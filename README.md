@@ -51,6 +51,14 @@ Run the test suite (photo detection, PDF/OCR, naming, adjustments):
 swift test
 ```
 
+## Windows version
+
+A native Windows sibling app lives in [windows/](windows/) — same architecture (shared
+platform-neutral core + native shell), with the photo detector and pipeline ported to a
+dependency-free C# library, the same conformance test suite in xUnit, a WPF UI, and
+WIA/eSCL scanner backends. See [windows/README.md](windows/README.md) for build
+instructions and current status.
+
 ## Using it
 
 1. Pick your scanner in the sidebar (or **Demo Scanner** to explore).

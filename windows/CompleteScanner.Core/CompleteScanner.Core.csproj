@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>CompleteScanner.Core</RootNamespace>
+    <Description>Platform-neutral core of CompleteScanner: photo detection, image pipeline,
+naming, presets, PDF assembly, and the scanner-backend contract. No UI, no OS-specific
+APIs, no package dependencies — usable from any .NET UI stack on any OS.</Description>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- 10.0.19041.0 gives access to WinRT APIs (Windows.Media.Ocr) from WPF via CsWinRT. -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>CompleteScanner.App</RootNamespace>
+    <AssemblyName>CompleteScanner</AssemblyName>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CompleteScanner.Core\CompleteScanner.Core.csproj" />
+  </ItemGroup>
+
+</Project>

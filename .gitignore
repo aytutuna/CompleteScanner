@@ -3,3 +3,8 @@
 dist/
 *.xcodeproj
 .DS_Store
+
+# Windows / .NET
+windows/**/bin/
+windows/**/obj/
+windows/.vs/

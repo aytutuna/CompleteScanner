@@ -1,0 +1,258 @@
+<Window x:Class="CompleteScanner.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="CompleteScanner"
+        Width="1200" Height="800" MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterScreen">
+    <Grid>
+        <DockPanel>
+            <!-- Status bar -->
+            <StatusBar DockPanel.Dock="Bottom">
+                <StatusBarItem>
+                    <TextBlock x:Name="StatusText" Text="Looking for scanners…" />
+                </StatusBarItem>
+                <StatusBarItem HorizontalAlignment="Right">
+                    <StackPanel Orientation="Horizontal">
+                        <ProgressBar x:Name="BusyBar" Width="160" Height="14" Margin="0,0,8,0"
+                                     Visibility="Collapsed" />
+                        <Button x:Name="CancelButton" Content="Cancel" Padding="10,2"
+                                Visibility="Collapsed" Click="Cancel_Click" />
+                    </StackPanel>
+                </StatusBarItem>
+            </StatusBar>
+
+            <!-- Sidebar: scanners + presets -->
+            <Grid DockPanel.Dock="Left" Width="230" Background="#F3F3F3">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="SCANNERS" FontSize="11" Foreground="#666"
+                           Margin="12,12,12,4" />
+                <ListBox Grid.Row="1" x:Name="DeviceList" Margin="8,0"
+                         SelectionChanged="DeviceList_SelectionChanged"
+                         BorderThickness="0" Background="Transparent">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="4,4">
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Transport}" FontSize="11" Foreground="#888" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock Grid.Row="2" Text="PRESETS" FontSize="11" Foreground="#666"
+                           Margin="12,12,12,4" />
+                <ListBox Grid.Row="3" x:Name="PresetList" Margin="8,0"
+                         MouseDoubleClick="PresetList_MouseDoubleClick"
+                         BorderThickness="0" Background="Transparent">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Name}" Margin="4,4" TextWrapping="Wrap" />
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="12,8,12,12">
+                    <Button Content="Save Preset" Padding="8,3" Click="SavePreset_Click" />
+                    <Button Content="Delete" Padding="8,3" Margin="6,0,0,0" Click="DeletePreset_Click" />
+                </StackPanel>
+            </Grid>
+
+            <!-- Inspector -->
+            <ScrollViewer DockPanel.Dock="Right" Width="290" Background="#FAFAFA"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="14" x:Name="Inspector">
+                    <TextBlock Text="Mode" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <RadioButton x:Name="ModeDocument" Content="Document" IsChecked="True"
+                                     Checked="Setting_Changed" />
+                        <RadioButton x:Name="ModePhotos" Content="Photos" Margin="12,0,0,0"
+                                     Checked="Setting_Changed" />
+                    </StackPanel>
+
+                    <TextBlock Text="Source" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <ComboBox x:Name="SourceBox" Margin="0,0,0,10" SelectionChanged="Setting_Changed" />
+
+                    <TextBlock Text="Resolution (dpi)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <ComboBox x:Name="ResolutionBox" Margin="0,0,0,10" SelectionChanged="Setting_Changed" />
+
+                    <TextBlock Text="Color" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <ComboBox x:Name="ColorModeBox" Margin="0,0,0,10" SelectionChanged="Setting_Changed" />
+
+                    <TextBlock Text="Format" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <ComboBox x:Name="FormatBox" Margin="0,0,0,10" SelectionChanged="Setting_Changed" />
+
+                    <StackPanel x:Name="DocumentOptions">
+                        <CheckBox x:Name="MultiPageBox" Content="Collect pages, then Save PDF"
+                                  Margin="0,0,0,6" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="SearchableBox" Content="Searchable PDF (OCR)"
+                                  Margin="0,0,0,10" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                    </StackPanel>
+
+                    <StackPanel x:Name="PhotoOptions" Visibility="Collapsed">
+                        <CheckBox x:Name="AutoSplitBox" Content="Auto-split photos" IsChecked="True"
+                                  Margin="0,0,0,6" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        <CheckBox x:Name="DeskewBox" Content="Auto-straighten (deskew)" IsChecked="True"
+                                  Margin="0,0,0,10" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                    </StackPanel>
+
+                    <Expander Header="Adjustments" Margin="0,0,0,10">
+                        <StackPanel Margin="0,6,0,0">
+                            <CheckBox x:Name="AutoEnhanceBox" Content="Auto enhance"
+                                      Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                            <TextBlock Text="Brightness" Margin="0,8,0,0" />
+                            <Slider x:Name="BrightnessSlider" Minimum="-1" Maximum="1" Value="0"
+                                    TickFrequency="0.05" IsSnapToTickEnabled="True"
+                                    ValueChanged="Setting_Changed" />
+                            <TextBlock Text="Contrast" Margin="0,4,0,0" />
+                            <Slider x:Name="ContrastSlider" Minimum="0.25" Maximum="4" Value="1"
+                                    TickFrequency="0.05" IsSnapToTickEnabled="True"
+                                    ValueChanged="Setting_Changed" />
+                            <TextBlock Text="Saturation" Margin="0,4,0,0" />
+                            <Slider x:Name="SaturationSlider" Minimum="0" Maximum="2" Value="1"
+                                    TickFrequency="0.05" IsSnapToTickEnabled="True"
+                                    ValueChanged="Setting_Changed" />
+                            <TextBlock Text="Sharpness" Margin="0,4,0,0" />
+                            <Slider x:Name="SharpnessSlider" Minimum="0" Maximum="2" Value="0"
+                                    TickFrequency="0.05" IsSnapToTickEnabled="True"
+                                    ValueChanged="Setting_Changed" />
+                            <CheckBox x:Name="DescreenBox" Content="Descreen (printed material)"
+                                      Margin="0,8,0,0" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                            <CheckBox x:Name="RestoreBox" Content="Restore faded colors"
+                                      Margin="0,4,0,0" Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                        </StackPanel>
+                    </Expander>
+
+                    <TextBlock Text="Save to" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <DockPanel Margin="0,0,0,6">
+                        <Button DockPanel.Dock="Right" Content="…" Padding="8,2" Margin="6,0,0,0"
+                                Click="BrowseDestination_Click" />
+                        <TextBox x:Name="DestinationBox" LostFocus="Setting_Changed" />
+                    </DockPanel>
+                    <TextBlock Text="File name template" FontWeight="SemiBold" Margin="0,0,0,4" />
+                    <TextBox x:Name="TemplateBox" Margin="0,0,0,14" LostFocus="Setting_Changed" />
+
+                    <Button x:Name="PreviewButton" Content="Preview" Padding="0,6" Margin="0,0,0,6"
+                            Click="Preview_Click" />
+                    <Button x:Name="ScanButton" Content="Scan" Padding="0,8" FontWeight="SemiBold"
+                            Margin="0,0,0,6" Click="Scan_Click" />
+                    <Button x:Name="SavePdfButton" Content="Save PDF" Padding="0,6" Margin="0,0,0,6"
+                            Click="SavePdf_Click" />
+                    <Button x:Name="ClearButton" Content="Clear Pages" Padding="0,4"
+                            Click="ClearPages_Click" />
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Center: preview canvas + page strip -->
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Background="#2B2B2B">
+                    <Grid x:Name="CanvasHost"
+                          MouseLeftButtonDown="Canvas_MouseDown"
+                          MouseMove="Canvas_MouseMove"
+                          MouseLeftButtonUp="Canvas_MouseUp"
+                          Background="Transparent">
+                        <Image x:Name="CanvasImage" Stretch="Uniform" Margin="16"
+                               RenderOptions.BitmapScalingMode="HighQuality" />
+                        <Canvas x:Name="SelectionOverlay" IsHitTestVisible="False">
+                            <Rectangle x:Name="SelectionMarquee" Stroke="#4DA3FF" StrokeThickness="1.5"
+                                       StrokeDashArray="4 3" Fill="#334DA3FF" Visibility="Collapsed" />
+                        </Canvas>
+                        <TextBlock x:Name="CanvasHint"
+                                   Text="Press Preview for an overview scan, or Scan to capture."
+                                   Foreground="#999" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
+
+                <!-- Page strip -->
+                <Border Grid.Row="1" x:Name="PageStrip" Background="#EFEFEF" Visibility="Collapsed"
+                        Padding="8">
+                    <StackPanel>
+                        <TextBlock x:Name="PageStripLabel" Text="0 pages" FontSize="11"
+                                   Foreground="#666" Margin="2,0,0,4" />
+                        <ListBox x:Name="PageList" Height="118"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                 ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                 BorderThickness="0" Background="Transparent">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="4">
+                                        <Image Source="{Binding Thumbnail}" Height="80" />
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                                                    Margin="0,3,0,0">
+                                            <Button Content="◀" FontSize="9" Padding="4,1"
+                                                    Click="PageLeft_Click" Tag="{Binding Page.Id}" />
+                                            <Button Content="✕" FontSize="9" Padding="4,1" Margin="3,0"
+                                                    Click="PageRemove_Click" Tag="{Binding Page.Id}" />
+                                            <Button Content="▶" FontSize="9" Padding="4,1"
+                                                    Click="PageRight_Click" Tag="{Binding Page.Id}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </DockPanel>
+
+        <!-- Photo review overlay -->
+        <Grid x:Name="PhotoReviewOverlay" Background="#CC202020" Visibility="Collapsed">
+            <Border Background="White" CornerRadius="8" MaxWidth="900" MaxHeight="640"
+                    Margin="40" Padding="18">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" x:Name="ReviewTitle" Text="Detected photos"
+                               FontSize="16" FontWeight="SemiBold" Margin="0,0,0,10" />
+                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                                HorizontalAlignment="Right" Margin="0,12,0,0">
+                        <Button Content="Discard" Padding="14,6" Click="ReviewCancel_Click" />
+                        <Button x:Name="ReviewSaveButton" Content="Save Photos" Padding="14,6"
+                                Margin="8,0,0,0" FontWeight="SemiBold" Click="ReviewSave_Click" />
+                    </StackPanel>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="PhotoGrid">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="#DDD" BorderThickness="1" CornerRadius="4"
+                                            Margin="6" Padding="8">
+                                        <StackPanel>
+                                            <Image Source="{Binding Thumbnail}" MaxHeight="150" MaxWidth="200"
+                                                   RenderTransformOrigin="0.5,0.5">
+                                                <Image.LayoutTransform>
+                                                    <RotateTransform Angle="{Binding RotationDegrees}" />
+                                                </Image.LayoutTransform>
+                                            </Image>
+                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
+                                                        HorizontalAlignment="Center">
+                                                <CheckBox Content="Keep" IsChecked="{Binding Included}" />
+                                                <Button Content="⟳" Margin="10,0,0,0" Padding="6,0"
+                                                        Click="ReviewRotate_Click" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
