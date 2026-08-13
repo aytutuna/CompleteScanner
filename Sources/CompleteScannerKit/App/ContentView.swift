@@ -17,7 +17,34 @@ struct ContentView: View {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)
         } detail: {
-            Group {
+            // The tab switcher lives in the content, not the toolbar: toolbar
+            // `.principal` items merge the title bar on newer macOS and push the
+            // sidebar under the traffic-light buttons.
+            VStack(spacing: 0) {
+                HStack {
+                    Picker("View", selection: $detailTab) {
+                        Text("Scanner").tag(DetailTab.scanner)
+                        Text("Scans").tag(DetailTab.scans)
+                        Text("Saved").tag(DetailTab.saved)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 280)
+                    Spacer()
+                    if detailTab == .scanner {
+                        Button {
+                            showInspector.toggle()
+                        } label: {
+                            Label("Scan Settings", systemImage: "sidebar.trailing")
+                        }
+                        .labelStyle(.iconOnly)
+                        .help("Show or hide the scan settings")
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.bar)
+                Divider()
                 switch detailTab {
                 case .scanner:
                     scannerDetail
@@ -25,17 +52,6 @@ struct ContentView: View {
                     scansDetail
                 case .saved:
                     savedDetail
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker("View", selection: $detailTab) {
-                        Label("Scanner", systemImage: "scanner").tag(DetailTab.scanner)
-                        Label("Scans", systemImage: "clock.arrow.circlepath").tag(DetailTab.scans)
-                        Label("Saved", systemImage: "tray.full").tag(DetailTab.saved)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
                 }
             }
         }
@@ -75,16 +91,6 @@ struct ContentView: View {
         .inspector(isPresented: $showInspector) {
             InspectorView()
                 .inspectorColumnWidth(min: 280, ideal: 330, max: 430)
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showInspector.toggle()
-                } label: {
-                    Label("Scan Settings", systemImage: "sidebar.trailing")
-                }
-                .help("Show or hide the scan settings")
-            }
         }
     }
 

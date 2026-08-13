@@ -11,11 +11,16 @@ struct InspectorView: View {
     @State private var newPresetName = ""
 
     var body: some View {
-        VStack(spacing: 0) {
-            settingsForm
-            Divider()
-            actionArea
-        }
+        // The action area is pinned as a bottom safe-area inset: the form scrolls
+        // above it, so Preview/Scan can never be pushed off-window no matter how
+        // small the window or how long the form gets.
+        settingsForm
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 0) {
+                    Divider()
+                    actionArea
+                }
+            }
         .onChange(of: state.settings.intent) { _, newIntent in
             if newIntent == .photo && state.settings.format == .pdf {
                 state.settings.format = .jpeg

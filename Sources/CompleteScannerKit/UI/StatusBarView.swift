@@ -34,5 +34,6 @@ struct StatusBarView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.bar)
     }
 }
