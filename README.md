@@ -1,0 +1,83 @@
+# CompleteScanner
+
+A one-stop, native macOS scanning app: documents to (searchable) PDF, and batch photo
+scanning that automatically finds, straightens, and splits multiple photos laid on the
+flatbed into separate JPEG/PNG files.
+
+Built with SwiftUI on Apple's **ImageCaptureCore**, so it works with any scanner that has a
+macOS driver (Epson, Canon, HP, Brother, …) as well as driverless **AirScan/eSCL network
+scanners** — including the Epson Perfection V39 II.
+
+## Features
+
+- **Any scanner**: USB scanners via their macOS (ICA) driver, plus network/shared scanners
+  discovered over Bonjour. Flatbed and document-feeder (ADF) sources.
+- **Document mode**: scan pages into a queue, reorder/delete, then save one multi-page PDF.
+  Optional **searchable PDF** — OCR (Apple Vision) embeds an invisible text layer so the PDF
+  is selectable and searchable. Or save every scan immediately as its own PDF/JPEG/PNG/TIFF.
+- **Photo batch mode**: lay several photos on the glass, press Scan once. The app detects
+  each photo, measures its tilt, deskews and crops each one, and shows a review grid —
+  untick false positives, rotate, then save all as separate JPEG/PNG/TIFF files with correct
+  DPI metadata. Repeat with the next batch.
+- **Preview & area selection**: fast overview scan of the bed, drag a marquee (with physical
+  inch dimensions shown) to scan only part of the glass.
+- **Full scan control**: resolution (from the scanner's real supported list), color /
+  grayscale / black-and-white, JPEG quality, DPI-correct output.
+- **Image adjustments**: auto-enhance, brightness / contrast / saturation / sharpness,
+  descreen (moiré reduction for printed material), faded-color restoration for old photos,
+  black-and-white threshold.
+- **Presets**: built-in starter presets (Document→PDF, compact grayscale text, photo
+  auto-split, old-photo restoration, quick preview) plus your own saved presets.
+- **File naming templates**: `{date}`, `{time}`, `{counter}`, `{counter:4}`, `{intent}`,
+  `{index}` tokens; automatic collision-free numbering.
+- **Demo Scanner**: a built-in simulated device so you can try every feature (including OCR
+  and photo splitting) with no hardware connected.
+
+## Build & run
+
+Requires Xcode (or its toolchain) on macOS 14+.
+
+```bash
+cd ~/CompleteScanner
+swift run CompleteScanner          # run directly
+# or build a double-clickable app:
+./scripts/make_app.sh              # -> dist/CompleteScanner.app
+open dist/CompleteScanner.app
+```
+
+Run the test suite (photo detection, PDF/OCR, naming, adjustments):
+
+```bash
+swift test
+```
+
+## Using it
+
+1. Pick your scanner in the sidebar (or **Demo Scanner** to explore).
+2. Choose a mode:
+   - **Document** — each Scan adds a page to the strip at the bottom; press **Save PDF**
+     when done. Turn on *Searchable PDF (OCR)* for selectable text.
+   - **Photos** — place several photos on the glass with a little space between them, press
+     **Scan**, review the detected photos in the grid, then **Save N Photos**. Put the next
+     batch on the glass and scan again.
+3. **Preview** does a quick overview pass; drag on the image to restrict the scan area.
+4. Set resolution, color mode, format, destination folder and naming in the inspector.
+
+## Scanner support notes
+
+- **Epson Perfection V39 II** (and other Epson Perfection models): install "Epson Scanner
+  Driver" / *Epson Scan 2* from Epson's macOS downloads if the scanner doesn't appear.
+  Once the driver is installed the scanner shows up in CompleteScanner automatically.
+- Any scanner visible to Apple Image Capture will appear here too — that includes most
+  Canon/HP/Brother/Fujitsu devices and all AirScan/eSCL network scanners.
+- If a USB scanner is missing: check the cable/power, then install the manufacturer's macOS
+  driver, then click the refresh button in the sidebar.
+
+## Project layout
+
+- `Sources/CompleteScannerKit/Core` — shared models + backend protocols
+- `Sources/CompleteScannerKit/Backends` — ImageCaptureCore backend, demo backend
+- `Sources/CompleteScannerKit/Pipeline` — photo detection/split/deskew, image adjustments
+- `Sources/CompleteScannerKit/Output` — PDF builder, OCR, image export, naming templates
+- `Sources/CompleteScannerKit/UI` — SwiftUI views
+- `Tests/CompleteScannerTests` — unit tests (synthetic-image based)

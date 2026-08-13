@@ -1,0 +1,153 @@
+# CompleteScanner — module contracts
+
+Native macOS scanner app. SwiftUI, macOS 14+, Swift 5.9 language mode, SwiftPM, **system frameworks only** (AppKit, SwiftUI, ImageCaptureCore, CoreImage, Vision, PDFKit, CoreGraphics, ImageIO, UniformTypeIdentifiers, Accelerate). No third-party dependencies. No UIKit.
+
+All app code lives in the library target `CompleteScannerKit` (`Sources/CompleteScannerKit/`). Tests in `Tests/CompleteScannerTests` use `@testable import CompleteScannerKit`.
+
+Already written (READ THESE FIRST, code against them exactly):
+- `Sources/CompleteScannerKit/Core/Models.swift` — all shared types (ScanIntent, ColorMode, ScanSource, OutputFormat, AdjustmentSettings, ScanSettings, ScannedPage, DetectedPhotoRegion, DetectedPhoto, ScannerInfo, ScannerCapabilities, ScanProgress, Preset, ScanError).
+- `Sources/CompleteScannerKit/Core/ScannerBackend.swift` — `ScannerBackend` / `ScannerSession` protocols (both `@MainActor`).
+- `Sources/CompleteScannerKit/App/AppState.swift` — the `@MainActor ObservableObject` all UI binds to.
+- `Sources/CompleteScannerKit/App/ContentView.swift`, `CompleteScannerApp.swift`.
+
+## Global rules
+
+1. Write ONLY the files assigned to you. Never edit shared files.
+2. Do NOT run `swift build` / `swift test` — the package intentionally does not compile until every module lands; integration happens afterward.
+3. Any helper function, extension, or type not listed in this document must be `private` or `fileprivate` in your file to avoid cross-file collisions.
+4. Coordinate conventions:
+   - Image/region coordinates: pixels, origin TOP-LEFT, x right, y down (see DetectedPhotoRegion doc comment; positive angle = clockwise on screen).
+   - Scan selection: normalized 0...1 rect of the flatbed, origin top-left.
+   - Vision (`VNRecognizedTextObservation.boundingBox`): normalized, origin BOTTOM-LEFT.
+   - PDF user space: points (72/inch), origin BOTTOM-LEFT. Page size = pixels / dpi × 72.
+5. Errors thrown across modules should be `ScanError`.
+
+## APIs each module must expose (exact signatures)
+
+### Pipeline/PhotoDetector.swift (+ Pipeline/Geometry.swift)
+
+```swift
+public struct PhotoDetectorOptions {
+    public var minPhotoSideInches: Double = 1.0
+    public var maxPhotoCount: Int = 20
+    /// Pixels (at full scan resolution) shaved off each edge of the detected rect before extraction.
+    public var edgeInsetPixels: Int = 0
+    public init() {}
+}
+
+public enum PhotoDetector {
+    /// Find distinct photos lying on a flatbed scan. Regions are in full-resolution pixel
+    /// coordinates of `image`, sorted top-to-bottom then left-to-right.
+    public static func detectRegions(in image: CGImage, dpi: Int, options: PhotoDetectorOptions = PhotoDetectorOptions()) -> [DetectedPhotoRegion]
+    /// Crop (and if `deskew`, rotate to upright) one region out of the source scan.
+    public static func extractPhoto(from image: CGImage, region: DetectedPhotoRegion, deskew: Bool) -> CGImage?
+}
+```
+
+### Pipeline/ImagePipeline.swift
+
+```swift
+public enum ImagePipeline {
+    /// Apply adjustments + color-mode conversion. Returns the input unchanged when
+    /// `settings.isIdentity && colorMode == .color`.
+    public static func apply(_ settings: AdjustmentSettings, to image: CGImage, colorMode: ColorMode) -> CGImage
+    /// Lossless 90° steps, clockwise. quarterTurns 0...3.
+    public static func rotate(_ image: CGImage, quarterTurns: Int) -> CGImage
+}
+```
+
+### Persistence/PresetStore.swift
+
+```swift
+public final class PresetStore {
+    public init()
+    /// Loads saved presets; on first run returns (and persists) built-in starter presets.
+    public func load() -> [Preset]
+    public func save(_ presets: [Preset])
+}
+
+public enum SettingsStore {
+    public static func load() -> ScanSettings?
+    public static func save(_ settings: ScanSettings)
+}
+```
+Storage: JSON under `~/Library/Application Support/CompleteScanner/` (`presets.json`, `settings.json`).
+
+### Output/PDFBuilder.swift
+
+```swift
+public enum PDFBuilder {
+    /// Multi-page PDF; each page sized pixels/dpi*72 points. When `searchable`, run OCR per page
+    /// and draw an invisible text layer aligned with the words.
+    public static func makePDF(pages: [ScannedPage], searchable: Bool, ocrLanguages: [String],
+                               progress: ((String) -> Void)?) throws -> Data
+    /// Same, but streamed straight to `url` (never holds the whole document in memory).
+    public static func writePDF(pages: [ScannedPage], searchable: Bool, ocrLanguages: [String],
+                                to url: URL, progress: ((String) -> Void)?) throws
+}
+```
+Note: `ScannedPage.fileURL` (optional) points at a full-resolution spill TIFF; when set,
+`page.image` is only a preview and PDFBuilder reloads the full pixels from the file per page.
+
+### Output/OCRService.swift
+
+```swift
+public struct OCRLine {
+    public let text: String
+    /// Vision-normalized bounding box (origin bottom-left).
+    public let boundingBox: CGRect
+    public let confidence: Float
+    public init(text: String, boundingBox: CGRect, confidence: Float)
+}
+
+public enum OCRService {
+    public static func recognizeLines(in image: CGImage, languages: [String]) throws -> [OCRLine]
+}
+```
+
+### Output/ImageExporter.swift
+
+```swift
+public enum ImageExporter {
+    /// Write jpeg/png/tiff with DPI metadata. Throws ScanError.unsupported for .pdf.
+    public static func write(_ image: CGImage, to url: URL, format: OutputFormat, dpi: Int, jpegQuality: Double) throws
+}
+```
+
+### Output/NamingTemplate.swift
+
+```swift
+public struct NamingTemplate {
+    public let template: String
+    public init(_ template: String)
+    /// Tokens: {date}=yyyy-MM-dd, {time}=HH.mm.ss, {year} {month} {day}, {counter} (also {counter:N}
+    /// zero-padded), {intent} ("Document"/"Photos"), {index} (photo number in a batch, empty when nil).
+    /// Unknown tokens pass through; result sanitized for the filesystem (no "/" or ":").
+    public func baseFilename(counter: Int, date: Date, intent: ScanIntent, index: Int?) -> String
+    /// base.ext, appending " 2", " 3", … until the name is free.
+    public static func uniqueURL(in directory: URL, base: String, fileExtension: String) -> URL
+}
+```
+
+### Backends/ICScannerBackend.swift
+
+```swift
+public final class ICScannerBackend: NSObject, ScannerBackend { ... }
+```
+ImageCaptureCore implementation: `ICDeviceBrowser` (scanner mask, local + bonjour + shared), sessions via `ICScannerDevice` (see task brief).
+
+### Backends/MockScannerBackend.swift
+
+```swift
+public final class MockScannerBackend: ScannerBackend { ... }
+```
+One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true)`; synthesizes deterministic flatbed images (see task brief).
+
+### UI files (all `internal`, SwiftUI, bind to `@EnvironmentObject var state: AppState`)
+
+- `UI/SidebarView.swift` — `struct SidebarView: View`: device list + refresh.
+- `UI/InspectorView.swift` — `struct InspectorView: View`: all settings + Overview/Scan/Cancel buttons + presets.
+- `UI/StatusBarView.swift` — `struct StatusBarView: View`: status text, progress, last-saved reveal buttons.
+- `UI/PreviewCanvasView.swift` — `struct PreviewCanvasView: View`: shows `state.canvasImage`, marquee selection editing `state.selectionRect` (only when `state.overviewImage != nil`).
+- `UI/PagesStripView.swift` — `struct PagesStripView: View`: page-queue thumbnails + Save PDF / Clear.
+- `UI/PhotoReviewView.swift` — `struct PhotoReviewView: View`: detected-photo grid sheet; Save via `state.saveReviewedPhotos()`, cancel via `state.cancelPhotoReview()`.
