@@ -17,6 +17,14 @@ public final class ICScannerBackend: NSObject, ScannerBackend, ICDeviceBrowserDe
 
     private var browser: ICDeviceBrowser?
     private var scannersByID: [String: ICScannerDevice] = [:]
+    /// Re-kicks enumeration while no scanner is visible — some drivers never deliver
+    /// `didAdd` for a device plugged in after browsing started.
+    private var replugWatchdog: Task<Void, Never>?
+    /// Backoff between watchdog re-browses. Long enough that a slow Bonjour/shared
+    /// enumeration (which can take several seconds) always finishes before a restart
+    /// could discard it; doubled after each fruitless restart, reset on discovery.
+    private static let initialRebrowseDelay: UInt64 = 10_000_000_000
+    private var rebrowseDelay: UInt64 = ICScannerBackend.initialRebrowseDelay
 
     public override init() {
         super.init()
@@ -26,6 +34,39 @@ public final class ICScannerBackend: NSObject, ScannerBackend, ICDeviceBrowserDe
 
     public func startBrowsing() {
         guard browser == nil else { return }
+        startBrowser()
+        rebrowseDelay = Self.initialRebrowseDelay
+        replugWatchdog?.cancel()
+        replugWatchdog = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let delay = self?.rebrowseDelay else { return }
+                try? await Task.sleep(nanoseconds: delay)
+                guard let self, !Task.isCancelled else { return }
+                if self.devices.isEmpty, self.browser != nil {
+                    // Only restart while nothing was found: a restart while a session
+                    // is open would tear the device out from under it.
+                    self.restartBrowser()
+                    self.rebrowseDelay = min(self.rebrowseDelay * 2, 60_000_000_000)
+                } else {
+                    self.rebrowseDelay = Self.initialRebrowseDelay
+                }
+            }
+        }
+    }
+
+    public func stopBrowsing() {
+        replugWatchdog?.cancel()
+        replugWatchdog = nil
+        browser?.stop()
+        browser?.delegate = nil
+        browser = nil
+        guard !devices.isEmpty || !scannersByID.isEmpty else { return }
+        scannersByID = [:]
+        devices = []
+        onDevicesChanged?()
+    }
+
+    private func startBrowser() {
         let b = ICDeviceBrowser()
         b.delegate = self
         b.browsedDeviceTypeMask = ICDeviceTypeMask(rawValue:
@@ -37,14 +78,11 @@ public final class ICScannerBackend: NSObject, ScannerBackend, ICDeviceBrowserDe
         b.start()
     }
 
-    public func stopBrowsing() {
+    private func restartBrowser() {
         browser?.stop()
         browser?.delegate = nil
         browser = nil
-        guard !devices.isEmpty || !scannersByID.isEmpty else { return }
-        scannersByID = [:]
-        devices = []
-        onDevicesChanged?()
+        startBrowser()
     }
 
     public func openSession(deviceID: String) async throws -> any ScannerSession {
@@ -61,12 +99,20 @@ public final class ICScannerBackend: NSObject, ScannerBackend, ICDeviceBrowserDe
 
     public nonisolated func deviceBrowser(_ browser: ICDeviceBrowser, didAdd device: ICDevice, moreComing: Bool) {
         guard let scanner = device as? ICScannerDevice else { return }
-        performOnMainActor { self.register(scanner) }
+        performOnMainActor {
+            // Ignore stragglers from a browser the watchdog already tore down — they
+            // would register a device object no didRemove will ever clean up.
+            guard browser === self.browser else { return }
+            self.register(scanner)
+        }
     }
 
     public nonisolated func deviceBrowser(_ browser: ICDeviceBrowser, didRemove device: ICDevice, moreGoing: Bool) {
         guard let scanner = device as? ICScannerDevice else { return }
-        performOnMainActor { self.unregister(scanner) }
+        performOnMainActor {
+            guard browser === self.browser else { return }
+            self.unregister(scanner)
+        }
     }
 
     // MARK: - Device bookkeeping
@@ -200,7 +246,7 @@ private final class ICHardwareScannerSession: NSObject, ScannerSession, ICScanne
             try? await selectFunctionalUnit(.flatbed)
         }
         let unit = device.selectedFunctionalUnit
-        let resolutions = unit.supportedResolutions.sorted()
+        let resolutions = Self.resolutionList(for: unit)
         if !resolutions.isEmpty { caps.supportedResolutions = resolutions }
 
         unit.measurementUnit = .inches
@@ -315,6 +361,33 @@ private final class ICHardwareScannerSession: NSObject, ScannerSession, ICScanne
     }
 
     // MARK: Helpers
+
+    /// Every resolution the device supports, always including the device maximum.
+    ///
+    /// Drivers report `supportedResolutions` in two shapes: a small discrete set
+    /// (used as-is), or a huge contiguous range like 50...4800 — for those, offering
+    /// thousands of picker entries is useless, so the standard ladder within the range
+    /// is offered plus the exact minimum, maximum, preferred and native values.
+    private static func resolutionList(for unit: ICScannerFunctionalUnit) -> [Int] {
+        let supported = unit.supportedResolutions
+        guard let minDPI = supported.min(), let maxDPI = supported.max() else { return [] }
+
+        var set = Set<Int>()
+        if supported.count <= 64 {
+            // A discrete list (even a generous one): offer every reported value.
+            set.formUnion(supported)
+        } else {
+            let ladder = [50, 72, 75, 100, 150, 200, 240, 300, 400, 600, 800,
+                          1200, 1600, 2400, 3200, 4800, 6400, 9600, 12800]
+            set.formUnion(ladder.filter { supported.contains($0) })
+            set.insert(minDPI)
+            set.insert(maxDPI)
+        }
+        set.formUnion(unit.preferredResolutions.filter { supported.contains($0) })
+        let native = Int(unit.nativeXResolution)
+        if native > 0, supported.contains(native) { set.insert(native) }
+        return set.sorted()
+    }
 
     private func ensureIdle() throws {
         guard !isClosing else { throw ScanError.sessionFailed("The session is closed.") }

@@ -39,9 +39,32 @@ public enum PDFBuilder {
             // full-resolution pixels one page at a time. The media box comes
             // from the recorded full-resolution size, so the physical page size
             // stays correct even when only the preview pixels are available.
-            let image = fullResolutionImage(for: page)
-            let pixelWidth = page.fullPixelSize.map { Int($0.width) } ?? image.width
-            let pixelHeight = page.fullPixelSize.map { Int($0.height) } ?? image.height
+            let turns = ((page.rotationQuarterTurns % 4) + 4) % 4
+            let swapsAxes = turns % 2 == 1
+            let image: CGImage
+            let pixelWidth: Int
+            let pixelHeight: Int
+            if let full = spoolImage(for: page) {
+                // The spool file is unrotated; apply the user's page rotation now, and
+                // swap the recorded dimensions for odd quarter turns.
+                image = turns == 0 ? full : ImagePipeline.rotate(full, quarterTurns: turns)
+                let rawWidth = page.fullPixelSize.map { Int($0.width) } ?? full.width
+                let rawHeight = page.fullPixelSize.map { Int($0.height) } ?? full.height
+                pixelWidth = swapsAxes ? rawHeight : rawWidth
+                pixelHeight = swapsAxes ? rawWidth : rawHeight
+            } else {
+                // Missing/unreadable spill file (or the page was never spooled): fall
+                // back to the in-memory image, which ALREADY carries the rotation.
+                image = page.image
+                if let full = page.fullPixelSize {
+                    // Recorded pre-rotation full-resolution size: swap for odd turns.
+                    pixelWidth = swapsAxes ? Int(full.height) : Int(full.width)
+                    pixelHeight = swapsAxes ? Int(full.width) : Int(full.height)
+                } else {
+                    pixelWidth = image.width
+                    pixelHeight = image.height
+                }
+            }
             var box = mediaBox(width: pixelWidth, height: pixelHeight, dpi: page.dpi)
             let boxData = Data(bytes: &box, count: MemoryLayout<CGRect>.size)
             let pageInfo = [kCGPDFContextMediaBox as String: boxData] as CFDictionary
@@ -61,13 +84,14 @@ public enum PDFBuilder {
         context.closePDF()
     }
 
-    private static func fullResolutionImage(for page: ScannedPage) -> CGImage {
+    /// The full-resolution UNROTATED pixels from the page's spill file, or nil when the
+    /// page was never spooled (or the file is unreadable) — the caller then falls back to
+    /// the in-memory image, which already carries any user rotation.
+    private static func spoolImage(for page: ScannedPage) -> CGImage? {
         guard let url = page.fileURL,
               let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
-            // Missing/unreadable spill file: fall back to the in-memory image
-            // rather than failing the whole save.
-            return page.image
+            return nil
         }
         return image
     }

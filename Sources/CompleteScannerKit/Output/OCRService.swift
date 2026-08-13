@@ -18,11 +18,16 @@ public struct OCRLine {
 public enum OCRService {
     /// Run accurate text recognition over `image` and return one OCRLine per observation
     /// (top candidate). Throws `ScanError.scanFailed` when the Vision handler fails.
-    public static func recognizeLines(in image: CGImage, languages: [String]) throws -> [OCRLine] {
+    ///
+    /// Recognition is universal: Vision detects the language(s) on the page itself, so no
+    /// configuration is required. The `languages` parameter is kept for API stability but
+    /// no longer constrains recognition.
+    public static func recognizeLines(in image: CGImage, languages: [String] = []) throws -> [OCRLine] {
+        _ = languages
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
-        applyLanguages(languages, to: request)
+        request.automaticallyDetectsLanguage = true
 
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         do {
@@ -40,15 +45,4 @@ public enum OCRService {
         }
     }
 
-    /// Set the requested recognition languages, silently dropping any the request
-    /// does not support (and leaving Vision's defaults when none are supported).
-    private static func applyLanguages(_ languages: [String], to request: VNRecognizeTextRequest) {
-        guard !languages.isEmpty else { return }
-        if let supported = try? request.supportedRecognitionLanguages() {
-            let usable = languages.filter { supported.contains($0) }
-            if !usable.isEmpty { request.recognitionLanguages = usable }
-        } else {
-            request.recognitionLanguages = languages
-        }
-    }
 }

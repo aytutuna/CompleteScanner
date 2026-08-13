@@ -32,8 +32,29 @@ struct PreviewCanvasView: View {
             }
         }
         .clipped()
-        .task(id: state.canvasRevision) {
-            displayImage = state.canvasImage.map { canvasDownsample($0, maxDimension: 2600) }
+        // Live preview: re-render whenever the canvas image OR the adjustment settings
+        // change, applying the current pipeline to the (raw) downsampled scan so slider
+        // edits are visible immediately without rescanning.
+        .task(id: PreviewRenderKey(revision: state.canvasRevision,
+                                   adjustments: state.settings.adjustments,
+                                   colorMode: state.settings.colorMode)) {
+            guard let base = state.canvasImage else {
+                displayImage = nil
+                return
+            }
+            // Coalesce slider drags: every tick re-keys this task, which cancels the
+            // superseded one during this sleep — before its render ever starts.
+            guard (try? await Task.sleep(nanoseconds: 80_000_000)) != nil else { return }
+            let adjustments = state.settings.adjustments
+            let colorMode = state.settings.colorMode
+            let rendered = await Task.detached(priority: .userInitiated) {
+                let down = canvasDownsample(base, maxDimension: 2600)
+                return ImagePipeline.apply(adjustments, to: down, colorMode: colorMode)
+            }.value
+            // A newer settings change may have superseded this render.
+            if !Task.isCancelled {
+                displayImage = rendered
+            }
         }
     }
 
@@ -224,8 +245,12 @@ struct PreviewCanvasView: View {
     // MARK: Detected photo outlines (informational, scan image only)
 
     private func detectedPhotosOverlay(image: CGImage, frame: CGRect) -> some View {
-        let sx = frame.width / CGFloat(image.width)
-        let sy = frame.height / CGFloat(image.height)
+        // Regions are in FULL-resolution pixel coordinates, but the canvas holds only a
+        // downsampled preview — map through the recorded true pixel size.
+        let pixelSize = state.lastScanPixelSize
+            ?? CGSize(width: max(image.width, 1), height: max(image.height, 1))
+        let sx = frame.width / pixelSize.width
+        let sy = frame.height / pixelSize.height
         return ForEach(Array(state.detectedPhotos.enumerated()), id: \.element.id) { index, photo in
             let pts = photo.region.corners.map {
                 CGPoint(x: frame.minX + $0.x * sx, y: frame.minY + $0.y * sy)
@@ -252,6 +277,16 @@ struct PreviewCanvasView: View {
             .allowsHitTesting(false)
         }
     }
+}
+
+// MARK: - File-private render key
+
+/// Identity of one live-preview render: the canvas image revision plus everything the
+/// pipeline consumes. `.task(id:)` keyed on this re-renders exactly when needed.
+fileprivate struct PreviewRenderKey: Equatable {
+    var revision: Int
+    var adjustments: AdjustmentSettings
+    var colorMode: ColorMode
 }
 
 // MARK: - File-private geometry helpers

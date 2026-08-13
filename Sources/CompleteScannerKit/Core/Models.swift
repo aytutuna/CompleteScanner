@@ -146,6 +146,10 @@ public struct ScannedPage: Identifiable {
     /// is spooled), so physical page size stays correct even if only the preview
     /// is available.
     public let fullPixelSize: CGSize?
+    /// User-requested rotation applied at save time (0...3 quarter turns clockwise).
+    /// `image` already shows the rotation; the full-resolution original (spool file)
+    /// stays unrotated until PDFBuilder applies it.
+    public var rotationQuarterTurns: Int = 0
 
     public init(image: CGImage, dpi: Int, colorMode: ColorMode, id: UUID = UUID(),
                 createdAt: Date = Date(), fileURL: URL? = nil, fullPixelSize: CGSize? = nil) {

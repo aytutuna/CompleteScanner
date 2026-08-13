@@ -223,22 +223,8 @@ struct InspectorView: View {
         Section("Document") {
             Toggle("Collect pages, save one PDF", isOn: $state.settings.documentMultiPage)
             Toggle("Searchable PDF (OCR)", isOn: $state.settings.pdfSearchable)
-            TextField("OCR languages", text: ocrLanguagesBinding, prompt: Text("en-US, de-DE"))
-                .onSubmit { state.settings.ocrLanguages.removeAll { $0.isEmpty } }
+                .help("Text is recognized in any language automatically — nothing to configure.")
         }
-    }
-
-    /// `ocrLanguages` shown and edited as one comma-separated string.
-    private var ocrLanguagesBinding: Binding<String> {
-        Binding(
-            get: { state.settings.ocrLanguages.joined(separator: ", ") },
-            set: { text in
-                let parts = text
-                    .components(separatedBy: ",")
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
-                state.settings.ocrLanguages = parts.allSatisfy(\.isEmpty) ? [] : parts
-            }
-        )
     }
 
     // MARK: Adjustments

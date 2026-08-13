@@ -33,6 +33,10 @@ public final class AppState: ObservableObject {
     /// Bumped whenever either canvas image changes, so views can key decode work on it
     /// (object identity of a CGImage is unreliable — addresses get reused).
     @Published public private(set) var canvasRevision = 0
+    /// True pixel dimensions of the last scan. `lastScanImage` holds only a downsampled
+    /// preview (full-resolution raws would pin hundreds of MB at high dpi); detected-photo
+    /// outlines use this to map full-resolution region coordinates onto the preview.
+    @Published public private(set) var lastScanPixelSize: CGSize?
     /// Normalized (0...1) crop rect within the flatbed, origin top-left. nil = full bed.
     @Published public var selectionRect: CGRect?
 
@@ -151,6 +155,7 @@ public final class AppState: ObservableObject {
         // The preview, marquee and detections belong to the previous device's bed.
         overviewImage = nil
         lastScanImage = nil
+        lastScanPixelSize = nil
         selectionRect = nil
         detectedPhotos = []
         showPhotoReview = false
@@ -225,6 +230,17 @@ public final class AppState: ObservableObject {
             }.value
             guard self.switchGeneration == generation else { return }
 
+            // The canvas shows the RAW scan: PreviewCanvasView applies the current
+            // adjustment settings to it live, so slider changes are visible
+            // immediately without rescanning. Only a downsampled preview is retained —
+            // a full-resolution raw at high dpi would pin hundreds of MB in memory.
+            let rawLast = raw.last?.image
+            let rawPreview: CGImage? = await Task.detached(priority: .userInitiated) {
+                rawLast.map { Self.makePreview($0, maxSide: 2600) ?? $0 }
+            }.value
+            guard self.switchGeneration == generation else { return }
+            let rawPixelSize = rawLast.map { CGSize(width: $0.width, height: $0.height) }
+
             switch s.intent {
             case .document:
                 if s.documentMultiPage {
@@ -237,17 +253,17 @@ public final class AppState: ObservableObject {
                         return
                     }
                     self.scannedPages.append(contentsOf: spooled)
-                    self.lastScanImage = spooled.last?.image
+                    self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
                     let n = processed.count
                     self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") — \(self.scannedPages.count) in queue. Scan more or Save PDF."
                 } else {
-                    self.lastScanImage = processed.last?.image
+                    self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
                     try await self.saveImmediately(processed)
                 }
             case .photo:
                 // Full resolution here: the detection overlay maps source-pixel
-                // coordinates onto this image.
-                self.lastScanImage = processed.last?.image
+                // coordinates onto this image (raw and processed share dimensions).
+                self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
                 let found: [DetectedPhoto] = await Task.detached(priority: .userInitiated) {
                     processed.flatMap { Self.splitPhotos(from: $0, settings: s) }
                 }.value
@@ -383,6 +399,26 @@ public final class AppState: ObservableObject {
         let newIdx = idx + offset
         guard newIdx >= 0 && newIdx < scannedPages.count else { return }
         scannedPages.swapAt(idx, newIdx)
+    }
+
+    private func setLastScan(preview: CGImage?, pixelSize: CGSize?) {
+        lastScanImage = preview
+        lastScanPixelSize = pixelSize
+    }
+
+    /// Rotate a queued page 90° clockwise. The in-memory preview is rotated right away
+    /// (the strip thumbnail follows it); the full-resolution spool file stays untouched
+    /// and PDFBuilder applies the accumulated rotation at save time.
+    public func rotatePage(id: UUID) {
+        guard !isBusy else { return }
+        guard let idx = scannedPages.firstIndex(where: { $0.id == id }) else { return }
+        let page = scannedPages[idx]
+        var updated = ScannedPage(image: ImagePipeline.rotate(page.image, quarterTurns: 1),
+                                  dpi: page.dpi, colorMode: page.colorMode,
+                                  id: page.id, createdAt: page.createdAt,
+                                  fileURL: page.fileURL, fullPixelSize: page.fullPixelSize)
+        updated.rotationQuarterTurns = (page.rotationQuarterTurns + 1) % 4
+        scannedPages[idx] = updated
     }
 
     public func clearPages() {

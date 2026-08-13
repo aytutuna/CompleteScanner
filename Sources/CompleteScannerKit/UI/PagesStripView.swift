@@ -18,7 +18,8 @@ struct PagesStripView: View {
                             canMoveLeft: index > 0,
                             canMoveRight: index < state.scannedPages.count - 1,
                             onRemove: { state.removePage(id: page.id) },
-                            onMove: { state.movePage(id: page.id, by: $0) })
+                            onMove: { state.movePage(id: page.id, by: $0) },
+                            onRotate: { state.rotatePage(id: page.id) })
                     }
                 }
                 .padding(.horizontal, 12)
@@ -59,6 +60,7 @@ fileprivate struct PageThumbnailCell: View {
     let canMoveRight: Bool
     let onRemove: () -> Void
     let onMove: (Int) -> Void
+    let onRotate: () -> Void
 
     @State private var thumbnail: CGImage?
     @State private var hovering = false
@@ -76,10 +78,10 @@ fileprivate struct PageThumbnailCell: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
-        .task {
-            if thumbnail == nil {
-                thumbnail = stripThumbnail(page.image, maxDimension: 200)
-            }
+        // Re-render when the page is rotated (the cell keeps its identity, so a
+        // plain run-once task would show the stale orientation).
+        .task(id: page.rotationQuarterTurns) {
+            thumbnail = stripThumbnail(page.image, maxDimension: 200)
         }
     }
 
@@ -110,6 +112,13 @@ fileprivate struct PageThumbnailCell: View {
                 }
                 .disabled(!canMoveLeft)
                 .help("Move page left")
+
+                Spacer(minLength: 2)
+
+                Button(action: onRotate) {
+                    Image(systemName: "rotate.right.fill")
+                }
+                .help("Rotate page 90° clockwise")
 
                 Spacer(minLength: 2)
 
