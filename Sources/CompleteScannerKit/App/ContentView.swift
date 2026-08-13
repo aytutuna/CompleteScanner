@@ -10,6 +10,7 @@ struct ContentView: View {
     }
 
     @State private var detailTab: DetailTab = .scanner
+    @State private var showInspector = true
 
     var body: some View {
         NavigationSplitView {
@@ -50,30 +51,40 @@ struct ContentView: View {
         } message: {
             Text(state.errorMessage ?? "")
         }
-        // Below this the layout cannot stay usable (sidebar + canvas + inspector).
-        .frame(minWidth: 960, minHeight: 620)
+        // Below this the layout cannot stay usable; the inspector adds its own
+        // width requirement only while shown.
+        .frame(minWidth: 700, minHeight: 560)
         .task { state.start() }
     }
 
     private var scannerDetail: some View {
-        // A draggable split instead of a fixed-width inspector: in small windows the
-        // canvas keeps its share (and the page preview keeps fitting), and the user can
-        // trade space between preview and controls.
-        HSplitView {
-            VStack(spacing: 0) {
-                PreviewCanvasView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if state.settings.intent == .document && !state.scannedPages.isEmpty {
-                    Divider()
-                    PagesStripView()
-                }
+        // The controls live in a native inspector panel: it manages its own width,
+        // counts into the window's minimum size (so nothing gets clipped in small
+        // windows), is user-resizable, and can be toggled to give the page preview
+        // the whole window.
+        VStack(spacing: 0) {
+            PreviewCanvasView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if state.settings.intent == .document && !state.scannedPages.isEmpty {
                 Divider()
-                StatusBarView()
+                PagesStripView()
             }
-            .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
-            .layoutPriority(1)
+            Divider()
+            StatusBarView()
+        }
+        .inspector(isPresented: $showInspector) {
             InspectorView()
-                .frame(minWidth: 280, idealWidth: 330, maxWidth: 430)
+                .inspectorColumnWidth(min: 280, ideal: 330, max: 430)
+        }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showInspector.toggle()
+                } label: {
+                    Label("Scan Settings", systemImage: "sidebar.trailing")
+                }
+                .help("Show or hide the scan settings")
+            }
         }
     }
 
