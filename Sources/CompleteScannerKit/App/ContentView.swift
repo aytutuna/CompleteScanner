@@ -5,6 +5,7 @@ struct ContentView: View {
 
     private enum DetailTab: Hashable {
         case scanner
+        case scans
         case saved
     }
 
@@ -19,6 +20,8 @@ struct ContentView: View {
                 switch detailTab {
                 case .scanner:
                     scannerDetail
+                case .scans:
+                    scansDetail
                 case .saved:
                     savedDetail
                 }
@@ -27,6 +30,7 @@ struct ContentView: View {
                 ToolbarItem(placement: .principal) {
                     Picker("View", selection: $detailTab) {
                         Label("Scanner", systemImage: "scanner").tag(DetailTab.scanner)
+                        Label("Scans", systemImage: "clock.arrow.circlepath").tag(DetailTab.scans)
                         Label("Saved", systemImage: "tray.full").tag(DetailTab.saved)
                     }
                     .pickerStyle(.segmented)
@@ -64,6 +68,14 @@ struct ContentView: View {
             Divider()
             InspectorView()
                 .frame(width: 330)
+        }
+    }
+
+    private var scansDetail: some View {
+        VStack(spacing: 0) {
+            ScanHistoryView()
+            Divider()
+            StatusBarView()
         }
     }
 

@@ -43,6 +43,18 @@ public final class AppState: ObservableObject {
     @Published public private(set) var scannedPages: [ScannedPage] = []
     @Published public var detectedPhotos: [DetectedPhoto] = []
     @Published public var showPhotoReview = false
+    /// This session's scans, newest first (small previews only) — the "Scans" tab.
+    @Published public private(set) var scanHistory: [ScanHistoryEntry] = []
+    /// Full-resolution sources of the current photo batch, keyed by scanned-page id and
+    /// retained only while the photo review is open, so manual crop corrections can
+    /// re-extract each photo from the correct sheet at full quality.
+    private var photoSourceImages: [UUID: CGImage] = [:]
+
+    /// The full-resolution page a detected photo was extracted from (nil once the
+    /// review is closed).
+    public func photoSource(for photo: DetectedPhoto) -> CGImage? {
+        photo.sourcePageID.flatMap { photoSourceImages[$0] }
+    }
 
     @Published public private(set) var isBusy = false
     @Published public private(set) var progress: ScanProgress?
@@ -159,6 +171,7 @@ public final class AppState: ObservableObject {
         selectionRect = nil
         detectedPhotos = []
         showPhotoReview = false
+        photoSourceImages = [:]
 
         guard let id else {
             statusMessage = "No scanner selected."
@@ -241,6 +254,25 @@ public final class AppState: ObservableObject {
             guard self.switchGeneration == generation else { return }
             let rawPixelSize = rawLast.map { CGSize(width: $0.width, height: $0.height) }
 
+            // Record every scanned page in the session history (small previews only).
+            let historyThumbs: [(CGImage, CGSize, Int)] = await Task.detached(priority: .utility) {
+                raw.map { page in
+                    (Self.makePreview(page.image, maxSide: 700) ?? page.image,
+                     CGSize(width: page.image.width, height: page.image.height),
+                     page.dpi)
+                }
+            }.value
+            guard self.switchGeneration == generation else { return }
+            let now = Date()
+            let entries = historyThumbs.map {
+                ScanHistoryEntry(date: now, intent: s.intent, dpi: $0.2,
+                                 thumbnail: $0.0, pixelSize: $0.1)
+            }
+            self.scanHistory.insert(contentsOf: entries.reversed(), at: 0)
+            if self.scanHistory.count > 50 {
+                self.scanHistory.removeSubrange(50...)
+            }
+
             switch s.intent {
             case .document:
                 if s.documentMultiPage {
@@ -268,6 +300,9 @@ public final class AppState: ObservableObject {
                     processed.flatMap { Self.splitPhotos(from: $0, settings: s) }
                 }.value
                 guard self.switchGeneration == generation else { return }
+                // Keep every sheet's full-resolution source while the review is open so
+                // manual crop corrections can re-extract from the correct page.
+                self.photoSourceImages = Dictionary(uniqueKeysWithValues: processed.map { ($0.id, $0.image) })
                 self.detectedPhotos = found
                 self.showPhotoReview = !found.isEmpty
                 self.statusMessage = "Found \(found.count) photo\(found.count == 1 ? "" : "s") on the bed."
@@ -286,7 +321,7 @@ public final class AppState: ObservableObject {
         guard !regions.isEmpty else { return [wholePagePhoto(page)] }
         return regions.compactMap { region in
             PhotoDetector.extractPhoto(from: page.image, region: region, deskew: s.photoAutoDeskew)
-                .map { DetectedPhoto(region: region, image: $0, dpi: page.dpi) }
+                .map { DetectedPhoto(region: region, image: $0, dpi: page.dpi, sourcePageID: page.id) }
         }
     }
 
@@ -294,7 +329,7 @@ public final class AppState: ObservableObject {
         let w = CGFloat(page.image.width), h = CGFloat(page.image.height)
         let region = DetectedPhotoRegion(center: CGPoint(x: w / 2, y: h / 2),
                                          size: CGSize(width: w, height: h), angleDegrees: 0)
-        return DetectedPhoto(region: region, image: page.image, dpi: page.dpi)
+        return DetectedPhoto(region: region, image: page.image, dpi: page.dpi, sourcePageID: page.id)
     }
 
     public func cancelScan() {
@@ -371,6 +406,7 @@ public final class AppState: ObservableObject {
             self.lastSavedURLs = saved
             self.detectedPhotos = []
             self.showPhotoReview = false
+            self.photoSourceImages = [:]
             self.statusMessage = "Saved \(saved.count) photo\(saved.count == 1 ? "" : "s") to \(s.destinationPath)"
         }
     }
@@ -378,7 +414,31 @@ public final class AppState: ObservableObject {
     public func cancelPhotoReview() {
         detectedPhotos = []
         showPhotoReview = false
+        photoSourceImages = [:]
         statusMessage = "Photo batch discarded."
+    }
+
+    /// Manual crop correction from the review sheet: re-extract one photo from its
+    /// (full-resolution) source page with a user-adjusted region. The extraction runs
+    /// off the main actor — at high dpi it renders hundreds of MB of pixels.
+    public func recropPhoto(id: UUID, region: DetectedPhotoRegion) {
+        guard !isBusy else { return }
+        guard let photo = detectedPhotos.first(where: { $0.id == id }),
+              let source = photoSource(for: photo) else { return }
+        let deskew = settings.photoAutoDeskew
+        Task { @MainActor [weak self] in
+            let image = await Task.detached(priority: .userInitiated) {
+                PhotoDetector.extractPhoto(from: source, region: region, deskew: deskew)
+            }.value
+            guard let self, let image, !self.isBusy,
+                  let idx = self.detectedPhotos.firstIndex(where: { $0.id == id }) else { return }
+            let old = self.detectedPhotos[idx]
+            var updated = DetectedPhoto(region: region, image: image, dpi: old.dpi,
+                                        id: old.id, sourcePageID: old.sourcePageID)
+            updated.included = old.included
+            updated.rotationQuarterTurns = old.rotationQuarterTurns
+            self.detectedPhotos[idx] = updated
+        }
     }
 
     // MARK: Page queue

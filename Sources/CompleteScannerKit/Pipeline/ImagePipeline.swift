@@ -44,11 +44,18 @@ public enum ImagePipeline {
             ])
         }
 
-        // 3. Sharpen.
+        // 3. Sharpen — or, for negative values, soften with a small Gaussian blur
+        //    (the blur expands the extent, so crop back to the original).
         if settings.sharpness > 0 {
             ci = applyFilter("CISharpenLuminance", to: ci, parameters: [
                 "inputSharpness": settings.sharpness,
             ])
+        } else if settings.sharpness < 0 {
+            let preBlurExtent = ci.extent
+            let blurred = applyFilter("CIGaussianBlur", to: ci.clampedToExtent(), parameters: [
+                "inputRadius": min(-settings.sharpness, 2) * 2,
+            ])
+            ci = blurred.cropped(to: preBlurExtent)
         }
 
         // 4. Descreen: tiny blur to break up halftone moiré, then a mild re-sharpen.

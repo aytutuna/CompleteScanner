@@ -28,6 +28,11 @@ public enum OCRService {
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
         request.automaticallyDetectsLanguage = true
+        // Offer every language Vision knows so mixed-language and non-Latin pages
+        // recognize too; automatic detection narrows per page.
+        if let supported = try? request.supportedRecognitionLanguages(), !supported.isEmpty {
+            request.recognitionLanguages = supported
+        }
 
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         do {

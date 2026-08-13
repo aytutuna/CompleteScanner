@@ -76,7 +76,7 @@ public struct AdjustmentSettings: Codable, Equatable, Sendable {
     public var contrast: Double = 1.0
     /// 0 ... 2, neutral 1
     public var saturation: Double = 1.0
-    /// 0 ... 2, neutral 0
+    /// -2 ... 2, neutral 0; positive sharpens, negative softens (Gaussian blur)
     public var sharpness: Double = 0.0
     /// Reduce moiré from scanning printed material.
     public var descreen: Bool = false
@@ -207,15 +207,43 @@ public struct DetectedPhoto: Identifiable {
     public let region: DetectedPhotoRegion
     public let image: CGImage
     public let dpi: Int
+    /// The scanned page this photo was extracted from — a multi-sheet (ADF) photo scan
+    /// produces photos from several pages, and manual re-cropping must use the right one.
+    public let sourcePageID: UUID?
     public var included: Bool = true
     /// Extra user-requested rotation applied at save time (0...3 quarter turns clockwise).
     public var rotationQuarterTurns: Int = 0
 
-    public init(region: DetectedPhotoRegion, image: CGImage, dpi: Int, id: UUID = UUID()) {
+    public init(region: DetectedPhotoRegion, image: CGImage, dpi: Int, id: UUID = UUID(),
+                sourcePageID: UUID? = nil) {
         self.id = id
         self.region = region
         self.image = image
         self.dpi = dpi
+        self.sourcePageID = sourcePageID
+    }
+}
+
+/// One entry in the session's scan history ("Scans" tab): a small preview of every scan
+/// as it happened, newest first.
+public struct ScanHistoryEntry: Identifiable {
+    public let id: UUID
+    public let date: Date
+    public let intent: ScanIntent
+    public let dpi: Int
+    /// Downsampled preview (≤ ~700 px long side) — history never retains full pixels.
+    public let thumbnail: CGImage
+    /// True pixel dimensions of the original scan.
+    public let pixelSize: CGSize
+
+    public init(date: Date, intent: ScanIntent, dpi: Int, thumbnail: CGImage,
+                pixelSize: CGSize, id: UUID = UUID()) {
+        self.id = id
+        self.date = date
+        self.intent = intent
+        self.dpi = dpi
+        self.thumbnail = thumbnail
+        self.pixelSize = pixelSize
     }
 }
 

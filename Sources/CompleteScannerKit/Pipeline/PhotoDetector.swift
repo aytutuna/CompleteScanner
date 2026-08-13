@@ -99,8 +99,16 @@ public enum PhotoDetector {
             regions.removeSubrange(options.maxPhotoCount...)
         }
 
-        // 10. Merge near-duplicates, apply the edge inset, and sort row-major.
+        // 10. Merge near-duplicates.
         regions = mergeOverlapping(regions)
+
+        // 11. Snap each region to the true photo edges at FULL resolution. The low-res
+        // mask bleeds a few pixels at the borders — visible as background slivers around
+        // extracted photos — and its loose threshold can shave off a photo's white print
+        // border; both are corrected here.
+        regions = regions.map { refineRegion($0, in: image, backgroundLuminance: Double(background)) ?? $0 }
+
+        // 12. Apply the edge inset and sort row-major.
         if options.edgeInsetPixels > 0 {
             let shrink = CGFloat(options.edgeInsetPixels) * 2
             for i in regions.indices {
@@ -151,6 +159,115 @@ public enum PhotoDetector {
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(image.width), height: h))
         return ctx.makeImage()
     }
+}
+
+// MARK: - Full-resolution edge refinement
+
+extension PhotoDetector {
+    /// Re-fit one detected region against the full-resolution pixels.
+    ///
+    /// The region (plus a margin) is rendered upright, then each side is scanned from the
+    /// outside for the first row/column that is not background. The background test is
+    /// deliberately much tighter than the detection threshold: a photo's white print
+    /// border usually differs only slightly from the bed glass, and the faint edge shadow
+    /// a lying photo casts differs clearly — so borders are kept while bed background is
+    /// trimmed exactly. Returns nil (caller keeps the unrefined region) when the result
+    /// would be degenerate.
+    fileprivate static func refineRegion(_ region: DetectedPhotoRegion, in image: CGImage,
+                                         backgroundLuminance bg: Double) -> DetectedPhotoRegion? {
+        let margin = max(24.0, 0.05 * Double(min(region.size.width, region.size.height)))
+        let cw = Int((Double(region.size.width) + 2 * margin).rounded())
+        let ch = Int((Double(region.size.height) + 2 * margin).rounded())
+        guard cw >= 8, ch >= 8, cw * ch <= 60_000_000 else { return nil }
+        guard let rgba = rasterizeRotated(image, center: region.center,
+                                         angleDegrees: region.angleDegrees,
+                                         width: cw, height: ch, fillGray: bg) else { return nil }
+
+        let lumTolerance = 0.035
+        let satTolerance = 0.06
+        func isBackground(_ index: Int) -> Bool {
+            let r = Double(rgba[index * 4]) / 255
+            let g = Double(rgba[index * 4 + 1]) / 255
+            let b = Double(rgba[index * 4 + 2]) / 255
+            let lum = 0.299 * r + 0.587 * g + 0.114 * b
+            let sat = max(r, max(g, b)) - min(r, min(g, b))
+            return abs(lum - bg) < lumTolerance && sat < satTolerance
+        }
+        // A line is still "background" while ≥92% of its pixels are (tolerates dust).
+        let backgroundShare = 0.92
+        func rowIsBackground(_ y: Int) -> Bool {
+            var count = 0
+            for x in 0..<cw where isBackground(y * cw + x) { count += 1 }
+            return Double(count) >= backgroundShare * Double(cw)
+        }
+        func columnIsBackground(_ x: Int) -> Bool {
+            var count = 0
+            for y in 0..<ch where isBackground(y * cw + x) { count += 1 }
+            return Double(count) >= backgroundShare * Double(ch)
+        }
+
+        // Each side starts at the ORIGINAL detected edge (index `m` from the buffer
+        // border): first trim inward over background lines (removes bed slivers), then
+        // grow outward across contiguous non-background lines (recovers white print
+        // borders and edge shadows). Growth stops at the first background line, so a
+        // neighboring photo inside the margin ring — always separated by a background
+        // gap — is never absorbed.
+        let m = Int(margin.rounded())
+        var top = min(m, ch - 1)
+        while top < ch - 1, rowIsBackground(top) { top += 1 }
+        while top > 0, !rowIsBackground(top - 1) { top -= 1 }
+        var bottom = max(ch - 1 - m, top)
+        while bottom > top, rowIsBackground(bottom) { bottom -= 1 }
+        while bottom < ch - 1, !rowIsBackground(bottom + 1) { bottom += 1 }
+        var left = min(m, cw - 1)
+        while left < cw - 1, columnIsBackground(left) { left += 1 }
+        while left > 0, !columnIsBackground(left - 1) { left -= 1 }
+        var right = max(cw - 1 - m, left)
+        while right > left, columnIsBackground(right) { right -= 1 }
+        while right < cw - 1, !columnIsBackground(right + 1) { right += 1 }
+
+        let newW = Double(right - left + 1)
+        let newH = Double(bottom - top + 1)
+        // Safety: keep the original detection if refinement collapsed (glare, unusual
+        // bed color) — better a slightly loose crop than a destroyed one.
+        guard newW >= 8, newH >= 8,
+              newW * newH >= 0.3 * Double(region.size.width * region.size.height) else { return nil }
+
+        // Center shift in the upright frame, rotated back into image coordinates.
+        let dx = (Double(left) + Double(right) + 1) / 2 - Double(cw) / 2
+        let dy = (Double(top) + Double(bottom) + 1) / 2 - Double(ch) / 2
+        let a = region.angleDegrees * .pi / 180
+        let (c, s) = (cos(a), sin(a))
+        let center = CGPoint(x: Double(region.center.x) + dx * c - dy * s,
+                             y: Double(region.center.y) + dx * s + dy * c)
+        return DetectedPhotoRegion(center: center,
+                                   size: CGSize(width: newW, height: newH),
+                                   angleDegrees: region.angleDegrees)
+    }
+}
+
+/// Render the rotated region upright into an RGBA8 buffer (rows top-to-bottom), the same
+/// transform `extractPhoto` uses; areas outside the source are filled with the bed's
+/// background gray so they read as background during refinement.
+private func rasterizeRotated(_ image: CGImage, center: CGPoint, angleDegrees: Double,
+                              width: Int, height: Int, fillGray: Double) -> [UInt8]? {
+    var buffer = [UInt8](repeating: 0, count: width * height * 4)
+    let ok = buffer.withUnsafeMutableBytes { raw -> Bool in
+        guard let ctx = makeRGBAContext(data: raw.baseAddress, width: width, height: height,
+                                        bytesPerRow: width * 4) else { return false }
+        ctx.interpolationQuality = .medium
+        ctx.setFillColor(gray: fillGray, alpha: 1)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        let h = CGFloat(image.height)
+        let cgCenter = CGPoint(x: center.x, y: h - center.y)
+        let angle = CGFloat(angleDegrees * .pi / 180)
+        ctx.translateBy(x: CGFloat(width) / 2, y: CGFloat(height) / 2)
+        ctx.rotate(by: angle)
+        ctx.translateBy(x: -cgCenter.x, y: -cgCenter.y)
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(image.width), height: h))
+        return true
+    }
+    return ok ? buffer : nil
 }
 
 // MARK: - Rasterization

@@ -7,6 +7,9 @@ import SwiftUI
 struct PhotoReviewView: View {
     @EnvironmentObject var state: AppState
 
+    /// Photo whose crop is being corrected manually (drives the editor sheet).
+    @State private var editingPhoto: DetectedPhoto?
+
     private var includedCount: Int {
         state.detectedPhotos.filter(\.included).count
     }
@@ -31,7 +34,9 @@ struct PhotoReviewView: View {
                         PhotoReviewCard(
                             photo: photo,
                             included: includedBinding(id: photo.id),
-                            onRotate: { rotate(id: photo.id, by: $0) })
+                            cropDisabled: state.isBusy,
+                            onRotate: { rotate(id: photo.id, by: $0) },
+                            onAdjustCrop: { editingPhoto = photo })
                     }
                 }
                 .padding()
@@ -60,6 +65,10 @@ struct PhotoReviewView: View {
         }
         .frame(minWidth: 620, idealWidth: 760, maxWidth: .infinity,
                minHeight: 440, idealHeight: 560, maxHeight: .infinity)
+        .sheet(item: $editingPhoto) { photo in
+            PhotoCropEditorView(photo: photo)
+                .environmentObject(state)
+        }
     }
 
     // MARK: File-local mutation helpers
@@ -88,7 +97,9 @@ struct PhotoReviewView: View {
 fileprivate struct PhotoReviewCard: View {
     let photo: DetectedPhoto
     @Binding var included: Bool
+    let cropDisabled: Bool
     let onRotate: (Int) -> Void
+    let onAdjustCrop: () -> Void
 
     @State private var thumbnail: CGImage?
 
@@ -122,6 +133,12 @@ fileprivate struct PhotoReviewCard: View {
 
                 Spacer(minLength: 4)
 
+                Button(action: onAdjustCrop) {
+                    Image(systemName: "crop")
+                }
+                .disabled(cropDisabled)
+                .help("Adjust the crop manually")
+
                 Button {
                     onRotate(-1)
                 } label: {
@@ -141,10 +158,9 @@ fileprivate struct PhotoReviewCard: View {
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.08)))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1))
-        .task {
-            if thumbnail == nil {
-                thumbnail = reviewThumbnail(photo.image, maxDimension: 340)
-            }
+        // Keyed on the region so a manual re-crop re-renders the thumbnail.
+        .task(id: photo.region) {
+            thumbnail = reviewThumbnail(photo.image, maxDimension: 340)
         }
     }
 

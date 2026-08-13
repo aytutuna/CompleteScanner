@@ -229,14 +229,19 @@ struct InspectorView: View {
 
     // MARK: Adjustments
 
+    // All adjustment sliders use one -100...+100 scale: 0 is neutral and sits at the
+    // center. The bindings below map that UI scale onto the underlying parameter ranges
+    // (settings/presets keep their original semantics on disk).
+
     private var adjustmentsSection: some View {
         Section {
             DisclosureGroup("Adjustments") {
                 Toggle("Auto-enhance", isOn: $state.settings.adjustments.autoEnhance)
-                adjustmentSlider("Brightness", value: $state.settings.adjustments.brightness, in: -1...1)
-                adjustmentSlider("Contrast", value: $state.settings.adjustments.contrast, in: 0.25...4)
-                adjustmentSlider("Saturation", value: $state.settings.adjustments.saturation, in: 0...2)
-                adjustmentSlider("Sharpness", value: $state.settings.adjustments.sharpness, in: 0...2)
+                amountSlider("Brightness", value: brightnessAmount)
+                amountSlider("Contrast", value: contrastAmount)
+                amountSlider("Saturation", value: saturationAmount)
+                amountSlider("Sharpness", value: sharpnessAmount)
+                    .help("Positive sharpens, negative softens")
                 Button {
                     resetAdjustmentSliders()
                 } label: {
@@ -247,18 +252,59 @@ struct InspectorView: View {
                 Toggle("Descreen printed material", isOn: $state.settings.adjustments.descreen)
                 Toggle("Restore faded colors", isOn: $state.settings.adjustments.restoreFadedColors)
                 if state.settings.colorMode == .blackWhite {
-                    adjustmentSlider("B&W threshold",
-                                     value: $state.settings.adjustments.blackWhiteThreshold, in: 0...1)
+                    LabeledContent("B&W threshold") {
+                        HStack(spacing: 6) {
+                            Slider(value: $state.settings.adjustments.blackWhiteThreshold, in: 0...1)
+                            Text("\(Int((state.settings.adjustments.blackWhiteThreshold * 100).rounded()))")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                                .frame(width: 34, alignment: .trailing)
+                        }
+                    }
                 }
             }
         }
     }
 
-    private func adjustmentSlider(_ title: LocalizedStringKey, value: Binding<Double>,
-                                  in range: ClosedRange<Double>) -> some View {
+    private func amountSlider(_ title: LocalizedStringKey, value: Binding<Double>) -> some View {
         LabeledContent(title) {
-            Slider(value: value, in: range)
+            HStack(spacing: 6) {
+                Slider(value: value, in: -100...100)
+                Text(amountText(value.wrappedValue))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 34, alignment: .trailing)
+            }
         }
+    }
+
+    private func amountText(_ amount: Double) -> String {
+        let rounded = Int(amount.rounded())
+        return rounded == 0 ? "0" : String(format: "%+d", rounded)
+    }
+
+    /// Brightness -1...1 ↔ -100...100, linear.
+    private var brightnessAmount: Binding<Double> {
+        Binding(get: { state.settings.adjustments.brightness * 100 },
+                set: { state.settings.adjustments.brightness = $0 / 100 })
+    }
+
+    /// Contrast 0.25...4 ↔ -100...100 exponentially, so 0 is exactly neutral (1.0).
+    private var contrastAmount: Binding<Double> {
+        Binding(get: { log(max(state.settings.adjustments.contrast, 0.25)) / log(4.0) * 100 },
+                set: { state.settings.adjustments.contrast = pow(4.0, $0 / 100) })
+    }
+
+    /// Saturation 0...2 ↔ -100...100, linear around neutral 1.
+    private var saturationAmount: Binding<Double> {
+        Binding(get: { (state.settings.adjustments.saturation - 1) * 100 },
+                set: { state.settings.adjustments.saturation = 1 + $0 / 100 })
+    }
+
+    /// Sharpness -2...2 ↔ -100...100; negative values soften (see ImagePipeline).
+    private var sharpnessAmount: Binding<Double> {
+        Binding(get: { state.settings.adjustments.sharpness * 50 },
+                set: { state.settings.adjustments.sharpness = $0 / 50 })
     }
 
     private var slidersAreNeutral: Bool {
