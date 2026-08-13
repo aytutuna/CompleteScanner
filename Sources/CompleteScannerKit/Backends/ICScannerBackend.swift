@@ -362,13 +362,24 @@ private final class ICHardwareScannerSession: NSObject, ScannerSession, ICScanne
 
     // MARK: Helpers
 
-    /// Every resolution the device supports, always including the device maximum.
+    /// The resolutions this device really offers, up to and including its true maximum.
     ///
-    /// Drivers report `supportedResolutions` in two shapes: a small discrete set
-    /// (used as-is), or a huge contiguous range like 50...4800 — for those, offering
-    /// thousands of picker entries is useless, so the standard ladder within the range
-    /// is offered plus the exact minimum, maximum, preferred and native values.
+    /// Accuracy rules, in order:
+    /// 1. `preferredResolutions` — when the driver provides it, that IS the device's
+    ///    accurate list (it's what Image Capture shows); use it verbatim.
+    /// 2. Otherwise `supportedResolutions`: a small discrete set is used as-is; a huge
+    ///    contiguous range (thousands of values) is thinned to the standard ladder.
+    /// In both fallback shapes, values above `nativeXResolution` (the optical
+    /// resolution) are software interpolation, not hardware capability — they are
+    /// dropped so the picker never advertises resolutions the scanner can't deliver.
     private static func resolutionList(for unit: ICScannerFunctionalUnit) -> [Int] {
+        let native = Int(unit.nativeXResolution)
+
+        let preferred = unit.preferredResolutions
+        if !preferred.isEmpty {
+            return preferred.sorted()
+        }
+
         let supported = unit.supportedResolutions
         guard let minDPI = supported.min(), let maxDPI = supported.max() else { return [] }
 
@@ -383,9 +394,10 @@ private final class ICHardwareScannerSession: NSObject, ScannerSession, ICScanne
             set.insert(minDPI)
             set.insert(maxDPI)
         }
-        set.formUnion(unit.preferredResolutions.filter { supported.contains($0) })
-        let native = Int(unit.nativeXResolution)
-        if native > 0, supported.contains(native) { set.insert(native) }
+        if native > 0 {
+            set = set.filter { $0 <= native }
+            if supported.contains(native) { set.insert(native) }
+        }
         return set.sorted()
     }
 

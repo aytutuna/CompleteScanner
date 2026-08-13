@@ -8,6 +8,27 @@ import Foundation
 private let pageSpoolDirectory: URL = FileManager.default.temporaryDirectory
     .appendingPathComponent("CompleteScanner-pages", isDirectory: true)
 
+/// Cooperative cancellation for the busy phases hardware cancel can't reach:
+/// processing, photo detection, OCR, PDF assembly, and file exports all poll this
+/// between work units. (Detached tasks don't inherit Swift task cancellation, so an
+/// explicit flag is threaded through instead.)
+final class CancelFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+}
+
 /// Central controller: owns backends, the open scanner session, settings, scan results,
 /// and every user-triggered operation. All UI binds to this object.
 @MainActor
@@ -76,6 +97,8 @@ public final class AppState: ObservableObject {
     private var switchTask: Task<Void, Never>?
     private var switchGeneration = 0
     private var settingsSaveTask: Task<Void, Never>?
+    /// The current exclusive operation's cancel flag (nil when idle).
+    private var currentCancelFlag: CancelFlag?
 
     /// Image shown in the preview canvas.
     public var canvasImage: CGImage? { overviewImage ?? lastScanImage }
@@ -210,11 +233,12 @@ public final class AppState: ObservableObject {
     public func performOverview() {
         guard let session else { return noDevice() }
         let generation = switchGeneration
-        runExclusive {
+        runExclusive { flag in
             self.statusMessage = "Scanning overview…"
             let image = try await session.performOverviewScan(settings: self.settings)
             // Discard results that arrive after the user switched devices.
             guard self.switchGeneration == generation else { return }
+            if flag.isCancelled { throw ScanError.cancelled }
             self.overviewImage = image
             self.statusMessage = "Overview ready — drag on the preview to select an area, then Scan."
         }
@@ -223,25 +247,34 @@ public final class AppState: ObservableObject {
     public func performScan() {
         guard let session else { return noDevice() }
         let generation = switchGeneration
-        runExclusive {
+        runExclusive { flag in
             self.statusMessage = "Scanning…"
             let raw = try await session.performScan(settings: self.settings,
                                                    selection: self.settings.source == .flatbed ? self.selectionRect : nil)
             // Discard results that arrive after the user switched devices.
             guard self.switchGeneration == generation else { return }
             guard !raw.isEmpty else { throw ScanError.scanFailed("The scanner returned no pages.") }
+            if flag.isCancelled { throw ScanError.cancelled }
             let s = self.settings
             self.statusMessage = "Processing…"
-            // Pixel-heavy work runs off the main actor so the UI stays live.
-            let processed: [ScannedPage] = await Task.detached(priority: .userInitiated) {
-                raw.map { page in
-                    if s.adjustments.isIdentity && s.colorMode == .color { return page }
+            // Pixel-heavy work runs off the main actor so the UI stays live; the cancel
+            // flag is polled between pages.
+            let processed: [ScannedPage] = try await Task.detached(priority: .userInitiated) {
+                var result: [ScannedPage] = []
+                for page in raw {
+                    if flag.isCancelled { throw ScanError.cancelled }
+                    if s.adjustments.isIdentity && s.colorMode == .color {
+                        result.append(page)
+                        continue
+                    }
                     let adjusted = ImagePipeline.apply(s.adjustments, to: page.image, colorMode: s.colorMode)
-                    return ScannedPage(image: adjusted, dpi: page.dpi, colorMode: s.colorMode,
-                                       id: page.id, createdAt: page.createdAt)
+                    result.append(ScannedPage(image: adjusted, dpi: page.dpi, colorMode: s.colorMode,
+                                              id: page.id, createdAt: page.createdAt))
                 }
+                return result
             }.value
             guard self.switchGeneration == generation else { return }
+            if flag.isCancelled { throw ScanError.cancelled }
 
             // The canvas shows the RAW scan: PreviewCanvasView applies the current
             // adjustment settings to it live, so slider changes are visible
@@ -290,16 +323,23 @@ public final class AppState: ObservableObject {
                     self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") — \(self.scannedPages.count) in queue. Scan more or Save PDF."
                 } else {
                     self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
-                    try await self.saveImmediately(processed)
+                    try await self.saveImmediately(processed, flag: flag)
                 }
             case .photo:
                 // Full resolution here: the detection overlay maps source-pixel
                 // coordinates onto this image (raw and processed share dimensions).
                 self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
-                let found: [DetectedPhoto] = await Task.detached(priority: .userInitiated) {
-                    processed.flatMap { Self.splitPhotos(from: $0, settings: s) }
+                self.statusMessage = "Detecting photos…"
+                let found: [DetectedPhoto] = try await Task.detached(priority: .userInitiated) {
+                    var all: [DetectedPhoto] = []
+                    for page in processed {
+                        if flag.isCancelled { throw ScanError.cancelled }
+                        all.append(contentsOf: Self.splitPhotos(from: page, settings: s))
+                    }
+                    return all
                 }.value
                 guard self.switchGeneration == generation else { return }
+                if flag.isCancelled { throw ScanError.cancelled }
                 // Keep every sheet's full-resolution source while the review is open so
                 // manual crop corrections can re-extract from the correct page.
                 self.photoSourceImages = Dictionary(uniqueKeysWithValues: processed.map { ($0.id, $0.image) })
@@ -333,7 +373,10 @@ public final class AppState: ObservableObject {
     }
 
     public func cancelScan() {
+        // Stop the hardware if it's mid-scan, AND flag the software phases
+        // (processing, OCR, PDF build, exports) — either may be the one running.
         session?.cancelScan()
+        currentCancelFlag?.cancel()
     }
 
     // MARK: Saving
@@ -342,12 +385,13 @@ public final class AppState: ObservableObject {
         guard !scannedPages.isEmpty else { return }
         let pages = scannedPages
         let s = settings
-        runExclusive {
+        runExclusive { flag in
             self.statusMessage = s.pdfSearchable ? "Running OCR and building PDF…" : "Building PDF…"
             let url = try self.outputURL(fileExtension: "pdf")
             try await Task.detached(priority: .userInitiated) {
                 try Self.writePDFAtomically(pages: pages, searchable: s.pdfSearchable,
-                                            languages: s.ocrLanguages, to: url) { [weak self] msg in
+                                            languages: s.ocrLanguages, to: url,
+                                            shouldContinue: { !flag.isCancelled }) { [weak self] msg in
                     Task { @MainActor in self?.statusMessage = msg }
                 }
             }.value
@@ -359,20 +403,22 @@ public final class AppState: ObservableObject {
     }
 
     /// Used when documentMultiPage is off: write each scan to disk as soon as it lands.
-    private func saveImmediately(_ pages: [ScannedPage]) async throws {
+    private func saveImmediately(_ pages: [ScannedPage], flag: CancelFlag) async throws {
         let s = settings
         var saved: [URL] = []
         if s.format == .pdf {
             let url = try outputURL(fileExtension: "pdf")
             try await Task.detached(priority: .userInitiated) {
                 try Self.writePDFAtomically(pages: pages, searchable: s.pdfSearchable,
-                                            languages: s.ocrLanguages, to: url) { [weak self] msg in
+                                            languages: s.ocrLanguages, to: url,
+                                            shouldContinue: { !flag.isCancelled }) { [weak self] msg in
                     Task { @MainActor in self?.statusMessage = msg }
                 }
             }.value
             saved = [url]
         } else {
             for page in pages {
+                if flag.isCancelled { throw ScanError.cancelled }
                 let url = try outputURL(fileExtension: s.format.fileExtension)
                 try await Task.detached(priority: .userInitiated) {
                     try ImageExporter.write(page.image, to: url, format: s.format,
@@ -390,9 +436,10 @@ public final class AppState: ObservableObject {
         guard !photos.isEmpty else { return cancelPhotoReview() }
         let s = settings
         let format: OutputFormat = s.format == .pdf ? .jpeg : s.format
-        runExclusive {
+        runExclusive { flag in
             var saved: [URL] = []
             for (index, photo) in photos.enumerated() {
+                if flag.isCancelled { throw ScanError.cancelled }
                 let url = try self.outputURL(fileExtension: format.fileExtension, index: index + 1)
                 try await Task.detached(priority: .userInitiated) {
                     let image = photo.rotationQuarterTurns == 0
@@ -571,12 +618,13 @@ public final class AppState: ObservableObject {
     /// or interrupted build never leaves a truncated PDF at the destination.
     private nonisolated static func writePDFAtomically(pages: [ScannedPage], searchable: Bool,
                                                        languages: [String], to url: URL,
+                                                       shouldContinue: (() -> Bool)? = nil,
                                                        progress: ((String) -> Void)?) throws {
         let tmp = url.deletingLastPathComponent()
             .appendingPathComponent(".\(UUID().uuidString).pdf.tmp")
         do {
             try PDFBuilder.writePDF(pages: pages, searchable: searchable, ocrLanguages: languages,
-                                    to: tmp, progress: progress)
+                                    to: tmp, progress: progress, shouldContinue: shouldContinue)
             try? FileManager.default.removeItem(at: url)
             try FileManager.default.moveItem(at: tmp, to: url)
         } catch {
@@ -613,13 +661,16 @@ public final class AppState: ObservableObject {
         return NamingTemplate.uniqueURL(in: dir, base: base, fileExtension: fileExtension)
     }
 
-    /// Run one long operation at a time; surface errors; manage busy state.
-    private func runExclusive(_ operation: @escaping () async throws -> Void) {
+    /// Run one long operation at a time; surface errors; manage busy state. The
+    /// operation receives a CancelFlag it must poll between heavy work units.
+    private func runExclusive(_ operation: @escaping (CancelFlag) async throws -> Void) {
         guard !isBusy else { return }
         isBusy = true
+        let flag = CancelFlag()
+        currentCancelFlag = flag
         Task { @MainActor in
             do {
-                try await operation()
+                try await operation(flag)
             } catch ScanError.cancelled {
                 statusMessage = "Cancelled."
             } catch is CancellationError {
@@ -628,6 +679,7 @@ public final class AppState: ObservableObject {
                 errorMessage = error.localizedDescription
                 statusMessage = "Ready."
             }
+            currentCancelFlag = nil
             progress = nil
             isBusy = false
         }
