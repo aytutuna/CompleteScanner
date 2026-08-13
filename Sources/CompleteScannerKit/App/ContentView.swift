@@ -50,11 +50,16 @@ struct ContentView: View {
         } message: {
             Text(state.errorMessage ?? "")
         }
+        // Below this the layout cannot stay usable (sidebar + canvas + inspector).
+        .frame(minWidth: 960, minHeight: 620)
         .task { state.start() }
     }
 
     private var scannerDetail: some View {
-        HStack(spacing: 0) {
+        // A draggable split instead of a fixed-width inspector: in small windows the
+        // canvas keeps its share (and the page preview keeps fitting), and the user can
+        // trade space between preview and controls.
+        HSplitView {
             VStack(spacing: 0) {
                 PreviewCanvasView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -65,9 +70,10 @@ struct ContentView: View {
                 Divider()
                 StatusBarView()
             }
-            Divider()
+            .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
+            .layoutPriority(1)
             InspectorView()
-                .frame(width: 330)
+                .frame(minWidth: 280, idealWidth: 330, maxWidth: 430)
         }
     }
 
