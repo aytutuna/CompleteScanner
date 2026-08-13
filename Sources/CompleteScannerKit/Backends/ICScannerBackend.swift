@@ -346,8 +346,36 @@ private final class ICHardwareScannerSession: NSObject, ScannerSession, ICScanne
 
     private nonisolated static func loadImage(at url: URL) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              CGImageSourceGetCount(source) > 0 else { return nil }
-        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+              CGImageSourceGetCount(source) > 0,
+              let lazy = CGImageSourceCreateImageAtIndex(source, 0,
+                  [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { return nil }
+        // The image source decodes pixels from the file lazily — on first DRAW, not now —
+        // and the caller deletes the scan file right after this returns. A lazy image
+        // would then decode to nothing (blank previews, blank PDFs). Render it into an
+        // owned bitmap immediately so the pixels live in memory, not in the file.
+        return materialized(lazy) ?? lazy
+    }
+
+    /// Copy of `image` backed by memory instead of a file. Grayscale/1-bit sources stay
+    /// 8-bit gray so a big text scan doesn't inflate to 4-byte RGBA; everything else
+    /// becomes standard 8-bit sRGB.
+    private nonisolated static func materialized(_ image: CGImage) -> CGImage? {
+        let w = image.width, h = image.height
+        guard w > 0, h > 0 else { return nil }
+        let ctx: CGContext?
+        if image.bitsPerPixel <= 8, let gray = CGColorSpace(name: CGColorSpace.genericGrayGamma2_2) {
+            ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: gray, bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        } else if let srgb = CGColorSpace(name: CGColorSpace.sRGB) {
+            ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: srgb, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        } else {
+            ctx = nil
+        }
+        guard let ctx else { return nil }
+        ctx.interpolationQuality = .none
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage()
     }
 
     /// Maps ImageCaptureCore errors to ScanError, turning cancellations into `.cancelled`.

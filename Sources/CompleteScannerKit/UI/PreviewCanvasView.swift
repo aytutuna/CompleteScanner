@@ -27,14 +27,14 @@ struct PreviewCanvasView: View {
                         detectedPhotosOverlay(image: image, frame: frame)
                     }
                 }
-                .task(id: ObjectIdentifier(image)) {
-                    displayImage = canvasDownsample(image, maxDimension: 2600)
-                }
             } else {
                 emptyState
             }
         }
         .clipped()
+        .task(id: state.canvasRevision) {
+            displayImage = state.canvasImage.map { canvasDownsample($0, maxDimension: 2600) }
+        }
     }
 
     // MARK: Empty state

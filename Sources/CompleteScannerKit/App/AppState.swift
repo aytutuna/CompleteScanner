@@ -23,9 +23,16 @@ public final class AppState: ObservableObject {
     }
 
     /// Low-res preview of the full bed; the selection marquee is only valid over this image.
-    @Published public private(set) var overviewImage: CGImage?
+    @Published public private(set) var overviewImage: CGImage? {
+        didSet { canvasRevision &+= 1 }
+    }
     /// The most recent full scan (shown in the canvas when there is no overview).
-    @Published public private(set) var lastScanImage: CGImage?
+    @Published public private(set) var lastScanImage: CGImage? {
+        didSet { canvasRevision &+= 1 }
+    }
+    /// Bumped whenever either canvas image changes, so views can key decode work on it
+    /// (object identity of a CGImage is unreliable — addresses get reused).
+    @Published public private(set) var canvasRevision = 0
     /// Normalized (0...1) crop rect within the flatbed, origin top-left. nil = full bed.
     @Published public var selectionRect: CGRect?
 
