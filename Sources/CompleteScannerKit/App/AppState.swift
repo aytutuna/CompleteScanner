@@ -36,7 +36,11 @@ public final class AppState: ObservableObject {
 
     // MARK: Published state
 
+    /// One entry per physical scanner (see `DeviceMerge`): the connection in use for the
+    /// selected scanner, the preferred connection for the others.
     @Published public private(set) var devices: [ScannerInfo] = []
+    /// Every backend entry grouped by physical scanner, in sidebar order.
+    public private(set) var deviceGroups: [DeviceGroup] = []
     @Published public private(set) var selectedDeviceID: String?
     @Published public private(set) var capabilities: ScannerCapabilities?
     @Published public var settings: ScanSettings {
@@ -92,6 +96,14 @@ public final class AppState: ObservableObject {
     private var session: (any ScannerSession)?
     private var sessionDeviceID: String?
     private var userPickedDevice = false
+    /// The backend entry of the selected device, kept so its scanner is found again when
+    /// that entry goes away.
+    private var selectedEntry: ScannerInfo?
+    /// The selected scanner should move to another connection (or it went away) during an
+    /// operation or photo review; switch once those end (`endOfWork`).
+    private var connectionSwitchDeferred = false
+    /// The device diagnostics last written (see `writeDeviceDiagnostics`).
+    private var lastDeviceReport = ""
     /// Device switches are serialized through this chain; concurrent clicks
     /// must never interleave open/close on hardware sessions.
     private var switchTask: Task<Void, Never>?
@@ -135,25 +147,93 @@ public final class AppState: ObservableObject {
         mergeDevices()
     }
 
+    /// Rebuilds the scanner list from every backend: entries for the same physical scanner
+    /// (the same MFP over USB and Bonjour) are grouped with `DeviceMerge.group` and ranked
+    /// USB, then Bonjour, then shared; the selection follows its scanner. When another
+    /// connection to the selected scanner becomes the preferred one (a better one appeared,
+    /// or the one in use went away), the session moves to it.
     private func mergeDevices() {
-        devices = backends.flatMap { $0.devices }
+        let entries = backends.flatMap { $0.devices }
+        deviceGroups = DeviceMerge.group(entries, rankPatterns: DeviceMerge.macRanking)
+        writeDeviceDiagnostics()
+
         if let sel = selectedDeviceID {
-            if !devices.contains(where: { $0.id == sel }) {
+            if let current = entries.first(where: { $0.id == sel }) { selectedEntry = current }
+            if let group = groupOfSelection(sel) {
+                if group.primary.id != sel {
+                    // Same scanner, another connection. Switching would discard a running
+                    // operation or an open photo review, whose pixels no longer need the
+                    // scanner, so wait for those to end (endOfWork re-runs this merge).
+                    if isBusy || showPhotoReview {
+                        connectionSwitchDeferred = true
+                    } else {
+                        selectDevice(group.primary.id)
+                    }
+                } else if !userPickedDevice, let real = preferredDefaultDevice(), group.primary.isDemo,
+                          deviceGroups.first(where: { $0.primary.id == real })?.primary.isDemo == false {
+                    // A real scanner appeared while we were auto-parked on the demo device.
+                    selectDevice(real)
+                }
+            } else if isBusy || showPhotoReview {
+                // The scanner went away (unplugged, powered off): the same deferral applies.
+                connectionSwitchDeferred = true
+            } else {
                 userPickedDevice = false
                 selectDevice(preferredDefaultDevice())
-            } else if !userPickedDevice, let real = preferredDefaultDevice(),
-                      devices.first(where: { $0.id == sel })?.isDemo == true,
-                      devices.first(where: { $0.id == real })?.isDemo == false {
-                // A real scanner appeared while we were auto-parked on the demo device.
-                selectDevice(real)
             }
         } else if let def = preferredDefaultDevice() {
             selectDevice(def)
         }
+        refreshDeviceRows()
     }
 
+    /// Re-evaluate a deferred connection switch once nothing is in progress.
+    private func endOfWork() {
+        guard connectionSwitchDeferred, !isBusy, !showPhotoReview else { return }
+        connectionSwitchDeferred = false
+        mergeDevices()
+    }
+
+    /// The first real scanner (else the demo device), through its preferred connection.
     private func preferredDefaultDevice() -> String? {
-        (devices.first(where: { !$0.isDemo }) ?? devices.first)?.id
+        (deviceGroups.first(where: { !$0.primary.isDemo }) ?? deviceGroups.first)?.primary.id
+    }
+
+    /// The scanner the selected device belongs to: the group listing it, or, when that entry
+    /// went away, the group holding another connection to the same scanner.
+    private func groupOfSelection(_ id: String) -> DeviceGroup? {
+        if let group = deviceGroups.first(where: { group in group.members.contains(where: { $0.id == id }) }) {
+            return group
+        }
+        guard let entry = selectedEntry, entry.id == id else { return nil }
+        return deviceGroups.first(where: { group in
+            group.members.contains(where: { DeviceMerge.sameDevice($0, entry) })
+        })
+    }
+
+    /// One entry per scanner: the selected scanner shows the connection in use (until a
+    /// deferred switch moves it), the others the connection they would use.
+    private func refreshDeviceRows() {
+        let sel = selectedDeviceID
+        let rows = deviceGroups.map { group in
+            group.members.first(where: { $0.id == sel }) ?? group.primary
+        }
+        if rows != devices { devices = rows }
+    }
+
+    /// Writes the raw device names and how they were grouped to
+    /// ~/Library/Logs/CompleteScanner/devices.txt whenever they change, so the names real
+    /// devices report can be collected to tune `DeviceMerge`. Best effort.
+    private func writeDeviceDiagnostics() {
+        let report = DeviceMerge.diagnosticsReport(deviceGroups)
+        guard report != lastDeviceReport else { return }
+        lastDeviceReport = report
+        let fileManager = FileManager.default
+        guard let library = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first else { return }
+        let folder = library.appendingPathComponent("Logs", isDirectory: true)
+            .appendingPathComponent("CompleteScanner", isDirectory: true)
+        try? fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+        try? Data(report.utf8).write(to: folder.appendingPathComponent("devices.txt"), options: .atomic)
     }
 
     /// Device selection driven by the user (sidebar click).
@@ -166,6 +246,12 @@ public final class AppState: ObservableObject {
         // Ignore re-clicks on a device that is already connected or connecting.
         guard id != selectedDeviceID || (session == nil && switchTask == nil) else { return }
         selectedDeviceID = id
+        if let id {
+            selectedEntry = deviceGroups.flatMap { $0.members }.first(where: { $0.id == id }) ?? selectedEntry
+        } else {
+            selectedEntry = nil
+        }
+        refreshDeviceRows()
         switchGeneration += 1
         let generation = switchGeneration
         let previous = switchTask
@@ -474,6 +560,7 @@ public final class AppState: ObservableObject {
         showPhotoReview = false
         photoSourceImages = [:]
         statusMessage = "Photo batch discarded."
+        endOfWork()
     }
 
     /// Manual crop correction from the review sheet: re-extract one photo from its
@@ -693,6 +780,7 @@ public final class AppState: ObservableObject {
             currentCancelFlag = nil
             progress = nil
             isBusy = false
+            endOfWork()
         }
     }
 }

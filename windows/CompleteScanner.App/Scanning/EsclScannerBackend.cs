@@ -81,7 +81,8 @@ public sealed class EsclScannerBackend : IScannerBackend
             {
                 var caps = await FetchCapabilities(host);
                 string name = caps.MakeAndModel ?? host;
-                var info = new ScannerInfo($"escl:{host}", name, "Network");
+                var info = new ScannerInfo($"escl:{host}", name, "Network", Backend: "escl",
+                                           Model: caps.MakeAndModel, HardwareId: caps.Uuid);
                 if (_devices.All(d => d.Id != info.Id))
                 {
                     _devices.Add(info);

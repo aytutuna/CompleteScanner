@@ -6,6 +6,7 @@ All app code lives in the library target `CompleteScannerKit` (`Sources/Complete
 
 Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Core/Models.swift` — all shared types (ScanIntent, ColorMode, ScanSource, OutputFormat, AdjustmentSettings, ScanSettings, ScannedPage, DetectedPhotoRegion, DetectedPhoto, ScannerInfo, ScannerCapabilities, ScanProgress, Preset, ScanError).
+- `Sources/CompleteScannerKit/Core/DeviceMerge.swift` — `DeviceGroup` and `DeviceMerge` (one row per physical scanner, see below).
 - `Sources/CompleteScannerKit/Core/Troubleshooting.swift` — `ScannerProblem` and `ScannerProblems.describe` (see below).
 - `Sources/CompleteScannerKit/Core/ScannerBackend.swift` — `ScannerBackend` / `ScannerSession` protocols (both `@MainActor`).
 - `Sources/CompleteScannerKit/App/AppState.swift` — the `@MainActor ObservableObject` all UI binds to.
@@ -65,6 +66,36 @@ public struct ScanStop: Equatable, Sendable {
 // `message(pagesKept:)` as an error once the pages are handled.
 ```
 Twin of `windows/CompleteScanner.Core/Troubleshooting.cs` (`ScanException.ForProblem` / `ScanException.Problem`): same cases, same text. Backends report fixable scanner conditions this way rather than as `scanFailed` text.
+
+### Core/DeviceMerge.swift (+ ScannerInfo in Core/Models.swift)
+
+```swift
+// ScannerInfo gains `backend: String` ("wia", "twain", "escl", "ic", "mock"; "" when unknown),
+// `model: String?` and `hardwareID: String?` (eSCL UUID or serial), all with init defaults.
+// ICScannerBackend sets backend "ic" and model = device.name, never a hardwareID: every
+// ImageCaptureCore connection has its own uuidString.
+
+public struct DeviceGroup: Equatable, Sendable {
+    public let key: String          // stable across runs; unique within one grouping
+    public let primary: ScannerInfo // the entry to connect through
+    public let members: [ScannerInfo]
+}
+
+public enum DeviceMerge {
+    public static let windowsRanking: [String]  // ["wia:WIA", "escl:Network", "wia:*", "twain:*"]
+    public static let macRanking: [String]      // ["ic:USB", "ic:Network", "ic:Shared"]
+    /// Lowercased model words: brackets, IP addresses and bit widths removed, vendor aliases
+    /// mapped, connection words dropped, duplicates removed; joined by spaces.
+    public static func modelKey(_ name: String) -> String
+    public static func sameDevice(_ a: ScannerInfo, _ b: ScannerInfo) -> Bool
+    public static func group(_ devices: [ScannerInfo], rankPatterns: [String],
+                             overrides: [String: String] = [:]) -> [DeviceGroup]
+    public static func connectionID(_ device: ScannerInfo) -> String    // "backend:transport"
+    public static func connectionLabel(_ device: ScannerInfo) -> String
+    public static func diagnosticsReport(_ groups: [DeviceGroup]) -> String
+}
+```
+Twin of `windows/CompleteScanner.Core/DeviceMerge.cs` (`HardwareId`, `ConnectionId`): same rules, same keys, same report text; `DeviceMergeTests` on both sides share one table. Only ASCII letters and digits count as model words on both platforms, so the result never depends on locale or Unicode tables. `AppState.devices` lists one entry per group (the connection in use for the selected scanner) and `AppState` writes `diagnosticsReport` to `~/Library/Logs/CompleteScanner/devices.txt` when it changes. The Mac has no connection chooser; Windows keeps the user's choice in `AppPreferences.PreferredConnection` (group key → connection id).
 
 ### Pipeline/PhotoDetector.swift (+ Pipeline/Geometry.swift)
 

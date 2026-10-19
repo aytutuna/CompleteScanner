@@ -187,7 +187,9 @@ public sealed class WiaScannerBackend : IScannerBackend
                 if ((int)info.Type != ScannerDeviceType) continue;
                 string id = (string)info.DeviceID;
                 string name = TryGetProperty(info.Properties, "Name") as string ?? "Scanner";
-                found.Add(new ScannerInfo($"wia:{id}", name, "WIA"));
+                found.Add(new ScannerInfo($"wia:{id}", name, "WIA", Backend: "wia",
+                                          Model: ModelOf(TryGetProperty(info.Properties, "Manufacturer") as string,
+                                                         TryGetProperty(info.Properties, "Description") as string)));
             }
         }
         catch
@@ -211,9 +213,20 @@ public sealed class WiaScannerBackend : IScannerBackend
         return found;
     }
 
+    /// <summary>
+    /// "Manufacturer Description" from the device's WIA properties, for matching it with the
+    /// same scanner on other connections (DeviceMerge drops a repeated manufacturer); null
+    /// when the driver reports neither.
+    /// </summary>
+    internal static string? ModelOf(string? manufacturer, string? description)
+    {
+        string model = $"{manufacturer?.Trim()} {description?.Trim()}".Trim();
+        return model.Length > 0 ? model : null;
+    }
+
     private void ReplaceDevices(List<ScannerInfo> found)
     {
-        if (_devices.Select(d => d.Id).SequenceEqual(found.Select(d => d.Id))) return;
+        if (_devices.SequenceEqual(found)) return;
         _devices.Clear();
         _devices.AddRange(found);
         DevicesChanged?.Invoke();

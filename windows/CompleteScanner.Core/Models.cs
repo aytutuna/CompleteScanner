@@ -405,8 +405,22 @@ public static class ScanHistory
 
 // MARK: - Devices
 
-/// <param name="Transport">"USB", "Network", "Shared", "Demo", ...</param>
-public sealed record ScannerInfo(string Id, string Name, string Transport, bool IsDemo = false);
+/// <summary>
+/// One device as one backend lists it. The same physical scanner can appear once per
+/// backend or connection; <see cref="DeviceMerge"/> groups those entries into one row.
+/// </summary>
+/// <param name="Transport">"USB", "Network", "Shared", "Demo", "WIA", ...</param>
+/// <param name="Backend">
+/// The backend listing the device: "wia", "twain", "escl", "ic" (ImageCaptureCore) or "mock";
+/// empty when unknown. Together with <paramref name="Transport"/> it names the connection.
+/// </param>
+/// <param name="Model">Manufacturer and model as the device reports them, when known; used to match entries.</param>
+/// <param name="HardwareId">
+/// An identifier of the physical device (eSCL UUID, serial number), when known. Two entries
+/// that both have one are the same scanner only when the identifiers match.
+/// </param>
+public sealed record ScannerInfo(string Id, string Name, string Transport, bool IsDemo = false,
+                                 string Backend = "", string? Model = null, string? HardwareId = null);
 
 public sealed class ScannerCapabilities
 {

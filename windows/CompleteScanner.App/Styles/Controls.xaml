@@ -147,6 +147,25 @@
         <Setter Property="Height" Value="28" />
     </Style>
 
+    <!-- A small menu button that reads as caption text with a chevron: the connection chooser
+         ("via WIA") in a sidebar scanner row. Its text lines up with the row's caption text. -->
+    <DataTemplate x:Key="ChevronLabelTemplate">
+        <DockPanel>
+            <TextBlock DockPanel.Dock="Right" Style="{StaticResource GlyphText}" FontSize="8" Margin="4,1,0,0"
+                       Text="&#xE70D;" />
+            <TextBlock Text="{Binding}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+        </DockPanel>
+    </DataTemplate>
+    <Style x:Key="ConnectionChooserButtonStyle" TargetType="Button" BasedOn="{StaticResource SubtleButtonStyle}">
+        <Setter Property="ContentTemplate" Value="{StaticResource ChevronLabelTemplate}" />
+        <Setter Property="FontFamily" Value="{StaticResource SmallFontFamily}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        <Setter Property="Padding" Value="4,0,4,1" />
+        <Setter Property="Margin" Value="-5,0,0,0" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+    </Style>
+
     <!-- ===== Segmented control (RadioButtons in a track) ===== -->
     <Style x:Key="SegmentedTrackStyle" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource ControlAltFillColorSecondaryBrush}" />
@@ -367,6 +386,29 @@
         <Setter Property="ItemContainerStyle" Value="{StaticResource NavListBoxItemStyle}" />
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <!-- Scanner rows. Only the selected row is a Tab stop, so Tab goes from it to its connection
+         button and then leaves the list (arrow keys move between rows). With no row selected
+         (the selected scanner is gone, or its row shows another connection until a deferred
+         switch), every row is a Tab stop: Tab into the list goes to the row the list last
+         remembers (which can be any row), so making only one row a stop could skip the list.
+         The empty context menu is a placeholder: MainWindow fills it with the connection menu
+         when it opens (Shift+F10, the Menu key or a right-click). -->
+    <Style x:Key="DeviceListItemStyle" TargetType="ListBoxItem" BasedOn="{StaticResource NavListBoxItemStyle}">
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="ContextMenu">
+            <Setter.Value>
+                <ContextMenu />
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="IsTabStop" Value="True" />
+            </Trigger>
+            <DataTrigger Binding="{Binding SelectedItem, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="{x:Null}">
+                <Setter Property="IsTabStop" Value="True" />
+            </DataTrigger>
+        </Style.Triggers>
     </Style>
 
     <!-- ===== Cards ===== -->

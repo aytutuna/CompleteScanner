@@ -304,18 +304,32 @@ public struct ScanHistoryEntry: Identifiable {
 
 // MARK: - Devices
 
+/// One device as one backend lists it. The same physical scanner can appear once per
+/// backend or connection; `DeviceMerge` groups those entries into one row.
 public struct ScannerInfo: Identifiable, Hashable, Sendable {
     public let id: String
     public let name: String
     /// "USB", "Network", "Shared", "Demo", ...
     public let transport: String
     public let isDemo: Bool
+    /// The backend listing the device: "wia", "twain", "escl", "ic" (ImageCaptureCore) or
+    /// "mock"; empty when unknown. Together with `transport` it names the connection.
+    public let backend: String
+    /// Manufacturer and model as the device reports them, when known; used to match entries.
+    public let model: String?
+    /// An identifier of the physical device (eSCL UUID, serial number), when known. Two
+    /// entries that both have one are the same scanner only when the identifiers match.
+    public let hardwareID: String?
 
-    public init(id: String, name: String, transport: String, isDemo: Bool = false) {
+    public init(id: String, name: String, transport: String, isDemo: Bool = false,
+                backend: String = "", model: String? = nil, hardwareID: String? = nil) {
         self.id = id
         self.name = name
         self.transport = transport
         self.isDemo = isDemo
+        self.backend = backend
+        self.model = model
+        self.hardwareID = hardwareID
     }
 }
 

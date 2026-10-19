@@ -147,7 +147,9 @@ public final class ICScannerBackend: NSObject, ScannerBackend, ICDeviceBrowserDe
         } else {
             transport = "Network"
         }
-        return ScannerInfo(id: id, name: name, transport: transport)
+        // The model is the name the device reports. ImageCaptureCore gives every connection its
+        // own uuidString, so it identifies the entry, not the physical scanner (no hardwareID).
+        return ScannerInfo(id: id, name: name, transport: transport, backend: "ic", model: device.name)
     }
 }
 

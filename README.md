@@ -80,6 +80,10 @@ instructions and current status.
   Canon/HP/Brother/Fujitsu devices and all AirScan/eSCL network scanners.
 - If a USB scanner is missing: check the cable/power, then install the manufacturer's macOS
   driver, then click the refresh button in the sidebar.
+- A scanner reachable several ways (an MFP on USB and on the network) is listed once. The app
+  connects over USB when it can, then over the network, then through a shared Mac. The names
+  the devices report, and how they were matched, are written to
+  `~/Library/Logs/CompleteScanner/devices.txt`.
 
 ## Project layout
 

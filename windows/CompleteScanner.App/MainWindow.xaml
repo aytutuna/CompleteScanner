@@ -70,34 +70,44 @@
                                VerticalAlignment="Center" />
                 </DockPanel>
                 <ListBox Grid.Row="1" x:Name="DeviceList" Style="{StaticResource NavListBoxStyle}" MaxHeight="220"
+                         ItemContainerStyle="{StaticResource DeviceListItemStyle}"
+                         KeyboardNavigation.TabNavigation="Local"
                          AutomationProperties.Name="Scanners"
-                         SelectionChanged="DeviceList_SelectionChanged">
+                         SelectionChanged="DeviceList_SelectionChanged"
+                         ContextMenuOpening="DeviceList_ContextMenuOpening">
+                    <!-- One row per scanner (DeviceRow). A scanner reached several ways (WIA, TWAIN,
+                         network) shows its connection as a "via WIA" menu button instead of a caption;
+                         the row's context menu offers the same choices (also in the folded rail). -->
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <DockPanel ToolTip="{Binding Name}">
+                            <DockPanel>
+                                <DockPanel.ToolTip>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Name}" />
+                                        <TextBlock Text="{Binding Caption}" Style="{StaticResource CaptionText}" />
+                                    </StackPanel>
+                                </DockPanel.ToolTip>
                                 <TextBlock x:Name="Glyph" DockPanel.Dock="Left" Style="{StaticResource GlyphText}"
                                            Text="&#xE8FE;" Margin="0,0,12,0" />
                                 <StackPanel x:Name="Texts">
                                     <TextBlock Text="{Binding Name}" Style="{StaticResource BodyText}" TextWrapping="NoWrap"
                                                TextTrimming="CharacterEllipsis" />
-                                    <TextBlock TextWrapping="NoWrap" TextTrimming="CharacterEllipsis">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock" BasedOn="{StaticResource CaptionText}">
-                                                <Setter Property="Text" Value="{Binding Transport}" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Transport}" Value="Demo">
-                                                        <Setter Property="Text" Value="Demo (no hardware)" />
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Transport}" Value="Network">
-                                                        <Setter Property="Text" Value="Network (eSCL)" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
+                                    <TextBlock x:Name="CaptionLine" Text="{Binding Caption}" Style="{StaticResource CaptionText}"
+                                               TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                    <Button x:Name="ConnectionButton" Style="{StaticResource ConnectionChooserButtonStyle}"
+                                            Content="{Binding Caption}" Visibility="Collapsed"
+                                            IsTabStop="{Binding IsTabStop, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
+                                            ToolTip="Choose how to connect to this scanner"
+                                            AutomationProperties.Name="{Binding ConnectionChooserName}"
+                                            AutomationProperties.HelpText="Opens a menu: Automatic, or one of the ways this scanner is connected"
+                                            Click="ConnectionButton_Click" />
                                 </StackPanel>
                             </DockPanel>
                             <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding HasConnectionChoice}" Value="True">
+                                    <Setter TargetName="CaptionLine" Property="Visibility" Value="Collapsed" />
+                                    <Setter TargetName="ConnectionButton" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
                                 <DataTrigger Binding="{Binding IsPaneCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}}" Value="True">
                                     <Setter TargetName="Texts" Property="Visibility" Value="Collapsed" />
                                     <Setter TargetName="Glyph" Property="Margin" Value="0" />

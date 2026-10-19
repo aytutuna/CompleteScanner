@@ -530,10 +530,71 @@ public partial class MainWindow : Window
     private void DeviceList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_updatingUi) return;
-        if (DeviceList.SelectedItem is ScannerInfo info && info.Id != ViewModel.SelectedDeviceId)
+        if (DeviceList.SelectedItem is DeviceRow row && row.Id != ViewModel.SelectedDeviceId)
         {
-            ViewModel.UserSelectDevice(info.Id);
+            ViewModel.UserSelectDevice(row.Id);
         }
+    }
+
+    /// <summary>The "via WIA" button of a scanner reached several ways: choose the connection.</summary>
+    private void ConnectionButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { DataContext: DeviceRow row } button) return;
+        var menu = BuildConnectionMenu(row);
+        menu.PlacementTarget = button;
+        menu.Placement = PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
+    /// <summary>
+    /// The keyboard (Shift+F10, Menu key) and right-click route to the same menu: the row's
+    /// placeholder context menu is replaced with the connection menu as it opens. Rows with a
+    /// single connection get no menu.
+    /// </summary>
+    private void DeviceList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (e.OriginalSource is DependencyObject source
+            && ItemsControl.ContainerFromElement(DeviceList, source) is ListBoxItem { DataContext: DeviceRow { HasConnectionChoice: true } row } item)
+        {
+            item.ContextMenu = BuildConnectionMenu(row);
+        }
+        else
+        {
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Automatic, then one item per connection to the scanner (the name that connection
+    /// reports in its tooltip). The saved choice is checked; Automatic when there is none.
+    /// </summary>
+    internal ContextMenu BuildConnectionMenu(DeviceRow row)
+    {
+        var menu = new ContextMenu();
+        var automatic = new MenuItem
+        {
+            Header = "Automatic",
+            ToolTip = "Use the best available connection",
+            IsCheckable = true,
+            IsChecked = row.ChosenConnection is null,
+        };
+        automatic.Click += (_, _) => ViewModel.ChooseConnection(row.Group.Key, null);
+        menu.Items.Add(automatic);
+        menu.Items.Add(new Separator());
+        foreach (var member in row.Group.Members)
+        {
+            string connection = DeviceMerge.ConnectionId(member);
+            var item = new MenuItem
+            {
+                Header = DeviceMerge.ConnectionLabel(member),
+                ToolTip = member.Name,
+                IsCheckable = true,
+                IsChecked = string.Equals(row.ChosenConnection, connection, StringComparison.OrdinalIgnoreCase),
+            };
+            item.Click += (_, _) => ViewModel.ChooseConnection(row.Group.Key, connection);
+            menu.Items.Add(item);
+        }
+        return menu;
     }
 
     private void PresetList_MouseDoubleClick(object sender, MouseButtonEventArgs e)

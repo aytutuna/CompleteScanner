@@ -55,6 +55,36 @@ public sealed class PhotoItem : INotifyPropertyChanged
     public double RotationDegrees => Photo.RotationQuarterTurns * 90;
 }
 
+/// <summary>
+/// A scanner in the sidebar: one row per physical scanner, however many connections reach it
+/// (WIA, TWAIN, network). <see cref="Info"/> is the entry the row stands for: the connection
+/// in use while the scanner is selected, otherwise the one it would connect through.
+/// </summary>
+public sealed class DeviceRow(ScannerInfo info, DeviceGroup group, string? chosenConnection)
+{
+    public ScannerInfo Info { get; } = info;
+    public DeviceGroup Group { get; } = group;
+    /// <summary>The connection the user chose for this scanner (<see cref="DeviceMerge.ConnectionId"/>); null = Automatic.</summary>
+    public string? ChosenConnection { get; } = chosenConnection;
+
+    public string Id => Info.Id;
+    public string Name => Info.Name;
+    public string Transport => Info.Transport;
+    public bool IsDemo => Info.IsDemo;
+    /// <summary>More than one connection reaches the scanner, so the row offers a choice.</summary>
+    public bool HasConnectionChoice => Group.Members.Count > 1;
+    public string ConnectionLabel => DeviceMerge.ConnectionLabel(Info);
+    /// <summary>The row's second line: how the scanner is reached.</summary>
+    public string Caption =>
+        IsDemo ? "Demo (no hardware)" : HasConnectionChoice ? $"via {ConnectionLabel}" : ConnectionLabel;
+    public string ConnectionChooserName => $"Connection for {Name}: {ConnectionLabel}";
+
+    /// <summary>Equal for rows that look and behave the same, so an unchanged list is not rebuilt.</summary>
+    internal string Signature =>
+        string.Join('\u001f', [Info.Id, Info.Name, Info.Transport, Group.Key, ChosenConnection ?? "",
+                               .. Group.Members.Select(m => m.Id)]);
+}
+
 /// <summary>One card in the Scans tab: a history entry plus its display bitmap.</summary>
 public sealed class HistoryItem(ScanHistoryEntry entry, BitmapSource thumbnail)
 {
@@ -95,7 +125,10 @@ public sealed class AppViewModel : INotifyPropertyChanged
 
     // MARK: Published state
 
-    public ObservableCollection<ScannerInfo> Devices { get; } = [];
+    /// <summary>The sidebar's scanners: one row per physical scanner (see <see cref="DeviceMerge"/>).</summary>
+    public ObservableCollection<DeviceRow> Devices { get; } = [];
+    /// <summary>Every backend entry grouped by physical scanner, in sidebar order.</summary>
+    public IReadOnlyList<DeviceGroup> DeviceGroups { get; private set; } = [];
 
     public string? SelectedDeviceId { get; private set; }
     public ScannerCapabilities? Capabilities { get; private set; }
@@ -152,9 +185,15 @@ public sealed class AppViewModel : INotifyPropertyChanged
     private readonly PageSpool _spool;
     private IScannerSession? _session;
     private bool _userPickedDevice;
+    /// <summary>The user's connection choice per scanner (<see cref="AppPreferences.PreferredConnection"/>).</summary>
+    private readonly Dictionary<string, string> _preferredConnection;
+    /// <summary>The backend entry of the selected device, kept so its scanner is found again when that entry goes away.</summary>
+    private ScannerInfo? _selectedEntry;
+    /// <summary>The device diagnostics last written (see <see cref="WriteDeviceDiagnostics"/>).</summary>
+    private string _lastDeviceReport = "";
     /// <summary>
-    /// A real scanner appeared, or the selected one went away, during an operation/review;
-    /// re-evaluate the selection afterwards.
+    /// A real scanner appeared, the selected one went away, or another connection to it became
+    /// the preferred one, during an operation/review; re-evaluate the selection afterwards.
     /// </summary>
     private bool _autoSwitchDeferred;
     /// <summary>
@@ -200,6 +239,10 @@ public sealed class AppViewModel : INotifyPropertyChanged
                                  new Scanning.EsclScannerBackend(),
                                  new MockScannerBackend()];
         _presetStore = new PresetStore();
+        // A null value can only come from a hand-edited file; it means no choice.
+        _preferredConnection = AppPreferencesStore.Load().PreferredConnection
+            .Where(pair => pair.Value is not null)
+            .ToDictionary(pair => pair.Key, pair => pair.Value);
         _ocrService = ocrService ?? new WindowsOcrService();
         foreach (var preset in _presetStore.Load()) Presets.Add(preset);
         _renderTimer = new DispatcherTimer(DispatcherPriority.Normal, _dispatcher) { Interval = CanvasRenderDebounce };
@@ -267,17 +310,22 @@ public sealed class AppViewModel : INotifyPropertyChanged
         _ = Task.Run(() => SavedFiles.SweepStaleTempFiles(folder, SavedFiles.StaleTempFileAge));
     }
 
+    /// <summary>
+    /// Rebuilds the scanner list from every backend: entries for the same physical scanner are
+    /// grouped (<see cref="DeviceMerge.Group"/>) and the selection follows its scanner. When
+    /// another connection to the selected scanner becomes the preferred one (a better one
+    /// appeared, the user chose one, or the one in use went away), the session moves to it.
+    /// </summary>
     private void MergeDevices()
     {
-        Devices.Clear();
-        foreach (var backend in _backends)
-        {
-            foreach (var device in backend.Devices) Devices.Add(device);
-        }
+        var entries = _backends.SelectMany(b => b.Devices).ToList();
+        DeviceGroups = DeviceMerge.Group(entries, DeviceMerge.WindowsRanking, _preferredConnection);
+        WriteDeviceDiagnostics();
 
         if (SelectedDeviceId is { } sel)
         {
-            if (Devices.All(d => d.Id != sel))
+            if (entries.FirstOrDefault(d => d.Id == sel) is { } current) _selectedEntry = current;
+            if (GroupOfSelection(sel) is not { } group)
             {
                 // The device went away (unplugged, powered off). Switching would discard a
                 // running operation or an open photo review, whose pixels no longer need the
@@ -292,9 +340,16 @@ public sealed class AppViewModel : INotifyPropertyChanged
                     SelectDevice(PreferredDefaultDevice());
                 }
             }
+            else if (group.Primary.Id != sel)
+            {
+                // Same scanner, another connection: the same deferral rules apply. The user's
+                // pick of this scanner stands.
+                if (IsBusy || ShowPhotoReview) _autoSwitchDeferred = true;
+                else SelectDevice(group.Primary.Id);
+            }
             else if (!_userPickedDevice && PreferredDefaultDevice() is { } real
-                     && Devices.First(d => d.Id == sel).IsDemo
-                     && !Devices.First(d => d.Id == real).IsDemo)
+                     && group.Primary.IsDemo
+                     && DeviceGroups.First(g => g.Primary.Id == real).Primary is { IsDemo: false })
             {
                 // A real scanner appeared while we were auto-parked on the demo device. Switching
                 // would discard a running operation or an open photo review, so wait for those
@@ -307,6 +362,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
         {
             SelectDevice(def);
         }
+        RefreshDeviceRows();
         NotifyAll();
     }
 
@@ -318,8 +374,90 @@ public sealed class AppViewModel : INotifyPropertyChanged
         MergeDevices();
     }
 
+    /// <summary>The first real scanner (else the demo device), through its preferred connection.</summary>
     private string? PreferredDefaultDevice() =>
-        (Devices.FirstOrDefault(d => !d.IsDemo) ?? Devices.FirstOrDefault())?.Id;
+        (DeviceGroups.FirstOrDefault(g => !g.Primary.IsDemo) ?? DeviceGroups.FirstOrDefault())?.Primary.Id;
+
+    /// <summary>
+    /// The scanner the selected device belongs to: the group listing it, or, when that entry
+    /// went away, the group holding another connection to the same scanner.
+    /// </summary>
+    private DeviceGroup? GroupOfSelection(string id) =>
+        DeviceGroups.FirstOrDefault(g => g.Members.Any(m => m.Id == id))
+        ?? (_selectedEntry is { } entry && entry.Id == id
+            ? DeviceGroups.FirstOrDefault(g => g.Members.Any(m => DeviceMerge.SameDevice(m, entry)))
+            : null);
+
+    /// <summary>
+    /// One row per scanner; the selected scanner's row shows the connection in use (until a
+    /// deferred switch moves it), the others the connection they would use.
+    /// </summary>
+    private void RefreshDeviceRows()
+    {
+        string? sel = SelectedDeviceId;
+        var rows = DeviceGroups.Select(group =>
+        {
+            var shown = group.Members.FirstOrDefault(m => m.Id == sel) ?? group.Primary;
+            string? chosen = _preferredConnection.TryGetValue(group.Key, out var connection)
+                             && group.Members.Any(m => string.Equals(DeviceMerge.ConnectionId(m), connection,
+                                                                     StringComparison.OrdinalIgnoreCase))
+                ? connection : null;
+            return new DeviceRow(shown, group, chosen);
+        }).ToList();
+        if (rows.Select(r => r.Signature).SequenceEqual(Devices.Select(r => r.Signature))) return;
+        Devices.Clear();
+        foreach (var row in rows) Devices.Add(row);
+    }
+
+    /// <summary>
+    /// The user chose how to reach a scanner (<see cref="DeviceMerge.ConnectionId"/>, or null
+    /// for Automatic). The choice is saved, and the scanner is selected through it. For the
+    /// selected scanner, a running operation or open photo review is not discarded: the switch
+    /// waits for it to end, like any other connection change (see <see cref="MergeDevices"/>).
+    /// </summary>
+    public void ChooseConnection(string groupKey, string? connectionId)
+    {
+        if (connectionId is null) _preferredConnection.Remove(groupKey);
+        else _preferredConnection[groupKey] = connectionId;
+        AppPreferencesStore.Update(preferences =>
+        {
+            if (connectionId is null) preferences.PreferredConnection.Remove(groupKey);
+            else preferences.PreferredConnection[groupKey] = connectionId;
+        });
+        MergeDevices();
+        if (DeviceGroups.FirstOrDefault(g => g.Key == groupKey) is not { } group) return;
+        bool selectedScanner = SelectedDeviceId is { } sel && GroupOfSelection(sel)?.Key == groupKey;
+        if (selectedScanner && (IsBusy || ShowPhotoReview))
+        {
+            // MergeDevices deferred the switch; EndOfWork makes it.
+            _userPickedDevice = true;
+            return;
+        }
+        UserSelectDevice(group.Primary.Id);
+    }
+
+    /// <summary>
+    /// Writes the raw device names and how they were grouped to
+    /// %LOCALAPPDATA%\CompleteScanner\Logs\devices.txt whenever they change, so the names real
+    /// drivers report can be collected to tune <see cref="DeviceMerge"/>. Best effort.
+    /// </summary>
+    private void WriteDeviceDiagnostics()
+    {
+        string report = DeviceMerge.DiagnosticsReport(DeviceGroups);
+        if (report == _lastDeviceReport) return;
+        _lastDeviceReport = report;
+        try
+        {
+            string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                                         "CompleteScanner", "Logs");
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "devices.txt"), report);
+        }
+        catch (Exception e)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Could not write the device diagnostics: {e.Message}");
+        }
+    }
 
     /// <summary>Device selection driven by the user (sidebar click).</summary>
     public void UserSelectDevice(string? id)
@@ -333,6 +471,9 @@ public sealed class AppViewModel : INotifyPropertyChanged
         // Ignore re-clicks on a device that is already connected or connecting.
         if (id == SelectedDeviceId && (_session != null || !_switchTask.IsCompleted)) return;
         SelectedDeviceId = id;
+        _selectedEntry = id is null ? null
+            : DeviceGroups.SelectMany(g => g.Members).FirstOrDefault(m => m.Id == id) ?? _selectedEntry;
+        RefreshDeviceRows();
         _switchGeneration += 1;
         int generation = _switchGeneration;
         var previous = _switchTask;
@@ -381,7 +522,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             NotifyAll();
             return;
         }
-        string name = Devices.FirstOrDefault(d => d.Id == id)?.Name ?? "scanner";
+        string name = DeviceGroups.SelectMany(g => g.Members).FirstOrDefault(d => d.Id == id)?.Name ?? "scanner";
         StatusMessage = $"Connecting to {name}…";
         NotifyAll();
         try

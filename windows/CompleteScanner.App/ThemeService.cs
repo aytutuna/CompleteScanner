@@ -76,7 +76,7 @@ public static class ThemeService
     public static void Set(AppAppearance appearance)
     {
         Apply(appearance);
-        AppPreferencesStore.Save(new AppPreferences { Appearance = appearance });
+        AppPreferencesStore.Update(preferences => preferences.Appearance = appearance);
     }
 
     /// <summary>

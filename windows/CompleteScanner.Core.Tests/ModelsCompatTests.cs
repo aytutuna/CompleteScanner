@@ -374,6 +374,27 @@ public class ModelsCompatTests
         Assert.Equal(AppAppearance.Dark,
                      Decode<AppPreferences>("""{ "appearance": "dark", "accent": "teal" }""").Appearance);
     }
+
+    [Fact]
+    public void PreferredConnection_MissingOrCorrupt_IsEmptyAndKeepsTheAppearance()
+    {
+        Assert.Empty(Decode<AppPreferences>("""{ "appearance": "dark" }""").PreferredConnection);
+        var corrupt = Decode<AppPreferences>("""{ "appearance": "dark", "preferredConnection": [1, 2] }""");
+        Assert.Empty(corrupt.PreferredConnection);
+        Assert.Equal(AppAppearance.Dark, corrupt.Appearance);
+        Assert.Empty(Decode<AppPreferences>("""{ "preferredConnection": null }""").PreferredConnection);
+    }
+
+    [Fact]
+    public void PreferredConnection_KeysAreWrittenUnchanged()
+    {
+        var preferences = new AppPreferences();
+        preferences.PreferredConnection["model:epson perfection v600"] = "twain:USB";
+        string json = CompatFixtures.Encode(preferences);
+        Assert.Contains("\"preferredConnection\"", json);
+        Assert.Contains("\"model:epson perfection v600\": \"twain:USB\"", json);
+        Assert.Equal("twain:USB", Decode<AppPreferences>(json).PreferredConnection["model:epson perfection v600"]);
+    }
 }
 
 // MARK: - Store files
@@ -688,6 +709,18 @@ public sealed class PresetStoreFileTests : IDisposable
         AppPreferencesStore.Save(new AppPreferences { Appearance = AppAppearance.Dark }, _directory);
         Assert.Equal(AppAppearance.Dark, AppPreferencesStore.Load(_directory).Appearance);
         Assert.Empty(KeptFiles("preferences.unreadable-"));
+    }
+
+    [Fact]
+    public void PreferencesUpdate_ChangesOnlyWhatItSets()
+    {
+        AppPreferencesStore.Save(new AppPreferences { Appearance = AppAppearance.Dark }, _directory);
+        AppPreferencesStore.Update(p => p.PreferredConnection["id:abc"] = "escl:Network", _directory);
+        AppPreferencesStore.Update(p => p.Appearance = AppAppearance.Light, _directory);
+
+        var loaded = AppPreferencesStore.Load(_directory);
+        Assert.Equal(AppAppearance.Light, loaded.Appearance);
+        Assert.Equal("escl:Network", loaded.PreferredConnection["id:abc"]);
     }
 
     [Fact]

@@ -28,7 +28,8 @@ public final class MockScannerBackend: ScannerBackend {
 
     public func startBrowsing() {
         guard devices.isEmpty else { return }
-        devices = [ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true)]
+        devices = [ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true,
+                               backend: "mock")]
         onDevicesChanged?()
     }
 

@@ -146,6 +146,13 @@ public static class SettingsStore
 public sealed class AppPreferences
 {
     public AppAppearance Appearance { get; set; } = AppAppearance.System;
+
+    /// <summary>
+    /// The connection the user chose per scanner: <see cref="DeviceGroup.Key"/> →
+    /// <see cref="DeviceMerge.ConnectionId"/> (for example "wia:WIA"). A scanner without an
+    /// entry connects automatically (<see cref="DeviceMerge.WindowsRanking"/>).
+    /// </summary>
+    public Dictionary<string, string> PreferredConnection { get; set; } = [];
 }
 
 public static class AppPreferencesStore
@@ -158,6 +165,21 @@ public static class AppPreferencesStore
     public static AppPreferences Load() => Load(StoreFiles.DefaultDirectory);
 
     public static void Save(AppPreferences preferences) => Save(preferences, StoreFiles.DefaultDirectory);
+
+    /// <summary>
+    /// Re-reads the saved preferences, applies <paramref name="change"/> and saves them, so
+    /// each part of the app changes only its own preferences and keeps the others' (the
+    /// appearance and the scanner connections are set from different places).
+    /// </summary>
+    public static void Update(Action<AppPreferences> change) => Update(change, StoreFiles.DefaultDirectory);
+
+    /// <summary>Same as <see cref="Update(Action{AppPreferences})"/>, in <paramref name="directory"/> (tests).</summary>
+    internal static void Update(Action<AppPreferences> change, string directory)
+    {
+        var preferences = Load(directory);
+        change(preferences);
+        Save(preferences, directory);
+    }
 
     /// <summary>Same as <see cref="Load()"/>, reading preferences.json from <paramref name="directory"/> (tests).</summary>
     internal static AppPreferences Load(string directory) =>

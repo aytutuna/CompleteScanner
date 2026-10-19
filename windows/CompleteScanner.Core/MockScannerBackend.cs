@@ -39,7 +39,7 @@ public sealed class MockScannerBackend : IScannerBackend
     public void StartBrowsing()
     {
         if (_devices.Count > 0) return;
-        _devices.Add(new ScannerInfo("mock:demo", "Demo Scanner", "Demo", IsDemo: true));
+        _devices.Add(new ScannerInfo("mock:demo", "Demo Scanner", "Demo", IsDemo: true, Backend: "mock"));
         DevicesChanged?.Invoke();
     }
 
