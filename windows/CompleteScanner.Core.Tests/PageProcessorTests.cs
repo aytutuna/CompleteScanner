@@ -10,6 +10,9 @@ public class PageProcessorTests
 {
     private static readonly RgbaImage BlankImage = TestPages.Enlarged(TestPages.NoisyBlank(), 1);
     private static readonly RgbaImage TextImage = TestPages.Enlarged(TestPages.OneTextLine(), 1);
+    /// <summary>A 6 × 8 in sheet lying at -4° on a dark backdrop, scanned at 100 dpi.</summary>
+    private static readonly RgbaImage SheetImage =
+        TestPages.SheetOnBackdrop(TestPages.Minus4, 30, 240, 0, 0x5EE70002).ToRgba();
 
     private static ScannedPage Page(RgbaImage image) => new(image, 100, ColorMode.Color);
 
@@ -73,6 +76,35 @@ public class PageProcessorTests
         // Quick scan saves every scan at once.
         var quick = TaskCatalog.Apply(ScanTask.QuickScan, new ScanSettings());
         Assert.False(PageProcessor.ChecksBlankPages(quick));
+    }
+
+    [Fact]
+    public void ForScan_CropAndStraighten_ComeBetweenTheBlankCheckAndTheAdjustments()
+    {
+        var s = new ScanSettings();
+        Assert.False(PageProcessor.CorrectsGeometry(s));
+        s.Document.AutoStraighten = true;
+        s.Adjustments.Brightness = 0.25;
+        Assert.True(PageProcessor.CorrectsGeometry(s));
+        var processor = PageProcessor.ForScan(s);
+        Assert.Equal(["blank", "geometry", "adjust"], processor.Steps.Select(step => step.Name));
+        var step = (GeometryStep)processor.Steps[1];
+        Assert.Equal((false, true), (step.Crop, step.Straighten));
+        s.Document.AutoCrop = true;
+        s.Document.AutoStraighten = false;
+        Assert.Equal((true, false), (((GeometryStep)PageProcessor.ForScan(s).Steps[1]).Crop, ((GeometryStep)PageProcessor.ForScan(s).Steps[1]).Straighten));
+    }
+
+    [Fact]
+    public void ForScan_PhotosAndPagesSavedAtOnce_AreNeverCroppedOrStraightened()
+    {
+        foreach (var s in new[] { new ScanSettings { Intent = ScanIntent.Photo }, new ScanSettings { DocumentMultiPage = false } })
+        {
+            s.Document.AutoCrop = true;
+            s.Document.AutoStraighten = true;
+            Assert.False(PageProcessor.CorrectsGeometry(s));
+            Assert.DoesNotContain("geometry", PageProcessor.ForScan(s).Steps.Select(step => step.Name));
+        }
     }
 
     [Fact]
@@ -191,6 +223,155 @@ public class PageProcessorTests
         cancelled.Cancel();
         Assert.ThrowsAny<OperationCanceledException>(
             () => PageProcessor.ForScan(new ScanSettings()).Process([Page(BlankImage)], cancelled.Token));
+    }
+
+    [Fact]
+    public void Process_CropsAndStraightens_KeepingThePageAsScanned()
+    {
+        var s = new ScanSettings();
+        s.Document.AutoCrop = true;
+        s.Document.AutoStraighten = true;
+        var scanned = Page(SheetImage);
+        var result = PageProcessor.ForScan(s).Process([scanned]);
+        var page = result.Pages[0];
+        Assert.Equal(scanned.Id, page.Id);
+        Assert.NotNull(page.Geometry);
+        Assert.True(page.Geometry.Cropped);
+        Assert.InRange(page.Geometry.AngleDegrees, TestPages.Minus4.Degrees - 0.3, TestPages.Minus4.Degrees + 0.3);
+        Assert.False(page.ShowsOriginal);
+        Assert.True(page.CanSwapVersions);
+        Assert.Same(SheetImage, page.Alternate!.Image);
+        Assert.InRange(page.Image.Width, TestPages.SheetWidth - 4, TestPages.SheetWidth + 2);
+        // The blank check ran on the page as scanned.
+        Assert.False(page.Blank!.IsBlank);
+        Assert.Equal(" 1 cropped and straightened.", PageCorrections.ScanNote(result.Pages));
+    }
+
+    [Fact]
+    public void Process_PageItIsNotSureAbout_StaysAsScanned()
+    {
+        var s = new ScanSettings();
+        s.Document.AutoCrop = true;
+        s.Document.AutoStraighten = true;
+        var scanned = Page(BlankImage);
+        var page = PageProcessor.ForScan(s).Process([scanned]).Pages[0];
+        Assert.Same(scanned.Image, page.Image);
+        Assert.Null(page.Geometry);
+        Assert.Null(page.Alternate);
+        Assert.False(page.CanSwapVersions);
+        Assert.Equal("", PageCorrections.ScanNote([page]));
+    }
+
+    [Fact]
+    public void AdjustmentStep_AdjustsBothVersions()
+    {
+        var s = new ScanSettings { ColorMode = ColorMode.Grayscale };
+        s.Document.AutoCrop = true;
+        s.Document.AutoStraighten = true;
+        var page = PageProcessor.ForScan(s).Process([Page(SheetImage)]).Pages[0];
+        Assert.Equal(ColorMode.Grayscale, page.ColorMode);
+        Assert.Equal(ImagePipeline.Apply(s.Adjustments, SheetImage, ColorMode.Grayscale).Pixels, page.Alternate!.Image!.Pixels);
+        Assert.NotNull(page.Geometry);
+    }
+
+    // MARK: - Showing a page as scanned
+
+    private static ScannedPage Corrected() =>
+        Page(SheetImage).WithSide(PageSide.Front, 1).WithBlank(new BlankPageResult(0.01, 50, false, false))
+                        .WithGeometry(RgbaImage.Filled(60, 80, 200, 200, 200), new PageGeometry(true, -4, GeometryBasis.PageEdges));
+
+    [Fact]
+    public void WithVersionsSwapped_ShowsThePageAsScanned_AndBackAgain()
+    {
+        var page = Corrected();
+        var original = page.WithVersionsSwapped(page.Alternate!.Image!);
+        Assert.True(original.ShowsOriginal);
+        Assert.Same(SheetImage, original.Image);
+        Assert.Equal(page.Id, original.Id);
+        Assert.Equal(page.Geometry, original.Geometry);
+        Assert.Equal((PageSide.Front, 1), (original.Side, original.SheetIndex));
+        Assert.Equal(page.Blank, original.Blank);
+        Assert.Same(page.Image, original.Alternate!.Image);
+        var back = original.WithVersionsSwapped(original.Alternate.Image!);
+        Assert.False(back.ShowsOriginal);
+        Assert.Same(page.Image, back.Image);
+        Assert.Same(SheetImage, back.Alternate!.Image);
+        // A page with no other version stays as it is.
+        var plain = Page(BlankImage);
+        Assert.Same(plain, plain.WithVersionsSwapped(TextImage));
+    }
+
+    [Fact]
+    public void WithVersionsSwapped_SpooledVersions_SwapFilesAndDropThePixelsOfTheHiddenOne()
+    {
+        var corrected = Corrected().WithImage(RgbaImage.Filled(6, 8, 1, 1, 1), filePath: "corrected.png", fullPixelSize: new SizeD(60, 80))
+                                   .WithAlternate(new PageVersion(null, "original.png", new SizeD(850, 1100)));
+        var preview = RgbaImage.Filled(85, 110, 2, 2, 2);
+        var original = corrected.WithVersionsSwapped(preview);
+        Assert.Equal(("original.png", new SizeD(850, 1100)), (original.FilePath, original.FullPixelSize));
+        Assert.Same(preview, original.Image);
+        Assert.Equal(new PageVersion(null, "corrected.png", new SizeD(60, 80)), original.Alternate);
+    }
+
+    [Fact]
+    public void RotatedClockwise_TurnsTheOtherVersionToo()
+    {
+        var page = Corrected();
+        var turned = page.RotatedClockwise();
+        Assert.Equal(1, turned.RotationQuarterTurns);
+        Assert.Equal((SheetImage.Height, SheetImage.Width), (turned.Alternate!.Image!.Width, turned.Alternate.Image.Height));
+        Assert.Equal(SheetImage.RotatedQuarterTurns(1).Pixels, turned.Alternate.Image.Pixels);
+        Assert.Equal(page.Geometry, turned.Geometry);
+        // A spooled other version has no pixels to turn: its file is turned when it is saved.
+        var spooled = page.WithAlternate(new PageVersion(null, "original.png", new SizeD(850, 1100)));
+        Assert.Equal(spooled.Alternate, spooled.RotatedClockwise().Alternate);
+    }
+
+    [Fact]
+    public void Geometry_SurvivesRebuildingThePage_TheOtherVersionStaysWithItsPixels()
+    {
+        var page = Corrected().WithVersionsSwapped(SheetImage);
+        foreach (var rebuilt in new[]
+                 {
+                     page.WithImage(RgbaImage.Filled(3, 3, 0, 0, 0)),
+                     page.WithSide(PageSide.Back, 0),
+                     page.WithBlank(null),
+                     page.WithInclusion(PageInclusion.Skip),
+                 })
+        {
+            Assert.Equal(page.Geometry, rebuilt.Geometry);
+            Assert.True(rebuilt.ShowsOriginal);
+            Assert.Same(page.Alternate, rebuilt.Alternate);
+        }
+        // CopyMeta takes the source's facts and keeps this page's other version.
+        var other = Page(TextImage).CopyMeta(page);
+        Assert.Equal((page.Geometry, true), (other.Geometry, other.ShowsOriginal));
+        Assert.Null(other.Alternate);
+        Assert.Null(Page(TextImage).Geometry);
+    }
+
+    [Fact]
+    public void PageCorrections_SayWhatWasDone_AndWhatOneClickDoes()
+    {
+        var page = Corrected();
+        Assert.Equal("Cropped and straightened 4.0°", PageCorrections.Caption(page));
+        Assert.Equal("Show as scanned", PageCorrections.ToggleLabel(page));
+        Assert.Equal("Page 2 is cropped and straightened again.", PageCorrections.SwapNote(page, 2));
+        var original = page.WithVersionsSwapped(SheetImage);
+        Assert.Equal("As scanned", PageCorrections.Caption(original));
+        Assert.Equal("Show cropped and straightened", PageCorrections.ToggleLabel(original));
+        Assert.Equal("Page 2 is shown as scanned. It is saved that way.", PageCorrections.SwapNote(original, 2));
+        var straightened = Page(SheetImage).WithGeometry(SheetImage, new PageGeometry(false, 1.25, GeometryBasis.TextLines));
+        Assert.Equal("Straightened 1.3°", PageCorrections.Caption(straightened));
+        Assert.Equal("Show straightened", PageCorrections.ToggleLabel(straightened.WithVersionsSwapped(SheetImage)));
+        var cropped = Page(SheetImage).WithGeometry(SheetImage, new PageGeometry(true, 0, GeometryBasis.PageEdges));
+        Assert.Equal("Cropped", PageCorrections.Caption(cropped));
+        Assert.Null(PageCorrections.Caption(Page(BlankImage)));
+        Assert.Null(PageCorrections.ToggleLabel(Page(BlankImage)));
+        Assert.Null(PageCorrections.ToggleLabel(cropped.WithAlternate(null)));
+        Assert.Equal(" 2 straightened.", PageCorrections.ScanNote([straightened, straightened, Page(BlankImage)]));
+        Assert.Equal(" 2 cropped or straightened.", PageCorrections.ScanNote([straightened, cropped]));
+        Assert.Equal("", PageCorrections.ScanNote([original]));
     }
 
     // MARK: - Which pages are saved

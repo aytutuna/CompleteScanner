@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import CoreGraphics
 import Foundation
+import ImageIO
 
 /// Where document pages are spilled to disk while they wait in the queue,
 /// so a long high-dpi batch doesn't hold gigabytes of pixels in memory.
@@ -170,6 +171,10 @@ public final class AppState: ObservableObject {
     /// The feeder check under way (`checkFeederDuplex`): scans and previews wait for it, since the
     /// session selects one unit at a time.
     private var feederDuplexCheck: Task<Void, Never>?
+    /// The last page swap (or the turn clicked behind one) queued; nil when none is under way.
+    /// Swaps and turns run in click order, and a save waits for them (`enqueuePageEdit`).
+    private var pageEditChain: Task<Void, Never>?
+    private var pageEditCount = 0
 
     /// Image shown in the preview canvas.
     public var canvasImage: CGImage? { overviewImage ?? lastScanImage }
@@ -550,7 +555,7 @@ public final class AppState: ObservableObject {
             let raw = cleaned.arranged
             let processed = cleaned.pages
             // " 2 look blank and will be skipped." after the pages added to the queue.
-            let blankNote = PageFilter.scanNote(processed, options: s.document)
+            let blankNote = PageFilter.scanNote(processed, options: s.document) + PageCorrections.scanNote(processed)
 
             // The canvas shows the RAW scan: PreviewCanvasView applies the current
             // adjustment settings to it live, so slider changes are visible
@@ -690,16 +695,19 @@ public final class AppState: ObservableObject {
 
     public func savePDF() {
         guard !scannedPages.isEmpty else { return }
-        let queued = scannedPages
         let s = settings
-        // Pages flagged in the strip (blank, or skipped by hand) are left out now, and only now.
-        let pages = PageFilter.pagesToSave(queued, options: s.document)
-        guard !pages.isEmpty else {
-            errorMessage = PageFilter.nothingToSaveMessage
-            statusMessage = PageFilter.queueSummary(queued, options: s.document) + "."
-            return
-        }
         runExclusive { flag in
+            // Let page swaps and turns that were clicked before the save land first.
+            await self.pageEditChain?.value
+            let queued = self.scannedPages
+            guard !queued.isEmpty else { return }
+            // Pages flagged in the strip (blank, or skipped by hand) are left out now, and only now.
+            let pages = PageFilter.pagesToSave(queued, options: s.document)
+            guard !pages.isEmpty else {
+                self.errorMessage = PageFilter.nothingToSaveMessage
+                self.statusMessage = PageFilter.queueSummary(queued, options: s.document) + "."
+                return
+            }
             self.statusMessage = s.pdfSearchable ? "Running OCR and building PDF…" : "Building PDF…"
             let url = try self.outputURL(fileExtension: "pdf")
             try await Task.detached(priority: .userInitiated) {
@@ -844,13 +852,90 @@ public final class AppState: ObservableObject {
     /// and PDFBuilder applies the accumulated rotation at save time.
     public func rotatePage(id: UUID) {
         guard !isBusy else { return }
+        // Behind a swap still reading its file, so the clicks land in the order they were made.
+        if pageEditChain != nil {
+            enqueuePageEdit { state in state.applyRotation(id: id) }
+        } else {
+            applyRotation(id: id)
+        }
+    }
+
+    private func applyRotation(id: UUID) {
         guard let idx = scannedPages.firstIndex(where: { $0.id == id }) else { return }
         let page = scannedPages[idx]
         // withImage keeps the page's facts (its side and sheet) and its spool file.
         var updated = page.withImage(ImagePipeline.rotate(page.image, quarterTurns: 1),
                                      fileURL: page.fileURL, fullPixelSize: page.fullPixelSize)
         updated.rotationQuarterTurns = (page.rotationQuarterTurns + 1) % 4
+        // The other version's pixels in memory turn with the page; a spooled one is turned when shown.
+        if var version = page.alternate, let other = version.image {
+            version.image = ImagePipeline.rotate(other, quarterTurns: 1)
+            updated = updated.withAlternate(version)
+        }
         scannedPages[idx] = updated
+    }
+
+    /// One click on a cropped or straightened page's swap button: the page as scanned is shown, and
+    /// saved, instead; a second click brings the cropped and straightened page back. The other
+    /// version is read from its spool file off the main actor; swaps and the turns clicked while one
+    /// is under way run one after another, and a save waits for them. Twin of the Windows
+    /// `AppViewModel.TogglePageGeometry`.
+    public func togglePageGeometry(id: UUID) {
+        guard !isBusy else { return }
+        enqueuePageEdit { state in await state.swapVersions(id: id) }
+    }
+
+    /// Runs `edit` after every page swap and turn queued before it (the Windows `_pageRotateChain`).
+    private func enqueuePageEdit(_ edit: @escaping @MainActor (AppState) async -> Void) {
+        let previous = pageEditChain
+        pageEditCount += 1
+        let ticket = pageEditCount
+        pageEditChain = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self else { return }
+            await edit(self)
+            if self.pageEditCount == ticket { self.pageEditChain = nil }
+        }
+    }
+
+    /// Shows the other version of the page as it is now: from memory, or read from its spool file
+    /// off the main actor. The swap applies if the page is still in the queue as it was when the
+    /// read started (not removed, saved, turned or swapped meanwhile).
+    private func swapVersions(id: UUID) async {
+        guard let page = scannedPages.first(where: { $0.id == id }), page.canSwapVersions,
+              let other = page.alternate else { return }
+        let shown: CGImage
+        if let image = other.image {
+            shown = image
+        } else {
+            guard let url = other.fileURL else { return }
+            let turns = page.rotationQuarterTurns
+            let read: CGImage? = await Task.detached(priority: .userInitiated) {
+                Self.previewOfSpoolFile(url, quarterTurns: turns)
+            }.value
+            // Removed while its file was read: nothing to switch, and nothing to report.
+            guard scannedPages.contains(where: { $0.id == id }) else { return }
+            guard let read else {
+                errorMessage = "The page could not be switched: its file could not be read."
+                return
+            }
+            shown = read
+        }
+        guard let idx = scannedPages.firstIndex(where: { $0.id == id }) else { return }
+        let current = scannedPages[idx]
+        guard current.canSwapVersions, current.showsOriginal == page.showsOriginal,
+              current.rotationQuarterTurns == page.rotationQuarterTurns else { return }
+        let swapped = current.withVersionsSwapped(shown)
+        scannedPages[idx] = swapped
+        statusMessage = PageCorrections.swapNote(swapped, number: idx + 1)
+    }
+
+    /// A preview of a spooled page version as the queue shows a page, turned by `quarterTurns`.
+    private nonisolated static func previewOfSpoolFile(_ url: URL, quarterTurns: Int) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let full = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let preview = makePreview(full, maxSide: 1600) ?? full
+        return quarterTurns == 0 ? preview : ImagePipeline.rotate(preview, quarterTurns: quarterTurns)
     }
 
     /// One click on a queued page's Keep or Skip button: the page is saved or left out, whatever
@@ -1170,7 +1255,8 @@ public final class AppState: ObservableObject {
 
     /// Write each full-resolution page to a spool TIFF and return queue entries
     /// that carry only a preview in memory. A page whose spill fails is kept
-    /// fully in memory instead.
+    /// fully in memory instead. The page as scanned, kept by crop and straighten, gets a spool
+    /// file of its own (and keeps its pixels in memory when that fails), so one click can show it.
     private nonisolated static func spoolPages(_ pages: [ScannedPage]) -> [ScannedPage] {
         try? FileManager.default.createDirectory(at: pageSpoolDirectory, withIntermediateDirectories: true)
         return pages.map { page in
@@ -1182,8 +1268,19 @@ public final class AppState: ObservableObject {
                 return page
             }
             let preview = makePreview(page.image, maxSide: 1600) ?? page.image
-            return page.withImage(preview, fileURL: url,
-                                  fullPixelSize: CGSize(width: page.image.width, height: page.image.height))
+            var spooled = page.withImage(preview, fileURL: url,
+                                         fullPixelSize: CGSize(width: page.image.width, height: page.image.height))
+            if let other = page.alternate?.image {
+                let otherURL = pageSpoolDirectory.appendingPathComponent("\(page.id.uuidString)-other.tiff")
+                do {
+                    try ImageExporter.write(other, to: otherURL, format: .tiff, dpi: page.dpi, jpegQuality: 1.0)
+                    spooled = spooled.withAlternate(PageVersion(image: nil, fileURL: otherURL,
+                                                                fullPixelSize: CGSize(width: other.width, height: other.height)))
+                } catch {
+                    // Kept in memory: the page can still be shown as scanned.
+                }
+            }
+            return spooled
         }
     }
 
@@ -1236,7 +1333,7 @@ public final class AppState: ObservableObject {
 
     private func deleteSpoolFiles(of pages: [ScannedPage]) {
         for page in pages {
-            if let url = page.fileURL {
+            for url in [page.fileURL, page.alternate?.fileURL].compactMap({ $0 }) {
                 try? FileManager.default.removeItem(at: url)
             }
         }

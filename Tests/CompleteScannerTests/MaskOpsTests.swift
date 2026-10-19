@@ -168,6 +168,26 @@ final class MaskOpsTests: XCTestCase {
         XCTAssertEqual(flat(rows), [[0, 1, 1], [1, 0, 2], [2, 1, 1]])
     }
 
+    func test_erode_outsideSet_keepsTheEdgeOfARegionAgainstTheBorder() {
+        // A 6 x 4 block in the top left corner of a 10 x 8 mask.
+        var mask = [UInt8](repeating: 0, count: 80)
+        for y in 0..<4 {
+            for x in 0..<6 { mask[y * 10 + x] = 1 }
+        }
+        var kept = [UInt8](repeating: 0, count: 80)
+        var shrunk = [UInt8](repeating: 0, count: 80)
+        for y in 0..<8 {
+            for x in 0..<10 {
+                // Outside set: it shrinks only on the sides facing the inside of the mask.
+                kept[y * 10 + x] = x < 5 && y < 3 ? 1 : 0
+                // Outside clear (the default): it shrinks along the border too.
+                shrunk[y * 10 + x] = x >= 1 && x < 5 && y >= 1 && y < 3 ? 1 : 0
+            }
+        }
+        XCTAssertEqual(MaskOps.erode(mask, 10, 8, radius: 1, outsideSet: true), kept)
+        XCTAssertEqual(MaskOps.erode(mask, 10, 8, radius: 1), shrunk)
+    }
+
     func test_erodeShrinksAtTheBorders_dilateDoesNotGrowPastThem() {
         let full = [UInt8](repeating: 1, count: 25)
         let eroded = MaskOps.erode(full, 5, 5, radius: 1)

@@ -316,8 +316,8 @@ public sealed class OutputOptions : IEquatable<OutputOptions>
 
 /// <summary>
 /// Settings for the clean-up of document pages, kept together as <see cref="ScanSettings.Document"/>
-/// (the "document" object in settings files). Later page features (crop, straighten, split) add
-/// their fields here; every one is off by default.
+/// (the "document" object in settings files). Later page features (split) add their fields here;
+/// every one is off by default.
 /// </summary>
 public sealed class DocumentOptions : IEquatable<DocumentOptions>
 {
@@ -330,12 +330,25 @@ public sealed class DocumentOptions : IEquatable<DocumentOptions>
     /// <summary>How much may be on a page for it to count as blank.</summary>
     public BlankSensitivity BlankSensitivity { get; set; } = BlankSensitivity.Medium;
 
+    /// <summary>
+    /// Each page is cut out of the scanner's background when its edges are clear
+    /// (<see cref="DocumentGeometry"/>). One click in the page strip shows a page as scanned.
+    /// </summary>
+    public bool AutoCrop { get; set; } = false;
+
+    /// <summary>
+    /// Each page that lies at a slant is turned straight, by its edges or its lines of text
+    /// (<see cref="DocumentGeometry"/>). One click in the page strip shows a page as scanned.
+    /// </summary>
+    public bool AutoStraighten { get; set; } = false;
+
     public DocumentOptions Clone() => (DocumentOptions)MemberwiseClone();
 
     public bool Equals(DocumentOptions? other) =>
-        other is not null && RemoveBlankPages == other.RemoveBlankPages && BlankSensitivity == other.BlankSensitivity;
+        other is not null && RemoveBlankPages == other.RemoveBlankPages && BlankSensitivity == other.BlankSensitivity
+        && AutoCrop == other.AutoCrop && AutoStraighten == other.AutoStraighten;
     public override bool Equals(object? obj) => Equals(obj as DocumentOptions);
-    public override int GetHashCode() => HashCode.Combine(RemoveBlankPages, BlankSensitivity);
+    public override int GetHashCode() => HashCode.Combine(RemoveBlankPages, BlankSensitivity, AutoCrop, AutoStraighten);
 }
 
 public static class BlankSensitivities
@@ -479,6 +492,28 @@ public sealed class ScannedPage
     /// <summary>Whether the user keeps or skips this page whatever the blank-page setting.</summary>
     public PageInclusion Inclusion { get; init; } = PageInclusion.Automatic;
 
+    /// <summary>
+    /// What crop and straighten did to the page (<see cref="DocumentGeometry"/>), or null when they
+    /// did nothing (off, or not sure).
+    /// </summary>
+    public PageGeometry? Geometry { get; init; }
+
+    /// <summary>
+    /// The user went back to the page as scanned: <see cref="Image"/> is the page before crop and
+    /// straighten, <see cref="Alternate"/> the cropped and straightened one.
+    /// </summary>
+    public bool ShowsOriginal { get; init; }
+
+    /// <summary>
+    /// The version of the page not shown (the page as scanned, or after crop and straighten), so
+    /// one click can swap them; null when there is none. Its pixels are dropped once it has a spool
+    /// file. Pixel steps after crop and straighten change it too (<see cref="WithAlternate"/>).
+    /// </summary>
+    public PageVersion? Alternate { get; init; }
+
+    /// <summary>The page was cropped or straightened and the other version is at hand: one click swaps them.</summary>
+    public bool CanSwapVersions => Geometry is not null && Alternate is not null;
+
     public ScannedPage(RgbaImage image, int dpi, ColorMode colorMode, Guid? id = null,
                        DateTime? createdAt = null, string? filePath = null, SizeD? fullPixelSize = null)
     {
@@ -504,12 +539,13 @@ public sealed class ScannedPage
         new ScannedPage(image, Dpi, colorMode ?? ColorMode, Id, CreatedAt, filePath, fullPixelSize)
         {
             RotationQuarterTurns = RotationQuarterTurns,
+            Alternate = Alternate,
         }.CopyMeta(this);
 
     /// <summary>
     /// This page carrying what the scan recorded about <paramref name="source"/>: its side and
-    /// sheet, the blank-page check and the user's keep or skip. Pixels, id, file and rotation
-    /// stay this page's.
+    /// sheet, the blank-page check, the user's keep or skip, and what crop and straighten did and
+    /// which version is shown. Pixels, id, file, rotation and the other version stay this page's.
     /// </summary>
     public ScannedPage CopyMeta(ScannedPage source) =>
         new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
@@ -519,6 +555,9 @@ public sealed class ScannedPage
             SheetIndex = source.SheetIndex,
             Blank = source.Blank,
             Inclusion = source.Inclusion,
+            Geometry = source.Geometry,
+            ShowsOriginal = source.ShowsOriginal,
+            Alternate = Alternate,
         };
 
     /// <summary>This page as <paramref name="side"/> of sheet <paramref name="sheetIndex"/> (both null: not two-sided).</summary>
@@ -530,6 +569,9 @@ public sealed class ScannedPage
             SheetIndex = sheetIndex,
             Blank = Blank,
             Inclusion = Inclusion,
+            Geometry = Geometry,
+            ShowsOriginal = ShowsOriginal,
+            Alternate = Alternate,
         };
 
     /// <summary>This page with what the blank-page check found (null: not checked).</summary>
@@ -541,6 +583,9 @@ public sealed class ScannedPage
             SheetIndex = SheetIndex,
             Blank = blank,
             Inclusion = Inclusion,
+            Geometry = Geometry,
+            ShowsOriginal = ShowsOriginal,
+            Alternate = Alternate,
         };
 
     /// <summary>This page kept, skipped, or following the blank-page setting again.</summary>
@@ -552,19 +597,84 @@ public sealed class ScannedPage
             SheetIndex = SheetIndex,
             Blank = Blank,
             Inclusion = inclusion,
+            Geometry = Geometry,
+            ShowsOriginal = ShowsOriginal,
+            Alternate = Alternate,
         };
+
+    /// <summary>
+    /// This page cropped or straightened: <paramref name="corrected"/> is shown, with what was done
+    /// (<paramref name="geometry"/>), and the page as it was becomes the <see cref="Alternate"/>.
+    /// </summary>
+    public ScannedPage WithGeometry(RgbaImage corrected, PageGeometry geometry) =>
+        new(corrected, Dpi, ColorMode, Id, CreatedAt)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = Side,
+            SheetIndex = SheetIndex,
+            Blank = Blank,
+            Inclusion = Inclusion,
+            Geometry = geometry,
+            ShowsOriginal = false,
+            Alternate = new PageVersion(Image, FilePath, FullPixelSize),
+        };
+
+    /// <summary>This page with another version not shown (null: none).</summary>
+    public ScannedPage WithAlternate(PageVersion? alternate) =>
+        new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = Side,
+            SheetIndex = SheetIndex,
+            Blank = Blank,
+            Inclusion = Inclusion,
+            Geometry = Geometry,
+            ShowsOriginal = ShowsOriginal,
+            Alternate = alternate,
+        };
+
+    /// <summary>
+    /// The other version shown: the page as scanned instead of the cropped and straightened one, or
+    /// back. <paramref name="shown"/> is the other version's pixels as the queue shows them (its
+    /// preview, turned like this page; <see cref="Alternate"/>'s own pixels when it has no spool
+    /// file). This version becomes the alternate, without its pixels when it has a spool file. A
+    /// page with no other version is returned as it is.
+    /// </summary>
+    public ScannedPage WithVersionsSwapped(RgbaImage shown)
+    {
+        if (Alternate is not { } other) return this;
+        return new ScannedPage(shown, Dpi, ColorMode, Id, CreatedAt, other.FilePath, other.FullPixelSize)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = Side,
+            SheetIndex = SheetIndex,
+            Blank = Blank,
+            Inclusion = Inclusion,
+            Geometry = Geometry,
+            ShowsOriginal = !ShowsOriginal,
+            Alternate = new PageVersion(FilePath is null ? Image : null, FilePath, FullPixelSize),
+        };
+    }
 
     /// <summary>
     /// The page turned 90° clockwise: the in-memory image is rotated right away (thumbnails
     /// follow it) while the spool file stays untouched and the accumulated turn count is
-    /// applied at save time. Port of AppState.rotatePage(id:).
+    /// applied at save time. The other version's pixels in memory turn with it. Port of
+    /// AppState.rotatePage(id:).
     /// </summary>
     public ScannedPage RotatedClockwise() =>
         new ScannedPage(ImagePipeline.Rotate(Image, 1), Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
         {
             RotationQuarterTurns = (RotationQuarterTurns + 1) % 4,
+            Alternate = Alternate is { Image: { } other } version ? version with { Image = ImagePipeline.Rotate(other, 1) } : Alternate,
         }.CopyMeta(this);
 }
+
+/// <summary>
+/// One version of a queued page (<see cref="ScannedPage.Alternate"/>): its pixels as the queue shows
+/// them (null once spooled), its full-resolution spool file and that file's pixel size.
+/// </summary>
+public sealed record PageVersion(RgbaImage? Image, string? FilePath, SizeD? FullPixelSize);
 
 /// <summary>
 /// A rotated rectangle found on a scanned flatbed image.

@@ -172,8 +172,8 @@ extension PhotoDetector {
     /// border usually differs only slightly from the bed glass, and the faint edge shadow
     /// a lying photo casts differs clearly — so borders are kept while bed background is
     /// trimmed exactly. Returns nil (caller keeps the unrefined region) when the result
-    /// would be degenerate.
-    fileprivate static func refineRegion(_ region: DetectedPhotoRegion, in image: CGImage,
+    /// would be degenerate. Also snaps the sheet found by `DocumentGeometry` to its edges.
+    static func refineRegion(_ region: DetectedPhotoRegion, in image: CGImage,
                                          backgroundLuminance bg: Double) -> DetectedPhotoRegion? {
         let margin = max(24.0, 0.05 * Double(min(region.size.width, region.size.height)))
         let cw = Int((Double(region.size.width) + 2 * margin).rounded())

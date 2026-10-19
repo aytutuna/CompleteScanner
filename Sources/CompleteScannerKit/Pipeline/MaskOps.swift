@@ -38,15 +38,17 @@ enum MaskOps {
     }
 
     /// Erosion with a (2r+1)×(2r+1) square: a pixel stays set when every pixel within r is.
-    /// Pixels outside the image count as clear, so the mask shrinks at the borders.
-    static func erode(_ mask: [UInt8], _ w: Int, _ h: Int, radius r: Int) -> [UInt8] {
+    /// Pixels outside the image count as clear, so the mask shrinks at the borders, unless
+    /// `outsideSet` says they count as set (a region touching the border then keeps its edge there,
+    /// as when closing the mask of a page laid against the glass's edge).
+    static func erode(_ mask: [UInt8], _ w: Int, _ h: Int, radius r: Int, outsideSet: Bool = false) -> [UInt8] {
         var tmp = [UInt8](repeating: 0, count: w * h)
         for y in 0..<h {
             let row = y * w
             for x in 0..<w {
-                var v: UInt8 = (x - r >= 0 && x + r < w) ? 1 : 0
+                var v: UInt8 = (outsideSet || (x - r >= 0 && x + r < w)) ? 1 : 0
                 if v == 1 {
-                    for xx in (x - r)...(x + r) where mask[row + xx] == 0 { v = 0; break }
+                    for xx in max(0, x - r)...min(w - 1, x + r) where mask[row + xx] == 0 { v = 0; break }
                 }
                 tmp[row + x] = v
             }
@@ -54,9 +56,9 @@ enum MaskOps {
         var out = [UInt8](repeating: 0, count: w * h)
         for y in 0..<h {
             for x in 0..<w {
-                var v: UInt8 = (y - r >= 0 && y + r < h) ? 1 : 0
+                var v: UInt8 = (outsideSet || (y - r >= 0 && y + r < h)) ? 1 : 0
                 if v == 1 {
-                    for yy in (y - r)...(y + r) where tmp[yy * w + x] == 0 { v = 0; break }
+                    for yy in max(0, y - r)...min(h - 1, y + r) where tmp[yy * w + x] == 0 { v = 0; break }
                 }
                 out[y * w + x] = v
             }

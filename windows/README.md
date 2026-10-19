@@ -23,7 +23,8 @@ UI per platform** architecture:
   scanner, whichever backends list it) is shared with macOS. So is the page clean-up stage
   (`PageProcessor.cs`: the steps every scanned page goes through before it is queued) and the
   image toolkit it works with (`GrayImage.cs`, `BackgroundMap.cs`, `MaskOps.cs` next to
-  `RgbaImage.cs`), starting with blank-page detection (`BlankPageDetector.cs`).
+  `RgbaImage.cs`), starting with blank-page detection (`BlankPageDetector.cs`) and crop and
+  straighten (`DocumentGeometry.cs`).
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
   xUnit with the same fixtures, geometry, and tolerances. **This is the contract that keeps
   the Swift and C# cores behaviorally identical** — change an algorithm on one side, port
@@ -165,6 +166,56 @@ through at 8–25 %): no letter, menu or photo was taken for blank and every bla
 **To check on real hardware:** blank backs from real duplex feeders, very thin paper with heavy
 show-through, and pencil notes on otherwise empty backs.
 
+### Crop and straighten
+
+**Crop to page** cuts each page out of the scanner's background, and **Straighten pages** turns a
+page that lies at a slant straight (the inspector's **Output** section, under the blank-page
+settings). Both are off unless a task turns them on: the **Two-sided document** task straightens,
+since feeders pull sheets in at a slant; no task crops yet. Like the blank-page check they run on
+pages collected in the queue only, after the blank-page check and before the adjustments, and a
+page saved at once is never changed, so the switches are greyed out then. A changed page carries a
+small arrow at its top right in the page strip, always shown, whose tooltip says what was done
+("Cropped and straightened 2.4°. Show as scanned."); one click shows the page as scanned, and it
+is saved that way, and a second click brings the cropped and straightened page back. Swaps and
+the turns clicked behind them run in click order, and **Save PDF** waits for them, on both
+platforms. Both versions
+are kept in the spool folder (`<id>.png` and `<id>-other.png`), so this works for every queued
+page until the queue is saved or cleared. The status after a scan says how many pages were
+changed (" 2 straightened.").
+
+How a page is judged, on its gray copy at 100 dpi (`DocumentGeometry`): the scanner's background
+is the median of the scan's outer ring (0.03 in); what differs from it by more than 4.5 % (more on
+a textured backdrop such as black felt or a dark archive frame) is something on the glass. The
+largest such region, with its gaps closed and the inside of its outline filled (a white sheet on a
+white lid shows only by its shadow), is the sheet when it covers 15–99 % of the scan, fills at
+least 90 % of the rectangle around it, is at most 5 times as long as wide, has no more than 8
+text-like marks around it (otherwise it is a picture on a page that fills the scan) and nothing
+beside it as large as 2 % of it (another sheet or photo, which cropping would drop). Its edges give
+the angle, snapped at full resolution, and the shadow or backdrop left along the edges of the crop
+is trimmed (0.04 in at most). A sheet lying along the scan's edge, or no sheet at all, takes its
+angle from the lines of text: projection profiles of the ink over ±7°, in 0.5° and then 0.05°
+steps, with rows and columns both tried for text running across or down the page. Turns under
+0.2° are left alone, a sheet beyond 15° is cropped without being turned, a page with too little
+text or no clear line direction stays as scanned, and turning a whole scan never cuts off
+anything in its corners (the canvas grows instead).
+
+Checked here on public-domain scans (the archive scans behind the website's pictures). Six of
+them (four letters, typed and handwritten, a menu and a menu cover) laid as sheets on a simulated
+lid with a contact shadow and on a dark backdrop at -4°, -1.5°, 0.35°, 2.5° and 6° (60 scans at
+300 dpi): 45 were cut out and turned by their edges, with an angle error of 0.007° on average
+(0.135° at most) and corners within 5 px on average (17 px, 1.4 mm, at most). The other 15 were
+not cropped: a white menu on the white lid with its shadow on two sides only, a letter whose own
+archive border carries marks around the paper, and a card with a tassel; they were straightened
+by their text when it was clear (the print, not the paper: up to 0.27° off the letter's edges and
+0.85° off the card's). The menu laid on a lid at 0.35° in the website's bed picture came out at
+0.356°. Text skew, measured by turning seven archive scans by a further -3°, -1°, 0.5°, 2° and
+5°: 0.056° error on average, 0.35° at most (a menu spread with little text). The archive scans as
+captured (white or dark backgrounds, a black frame, a cover strip along one edge) were cropped to
+their paper or left alone (a card with a tassel); beds with two or three photos were left alone,
+and a bed with one photo card at -4° was cut out at -4.004°.
+**To check on real hardware:** shadows from real lids (often on two sides only), feeder scans
+with a black or grey backing, and very thin or translucent paper.
+
 ### PDF size
 
 The inspector's **Output** section has a **PDF size** choice for PDF output: Best, Standard,
@@ -294,6 +345,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | One row per scanner (`DeviceMerge`, connection chooser) | Matching rules, ranking and the saved choice are covered by `DeviceMergeTests` (same table as macOS) and were checked by driving the view model with fake WIA and TWAIN backends: one row, WIA preferred, a later-appearing better connection taken over once the running scan ends, the user's choice saved and used at the next start, a choice made during a scan applied after it. A saved choice is keyed by the eSCL UUID or the model name, whichever the current set of connections yields, so it lapses when that set changes (see above). **Unverified with real drivers:** the names real WIA, eSCL and TWAIN drivers report; `devices.txt` collects them |
 | TWAIN backend (`Scanning/Twain`) | **Experimental, untested against hardware** — see [TWAIN](#twain) below. The scan logic in Core (negotiation choices, the acquisition state machine, strip and bitmap conversion, paper sizes, error mapping, 32-bit driver detection) is covered by `TwainScanLoopTests`, `TwainRasterTests` and `TwainScanRequestsTests` through a fake transport. Driving the view model with the real session class over a scripted transport checked flatbed, feeder, preview, empty feeder, a jam after two sheets (pages kept, reason shown), cancel while the driver is silent (returns at once, the source is reset and disabled in the background), switching away (the source is closed without waiting), the driver-window switch and its saved choice (kept when connecting finds the scanner off), a driver stuck while enabling (reported after the start limit, the next scan refused at once, the late scan stopped when the driver answers), and that a scanner only TWAIN lists is never opened unless the user picks it. On a PC without a TWAIN Data Source Manager the backend lists nothing and `devices.txt` says why; the app starts normally. **Unverified:** real drivers, NTwain's message loop with them, the TWAIN Working Group sample source (not installed here) |
 | Two-sided scanning and paper size (`DocumentSides`, `PaperSize`) | Covered by `DocumentSidesTests`, `PaperSizeTests` and the sides cases of `ModelsCompatTests`, `ScanTaskTests`, `SettingsAdapterTests` and `MockScannerTests` (same cases as macOS), plus the backend requests in `EsclTests`, `TwainScanRequestsTests` and `WiaErrorsTests`. Checked by driving the view model with the demo scanner (both sides in one pass on the long and the short edge, a jam keeping one sheet's two sides, turning over by hand with matching counts, a mismatch, scanning the backs again, combining anyway, keeping the fronts, a jam during the fronts (the steps stay at the fronts, the rest of them scanned as fronts, Done with fronts), a stack scanned in parts (Scan more fronts), a scanner whose capabilities could not be read on connect asked for both sides by a one-sided feeder (pages kept one-sided, capabilities read after the scan), earlier pages keeping their place, the two-sided task on two-sided and one-sided feeders, paper sizes on the feeder and the glass, the saved PDFs' page counts) and by building the window without showing it: the Sides, Flip on and Paper size choices with their greyed-out items and reasons, the banner's two steps, Scan more fronts, Done with fronts and the mismatch choices, the side badges and the screen reader names in the page strip and the Two-sided document card, rendered off screen in light and dark. **Unverified:** real drivers (see [Two-sided scanning and paper size](#two-sided-scanning-and-paper-size)) |
+| Crop and straighten (`DocumentGeometry`, `GeometryStep`, `PageCorrections`) | Covered by `DocumentGeometryTests`, the crop and straighten cases of `PageProcessorTests`, `ModelsCompatTests`, `ScanTaskTests` and `MaskOpsTests` (same cases as macOS, on the same synthetic pages checked by checksum). Checked on public-domain scans laid at known angles on a lid and a dark backdrop, on archive scans as they were captured, and by driving the view model with those scans (scan, the strip's captions, both versions spooled, show as scanned and back, turning a page, saving whichever version is shown, removing and clearing pages, the switches off and pages saved at once, the two-sided task) and by building the window without showing it: the switches and their hint, the swap button and its glyphs, rendered off screen. **Unverified:** real lids, feeder backings and thin paper (see [Crop and straighten](#crop-and-straighten)) |
 | Blank pages (`BlankPageDetector`, `PageProcessor`, `PageFilter`, image toolkit) | Covered by `BlankPageDetectorTests`, `PageProcessorTests`, `GrayImageTests`, `RgbaImageTests`, `MaskOpsTests` and the blank-page cases of `ModelsCompatTests`, `ScanTaskTests` and `MockScannerTests` (same cases as macOS; `MaskOpsTests` also pins PhotoDetector's regions on the demo bed to the last bit, unchanged by moving the mask code out of it). Checked on public-domain scans of letters, menus and photos (none taken for blank, at any level, with or without their dark surroundings) and on blank backs made from them (all found blank), and by driving the view model with the demo scanner (flagging, Skip blank pages turned on and off with pages queued, Keep and Skip per page, rotating a flagged page, saving 5 of 6 pages, nothing to save, pages saved at once keeping every page, the two-sided task, turning over by hand) and by building the window without showing it: the switch, the levels, the badges, Keep and Skip, the strip label, Save PDF's count, rendered off screen in light and dark. **Unverified:** blank backs from real scanners (see [Blank pages](#blank-pages)) |
 | Share, email, open with, copy (`SaveActions`, `FileActions`, `ShareService`) | The choices are covered by `SaveActionsTests` and the after-save cases of `ModelsCompatTests` (same cases as macOS). Checked by driving the view model's real save paths with a stand-in for Windows (each after-save action after a PDF, a file saved at once and a photo batch; the Email task sharing; no share window; a refused action; a moved file; a cancelled save running nothing), by building the real clipboard data and share package without placing them anywhere, and by building the window without showing it: the bar, its buttons and menu, the narrow layout, the "After saving" choices, the Saved tab's buttons and menus, rendered off screen in light and dark. **Not tried on screen:** the share window, the Open with dialog and the clipboard themselves (checks must not send, open or overwrite anything), and Mail or Outlook as share targets |
 | Troubleshooter (`Troubleshooter`, `SystemDiagnostics`, `TroubleshooterWindow`) | The checks are covered by `TroubleshooterTests` (same cases as macOS) and the Windows service and network values by `WindowsSystemStatusTests`. Checked by driving the view model with stand-in connections and a stand-in for Windows (the snapshot, the order of the checks, devices.txt, Refresh, Copy diagnostics and Settings refused, a busy scanner at connect and at scan, a connection that works clearing it, a cancelled scan not counting), by reading the real WIA service and network on Windows 11 (Running and Public, as `sc query` and `Get-NetConnectionProfile` report, from UI and thread-pool threads), by copying to the real clipboard with the user's clipboard saved and restored, by an address added by hand on loopback where nothing listens, by a discovered scanner (a stand-in service for a loopback scanner) that stays listed, selected and connected across a Refresh when Windows aborts either network watcher, and dropped only once the restarted watcher's first pass did not find it again, and by building the sidebar, error bar and troubleshooter window without showing them: the header button, the empty state's links, the error bar's Troubleshoot (and none on a file or photo error shown later), one card per check with its buttons and screen-reader names (each card a named group in the UI Automation tree), a Refresh while one runs ignored, rendered off screen in light and dark. **Not tried on screen:** opening Windows Settings and the real Add scanner dialog from it. **Unverified:** a stopped or disabled WIA service, a TWAIN install with 32-bit-only drivers, and a scanner that is really busy in another app |
@@ -353,6 +405,10 @@ Known divergences from the macOS app (all documented in the source):
   that CoreGraphics decodes slightly differently from WIC can give a slightly different ink
   coverage. The demo scanner's blank backs show its own front through, which the Mac draws with
   real glyphs.
+- Crop and straighten: the plan (sheet, angle, canvas) is the same code on both platforms, on the
+  same gray copy; the snap of the sheet's edges at full resolution draws the region with
+  CoreGraphics on the Mac and samples it with `RgbaImage` on Windows, so a crop can differ by a
+  pixel or so. The swap button sits under the page in the Mac strip and on the page on Windows.
 - PDF sizes: Windows writes the planned JPEG into its own PDF writer. The Mac, whose PDFs come
   from CoreGraphics, encodes the same plan with ImageIO and draws a JPEG-backed image, which
   CoreGraphics is expected to store unchanged; this, and the resulting file sizes, still need
@@ -482,8 +538,9 @@ file without them, or with a value this version does not know, reads as Standard
 Two-sided scanning and the paper size are top-level keys (`"duplex": "off"`, `"backBinding":
 "longEdge"`, `"paperSize": "auto"`); a file without them, or with a value this version does not
 know, scans one side on the whole area. Blank pages are in a `"document"` object
-(`"document": {"removeBlankPages": false, "blankSensitivity": "medium"}`); a file without it keeps
-every page, and a sensitivity this version does not know reads as Medium. A first run starts without presets: the task
+(`"document": {"removeBlankPages": false, "blankSensitivity": "medium", "autoCrop": false,
+"autoStraighten": false}`); a file without it keeps every page and leaves pages as scanned, and a
+sensitivity this version does not know reads as Medium. A first run starts without presets: the task
 cards replaced the five starter presets earlier versions wrote, and presets files that already
 hold them keep them. They load across versions the same way as on macOS (`../CONTRACTS.md`, rule 6): a value this version does not understand resets only
 that setting; a file that cannot be decoded is kept next to it as

@@ -170,6 +170,22 @@ public class ScanTaskTests
     }
 
     [Fact]
+    public void Apply_OnlyTheTwoSidedTaskStraightens_NoTaskCrops()
+    {
+        var current = Customized();
+        current.Document.AutoCrop = true;
+        current.Document.AutoStraighten = true;
+        foreach (var task in ScanTasks.All)
+        {
+            var s = TaskCatalog.Apply(task, current);
+            Assert.False(s.Document.AutoCrop);
+            Assert.Equal(task == ScanTask.TwoSided, s.Document.AutoStraighten);
+        }
+        Assert.True(current.Document.AutoCrop);
+        Assert.True(TaskCatalog.Apply(ScanTask.TwoSided, new ScanSettings()).Document.AutoStraighten);
+    }
+
+    [Fact]
     public void TwoSided_IsATwoSidedFeederPdf()
     {
         var definition = TaskCatalog.Definition(ScanTask.TwoSided);

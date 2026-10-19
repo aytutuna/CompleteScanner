@@ -63,6 +63,8 @@ internal static class CompatFixtures
         settings.PaperSize = PaperSize.A4;
         settings.Document.RemoveBlankPages = true;
         settings.Document.BlankSensitivity = BlankSensitivity.High;
+        settings.Document.AutoCrop = true;
+        settings.Document.AutoStraighten = true;
         return settings;
     }
 
@@ -120,7 +122,8 @@ internal static class CompatFixtures
         "        \"blackWhiteThreshold\": 0.375\n      }\n",
         "        \"blackWhiteThreshold\": 0.375\n      },\n      \"output\": {\n        \"pdfSize\": \"compact\",\n        \"afterSave\": \"share\"\n      },\n"
         + "      \"duplex\": \"manual\",\n      \"backBinding\": \"shortEdge\",\n      \"paperSize\": \"a4\",\n"
-        + "      \"document\": {\n        \"removeBlankPages\": true,\n        \"blankSensitivity\": \"high\"\n      }\n");
+        + "      \"document\": {\n        \"removeBlankPages\": true,\n        \"blankSensitivity\": \"high\",\n"
+        + "        \"autoCrop\": true,\n        \"autoStraighten\": true\n      }\n");
 
     /// <summary>Field-by-field equality, including the legacy OCR languages.</summary>
     public static void AssertSettingsEqual(ScanSettings expected, ScanSettings actual)
@@ -616,6 +619,57 @@ public class ModelsCompatTests
         clone.Document.BlankSensitivity = BlankSensitivity.Low;
         Assert.True(original.Document.RemoveBlankPages);
         Assert.Equal(BlankSensitivity.High, original.Document.BlankSensitivity);
+    }
+
+    // MARK: - Crop and straighten (CONTRACTS.md, rule 6)
+
+    [Fact]
+    public void CropAndStraighten_AreOffByDefault_AndInFilesWithoutThem()
+    {
+        var document = new ScanSettings().Document;
+        Assert.Equal((false, false), (document.AutoCrop, document.AutoStraighten));
+        var presets = Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize);
+        Assert.Equal((false, false), (presets[0].Settings.Document.AutoCrop, presets[0].Settings.Document.AutoStraighten));
+        // A "document" object written before crop and straighten existed keeps its blank-page settings.
+        var older = Decode<ScanSettings>("""{"document": {"removeBlankPages": true, "blankSensitivity": "low"}}""");
+        Assert.Equal((true, BlankSensitivity.Low, false, false),
+                     (older.Document.RemoveBlankPages, older.Document.BlankSensitivity, older.Document.AutoCrop, older.Document.AutoStraighten));
+    }
+
+    [Fact]
+    public void CorruptCropOrStraighten_FallsBackToOff_RestIntact()
+    {
+        var settings = Decode<ScanSettings>("""{"resolution": 150, "document": {"removeBlankPages": true, "autoCrop": "yes", "autoStraighten": 1}, "pdfSearchable": false}""");
+        Assert.Equal((false, false), (settings.Document.AutoCrop, settings.Document.AutoStraighten));
+        Assert.True(settings.Document.RemoveBlankPages);
+        Assert.Equal(150, settings.Resolution);
+        Assert.False(settings.PdfSearchable);
+        var straighten = Decode<ScanSettings>("""{"document": {"autoCrop": null, "autoStraighten": true}}""");
+        Assert.Equal((false, true), (straighten.Document.AutoCrop, straighten.Document.AutoStraighten));
+    }
+
+    [Fact]
+    public void CropAndStraighten_RoundTrip_AndCloneIsIndependent()
+    {
+        foreach (bool crop in new[] { false, true })
+        {
+            foreach (bool straighten in new[] { false, true })
+            {
+                var settings = new ScanSettings();
+                settings.Document.AutoCrop = crop;
+                settings.Document.AutoStraighten = straighten;
+                var back = Decode<ScanSettings>(CompatFixtures.Encode(settings));
+                Assert.Equal((crop, straighten), (back.Document.AutoCrop, back.Document.AutoStraighten));
+                Assert.Equal(settings.Document, back.Document);
+            }
+        }
+        var original = CompatFixtures.NonDefaultSettings();
+        var clone = original.Clone();
+        clone.Document.AutoCrop = false;
+        clone.Document.AutoStraighten = false;
+        Assert.True(original.Document.AutoCrop);
+        Assert.True(original.Document.AutoStraighten);
+        Assert.NotEqual(original.Document, clone.Document);
     }
 
     [Fact]

@@ -368,6 +368,40 @@ struct InspectorView: View {
             Toggle("Searchable PDF (OCR)", isOn: $state.settings.pdfSearchable)
                 .help("Text is recognized in any language automatically — nothing to configure.")
             blankPagesRow
+            geometryRow
+        }
+    }
+
+    /// Crop and straighten: run on pages collected in the queue only, where a changed page shows a
+    /// swap button; with each scan saved at once the switches are off and say why. Twin of the
+    /// Windows inspector's "Crop to page" and "Straighten pages".
+    private var geometryRow: some View {
+        let collecting = state.settings.documentMultiPage
+        let document = state.settings.document
+        let hint: String
+        switch (collecting, document.autoCrop, document.autoStraighten) {
+        case (false, _, _):
+            hint = "Only for pages collected before saving: a scan saved at once is kept as scanned."
+        case (true, true, true):
+            hint = "Pages are cut out of the scanner background and turned straight when that is clear. Click the arrow on a page to see it as scanned."
+        case (true, true, false):
+            hint = "Pages are cut out of the scanner background when that is clear. Click the arrow on a page to see it as scanned."
+        case (true, false, true):
+            hint = "Pages that lie at a slant are turned straight when that is clear. Click the arrow on a page to see it as scanned."
+        case (true, false, false):
+            hint = "Cut each page out of the scanner background, and turn pages that lie at a slant."
+        }
+        return VStack(alignment: .leading, spacing: 6) {
+            Toggle("Crop to page", isOn: $state.settings.document.autoCrop)
+                .disabled(!collecting)
+                .help(hint)
+            Toggle("Straighten pages", isOn: $state.settings.document.autoStraighten)
+                .disabled(!collecting)
+                .help(hint)
+            Text(hint)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

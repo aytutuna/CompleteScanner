@@ -58,6 +58,12 @@ scanners** — including the Epson Perfection V39 II.
   lone page number counts as blank at Medium, one line of text or a signature never does. Pages
   saved as soon as they are scanned are never left out. The Two-sided document task skips blank
   pages, since one-sided sheets have empty backs.
+- **Crop and straighten**: **Crop to page** cuts each page out of the scanner's background and
+  **Straighten pages** turns a page that lies at a slant straight, by the edges of the sheet or,
+  without a visible edge, by its lines of text. Both are cautious: a page whose edges or text are
+  unclear is left as scanned, a crop never cuts into the sheet, and turning a page never cuts off
+  anything in its corners. A changed page has a small arrow in the page strip that shows it as
+  scanned, and back. The Two-sided document task straightens pages.
 - **"Why isn't my scanner listed?"**: a troubleshooter, from the **?** button next to
   **Scanners**, the empty scanner list and an error about a scanner. It checks, in plain
   language, whether macOS is looking for scanners and what the last failure was (a scanner that

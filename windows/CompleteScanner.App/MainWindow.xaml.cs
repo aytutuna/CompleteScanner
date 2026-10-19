@@ -956,8 +956,11 @@ public partial class MainWindow : Window
             {
                 segment.IsChecked = (BlankSensitivity)segment.Tag == s.Document.BlankSensitivity;
             }
+            AutoCropBox.IsChecked = s.Document.AutoCrop;
+            AutoStraightenBox.IsChecked = s.Document.AutoStraighten;
             SyncPdfSizeOptions();
             SyncBlankPageOptions();
+            SyncGeometryOptions();
             SyncCapabilityPickers();
         }
         finally
@@ -1011,6 +1014,7 @@ public partial class MainWindow : Window
         PhotoOptions.Visibility = s.Intent == ScanIntent.Photo ? Visibility.Visible : Visibility.Collapsed;
         SyncPdfSizeOptions();
         SyncBlankPageOptions();
+        SyncGeometryOptions();
         ViewModel.SettingsEdited();
         RefreshFromViewModel();
     }
@@ -1069,6 +1073,67 @@ public partial class MainWindow : Window
         SyncBlankPageOptions();
         ViewModel.SettingsEdited();
         RefreshFromViewModel();
+    }
+
+    /// <summary>
+    /// Crop and straighten run on pages collected in the queue only, where a changed page shows a
+    /// swap button: with each scan saved at once the switches are off and say why.
+    /// </summary>
+    private void SyncGeometryOptions()
+    {
+        var s = ViewModel.Settings;
+        bool collecting = s.DocumentMultiPage;
+        AutoCropBox.IsEnabled = collecting;
+        AutoStraightenBox.IsEnabled = collecting;
+        string hint = !collecting
+            ? "Only for pages collected before saving: a scan saved at once is kept as scanned."
+            : (s.Document.AutoCrop, s.Document.AutoStraighten) switch
+            {
+                (true, true) => "Pages are cut out of the scanner background and turned straight when that is clear. Click the arrow on a page to see it as scanned.",
+                (true, false) => "Pages are cut out of the scanner background when that is clear. Click the arrow on a page to see it as scanned.",
+                (false, true) => "Pages that lie at a slant are turned straight when that is clear. Click the arrow on a page to see it as scanned.",
+                _ => "Cut each page out of the scanner background, and turn pages that lie at a slant.",
+            };
+        GeometryHint.Text = hint;
+        foreach (var box in new[] { AutoCropBox, AutoStraightenBox })
+        {
+            box.ToolTip = hint;
+            AutomationProperties.SetHelpText(box, hint);
+        }
+    }
+
+    private void Geometry_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_updatingUi || !IsLoaded) return;
+        var document = ViewModel.Settings.Document;
+        document.AutoCrop = AutoCropBox.IsChecked == true;
+        document.AutoStraighten = AutoStraightenBox.IsChecked == true;
+        SyncGeometryOptions();
+        ViewModel.SettingsEdited();
+        RefreshFromViewModel();
+    }
+
+    private async void PageGeometry_Click(object sender, RoutedEventArgs e)
+    {
+        if (PageIdOf(sender) is not { } id) return;
+        await ViewModel.TogglePageGeometry(id);
+        RefreshFromViewModel();
+        // The page was replaced (its pixels changed): its new container takes the focus, so the
+        // keyboard stays on the page. It may also have been removed while its other version was read.
+        int index = IndexOfPage(id);
+        if (index >= 0 && PageList.ItemContainerGenerator.ContainerFromIndex(index) is ListBoxItem container)
+        {
+            container.Focus();
+        }
+    }
+
+    private int IndexOfPage(Guid id)
+    {
+        for (int i = 0; i < ViewModel.ScannedPages.Count; i++)
+        {
+            if (ViewModel.ScannedPages[i].Page.Id == id) return i;
+        }
+        return -1;
     }
 
     private void PageToggle_Click(object sender, RoutedEventArgs e)

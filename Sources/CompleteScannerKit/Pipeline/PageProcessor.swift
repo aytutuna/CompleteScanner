@@ -26,7 +26,29 @@ public struct BlankDetectionStep: PageStep {
     }
 }
 
-/// The image adjustments and the color mode (`ImagePipeline.apply`).
+/// Crops the page to the sheet and straightens it (`DocumentGeometry.correct`), keeping the page as
+/// it was as the other version (`ScannedPage.withGeometry`); a page the analysis is not sure about
+/// stays as it is. Runs after the blank check, before the adjustments. Twin of C# `GeometryStep`.
+public struct GeometryStep: PageStep {
+    public let crop: Bool
+    public let straighten: Bool
+    public var name: String { "geometry" }
+
+    public init(crop: Bool, straighten: Bool) {
+        self.crop = crop
+        self.straighten = straighten
+    }
+
+    public func apply(_ page: ScannedPage) -> ScannedPage {
+        guard let pixels = RgbaImage(cgImage: page.image),
+              let corrected = DocumentGeometry.correct(pixels, dpi: page.dpi, crop: crop, straighten: straighten),
+              let image = corrected.image.makeCGImage() else { return page }
+        return page.withGeometry(image, geometry: corrected.geometry)
+    }
+}
+
+/// The image adjustments and the color mode (`ImagePipeline.apply`), on the page and on its other
+/// version (the page as scanned, kept by crop and straighten), so either can be shown.
 public struct AdjustmentStep: PageStep {
     public let adjustments: AdjustmentSettings
     public let colorMode: ColorMode
@@ -38,7 +60,11 @@ public struct AdjustmentStep: PageStep {
     }
 
     public func apply(_ page: ScannedPage) -> ScannedPage {
-        page.withImage(ImagePipeline.apply(adjustments, to: page.image, colorMode: colorMode), colorMode: colorMode)
+        let adjusted = page.withImage(ImagePipeline.apply(adjustments, to: page.image, colorMode: colorMode),
+                                      colorMode: colorMode)
+        guard var version = page.alternate, let other = version.image else { return adjusted }
+        version.image = ImagePipeline.apply(adjustments, to: other, colorMode: colorMode)
+        return adjusted.withAlternate(version)
     }
 }
 
@@ -69,9 +95,9 @@ public struct ProcessedScan {
 /// The clean-up stage between the scanner and the page queue, the same for every scanner: the
 /// pages are put in reading order with their sides (two-sided scans), then every step runs on
 /// every page in order. The order of the steps is fixed: `forScan` builds them from the settings:
-/// blank check (document pages), then adjustments. Later page features slot in between (crop and
-/// straighten after the blank check, separator sheets after that, turning pages upright before
-/// the adjustments). Twin of C# `PageProcessor`.
+/// blank check (document pages), crop and straighten, then adjustments. Later page features slot
+/// in between (separator sheets after crop and straighten, turning pages upright before the
+/// adjustments). Twin of C# `PageProcessor`.
 public struct PageProcessor {
     public let steps: [any PageStep]
     public let arrangement: ScanArrangement
@@ -85,11 +111,15 @@ public struct PageProcessor {
 
     /// The steps for a scan made with `settings`: the blank-page check for pages collected in the
     /// document queue (whether or not blank pages are left out, so the page strip can flag them),
-    /// then the adjustments unless they change nothing.
+    /// crop and straighten when asked for those pages, then the adjustments unless they change
+    /// nothing.
     public static func forScan(_ settings: ScanSettings, arrangement: ScanArrangement = .asScanned) -> PageProcessor {
         var steps: [any PageStep] = []
         if checksBlankPages(settings) {
             steps.append(BlankDetectionStep(options: BlankPageOptions(sensitivity: settings.document.blankSensitivity)))
+        }
+        if correctsGeometry(settings) {
+            steps.append(GeometryStep(crop: settings.document.autoCrop, straighten: settings.document.autoStraighten))
         }
         if !(settings.adjustments.isIdentity && settings.colorMode == .color) {
             steps.append(AdjustmentStep(adjustments: settings.adjustments, colorMode: settings.colorMode))
@@ -102,6 +132,13 @@ public struct PageProcessor {
     /// are scanned are never checked, so none is ever left out unseen.
     public static func checksBlankPages(_ settings: ScanSettings) -> Bool {
         TaskCatalog.flow(of: settings) == .documentQueue && settings.documentMultiPage
+    }
+
+    /// Whether scans with these settings are cropped or straightened: asked for, on document pages
+    /// collected in the queue, where the page strip shows a changed page and one click shows it as
+    /// scanned. Pages saved as soon as they are scanned are never changed unseen.
+    public static func correctsGeometry(_ settings: ScanSettings) -> Bool {
+        checksBlankPages(settings) && (settings.document.autoCrop || settings.document.autoStraighten)
     }
 
     /// Arranges the pages, then runs every step on every page. `shouldContinue` is asked before
@@ -205,5 +242,52 @@ public enum PageFilter {
         return options.removeBlankPages
             ? " \(blank) \(verb) blank and will be skipped."
             : " \(blank) \(verb) blank."
+    }
+}
+
+/// What the page strip and the status say about crop and straighten: a caption on a changed page,
+/// its one-click swap with the page as scanned, and the note after a scan. Twin of C#
+/// `PageCorrections`.
+public enum PageCorrections {
+    /// "Cropped and straightened 2.4°", "Straightened 1.5°" or "Cropped" for a changed page shown
+    /// changed; "As scanned" when the user went back to the page as scanned; nil for other pages.
+    public static func caption(_ page: ScannedPage) -> String? {
+        guard let geometry = page.geometry else { return nil }
+        return page.showsOriginal ? "As scanned" : geometry.caption
+    }
+
+    /// What one click on the page's swap button does: "Show as scanned", or back: "Show cropped and
+    /// straightened", "Show straightened", "Show cropped"; nil when the page cannot swap.
+    public static func toggleLabel(_ page: ScannedPage) -> String? {
+        guard page.canSwapVersions, let geometry = page.geometry else { return nil }
+        return page.showsOriginal ? "Show \(done(geometry))" : "Show as scanned"
+    }
+
+    /// The status after a page's versions were swapped: "Page 3 is shown as scanned. It is saved
+    /// that way." or "Page 3 is cropped and straightened again."
+    public static func swapNote(_ page: ScannedPage, number: Int) -> String {
+        guard !page.showsOriginal, let geometry = page.geometry else {
+            return "Page \(number) is shown as scanned. It is saved that way."
+        }
+        return "Page \(number) is \(done(geometry)) again."
+    }
+
+    /// The status after a scan's pages were queued, when crop and straighten changed some: " 2
+    /// straightened." or " 3 cropped or straightened." (leading space; empty when none was).
+    public static func scanNote(_ added: [ScannedPage]) -> String {
+        let changed = added.compactMap { page -> String? in
+            guard let geometry = page.geometry, !page.showsOriginal else { return nil }
+            return done(geometry)
+        }
+        guard let first = changed.first else { return "" }
+        let verb = Set(changed).count == 1 ? first : "cropped or straightened"
+        return " \(changed.count) \(verb)."
+    }
+
+    /// "cropped and straightened", "straightened" or "cropped".
+    private static func done(_ geometry: PageGeometry) -> String {
+        geometry.cropped && geometry.straightened ? "cropped and straightened"
+            : geometry.straightened ? "straightened"
+            : "cropped"
     }
 }

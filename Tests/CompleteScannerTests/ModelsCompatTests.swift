@@ -55,6 +55,8 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.paperSize = .a4
     settings.document.removeBlankPages = true
     settings.document.blankSensitivity = .high
+    settings.document.autoCrop = true
+    settings.document.autoStraighten = true
     return settings
 }
 
@@ -106,7 +108,8 @@ private let presetsJSONBeforePDFSize = """
 private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
     .replacingOccurrences(
         of: "\"documentMultiPage\" : false",
-        with: "\"document\" : {\n        \"blankSensitivity\" : \"high\",\n        \"removeBlankPages\" : true\n      },\n"
+        with: "\"document\" : {\n        \"autoCrop\" : true,\n        \"autoStraighten\" : true,\n"
+            + "        \"blankSensitivity\" : \"high\",\n        \"removeBlankPages\" : true\n      },\n"
             + "      \"documentMultiPage\" : false")
     .replacingOccurrences(
         of: "\"pdfSearchable\" : false",
@@ -513,6 +516,57 @@ final class ModelsCompatTests: XCTestCase {
         copy.document.blankSensitivity = .low
         XCTAssertTrue(original.document.removeBlankPages)
         XCTAssertEqual(original.document.blankSensitivity, .high)
+    }
+
+    // MARK: Crop and straighten (CONTRACTS.md, rule 6)
+
+    func test_cropAndStraighten_areOffByDefault_andInFilesWithoutThem() throws {
+        let document = ScanSettings().document
+        XCTAssertFalse(document.autoCrop)
+        XCTAssertFalse(document.autoStraighten)
+        let presets = try decode([Preset].self, presetsJSONBeforePDFSize)
+        XCTAssertFalse(presets[0].settings.document.autoCrop)
+        XCTAssertFalse(presets[0].settings.document.autoStraighten)
+        // A "document" object written before crop and straighten existed keeps its blank-page settings.
+        let older = try decode(ScanSettings.self, #"{"document": {"removeBlankPages": true, "blankSensitivity": "low"}}"#)
+        XCTAssertTrue(older.document.removeBlankPages)
+        XCTAssertEqual(older.document.blankSensitivity, .low)
+        XCTAssertFalse(older.document.autoCrop)
+        XCTAssertFalse(older.document.autoStraighten)
+    }
+
+    func test_corruptCropOrStraighten_fallsBackToOff_restIntact() throws {
+        let settings = try decode(ScanSettings.self,
+                                  #"{"resolution": 150, "document": {"removeBlankPages": true, "autoCrop": "yes", "autoStraighten": 1}, "pdfSearchable": false}"#)
+        XCTAssertFalse(settings.document.autoCrop)
+        XCTAssertFalse(settings.document.autoStraighten)
+        XCTAssertTrue(settings.document.removeBlankPages)
+        XCTAssertEqual(settings.resolution, 150)
+        XCTAssertFalse(settings.pdfSearchable)
+        let straighten = try decode(ScanSettings.self, #"{"document": {"autoCrop": null, "autoStraighten": true}}"#)
+        XCTAssertFalse(straighten.document.autoCrop)
+        XCTAssertTrue(straighten.document.autoStraighten)
+    }
+
+    func test_cropAndStraighten_roundTrip_andCopyIsIndependent() throws {
+        for crop in [false, true] {
+            for straighten in [false, true] {
+                var settings = ScanSettings()
+                settings.document.autoCrop = crop
+                settings.document.autoStraighten = straighten
+                let back = try JSONDecoder().decode(ScanSettings.self, from: encode(settings))
+                XCTAssertEqual(back.document.autoCrop, crop)
+                XCTAssertEqual(back.document.autoStraighten, straighten)
+                XCTAssertEqual(back.document, settings.document)
+            }
+        }
+        let original = nonDefaultSettings()
+        var copy = original
+        copy.document.autoCrop = false
+        copy.document.autoStraighten = false
+        XCTAssertTrue(original.document.autoCrop)
+        XCTAssertTrue(original.document.autoStraighten)
+        XCTAssertNotEqual(original.document, copy.document)
     }
 
     func test_copy_carriesTheTask() {

@@ -111,12 +111,13 @@ public enum TaskCatalog {
 
     /// `current` with the task's settings laid over it: mode, source, resolution, color,
     /// format, JPEG quality, PDF size, the after-save action, the photo and document switches,
-    /// searchable PDF, adjustments, two-sided scanning, skipping blank pages, file name and the
-    /// task itself. The destination folder, the photo detection tuning, the legacy OCR languages,
-    /// the paper size, the edge backs are turned on and how much counts as blank are kept: they
-    /// describe the user's paper, not the task. The two-sided task asks for `.both` and skips
-    /// blank pages (the empty backs of one-sided sheets); `SettingsAdapter` turns `.both` into
-    /// turning over by hand on a feeder that scans one side.
+    /// searchable PDF, adjustments, two-sided scanning, skipping blank pages, crop and straighten,
+    /// file name and the task itself. The destination folder, the photo detection tuning, the
+    /// legacy OCR languages, the paper size, the edge backs are turned on and how much counts as
+    /// blank are kept: they describe the user's paper, not the task. The two-sided task asks for
+    /// `.both`, skips blank pages (the empty backs of one-sided sheets) and straightens pages the
+    /// feeder pulled in at a slant; no task crops yet; `SettingsAdapter` turns `.both` into turning
+    /// over by hand on a feeder that scans one side.
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings {
         var s = current
         s.source = .flatbed
@@ -131,6 +132,8 @@ public enum TaskCatalog {
         s.output.afterSave = AfterSaveAction.none
         s.duplex = .off
         s.document.removeBlankPages = task == .twoSided
+        s.document.autoCrop = false
+        s.document.autoStraighten = task == .twoSided
         switch task {
         case .document:
             s.intent = .document

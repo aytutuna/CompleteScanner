@@ -158,6 +158,141 @@ internal static class TestPages
         ("h tinted with text", TintedWithText()),
     ];
 
+    // MARK: - Pages for crop and straighten
+
+    /// <summary>
+    /// A turn by a small angle as exact fixed-point sine and cosine (× 65536), so both platforms draw
+    /// the same pixels without trigonometry.
+    /// </summary>
+    public readonly record struct Turn(int Sin, int Cos)
+    {
+        /// <summary>The angle drawn, clockwise on screen positive.</summary>
+        public double Degrees => Math.Atan2(Sin, Cos) * 180 / Math.PI;
+    }
+
+    public static readonly Turn Straight = new(0, 65536);
+    public static readonly Turn Plus0Point1 = new(114, 65536);
+    public static readonly Turn Minus1Point5 = new(-1716, 65514);
+    public static readonly Turn Plus2 = new(2287, 65496);
+    public static readonly Turn Plus3 = new(3430, 65446);
+    public static readonly Turn Minus4 = new(-4572, 65376);
+    public static readonly Turn Plus6Point5 = new(7419, 65115);
+
+    /// <summary>The sheet of <see cref="SheetOnBackdrop"/>: 6 × 8 in.</summary>
+    public const int SheetWidth = 600;
+    public const int SheetHeight = 800;
+
+    /// <summary>A page of text: 34 lines of glyphs (<see cref="TextLine"/>) 6.5 in long, every 0.28 in, on noisy paper.</summary>
+    public static GrayImage TextPage() => Noisy(0x7E57AA6E, 245, p =>
+    {
+        var rng = new Rng(0x7E57AA6F);
+        for (int line = 0; line < 34; line++) TextLine(p, 100, 100 + line * 28, 650, 40, rng);
+    });
+
+    /// <summary>
+    /// <paramref name="page"/> with its content turned clockwise by <paramref name="turn"/> about the
+    /// center (nearest pixel); what comes in from outside the page is <paramref name="fill"/>.
+    /// </summary>
+    public static GrayImage Turned(GrayImage page, Turn turn, byte fill)
+    {
+        int w = page.Width, h = page.Height;
+        var p = new byte[w * h];
+        for (int y = 0; y < h; y++)
+        {
+            long dy = 2L * y + 1 - h;
+            for (int x = 0; x < w; x++)
+            {
+                long dx = 2L * x + 1 - w;
+                // The pixel's offset from the center (doubled) turned back, in 1/65536 units.
+                long sx = FloorDiv(dx * turn.Cos + dy * turn.Sin + (long)w * 65536, 2L * 65536);
+                long sy = FloorDiv(-dx * turn.Sin + dy * turn.Cos + (long)h * 65536, 2L * 65536);
+                p[y * w + x] = sx >= 0 && sx < w && sy >= 0 && sy < h ? page.Pixels[sy * w + sx] : fill;
+            }
+        }
+        return new GrayImage(w, h, p);
+    }
+
+    /// <summary>
+    /// A 6 × 8 in sheet (<see cref="SheetWidth"/> × <see cref="SheetHeight"/>: <paramref name="paper"/>
+    /// with noise and 24 lines of glyphs) lying at the center of the 850 × 1100 scan on a noisy
+    /// <paramref name="backdrop"/>, turned clockwise by <paramref name="turn"/>, with a
+    /// <paramref name="shadow"/> px edge shadow (200) all around it when above 0.
+    /// </summary>
+    public static GrayImage SheetOnBackdrop(Turn turn, int backdrop, int paper, int shadow, uint seed)
+    {
+        const int sw = SheetWidth, sh = SheetHeight;
+        var sheet = new byte[sw * sh];
+        var rng = new Rng(seed);
+        for (int i = 0; i < sheet.Length; i++) sheet[i] = Clamp(paper + rng.Noise());
+        var text = new Rng(seed ^ 0x5A5A5A5A);
+        for (int line = 0; line < 24; line++) SheetTextLine(sheet, 60, 60 + line * 28, 480, 40, text);
+
+        var p = new byte[Width * Height];
+        var noise = new Rng(seed + 1);
+        long halfW = (long)sw * 65536, halfH = (long)sh * 65536;
+        long outerW = (long)(sw + 2 * shadow) * 65536, outerH = (long)(sh + 2 * shadow) * 65536;
+        for (int y = 0; y < Height; y++)
+        {
+            long dy = 2L * y + 1 - Height;
+            for (int x = 0; x < Width; x++)
+            {
+                long dx = 2L * x + 1 - Width;
+                // The pixel in the sheet's frame (doubled, in 1/65536 units).
+                long u = dx * turn.Cos + dy * turn.Sin;
+                long v = -dx * turn.Sin + dy * turn.Cos;
+                int value;
+                if (Math.Abs(u) < halfW && Math.Abs(v) < halfH)
+                {
+                    long sx = FloorDiv(u + halfW, 2L * 65536), sy = FloorDiv(v + halfH, 2L * 65536);
+                    value = sheet[sy * sw + sx];
+                }
+                else if (shadow > 0 && Math.Abs(u) < outerW && Math.Abs(v) < outerH)
+                {
+                    value = 200 + noise.Noise();
+                }
+                else
+                {
+                    value = backdrop + noise.Noise();
+                }
+                p[y * Width + x] = Clamp(value);
+            }
+        }
+        return new GrayImage(Width, Height, p);
+    }
+
+    /// <summary><see cref="TextLine"/> on the sheet of <see cref="SheetOnBackdrop"/>.</summary>
+    private static void SheetTextLine(byte[] p, int x, int y, int maxWidth, byte ink, Rng rng)
+    {
+        int[] picks = [0b00111, 0b01011, 0b01101, 0b01110, 0b10011, 0b10101, 0b10110, 0b11001, 0b11010, 0b11100];
+        void Bar(int bx, int by, int bw, int bh)
+        {
+            for (int py = by; py < by + bh; py++)
+            {
+                for (int px = bx; px < bx + bw; px++) p[py * SheetWidth + px] = ink;
+            }
+        }
+        int cx = x;
+        while (true)
+        {
+            int glyphs = 2 + rng.Below(7);
+            if (cx + glyphs * 7 > x + maxWidth) break;
+            for (int g = 0; g < glyphs; g++)
+            {
+                int bits = picks[rng.Below(10)];
+                if ((bits & 1) != 0) Bar(cx, y, 1, 9);
+                if ((bits & 2) != 0) Bar(cx + 4, y, 1, 9);
+                if ((bits & 4) != 0) Bar(cx, y, 5, 1);
+                if ((bits & 8) != 0) Bar(cx, y + 4, 5, 1);
+                if ((bits & 16) != 0) Bar(cx, y + 8, 5, 1);
+                cx += 7;
+            }
+            cx += 7;
+        }
+    }
+
+    /// <summary>Division rounding down (toward minus infinity), for negative offsets too.</summary>
+    public static long FloorDiv(long a, long b) => a >= 0 ? a / b : -((-a + b - 1) / b);
+
     // MARK: - Drawing
 
     /// <summary>Paper of one value with noise, then <paramref name="draw"/> on top.</summary>

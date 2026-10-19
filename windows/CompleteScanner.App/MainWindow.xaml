@@ -422,14 +422,29 @@
                                                                 HorizontalAlignment="Center" Margin="0,4,0,0"
                                                                 Click="PageToggle_Click" Tag="{Binding Page.Id}" />
                                                     </StackPanel>
-                                                    <!-- Which side of which sheet, for two-sided stacks. -->
-                                                    <Border x:Name="SideBadge" HorizontalAlignment="Left" VerticalAlignment="Top"
-                                                            Margin="4,4,0,0" Padding="5,0,5,1" CornerRadius="4" IsHitTestVisible="False"
-                                                            Background="{DynamicResource SolidBackgroundFillColorQuarternaryBrush}"
-                                                            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                                                        <TextBlock Text="{Binding SideLabel}" Style="{StaticResource CaptionText}"
-                                                                   TextWrapping="NoWrap" />
-                                                    </Border>
+                                                    <!-- The top row: which side of which sheet on the left, and
+                                                         the swap button on the right. The side badge takes the
+                                                         room the button leaves, and wraps rather than cover it. -->
+                                                    <DockPanel x:Name="TopRow" VerticalAlignment="Top" Margin="4,4,4,0">
+                                                        <!-- A page crop and straighten changed: one click shows it as
+                                                             scanned, and back. Always shown, on the page itself. -->
+                                                        <Button x:Name="GeometryToggle" DockPanel.Dock="Right" Style="{StaticResource PageToggleButtonStyle}"
+                                                                VerticalAlignment="Top" Margin="2,0,0,0"
+                                                                Padding="4,2,4,2" FontFamily="{StaticResource IconFontFamily}" FontSize="11"
+                                                                Content="{Binding GeometryGlyph}"
+                                                                ToolTip="{Binding GeometryToolTip}"
+                                                                AutomationProperties.Name="{Binding GeometryToggleLabel}"
+                                                                AutomationProperties.HelpText="{Binding GeometryCaption}"
+                                                                Click="PageGeometry_Click" Tag="{Binding Page.Id}" />
+                                                        <!-- Which side of which sheet, for two-sided stacks. -->
+                                                        <Border x:Name="SideBadge" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                                Padding="5,0,5,1" CornerRadius="4" IsHitTestVisible="False"
+                                                                Background="{DynamicResource SolidBackgroundFillColorQuarternaryBrush}"
+                                                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                                            <TextBlock Text="{Binding SideLabel}" Style="{StaticResource CaptionText}"
+                                                                       TextWrapping="Wrap" />
+                                                        </Border>
+                                                    </DockPanel>
                                                     <Border x:Name="Actions" Style="{StaticResource HoverActionBarStyle}"
                                                             HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,6">
                                                         <StackPanel Orientation="Horizontal">
@@ -470,6 +485,9 @@
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding ToggleLabel}" Value="{x:Null}">
                                                         <Setter TargetName="BlankToggle" Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding GeometryToggleLabel}" Value="{x:Null}">
+                                                        <Setter TargetName="GeometryToggle" Property="Visibility" Value="Collapsed" />
                                                     </DataTrigger>
                                                     <!-- Left out when saving: the page is dimmed. -->
                                                     <DataTrigger Binding="{Binding IsExcluded}" Value="True">
@@ -700,6 +718,15 @@
                                                     <TextBlock x:Name="BlankSensitivityHint" Style="{StaticResource CaptionText}"
                                                                TextWrapping="Wrap" Margin="0,4,0,0" />
                                                 </StackPanel>
+                                                <!-- Crop and straighten: changed pages carry a swap button in the page strip. -->
+                                                <CheckBox x:Name="AutoCropBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,8,0,0"
+                                                          Content="Crop to page" ToolTipService.ShowOnDisabled="True"
+                                                          Checked="Geometry_Changed" Unchecked="Geometry_Changed" />
+                                                <CheckBox x:Name="AutoStraightenBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                          Content="Straighten pages" ToolTipService.ShowOnDisabled="True"
+                                                          Checked="Geometry_Changed" Unchecked="Geometry_Changed" />
+                                                <TextBlock x:Name="GeometryHint" Style="{StaticResource CaptionText}"
+                                                           TextWrapping="Wrap" Margin="0,0,0,4" />
                                             </StackPanel>
                                             <TextBlock Text="After saving" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />
                                             <ComboBox x:Name="AfterSaveBox" HorizontalAlignment="Stretch"

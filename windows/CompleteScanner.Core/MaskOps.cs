@@ -56,9 +56,11 @@ internal static class MaskOps
 
     /// <summary>
     /// Erosion with a (2r+1)×(2r+1) square: a pixel stays set when every pixel within r is.
-    /// Pixels outside the image count as clear, so the mask shrinks at the borders.
+    /// Pixels outside the image count as clear, so the mask shrinks at the borders, unless
+    /// <paramref name="outsideSet"/> says they count as set (a region touching the border then
+    /// keeps its edge there, as when closing the mask of a page laid against the glass's edge).
     /// </summary>
-    public static byte[] Erode(byte[] mask, int w, int h, int r)
+    public static byte[] Erode(byte[] mask, int w, int h, int r, bool outsideSet = false)
     {
         var tmp = new byte[w * h];
         for (int y = 0; y < h; y++)
@@ -66,10 +68,10 @@ internal static class MaskOps
             int row = y * w;
             for (int x = 0; x < w; x++)
             {
-                byte v = (byte)((x - r >= 0 && x + r < w) ? 1 : 0);
+                byte v = (byte)((outsideSet || (x - r >= 0 && x + r < w)) ? 1 : 0);
                 if (v == 1)
                 {
-                    for (int xx = x - r; xx <= x + r; xx++)
+                    for (int xx = Math.Max(0, x - r); xx <= Math.Min(w - 1, x + r); xx++)
                     {
                         if (mask[row + xx] == 0) { v = 0; break; }
                     }
@@ -82,10 +84,10 @@ internal static class MaskOps
         {
             for (int x = 0; x < w; x++)
             {
-                byte v = (byte)((y - r >= 0 && y + r < h) ? 1 : 0);
+                byte v = (byte)((outsideSet || (y - r >= 0 && y + r < h)) ? 1 : 0);
                 if (v == 1)
                 {
-                    for (int yy = y - r; yy <= y + r; yy++)
+                    for (int yy = Math.Max(0, y - r); yy <= Math.Min(h - 1, y + r); yy++)
                     {
                         if (tmp[yy * w + x] == 0) { v = 0; break; }
                     }

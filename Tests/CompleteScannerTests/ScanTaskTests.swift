@@ -140,6 +140,19 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertTrue(TaskCatalog.apply(.twoSided, to: ScanSettings()).document.removeBlankPages)
     }
 
+    func test_apply_onlyTheTwoSidedTaskStraightens_noTaskCrops() {
+        var current = customized()
+        current.document.autoCrop = true
+        current.document.autoStraighten = true
+        for task in ScanTask.allCases {
+            let s = TaskCatalog.apply(task, to: current)
+            XCTAssertFalse(s.document.autoCrop, task.rawValue)
+            XCTAssertEqual(s.document.autoStraighten, task == .twoSided, task.rawValue)
+        }
+        XCTAssertTrue(current.document.autoCrop)
+        XCTAssertTrue(TaskCatalog.apply(.twoSided, to: ScanSettings()).document.autoStraighten)
+    }
+
     func test_twoSided_isATwoSidedFeederPDF() {
         XCTAssertEqual(TaskCatalog.definition(.twoSided).steps[0].primaryActionLabel, "Scan stack")
         var s = TaskCatalog.apply(.twoSided, to: ScanSettings())

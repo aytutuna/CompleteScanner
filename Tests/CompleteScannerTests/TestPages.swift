@@ -163,6 +163,125 @@ enum TestPages {
         ]
     }
 
+    // MARK: - Pages for crop and straighten
+
+    /// A turn by a small angle as exact fixed-point sine and cosine (× 65536), so both platforms draw
+    /// the same pixels without trigonometry.
+    struct Turn {
+        let sin: Int
+        let cos: Int
+
+        /// The angle drawn, clockwise on screen positive.
+        var degrees: Double { atan2(Double(sin), Double(cos)) * 180 / .pi }
+    }
+
+    static let straight = Turn(sin: 0, cos: 65536)
+    static let plus0Point1 = Turn(sin: 114, cos: 65536)
+    static let minus1Point5 = Turn(sin: -1716, cos: 65514)
+    static let plus2 = Turn(sin: 2287, cos: 65496)
+    static let plus3 = Turn(sin: 3430, cos: 65446)
+    static let minus4 = Turn(sin: -4572, cos: 65376)
+    static let plus6Point5 = Turn(sin: 7419, cos: 65115)
+
+    /// The sheet of `sheetOnBackdrop`: 6 × 8 in.
+    static let sheetWidth = 600
+    static let sheetHeight = 800
+
+    /// A page of text: 34 lines of glyphs (`textLine`) 6.5 in long, every 0.28 in, on noisy paper.
+    static func textPage() -> GrayImage {
+        noisy(0x7E57_AA6E, 245) { p in
+            let rng = Rng(0x7E57_AA6F)
+            for line in 0..<34 { textLine(&p, 100, 100 + line * 28, 650, 40, rng) }
+        }
+    }
+
+    /// `page` with its content turned clockwise by `turn` about the center (nearest pixel); what
+    /// comes in from outside the page is `fill`.
+    static func turned(_ page: GrayImage, _ turn: Turn, fill: UInt8) -> GrayImage {
+        let w = page.width, h = page.height
+        var p = [UInt8](repeating: 0, count: w * h)
+        let unit = 65536
+        for y in 0..<h {
+            let dy = 2 * y + 1 - h
+            for x in 0..<w {
+                let dx = 2 * x + 1 - w
+                // The pixel's offset from the center (doubled) turned back, in 1/65536 units.
+                let sx = floorDiv(dx * turn.cos + dy * turn.sin + w * unit, 2 * unit)
+                let sy = floorDiv(-dx * turn.sin + dy * turn.cos + h * unit, 2 * unit)
+                p[y * w + x] = sx >= 0 && sx < w && sy >= 0 && sy < h ? page.pixels[sy * w + sx] : fill
+            }
+        }
+        return GrayImage(width: w, height: h, pixels: p)
+    }
+
+    /// A 6 × 8 in sheet (`sheetWidth` × `sheetHeight`: `paper` with noise and 24 lines of glyphs)
+    /// lying at the center of the 850 × 1100 scan on a noisy `backdrop`, turned clockwise by `turn`,
+    /// with a `shadow` px edge shadow (200) all around it when above 0.
+    static func sheetOnBackdrop(_ turn: Turn, backdrop: Int, paper: Int, shadow: Int, seed: UInt32) -> GrayImage {
+        let sw = sheetWidth, sh = sheetHeight
+        var sheet = [UInt8](repeating: 0, count: sw * sh)
+        let rng = Rng(seed)
+        for i in 0..<sheet.count { sheet[i] = clamp(paper + rng.noise()) }
+        let text = Rng(seed ^ 0x5A5A_5A5A)
+        for line in 0..<24 { sheetTextLine(&sheet, 60, 60 + line * 28, 480, 40, text) }
+
+        var p = [UInt8](repeating: 0, count: width * height)
+        let noise = Rng(seed &+ 1)
+        let unit = 65536
+        let halfW = sw * unit, halfH = sh * unit
+        let outerW = (sw + 2 * shadow) * unit, outerH = (sh + 2 * shadow) * unit
+        for y in 0..<height {
+            let dy = 2 * y + 1 - height
+            for x in 0..<width {
+                let dx = 2 * x + 1 - width
+                // The pixel in the sheet's frame (doubled, in 1/65536 units).
+                let u = dx * turn.cos + dy * turn.sin
+                let v = -dx * turn.sin + dy * turn.cos
+                let value: Int
+                if abs(u) < halfW && abs(v) < halfH {
+                    let sx = floorDiv(u + halfW, 2 * unit), sy = floorDiv(v + halfH, 2 * unit)
+                    value = Int(sheet[sy * sw + sx])
+                } else if shadow > 0 && abs(u) < outerW && abs(v) < outerH {
+                    value = 200 + noise.noise()
+                } else {
+                    value = backdrop + noise.noise()
+                }
+                p[y * width + x] = clamp(value)
+            }
+        }
+        return GrayImage(width: width, height: height, pixels: p)
+    }
+
+    /// `textLine` on the sheet of `sheetOnBackdrop`.
+    private static func sheetTextLine(_ p: inout [UInt8], _ x: Int, _ y: Int, _ maxWidth: Int, _ ink: UInt8, _ rng: Rng) {
+        let picks = [0b00111, 0b01011, 0b01101, 0b01110, 0b10011, 0b10101, 0b10110, 0b11001, 0b11010, 0b11100]
+        func bar(_ bx: Int, _ by: Int, _ bw: Int, _ bh: Int) {
+            for py in by..<(by + bh) {
+                for px in bx..<(bx + bw) { p[py * sheetWidth + px] = ink }
+            }
+        }
+        var cx = x
+        while true {
+            let glyphs = 2 + rng.below(7)
+            if cx + glyphs * 7 > x + maxWidth { break }
+            for _ in 0..<glyphs {
+                let bits = picks[rng.below(10)]
+                if bits & 1 != 0 { bar(cx, y, 1, 9) }
+                if bits & 2 != 0 { bar(cx + 4, y, 1, 9) }
+                if bits & 4 != 0 { bar(cx, y, 5, 1) }
+                if bits & 8 != 0 { bar(cx, y + 4, 5, 1) }
+                if bits & 16 != 0 { bar(cx, y + 8, 5, 1) }
+                cx += 7
+            }
+            cx += 7
+        }
+    }
+
+    /// Division rounding down (toward minus infinity), for negative offsets too.
+    static func floorDiv(_ a: Int, _ b: Int) -> Int {
+        a >= 0 ? a / b : -((-a + b - 1) / b)
+    }
+
     // MARK: - Drawing
 
     /// Paper of one value with noise, then `draw` on top.

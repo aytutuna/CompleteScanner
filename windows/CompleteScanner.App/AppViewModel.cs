@@ -12,7 +12,7 @@ namespace CompleteScanner.App;
 
 /// <summary>
 /// A page in the queue strip, wrapped with its display thumbnail and what the strip says about
-/// it under the current blank-page settings (<see cref="Options"/>).
+/// it under the current blank-page settings (<see cref="Options"/>) and after crop and straighten.
 /// </summary>
 public sealed class PageItem : INotifyPropertyChanged
 {
@@ -82,12 +82,31 @@ public sealed class PageItem : INotifyPropertyChanged
     /// <summary>The button's short text: "Keep" for a left-out page, "Skip" otherwise.</summary>
     public string? ToggleText => ToggleLabel is null ? null : IsExcluded ? "Keep" : "Skip";
 
-    /// <summary>The page's name for screen readers: "Page 3, Sheet 2 · back, Blank, skipped", or "Page 3".</summary>
+    /// <summary>
+    /// "Cropped and straightened 2.4°", "As scanned", or null for a page crop and straighten left
+    /// alone (<see cref="PageCorrections.Caption"/>).
+    /// </summary>
+    public string? GeometryCaption => PageCorrections.Caption(Page);
+
+    /// <summary>What the page's swap button does ("Show as scanned", "Show straightened"); null when it has none.</summary>
+    public string? GeometryToggleLabel => PageCorrections.ToggleLabel(Page);
+
+    /// <summary>The swap button's tooltip: what was done to the page, then what a click does.</summary>
+    public string? GeometryToolTip => GeometryToggleLabel is { } label ? $"{GeometryCaption}. {label}." : null;
+
+    /// <summary>The swap button's glyph: undo while the changed page shows, redo while the page as scanned shows.</summary>
+    public string GeometryGlyph => Page.ShowsOriginal ? "\uE7A6" : "\uE7A7";
+
+    /// <summary>
+    /// The page's name for screen readers: "Page 3, Sheet 2 · back, Blank, skipped, Straightened
+    /// 1.5°", or "Page 3".
+    /// </summary>
     /// <param name="number">The page's position in the queue, from 1.</param>
     public string AccessibleName(int number)
     {
         string name = SideLabel is { } label ? $"Page {number}, {label}" : $"Page {number}";
-        return BlankBadge is { } badge ? $"{name}, {badge}" : name;
+        if (BlankBadge is { } badge) name = $"{name}, {badge}";
+        return GeometryCaption is { } caption ? $"{name}, {caption}" : name;
     }
 }
 
@@ -1059,8 +1078,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
             token.ThrowIfCancellationRequested();
             var raw = cleaned.Arranged;
             var processed = cleaned.Pages.ToList();
-            // " 2 look blank and will be skipped." after the pages added to the queue.
-            string blankNote = PageFilter.ScanNote(processed, s.Document);
+            // " 2 look blank and will be skipped. 3 straightened." after the pages added to the queue.
+            string blankNote = PageFilter.ScanNote(processed, s.Document) + PageCorrections.ScanNote(processed);
 
             // The canvas shows the RAW scan through the live adjustments (only a downsampled
             // copy is retained), and every scanned page is recorded in the session history.
@@ -1567,6 +1586,79 @@ public sealed class AppViewModel : INotifyPropertyChanged
         NotifyAll();
     }
 
+    /// <summary>
+    /// One click on a cropped or straightened page's swap button: the page as scanned is shown,
+    /// and saved, instead; a second click brings the cropped and straightened page back. The other
+    /// version is read from its spool file off the UI thread; swaps and turns run one after another
+    /// (<see cref="RotatePage"/>), and a save waits for them.
+    /// </summary>
+    public Task TogglePageGeometry(Guid id)
+    {
+        if (IsBusy) return Task.CompletedTask;
+        var previous = _pageRotateChain;
+        var task = Run();
+        _pageRotateChain = Settled(task);
+        return task;
+
+        async Task Run()
+        {
+            await Settled(previous);
+            var item = ScannedPages.FirstOrDefault(p => p.Page.Id == id);
+            if (item is null || !item.Page.CanSwapVersions) return;
+            var page = item.Page;
+            (RgbaImage Shown, System.Windows.Media.Imaging.BitmapSource Thumbnail) other;
+            try
+            {
+                other = await Task.Run(() =>
+                {
+                    var shown = OtherVersionPreview(page);
+                    return (shown, WpfImageCodec.ToThumbnail(shown, PageItem.ThumbnailMaxSide));
+                });
+            }
+            catch (Exception e)
+            {
+                // Removed while its file was read: the file may be gone (nothing to report), or
+                // still there because the read held it open when the page's files were deleted.
+                if (IndexOfPage(id) < 0)
+                {
+                    DeleteSpoolFiles([page]);
+                    return;
+                }
+                ErrorMessage = $"The page could not be switched: {e.Message}";
+                NotifyAll();
+                return;
+            }
+            // The page may have been removed, saved or kept meanwhile: the swap applies to the page
+            // as it is now, if it still shows the same version. A removed page's files are deleted
+            // again, as the read may have held one open when the removal tried.
+            int index = IndexOfPage(id);
+            if (index < 0)
+            {
+                DeleteSpoolFiles([page]);
+                return;
+            }
+            var current = ScannedPages[index].Page;
+            if (!current.CanSwapVersions || current.ShowsOriginal != page.ShowsOriginal) return;
+            var swapped = current.WithVersionsSwapped(other.Shown);
+            ScannedPages[index] = new PageItem(swapped, other.Thumbnail, Settings.Document);
+            StatusMessage = PageCorrections.SwapNote(swapped, index + 1);
+            NotifyAll();
+        }
+    }
+
+    /// <summary>
+    /// The version of <paramref name="page"/> not shown, as the queue shows a page: its pixels in
+    /// memory, or a preview of its spool file turned like the page.
+    /// </summary>
+    private static RgbaImage OtherVersionPreview(ScannedPage page)
+    {
+        var other = page.Alternate ?? throw new InvalidOperationException("The page has no other version.");
+        if (other.Image is { } image) return image;
+        if (other.FilePath is not { } path) throw new InvalidOperationException("The other version of the page is no longer available.");
+        var preview = ScanHistory.MakePreview(WpfImageCodec.Load(path), SpoolPreviewMaxSide);
+        return ImagePipeline.Rotate(preview, page.RotationQuarterTurns);
+    }
+
     public void ClearPages()
     {
         if (IsBusy) return;
@@ -2067,9 +2159,14 @@ public sealed class AppViewModel : INotifyPropertyChanged
         NotifyAll();
     }
 
+    /// <summary>Long side of the in-memory preview of a spooled page.</summary>
+    private const int SpoolPreviewMaxSide = 1600;
+
     /// <summary>
     /// Write each full-resolution page to a spool PNG and return queue entries that carry
-    /// only a preview in memory. A page whose spill fails is kept fully in memory instead.
+    /// only a preview in memory. A page whose spill fails is kept fully in memory instead. The
+    /// page as scanned, kept by crop and straighten, gets a spool file of its own (and keeps its
+    /// pixels in memory when that fails), so one click can show it.
     /// </summary>
     private static List<ScannedPage> SpoolPages(List<ScannedPage> pages, string spoolDirectory)
     {
@@ -2085,8 +2182,22 @@ public sealed class AppViewModel : INotifyPropertyChanged
             {
                 return page;
             }
-            var preview = ScanHistory.MakePreview(page.Image, 1600);
-            return page.WithImage(preview, filePath: path, fullPixelSize: new SizeD(page.Image.Width, page.Image.Height));
+            var preview = ScanHistory.MakePreview(page.Image, SpoolPreviewMaxSide);
+            var spooled = page.WithImage(preview, filePath: path, fullPixelSize: new SizeD(page.Image.Width, page.Image.Height));
+            if (page.Alternate is { Image: { } other })
+            {
+                string otherPath = Path.Combine(spoolDirectory, $"{page.Id}-other.png");
+                try
+                {
+                    WpfImageCodec.Save(other, otherPath, OutputFormat.Png, page.Dpi, 1.0);
+                    spooled = spooled.WithAlternate(new PageVersion(null, otherPath, new SizeD(other.Width, other.Height)));
+                }
+                catch
+                {
+                    // Kept in memory: the page can still be shown as scanned.
+                }
+            }
+            return spooled;
         }).ToList();
     }
 
@@ -2167,8 +2278,9 @@ public sealed class AppViewModel : INotifyPropertyChanged
     {
         foreach (var page in pages)
         {
-            if (page.FilePath is { } path)
+            foreach (var path in new[] { page.FilePath, page.Alternate?.FilePath })
             {
+                if (path is null) continue;
                 try { File.Delete(path); } catch { /* best effort */ }
             }
         }

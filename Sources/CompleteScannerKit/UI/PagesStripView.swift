@@ -27,7 +27,8 @@ struct PagesStripView: View {
                             onRemove: { state.removePage(id: page.id) },
                             onMove: { state.movePage(id: page.id, by: $0) },
                             onRotate: { state.rotatePage(id: page.id) },
-                            onToggle: { state.togglePageInclusion(id: page.id) })
+                            onToggle: { state.togglePageInclusion(id: page.id) },
+                            onSwap: { state.togglePageGeometry(id: page.id) })
                     }
                 }
                 .padding(.horizontal, 12)
@@ -77,6 +78,8 @@ fileprivate struct PageThumbnailCell: View {
     let onRotate: () -> Void
     /// Keep or skip the page (`AppState.togglePageInclusion`).
     let onToggle: () -> Void
+    /// Show the page as scanned, or cropped and straightened again (`AppState.togglePageGeometry`).
+    let onSwap: () -> Void
 
     @State private var thumbnail: CGImage?
     @State private var hovering = false
@@ -96,16 +99,20 @@ fileprivate struct PageThumbnailCell: View {
                 .overlay(alignment: .bottom) { blankToggle }
                 .onHover { hovering = $0 }
 
-            Text(caption)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .help(DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? "")
+            // Below the page, clear of the hover controls on it.
+            HStack(spacing: 3) {
+                Text(caption)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .help(DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? "")
+                geometryToggle
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityName)
-        // Re-render when the page is rotated (the cell keeps its identity, so a
-        // plain run-once task would show the stale orientation).
-        .task(id: page.rotationQuarterTurns) {
+        // Re-render when the page is rotated or shown as scanned (the cell keeps its identity, so
+        // a plain run-once task would show stale pixels).
+        .task(id: page.rotationQuarterTurns * 2 + (page.showsOriginal ? 1 : 0)) {
             thumbnail = stripThumbnail(page.image, maxDimension: 200)
         }
     }
@@ -116,7 +123,7 @@ fileprivate struct PageThumbnailCell: View {
         return "Page \(pageNumber) \u{00B7} \(side == .front ? "front" : "back")"
     }
 
-    /// "Page 3, Sheet 2 · back, Blank, skipped" for screen readers.
+    /// "Page 3, Sheet 2 · back, Blank, skipped, Straightened 1.5°" for screen readers.
     private var accessibilityName: String {
         var name = "Page \(pageNumber)"
         if let label = DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) {
@@ -125,7 +132,26 @@ fileprivate struct PageThumbnailCell: View {
         if let badge = PageFilter.badge(page, options: options) {
             name += ", \(badge)"
         }
+        if let caption = PageCorrections.caption(page) {
+            name += ", \(caption)"
+        }
         return name
+    }
+
+    /// A page crop and straighten changed: one click (always shown, not only on hover) shows it as
+    /// scanned, and back. What was done and what a click does show on hover and to screen readers.
+    @ViewBuilder
+    private var geometryToggle: some View {
+        if let label = PageCorrections.toggleLabel(page), let caption = PageCorrections.caption(page) {
+            Button(action: onSwap) {
+                Image(systemName: page.showsOriginal ? "arrow.uturn.forward" : "arrow.uturn.backward")
+                    .font(.caption2)
+            }
+            .buttonStyle(.borderless)
+            .help("\(caption). \(label).")
+            .accessibilityLabel(label)
+            .accessibilityHint(caption)
+        }
     }
 
     /// A page that looks blank, or was skipped: a small mark in the corner that fits the cell,

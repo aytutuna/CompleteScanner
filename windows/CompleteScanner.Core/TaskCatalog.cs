@@ -91,11 +91,13 @@ public static class TaskCatalog
     /// <paramref name="current"/> with the task's settings laid over it: mode, source,
     /// resolution, color, format, JPEG quality, PDF size, the after-save action, the photo and
     /// document switches, searchable PDF, adjustments, two-sided scanning, skipping blank pages,
+    /// crop and straighten,
     /// file name and the task itself. The destination folder, the photo detection tuning, the
     /// legacy OCR languages, the paper size, the edge backs are turned on and how much counts as
     /// blank are kept: they describe the user's paper, not the task. <paramref name="current"/> is
-    /// not changed. The two-sided task asks for <see cref="DuplexMode.Both"/> and skips blank
-    /// pages (the empty backs of one-sided sheets); <see cref="SettingsAdapter"/> turns
+    /// not changed. The two-sided task asks for <see cref="DuplexMode.Both"/>, skips blank
+    /// pages (the empty backs of one-sided sheets) and straightens pages the feeder pulled in at a
+    /// slant; no task crops yet; <see cref="SettingsAdapter"/> turns
     /// <see cref="DuplexMode.Both"/> into turning over by hand on a feeder that scans one side.
     /// </summary>
     public static ScanSettings Apply(ScanTask task, ScanSettings current)
@@ -113,6 +115,8 @@ public static class TaskCatalog
         s.Output.AfterSave = AfterSaveAction.None;
         s.Duplex = DuplexMode.Off;
         s.Document.RemoveBlankPages = task == ScanTask.TwoSided;
+        s.Document.AutoCrop = false;
+        s.Document.AutoStraighten = task == ScanTask.TwoSided;
         switch (task)
         {
             case ScanTask.Document:

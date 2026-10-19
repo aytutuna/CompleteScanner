@@ -275,6 +275,12 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
     public var removeBlankPages: Bool = false
     /// How much may be on a page for it to count as blank.
     public var blankSensitivity: BlankSensitivity = .medium
+    /// Each page is cut out of the scanner's background when its edges are clear
+    /// (`DocumentGeometry`). One click in the page strip shows a page as scanned.
+    public var autoCrop: Bool = false
+    /// Each page that lies at a slant is turned straight, by its edges or its lines of text
+    /// (`DocumentGeometry`). One click in the page strip shows a page as scanned.
+    public var autoStraighten: Bool = false
 
     public init() {}
 
@@ -282,6 +288,8 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case removeBlankPages
         case blankSensitivity
+        case autoCrop
+        case autoStraighten
     }
 }
 
@@ -292,6 +300,8 @@ extension DocumentOptions {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         removeBlankPages = container.decodeLenient(forKey: .removeBlankPages, default: removeBlankPages)
         blankSensitivity = container.decodeLenient(forKey: .blankSensitivity, default: blankSensitivity)
+        autoCrop = container.decodeLenient(forKey: .autoCrop, default: autoCrop)
+        autoStraighten = container.decodeLenient(forKey: .autoStraighten, default: autoStraighten)
     }
 }
 
@@ -431,6 +441,19 @@ public struct ScannedPage: Identifiable {
     public var blank: BlankPageResult?
     /// Whether the user keeps or skips this page whatever the blank-page setting.
     public var inclusion: PageInclusion = .automatic
+    /// What crop and straighten did to the page (`DocumentGeometry`), or nil when they did nothing
+    /// (off, or not sure).
+    public var geometry: PageGeometry?
+    /// The user went back to the page as scanned: `image` is the page before crop and straighten,
+    /// `alternate` the cropped and straightened one.
+    public var showsOriginal: Bool = false
+    /// The version of the page not shown (the page as scanned, or after crop and straighten), so one
+    /// click can swap them; nil when there is none. Its pixels are dropped once it has a spool file.
+    /// Pixel steps after crop and straighten change it too (`withAlternate(_:)`).
+    public var alternate: PageVersion?
+
+    /// The page was cropped or straightened and the other version is at hand: one click swaps them.
+    public var canSwapVersions: Bool { geometry != nil && alternate != nil }
 
     public init(image: CGImage, dpi: Int, colorMode: ColorMode, id: UUID = UUID(),
                 createdAt: Date = Date(), fileURL: URL? = nil, fullPixelSize: CGSize? = nil) {
@@ -454,18 +477,64 @@ public struct ScannedPage: Identifiable {
         var page = ScannedPage(image: image, dpi: dpi, colorMode: colorMode ?? self.colorMode, id: id,
                                createdAt: createdAt, fileURL: fileURL, fullPixelSize: fullPixelSize)
         page.rotationQuarterTurns = rotationQuarterTurns
+        page.alternate = alternate
         return page.copyMeta(from: self)
     }
 
     /// This page carrying what the scan recorded about `source`: its side and sheet, the
-    /// blank-page check and the user's keep or skip. Pixels, id, file and rotation stay this
-    /// page's. Twin of C# `ScannedPage.CopyMeta`.
+    /// blank-page check, the user's keep or skip, and what crop and straighten did and which
+    /// version is shown. Pixels, id, file, rotation and the other version stay this page's. Twin of
+    /// C# `ScannedPage.CopyMeta`.
     public func copyMeta(from source: ScannedPage) -> ScannedPage {
         var page = self
         page.side = source.side
         page.sheetIndex = source.sheetIndex
         page.blank = source.blank
         page.inclusion = source.inclusion
+        page.geometry = source.geometry
+        page.showsOriginal = source.showsOriginal
+        return page
+    }
+
+    /// This page cropped or straightened: `corrected` is shown, with what was done (`geometry`),
+    /// and the page as it was becomes the `alternate`. Twin of C# `ScannedPage.WithGeometry`.
+    public func withGeometry(_ corrected: CGImage, geometry: PageGeometry) -> ScannedPage {
+        var page = ScannedPage(image: corrected, dpi: dpi, colorMode: colorMode, id: id, createdAt: createdAt)
+        page.rotationQuarterTurns = rotationQuarterTurns
+        page.side = side
+        page.sheetIndex = sheetIndex
+        page.blank = blank
+        page.inclusion = inclusion
+        page.geometry = geometry
+        page.showsOriginal = false
+        page.alternate = PageVersion(image: image, fileURL: fileURL, fullPixelSize: fullPixelSize)
+        return page
+    }
+
+    /// This page with another version not shown (nil: none).
+    public func withAlternate(_ alternate: PageVersion?) -> ScannedPage {
+        var page = self
+        page.alternate = alternate
+        return page
+    }
+
+    /// The other version shown: the page as scanned instead of the cropped and straightened one, or
+    /// back. `shown` is the other version's pixels as the queue shows them (its preview, turned like
+    /// this page; `alternate`'s own pixels when it has no spool file). This version becomes the
+    /// alternate, without its pixels when it has a spool file. A page with no other version is
+    /// returned as it is. Twin of C# `ScannedPage.WithVersionsSwapped`.
+    public func withVersionsSwapped(_ shown: CGImage) -> ScannedPage {
+        guard let other = alternate else { return self }
+        var page = ScannedPage(image: shown, dpi: dpi, colorMode: colorMode, id: id, createdAt: createdAt,
+                               fileURL: other.fileURL, fullPixelSize: other.fullPixelSize)
+        page.rotationQuarterTurns = rotationQuarterTurns
+        page.side = side
+        page.sheetIndex = sheetIndex
+        page.blank = blank
+        page.inclusion = inclusion
+        page.geometry = geometry
+        page.showsOriginal = !showsOriginal
+        page.alternate = PageVersion(image: fileURL == nil ? image : nil, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }
 
@@ -489,6 +558,20 @@ public struct ScannedPage: Identifiable {
         page.side = side
         page.sheetIndex = sheetIndex
         return page
+    }
+}
+
+/// One version of a queued page (`ScannedPage.alternate`): its pixels as the queue shows them (nil
+/// once spooled), its full-resolution spool file and that file's pixel size. Twin of C# `PageVersion`.
+public struct PageVersion {
+    public var image: CGImage?
+    public var fileURL: URL?
+    public var fullPixelSize: CGSize?
+
+    public init(image: CGImage?, fileURL: URL?, fullPixelSize: CGSize?) {
+        self.image = image
+        self.fileURL = fileURL
+        self.fullPixelSize = fullPixelSize
     }
 }
 

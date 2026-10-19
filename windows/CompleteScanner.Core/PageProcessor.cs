@@ -29,15 +29,40 @@ public sealed class BlankDetectionStep(BlankPageOptions options) : IPageStep
         page.WithBlank(BlankPageDetector.Analyze(page.Image, page.Dpi, Options));
 }
 
-/// <summary>The image adjustments and the color mode (<see cref="ImagePipeline.Apply"/>).</summary>
+/// <summary>
+/// Crops the page to the sheet and straightens it (<see cref="DocumentGeometry.Correct"/>), keeping
+/// the page as it was as the other version (<see cref="ScannedPage.WithGeometry"/>); a page the
+/// analysis is not sure about stays as it is. Runs after the blank check, before the adjustments.
+/// </summary>
+public sealed class GeometryStep(bool crop, bool straighten) : IPageStep
+{
+    public bool Crop { get; } = crop;
+    public bool Straighten { get; } = straighten;
+    public string Name => "geometry";
+
+    public ScannedPage Apply(ScannedPage page) =>
+        DocumentGeometry.Correct(page.Image, page.Dpi, Crop, Straighten) is { } corrected
+            ? page.WithGeometry(corrected.Image, corrected.Geometry)
+            : page;
+}
+
+/// <summary>
+/// The image adjustments and the color mode (<see cref="ImagePipeline.Apply"/>), on the page and on
+/// its other version (the page as scanned, kept by crop and straighten), so either can be shown.
+/// </summary>
 public sealed class AdjustmentStep(AdjustmentSettings adjustments, ColorMode colorMode) : IPageStep
 {
     public AdjustmentSettings Adjustments { get; } = adjustments;
     public ColorMode ColorMode { get; } = colorMode;
     public string Name => "adjust";
 
-    public ScannedPage Apply(ScannedPage page) =>
-        page.WithImage(ImagePipeline.Apply(Adjustments, page.Image, ColorMode), ColorMode);
+    public ScannedPage Apply(ScannedPage page)
+    {
+        var adjusted = page.WithImage(ImagePipeline.Apply(Adjustments, page.Image, ColorMode), ColorMode);
+        return page.Alternate is { Image: { } other } version
+            ? adjusted.WithAlternate(version with { Image = ImagePipeline.Apply(Adjustments, other, ColorMode) })
+            : adjusted;
+    }
 }
 
 /// <summary>How the pages of one scan come out of the scanner.</summary>
@@ -66,9 +91,9 @@ public sealed record ProcessedScan(IReadOnlyList<ScannedPage> Arranged, IReadOnl
 /// The clean-up stage between the scanner and the page queue, the same for every scanner: the
 /// pages are put in reading order with their sides (two-sided scans), then every step runs on
 /// every page in order. The order of the steps is fixed: <see cref="ForScan"/> builds them from
-/// the settings: blank check (document pages), then adjustments. Later page features slot in
-/// between (crop and straighten after the blank check, separator sheets after that, turning
-/// pages upright before the adjustments).
+/// the settings: blank check (document pages), crop and straighten, then adjustments. Later page
+/// features slot in between (separator sheets after crop and straighten, turning pages upright
+/// before the adjustments).
 /// </summary>
 public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
                                   ScanArrangement arrangement = ScanArrangement.AsScanned,
@@ -81,7 +106,8 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// <summary>
     /// The steps for a scan made with <paramref name="settings"/>: the blank-page check for pages
     /// collected in the document queue (whether or not blank pages are left out, so the page
-    /// strip can flag them), then the adjustments unless they change nothing.
+    /// strip can flag them), crop and straighten when asked for those pages, then the adjustments
+    /// unless they change nothing.
     /// </summary>
     public static PageProcessor ForScan(ScanSettings settings, ScanArrangement arrangement = ScanArrangement.AsScanned)
     {
@@ -89,6 +115,10 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
         if (ChecksBlankPages(settings))
         {
             steps.Add(new BlankDetectionStep(new BlankPageOptions { Sensitivity = settings.Document.BlankSensitivity }));
+        }
+        if (CorrectsGeometry(settings))
+        {
+            steps.Add(new GeometryStep(settings.Document.AutoCrop, settings.Document.AutoStraighten));
         }
         if (!(settings.Adjustments.IsIdentity && settings.ColorMode == ColorMode.Color))
         {
@@ -104,6 +134,14 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// </summary>
     public static bool ChecksBlankPages(ScanSettings settings) =>
         TaskCatalog.FlowOf(settings) == TaskFlowKind.DocumentQueue && settings.DocumentMultiPage;
+
+    /// <summary>
+    /// Whether scans with these settings are cropped or straightened: asked for, on document pages
+    /// collected in the queue, where the page strip shows a changed page and one click shows it as
+    /// scanned. Pages saved as soon as they are scanned are never changed unseen.
+    /// </summary>
+    public static bool CorrectsGeometry(ScanSettings settings) =>
+        ChecksBlankPages(settings) && (settings.Document.AutoCrop || settings.Document.AutoStraighten);
 
     /// <summary>
     /// Arranges the pages, then runs every step on every page. <paramref name="token"/> is checked
@@ -224,4 +262,55 @@ public static class PageFilter
     /// <summary>The message when every queued page is left out, so there is nothing to save.</summary>
     public const string NothingToSaveMessage =
         "Every page in the queue is skipped. Keep a page, or turn off Skip blank pages, to save.";
+}
+
+/// <summary>
+/// What the page strip and the status say about crop and straighten: a caption on a changed page,
+/// its one-click swap with the page as scanned, and the note after a scan.
+/// </summary>
+public static class PageCorrections
+{
+    /// <summary>
+    /// "Cropped and straightened 2.4°", "Straightened 1.5°" or "Cropped" for a changed page shown
+    /// changed; "As scanned" when the user went back to the page as scanned; null for other pages.
+    /// </summary>
+    public static string? Caption(ScannedPage page) =>
+        page.Geometry is not { } geometry ? null : page.ShowsOriginal ? "As scanned" : geometry.Caption;
+
+    /// <summary>
+    /// What one click on the page's swap button does: "Show as scanned", or back: "Show cropped
+    /// and straightened", "Show straightened", "Show cropped"; null when the page cannot swap.
+    /// </summary>
+    public static string? ToggleLabel(ScannedPage page)
+    {
+        if (!page.CanSwapVersions || page.Geometry is not { } geometry) return null;
+        return page.ShowsOriginal ? $"Show {Done(geometry)}" : "Show as scanned";
+    }
+
+    /// <summary>
+    /// The status after a page's versions were swapped: "Page 3 is shown as scanned." or
+    /// "Page 3 is cropped and straightened again."
+    /// </summary>
+    public static string SwapNote(ScannedPage page, int number) =>
+        page.ShowsOriginal || page.Geometry is not { } geometry
+            ? $"Page {number} is shown as scanned. It is saved that way."
+            : $"Page {number} is {Done(geometry)} again.";
+
+    /// <summary>
+    /// The status after a scan's pages were queued, when crop and straighten changed some: " 2
+    /// straightened." or " 3 cropped or straightened." (leading space; empty when none was).
+    /// </summary>
+    public static string ScanNote(IEnumerable<ScannedPage> added)
+    {
+        var changed = added.Where(p => p.Geometry is not null && !p.ShowsOriginal).Select(p => Done(p.Geometry!)).ToList();
+        if (changed.Count == 0) return "";
+        string verb = changed.Distinct().Count() == 1 ? changed[0] : "cropped or straightened";
+        return $" {changed.Count} {verb}.";
+    }
+
+    /// <summary>"cropped and straightened", "straightened" or "cropped".</summary>
+    private static string Done(PageGeometry geometry) =>
+        geometry.Cropped && geometry.Straightened ? "cropped and straightened"
+        : geometry.Straightened ? "straightened"
+        : "cropped";
 }

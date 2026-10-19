@@ -9,6 +9,19 @@ private let blankRgba = TestPages.enlarged(TestPages.noisyBlank(), 1)
 private let textRgba = TestPages.enlarged(TestPages.oneTextLine(), 1)
 private let blankImage: CGImage = blankRgba.makeCGImage()!
 private let textImage: CGImage = textRgba.makeCGImage()!
+/// A 6 × 8 in sheet lying at -4° on a dark backdrop, scanned at 100 dpi.
+private let sheetRgba = TestPages.sheetOnBackdrop(TestPages.minus4, backdrop: 30, paper: 240, shadow: 0,
+                                                  seed: 0x5EE7_0002).toRgba()
+private let sheetImage: CGImage = sheetRgba.makeCGImage()!
+
+/// The sheet cropped and straightened by hand: a gray stand-in, with the facts a scan records.
+private func corrected() -> ScannedPage {
+    page(sheetImage)
+        .withSide(.front, sheetIndex: 1)
+        .withBlank(BlankPageResult(inkCoverage: 0.01, inkComponents: 50, hasLargeDarkArea: false, isBlank: false))
+        .withGeometry(RgbaImage.filled(width: 60, height: 80, r: 200, g: 200, b: 200).makeCGImage()!,
+                      geometry: PageGeometry(cropped: true, angleDegrees: -4, basis: .pageEdges))
+}
 
 private func page(_ image: CGImage) -> ScannedPage {
     ScannedPage(image: image, dpi: 100, colorMode: .color)
@@ -108,6 +121,35 @@ final class PageProcessorTests: XCTestCase {
         XCTAssertFalse(PageProcessor.checksBlankPages(TaskCatalog.apply(.quickScan, to: ScanSettings())))
     }
 
+    func test_forScan_cropAndStraighten_comeBetweenTheBlankCheckAndTheAdjustments() throws {
+        var s = ScanSettings()
+        XCTAssertFalse(PageProcessor.correctsGeometry(s))
+        s.document.autoStraighten = true
+        s.adjustments.brightness = 0.25
+        XCTAssertTrue(PageProcessor.correctsGeometry(s))
+        let processor = PageProcessor.forScan(s)
+        XCTAssertEqual(processor.steps.map(\.name), ["blank", "geometry", "adjust"])
+        let step = try XCTUnwrap(processor.steps[1] as? GeometryStep)
+        XCTAssertEqual([step.crop, step.straighten], [false, true])
+        s.document.autoCrop = true
+        s.document.autoStraighten = false
+        let cropOnly = try XCTUnwrap(PageProcessor.forScan(s).steps[1] as? GeometryStep)
+        XCTAssertEqual([cropOnly.crop, cropOnly.straighten], [true, false])
+    }
+
+    func test_forScan_photosAndPagesSavedAtOnce_areNeverCroppedOrStraightened() {
+        var photos = ScanSettings()
+        photos.intent = .photo
+        var atOnce = ScanSettings()
+        atOnce.documentMultiPage = false
+        for var s in [photos, atOnce] {
+            s.document.autoCrop = true
+            s.document.autoStraighten = true
+            XCTAssertFalse(PageProcessor.correctsGeometry(s))
+            XCTAssertFalse(PageProcessor.forScan(s).steps.map(\.name).contains("geometry"))
+        }
+    }
+
     func test_forScan_takesTheBackBindingAndArrangement() {
         var s = ScanSettings()
         s.backBinding = .shortEdge
@@ -195,6 +237,141 @@ final class PageProcessorTests: XCTestCase {
     }
 
     // MARK: Which pages are saved
+
+    func test_process_cropsAndStraightens_keepingThePageAsScanned() throws {
+        var s = ScanSettings()
+        s.document.autoCrop = true
+        s.document.autoStraighten = true
+        let scanned = page(sheetImage)
+        let result = try PageProcessor.forScan(s).process([scanned])
+        let processed = result.pages[0]
+        XCTAssertEqual(processed.id, scanned.id)
+        let geometry = try XCTUnwrap(processed.geometry)
+        XCTAssertTrue(geometry.cropped)
+        XCTAssertTrue(abs(geometry.angleDegrees - TestPages.minus4.degrees) <= 0.3, "\(geometry.angleDegrees)")
+        XCTAssertFalse(processed.showsOriginal)
+        XCTAssertTrue(processed.canSwapVersions)
+        XCTAssertTrue(processed.alternate?.image === sheetImage)
+        XCTAssertTrue(processed.image.width >= TestPages.sheetWidth - 4 && processed.image.width <= TestPages.sheetWidth + 2,
+                      "\(processed.image.width)")
+        // The blank check ran on the page as scanned.
+        XCTAssertEqual(processed.blank?.isBlank, false)
+        XCTAssertEqual(PageCorrections.scanNote(result.pages), " 1 cropped and straightened.")
+    }
+
+    func test_process_pageItIsNotSureAbout_staysAsScanned() throws {
+        var s = ScanSettings()
+        s.document.autoCrop = true
+        s.document.autoStraighten = true
+        let scanned = page(blankImage)
+        let processed = try PageProcessor.forScan(s).process([scanned]).pages[0]
+        XCTAssertTrue(processed.image === scanned.image)
+        XCTAssertNil(processed.geometry)
+        XCTAssertNil(processed.alternate)
+        XCTAssertFalse(processed.canSwapVersions)
+        XCTAssertEqual(PageCorrections.scanNote([processed]), "")
+    }
+
+    func test_adjustmentStep_adjustsBothVersions() throws {
+        var s = ScanSettings()
+        s.colorMode = .grayscale
+        s.document.autoCrop = true
+        s.document.autoStraighten = true
+        let processed = try PageProcessor.forScan(s).process([page(sheetImage)]).pages[0]
+        XCTAssertEqual(processed.colorMode, .grayscale)
+        // The page as scanned went through the adjustments too: new pixels, its own size.
+        let other = try XCTUnwrap(processed.alternate?.image)
+        XCTAssertFalse(other === sheetImage)
+        XCTAssertEqual(other.width, sheetImage.width)
+        XCTAssertEqual(other.height, sheetImage.height)
+        XCTAssertNotNil(processed.geometry)
+    }
+
+    // MARK: Showing a page as scanned
+
+    func test_withVersionsSwapped_showsThePageAsScanned_andBackAgain() throws {
+        let changed = corrected()
+        let original = changed.withVersionsSwapped(try XCTUnwrap(changed.alternate?.image))
+        XCTAssertTrue(original.showsOriginal)
+        XCTAssertTrue(original.image === sheetImage)
+        XCTAssertEqual(original.id, changed.id)
+        XCTAssertEqual(original.geometry, changed.geometry)
+        XCTAssertEqual(original.side, .front)
+        XCTAssertEqual(original.sheetIndex, 1)
+        XCTAssertEqual(original.blank, changed.blank)
+        XCTAssertTrue(original.alternate?.image === changed.image)
+        let back = original.withVersionsSwapped(try XCTUnwrap(original.alternate?.image))
+        XCTAssertFalse(back.showsOriginal)
+        XCTAssertTrue(back.image === changed.image)
+        XCTAssertTrue(back.alternate?.image === sheetImage)
+        // A page with no other version stays as it is.
+        let plain = page(blankImage)
+        let same = plain.withVersionsSwapped(textImage)
+        XCTAssertTrue(same.image === blankImage)
+        XCTAssertFalse(same.showsOriginal)
+    }
+
+    func test_withVersionsSwapped_spooledVersions_swapFilesAndDropThePixelsOfTheHiddenOne() throws {
+        let correctedURL = URL(fileURLWithPath: "/tmp/corrected.tiff")
+        let originalURL = URL(fileURLWithPath: "/tmp/original.tiff")
+        let spooled = corrected()
+            .withImage(solid(6, 8, 1), fileURL: correctedURL, fullPixelSize: CGSize(width: 60, height: 80))
+            .withAlternate(PageVersion(image: nil, fileURL: originalURL, fullPixelSize: CGSize(width: 850, height: 1100)))
+        let preview = solid(85, 110, 2)
+        let original = spooled.withVersionsSwapped(preview)
+        XCTAssertEqual(original.fileURL, originalURL)
+        XCTAssertEqual(original.fullPixelSize, CGSize(width: 850, height: 1100))
+        XCTAssertTrue(original.image === preview)
+        let hidden = try XCTUnwrap(original.alternate)
+        XCTAssertNil(hidden.image)
+        XCTAssertEqual(hidden.fileURL, correctedURL)
+        XCTAssertEqual(hidden.fullPixelSize, CGSize(width: 60, height: 80))
+    }
+
+    func test_geometry_survivesRebuildingThePage_theOtherVersionStaysWithItsPixels() {
+        let swapped = corrected().withVersionsSwapped(sheetImage)
+        let rebuilt = [
+            swapped.withImage(solid(3, 3, 0)),
+            swapped.withSide(.back, sheetIndex: 0),
+            swapped.withBlank(nil),
+            swapped.withInclusion(.skip),
+        ]
+        for page in rebuilt {
+            XCTAssertEqual(page.geometry, swapped.geometry)
+            XCTAssertTrue(page.showsOriginal)
+            XCTAssertTrue(page.alternate?.image === swapped.alternate?.image)
+        }
+        // copyMeta takes the source's facts and keeps this page's other version.
+        let other = page(textImage).copyMeta(from: swapped)
+        XCTAssertEqual(other.geometry, swapped.geometry)
+        XCTAssertTrue(other.showsOriginal)
+        XCTAssertNil(other.alternate)
+        XCTAssertNil(page(textImage).geometry)
+    }
+
+    func test_pageCorrections_sayWhatWasDone_andWhatOneClickDoes() {
+        let changed = corrected()
+        XCTAssertEqual(PageCorrections.caption(changed), "Cropped and straightened 4.0°")
+        XCTAssertEqual(PageCorrections.toggleLabel(changed), "Show as scanned")
+        XCTAssertEqual(PageCorrections.swapNote(changed, number: 2), "Page 2 is cropped and straightened again.")
+        let original = changed.withVersionsSwapped(sheetImage)
+        XCTAssertEqual(PageCorrections.caption(original), "As scanned")
+        XCTAssertEqual(PageCorrections.toggleLabel(original), "Show cropped and straightened")
+        XCTAssertEqual(PageCorrections.swapNote(original, number: 2), "Page 2 is shown as scanned. It is saved that way.")
+        let straightened = page(sheetImage).withGeometry(sheetImage, geometry: PageGeometry(cropped: false, angleDegrees: 1.25,
+                                                                                             basis: .textLines))
+        XCTAssertEqual(PageCorrections.caption(straightened), "Straightened 1.3°")
+        XCTAssertEqual(PageCorrections.toggleLabel(straightened.withVersionsSwapped(sheetImage)), "Show straightened")
+        let cropped = page(sheetImage).withGeometry(sheetImage, geometry: PageGeometry(cropped: true, angleDegrees: 0,
+                                                                                        basis: .pageEdges))
+        XCTAssertEqual(PageCorrections.caption(cropped), "Cropped")
+        XCTAssertNil(PageCorrections.caption(page(blankImage)))
+        XCTAssertNil(PageCorrections.toggleLabel(page(blankImage)))
+        XCTAssertNil(PageCorrections.toggleLabel(cropped.withAlternate(nil)))
+        XCTAssertEqual(PageCorrections.scanNote([straightened, straightened, page(blankImage)]), " 2 straightened.")
+        XCTAssertEqual(PageCorrections.scanNote([straightened, cropped]), " 2 cropped or straightened.")
+        XCTAssertEqual(PageCorrections.scanNote([original]), "")
+    }
 
     func test_isExcluded_followsTheSetting_unlessTheUserDecided() {
         let on = options(true)

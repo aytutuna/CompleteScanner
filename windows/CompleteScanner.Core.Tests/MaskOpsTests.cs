@@ -137,6 +137,31 @@ public class MaskOpsTests
         (64, 48, 50, 6), (64, 48, 85, 7), (101, 37, 60, 8), (5, 5, 100, 9), (5, 5, 0, 10),
     ];
 
+    [Fact]
+    public void Erode_OutsideSet_KeepsTheEdgeOfARegionAgainstTheBorder()
+    {
+        // A 6 x 4 block in the top left corner of a 10 x 8 mask.
+        var mask = new byte[80];
+        for (int y = 0; y < 4; y++)
+        {
+            for (int x = 0; x < 6; x++) mask[y * 10 + x] = 1;
+        }
+        var kept = new byte[80];
+        var shrunk = new byte[80];
+        for (int y = 0; y < 8; y++)
+        {
+            for (int x = 0; x < 10; x++)
+            {
+                // Outside set: it shrinks only on the sides facing the inside of the mask.
+                kept[y * 10 + x] = (byte)(x < 5 && y < 3 ? 1 : 0);
+                // Outside clear (the default): it shrinks along the border too.
+                shrunk[y * 10 + x] = (byte)(x >= 1 && x < 5 && y >= 1 && y < 3 ? 1 : 0);
+            }
+        }
+        Assert.Equal(kept, MaskOps.Erode(mask, 10, 8, 1, outsideSet: true));
+        Assert.Equal(shrunk, MaskOps.Erode(mask, 10, 8, 1));
+    }
+
     // MARK: - Equivalence
 
     [Fact]
