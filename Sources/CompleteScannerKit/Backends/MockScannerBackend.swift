@@ -7,7 +7,9 @@ import Foundation
 /// photo splitting, OCR, PDF export) can be exercised end to end. It also has a
 /// document feeder holding `feederSheetCount` two-sided letter-size sheets, which it scans one
 /// side or both (`feederDuplex`), so two-sided scanning, turning the stack over by hand and paper
-/// sizes can be tried without hardware. Twin of C# `MockScannerBackend`.
+/// sizes can be tried without hardware. For the ID card task its glass holds a sample card (an
+/// obviously made-up design, no real document), which it turns over after every scan
+/// (`idCardTurnedOver`). Twin of C# `MockScannerBackend`.
 public final class MockScannerBackend: ScannerBackend {
 
     /// Sheets the demo feeder holds unless `feederSheetCount` is changed.
@@ -42,6 +44,11 @@ public final class MockScannerBackend: ScannerBackend {
     /// like the back of a one-sided page in a two-sided stack. Empty by default; the app's demo
     /// scanner has a blank back on its second sheet.
     public var feederBlankBackSheets: Set<Int> = []
+
+    /// The sample ID card on the glass lies with its back up: a scan for the ID card task shows its
+    /// back. The demo turns the card over by itself after every such scan, as the user is asked to,
+    /// so scans alternate front, back, front… A preview shows the side facing down without turning it.
+    public var idCardTurnedOver: Bool = false
 
     public init() {}
 
@@ -99,7 +106,10 @@ private final class MockScannerSession: ScannerSession {
     func performOverviewScan(settings: ScanSettings) async throws -> CGImage {
         cancelRequested = false
         progressHandler?(ScanProgress(fraction: 0.5, message: "Scanning overview…"))
-        guard let image = MockBedRenderer.renderBed(dpi: 100, intent: settings.intent) else {
+        let rendered = settings.task == .idCard
+            ? MockBedRenderer.renderIdCardBed(dpi: 100, side: (backend?.idCardTurnedOver ?? false) ? .back : .front)
+            : MockBedRenderer.renderBed(dpi: 100, intent: settings.intent)
+        guard let image = rendered else {
             throw ScanError.scanFailed("Could not render the demo overview.")
         }
         return image
@@ -118,9 +128,16 @@ private final class MockScannerSession: ScannerSession {
         try await sleepCheckingCancellation(seconds: 0.25)
 
         progressHandler?(ScanProgress(fraction: 0.6, message: "Scanning…"))
-        guard var image = MockBedRenderer.renderBed(dpi: dpi, intent: settings.intent) else {
+        // The ID card task scans the sample card, then turns it over as the user would.
+        let idCard = settings.task == .idCard
+        let cardSide: PageSide = (backend?.idCardTurnedOver ?? false) ? .back : .front
+        let rendered = idCard
+            ? MockBedRenderer.renderIdCardBed(dpi: dpi, side: cardSide)
+            : MockBedRenderer.renderBed(dpi: dpi, intent: settings.intent)
+        guard var image = rendered else {
             throw ScanError.scanFailed("Could not render the demo scan.")
         }
+        if idCard { backend?.idCardTurnedOver = cardSide == .front }
         try await sleepCheckingCancellation(seconds: 0.25)
 
         progressHandler?(ScanProgress(fraction: 0.9, message: "Transferring…"))
@@ -344,6 +361,133 @@ private enum MockBedRenderer {
             }
         }
         return RgbaImage(width: width, height: height, pixels: pixels).makeCGImage()
+    }
+
+    // MARK: ID card
+
+    /// Where the sample card lies on the glass, front down (its centre, in inches from the top-left corner).
+    static let idCardCenterInches = CGPoint(x: 2.35, y: 1.75)
+    /// The sample card's tilt with its front down; turned over where it lay, the other way.
+    static let idCardAngleDegrees: CGFloat = 4
+
+    /// The glass with the sample ID card on it, near the top-left corner and tilted 4°: the `side`
+    /// facing the glass. Turned over where it lay, the card's back is tilted the other way. The
+    /// design is made up and says SAMPLE: a header band, a grey photo placeholder and field bars on
+    /// the front; a barcode, SAMPLE and three lines of code blocks on the back. ID-1 size
+    /// (3.370 × 2.125 in), with rounded corners. The same card as the C# demo, drawn with CoreGraphics.
+    static func renderIdCardBed(dpi: Int, side: PageSide) -> CGImage? {
+        let scale = CGFloat(dpi)
+        let width = Int(bedInches.width * scale)
+        let height = Int(bedInches.height * scale)
+        guard width > 0, height > 0,
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: width, height: height,
+                                  bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            return nil
+        }
+        // Flip so (0, 0) is the top-left corner and y grows downward.
+        ctx.translateBy(x: 0, y: CGFloat(height))
+        ctx.scaleBy(x: 1, y: -1)
+        drawBedBackground(in: ctx, width: CGFloat(width), height: CGFloat(height))
+
+        let cardW = CGFloat(IdCardDetector.cardLongSideInches)
+        let cardH = CGFloat(IdCardDetector.cardShortSideInches)
+        ctx.saveGState()
+        ctx.translateBy(x: idCardCenterInches.x * scale, y: idCardCenterInches.y * scale)
+        // In this flipped (y-down) space a positive CG rotation appears clockwise on screen.
+        ctx.rotate(by: (side == .front ? idCardAngleDegrees : -idCardAngleDegrees) * .pi / 180)
+        // From here on, inches from the card's top-left corner.
+        ctx.scaleBy(x: scale, y: scale)
+        ctx.translateBy(x: -cardW / 2, y: -cardH / 2)
+        let card = CGRect(x: 0, y: 0, width: cardW, height: cardH)
+        ctx.addPath(CGPath(roundedRect: card, cornerWidth: 0.125, cornerHeight: 0.125, transform: nil))
+        ctx.clip()
+        let paper = rgb(196 / 255, 224 / 255, 220 / 255)
+        let ink = rgb(36 / 255, 44 / 255, 52 / 255)
+        let red = rgb(190 / 255, 40 / 255, 40 / 255)
+        ctx.setFillColor(paper)
+        ctx.fill(card)
+        if side == .front {
+            // Header band with SAMPLE in white.
+            ctx.setFillColor(rgb(30 / 255, 96 / 255, 104 / 255))
+            ctx.fill(CGRect(x: 0, y: 0, width: cardW, height: 0.42))
+            drawSample(in: ctx, x: 0.2, y: 0.07, cell: 0.04, color: gray(250 / 255))
+            // Photo placeholder: a grey box with a head-and-shoulders outline.
+            ctx.saveGState()
+            let photo = CGRect(x: 0.18, y: 0.58, width: 0.8, height: 1.02)
+            ctx.clip(to: photo)
+            ctx.setFillColor(rgb(176 / 255, 184 / 255, 190 / 255))
+            ctx.fill(photo)
+            ctx.setFillColor(rgb(120 / 255, 128 / 255, 136 / 255))
+            ctx.fillEllipse(in: CGRect(x: 0.58 - 0.17, y: 0.92 - 0.17, width: 0.34, height: 0.34))
+            ctx.fillEllipse(in: CGRect(x: 0.58 - 0.34, y: 1.62 - 0.42, width: 0.68, height: 0.84))
+            ctx.restoreGState()
+            // Field labels and values.
+            for (line, valueWidth) in cardFieldWidths.enumerated() {
+                let top = 0.6 + CGFloat(line) * 0.3
+                ctx.setFillColor(rgb(90 / 255, 130 / 255, 135 / 255))
+                ctx.fill(CGRect(x: 1.15, y: top, width: 0.5, height: 0.05))
+                ctx.setFillColor(ink)
+                ctx.fill(CGRect(x: 1.15, y: top + 0.08, width: valueWidth, height: 0.09))
+            }
+            // SAMPLE again along the bottom, in red.
+            drawSample(in: ctx, x: 1.15, y: 1.82, cell: 0.032, color: red)
+        } else {
+            // A barcode.
+            ctx.setFillColor(ink)
+            var bar = 0
+            while 0.2 + CGFloat(bar) * 0.018 < cardW - 0.2 {
+                if bar * 7 % 5 < 2 {
+                    let x = 0.2 + CGFloat(bar) * 0.018
+                    ctx.fill(CGRect(x: x, y: 0.2, width: min(0.018, cardW - 0.2 - x), height: 0.42))
+                }
+                bar += 1
+            }
+            drawSample(in: ctx, x: 1.0, y: 0.8, cell: 0.045, color: red)
+            // Three lines of code blocks.
+            ctx.setFillColor(ink)
+            for line in 0..<3 {
+                let top = cardH - 0.62 + CGFloat(line) * 0.17
+                var cell = 0
+                while 0.2 + CGFloat(cell) * 0.085 < cardW - 0.2 {
+                    let x = 0.2 + CGFloat(cell) * 0.085
+                    if (cell * 3 + line) % 7 != 0 {
+                        ctx.fill(CGRect(x: x, y: top, width: min(0.06, cardW - 0.2 - x), height: 0.1))
+                    }
+                    cell += 1
+                }
+            }
+        }
+        ctx.restoreGState()
+        return ctx.makeImage()
+    }
+
+    /// Lengths of the sample card's field values, in inches.
+    private static let cardFieldWidths: [CGFloat] = [1.7, 1.25, 1.45, 0.95]
+
+    /// 5 × 7 blocks of the letters S, A, M, P, L, E.
+    private static let sampleGlyphs: [String] = [
+        "01111" + "10000" + "10000" + "01110" + "00001" + "00001" + "11110",
+        "01110" + "10001" + "10001" + "11111" + "10001" + "10001" + "10001",
+        "10001" + "11011" + "10101" + "10101" + "10001" + "10001" + "10001",
+        "11110" + "10001" + "10001" + "11110" + "10000" + "10000" + "10000",
+        "10000" + "10000" + "10000" + "10000" + "10000" + "10000" + "11111",
+        "11111" + "10000" + "10000" + "11110" + "10000" + "10000" + "11111",
+    ]
+
+    /// The word SAMPLE in blocks of `cell` inches, its top-left corner at (`x`, `y`) inches on the card.
+    private static func drawSample(in ctx: CGContext, x: CGFloat, y: CGFloat, cell: CGFloat, color: CGColor) {
+        ctx.setFillColor(color)
+        for (letter, glyph) in sampleGlyphs.enumerated() {
+            let bits = Array(glyph)
+            for row in 0..<7 {
+                for column in 0..<5 where bits[row * 5 + column] == "1" {
+                    ctx.fill(CGRect(x: x + CGFloat(letter * 6 + column) * cell, y: y + CGFloat(row) * cell,
+                                    width: cell, height: cell))
+                }
+            }
+        }
     }
 
     // MARK: Background

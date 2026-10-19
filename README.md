@@ -64,6 +64,15 @@ scanners** — including the Epson Perfection V39 II.
   unclear is left as scanned, a crop never cuts into the sheet, and turning a page never cuts off
   anything in its corners. A changed page has a small arrow in the page strip that shows it as
   scanned, and back. The Two-sided document task straightens pages.
+- **ID card**: copies of an ID card or driving licence for a bank, a rental or a job. Scan the
+  front, turn the card over where it lies and scan the back (or skip it when nothing is printed
+  there); the card is found on the glass, cut out and straightened, and both sides go on one A4 or
+  Letter page at their real size (85.60 × 53.98 mm), the paper usual where you live unless you pick
+  the other. Check the sides, turn or re-crop one, swap them or scan one again, then save a PDF, or a
+  JPEG, PNG or TIFF of the page, and if you like each side as an image too. ID cards are sensitive,
+  so nothing leaves the Mac: the scans are kept in memory only, never in the Scans tab, and are
+  cleared as soon as the card is saved or discarded; the PDF has no searchable text layer unless you
+  turn it on. Printing the page comes with the Copy task.
 - **"Why isn't my scanner listed?"**: a troubleshooter, from the **?** button next to
   **Scanners**, the empty scanner list and an error about a scanner. It checks, in plain
   language, whether macOS is looking for scanners and what the last failure was (a scanner that
@@ -78,7 +87,7 @@ scanners** — including the Epson Perfection V39 II.
   descreen (moiré reduction for printed material), faded-color restoration for old photos,
   black-and-white threshold.
 - **Start screen**: pick what you are scanning (Document to PDF, Multi-page from feeder,
-  Photos, Old photo restoration, Quick scan, Email a document, Two-sided document) and everything is set up for it, with a short
+  Photos, Old photo restoration, Quick scan, Email a document, Two-sided document, ID card) and everything is set up for it, with a short
   guide on the scan screen. Tasks the connected scanner cannot do are greyed out with the
   reason. The app remembers the task you used last.
 - **Presets**: save your own settings as presets; they appear on the start screen too.
@@ -87,7 +96,8 @@ scanners** — including the Epson Perfection V39 II.
   `{index}`, `{task}` tokens; automatic collision-free numbering.
 - **Demo Scanner**: a built-in simulated device so you can try every feature (including OCR,
   photo splitting and a document feeder with three two-sided sheets, which it scans one side or
-  both; the second sheet's back is blank) with no hardware connected.
+  both; the second sheet's back is blank; for the ID card task a made-up sample card, which it
+  turns over after each scan) with no hardware connected.
 
 ## Build & run
 
@@ -149,7 +159,8 @@ instructions and current status.
 - `Sources/CompleteScannerKit/Backends` — ImageCaptureCore backend, demo backend
 - `Sources/CompleteScannerKit/Pipeline` — photo detection/split/deskew, image adjustments, the
   page clean-up stage (`PageProcessor`: blank-page check, then adjustments) and its image
-  toolkit (`RgbaImage`, `GrayImage`, `BackgroundMap`, `MaskOps`, `BlankPageDetector`)
+  toolkit (`RgbaImage`, `GrayImage`, `BackgroundMap`, `MaskOps`, `BlankPageDetector`), and the ID
+  card's detector, layout and page (`IdCard`)
 - `Sources/CompleteScannerKit/Output` — PDF builder, OCR, image export, naming templates
 - `Sources/CompleteScannerKit/UI` — SwiftUI views
 - `Tests/CompleteScannerTests` — unit tests (synthetic-image based)

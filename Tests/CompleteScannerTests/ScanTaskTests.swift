@@ -27,6 +27,8 @@ private func customized() -> ScanSettings {
     s.duplex = .manual
     s.backBinding = .shortEdge
     s.paperSize = .legal
+    s.taskOptions.idCardPaper = .letter
+    s.taskOptions.idCardSaveSidesAsImages = true
     return s
 }
 
@@ -34,7 +36,7 @@ final class ScanTaskTests: XCTestCase {
 
     func test_rawValues_areTheStoredNames() {
         XCTAssertEqual(ScanTask.allCases.map(\.rawValue),
-                       ["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided"])
+                       ["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard"])
     }
 
     func test_tryParse_isExact() {
@@ -52,12 +54,15 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertEqual(TaskCatalog.all.map(\.task), ScanTask.allCases)
         XCTAssertEqual(TaskCatalog.all.map(\.title),
                        ["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
-                        "Email a document", "Two-sided document"])
+                        "Email a document", "Two-sided document", "ID card"])
         XCTAssertEqual(TaskCatalog.all.map(\.iconKey),
-                       ["document", "feeder", "photos", "restore", "quick", "email", "twoSided"])
+                       ["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard"])
         for definition in TaskCatalog.all {
             XCTAssertEqual(TaskCatalog.definition(definition.task), definition)
             XCTAssertFalse(definition.subtitle.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        // Every task but the ID card has one repeating scan step.
+        for definition in TaskCatalog.all where definition.task != .idCard {
             XCTAssertEqual(definition.steps.count, 1)
             let step = definition.steps[0]
             XCTAssertEqual(step.id, "scan")
@@ -72,11 +77,11 @@ final class ScanTaskTests: XCTestCase {
     func test_definitions_flowIntentAndRequiredSource() {
         XCTAssertEqual(TaskCatalog.all.map(\.flow),
                        [.documentQueue, .documentQueue, .photoSplit, .photoSplit, .documentQueue, .documentQueue,
-                        .documentQueue])
+                        .documentQueue, .idCard])
         XCTAssertEqual(TaskCatalog.all.map(\.intent),
-                       [.document, .document, .photo, .photo, .document, .document, .document])
+                       [.document, .document, .photo, .photo, .document, .document, .document, .document])
         XCTAssertEqual(TaskCatalog.all.map(\.requiredSource),
-                       [nil, .documentFeeder, nil, nil, .flatbed, nil, .documentFeeder])
+                       [nil, .documentFeeder, nil, nil, .flatbed, nil, .documentFeeder, .flatbed])
     }
 
     func test_apply_keepsDestinationAndDetectionTuning_andLeavesTheInputAlone() {
@@ -90,7 +95,12 @@ final class ScanTaskTests: XCTestCase {
             XCTAssertEqual(s.task, task)
             XCTAssertEqual(s.jpegQuality, 0.9)
             XCTAssertEqual(s.colorMode, .color)
-            XCTAssertTrue(s.photoAutoSplit && s.photoAutoDeskew && s.pdfSearchable)
+            XCTAssertTrue(s.photoAutoSplit && s.photoAutoDeskew)
+            // The ID card's numbers are better not indexed: no text layer.
+            XCTAssertEqual(s.pdfSearchable, task != .idCard, task.rawValue)
+            // How the user wants a task done is kept.
+            XCTAssertEqual(s.taskOptions.idCardPaper, .letter, task.rawValue)
+            XCTAssertTrue(s.taskOptions.idCardSaveSidesAsImages, task.rawValue)
             XCTAssertEqual(s.intent, TaskCatalog.definition(task).intent)
             XCTAssertTrue(TaskCatalog.fits(task, s))
             XCTAssertEqual(TaskCatalog.infer(s), task)
@@ -114,6 +124,7 @@ final class ScanTaskTests: XCTestCase {
             "document flatbed 150 jpeg false Scan {date} {counter} false false standard",
             "document flatbed 300 pdf true Scan {date} {counter} false false compact",
             "document documentFeeder 300 pdf true Scan {date} {counter} false false standard",
+            "document flatbed 300 pdf true ID card {date} false false standard",
         ])
     }
 
@@ -169,6 +180,38 @@ final class ScanTaskTests: XCTestCase {
         s.duplex = .both
         s.source = .flatbed
         XCTAssertFalse(TaskCatalog.fits(.twoSided, s))
+    }
+
+    func test_idCard_isAFlatbedPDFWithItsOwnSteps() {
+        let definition = TaskCatalog.definition(.idCard)
+        XCTAssertEqual(definition.steps, IdCardSteps.steps)
+        XCTAssertEqual(definition.steps[0].primaryActionLabel, "Scan front")
+        var s = TaskCatalog.apply(.idCard, to: ScanSettings())
+        XCTAssertEqual(s.intent, .document)
+        XCTAssertEqual(s.source, .flatbed)
+        XCTAssertEqual(s.format, .pdf)
+        XCTAssertEqual(s.resolution, 300)
+        XCTAssertEqual(s.colorMode, .color)
+        XCTAssertEqual(s.duplex, .off)
+        XCTAssertFalse(s.pdfSearchable)
+        XCTAssertEqual(s.output.afterSave, AfterSaveAction.none)
+        XCTAssertEqual(TaskCatalog.flow(of: s), .idCard)
+        XCTAssertEqual(TaskCatalog.guidedSteps(s, capabilities: nil), IdCardSteps.steps)
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi \u{00B7} Color \u{00B7} PDF")
+        XCTAssertTrue(TaskCatalog.fits(.idCard, s))
+        // Saving JPEG or PNG keeps the task; the feeder or Photos mode ends it.
+        s.format = .png
+        XCTAssertTrue(TaskCatalog.fits(.idCard, s))
+        s.source = .documentFeeder
+        XCTAssertFalse(TaskCatalog.fits(.idCard, s))
+        XCTAssertEqual(TaskCatalog.flow(of: s), .documentQueue)
+        s.source = .flatbed
+        s.intent = .photo
+        XCTAssertFalse(TaskCatalog.fits(.idCard, s))
+        // Settings never look like an ID card without the task stored.
+        var untagged = TaskCatalog.apply(.idCard, to: ScanSettings())
+        untagged.taskId = nil
+        XCTAssertEqual(TaskCatalog.infer(untagged), .document)
     }
 
     func test_guidedSteps_turningOverByHandWinsOverTheTask() {
@@ -288,13 +331,15 @@ final class ScanTaskTests: XCTestCase {
         }
     }
 
-    func test_availability_feederOnlyScanner_noQuickScan() {
+    func test_availability_feederOnlyScanner_noQuickScanOrIdCard() {
         let caps = ScannerCapabilities(sources: [.documentFeeder], supportsOverview: false)
-        let quick = TaskCatalog.availability(of: .quickScan, capabilities: caps)
-        XCTAssertFalse(quick.isAvailable)
-        XCTAssertEqual(quick.reason, "This scanner has no flatbed.")
+        for task in [ScanTask.quickScan, .idCard] {
+            let availability = TaskCatalog.availability(of: task, capabilities: caps)
+            XCTAssertFalse(availability.isAvailable)
+            XCTAssertEqual(availability.reason, "This scanner has no flatbed.")
+        }
         // Documents and photos fall back to the feeder (SettingsAdapter).
-        for task in ScanTask.allCases where task != .quickScan {
+        for task in ScanTask.allCases where task != .quickScan && task != .idCard {
             XCTAssertTrue(TaskCatalog.availability(of: task, capabilities: caps).isAvailable, task.rawValue)
         }
     }
@@ -410,6 +455,6 @@ final class ScanTaskTests: XCTestCase {
 
     func test_fileLabels() {
         XCTAssertEqual(TaskCatalog.all.map(\.fileLabel),
-                       ["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document"])
+                       ["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card"])
     }
 }

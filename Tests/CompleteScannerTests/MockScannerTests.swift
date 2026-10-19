@@ -321,4 +321,58 @@ final class MockScannerTests: XCTestCase {
         XCTAssertEqual(pages.count, 1)
         XCTAssertEqual(pages.first?.image.height, Int(11.7 * Double(mockDPI)))
     }
+
+    // MARK: ID card
+
+    private func idCardSettings(dpi: Int) -> ScanSettings {
+        var settings = TaskCatalog.apply(.idCard, to: ScanSettings())
+        settings.resolution = dpi
+        return settings
+    }
+
+    @MainActor
+    func test_idCardScansTurnTheSampleCardOver() async throws {
+        let (backend, session) = try await open()
+        XCTAssertFalse(backend.idCardTurnedOver)
+        // A preview shows the side facing the glass without turning the card.
+        let preview = try await session.performOverviewScan(settings: idCardSettings(dpi: mockDPI))
+        XCTAssertFalse(backend.idCardTurnedOver)
+        let first = try await session.performScan(settings: idCardSettings(dpi: mockDPI), selection: nil)
+        let front = try XCTUnwrap(first.first).image
+        XCTAssertTrue(backend.idCardTurnedOver)
+        let second = try await session.performScan(settings: idCardSettings(dpi: mockDPI), selection: nil)
+        let back = try XCTUnwrap(second.first).image
+        XCTAssertFalse(backend.idCardTurnedOver)
+        let third = try await session.performScan(settings: idCardSettings(dpi: mockDPI), selection: nil)
+        let frontAgain = try XCTUnwrap(third.first).image
+        XCTAssertEqual(front.width, back.width)
+        XCTAssertEqual(front.height, back.height)
+        XCTAssertEqual(front.height, Int(11.7 * Double(mockDPI)))
+        XCTAssertNotEqual(rgbaPixels(front), rgbaPixels(back))
+        XCTAssertEqual(rgbaPixels(front), rgbaPixels(frontAgain))
+        XCTAssertEqual(preview.height, Int(11.7 * 100.0))
+        // Other scans do not touch the card.
+        var plain = ScanSettings()
+        plain.resolution = mockDPI
+        _ = try await session.performScan(settings: plain, selection: nil)
+        XCTAssertTrue(backend.idCardTurnedOver)
+    }
+
+    @MainActor
+    func test_theSampleCardIsFoundAtIdOneSize() async throws {
+        let (_, session) = try await open()
+        for angle in [4.0, -4.0] {
+            let pages = try await session.performScan(settings: idCardSettings(dpi: 150), selection: nil)
+            let scan = try XCTUnwrap(pages.first)
+            let pick = IdCardDetector.detect(scan.image, dpi: 150)
+            XCTAssertEqual(pick.kind, .card)
+            let longSide = Double(max(pick.region.size.width, pick.region.size.height)) / 150
+            let shortSide = Double(min(pick.region.size.width, pick.region.size.height)) / 150
+            XCTAssertEqual(longSide, 3.370, accuracy: 0.05)
+            XCTAssertEqual(shortSide, 2.125, accuracy: 0.05)
+            XCTAssertEqual(pick.region.angleDegrees, angle, accuracy: 0.5)
+            XCTAssertEqual(Double(pick.region.center.x) / 150, 2.35, accuracy: 0.05)
+            XCTAssertEqual(Double(pick.region.center.y) / 150, 1.75, accuracy: 0.05)
+        }
+    }
 }

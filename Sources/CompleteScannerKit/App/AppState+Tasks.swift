@@ -73,7 +73,9 @@ extension AppState {
         // A feeder not asked yet whether it scans both sides is taken to (`sidesCapabilities`); the
         // check that follows the change of source switches to turning over by hand if it does not.
         let adapted = SettingsAdapter.adapt(TaskCatalog.apply(task, to: settings), to: sidesCapabilities)
-        // Fresh steps, even when the same task is picked again.
+        // Fresh steps, even when the same task is picked again: nothing of an ID card is kept, on
+        // the stage either.
+        if isIdCardFlow || hasIdCardCaptures || showIdCardReview { clearIdCard(clearCanvas: true) }
         taskFlow = nil
         flowTask = nil
         flowIsManual = false
@@ -84,9 +86,10 @@ extension AppState {
     }
 
     /// Leaves the active task: the settings stay as they are, without the task's banner, so the
-    /// scan screen is back to plain settings.
+    /// scan screen is back to plain settings. Refused while an operation runs: a scan under way
+    /// belongs to the task's steps.
     public func exitTask() {
-        guard settings.taskId != nil else { return }
+        guard !isBusy, settings.taskId != nil else { return }
         settings.taskId = nil
     }
 
@@ -95,6 +98,7 @@ extension AppState {
     /// steps go when there is nothing to guide. A task id this version does not know stays
     /// stored, without steps. Steps already under way are kept while they still apply.
     func syncTaskFlow() {
+        let wasIdCard = isIdCardFlow
         let caps = sidesCapabilities
         let manual = DocumentSides.usesManualSteps(settings, capabilities: caps)
         let task: ScanTask? = manual ? nil : settings.task
@@ -103,6 +107,9 @@ extension AppState {
             flowTask = nil
             flowIsManual = false
             if sidesMismatch != nil { sidesMismatch = nil }
+            // No steps: the sides of an ID card scanned before go, and the stage no longer shows the
+            // card (also a scan whose card was not found, or a preview of the glass).
+            if wasIdCard || hasIdCardCaptures || showIdCardReview { clearIdCard(clearCanvas: true) }
             return
         }
         if taskFlow == nil || flowTask != task || flowIsManual != manual {
@@ -110,7 +117,23 @@ extension AppState {
             flowTask = task
             flowIsManual = manual
             if sidesMismatch != nil { sidesMismatch = nil }
+            // Steps started afresh: the same.
+            if wasIdCard || hasIdCardCaptures || showIdCardReview { clearIdCard(clearCanvas: true) }
         }
+    }
+
+    /// The banner's skip button is offered: the back of an ID card (`IdCardSteps.offersSkip`).
+    public var canSkipStep: Bool { isIdCardFlow && IdCardSteps.offersSkip(taskFlow?.current) }
+
+    /// Leaves out the back of an ID card with nothing on it (`canSkipStep`), after which the card's
+    /// review opens. The backs of a stack turned over by hand are not skipped here: Keep Fronts Only
+    /// (`keepFrontsOnly`) leaves them out. Twin of the Windows `AppViewModel.SkipStep`.
+    public func skipStep() {
+        guard !isBusy, canSkipStep else { return }
+        taskFlow?.skip()
+        setIdCardSide(.back, photo: nil, note: nil)
+        statusMessage = "No back side. Check the front, then save."
+        openIdCardReview()
     }
 
     /// Back to the first step with nothing captured; a stack's count mismatch goes with it.

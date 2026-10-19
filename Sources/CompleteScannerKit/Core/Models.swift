@@ -305,6 +305,34 @@ extension DocumentOptions {
     }
 }
 
+/// Choices that belong to one task, kept together as `ScanSettings.taskOptions` (the "taskOptions"
+/// object in settings files). Picking a task keeps them: they say how the user wants that task
+/// done. Later tasks add their fields here. Twin of C# `TaskOptions`.
+public struct TaskOptions: Codable, Equatable, Sendable {
+    /// The page the ID card's sides are laid out on. Settings without it get `.auto`.
+    public var idCardPaper: IdCardPaper = .auto
+    /// Each side of the ID card is also saved as an image of its own. Off unless chosen.
+    public var idCardSaveSidesAsImages: Bool = false
+
+    public init() {}
+
+    /// `encode(to:)` stays synthesized.
+    private enum CodingKeys: String, CodingKey {
+        case idCardPaper
+        case idCardSaveSidesAsImages
+    }
+}
+
+extension TaskOptions {
+    /// Tolerant decoding: a missing or undecodable key keeps the property's default.
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        idCardPaper = container.decodeLenient(forKey: .idCardPaper, default: idCardPaper)
+        idCardSaveSidesAsImages = container.decodeLenient(forKey: .idCardSaveSidesAsImages, default: idCardSaveSidesAsImages)
+    }
+}
+
 public struct ScanSettings: Codable, Equatable, Sendable {
     public var intent: ScanIntent = .document
     public var source: ScanSource = .flatbed
@@ -358,6 +386,9 @@ public struct ScanSettings: Codable, Equatable, Sendable {
     /// Clean-up of document pages (blank pages).
     public var document: DocumentOptions = DocumentOptions()
 
+    /// Choices of particular tasks (the ID card's page).
+    public var taskOptions: TaskOptions = TaskOptions()
+
     public init() {}
 
     /// The task of `taskId`, when this version knows it.
@@ -377,6 +408,7 @@ public struct ScanSettings: Codable, Equatable, Sendable {
         case output
         case duplex, backBinding, paperSize
         case document
+        case taskOptions
     }
 }
 
@@ -408,6 +440,7 @@ extension ScanSettings {
         backBinding = container.decodeLenient(forKey: .backBinding, default: backBinding)
         paperSize = container.decodeLenient(forKey: .paperSize, default: paperSize)
         document = container.decodeLenient(forKey: .document, default: document)
+        taskOptions = container.decodeLenient(forKey: .taskOptions, default: taskOptions)
     }
 }
 

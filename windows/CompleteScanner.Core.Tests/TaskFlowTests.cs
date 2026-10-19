@@ -190,7 +190,8 @@ public class TaskFlowTests
     [Fact]
     public void CatalogFlows_OneRepeatingScanStep()
     {
-        foreach (var definition in TaskCatalog.All)
+        // The ID card's front, back and review are checked in IdCardTests.
+        foreach (var definition in TaskCatalog.All.Where(d => d.Task != ScanTask.IdCard))
         {
             var flow = new TaskFlow(definition.Steps);
             Assert.Equal(1, flow.StepCount);

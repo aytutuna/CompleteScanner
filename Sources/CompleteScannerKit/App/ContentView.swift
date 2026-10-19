@@ -61,6 +61,23 @@ struct ContentView: View {
                     savedDetail
                 }
             }
+            // The ID card's review, on the detail rather than next to the photo review's sheet.
+            .sheet(isPresented: $state.showIdCardReview) {
+                IdCardReviewView()
+                    .environmentObject(state)
+            }
+            // Leaving the ID card task (or picking a task or a preset) with a side scanned and not
+            // saved asks first (`AppState.leaveIdCard`).
+            .alert("Discard the ID card?",
+                   isPresented: Binding(
+                       get: { state.pendingIdCardLeave != nil },
+                       set: { if !$0 { state.pendingIdCardLeave = nil } }),
+                   presenting: state.pendingIdCardLeave) { leave in
+                Button("Discard", role: .destructive) { state.discardIdCard(andThen: leave) }
+                Button("Cancel", role: .cancel) {}
+            } message: { _ in
+                Text("The ID card has not been saved. Its scanned sides will be discarded.")
+            }
         }
         .sheet(isPresented: $state.showPhotoReview) {
             PhotoReviewView()

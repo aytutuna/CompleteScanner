@@ -9,12 +9,14 @@ public enum TaskFlowKind
     DocumentQueue,
     /// <summary>Photos are found on the bed, cropped and straightened, then reviewed.</summary>
     PhotoSplit,
+    /// <summary>The front and back of a card are found on the bed and laid out on one page (<see cref="IdCardComposer"/>).</summary>
+    IdCard,
 }
 
 /// <summary>A task card: what it is called, how it looks and how its scans are handled.</summary>
 /// <param name="IconKey">
 /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-/// "photos", "restore", "quick", "email", "twoSided".
+/// "photos", "restore", "quick", "email", "twoSided", "idCard".
 /// </param>
 /// <param name="Intent">The scan mode the task uses.</param>
 /// <param name="RequiredSource">The source the task cannot work without; null when any source does.</param>
@@ -80,6 +82,10 @@ public static class TaskCatalog
             [new TaskStep("scan", "Scan the stack",
                           "Load the pages in the document feeder and scan: both sides of every sheet are scanned and put in order. Then save the PDF.",
                           "Scan stack", Repeats: true)]),
+        new(ScanTask.IdCard, "ID card",
+            "Both sides of an ID card or driving licence on one page, at real size.",
+            "idCard", TaskFlowKind.IdCard, ScanIntent.Document, ScanSource.Flatbed, "ID card",
+            IdCardSteps.Steps),
     ];
 
     /// <summary>Every task, in start-screen order.</summary>
@@ -93,12 +99,14 @@ public static class TaskCatalog
     /// document switches, searchable PDF, adjustments, two-sided scanning, skipping blank pages,
     /// crop and straighten,
     /// file name and the task itself. The destination folder, the photo detection tuning, the
-    /// legacy OCR languages, the paper size, the edge backs are turned on and how much counts as
-    /// blank are kept: they describe the user's paper, not the task. <paramref name="current"/> is
+    /// legacy OCR languages, the paper size, the edge backs are turned on, how much counts as
+    /// blank and the choices of each task (<see cref="ScanSettings.TaskOptions"/>) are kept: they
+    /// describe the user's paper and how they want a task done, not the task. <paramref name="current"/> is
     /// not changed. The two-sided task asks for <see cref="DuplexMode.Both"/>, skips blank
     /// pages (the empty backs of one-sided sheets) and straightens pages the feeder pulled in at a
     /// slant; no task crops yet; <see cref="SettingsAdapter"/> turns
     /// <see cref="DuplexMode.Both"/> into turning over by hand on a feeder that scans one side.
+    /// The ID card task makes no searchable PDF: the numbers on an ID are better not indexed.
     /// </summary>
     public static ScanSettings Apply(ScanTask task, ScanSettings current)
     {
@@ -109,7 +117,7 @@ public static class TaskCatalog
         s.PhotoAutoSplit = true;
         s.PhotoAutoDeskew = true;
         s.DocumentMultiPage = true;
-        s.PdfSearchable = true;
+        s.PdfSearchable = task != ScanTask.IdCard;
         s.Adjustments = new AdjustmentSettings();
         s.Output.PdfSize = PdfSizePreset.Standard;
         s.Output.AfterSave = AfterSaveAction.None;
@@ -168,6 +176,12 @@ public static class TaskCatalog
                 s.Format = OutputFormat.Pdf;
                 s.Duplex = DuplexMode.Both;
                 s.NamingTemplate = "Scan {date} {counter}";
+                break;
+            case ScanTask.IdCard:
+                s.Intent = ScanIntent.Document;
+                s.Resolution = 300;
+                s.Format = OutputFormat.Pdf;
+                s.NamingTemplate = "ID card {date}";
                 break;
         }
         s.TaskId = task.RawValue();

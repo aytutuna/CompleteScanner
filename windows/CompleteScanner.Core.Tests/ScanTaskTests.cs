@@ -10,7 +10,7 @@ public class ScanTaskTests
     [Fact]
     public void RawValues_AreTheStoredNames()
     {
-        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided"],
+        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard"],
                      ScanTasks.All.Select(t => t.RawValue()));
     }
 
@@ -30,14 +30,18 @@ public class ScanTaskTests
     {
         Assert.Equal(ScanTasks.All, TaskCatalog.All.Select(d => d.Task));
         Assert.Equal(["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
-                      "Email a document", "Two-sided document"],
+                      "Email a document", "Two-sided document", "ID card"],
                      TaskCatalog.All.Select(d => d.Title));
-        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided"],
+        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard"],
                      TaskCatalog.All.Select(d => d.IconKey));
         foreach (var definition in TaskCatalog.All)
         {
             Assert.Same(definition, TaskCatalog.Definition(definition.Task));
             Assert.False(string.IsNullOrWhiteSpace(definition.Subtitle));
+        }
+        // Every task but the ID card has one repeating scan step.
+        foreach (var definition in TaskCatalog.All.Where(d => d.Task != ScanTask.IdCard))
+        {
             var step = Assert.Single(definition.Steps);
             Assert.Equal("scan", step.Id);
             Assert.True(step.Repeats);
@@ -60,6 +64,7 @@ public class ScanTaskTests
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.Flatbed),
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, null),
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.DocumentFeeder),
+                (TaskFlowKind.IdCard, ScanIntent.Document, ScanSource.Flatbed),
             ],
             TaskCatalog.All.Select(d => (d.Flow, d.Intent, d.RequiredSource)));
     }
@@ -90,6 +95,8 @@ public class ScanTaskTests
         s.Duplex = DuplexMode.Manual;
         s.BackBinding = DuplexBinding.ShortEdge;
         s.PaperSize = PaperSize.Legal;
+        s.TaskOptions.IdCardPaper = IdCardPaper.Letter;
+        s.TaskOptions.IdCardSaveSidesAsImages = true;
         return s;
     }
 
@@ -109,7 +116,12 @@ public class ScanTaskTests
             Assert.Equal(task, s.Task);
             Assert.Equal(0.9, s.JpegQuality);
             Assert.Equal(ColorMode.Color, s.ColorMode);
-            Assert.True(s.PhotoAutoSplit && s.PhotoAutoDeskew && s.PdfSearchable);
+            Assert.True(s.PhotoAutoSplit && s.PhotoAutoDeskew);
+            // The ID card's numbers are better not indexed: no text layer.
+            Assert.Equal(task != ScanTask.IdCard, s.PdfSearchable);
+            // How the user wants a task done is kept.
+            Assert.Equal((IdCardPaper.Letter, true), (s.TaskOptions.IdCardPaper, s.TaskOptions.IdCardSaveSidesAsImages));
+            Assert.NotSame(current.TaskOptions, s.TaskOptions);
             Assert.Equal(TaskCatalog.Definition(task).Intent, s.Intent);
             Assert.True(TaskCatalog.Fits(task, s));
             Assert.Equal(task, TaskCatalog.Infer(s));
@@ -136,6 +148,7 @@ public class ScanTaskTests
                 (ScanIntent.Document, ScanSource.Flatbed, 150, OutputFormat.Jpeg, false, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
                 (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Compact),
                 (ScanIntent.Document, ScanSource.DocumentFeeder, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
+                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "ID card {date}", false, false, PdfSizePreset.Standard),
             ],
             rows);
     }
@@ -202,6 +215,36 @@ public class ScanTaskTests
         s.Duplex = DuplexMode.Both;
         s.Source = ScanSource.Flatbed;
         Assert.False(TaskCatalog.Fits(ScanTask.TwoSided, s));
+    }
+
+    [Fact]
+    public void IdCard_IsAFlatbedPdfWithItsOwnSteps()
+    {
+        var definition = TaskCatalog.Definition(ScanTask.IdCard);
+        Assert.Equal(IdCardSteps.Steps, definition.Steps);
+        Assert.Equal("Scan front", definition.Steps[0].PrimaryActionLabel);
+        var s = TaskCatalog.Apply(ScanTask.IdCard, new ScanSettings());
+        Assert.Equal((ScanIntent.Document, ScanSource.Flatbed, OutputFormat.Pdf, 300, ColorMode.Color, DuplexMode.Off),
+                     (s.Intent, s.Source, s.Format, s.Resolution, s.ColorMode, s.Duplex));
+        Assert.False(s.PdfSearchable);
+        Assert.Equal(AfterSaveAction.None, s.Output.AfterSave);
+        Assert.Equal(TaskFlowKind.IdCard, TaskCatalog.FlowOf(s));
+        Assert.Equal(IdCardSteps.Steps, TaskCatalog.GuidedSteps(s, null));
+        Assert.Equal("300 dpi · Color · PDF", TaskCatalog.Summary(s));
+        Assert.True(TaskCatalog.Fits(ScanTask.IdCard, s));
+        // Saving JPEG or PNG keeps the task; the feeder or Photos mode ends it.
+        s.Format = OutputFormat.Png;
+        Assert.True(TaskCatalog.Fits(ScanTask.IdCard, s));
+        s.Source = ScanSource.DocumentFeeder;
+        Assert.False(TaskCatalog.Fits(ScanTask.IdCard, s));
+        Assert.Equal(TaskFlowKind.DocumentQueue, TaskCatalog.FlowOf(s));
+        s.Source = ScanSource.Flatbed;
+        s.Intent = ScanIntent.Photo;
+        Assert.False(TaskCatalog.Fits(ScanTask.IdCard, s));
+        // Settings never look like an ID card without the task stored.
+        var untagged = TaskCatalog.Apply(ScanTask.IdCard, new ScanSettings());
+        untagged.TaskId = null;
+        Assert.Equal(ScanTask.Document, TaskCatalog.Infer(untagged));
     }
 
     [Fact]
@@ -321,14 +364,17 @@ public class ScanTaskTests
     }
 
     [Fact]
-    public void Availability_FeederOnlyScanner_NoQuickScan()
+    public void Availability_FeederOnlyScanner_NoQuickScanOrIdCard()
     {
         var caps = new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder], SupportsOverview = false };
-        var quick = TaskCatalog.Availability(ScanTask.QuickScan, caps);
-        Assert.False(quick.IsAvailable);
-        Assert.Equal("This scanner has no flatbed.", quick.Reason);
+        foreach (var task in new[] { ScanTask.QuickScan, ScanTask.IdCard })
+        {
+            var availability = TaskCatalog.Availability(task, caps);
+            Assert.False(availability.IsAvailable);
+            Assert.Equal("This scanner has no flatbed.", availability.Reason);
+        }
         // Documents and photos fall back to the feeder (SettingsAdapter).
-        Assert.All(ScanTasks.All.Where(t => t != ScanTask.QuickScan),
+        Assert.All(ScanTasks.All.Where(t => t is not (ScanTask.QuickScan or ScanTask.IdCard)),
                    task => Assert.True(TaskCatalog.Availability(task, caps).IsAvailable));
     }
 
@@ -436,7 +482,7 @@ public class ScanTaskTests
     [Fact]
     public void FileLabels()
     {
-        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document"],
+        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card"],
                      TaskCatalog.All.Select(d => d.FileLabel));
     }
 }

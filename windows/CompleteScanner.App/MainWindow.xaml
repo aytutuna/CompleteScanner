@@ -333,6 +333,13 @@
                                                             Click="KeepFronts_Click" />
                                                 </WrapPanel>
                                             </StackPanel>
+                                            <!-- A step that may be left out (the back of a card with
+                                                 nothing printed on it). -->
+                                            <WrapPanel x:Name="StepActions" Visibility="Collapsed" Margin="-11,6,0,0">
+                                                <Button x:Name="SkipStepButton" Style="{StaticResource SubtleButtonStyle}"
+                                                        local:Icon.Glyph="&#xE72A;" Content="Skip"
+                                                        Click="SkipStep_Click" />
+                                            </WrapPanel>
                                         </StackPanel>
                                     </DockPanel>
                                 </GroupBox>
@@ -517,8 +524,8 @@
                             <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto"
                                           HorizontalScrollBarVisibility="Disabled">
                                 <StackPanel Margin="12" x:Name="Inspector">
-                                    <Border Style="{StaticResource SegmentedTrackStyle}" Margin="0,0,0,12"
-                                            AutomationProperties.Name="Scan mode">
+                                    <Border x:Name="ModeTrack" Style="{StaticResource SegmentedTrackStyle}" Margin="0,0,0,12"
+                                            AutomationProperties.Name="Scan mode" ToolTipService.ShowOnDisabled="True">
                                         <UniformGrid Columns="2">
                                             <RadioButton x:Name="ModeDocument" Style="{StaticResource SegmentedItemStyle}"
                                                          Content="Document" local:Icon.Glyph="&#xE8A5;" IsChecked="True"
@@ -540,6 +547,7 @@
                                             <TextBlock Text="Source" Style="{StaticResource FieldLabelText}" />
                                             <ComboBox x:Name="SourceBox" Margin="{StaticResource FieldSpacing}"
                                                       HorizontalAlignment="Stretch" AutomationProperties.Name="Source"
+                                                      ToolTipService.ShowOnDisabled="True"
                                                       SelectionChanged="Setting_Changed" />
                                             <!-- Feeder sheets: one side, both, or turned over by hand. Choices the
                                                  scanner or the settings cannot do are greyed out with the reason;
@@ -893,6 +901,167 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
+                </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- ID card review: both sides, the page they go on, and saving. Modal like the photo
+             review, leaving the status bar (with its Cancel button) reachable. -->
+        <Grid Grid.Row="1" x:Name="IdCardReviewOverlay" Background="{DynamicResource SmokeFillColorDefaultBrush}"
+              Visibility="Collapsed">
+            <Border Style="{StaticResource DialogCardStyle}" MaxWidth="900" MaxHeight="720" Margin="24"
+                    HorizontalAlignment="Center" VerticalAlignment="Center" MinWidth="360">
+                <DockPanel>
+                    <Border DockPanel.Dock="Bottom" Padding="24,16">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Bottom">
+                                <Button x:Name="IdCardDiscardButton" Style="{StaticResource IconTextButtonStyle}"
+                                        local:Icon.Glyph="&#xE74D;" Content="Discard" MinWidth="110"
+                                        ToolTip="Drop both sides without saving them"
+                                        Click="IdCardDiscard_Click" />
+                                <Button x:Name="IdCardSaveButton" Style="{StaticResource AccentIconTextButtonStyle}"
+                                        local:Icon.Glyph="&#xE74E;" Content="Save" MinWidth="110" Margin="8,0,0,0"
+                                        Click="IdCardSave_Click" />
+                            </StackPanel>
+                            <WrapPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,16,6">
+                                    <TextBlock x:Name="IdCardPaperLabel" Text="Paper" Style="{StaticResource BodyText}"
+                                               VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <ComboBox x:Name="IdCardPaperBox" MinWidth="150" AutomationProperties.Name="Paper"
+                                              ToolTip="The page both sides are laid out on"
+                                              SelectionChanged="IdCardPaper_Changed" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,16,6">
+                                    <TextBlock x:Name="IdCardFormatLabel" Text="Save as" Style="{StaticResource BodyText}"
+                                               VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <ComboBox x:Name="IdCardFormatBox" MinWidth="90" AutomationProperties.Name="Save as"
+                                              SelectionChanged="IdCardFormat_Changed" />
+                                </StackPanel>
+                                <CheckBox x:Name="IdCardSidesBox" Content="Also save each side as an image"
+                                          VerticalAlignment="Center" Margin="0,0,0,6"
+                                          ToolTip="Each side is saved as a picture of its own too, next to the page"
+                                          Click="IdCardSides_Click" />
+                            </WrapPanel>
+                        </DockPanel>
+                    </Border>
+                    <Border Background="{DynamicResource LayerFillColorAltBrush}"
+                            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1"
+                            CornerRadius="8,8,0,0" Padding="24,20,24,16">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                                <TextBlock x:Name="IdCardReviewTitle" Text="Check the ID card" Style="{StaticResource SubtitleText}" />
+                                <TextBlock Text="Both sides go on one page at their real size. The scans stay on this PC: they are not kept in the Scans tab, and are cleared once you save or discard them."
+                                           Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                          Margin="0,0,-18,0">
+                                <WrapPanel Margin="0,0,18,0">
+                                    <!-- The sides: each with its turn, its crop and scanning it again. -->
+                                    <StackPanel Width="300" Margin="0,0,24,12">
+                                        <Border x:Name="IdCardFrontCard" Style="{StaticResource CardStyle}" Margin="0,0,0,12"
+                                                AutomationProperties.Name="Front side">
+                                            <StackPanel>
+                                                <DockPanel>
+                                                    <Button DockPanel.Dock="Right" Style="{StaticResource SmallIconButtonStyle}"
+                                                            Content="&#xE72C;" Tag="front" ToolTip="Scan the front again"
+                                                            AutomationProperties.Name="Scan the front again"
+                                                            Click="IdCardRetake_Click" />
+                                                    <Button DockPanel.Dock="Right" x:Name="IdCardFrontCropButton" Style="{StaticResource SmallIconButtonStyle}"
+                                                            Content="&#xE7A8;" Tag="front" ToolTip="Fix the crop of the front"
+                                                            AutomationProperties.Name="Fix the crop of the front"
+                                                            Click="IdCardCrop_Click" />
+                                                    <Button DockPanel.Dock="Right" Style="{StaticResource SmallIconButtonStyle}"
+                                                            Content="&#xE7AD;" Tag="front" ToolTip="Turn the front 90° clockwise"
+                                                            AutomationProperties.Name="Turn the front 90° clockwise"
+                                                            Click="IdCardRotate_Click" />
+                                                    <TextBlock Text="Front" Style="{StaticResource BodyStrongText}" VerticalAlignment="Center" />
+                                                </DockPanel>
+                                                <Border Style="{StaticResource ImageWellStyle}" Height="170" Margin="0,8,0,0">
+                                                    <Image x:Name="IdCardFrontImage" Margin="8" Stretch="Uniform"
+                                                           RenderOptions.BitmapScalingMode="HighQuality">
+                                                        <Image.LayoutTransform>
+                                                            <RotateTransform x:Name="IdCardFrontTurn" />
+                                                        </Image.LayoutTransform>
+                                                    </Image>
+                                                </Border>
+                                                <DockPanel x:Name="IdCardFrontNotice" Visibility="Collapsed" Margin="0,8,0,0">
+                                                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource GlyphText}" Text="&#xE7BA;"
+                                                               Margin="0,0,8,0" VerticalAlignment="Top" Padding="0,2,0,0"
+                                                               Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                                                    <TextBlock x:Name="IdCardFrontNoteText" Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
+                                                </DockPanel>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border x:Name="IdCardBackCard" Style="{StaticResource CardStyle}" AutomationProperties.Name="Back side">
+                                            <StackPanel>
+                                                <DockPanel>
+                                                    <Button DockPanel.Dock="Right" x:Name="IdCardBackRetakeButton" Style="{StaticResource SmallIconButtonStyle}"
+                                                            Content="&#xE72C;" Tag="back" ToolTip="Scan the back again"
+                                                            AutomationProperties.Name="Scan the back again"
+                                                            Click="IdCardRetake_Click" />
+                                                    <Button DockPanel.Dock="Right" x:Name="IdCardBackCropButton" Style="{StaticResource SmallIconButtonStyle}"
+                                                            Content="&#xE7A8;" Tag="back" ToolTip="Fix the crop of the back"
+                                                            AutomationProperties.Name="Fix the crop of the back"
+                                                            Click="IdCardCrop_Click" />
+                                                    <Button DockPanel.Dock="Right" x:Name="IdCardBackRotateButton" Style="{StaticResource SmallIconButtonStyle}"
+                                                            Content="&#xE7AD;" Tag="back" ToolTip="Turn the back 90° clockwise"
+                                                            AutomationProperties.Name="Turn the back 90° clockwise"
+                                                            Click="IdCardRotate_Click" />
+                                                    <TextBlock Text="Back" Style="{StaticResource BodyStrongText}" VerticalAlignment="Center" />
+                                                </DockPanel>
+                                                <Border x:Name="IdCardBackWell" Style="{StaticResource ImageWellStyle}" Height="170" Margin="0,8,0,0">
+                                                    <Image x:Name="IdCardBackImage" Margin="8" Stretch="Uniform"
+                                                           RenderOptions.BitmapScalingMode="HighQuality">
+                                                        <Image.LayoutTransform>
+                                                            <RotateTransform x:Name="IdCardBackTurn" />
+                                                        </Image.LayoutTransform>
+                                                    </Image>
+                                                </Border>
+                                                <StackPanel x:Name="IdCardNoBack" Visibility="Collapsed" Margin="0,8,0,0">
+                                                    <TextBlock Text="No back side. Scan it if something is printed on the back."
+                                                               Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" />
+                                                    <Button x:Name="IdCardScanBackButton" Style="{StaticResource SubtleButtonStyle}"
+                                                            local:Icon.Glyph="&#xE8FE;" Content="Scan the back" Tag="back"
+                                                            HorizontalAlignment="Left" Margin="-11,4,0,0"
+                                                            Click="IdCardRetake_Click" />
+                                                </StackPanel>
+                                                <DockPanel x:Name="IdCardBackNotice" Visibility="Collapsed" Margin="0,8,0,0">
+                                                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource GlyphText}" Text="&#xE7BA;"
+                                                               Margin="0,0,8,0" VerticalAlignment="Top" Padding="0,2,0,0"
+                                                               Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                                                    <TextBlock x:Name="IdCardBackNoteText" Style="{StaticResource CaptionText}" TextWrapping="Wrap" />
+                                                </DockPanel>
+                                            </StackPanel>
+                                        </Border>
+                                        <Button x:Name="IdCardSwapButton" Style="{StaticResource SubtleButtonStyle}"
+                                                local:Icon.Glyph="&#xE8AB;" Content="Swap front and back"
+                                                HorizontalAlignment="Left" Margin="-11,8,0,0"
+                                                ToolTip="The sides were scanned the other way round"
+                                                Click="IdCardSwap_Click" />
+                                    </StackPanel>
+                                    <!-- The page both sides go on, drawn small. -->
+                                    <StackPanel Width="300" Margin="0,0,0,12">
+                                        <TextBlock Text="The page" Style="{StaticResource BodyStrongText}" Margin="0,0,0,8" />
+                                        <Border HorizontalAlignment="Left" Background="White" Effect="{DynamicResource PageShadow}"
+                                                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="1">
+                                            <Image x:Name="IdCardPageImage" Height="380" Stretch="Uniform"
+                                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                                   AutomationProperties.Name="The page both sides are saved on" />
+                                        </Border>
+                                        <TextBlock x:Name="IdCardLayoutText" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                                   Margin="0,10,0,0" AutomationProperties.LiveSetting="Polite" />
+                                        <DockPanel x:Name="IdCardSizeNotice" Visibility="Collapsed" Margin="0,6,0,0">
+                                            <TextBlock DockPanel.Dock="Left" Style="{StaticResource GlyphText}" Text="&#xE7BA;"
+                                                       Margin="0,0,8,0" VerticalAlignment="Top" Padding="0,2,0,0"
+                                                       Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                                            <TextBlock x:Name="IdCardSizeText" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                                       AutomationProperties.LiveSetting="Assertive" />
+                                        </DockPanel>
+                                    </StackPanel>
+                                </WrapPanel>
                             </ScrollViewer>
                         </DockPanel>
                     </Border>

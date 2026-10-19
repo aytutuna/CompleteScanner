@@ -14,6 +14,7 @@ public static class TaskIcons
         "quick" => "",
         "email" => "",
         "twoSided" => "",
+        "idCard" => "",
         _ => "",
     };
 

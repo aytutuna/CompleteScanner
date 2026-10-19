@@ -7,6 +7,8 @@ public enum TaskFlowKind: String, Sendable {
     case documentQueue
     /// Photos are found on the bed, cropped and straightened, then reviewed.
     case photoSplit
+    /// The front and back of a card are found on the bed and laid out on one page (`IdCardComposer`).
+    case idCard
 }
 
 /// A task card: what it is called, how it looks and how its scans are handled.
@@ -15,7 +17,7 @@ public struct TaskDefinition: Equatable, Sendable {
     public let title: String
     public let subtitle: String
     /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-    /// "photos", "restore", "quick", "email", "twoSided".
+    /// "photos", "restore", "quick", "email", "twoSided", "idCard".
     public let iconKey: String
     public let flow: TaskFlowKind
     /// The scan mode the task uses.
@@ -102,6 +104,12 @@ public enum TaskCatalog {
             steps: [TaskStep(id: "scan", title: "Scan the stack",
                              prompt: "Load the pages in the document feeder and scan: both sides of every sheet are scanned and put in order. Then save the PDF.",
                              primaryActionLabel: "Scan stack", repeats: true)]),
+        TaskDefinition(
+            task: .idCard, title: "ID card",
+            subtitle: "Both sides of an ID card or driving licence on one page, at real size.",
+            iconKey: "idCard", flow: .idCard, intent: .document, requiredSource: .flatbed,
+            fileLabel: "ID card",
+            steps: IdCardSteps.steps),
     ]
 
     public static func definition(_ task: ScanTask) -> TaskDefinition {
@@ -113,11 +121,13 @@ public enum TaskCatalog {
     /// format, JPEG quality, PDF size, the after-save action, the photo and document switches,
     /// searchable PDF, adjustments, two-sided scanning, skipping blank pages, crop and straighten,
     /// file name and the task itself. The destination folder, the photo detection tuning, the
-    /// legacy OCR languages, the paper size, the edge backs are turned on and how much counts as
-    /// blank are kept: they describe the user's paper, not the task. The two-sided task asks for
-    /// `.both`, skips blank pages (the empty backs of one-sided sheets) and straightens pages the
-    /// feeder pulled in at a slant; no task crops yet; `SettingsAdapter` turns `.both` into turning
-    /// over by hand on a feeder that scans one side.
+    /// legacy OCR languages, the paper size, the edge backs are turned on, how much counts as blank
+    /// and the choices of each task (`taskOptions`) are kept: they describe the user's paper and how
+    /// they want a task done, not the task. The two-sided task asks for `.both`, skips blank pages
+    /// (the empty backs of one-sided sheets) and straightens pages the feeder pulled in at a slant;
+    /// no task crops yet; `SettingsAdapter` turns `.both` into turning over by hand on a feeder that
+    /// scans one side. The ID card task makes no searchable PDF: the numbers on an ID are better not
+    /// indexed.
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings {
         var s = current
         s.source = .flatbed
@@ -126,7 +136,7 @@ public enum TaskCatalog {
         s.photoAutoSplit = true
         s.photoAutoDeskew = true
         s.documentMultiPage = true
-        s.pdfSearchable = true
+        s.pdfSearchable = task != .idCard
         s.adjustments = AdjustmentSettings()
         s.output.pdfSize = .standard
         s.output.afterSave = AfterSaveAction.none
@@ -178,6 +188,11 @@ public enum TaskCatalog {
             s.format = .pdf
             s.duplex = .both
             s.namingTemplate = "Scan {date} {counter}"
+        case .idCard:
+            s.intent = .document
+            s.resolution = 300
+            s.format = .pdf
+            s.namingTemplate = "ID card {date}"
         }
         s.taskId = task.rawValue
         return s

@@ -65,6 +65,8 @@ internal static class CompatFixtures
         settings.Document.BlankSensitivity = BlankSensitivity.High;
         settings.Document.AutoCrop = true;
         settings.Document.AutoStraighten = true;
+        settings.TaskOptions.IdCardPaper = IdCardPaper.Letter;
+        settings.TaskOptions.IdCardSaveSidesAsImages = true;
         return settings;
     }
 
@@ -115,15 +117,16 @@ internal static class CompatFixtures
 
     /// <summary>
     /// <see cref="NonDefaultSettings"/> as this version writes it: <see cref="PresetsJsonBeforePdfSize"/>
-    /// with the "output" object, then the sides, the paper size and the "document" object, after
-    /// the earlier keys.
+    /// with the "output" object, then the sides, the paper size, the "document" object and the
+    /// "taskOptions" object, after the earlier keys.
     /// </summary>
     public static readonly string CurrentFormatPresetsJson = PresetsJsonBeforePdfSize.ReplaceLineEndings("\n").Replace(
         "        \"blackWhiteThreshold\": 0.375\n      }\n",
         "        \"blackWhiteThreshold\": 0.375\n      },\n      \"output\": {\n        \"pdfSize\": \"compact\",\n        \"afterSave\": \"share\"\n      },\n"
         + "      \"duplex\": \"manual\",\n      \"backBinding\": \"shortEdge\",\n      \"paperSize\": \"a4\",\n"
         + "      \"document\": {\n        \"removeBlankPages\": true,\n        \"blankSensitivity\": \"high\",\n"
-        + "        \"autoCrop\": true,\n        \"autoStraighten\": true\n      }\n");
+        + "        \"autoCrop\": true,\n        \"autoStraighten\": true\n      },\n"
+        + "      \"taskOptions\": {\n        \"idCardPaper\": \"letter\",\n        \"idCardSaveSidesAsImages\": true\n      }\n");
 
     /// <summary>Field-by-field equality, including the legacy OCR languages.</summary>
     public static void AssertSettingsEqual(ScanSettings expected, ScanSettings actual)
@@ -312,7 +315,7 @@ public class ModelsCompatTests
                 "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
                 "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
                 "pdfSearchable", "ocrLanguages", "adjustments", "output", "duplex", "backBinding", "paperSize",
-                "document",
+                "document", "taskOptions",
             ],
             settings.RootElement.EnumerateObject().Select(p => p.Name));
         var adjustments = settings.RootElement.GetProperty("adjustments");
@@ -405,7 +408,7 @@ public class ModelsCompatTests
                 "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
                 "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
                 "pdfSearchable", "ocrLanguages", "adjustments", "taskId", "output", "duplex", "backBinding", "paperSize",
-                "document",
+                "document", "taskOptions",
             ],
             written.RootElement.EnumerateObject().Select(p => p.Name));
         Assert.Equal("document", written.RootElement.GetProperty("taskId").GetString());
@@ -433,6 +436,7 @@ public class ModelsCompatTests
         expected.BackBinding = DuplexBinding.LongEdge;
         expected.PaperSize = PaperSize.Auto;
         expected.Document = new DocumentOptions();
+        expected.TaskOptions = new TaskOptions();
         CompatFixtures.AssertSettingsEqual(expected, presets[0].Settings);
         Assert.Equal(PdfSizePreset.Standard, Decode<ScanSettings>("{}").Output.PdfSize);
         Assert.Equal(PdfSizePreset.Standard, Decode<ScanSettings>("""{"output": {}}""").Output.PdfSize);
@@ -670,6 +674,79 @@ public class ModelsCompatTests
         Assert.True(original.Document.AutoCrop);
         Assert.True(original.Document.AutoStraighten);
         Assert.NotEqual(original.Document, clone.Document);
+    }
+
+    // MARK: - Task options (CONTRACTS.md, rule 6)
+
+    [Fact]
+    public void TaskOptions_AutomaticPaperAndNoSideImagesByDefault_AndInFilesWithoutThem()
+    {
+        static string Name<T>(T value) => JsonSerializer.Serialize(value, StoreFiles.JsonOptions).Trim('"');
+        Assert.Equal(["auto", "a4", "letter"], Enum.GetValues<IdCardPaper>().Select(Name));
+        var options = new ScanSettings().TaskOptions;
+        Assert.Equal((IdCardPaper.Auto, false), (options.IdCardPaper, options.IdCardSaveSidesAsImages));
+        var presets = Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize);
+        Assert.Equal(new TaskOptions(), presets[0].Settings.TaskOptions);
+        Assert.Equal(new TaskOptions(), Decode<ScanSettings>("""{"taskOptions": {}}""").TaskOptions);
+    }
+
+    [Fact]
+    public void UnknownOrCorruptTaskOptions_FallBackToTheDefaults_RestIntact()
+    {
+        foreach (string taskOptions in new[]
+                 {
+                     """ "taskOptions": {"idCardPaper": "tabloid", "idCardSaveSidesAsImages": true} """,
+                     """ "taskOptions": {"idCardPaper": "A4", "idCardSaveSidesAsImages": true} """,
+                     """ "taskOptions": {"idCardPaper": 1, "idCardSaveSidesAsImages": true} """,
+                     """ "taskOptions": {"idCardPaper": null, "idCardSaveSidesAsImages": true} """,
+                 })
+        {
+            var settings = Decode<ScanSettings>($$"""{"resolution": 150, {{taskOptions}}, "pdfSearchable": false}""");
+            Assert.Equal((IdCardPaper.Auto, true), (settings.TaskOptions.IdCardPaper, settings.TaskOptions.IdCardSaveSidesAsImages));
+            Assert.Equal(150, settings.Resolution);
+            Assert.False(settings.PdfSearchable);
+        }
+        foreach (string taskOptions in new[]
+                 {
+                     """ "taskOptions": "id card" """,
+                     """ "taskOptions": null """,
+                     """ "taskOptions": [] """,
+                     """ "taskOptions": {"idCardPaper": "a4", "idCardSaveSidesAsImages": "yes"} """,
+                 })
+        {
+            var settings = Decode<ScanSettings>($$"""{"resolution": 150, {{taskOptions}}, "pdfSearchable": false}""");
+            Assert.False(settings.TaskOptions.IdCardSaveSidesAsImages);
+            Assert.Equal(150, settings.Resolution);
+            Assert.False(settings.PdfSearchable);
+        }
+        Assert.Equal(IdCardPaper.A4,
+                     Decode<ScanSettings>("""{"taskOptions": {"idCardPaper": "a4", "idCardSaveSidesAsImages": "yes"}}""").TaskOptions.IdCardPaper);
+    }
+
+    [Fact]
+    public void TaskOptions_RoundTrip_AndCloneIsIndependent()
+    {
+        foreach (var paper in Enum.GetValues<IdCardPaper>())
+        {
+            foreach (bool sides in new[] { false, true })
+            {
+                var settings = new ScanSettings();
+                settings.TaskOptions.IdCardPaper = paper;
+                settings.TaskOptions.IdCardSaveSidesAsImages = sides;
+                string json = CompatFixtures.Encode(settings);
+                using var written = JsonDocument.Parse(json);
+                Assert.Equal(["idCardPaper", "idCardSaveSidesAsImages"],
+                             written.RootElement.GetProperty("taskOptions").EnumerateObject().Select(p => p.Name));
+                Assert.Equal(settings.TaskOptions, Decode<ScanSettings>(json).TaskOptions);
+            }
+        }
+        var original = CompatFixtures.NonDefaultSettings();
+        var clone = original.Clone();
+        Assert.NotSame(original.TaskOptions, clone.TaskOptions);
+        Assert.Equal(original.TaskOptions, clone.TaskOptions);
+        clone.TaskOptions.IdCardPaper = IdCardPaper.A4;
+        clone.TaskOptions.IdCardSaveSidesAsImages = false;
+        Assert.Equal((IdCardPaper.Letter, true), (original.TaskOptions.IdCardPaper, original.TaskOptions.IdCardSaveSidesAsImages));
     }
 
     [Fact]

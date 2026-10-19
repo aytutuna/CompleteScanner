@@ -13,6 +13,7 @@ enum TaskSymbols {
         case "quick": return "bolt"
         case "email": return "envelope"
         case "twoSided": return "arrow.left.arrow.right.square"
+        case "idCard": return "person.text.rectangle"
         default: return "scanner"
         }
     }
@@ -88,7 +89,13 @@ struct TaskStartView: View {
             ? "\(card.definition.subtitle) \(card.summary)."
             : "\(card.definition.subtitle) Not available: \(card.availability.reason ?? "")"
         return Button {
-            if state.startTask(card.definition.task) { onOpenScanner() }
+            // Picking a task while the ID card task holds a side asks first.
+            let appState = state
+            let openScanner = onOpenScanner
+            let task = card.definition.task
+            appState.leaveIdCard {
+                if appState.startTask(task) { openScanner() }
+            }
         } label: {
             TaskCardLabel(symbol: TaskSymbols.systemImage(card.definition.iconKey),
                           title: card.definition.title,
@@ -111,8 +118,12 @@ struct TaskStartView: View {
         let hint = "Preset for \(taskTitle). \(TaskCatalog.summary(preset.settings))."
         return Button {
             guard !state.isBusy else { return }
-            state.applyPreset(preset)
-            onOpenScanner()
+            let appState = state
+            let openScanner = onOpenScanner
+            appState.leaveIdCard {
+                appState.applyPreset(preset)
+                openScanner()
+            }
         } label: {
             TaskCardLabel(symbol: TaskSymbols.systemImage(TaskCatalog.definition(task).iconKey),
                           title: preset.name,

@@ -57,6 +57,8 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.document.blankSensitivity = .high
     settings.document.autoCrop = true
     settings.document.autoStraighten = true
+    settings.taskOptions.idCardPaper = .letter
+    settings.taskOptions.idCardSaveSidesAsImages = true
     return settings
 }
 
@@ -104,7 +106,8 @@ private let presetsJSONBeforePDFSize = """
 """
 
 /// `nonDefaultSettings()` as this version writes it: `presetsJSONBeforePDFSize` with the
-/// "output" object, the sides, the paper size and the "document" object in their sorted places.
+/// "output" object, the sides, the paper size, the "document" object and the "taskOptions" object
+/// in their sorted places.
 private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
     .replacingOccurrences(
         of: "\"documentMultiPage\" : false",
@@ -119,6 +122,9 @@ private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
                           with: "\"backBinding\" : \"shortEdge\",\n      \"colorMode\" : \"grayscale\"")
     .replacingOccurrences(of: "\"format\" : \"tiff\"",
                           with: "\"duplex\" : \"manual\",\n      \"format\" : \"tiff\"")
+    .replacingOccurrences(of: "\"source\" : \"documentFeeder\"",
+                          with: "\"source\" : \"documentFeeder\",\n      \"taskOptions\" : {\n        \"idCardPaper\" : \"letter\",\n"
+                              + "        \"idCardSaveSidesAsImages\" : true\n      }")
 
 // MARK: - Decoding compatibility
 
@@ -261,7 +267,7 @@ final class ModelsCompatTests: XCTestCase {
             "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
             "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
             "pdfSearchable", "ocrLanguages", "adjustments", "output", "duplex", "backBinding", "paperSize",
-            "document",
+            "document", "taskOptions",
         ])
         let adjustments = try XCTUnwrap(settings["adjustments"] as? [String: Any])
         XCTAssertEqual(Set(adjustments.keys), [
@@ -335,7 +341,7 @@ final class ModelsCompatTests: XCTestCase {
             "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
             "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
             "pdfSearchable", "ocrLanguages", "adjustments", "taskId", "output", "duplex", "backBinding", "paperSize",
-            "document",
+            "document", "taskOptions",
         ])
         XCTAssertEqual(written["taskId"] as? String, "document")
     }
@@ -357,6 +363,7 @@ final class ModelsCompatTests: XCTestCase {
         expected.backBinding = .longEdge
         expected.paperSize = .auto
         expected.document = DocumentOptions()
+        expected.taskOptions = TaskOptions()
         XCTAssertEqual(presets[0].settings, expected)
         XCTAssertEqual(try decode(ScanSettings.self, "{}").output.pdfSize, .standard)
         XCTAssertEqual(try decode(ScanSettings.self, #"{"output": {}}"#).output.pdfSize, .standard)
@@ -567,6 +574,64 @@ final class ModelsCompatTests: XCTestCase {
         XCTAssertTrue(original.document.autoCrop)
         XCTAssertTrue(original.document.autoStraighten)
         XCTAssertNotEqual(original.document, copy.document)
+    }
+
+    // MARK: Task options (CONTRACTS.md, rule 6)
+
+    func test_taskOptions_automaticPaperAndNoSideImagesByDefault_andInFilesWithoutThem() throws {
+        XCTAssertEqual(IdCardPaper.allCases.map(\.rawValue), ["auto", "a4", "letter"])
+        let options = ScanSettings().taskOptions
+        XCTAssertEqual(options.idCardPaper, .auto)
+        XCTAssertFalse(options.idCardSaveSidesAsImages)
+        let presets = try decode([Preset].self, presetsJSONBeforePDFSize)
+        XCTAssertEqual(presets[0].settings.taskOptions, TaskOptions())
+        XCTAssertEqual(try decode(ScanSettings.self, #"{"taskOptions": {}}"#).taskOptions, TaskOptions())
+    }
+
+    func test_unknownOrCorruptTaskOptions_fallBackToTheDefaults_restIntact() throws {
+        for taskOptions in [#""taskOptions": {"idCardPaper": "tabloid", "idCardSaveSidesAsImages": true}"#,
+                            #""taskOptions": {"idCardPaper": "A4", "idCardSaveSidesAsImages": true}"#,
+                            #""taskOptions": {"idCardPaper": 1, "idCardSaveSidesAsImages": true}"#,
+                            #""taskOptions": {"idCardPaper": null, "idCardSaveSidesAsImages": true}"#] {
+            let settings = try decode(ScanSettings.self, #"{"resolution": 150, "# + taskOptions + #", "pdfSearchable": false}"#)
+            XCTAssertEqual(settings.taskOptions.idCardPaper, .auto, taskOptions)
+            XCTAssertTrue(settings.taskOptions.idCardSaveSidesAsImages, taskOptions)
+            XCTAssertEqual(settings.resolution, 150, taskOptions)
+            XCTAssertFalse(settings.pdfSearchable, taskOptions)
+        }
+        for taskOptions in [#""taskOptions": "id card""#,
+                            #""taskOptions": null"#,
+                            #""taskOptions": []"#,
+                            #""taskOptions": {"idCardPaper": "a4", "idCardSaveSidesAsImages": "yes"}"#] {
+            let settings = try decode(ScanSettings.self, #"{"resolution": 150, "# + taskOptions + #", "pdfSearchable": false}"#)
+            XCTAssertFalse(settings.taskOptions.idCardSaveSidesAsImages, taskOptions)
+            XCTAssertEqual(settings.resolution, 150, taskOptions)
+            XCTAssertFalse(settings.pdfSearchable, taskOptions)
+        }
+        let a4 = try decode(ScanSettings.self, #"{"taskOptions": {"idCardPaper": "a4", "idCardSaveSidesAsImages": "yes"}}"#)
+        XCTAssertEqual(a4.taskOptions.idCardPaper, .a4)
+    }
+
+    func test_taskOptions_roundTrip_andCopyIsIndependent() throws {
+        for paper in IdCardPaper.allCases {
+            for sides in [false, true] {
+                var settings = ScanSettings()
+                settings.taskOptions.idCardPaper = paper
+                settings.taskOptions.idCardSaveSidesAsImages = sides
+                let data = try encode(settings)
+                let written = try XCTUnwrap(try jsonObject(data)["taskOptions"] as? [String: Any])
+                XCTAssertEqual(Set(written.keys), ["idCardPaper", "idCardSaveSidesAsImages"])
+                XCTAssertEqual(written["idCardPaper"] as? String, paper.rawValue)
+                XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: data).taskOptions, settings.taskOptions)
+            }
+        }
+        let original = nonDefaultSettings()
+        var copy = original
+        XCTAssertEqual(copy.taskOptions, original.taskOptions)
+        copy.taskOptions.idCardPaper = .a4
+        copy.taskOptions.idCardSaveSidesAsImages = false
+        XCTAssertEqual(original.taskOptions.idCardPaper, .letter)
+        XCTAssertTrue(original.taskOptions.idCardSaveSidesAsImages)
     }
 
     func test_copy_carriesTheTask() {

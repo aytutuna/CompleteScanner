@@ -351,6 +351,27 @@ public sealed class DocumentOptions : IEquatable<DocumentOptions>
     public override int GetHashCode() => HashCode.Combine(RemoveBlankPages, BlankSensitivity, AutoCrop, AutoStraighten);
 }
 
+/// <summary>
+/// Choices that belong to one task, kept together as <see cref="ScanSettings.TaskOptions"/> (the
+/// "taskOptions" object in settings files). Picking a task keeps them: they say how the user wants
+/// that task done. Later tasks add their fields here.
+/// </summary>
+public sealed class TaskOptions : IEquatable<TaskOptions>
+{
+    /// <summary>The page the ID card's sides are laid out on. Settings without it get Automatic.</summary>
+    public IdCardPaper IdCardPaper { get; set; } = IdCardPaper.Auto;
+
+    /// <summary>Each side of the ID card is also saved as an image of its own. Off unless chosen.</summary>
+    public bool IdCardSaveSidesAsImages { get; set; } = false;
+
+    public TaskOptions Clone() => (TaskOptions)MemberwiseClone();
+
+    public bool Equals(TaskOptions? other) =>
+        other is not null && IdCardPaper == other.IdCardPaper && IdCardSaveSidesAsImages == other.IdCardSaveSidesAsImages;
+    public override bool Equals(object? obj) => Equals(obj as TaskOptions);
+    public override int GetHashCode() => HashCode.Combine(IdCardPaper, IdCardSaveSidesAsImages);
+}
+
 public static class BlankSensitivities
 {
     /// <summary>The levels as the inspector lists them: least first.</summary>
@@ -431,6 +452,9 @@ public sealed class ScanSettings
     /// <summary>Clean-up of document pages (blank pages). Written after the earlier keys.</summary>
     public DocumentOptions Document { get; set; } = new();
 
+    /// <summary>Choices of particular tasks (the ID card's page). Written after the earlier keys.</summary>
+    public TaskOptions TaskOptions { get; set; } = new();
+
     public static string DefaultDestinationPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "CompleteScanner");
 
@@ -443,6 +467,7 @@ public sealed class ScanSettings
         copy.Adjustments = Adjustments.Clone();
         copy.Output = Output.Clone();
         copy.Document = Document.Clone();
+        copy.TaskOptions = TaskOptions.Clone();
         return copy;
     }
 }

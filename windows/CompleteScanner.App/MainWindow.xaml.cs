@@ -44,6 +44,7 @@ public partial class MainWindow : Window
         StartView.Attach(ViewModel);
         StartView.TaskChosen += StartTask;
         StartView.PresetChosen += StartPreset;
+        AskDiscardIdCard = AskDiscardIdCardInDialog;
         StartView.GoToScanRequested += () => ShowScanScreen();
         // A first run opens on the start screen; later runs open where scanning happens, with
         // the task (and its banner) the user had last.
@@ -58,6 +59,14 @@ public partial class MainWindow : Window
         foreach (var binding in Enum.GetValues<DuplexBinding>())
         {
             BackBindingBox.Items.Add(new ComboBoxItem { Content = binding.Label(), Tag = binding });
+        }
+        foreach (var paper in IdCardPapers.All)
+        {
+            IdCardPaperBox.Items.Add(new ComboBoxItem { Content = IdCardPapers.ChoiceLabel(paper, AppViewModel.RegionCode), Tag = paper });
+        }
+        foreach (var format in Enum.GetValues<OutputFormat>())
+        {
+            IdCardFormatBox.Items.Add(new ComboBoxItem { Content = format.Label(), Tag = format });
         }
 
         Loaded += (_, _) =>
@@ -229,6 +238,10 @@ public partial class MainWindow : Window
         {
             return "The detected photos have not been saved.";
         }
+        if (ViewModel.HasIdCardCaptures)
+        {
+            return "The ID card has not been saved.";
+        }
         return null;
     }
 
@@ -271,7 +284,8 @@ public partial class MainWindow : Window
         LastPdfSizeText.Text = ViewModel.LastPdfSizeText;
         LastPdfSizeText.Visibility = ViewModel.LastPdfSizeText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         ClearButton.IsEnabled = pageCount > 0 && !ViewModel.IsBusy;
-        QueueButtons.Visibility = ViewModel.Settings.Intent == ScanIntent.Document || pageCount > 0
+        // The ID card is saved from its review, not from the page queue.
+        QueueButtons.Visibility = (ViewModel.Settings.Intent == ScanIntent.Document && !ViewModel.IsIdCardFlow) || pageCount > 0
             ? Visibility.Visible : Visibility.Collapsed;
         PageList.IsEnabled = !ViewModel.IsBusy;
 
@@ -287,6 +301,14 @@ public partial class MainWindow : Window
         Inspector.IsEnabled = !ViewModel.IsBusy;
         PresetList.IsEnabled = !ViewModel.IsBusy;
         PresetButtons.IsEnabled = !ViewModel.IsBusy;
+        // While a side of an ID card is held, the mode and the source stay as they are: changing
+        // them would end the task and drop the card. Leaving the task asks first.
+        bool cardHeld = ViewModel.HasIdCardCaptures;
+        string? cardHint = cardHeld ? IdCardHeldHint : null;
+        ModeTrack.IsEnabled = SourceBox.IsEnabled = !cardHeld;
+        ModeTrack.ToolTip = SourceBox.ToolTip = cardHint;
+        AutomationProperties.SetHelpText(ModeTrack, cardHint ?? "");
+        AutomationProperties.SetHelpText(SourceBox, cardHint ?? "");
 
         UpdateMarquee();
         SyncDeviceSelection();
@@ -296,8 +318,9 @@ public partial class MainWindow : Window
 
         // Photo review overlay.
         PhotoReviewOverlay.Visibility = ViewModel.ShowPhotoReview ? Visibility.Visible : Visibility.Collapsed;
-        // The review is modal (a sheet on macOS): nothing underneath is reachable, not even by keyboard.
-        MainContent.IsEnabled = !ViewModel.ShowPhotoReview;
+        // The reviews are modal (sheets on macOS): nothing underneath is reachable, not even by keyboard.
+        MainContent.IsEnabled = !ViewModel.ShowPhotoReview && !ViewModel.ShowIdCardReview;
+        SyncIdCardReview();
         if (!ReferenceEquals(_boundPhotoBatch, ViewModel.DetectedPhotos))
         {
             _boundPhotoBatch = ViewModel.DetectedPhotos;
@@ -459,6 +482,7 @@ public partial class MainWindow : Window
     private void FocusMainAction()
     {
         if (ViewModel.ShowPhotoReview && ReviewSaveButton.IsEnabled) ReviewSaveButton.Focus();
+        else if (ViewModel.ShowIdCardReview && IdCardSaveButton.IsEnabled) IdCardSaveButton.Focus();
         else if (ScanTab.IsSelected && ScanButton.IsEnabled) ScanButton.Focus();
         else MainTabs.Focus();
     }
@@ -540,6 +564,8 @@ public partial class MainWindow : Window
         ExitTaskButton.ToolTip = task is not null
             ? "Leave the task. Its settings stay, without the guidance."
             : "Stop turning stacks over by hand: scan one side of each sheet.";
+        // Not while a scan runs: its result belongs to the task's steps.
+        ExitTaskButton.IsEnabled = !ViewModel.IsBusy;
 
         bool awaitingBacks = ViewModel.AwaitingBacks;
         bool finishFronts = ViewModel.CanFinishFronts;
@@ -558,6 +584,168 @@ public partial class MainWindow : Window
         ScanBacksAgainButton.Visibility = mismatch is null ? Visibility.Collapsed : Visibility.Visible;
         SidesActions.IsEnabled = !ViewModel.IsBusy;
         if (mismatch is not null && noticeChanged) AnnounceWhenShown(SidesNoticeText);
+
+        // The back of an ID card may be left out: "Skip back side". (The backs of a stack turned
+        // over by hand are left out with Keep fronts only.)
+        bool skippable = ViewModel.CanSkipStep;
+        StepActions.Visibility = skippable ? Visibility.Visible : Visibility.Collapsed;
+        StepActions.IsEnabled = !ViewModel.IsBusy;
+        if (skippable)
+        {
+            SkipStepButton.Content = $"Skip {step!.Title.ToLowerInvariant()}";
+            SkipStepButton.ToolTip = "Nothing is printed on the back: save the front only";
+        }
+    }
+
+    private void SkipStep_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.SkipStep();
+        RefreshFromViewModel();
+        FocusMainAction();
+    }
+
+    // MARK: - ID card review
+
+    /// <summary>Whether the ID card review was open at the last refresh (to move focus into it once).</summary>
+    private bool _idCardReviewShown;
+
+    /// <summary>
+    /// The ID card review: each side with its turn and the note about its crop, a missing back with
+    /// a way to scan it, the page both go on with what it holds and whether it is at real size, and
+    /// the paper, format and side-image choices (the same settings as the inspector's).
+    /// </summary>
+    private void SyncIdCardReview()
+    {
+        bool shown = ViewModel.ShowIdCardReview;
+        IdCardReviewOverlay.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+        if (!shown)
+        {
+            _idCardReviewShown = false;
+            IdCardFrontImage.Source = null;
+            IdCardBackImage.Source = null;
+            IdCardPageImage.Source = null;
+            return;
+        }
+        var front = ViewModel.IdCardFront;
+        var back = ViewModel.IdCardBack;
+        IdCardFrontImage.Source = front?.Thumbnail;
+        IdCardFrontTurn.Angle = front?.RotationDegrees ?? 0;
+        IdCardBackImage.Source = back?.Thumbnail;
+        IdCardBackTurn.Angle = back?.RotationDegrees ?? 0;
+        IdCardFrontNoteText.Text = ViewModel.IdCardFrontNote ?? "";
+        IdCardFrontNotice.Visibility = ViewModel.IdCardFrontNote is null ? Visibility.Collapsed : Visibility.Visible;
+        IdCardBackNoteText.Text = ViewModel.IdCardBackNote ?? "";
+        IdCardBackNotice.Visibility = back is not null && ViewModel.IdCardBackNote is not null ? Visibility.Visible : Visibility.Collapsed;
+        IdCardBackWell.Visibility = back is null ? Visibility.Collapsed : Visibility.Visible;
+        IdCardNoBack.Visibility = back is null ? Visibility.Visible : Visibility.Collapsed;
+        IdCardBackRotateButton.Visibility = IdCardBackCropButton.Visibility = IdCardBackRetakeButton.Visibility =
+            back is null ? Visibility.Collapsed : Visibility.Visible;
+        IdCardSwapButton.Visibility = back is null ? Visibility.Collapsed : Visibility.Visible;
+        AutomationProperties.SetName(IdCardBackCard, back is null ? "Back side: none" : "Back side");
+
+        IdCardPageImage.Source = ViewModel.IdCardPreview;
+        IdCardLayoutText.Text = ViewModel.IdCardLayoutCaption;
+        IdCardSizeText.Text = ViewModel.IdCardSizeWarning ?? "";
+        IdCardSizeNotice.Visibility = ViewModel.IdCardSizeWarning is null ? Visibility.Collapsed : Visibility.Visible;
+
+        var s = ViewModel.Settings;
+        bool wasUpdating = _updatingUi;
+        _updatingUi = true;
+        try
+        {
+            IdCardPaperBox.SelectedItem = IdCardPaperBox.Items.Cast<ComboBoxItem>().First(i => (IdCardPaper)i.Tag == s.TaskOptions.IdCardPaper);
+            IdCardFormatBox.SelectedItem = IdCardFormatBox.Items.Cast<ComboBoxItem>().First(i => (OutputFormat)i.Tag == s.Format);
+            IdCardSidesBox.IsChecked = s.TaskOptions.IdCardSaveSidesAsImages;
+        }
+        finally
+        {
+            _updatingUi = wasUpdating;
+        }
+        IdCardSaveButton.Content = s.Format == OutputFormat.Pdf ? "Save PDF" : $"Save {s.Format.Label()}";
+        IdCardSaveButton.ToolTip = $"Save {(back is null ? "the front" : "both sides")} on one {ViewModel.IdCardPaperSize.Label()} page";
+
+        bool busy = ViewModel.IsBusy;
+        IdCardSaveButton.IsEnabled = !busy && front is not null;
+        IdCardDiscardButton.IsEnabled = !busy;
+        IdCardPaperBox.IsEnabled = IdCardFormatBox.IsEnabled = IdCardSidesBox.IsEnabled = !busy;
+        IdCardFrontCard.IsEnabled = IdCardBackCard.IsEnabled = IdCardSwapButton.IsEnabled = !busy;
+        IdCardFrontCropButton.IsEnabled = IdCardBackCropButton.IsEnabled = !ViewModel.IsRecropPending;
+        if (!_idCardReviewShown)
+        {
+            _idCardReviewShown = true;
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (IdCardSaveButton.IsEnabled) IdCardSaveButton.Focus();
+            }, System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+    }
+
+    private static PageSide SideOf(object sender) =>
+        sender is FrameworkElement { Tag: "back" } ? PageSide.Back : PageSide.Front;
+
+    private void IdCardSave_Click(object sender, RoutedEventArgs e) => _ = ViewModel.SaveIdCard();
+
+    private void IdCardDiscard_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.DiscardIdCard();
+        RefreshFromViewModel();
+        FocusMainAction();
+    }
+
+    private void IdCardRotate_Click(object sender, RoutedEventArgs e) => ViewModel.RotateIdCardSide(SideOf(sender));
+
+    private void IdCardSwap_Click(object sender, RoutedEventArgs e) => ViewModel.SwapIdCardSides();
+
+    /// <summary>Scans a side again (or the back after all): the review closes and the Scan button takes over.</summary>
+    private void IdCardRetake_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.RetakeIdCardSide(SideOf(sender));
+        RefreshFromViewModel();
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (ScanButton.IsEnabled) ScanButton.Focus();
+        }, System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    /// <summary>Fixes a side's crop in the crop editor, on the scan it was cut from.</summary>
+    private void IdCardCrop_Click(object sender, RoutedEventArgs e)
+    {
+        var side = SideOf(sender);
+        var item = side == PageSide.Front ? ViewModel.IdCardFront : ViewModel.IdCardBack;
+        if (ViewModel.IsBusy || ViewModel.IsRecropPending || item is null) return;
+        if (ViewModel.IdCardSource(side) is not { } source)
+        {
+            ShowError("The scan of this side is no longer available.");
+            return;
+        }
+        var editor = new PhotoCropEditorWindow(source, item.Photo.Region, deskew: true) { Owner = this };
+        if (editor.ShowDialog() == true && !editor.Region.Equals(item.Photo.Region))
+        {
+            _ = ViewModel.RecropIdCardSide(side, editor.Region);
+        }
+    }
+
+    private void IdCardPaper_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingUi || !IsLoaded || IdCardPaperBox.SelectedItem is not ComboBoxItem { Tag: IdCardPaper paper }) return;
+        ViewModel.SetIdCardPaper(paper);
+    }
+
+    private void IdCardFormat_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingUi || !IsLoaded || IdCardFormatBox.SelectedItem is not ComboBoxItem { Tag: OutputFormat format }) return;
+        if (ViewModel.Settings.Format == format) return;
+        // The same setting as the inspector's Format.
+        ViewModel.Settings.Format = format;
+        ViewModel.SettingsEdited();
+        PushSettingsToUi();
+        RefreshFromViewModel();
+    }
+
+    private void IdCardSides_Click(object sender, RoutedEventArgs e)
+    {
+        if (_updatingUi || !IsLoaded) return;
+        ViewModel.SetIdCardSaveSidesAsImages(IdCardSidesBox.IsChecked == true);
     }
 
     /// <summary>
@@ -654,15 +842,43 @@ public partial class MainWindow : Window
     /// <summary>A task card was picked: set it up and go to the scan screen.</summary>
     private void StartTask(ScanTask task)
     {
+        if (ViewModel.IsBusy || !ConfirmDropIdCard()) return;
         if (!ViewModel.StartTask(task)) return;
         PushSettingsToUi();
         ShowScanScreen();
     }
 
+    /// <summary>
+    /// Asks before something that ends the ID card task (leaving it, picking a task or a preset)
+    /// while a side of the card is held and not saved. Discard drops the card and goes on (true);
+    /// Cancel keeps it (false). True at once when no side is held. Refused (false) while an
+    /// operation runs: the card cannot be discarded then.
+    /// </summary>
+    private bool ConfirmDropIdCard()
+    {
+        if (ViewModel.IsBusy) return false;
+        if (!ViewModel.HasIdCardCaptures) return true;
+        if (!AskDiscardIdCard() || ViewModel.IsBusy) return false;
+        ViewModel.DiscardIdCard();
+        return true;
+    }
+
+    /// <summary>Why the mode and the source cannot be changed while a side of an ID card is held.</summary>
+    private const string IdCardHeldHint =
+        "The ID card task needs the flatbed in Document mode. Save or discard the card, or leave the task, to change this.";
+
+    /// <summary>The question <see cref="ConfirmDropIdCard"/> asks: true to discard the card.</summary>
+    private Func<bool> AskDiscardIdCard;
+
+    private bool AskDiscardIdCardInDialog() =>
+        MessageBox.Show(this, "The ID card has not been saved. Its scanned sides will be discarded.\n\nDiscard the ID card?",
+                        "CompleteScanner", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No)
+        == MessageBoxResult.Yes;
+
     /// <summary>A preset card was picked: apply it and go to the scan screen.</summary>
     private void StartPreset(Preset preset)
     {
-        if (ViewModel.IsBusy) return;
+        if (ViewModel.IsBusy || !ConfirmDropIdCard()) return;
         ViewModel.ApplyPreset(preset);
         PushSettingsToUi();
         _savedTabStale = true;
@@ -691,8 +907,16 @@ public partial class MainWindow : Window
 
     private void ExitTask_Click(object sender, RoutedEventArgs e)
     {
-        if (ViewModel.ActiveTask is not null) ViewModel.ExitTask();
-        else ViewModel.ScanOneSideOnly();
+        if (ViewModel.IsBusy) return;
+        if (ViewModel.ActiveTask is not null)
+        {
+            if (!ConfirmDropIdCard()) return;
+            ViewModel.ExitTask();
+        }
+        else
+        {
+            ViewModel.ScanOneSideOnly();
+        }
         PushSettingsToUi();
         RefreshFromViewModel();
         ScanButton.Focus();
@@ -1379,6 +1603,7 @@ public partial class MainWindow : Window
     {
         if (PresetList.SelectedItem is Preset preset)
         {
+            if (!ConfirmDropIdCard()) return;
             ViewModel.ApplyPreset(preset);
             PushSettingsToUi();
             _savedTabStale = true;

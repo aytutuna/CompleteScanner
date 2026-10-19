@@ -63,11 +63,11 @@ public final class AppState: ObservableObject {
     }
 
     /// Low-res preview of the full bed; the selection marquee is only valid over this image.
-    @Published public private(set) var overviewImage: CGImage? {
+    @Published public internal(set) var overviewImage: CGImage? {
         didSet { canvasRevision &+= 1 }
     }
     /// The most recent full scan (shown in the canvas when there is no overview).
-    @Published public private(set) var lastScanImage: CGImage? {
+    @Published public internal(set) var lastScanImage: CGImage? {
         didSet { canvasRevision &+= 1 }
     }
     /// Bumped whenever either canvas image changes, so views can key decode work on it
@@ -76,7 +76,7 @@ public final class AppState: ObservableObject {
     /// True pixel dimensions of the last scan. `lastScanImage` holds only a downsampled
     /// preview (full-resolution raws would pin hundreds of MB at high dpi); detected-photo
     /// outlines use this to map full-resolution region coordinates onto the preview.
-    @Published public private(set) var lastScanPixelSize: CGSize?
+    @Published public internal(set) var lastScanPixelSize: CGSize?
     /// Normalized (0...1) crop rect within the flatbed, origin top-left. nil = full bed.
     @Published public var selectionRect: CGRect?
 
@@ -90,17 +90,46 @@ public final class AppState: ObservableObject {
     /// re-extract each photo from the correct sheet at full quality.
     private var photoSourceImages: [UUID: CGImage] = [:]
 
-    /// The full-resolution page a detected photo was extracted from (nil once the
-    /// review is closed).
+    /// The full-resolution page a detected photo, or a side of the ID card, was extracted from
+    /// (nil once the review is closed).
     public func photoSource(for photo: DetectedPhoto) -> CGImage? {
-        photo.sourcePageID.flatMap { photoSourceImages[$0] }
+        photo.sourcePageID.flatMap { photoSourceImages[$0] ?? idCardSourceImages[$0] }
     }
+
+    /// The front of the ID card, cut out of its scan; nil until it is scanned (AppState+IdCard.swift).
+    @Published public internal(set) var idCardFront: DetectedPhoto?
+    /// The back of the ID card; nil until it is scanned, and when it was skipped.
+    @Published public internal(set) var idCardBack: DetectedPhoto?
+    /// What to check about the front's crop (`IdCardPick.note`); nil when the card was found.
+    @Published public internal(set) var idCardFrontNote: String?
+    /// What to check about the back's crop; nil when the card was found.
+    @Published public internal(set) var idCardBackNote: String?
+    /// The sides are in (or the back was skipped): the review to check and save them is open.
+    @Published public var showIdCardReview = false
+    /// A small picture of the page the sides are saved on; nil while there is no front.
+    @Published public internal(set) var idCardPreview: CGImage?
+    /// What the page holds: "Front and back on one A4 page, at real size."
+    @Published public internal(set) var idCardLayoutCaption = ""
+    /// Set when the sides had to be made smaller to fit the page (`IdCardLayout.notRealSizeMessage`).
+    @Published public internal(set) var idCardSizeWarning: String?
+    /// The scans the ID card's sides were cut from, by scanned-page id, so a crop can be fixed. In
+    /// memory only (ID card scans are never spooled), and dropped with the sides.
+    var idCardSourceImages: [UUID: CGImage] = [:]
+    /// What each of those scans covers (resolution, size, selection), so a back that does not stand
+    /// out takes the front's place only on a scan of the same part of the glass.
+    var idCardScanAreas: [UUID: IdCardScanArea] = [:]
+    /// Something asked for that would end the ID card task while a side is held and not saved
+    /// (leaving it, picking a task or a preset): it waits until the user discards the card
+    /// (`ContentView` asks; AppState+IdCard.swift).
+    @Published public var pendingIdCardLeave: IdCardLeave?
+    /// Bumped for every new picture of the ID card's page; a late one is dropped.
+    var idCardPreviewRevision = 0
 
     @Published public private(set) var isBusy = false
     @Published public private(set) var progress: ScanProgress?
     @Published public internal(set) var statusMessage = "Looking for scanners…"
     @Published public var errorMessage: String?
-    @Published public private(set) var lastSavedURLs: [URL] = []
+    @Published public internal(set) var lastSavedURLs: [URL] = []
     /// Size of the PDF saved last in this session, in bytes; nil before the first one. Shown
     /// under the PDF size choice.
     @Published public private(set) var lastPDFByteCount: Int64?
@@ -243,19 +272,24 @@ public final class AppState: ObservableObject {
             if let group = groupOfSelection(sel) {
                 if group.primary.id != sel {
                     // Same scanner, another connection. Switching would discard a running
-                    // operation or an open photo review, whose pixels no longer need the
-                    // scanner, so wait for those to end (endOfWork re-runs this merge).
-                    if isBusy || showPhotoReview {
+                    // operation, an open photo review or an ID card's sides, so wait for those
+                    // to end (endOfWork re-runs this merge).
+                    if autoSwitchMustWait {
                         connectionSwitchDeferred = true
                     } else {
                         selectDevice(group.primary.id)
                     }
                 } else if !userPickedDevice, let real = preferredDefaultDevice(), group.primary.isDemo,
                           deviceGroups.first(where: { $0.primary.id == real })?.primary.isDemo == false {
-                    // A real scanner appeared while we were auto-parked on the demo device.
-                    selectDevice(real)
+                    // A real scanner appeared while we were auto-parked on the demo device: the
+                    // same deferral applies.
+                    if autoSwitchMustWait {
+                        connectionSwitchDeferred = true
+                    } else {
+                        selectDevice(real)
+                    }
                 }
-            } else if isBusy || showPhotoReview {
+            } else if autoSwitchMustWait {
                 // The scanner went away (unplugged, powered off): the same deferral applies.
                 connectionSwitchDeferred = true
             } else {
@@ -268,9 +302,15 @@ public final class AppState: ObservableObject {
         refreshDeviceRows()
     }
 
+    /// A switch of scanner made by the app (the scanner went away, another connection or a real
+    /// scanner appeared) waits: it would discard a running operation or the open photo review, or
+    /// the ID card's sides, whose other side and new scans need this scanner's glass. The switch is
+    /// made once these end (`endOfWork`). Twin of the Windows `AppViewModel.AutoSwitchMustWait`.
+    var autoSwitchMustWait: Bool { isBusy || showPhotoReview || showIdCardReview || hasIdCardCaptures }
+
     /// Re-evaluate a deferred connection switch once nothing is in progress.
-    private func endOfWork() {
-        guard connectionSwitchDeferred, !isBusy, !showPhotoReview else { return }
+    func endOfWork() {
+        guard connectionSwitchDeferred, !autoSwitchMustWait else { return }
         connectionSwitchDeferred = false
         mergeDevices()
     }
@@ -505,6 +545,14 @@ public final class AppState: ObservableObject {
 
     public func performScan() {
         guard let session else { return noDevice() }
+        // The ID card task scans the side its steps are at; once the sides are in, Scan opens the
+        // review again.
+        let idCard = TaskCatalog.flow(of: settings) == .idCard
+        let cardSide: PageSide? = idCard ? IdCardSteps.sideOf(taskFlow?.current?.id) : nil
+        if idCard && cardSide == nil {
+            openIdCardReview()
+            return
+        }
         let generation = switchGeneration
         runExclusive { flag in
             if self.settings.source == .documentFeeder { await self.checkFeederDuplex() }
@@ -520,8 +568,9 @@ public final class AppState: ObservableObject {
             let manualSide: PageSide? = sides == .manual && self.isTurningOverByHand
                 ? (self.taskFlow?.current?.id == DocumentSides.backsStepID ? .back : .front)
                 : nil
-            // The flatbed scans the selection, else the paper size's part of the glass.
-            let paperArea: CGRect? = self.capabilities.flatMap {
+            // The flatbed scans the selection, else the paper size's part of the glass; an ID card
+            // may lie anywhere on it, so its scans take the whole glass.
+            let paperArea: CGRect? = idCard ? nil : self.capabilities.flatMap {
                 PaperSizes.flatbedSelection(s.paperSize, bed: $0.flatbedSizeInches)
             }
             let selection: CGRect? = s.source == .flatbed ? (self.selectionRect ?? paperArea) : nil
@@ -568,23 +617,26 @@ public final class AppState: ObservableObject {
             guard self.switchGeneration == generation else { return }
             let rawPixelSize = rawLast.map { CGSize(width: $0.width, height: $0.height) }
 
-            // Record every scanned page in the session history (small previews only).
-            let historyThumbs: [(CGImage, CGSize, Int)] = await Task.detached(priority: .utility) {
-                raw.map { page in
-                    (Self.makePreview(page.image, maxSide: 700) ?? page.image,
-                     CGSize(width: page.image.width, height: page.image.height),
-                     page.dpi)
+            // Record every scanned page in the session history (small previews only). ID cards are
+            // kept out of it: nothing of them is left once saved or discarded.
+            if !idCard {
+                let historyThumbs: [(CGImage, CGSize, Int)] = await Task.detached(priority: .utility) {
+                    raw.map { page in
+                        (Self.makePreview(page.image, maxSide: 700) ?? page.image,
+                         CGSize(width: page.image.width, height: page.image.height),
+                         page.dpi)
+                    }
+                }.value
+                guard self.switchGeneration == generation else { return }
+                let now = Date()
+                let entries = historyThumbs.map {
+                    ScanHistoryEntry(date: now, intent: s.intent, dpi: $0.2,
+                                     thumbnail: $0.0, pixelSize: $0.1)
                 }
-            }.value
-            guard self.switchGeneration == generation else { return }
-            let now = Date()
-            let entries = historyThumbs.map {
-                ScanHistoryEntry(date: now, intent: s.intent, dpi: $0.2,
-                                 thumbnail: $0.0, pixelSize: $0.1)
-            }
-            self.scanHistory.insert(contentsOf: entries.reversed(), at: 0)
-            if self.scanHistory.count > 50 {
-                self.scanHistory.removeSubrange(50...)
+                self.scanHistory.insert(contentsOf: entries.reversed(), at: 0)
+                if self.scanHistory.count > 50 {
+                    self.scanHistory.removeSubrange(50...)
+                }
             }
 
             switch TaskCatalog.flow(of: s) {
@@ -640,6 +692,35 @@ public final class AppState: ObservableObject {
                 self.recordCaptures(found.map(\.id))
                 self.showPhotoReview = !found.isEmpty
                 self.statusMessage = "Found \(found.count) photo\(found.count == 1 ? "" : "s") on the bed."
+            case .idCard:
+                guard self.isIdCardFlow else {
+                    self.dropIdCardScanOutsideTask()
+                    break
+                }
+                self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
+                guard let side = cardSide, let page = processed.last else { break }
+                self.statusMessage = "Finding the card\u{2026}"
+                // A back that does not stand out takes the front's place, the card turned over where it
+                // lay, when both scans cover the same part of the glass.
+                let area = IdCardScanArea(dpi: page.dpi,
+                                          pixelSize: CGSize(width: page.image.width, height: page.image.height),
+                                          selection: selection)
+                var frontPlace: DetectedPhotoRegion?
+                if side == .back, let front = self.idCardFront, let frontScan = front.sourcePageID,
+                   let frontArea = self.idCardScanAreas[frontScan] {
+                    frontPlace = IdCardDetector.frontPlaceOnBack(front.region, front: frontArea, back: area)
+                }
+                let fallback = frontPlace
+                let found: (DetectedPhoto, String?) = try await Task.detached(priority: .userInitiated) { () throws -> (DetectedPhoto, String?) in
+                    let pick = IdCardDetector.detect(page.image, dpi: page.dpi, fallback: fallback)
+                    if flag.isCancelled { throw ScanError.cancelled }
+                    let image = IdCardDetector.extract(page.image, pick: pick)
+                    return (DetectedPhoto(region: pick.region, image: image, dpi: page.dpi, sourcePageID: page.id),
+                            pick.note)
+                }.value
+                guard self.switchGeneration == generation else { return }
+                if flag.isCancelled { throw ScanError.cancelled }
+                self.recordIdCardSide(side, photo: found.0, note: found.1, source: page.image, area: area)
             }
             if let stop {
                 self.errorMessage = stop.message(pagesKept: raw.count)
@@ -804,6 +885,10 @@ public final class AppState: ObservableObject {
     /// off the main actor — at high dpi it renders hundreds of MB of pixels.
     public func recropPhoto(id: UUID, region: DetectedPhotoRegion) {
         guard !isBusy else { return }
+        if let side = idCardSide(ofPhoto: id) {
+            recropIdCardSide(side, region: region)
+            return
+        }
         guard let photo = detectedPhotos.first(where: { $0.id == id }),
               let source = photoSource(for: photo) else { return }
         let deskew = settings.photoAutoDeskew
@@ -842,7 +927,7 @@ public final class AppState: ObservableObject {
         scannedPages.swapAt(idx, newIdx)
     }
 
-    private func setLastScan(preview: CGImage?, pixelSize: CGSize?) {
+    func setLastScan(preview: CGImage?, pixelSize: CGSize?) {
         lastScanImage = preview
         lastScanPixelSize = pixelSize
     }
@@ -1221,7 +1306,7 @@ public final class AppState: ObservableObject {
 
     /// The after-save action of the settings the files were saved with, once a save has finished
     /// (never after a cancelled or failed one). A refusal is reported; the save stands.
-    private func runAfterSave(_ action: AfterSaveAction, saved: [URL]) {
+    func runAfterSave(_ action: AfterSaveAction, saved: [URL]) {
         guard let step = SaveActions.plan(action, saved: saved) else { return }
         runFileAction(step.fileAction, urls: step.urls)
     }
@@ -1300,20 +1385,20 @@ public final class AppState: ObservableObject {
     }
 
     /// Remember the size of the PDF just written at `url` (nil when it cannot be read).
-    private func notePDFSize(of url: URL) {
+    func notePDFSize(of url: URL) {
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber
         lastPDFByteCount = size?.int64Value
     }
 
     /// " (412 KB)" after the name of the PDF just saved, or nothing when its size is unknown.
-    private var pdfSizeSuffix: String {
+    var pdfSizeSuffix: String {
         guard let bytes = lastPDFByteCount else { return "" }
         return " (\(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)))"
     }
 
     /// Write the PDF to a hidden temp name and move it into place, so a failed
     /// or interrupted build never leaves a truncated PDF at the destination.
-    private nonisolated static func writePDFAtomically(pages: [ScannedPage], searchable: Bool,
+    nonisolated static func writePDFAtomically(pages: [ScannedPage], searchable: Bool,
                                                        languages: [String], pdfSize: PDFSizePreset,
                                                        to url: URL,
                                                        shouldContinue: (() -> Bool)? = nil,
@@ -1352,7 +1437,7 @@ public final class AppState: ObservableObject {
         return value
     }
 
-    private func outputURL(fileExtension: String, index: Int? = nil) throws -> URL {
+    func outputURL(fileExtension: String, index: Int? = nil) throws -> URL {
         let dir = try destinationDirectory()
         let base = NamingTemplate(settings.namingTemplate)
             .baseFilename(NamingContext(counter: nextCounter(), date: Date(), intent: settings.intent,
@@ -1362,7 +1447,7 @@ public final class AppState: ObservableObject {
 
     /// Run one long operation at a time; surface errors; manage busy state. The
     /// operation receives a CancelFlag it must poll between heavy work units.
-    private func runExclusive(_ operation: @escaping (CancelFlag) async throws -> Void) {
+    func runExclusive(_ operation: @escaping (CancelFlag) async throws -> Void) {
         guard !isBusy else { return }
         isBusy = true
         let flag = CancelFlag()

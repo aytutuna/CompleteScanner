@@ -305,4 +305,55 @@ public class MockScannerTests
         var page = Assert.Single(pages);
         Assert.Equal((int)(11.7 * Dpi), page.Image.Height);
     }
+
+    // MARK: - ID card
+
+    private static ScanSettings IdCardSettings(int dpi)
+    {
+        var settings = TaskCatalog.Apply(ScanTask.IdCard, new ScanSettings());
+        settings.Resolution = dpi;
+        return settings;
+    }
+
+    [Fact]
+    public async Task IdCardScansTurnTheSampleCardOver()
+    {
+        var (backend, session) = await Open();
+        Assert.False(backend.IdCardTurnedOver);
+        // A preview shows the side facing the glass without turning the card.
+        var preview = await session.PerformOverviewScanAsync(IdCardSettings(Dpi));
+        Assert.False(backend.IdCardTurnedOver);
+        var front = Assert.Single(await session.PerformScanAsync(IdCardSettings(Dpi), selection: null)).Image;
+        Assert.True(backend.IdCardTurnedOver);
+        var back = Assert.Single(await session.PerformScanAsync(IdCardSettings(Dpi), selection: null)).Image;
+        Assert.False(backend.IdCardTurnedOver);
+        var frontAgain = Assert.Single(await session.PerformScanAsync(IdCardSettings(Dpi), selection: null)).Image;
+        Assert.Equal((front.Width, front.Height), (back.Width, back.Height));
+        Assert.Equal((int)(11.7 * Dpi), front.Height);
+        Assert.NotEqual(front.Pixels, back.Pixels);
+        Assert.Equal(front.Pixels, frontAgain.Pixels);
+        Assert.Equal((int)(11.7 * 100), preview.Height);
+        // Other scans do not touch the card.
+        await session.PerformScanAsync(new ScanSettings { Resolution = Dpi }, selection: null);
+        Assert.True(backend.IdCardTurnedOver);
+    }
+
+    [Fact]
+    public async Task TheSampleCardIsFoundAtIdOneSize()
+    {
+        var (_, session) = await Open();
+        foreach (double angle in new[] { 4.0, -4.0 })
+        {
+            var scan = Assert.Single(await session.PerformScanAsync(IdCardSettings(150), selection: null));
+            var pick = IdCardDetector.Detect(scan.Image, 150);
+            Assert.Equal(IdCardPickKind.Card, pick.Kind);
+            double longSide = Math.Max(pick.Region.Size.Width, pick.Region.Size.Height) / 150;
+            double shortSide = Math.Min(pick.Region.Size.Width, pick.Region.Size.Height) / 150;
+            Assert.InRange(longSide, 3.370 - 0.05, 3.370 + 0.05);
+            Assert.InRange(shortSide, 2.125 - 0.05, 2.125 + 0.05);
+            Assert.InRange(pick.Region.AngleDegrees, angle - 0.5, angle + 0.5);
+            Assert.InRange(pick.Region.Center.X / 150, 2.30, 2.40);
+            Assert.InRange(pick.Region.Center.Y / 150, 1.70, 1.80);
+        }
+    }
 }

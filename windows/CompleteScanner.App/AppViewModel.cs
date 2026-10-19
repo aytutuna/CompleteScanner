@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Interop;
@@ -245,6 +246,23 @@ public sealed class AppViewModel : INotifyPropertyChanged
     public ObservableCollection<PhotoItem> DetectedPhotos { get; private set; } = [];
     public bool ShowPhotoReview { get; private set; }
 
+    /// <summary>The front of the ID card, cut out of its scan; null until it is scanned.</summary>
+    public PhotoItem? IdCardFront { get; private set; }
+    /// <summary>The back of the ID card; null until it is scanned, and when it was skipped.</summary>
+    public PhotoItem? IdCardBack { get; private set; }
+    /// <summary>What to check about the front's crop (<see cref="IdCardPick.Note"/>); null when the card was found.</summary>
+    public string? IdCardFrontNote { get; private set; }
+    /// <summary>What to check about the back's crop; null when the card was found.</summary>
+    public string? IdCardBackNote { get; private set; }
+    /// <summary>The sides are in (or the back was skipped): the review to check and save them is open.</summary>
+    public bool ShowIdCardReview { get; private set; }
+    /// <summary>A small picture of the page the sides are saved on; null while there is no front.</summary>
+    public BitmapSource? IdCardPreview { get; private set; }
+    /// <summary>What the page holds: "Front and back on one A4 page, at real size."</summary>
+    public string IdCardLayoutCaption { get; private set; } = "";
+    /// <summary>Set when the sides had to be made smaller to fit the page (<see cref="IdCardLayout.NotRealSizeMessage"/>).</summary>
+    public string? IdCardSizeWarning { get; private set; }
+
     /// <summary>This session's scans, newest first (small previews only) — the Scans tab.</summary>
     public ObservableCollection<HistoryItem> History { get; } = [];
 
@@ -318,6 +336,38 @@ public sealed class AppViewModel : INotifyPropertyChanged
 
     /// <summary>How the next scan captures the sheets (one side, both, or turned over by hand).</summary>
     public DuplexMode EffectiveDuplex => DocumentSides.Effective(Settings, Capabilities);
+
+    /// <summary>The steps guide the ID card task: front, back, then the review.</summary>
+    public bool IsIdCardFlow => Flow is not null && _flowKey.Task == ScanTask.IdCard && !_flowKey.Manual;
+
+    /// <summary>A side of an ID card is held in memory and not saved yet.</summary>
+    public bool HasIdCardCaptures => IdCardFront is not null || IdCardBack is not null;
+
+    /// <summary>
+    /// The skip button of the banner is offered: the back of an ID card (<see cref="IdCardSteps.OffersSkip"/>).
+    /// </summary>
+    public bool CanSkipStep => IsIdCardFlow && IdCardSteps.OffersSkip(Flow?.Current);
+
+    /// <summary>
+    /// A switch of scanner made by the app (the scanner went away, another connection or a real
+    /// scanner appeared) waits: it would discard a running operation or the open photo review, or
+    /// the ID card's sides, whose other side and new scans need this scanner's glass. The switch is
+    /// made once these end (<see cref="EndOfWork"/>).
+    /// </summary>
+    private bool AutoSwitchMustWait => IsBusy || ShowPhotoReview || ShowIdCardReview || HasIdCardCaptures;
+
+    /// <summary>The page the ID card is saved on: the choice in the review; Automatic is the paper usual where the user lives.</summary>
+    public PaperSize IdCardPaperSize => IdCardPapers.Resolve(Settings.TaskOptions.IdCardPaper, RegionCode);
+
+    /// <summary>The user's country or region (two letters), for the paper usual there; null when unknown.</summary>
+    public static string? RegionCode
+    {
+        get
+        {
+            try { return RegionInfo.CurrentRegion.TwoLetterISORegionName; }
+            catch (ArgumentException) { return null; }
+        }
+    }
 
     /// <summary>The start screen's task cards, with what the connected scanner can do.</summary>
     public IReadOnlyList<TaskCardItem> TaskCards =>
@@ -397,6 +447,18 @@ public sealed class AppViewModel : INotifyPropertyChanged
     /// re-extract each photo from the correct sheet at full quality.
     /// </summary>
     private Dictionary<Guid, RgbaImage> _photoSourceImages = [];
+    /// <summary>
+    /// The scans the ID card's sides were cut from, by scanned-page id, so a crop can be fixed. In
+    /// memory only (ID card scans are never spooled), and dropped with the sides.
+    /// </summary>
+    private readonly Dictionary<Guid, RgbaImage> _idCardSources = [];
+    /// <summary>
+    /// What each of those scans covers (resolution, size, selection), so a back that does not stand
+    /// out takes the front's place only on a scan of the same part of the glass.
+    /// </summary>
+    private readonly Dictionary<Guid, IdCardScanArea> _idCardScanAreas = [];
+    /// <summary>Bumped for every new picture of the ID card's page; a late one is dropped.</summary>
+    private int _idCardPreviewRevision;
     /// <summary>Page rotations run in order (rapid clicks accumulate instead of racing).</summary>
     private Task _pageRotateChain = Task.CompletedTask;
     /// <summary>In-flight re-crops; saving the batch waits for them first.</summary>
@@ -542,7 +604,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
                 // The device went away (unplugged, powered off). Switching would discard a
                 // running operation or an open photo review, whose pixels no longer need the
                 // scanner, so wait for those to end (EndOfWork re-runs this merge).
-                if (IsBusy || ShowPhotoReview)
+                if (AutoSwitchMustWait)
                 {
                     _autoSwitchDeferred = true;
                 }
@@ -556,7 +618,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             {
                 // Same scanner, another connection: the same deferral rules apply. The user's
                 // pick of this scanner stands.
-                if (IsBusy || ShowPhotoReview) _autoSwitchDeferred = true;
+                if (AutoSwitchMustWait) _autoSwitchDeferred = true;
                 else SelectDevice(group.Primary.Id);
             }
             else if (!_userPickedDevice && PreferredDefaultDevice() is { } real
@@ -566,7 +628,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
                 // A real scanner appeared while we were auto-parked on the demo device. Switching
                 // would discard a running operation or an open photo review, so wait for those
                 // to end (EndOfWork re-runs this merge).
-                if (IsBusy || ShowPhotoReview) _autoSwitchDeferred = true;
+                if (AutoSwitchMustWait) _autoSwitchDeferred = true;
                 else SelectDevice(real);
             }
         }
@@ -581,7 +643,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
     /// <summary>Re-evaluate a deferred automatic device switch once nothing is in progress.</summary>
     private void EndOfWork()
     {
-        if (!_autoSwitchDeferred || IsBusy || ShowPhotoReview) return;
+        if (!_autoSwitchDeferred || AutoSwitchMustWait) return;
         _autoSwitchDeferred = false;
         MergeDevices();
     }
@@ -648,7 +710,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
         MergeDevices();
         if (DeviceGroups.FirstOrDefault(g => g.Key == groupKey) is not { } group) return;
         bool selectedScanner = SelectedDeviceId is { } sel && GroupOfSelection(sel)?.Key == groupKey;
-        if (selectedScanner && (IsBusy || ShowPhotoReview))
+        if (selectedScanner && AutoSwitchMustWait)
         {
             // MergeDevices deferred the switch; EndOfWork makes it.
             _userPickedDevice = true;
@@ -671,7 +733,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
     {
         MergeDevices();
         if (DeviceGroups.FirstOrDefault(g => g.Members.Any(m => m.Id == deviceId)) is not { } group) return;
-        if (IsBusy || ShowPhotoReview) return;
+        if (AutoSwitchMustWait) return;
         UserSelectDevice(group.Primary.Id);
     }
 
@@ -977,7 +1039,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
                 {
                     _ = _dispatcher.BeginInvoke(() =>
                     {
-                        if (!_userPickedDevice && SelectedDeviceId == id && !IsBusy && !ShowPhotoReview)
+                        if (!_userPickedDevice && SelectedDeviceId == id && !AutoSwitchMustWait)
                         {
                             SelectDevice(PreferredDefaultDevice());
                         }
@@ -1033,6 +1095,15 @@ public sealed class AppViewModel : INotifyPropertyChanged
         // again to tag each page), and processing, history and saving must all agree with
         // what was actually scanned.
         var s = Settings.Clone();
+        // The ID card task scans the side its steps are at; once the sides are in, Scan opens
+        // the review again.
+        bool idCard = TaskCatalog.FlowOf(s) == TaskFlowKind.IdCard;
+        PageSide? cardSide = idCard ? IdCardSteps.SideOf(Flow?.Current?.Id) : null;
+        if (idCard && cardSide is null)
+        {
+            OpenIdCardReview();
+            return Task.CompletedTask;
+        }
         // The backend is asked for a two-sided scan only when its feeder can do one; turning
         // the stack over by hand scans one side at a time, and the steps say which.
         var sides = DocumentSides.Effective(s, Capabilities);
@@ -1040,9 +1111,10 @@ public sealed class AppViewModel : INotifyPropertyChanged
         PageSide? manualSide = sides == DuplexMode.Manual && IsTurningOverByHand && Flow?.Current is { } step
             ? step.Id == DocumentSides.BacksStepId ? PageSide.Back : PageSide.Front
             : null;
-        // The flatbed scans the selection, else the paper size's part of the glass.
+        // The flatbed scans the selection, else the paper size's part of the glass; an ID card
+        // may lie anywhere on it, so its scans take the whole glass.
         var selection = s.Source == ScanSource.Flatbed
-            ? SelectionRect ?? (Capabilities is { } caps ? PaperSizes.FlatbedSelection(s.PaperSize, caps.FlatbedSizeInches) : null)
+            ? SelectionRect ?? (!idCard && Capabilities is { } caps ? PaperSizes.FlatbedSelection(s.PaperSize, caps.FlatbedSizeInches) : null)
             : null;
         return RunExclusive(async token =>
         {
@@ -1086,6 +1158,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
             var (rawPreview, historyItems) = await Task.Run(() =>
             {
                 var preview = ScanHistory.MakePreview(raw[^1].Image, CanvasPreviewMaxSide);
+                // ID cards are kept out of the history: nothing of them is left once saved or discarded.
+                if (idCard) return (preview, new List<HistoryItem>());
                 var entries = ScanHistory.MakeEntries(raw, s.Intent, DateTime.Now);
                 // The cards only display the bitmap: keep metadata-only entries so each
                 // preview's pixels are held once, not twice.
@@ -1098,7 +1172,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             }, token);
             if (_switchGeneration != generation) return;
             token.ThrowIfCancellationRequested();
-            RecordHistory(historyItems);
+            if (!idCard) RecordHistory(historyItems);
 
             switch (TaskCatalog.FlowOf(s))
             {
@@ -1169,6 +1243,15 @@ public sealed class AppViewModel : INotifyPropertyChanged
                     ShowPhotoReview = found.Count > 0;
                     if (!ShowPhotoReview) _photoSourceImages = [];
                     StatusMessage = $"Found {found.Count} photo{(found.Count == 1 ? "" : "s")} on the bed.";
+                    break;
+                case TaskFlowKind.IdCard:
+                    if (!IsIdCardFlow)
+                    {
+                        DropIdCardScanOutsideTask();
+                        break;
+                    }
+                    SetLastScan(rawPreview);
+                    await CaptureIdCardSide(cardSide!.Value, processed[^1], selection, generation, token);
                     break;
             }
             if (stop is not null) ErrorMessage = stop.Message(raw.Count);
@@ -1704,6 +1787,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
         }
         var adapted = SettingsAdapter.Adapt(TaskCatalog.Apply(task, Settings), Capabilities);
         Settings = adapted.Settings;
+        // Fresh steps, even for the same task: nothing of an ID card is kept, on the stage either.
+        if (IsIdCardFlow || HasIdCardCaptures || ShowIdCardReview) ClearIdCard(clearCanvas: true);
         Flow = null;
         SettingsEdited();
         StatusMessage = WithNotes($"Ready for “{TaskCatalog.Definition(task).Title}”.", adapted.Notes);
@@ -1713,11 +1798,12 @@ public sealed class AppViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// Leaves the active task: the settings stay as they are, without the task's banner, so
-    /// the scan screen is back to plain settings.
+    /// the scan screen is back to plain settings. Refused while an operation runs: a scan under
+    /// way belongs to the task's steps.
     /// </summary>
     public void ExitTask()
     {
-        if (Settings.TaskId is null) return;
+        if (IsBusy || Settings.TaskId is null) return;
         Settings.TaskId = null;
         SettingsEdited();
         NotifyAll();
@@ -1745,6 +1831,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
     /// </summary>
     private void SyncTaskFlow()
     {
+        bool wasIdCard = IsIdCardFlow;
         if (Settings.Task is { } task && !TaskCatalog.Fits(task, Settings)) Settings.TaskId = null;
         bool manual = DocumentSides.UsesManualSteps(Settings, Capabilities);
         (ScanTask?, bool) key = manual ? (null, true) : (Settings.Task, false);
@@ -1760,6 +1847,13 @@ public sealed class AppViewModel : INotifyPropertyChanged
             _flowKey = key;
             SidesMismatch = null;
         }
+        else
+        {
+            return;
+        }
+        // Steps started afresh, or none: the sides of an ID card scanned before go, and the stage
+        // no longer shows the card (also a scan whose card was not found, or a preview of the glass).
+        if (wasIdCard || HasIdCardCaptures || ShowIdCardReview) ClearIdCard(clearCanvas: true);
     }
 
     /// <summary>Back to the first step with nothing captured; a stack's count mismatch goes with it.</summary>
@@ -1907,6 +2001,408 @@ public sealed class AppViewModel : INotifyPropertyChanged
     {
         if (Flow?.Current is not { } step) return;
         foreach (var id in ids) Flow.Record(step.Id, id);
+    }
+
+    /// <summary>
+    /// Leaves out the back of an ID card with nothing on it (<see cref="CanSkipStep"/>), after which
+    /// the card's review opens. The backs of a stack turned over by hand are not skipped here: Keep
+    /// fronts only (<see cref="KeepFrontsOnly"/>) leaves them out.
+    /// </summary>
+    public void SkipStep()
+    {
+        if (IsBusy || !CanSkipStep || Flow is null) return;
+        Flow.Skip();
+        SetIdCardSide(PageSide.Back, null, null);
+        StatusMessage = "No back side. Check the front, then save.";
+        OpenIdCardReview();
+        NotifyAll();
+    }
+
+    // MARK: ID card
+
+    /// <summary>
+    /// One side of the ID card was scanned: the card is found on the scan and cut out straight
+    /// (<see cref="IdCardDetector"/>; a back that does not stand out takes the front's place when
+    /// both scans cover the same part of the glass), the step records it and moves on (past a back
+    /// already scanned or skipped, when the front was scanned again), and once the sides are in, the
+    /// review opens. The scan is kept in memory only while the side is, so its crop can be fixed;
+    /// nothing is spooled. <paramref name="selection"/> is the part of the glass scanned (null: all of it).
+    /// </summary>
+    private async Task CaptureIdCardSide(PageSide side, ScannedPage page, RectD? selection, int generation, CancellationToken token)
+    {
+        StatusMessage = "Finding the card…";
+        NotifyAll();
+        var area = new IdCardScanArea(page.Dpi, new SizeD(page.Image.Width, page.Image.Height), selection);
+        var fallback = side == PageSide.Back && IdCardFront is { } front
+                       && front.Photo.SourcePageId is { } frontScan && _idCardScanAreas.TryGetValue(frontScan, out var frontArea)
+            ? IdCardDetector.FrontPlaceOnBack(front.Photo.Region, frontArea, area)
+            : null;
+        var (item, note) = await Task.Run(() =>
+        {
+            var pick = IdCardDetector.Detect(page.Image, page.Dpi, fallback);
+            token.ThrowIfCancellationRequested();
+            var image = IdCardDetector.Extract(page.Image, pick);
+            var photo = new DetectedPhoto(pick.Region, image, page.Dpi, sourcePageId: page.Id);
+            return (new PhotoItem(photo, WpfImageCodec.ToThumbnail(image, PhotoItem.ThumbnailMaxSide)), pick.Note);
+        }, token);
+        if (_switchGeneration != generation) return;
+        token.ThrowIfCancellationRequested();
+        if (!IsIdCardFlow)
+        {
+            DropIdCardScanOutsideTask();
+            return;
+        }
+        _idCardSources[page.Id] = page.Image;
+        _idCardScanAreas[page.Id] = area;
+        SetIdCardSide(side, item, note);
+        if (Flow is { } flow)
+        {
+            flow.Record(IdCardSteps.StepId(side), item.Photo.Id);
+            flow.Advance();
+            if (flow.Current?.Id == IdCardSteps.BackStepId
+                && (IdCardBack is not null || flow.IsSkipped(IdCardSteps.BackStepId)))
+            {
+                flow.Advance();
+            }
+        }
+        string check = note is null ? "" : $" {note}";
+        if (Flow?.Current?.Id == IdCardSteps.ReviewStepId)
+        {
+            StatusMessage = $"{(side == PageSide.Front ? "Front" : "Back")} scanned. Check the sides, then save.{check}";
+            OpenIdCardReview();
+        }
+        else
+        {
+            StatusMessage = $"Front scanned. Turn the card over where it lies and scan the back, or skip it.{check}";
+        }
+    }
+
+    /// <summary>
+    /// A scan of the ID card finished outside its steps (the task ended while it ran): nothing of
+    /// it is kept, a side never stays held without the task, and the stage no longer shows the card.
+    /// </summary>
+    private void DropIdCardScanOutsideTask()
+    {
+        ClearIdCard(clearCanvas: true);
+        StatusMessage = "The ID card task ended during the scan. Nothing of the card was kept.";
+    }
+
+    /// <summary>Puts a side in place (null: none), dropping the scan the one it replaces came from.</summary>
+    private void SetIdCardSide(PageSide side, PhotoItem? item, string? note)
+    {
+        var old = side == PageSide.Front ? IdCardFront : IdCardBack;
+        if (side == PageSide.Front)
+        {
+            IdCardFront = item;
+            IdCardFrontNote = note;
+        }
+        else
+        {
+            IdCardBack = item;
+            IdCardBackNote = note;
+        }
+        if (old?.Photo.SourcePageId is { } id
+            && IdCardFront?.Photo.SourcePageId != id && IdCardBack?.Photo.SourcePageId != id)
+        {
+            _idCardSources.Remove(id);
+            _idCardScanAreas.Remove(id);
+        }
+    }
+
+    /// <summary>Opens the review of the ID card's sides, once there is a front.</summary>
+    private void OpenIdCardReview()
+    {
+        if (IdCardFront is null) return;
+        ShowIdCardReview = true;
+        _ = RefreshIdCardPreview();
+        NotifyAll();
+    }
+
+    /// <summary>Resolution of the page picture in the review.</summary>
+    private const int IdCardPreviewDpi = 40;
+
+    /// <summary>
+    /// Draws the page the sides go on again (after a turn, a new crop, swapping the sides or another
+    /// paper), small and off the UI thread, with what it holds and whether it is at real size. A
+    /// picture overtaken by a newer one is dropped.
+    /// </summary>
+    public async Task RefreshIdCardPreview()
+    {
+        int revision = ++_idCardPreviewRevision;
+        var paper = IdCardPaperSize;
+        var paperInches = PaperSizes.Inches(paper)!.Value;
+        if (IdCardFront is not { } front)
+        {
+            IdCardPreview = null;
+            IdCardLayoutCaption = "";
+            IdCardSizeWarning = null;
+            NotifyAll();
+            return;
+        }
+        var frontPhoto = front.Photo;
+        var backPhoto = IdCardBack?.Photo;
+        int frontTurns = frontPhoto.RotationQuarterTurns, backTurns = backPhoto?.RotationQuarterTurns ?? 0;
+        (BitmapSource Bitmap, IdCardLayoutResult Layout) result;
+        try
+        {
+            result = await Task.Run(() =>
+            {
+                var f = IdCardSideOf(frontPhoto, frontTurns);
+                var b = backPhoto is null ? null : IdCardSideOf(backPhoto, backTurns);
+                var layout = IdCardLayout.Place(f.Inches, b?.Inches, paperInches);
+                var page = IdCardComposer.Compose(f, b, IdCardPreviewDpi, paperInches);
+                return (WpfImageCodec.ToBitmapSource(page), layout);
+            });
+        }
+        catch (Exception e)
+        {
+            if (revision != _idCardPreviewRevision) return;
+            ErrorMessage = $"The page could not be drawn: {e.Message}";
+            NotifyAll();
+            return;
+        }
+        if (revision != _idCardPreviewRevision) return;
+        IdCardPreview = result.Bitmap;
+        IdCardLayoutCaption = IdCardLayout.Caption(paper, backPhoto is not null, result.Layout.ScaledToFit);
+        IdCardSizeWarning = result.Layout.ScaledToFit ? IdCardLayout.NotRealSizeMessage : null;
+        NotifyAll();
+    }
+
+    /// <summary>A side as it is saved: turned as the user turned it.</summary>
+    private static IdCardSide IdCardSideOf(DetectedPhoto photo, int quarterTurns) =>
+        new(quarterTurns == 0 ? photo.Image : ImagePipeline.Rotate(photo.Image, quarterTurns), photo.Dpi);
+
+    /// <summary>The scan a side of the ID card was cut from (null once the sides are saved or discarded).</summary>
+    public RgbaImage? IdCardSource(PageSide side) =>
+        (side == PageSide.Front ? IdCardFront : IdCardBack)?.Photo.SourcePageId is { } id
+        && _idCardSources.TryGetValue(id, out var image) ? image : null;
+
+    /// <summary>Turns a side of the ID card 90° clockwise.</summary>
+    public void RotateIdCardSide(PageSide side)
+    {
+        if (IsBusy || (side == PageSide.Front ? IdCardFront : IdCardBack) is not { } item) return;
+        item.RotateClockwise();
+        _ = RefreshIdCardPreview();
+        NotifyAll();
+    }
+
+    /// <summary>The front becomes the back and the back the front (scanned in the wrong order).</summary>
+    public void SwapIdCardSides()
+    {
+        if (IsBusy || IdCardFront is null || IdCardBack is null) return;
+        (IdCardFront, IdCardBack) = (IdCardBack, IdCardFront);
+        (IdCardFrontNote, IdCardBackNote) = (IdCardBackNote, IdCardFrontNote);
+        StatusMessage = "Front and back swapped.";
+        _ = RefreshIdCardPreview();
+        NotifyAll();
+    }
+
+    /// <summary>
+    /// Scans a side of the ID card again, or the back after all: the review closes, the side goes
+    /// and the steps go back to it. The other side stays.
+    /// </summary>
+    public void RetakeIdCardSide(PageSide side)
+    {
+        if (IsBusy || !IsIdCardFlow || Flow is null) return;
+        Flow.Retake(IdCardSteps.StepId(side));
+        SetIdCardSide(side, null, null);
+        ShowIdCardReview = false;
+        IdCardPreview = null;
+        _idCardPreviewRevision++;
+        StatusMessage = Flow.Current?.Prompt ?? "";
+        NotifyAll();
+        // The only side held went: a scanner switch that waited for the card is made now.
+        EndOfWork();
+    }
+
+    /// <summary>
+    /// Manual crop correction of a side of the ID card: cut out again from its scan with a region
+    /// the user adjusted (full-resolution pixels, top-left origin), turned straight, off the UI
+    /// thread. The side keeps its turn. False when nothing changed (busy, the side scanned again,
+    /// swapped or saved meanwhile, or nothing could be cut out). Saving waits for it.
+    /// </summary>
+    public Task<bool> RecropIdCardSide(PageSide side, DetectedPhotoRegion region)
+    {
+        if (IsBusy) return Task.FromResult(false);
+        var item = side == PageSide.Front ? IdCardFront : IdCardBack;
+        if (item is null || IdCardSource(side) is not { } source) return Task.FromResult(false);
+        double diagonal = Math.Sqrt((double)source.Width * source.Width + (double)source.Height * source.Height);
+        if (!(region.Size.Width >= 1 && region.Size.Height >= 1
+              && region.Size.Width <= diagonal && region.Size.Height <= diagonal))
+        {
+            return Task.FromResult(false);
+        }
+        var edited = new DetectedPhotoRegion(region.Center, region.Size, region.AngleDegrees, region.Id);
+        var previous = _recropChain;
+        var task = Run();
+        _recropChain = Settled(task);
+        NotifyAll();
+        return task;
+
+        async Task<bool> Run()
+        {
+            await Settled(previous);
+            StatusMessage = "Updating crop…";
+            NotifyAll();
+            (RgbaImage, BitmapSource)? result;
+            try
+            {
+                result = await Task.Run(() =>
+                {
+                    var image = PhotoDetector.ExtractPhoto(source, edited, deskew: true);
+                    return image is null
+                        ? ((RgbaImage, BitmapSource)?)null
+                        : (image, WpfImageCodec.ToThumbnail(image, PhotoItem.ThumbnailMaxSide));
+                });
+            }
+            catch (Exception e)
+            {
+                ErrorMessage = $"The crop could not be applied: {e.Message}";
+                StatusMessage = "Ready.";
+                NotifyAll();
+                return false;
+            }
+            if (!ReferenceEquals(side == PageSide.Front ? IdCardFront : IdCardBack, item)) return false;
+            if (result is not { } r)
+            {
+                StatusMessage = "That crop could not be cut out.";
+                NotifyAll();
+                return false;
+            }
+            SetIdCardSide(side, new PhotoItem(item.Photo.Recropped(edited, r.Item1), r.Item2), null);
+            StatusMessage = "Crop updated.";
+            _ = RefreshIdCardPreview();
+            NotifyAll();
+            return true;
+        }
+    }
+
+    /// <summary>The paper the ID card is laid out on (saved with the settings); the page is drawn again.</summary>
+    public void SetIdCardPaper(IdCardPaper paper)
+    {
+        if (Settings.TaskOptions.IdCardPaper == paper) return;
+        Settings.TaskOptions.IdCardPaper = paper;
+        SettingsEdited();
+        _ = RefreshIdCardPreview();
+        NotifyAll();
+    }
+
+    /// <summary>Whether each side of the ID card is also saved as an image of its own (saved with the settings).</summary>
+    public void SetIdCardSaveSidesAsImages(bool save)
+    {
+        if (Settings.TaskOptions.IdCardSaveSidesAsImages == save) return;
+        Settings.TaskOptions.IdCardSaveSidesAsImages = save;
+        SettingsEdited();
+        NotifyAll();
+    }
+
+    /// <summary>
+    /// Saves the ID card: both sides on one page at real size (<see cref="IdCardComposer"/>) on the
+    /// paper chosen, as a PDF or an image in the chosen format, and each side as an image of its own
+    /// when asked for. All or nothing: a failed or cancelled save removes what it wrote, and the
+    /// review stays open. Once saved, the sides and their scans are dropped from memory and the
+    /// stage is cleared, and the steps start again.
+    /// </summary>
+    public Task SaveIdCard()
+    {
+        if (IdCardFront is null) return Task.CompletedTask;
+        var s = Settings.Clone();
+        var paper = IdCardPaperSize;
+        var paperInches = PaperSizes.Inches(paper)!.Value;
+        return RunExclusive(async token =>
+        {
+            // A crop correction applied just before saving must be in the files.
+            await Settled(_recropChain);
+            if (IdCardFront is not { } frontItem) return;
+            var frontPhoto = frontItem.Photo;
+            var backPhoto = IdCardBack?.Photo;
+            int frontTurns = frontPhoto.RotationQuarterTurns, backTurns = backPhoto?.RotationQuarterTurns ?? 0;
+            StatusMessage = "Saving the ID card…";
+            NotifyAll();
+            // The page at the scan's resolution, at most 600 dpi; each side's own image keeps the scan's.
+            int dpi = IdCardComposer.PageDpi(frontPhoto.Dpi);
+            var (front, back, page) = await Task.Run(() =>
+            {
+                var f = IdCardSideOf(frontPhoto, frontTurns);
+                var b = backPhoto is null ? null : IdCardSideOf(backPhoto, backTurns);
+                return (f, b, IdCardComposer.Compose(f, b, dpi, paperInches));
+            }, token);
+            var saved = new List<string>();
+            await WriteImagesRollingBack(saved, async () =>
+            {
+                if (s.Format == OutputFormat.Pdf)
+                {
+                    saved.Add(await WritePdfAtomically([new ScannedPage(page, dpi, s.ColorMode)], s, OutputPath(s, "pdf"), token));
+                }
+                else
+                {
+                    string path = OutputPath(s, s.Format.FileExtension());
+                    saved.Add(await Task.Run(() => WpfImageCodec.SaveAsNew(page, path, s.Format, dpi, s.JpegQuality), token));
+                }
+                if (!s.TaskOptions.IdCardSaveSidesAsImages) return;
+                var sideFormat = s.Format == OutputFormat.Pdf ? OutputFormat.Jpeg : s.Format;
+                string folder = Path.GetDirectoryName(saved[0])!;
+                string baseName = Path.GetFileNameWithoutExtension(saved[0]);
+                foreach (var (side, image) in back is null
+                             ? new[] { (PageSide.Front, front) }
+                             : new[] { (PageSide.Front, front), (PageSide.Back, back) })
+                {
+                    token.ThrowIfCancellationRequested();
+                    string sidePath = NamingTemplate.UniquePath(folder, IdCardComposer.SideFileBase(baseName, side),
+                                                                sideFormat.FileExtension());
+                    saved.Add(await Task.Run(() => WpfImageCodec.SaveAsNew(image.Image, sidePath, sideFormat, image.Dpi, s.JpegQuality)));
+                }
+            });
+            MarkSaved(saved);
+            ClearIdCard(clearCanvas: true);
+            ResetFlow();
+            string sizeNote = s.Format == OutputFormat.Pdf ? PdfSizeSuffix() : "";
+            StatusMessage = saved.Count == 1
+                ? $"Saved the ID card on one {paper.Label()} page: {Path.GetFileName(saved[0])}{sizeNote}"
+                : $"Saved the ID card on one {paper.Label()} page: {Path.GetFileName(saved[0])}{sizeNote}, and each side as an image";
+            RunAfterSave(s.Output.AfterSave, saved);
+        });
+    }
+
+    /// <summary>Drops the ID card's sides without saving them, and starts the steps again.</summary>
+    public void DiscardIdCard()
+    {
+        if (IsBusy) return;
+        ClearIdCard(clearCanvas: true);
+        ResetFlow();
+        StatusMessage = "ID card discarded. Nothing of it was kept.";
+        NotifyAll();
+        EndOfWork();
+    }
+
+    /// <summary>
+    /// Drops everything of the ID card from memory: its sides, the scans they came from, the review
+    /// and its page and, with <paramref name="clearCanvas"/>, the preview and the last scan on the
+    /// stage, which show the card too.
+    /// </summary>
+    private void ClearIdCard(bool clearCanvas)
+    {
+        IdCardFront = null;
+        IdCardBack = null;
+        IdCardFrontNote = null;
+        IdCardBackNote = null;
+        _idCardSources.Clear();
+        _idCardScanAreas.Clear();
+        ShowIdCardReview = false;
+        IdCardPreview = null;
+        IdCardLayoutCaption = "";
+        IdCardSizeWarning = null;
+        _idCardPreviewRevision++;
+        if (clearCanvas && (OverviewImage is not null || LastScanImage is not null))
+        {
+            OverviewImage = null;
+            LastScanImage = null;
+            SelectionRect = null;
+            CanvasImageChanged();
+        }
+        // A scanner switch that waited for the card is made now, after whatever dropped it
+        // (it may be in the middle of a switch already).
+        if (_autoSwitchDeferred) _ = _dispatcher.BeginInvoke(new Action(EndOfWork));
     }
 
     private static string WithNotes(string message, IReadOnlyList<SettingsNote> notes) =>

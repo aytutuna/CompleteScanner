@@ -39,6 +39,15 @@ struct TaskBannerView: View {
                     sidesActions
                         .padding(.top, 4)
                 }
+                // The back of a card with nothing printed on it may be left out. (The backs of a stack
+                // turned over by hand are left out with Keep Fronts Only.)
+                if state.canSkipStep, let step = state.taskFlow?.current {
+                    Button("Skip \(step.title.lowercased())") { state.skipStep() }
+                        .controlSize(.small)
+                        .disabled(state.isBusy)
+                        .help("Nothing is printed on the back: save the front only")
+                        .padding(.top, 4)
+                }
             }
             Spacer(minLength: 8)
             Button {
@@ -49,7 +58,9 @@ struct TaskBannerView: View {
             .help("Pick another task on the start screen")
             Button {
                 if definition != nil {
-                    state.exitTask()
+                    // Leaving the ID card task with a side scanned asks first.
+                    let appState = state
+                    appState.leaveIdCard { appState.exitTask() }
                 } else {
                     state.scanOneSideOnly()
                 }
@@ -57,6 +68,8 @@ struct TaskBannerView: View {
                 Image(systemName: "xmark")
             }
             .buttonStyle(.borderless)
+            // Not while a scan runs: its result belongs to the task's steps.
+            .disabled(state.isBusy)
             .help(exitHelp)
             .accessibilityLabel(exitLabel)
         }

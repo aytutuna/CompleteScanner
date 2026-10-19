@@ -66,8 +66,15 @@ struct InspectorView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .disabled(state.hasIdCardCaptures)
+            .help(state.hasIdCardCaptures ? Self.idCardHeldHint : "")
         }
     }
+
+    /// Why the mode and the source cannot be changed while a side of an ID card is held: changing
+    /// them would end the task and drop the card. Leaving the task asks first.
+    private static let idCardHeldHint =
+        "The ID card task needs the flatbed in Document mode. Save or discard the card, or leave the task, to change this."
 
     // MARK: Scan
 
@@ -78,6 +85,8 @@ struct InspectorView: View {
                     Text(source.label).tag(source)
                 }
             }
+            .disabled(state.hasIdCardCaptures)
+            .help(state.hasIdCardCaptures ? Self.idCardHeldHint : "")
             if availableSources.contains(.documentFeeder) {
                 sidesRows
             }
@@ -543,7 +552,10 @@ struct InspectorView: View {
                         .disabled(true)
                 } else {
                     ForEach(state.presets) { preset in
-                        Button(preset.name) { state.applyPreset(preset) }
+                        Button(preset.name) {
+                            let appState = state
+                            appState.leaveIdCard { appState.applyPreset(preset) }
+                        }
                     }
                 }
                 Divider()

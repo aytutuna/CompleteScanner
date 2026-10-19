@@ -6,7 +6,9 @@ namespace CompleteScanner.Core;
 /// can be exercised end to end. It also has a document feeder holding
 /// <see cref="FeederSheetCount"/> two-sided letter-size sheets, which it scans one side or
 /// both (<see cref="FeederDuplex"/>), so two-sided scanning, turning the stack over by hand and
-/// paper sizes can be tried without hardware. Port of
+/// paper sizes can be tried without hardware. For the ID card task its glass holds a sample card
+/// (an obviously made-up design, no real document), which it turns over after every scan
+/// (<see cref="IdCardTurnedOver"/>). Port of
 /// Sources/CompleteScannerKit/Backends/MockScannerBackend.swift.
 ///
 /// Divergence from the macOS mock: the demo document page renders text-shaped bars rather
@@ -62,6 +64,13 @@ public sealed class MockScannerBackend : IScannerBackend
     /// </summary>
     public IReadOnlyCollection<int> FeederBlankBackSheets { get; set; } = [];
 
+    /// <summary>
+    /// The sample ID card on the glass lies with its back up: a scan for the ID card task shows its
+    /// back. The demo turns the card over by itself after every such scan, as the user is asked to,
+    /// so scans alternate front, back, front… A preview shows the side facing down without turning it.
+    /// </summary>
+    public bool IdCardTurnedOver { get; set; }
+
     public void StartBrowsing()
     {
         if (_devices.Count > 0) return;
@@ -111,7 +120,9 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
     {
         _cancelRequested = false;
         ProgressHandler?.Invoke(new ScanProgress(0.5, "Scanning overview…"));
-        return Task.FromResult(MockBedRenderer.RenderBed(100, settings.Intent));
+        return Task.FromResult(settings.Task == ScanTask.IdCard
+            ? MockBedRenderer.RenderIdCardBed(100, backend.IdCardTurnedOver ? PageSide.Back : PageSide.Front)
+            : MockBedRenderer.RenderBed(100, settings.Intent));
     }
 
     public async Task<IReadOnlyList<ScannedPage>> PerformScanAsync(ScanSettings settings, RectD? selection)
@@ -126,7 +137,13 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
         await SleepCheckingCancellation(0.25);
 
         ProgressHandler?.Invoke(new ScanProgress(0.6, "Scanning…"));
-        var image = await Task.Run(() => MockBedRenderer.RenderBed(dpi, settings.Intent));
+        // The ID card task scans the sample card, then turns it over as the user would.
+        bool idCard = settings.Task == ScanTask.IdCard;
+        var cardSide = backend.IdCardTurnedOver ? PageSide.Back : PageSide.Front;
+        var image = await Task.Run(() => idCard
+            ? MockBedRenderer.RenderIdCardBed(dpi, cardSide)
+            : MockBedRenderer.RenderBed(dpi, settings.Intent));
+        if (idCard) backend.IdCardTurnedOver = cardSide == PageSide.Front;
         await SleepCheckingCancellation(0.25);
 
         ProgressHandler?.Invoke(new ScanProgress(0.9, "Transferring…"));
@@ -343,6 +360,137 @@ internal static class MockBedRenderer
             FillRect(image, x, y, size, size, 70, 70, 70);
         }
         return image;
+    }
+
+    // MARK: ID card
+
+    /// <summary>Where the sample card lies on the glass, front down (its centre, in inches from the top-left corner).</summary>
+    public static readonly PointD IdCardCenterInches = new(2.35, 1.75);
+    /// <summary>The sample card's tilt with its front down; turned over where it lay, the other way.</summary>
+    public const double IdCardAngleDegrees = 4;
+
+    /// <summary>
+    /// The glass with the sample ID card on it, near the top-left corner and tilted 4°: the
+    /// <paramref name="side"/> facing the glass. Turned over where it lay, the card's back is tilted
+    /// the other way. The design is made up and says SAMPLE: a header band, a grey photo
+    /// placeholder and field bars on the front; a barcode, SAMPLE and three lines of code blocks on
+    /// the back. ID-1 size (3.370 × 2.125 in), with rounded corners.
+    /// </summary>
+    public static RgbaImage RenderIdCardBed(int dpi, PageSide side)
+    {
+        double scale = dpi;
+        int width = (int)(BedInches.Width * scale);
+        int height = (int)(BedInches.Height * scale);
+        var image = RgbaImage.Filled(width, height, 245, 245, 245);
+        DrawBedBackground(image);
+
+        double w = IdCardDetector.CardLongSideInches * scale, h = IdCardDetector.CardShortSideInches * scale;
+        var center = new PointD(IdCardCenterInches.X * scale, IdCardCenterInches.Y * scale);
+        double angle = (side == PageSide.Front ? IdCardAngleDegrees : -IdCardAngleDegrees) * Math.PI / 180;
+        double cos = Math.Cos(angle), sin = Math.Sin(angle);
+        double halfDiag = Math.Sqrt(w * w + h * h) / 2;
+        int minX = Math.Max(0, (int)(center.X - halfDiag)), maxX = Math.Min(width - 1, (int)Math.Ceiling(center.X + halfDiag));
+        int minY = Math.Max(0, (int)(center.Y - halfDiag)), maxY = Math.Min(height - 1, (int)Math.Ceiling(center.Y + halfDiag));
+        for (int py = minY; py <= maxY; py++)
+        {
+            for (int px = minX; px <= maxX; px++)
+            {
+                double dx = px + 0.5 - center.X, dy = py + 0.5 - center.Y;
+                // Image → the card's own frame, in inches from its top-left corner.
+                double lx = (dx * cos + dy * sin) / scale + IdCardDetector.CardLongSideInches / 2;
+                double ly = (-dx * sin + dy * cos) / scale + IdCardDetector.CardShortSideInches / 2;
+                if (CardColor(lx, ly, side) is not { } color) continue;
+                int pi = (py * width + px) * 4;
+                image.Pixels[pi] = color.R;
+                image.Pixels[pi + 1] = color.G;
+                image.Pixels[pi + 2] = color.B;
+                image.Pixels[pi + 3] = 255;
+            }
+        }
+        return image;
+    }
+
+    /// <summary>The sample card's color at (<paramref name="x"/>, <paramref name="y"/>) inches from its top-left corner; null outside it.</summary>
+    private static (byte R, byte G, byte B)? CardColor(double x, double y, PageSide side)
+    {
+        const double cardW = IdCardDetector.CardLongSideInches, cardH = IdCardDetector.CardShortSideInches;
+        const double radius = 0.125;
+        if (x < 0 || y < 0 || x >= cardW || y >= cardH) return null;
+        // Rounded corners.
+        double cx = Math.Clamp(x, radius, cardW - radius), cy = Math.Clamp(y, radius, cardH - radius);
+        if ((x - cx) * (x - cx) + (y - cy) * (y - cy) > radius * radius) return null;
+
+        (byte, byte, byte) paper = (196, 224, 220), ink = (36, 44, 52);
+        if (side == PageSide.Front)
+        {
+            // Header band with SAMPLE in white.
+            if (y < 0.42)
+            {
+                return SampleText(x - 0.2, y - 0.07, 0.04) ? ((byte)250, (byte)250, (byte)250) : ((byte)30, (byte)96, (byte)104);
+            }
+            // Photo placeholder: a grey box with a head-and-shoulders outline.
+            if (x >= 0.18 && x < 0.98 && y >= 0.58 && y < 1.6)
+            {
+                double hx = x - 0.58, hy = y - 0.92, sy = y - 1.62;
+                bool head = hx * hx + hy * hy <= 0.17 * 0.17;
+                bool shoulders = hx * hx / (0.34 * 0.34) + sy * sy / (0.42 * 0.42) <= 1;
+                return head || shoulders ? ((byte)120, (byte)128, (byte)136) : ((byte)176, (byte)184, (byte)190);
+            }
+            // Field labels and values.
+            for (int line = 0; line < CardFieldWidths.Length; line++)
+            {
+                double top = 0.6 + line * 0.3;
+                if (x >= 1.15 && x < 1.65 && y >= top && y < top + 0.05) return (90, 130, 135);
+                if (x >= 1.15 && x < 1.15 + CardFieldWidths[line] && y >= top + 0.08 && y < top + 0.17) return ink;
+            }
+            // SAMPLE again along the bottom, in red.
+            if (SampleText(x - 1.15, y - 1.82, 0.032)) return (190, 40, 40);
+            return paper;
+        }
+
+        // Back: a barcode, SAMPLE, and three lines of code blocks.
+        if (y >= 0.2 && y < 0.62 && x >= 0.2 && x < cardW - 0.2)
+        {
+            int bar = (int)((x - 0.2) / 0.018);
+            return bar * 7 % 5 < 2 ? ink : paper;
+        }
+        if (SampleText(x - 1.0, y - 0.8, 0.045)) return (190, 40, 40);
+        for (int line = 0; line < 3; line++)
+        {
+            double top = cardH - 0.62 + line * 0.17;
+            if (y >= top && y < top + 0.1 && x >= 0.2 && x < cardW - 0.2)
+            {
+                int cell = (int)((x - 0.2) / 0.085);
+                double inCell = x - 0.2 - cell * 0.085;
+                return inCell < 0.06 && (cell * 3 + line) % 7 != 0 ? ink : paper;
+            }
+        }
+        return paper;
+    }
+
+    /// <summary>Lengths of the sample card's field values, in inches.</summary>
+    private static readonly double[] CardFieldWidths = [1.7, 1.25, 1.45, 0.95];
+
+    /// <summary>5 × 7 blocks of the letters S, A, M, P, L, E.</summary>
+    private static readonly string[] SampleGlyphs =
+    [
+        "01111" + "10000" + "10000" + "01110" + "00001" + "00001" + "11110",
+        "01110" + "10001" + "10001" + "11111" + "10001" + "10001" + "10001",
+        "10001" + "11011" + "10101" + "10101" + "10001" + "10001" + "10001",
+        "11110" + "10001" + "10001" + "11110" + "10000" + "10000" + "10000",
+        "10000" + "10000" + "10000" + "10000" + "10000" + "10000" + "11111",
+        "11111" + "10000" + "10000" + "11110" + "10000" + "10000" + "11111",
+    ];
+
+    /// <summary>Whether (<paramref name="x"/>, <paramref name="y"/>), relative to the word's top-left corner, is ink of the word SAMPLE drawn in blocks of <paramref name="cell"/> inches.</summary>
+    private static bool SampleText(double x, double y, double cell)
+    {
+        if (x < 0 || y < 0) return false;
+        int column = (int)(x / cell), row = (int)(y / cell);
+        if (row >= 7) return false;
+        int letter = column / 6, within = column % 6;
+        if (letter >= SampleGlyphs.Length || within >= 5) return false;
+        return SampleGlyphs[letter][row * 5 + within] == '1';
     }
 
     // MARK: Background

@@ -24,7 +24,8 @@ UI per platform** architecture:
   (`PageProcessor.cs`: the steps every scanned page goes through before it is queued) and the
   image toolkit it works with (`GrayImage.cs`, `BackgroundMap.cs`, `MaskOps.cs` next to
   `RgbaImage.cs`), starting with blank-page detection (`BlankPageDetector.cs`) and crop and
-  straighten (`DocumentGeometry.cs`).
+  straighten (`DocumentGeometry.cs`), and the ID card task (`IdCard.cs`: finding the card on the
+  glass, laying both sides out at real size and drawing the page).
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
   xUnit with the same fixtures, geometry, and tolerances. **This is the contract that keeps
   the Swift and C# cores behaviorally identical** — change an algorithm on one side, port
@@ -216,6 +217,48 @@ and a bed with one photo card at -4° was cut out at -4.004°.
 **To check on real hardware:** shadows from real lids (often on two sides only), feeder scans
 with a black or grey backing, and very thin or translucent paper.
 
+### ID card
+
+The **ID card** task (flatbed only; greyed out on a scanner without one) makes a copy of an ID
+card or driving licence with both sides on one page at real size. The banner guides three steps:
+**Scan front** (the card face down near a corner of the glass, the lid closed), **Scan back** (the
+card turned over where it lies; **Skip back side** when nothing is printed there), then the
+review. Each scan takes the whole glass (or the area selected on the preview). The card is found among what stands out from the lid
+(`PhotoDetector`, things smaller than 1.5 in ignored, four at most): the region closest to an ID-1
+card in shape and size (85.60 × 53.98 mm, aspect 1.586; up to a 6 in passport page), else the
+largest one, else the whole glass to be cropped by hand; a back that does not stand out (a white
+card on a white lid) takes the front's place with its tilt mirrored, moved to the back's
+resolution, when both scans cover the same part of the glass (otherwise the largest region or the
+whole glass). Each side is cut out and turned straight, and a note says when its crop should be
+checked. While a side is held, the inspector's Mode and Source are locked (changing them would end
+the task), the app does not switch scanners on its own (a scanner that went away or a better
+connection waits until the card is saved or discarded), and leaving the task, picking a task or a
+preset asks whether to discard the card first.
+
+The review shows both sides, each with **Turn**, **Fix crop** (the crop editor, on the scan the side
+came from) and **Scan again**, **Swap front and back**, and the page they go on: centred, the front
+1 in from the top, the back 0.5 in under it, at real size; a side too large for that (a crop fixed
+to the whole glass) is made smaller with a warning that the copy is not at real size. **Paper** is
+Automatic (the paper usual in the user's region: Letter in the US, Canada, Mexico and the other
+Letter countries, A4 elsewhere), A4 or Letter; **Save as** is the inspector's format: a PDF page
+the size of the paper, or a JPEG, PNG or TIFF of it at the scan's resolution (at most 600 dpi), so
+it prints at real size either way; **Also save each side as an image** adds "… front" and "… back" images (JPEG for a
+PDF, at the scan's full resolution). The file is named "ID card {date}". Saving is all or nothing.
+
+ID cards are sensitive, so the task keeps as little as it can: the scans are never written to the
+page spool and never added to the Scans tab, they stay in memory only while the review needs them,
+and saving, discarding, leaving the task or picking a task again drops them and clears the preview
+on the stage (also a scan whose card was never found, a cancelled one, or a preview of the glass). The PDF gets no searchable text layer unless it is turned on (the numbers on an ID
+are better not indexed by search). Files go only to the chosen folder; nothing is sent anywhere,
+and the task sets the after-save action to Do nothing. Closing the window with an unsaved card asks first.
+
+The demo scanner has a made-up sample card (ID-1 size, "SAMPLE", a grey photo placeholder and
+field bars; a barcode and code blocks on the back) near the top-left corner of its glass, tilted
+4°; it turns the card over after each ID card scan. Printing the page comes with the Copy task
+(M13); until then Automatic does not read the default printer's paper.
+**To check on real hardware:** light or white cards on a white lid, glossy cards with glare,
+cards with holograms, and the real size of a printed copy measured with a ruler.
+
 ### PDF size
 
 The inspector's **Output** section has a **PDF size** choice for PDF output: Best, Standard,
@@ -346,6 +389,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | TWAIN backend (`Scanning/Twain`) | **Experimental, untested against hardware** — see [TWAIN](#twain) below. The scan logic in Core (negotiation choices, the acquisition state machine, strip and bitmap conversion, paper sizes, error mapping, 32-bit driver detection) is covered by `TwainScanLoopTests`, `TwainRasterTests` and `TwainScanRequestsTests` through a fake transport. Driving the view model with the real session class over a scripted transport checked flatbed, feeder, preview, empty feeder, a jam after two sheets (pages kept, reason shown), cancel while the driver is silent (returns at once, the source is reset and disabled in the background), switching away (the source is closed without waiting), the driver-window switch and its saved choice (kept when connecting finds the scanner off), a driver stuck while enabling (reported after the start limit, the next scan refused at once, the late scan stopped when the driver answers), and that a scanner only TWAIN lists is never opened unless the user picks it. On a PC without a TWAIN Data Source Manager the backend lists nothing and `devices.txt` says why; the app starts normally. **Unverified:** real drivers, NTwain's message loop with them, the TWAIN Working Group sample source (not installed here) |
 | Two-sided scanning and paper size (`DocumentSides`, `PaperSize`) | Covered by `DocumentSidesTests`, `PaperSizeTests` and the sides cases of `ModelsCompatTests`, `ScanTaskTests`, `SettingsAdapterTests` and `MockScannerTests` (same cases as macOS), plus the backend requests in `EsclTests`, `TwainScanRequestsTests` and `WiaErrorsTests`. Checked by driving the view model with the demo scanner (both sides in one pass on the long and the short edge, a jam keeping one sheet's two sides, turning over by hand with matching counts, a mismatch, scanning the backs again, combining anyway, keeping the fronts, a jam during the fronts (the steps stay at the fronts, the rest of them scanned as fronts, Done with fronts), a stack scanned in parts (Scan more fronts), a scanner whose capabilities could not be read on connect asked for both sides by a one-sided feeder (pages kept one-sided, capabilities read after the scan), earlier pages keeping their place, the two-sided task on two-sided and one-sided feeders, paper sizes on the feeder and the glass, the saved PDFs' page counts) and by building the window without showing it: the Sides, Flip on and Paper size choices with their greyed-out items and reasons, the banner's two steps, Scan more fronts, Done with fronts and the mismatch choices, the side badges and the screen reader names in the page strip and the Two-sided document card, rendered off screen in light and dark. **Unverified:** real drivers (see [Two-sided scanning and paper size](#two-sided-scanning-and-paper-size)) |
 | Crop and straighten (`DocumentGeometry`, `GeometryStep`, `PageCorrections`) | Covered by `DocumentGeometryTests`, the crop and straighten cases of `PageProcessorTests`, `ModelsCompatTests`, `ScanTaskTests` and `MaskOpsTests` (same cases as macOS, on the same synthetic pages checked by checksum). Checked on public-domain scans laid at known angles on a lid and a dark backdrop, on archive scans as they were captured, and by driving the view model with those scans (scan, the strip's captions, both versions spooled, show as scanned and back, turning a page, saving whichever version is shown, removing and clearing pages, the switches off and pages saved at once, the two-sided task) and by building the window without showing it: the switches and their hint, the swap button and its glyphs, rendered off screen. **Unverified:** real lids, feeder backings and thin paper (see [Crop and straighten](#crop-and-straighten)) |
+| ID card (`IdCard`, the review) | Covered by `IdCardTests` (paper, steps, layout on Letter and A4, scaled to fit, the composed page in pixels and as a 612 × 792 pt PDF page, the detector on a synthetic bed with a card turned 7° among other objects, the back taking the front's place, moved to another resolution and refused for another part of the glass, the page at most 600 dpi, Skip only for the card's back) and the ID card cases of `ScanTaskTests`, `ModelsCompatTests`, `TaskFlowTests` and `MockScannerTests` (same cases as macOS). Checked by driving the view model with the demo scanner's sample card (front, back, the review, turning and swapping the sides, fixing a crop, Letter and A4, saving a PDF at 612 × 792 pt with no text layer, a PNG page at 300 dpi with the front as an image, skipping the back, scanning a side again, discarding, leaving the task, picking a task again) and with a white-on-white back (at the front's resolution, at twice it, and with another selection), a scanner going away with the review open and between the sides (no switch until the card is saved, discarded or the task left), a page saved from a 1200 dpi scan (A4 at 600 dpi, the side at 1200), the stage cleared on leaving with no side held, checking that nothing goes to the history or the page spool and that the stage is cleared, and by building the window without showing it: the task card, the banner's steps and Skip back side (and no Skip for the backs of a stack turned over by hand), Mode and Source locked while a side is held, Leave the task and picking a task asking first (Cancel keeps the card, Discard drops it), the review with both sides, the front only, the not-at-real-size warning, the paper and format pickers, rendered off screen in light and dark. **Unverified:** real cards on real lids (see [ID card](#id-card)), printing at real size |
 | Blank pages (`BlankPageDetector`, `PageProcessor`, `PageFilter`, image toolkit) | Covered by `BlankPageDetectorTests`, `PageProcessorTests`, `GrayImageTests`, `RgbaImageTests`, `MaskOpsTests` and the blank-page cases of `ModelsCompatTests`, `ScanTaskTests` and `MockScannerTests` (same cases as macOS; `MaskOpsTests` also pins PhotoDetector's regions on the demo bed to the last bit, unchanged by moving the mask code out of it). Checked on public-domain scans of letters, menus and photos (none taken for blank, at any level, with or without their dark surroundings) and on blank backs made from them (all found blank), and by driving the view model with the demo scanner (flagging, Skip blank pages turned on and off with pages queued, Keep and Skip per page, rotating a flagged page, saving 5 of 6 pages, nothing to save, pages saved at once keeping every page, the two-sided task, turning over by hand) and by building the window without showing it: the switch, the levels, the badges, Keep and Skip, the strip label, Save PDF's count, rendered off screen in light and dark. **Unverified:** blank backs from real scanners (see [Blank pages](#blank-pages)) |
 | Share, email, open with, copy (`SaveActions`, `FileActions`, `ShareService`) | The choices are covered by `SaveActionsTests` and the after-save cases of `ModelsCompatTests` (same cases as macOS). Checked by driving the view model's real save paths with a stand-in for Windows (each after-save action after a PDF, a file saved at once and a photo batch; the Email task sharing; no share window; a refused action; a moved file; a cancelled save running nothing), by building the real clipboard data and share package without placing them anywhere, and by building the window without showing it: the bar, its buttons and menu, the narrow layout, the "After saving" choices, the Saved tab's buttons and menus, rendered off screen in light and dark. **Not tried on screen:** the share window, the Open with dialog and the clipboard themselves (checks must not send, open or overwrite anything), and Mail or Outlook as share targets |
 | Troubleshooter (`Troubleshooter`, `SystemDiagnostics`, `TroubleshooterWindow`) | The checks are covered by `TroubleshooterTests` (same cases as macOS) and the Windows service and network values by `WindowsSystemStatusTests`. Checked by driving the view model with stand-in connections and a stand-in for Windows (the snapshot, the order of the checks, devices.txt, Refresh, Copy diagnostics and Settings refused, a busy scanner at connect and at scan, a connection that works clearing it, a cancelled scan not counting), by reading the real WIA service and network on Windows 11 (Running and Public, as `sc query` and `Get-NetConnectionProfile` report, from UI and thread-pool threads), by copying to the real clipboard with the user's clipboard saved and restored, by an address added by hand on loopback where nothing listens, by a discovered scanner (a stand-in service for a loopback scanner) that stays listed, selected and connected across a Refresh when Windows aborts either network watcher, and dropped only once the restarted watcher's first pass did not find it again, and by building the sidebar, error bar and troubleshooter window without showing them: the header button, the empty state's links, the error bar's Troubleshoot (and none on a file or photo error shown later), one card per check with its buttons and screen-reader names (each card a named group in the UI Automation tree), a Refresh while one runs ignored, rendered off screen in light and dark. **Not tried on screen:** opening Windows Settings and the real Add scanner dialog from it. **Unverified:** a stopped or disabled WIA service, a TWAIN install with 32-bit-only drivers, and a scanner that is really busy in another app |
@@ -409,6 +453,11 @@ Known divergences from the macOS app (all documented in the source):
   same gray copy; the snap of the sheet's edges at full resolution draws the region with
   CoreGraphics on the Mac and samples it with `RgbaImage` on Windows, so a crop can differ by a
   pixel or so. The swap button sits under the page in the Mac strip and on the page on Windows.
+- ID card: the detector, layout and page are the same code on both platforms; the side is cut out
+  with `RgbaImage` on Windows and with CoreGraphics on the Mac, so a side can differ by a pixel or
+  so. The review is an overlay on Windows and a sheet on the Mac. Closing the window with an
+  unsaved card asks first on Windows; on the Mac the app keeps running and the card stays until it
+  is saved or discarded.
 - PDF sizes: Windows writes the planned JPEG into its own PDF writer. The Mac, whose PDFs come
   from CoreGraphics, encodes the same plan with ImageIO and draws a JPEG-backed image, which
   CoreGraphics is expected to store unchanged; this, and the resulting file sizes, still need
@@ -540,7 +589,10 @@ Two-sided scanning and the paper size are top-level keys (`"duplex": "off"`, `"b
 know, scans one side on the whole area. Blank pages are in a `"document"` object
 (`"document": {"removeBlankPages": false, "blankSensitivity": "medium", "autoCrop": false,
 "autoStraighten": false}`); a file without it keeps every page and leaves pages as scanned, and a
-sensitivity this version does not know reads as Medium. A first run starts without presets: the task
+sensitivity this version does not know reads as Medium. How the user wants a task done is in a
+`"taskOptions"` object (`"taskOptions": {"idCardPaper": "auto", "idCardSaveSidesAsImages": false}`),
+kept when a task is picked; a file without it, or with a paper this version does not know, reads as
+Automatic without side images. A first run starts without presets: the task
 cards replaced the five starter presets earlier versions wrote, and presets files that already
 hold them keep them. They load across versions the same way as on macOS (`../CONTRACTS.md`, rule 6): a value this version does not understand resets only
 that setting; a file that cannot be decoded is kept next to it as

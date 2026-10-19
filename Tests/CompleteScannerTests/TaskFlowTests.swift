@@ -165,7 +165,8 @@ final class TaskFlowTests: XCTestCase {
     }
 
     func test_catalogFlows_oneRepeatingScanStep() {
-        for definition in TaskCatalog.all {
+        // The ID card's front, back and review are checked in IdCardTests.
+        for definition in TaskCatalog.all where definition.task != .idCard {
             var flow = TaskFlow(steps: definition.steps)
             XCTAssertEqual(flow.stepCount, 1)
             XCTAssertFalse(flow.canFinish)
