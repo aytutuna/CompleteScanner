@@ -477,6 +477,16 @@
                                                                 AutomationProperties.Name="{Binding GeometryToggleLabel}"
                                                                 AutomationProperties.HelpText="{Binding GeometryCaption}"
                                                                 Click="PageGeometry_Click" Tag="{Binding Page.Id}" />
+                                                        <!-- A page turned upright: one click turns it back as scanned, and
+                                                             again. Always shown, on the page itself. -->
+                                                        <Button x:Name="UprightToggle" DockPanel.Dock="Right" Style="{StaticResource PageToggleButtonStyle}"
+                                                                VerticalAlignment="Top" Margin="2,0,0,0"
+                                                                Padding="4,2,4,2" FontFamily="{StaticResource IconFontFamily}" FontSize="11"
+                                                                Content="&#xE72C;"
+                                                                ToolTip="{Binding UprightToolTip}"
+                                                                AutomationProperties.Name="{Binding UprightToggleLabel}"
+                                                                AutomationProperties.HelpText="{Binding UprightCaption}"
+                                                                Click="PageUpright_Click" Tag="{Binding Page.Id}" />
                                                         <StackPanel>
                                                             <!-- The first page of each document when the queue is split:
                                                                  "Document 2 · Lease" (the full name on hover). -->
@@ -580,6 +590,9 @@
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding GeometryToggleLabel}" Value="{x:Null}">
                                                         <Setter TargetName="GeometryToggle" Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding UprightToggleLabel}" Value="{x:Null}">
+                                                        <Setter TargetName="UprightToggle" Property="Visibility" Value="Collapsed" />
                                                     </DataTrigger>
                                                     <!-- Left out when saving: the page is dimmed. -->
                                                     <DataTrigger Binding="{Binding IsExcluded}" Value="True">
@@ -894,6 +907,13 @@
                                                           Content="Straighten pages" ToolTipService.ShowOnDisabled="True"
                                                           Checked="Geometry_Changed" Unchecked="Geometry_Changed" />
                                                 <TextBlock x:Name="GeometryHint" Style="{StaticResource CaptionText}"
+                                                           TextWrapping="Wrap" Margin="0,0,0,4" />
+                                                <!-- Turn pages upright by reading their text: a turned page carries an
+                                                     undo button in the page strip. -->
+                                                <CheckBox x:Name="AutoRotateBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,8,0,0"
+                                                          Content="Rotate pages upright" ToolTipService.ShowOnDisabled="True"
+                                                          Checked="AutoRotate_Changed" Unchecked="AutoRotate_Changed" />
+                                                <TextBlock x:Name="AutoRotateHint" Style="{StaticResource CaptionText}"
                                                            TextWrapping="Wrap" Margin="0,0,0,4" />
                                                 <!-- Split the stack into documents: the page strip shows where before
                                                      saving, and one click on the gap between two pages splits or joins. -->

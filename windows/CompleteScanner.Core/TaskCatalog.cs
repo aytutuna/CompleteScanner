@@ -129,14 +129,14 @@ public static class TaskCatalog
     /// resolution, color, format, JPEG quality, PDF size, the after-save action, the text beside a
     /// PDF (off: only the Scan to Word task saves text), the photo and
     /// document switches, searchable PDF, adjustments, two-sided scanning, skipping blank pages,
-    /// crop and straighten,
+    /// crop and straighten, turning pages upright,
     /// file name and the task itself. The destination folder, the photo detection tuning, the
     /// legacy OCR languages, the paper size, the edge backs are turned on, how much counts as
     /// blank and the choices of each task (<see cref="ScanSettings.TaskOptions"/>) are kept: they
     /// describe the user's paper and how they want a task done, not the task. <paramref name="current"/> is
     /// not changed. The two-sided task asks for <see cref="DuplexMode.Both"/>, skips blank
-    /// pages (the empty backs of one-sided sheets) and straightens pages the feeder pulled in at a
-    /// slant; no task crops yet; <see cref="SettingsAdapter"/> turns
+    /// pages (the empty backs of one-sided sheets), straightens pages the feeder pulled in at a
+    /// slant and turns upright the sheets put in the wrong way round; no task crops yet; <see cref="SettingsAdapter"/> turns
     /// <see cref="DuplexMode.Both"/> into turning over by hand on a feeder that scans one side.
     /// The ID card task makes no searchable PDF: the numbers on an ID are better not indexed; neither
     /// does the Copy task, whose PDF (when one is saved too) is a record of the paper copy. The
@@ -163,6 +163,7 @@ public static class TaskCatalog
         s.Document.RemoveBlankPages = task is ScanTask.TwoSided or ScanTask.Batch;
         s.Document.AutoCrop = false;
         s.Document.AutoStraighten = task == ScanTask.TwoSided;
+        s.Document.AutoRotate = task == ScanTask.TwoSided;
         s.Document.SplitMode = task == ScanTask.Batch ? SplitMode.SeparatorSheet : SplitMode.None;
         switch (task)
         {

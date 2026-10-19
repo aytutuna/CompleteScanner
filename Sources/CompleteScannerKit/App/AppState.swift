@@ -205,6 +205,8 @@ public final class AppState: ObservableObject {
     private let troubleshooterService: any TroubleshooterService
     /// Lists the printers and prints through the print panel (a stand-in in tests; AppState+Copy.swift).
     let printService: any PrintService
+    /// Reads pages for "Rotate pages upright" (`OrientationStep`; a stand-in in tests).
+    let orientationScorer: any OrientationScorer
     private var session: (any ScannerSession)?
     private var sessionDeviceID: String?
     private var userPickedDevice = false
@@ -239,7 +241,8 @@ public final class AppState: ObservableObject {
     public init(backends: [any ScannerBackend]? = nil, presetStore: PresetStore = PresetStore(),
                 fileActions: (any FileActionService)? = nil,
                 troubleshooterService: (any TroubleshooterService)? = nil,
-                printService: (any PrintService)? = nil) {
+                printService: (any PrintService)? = nil,
+                orientationScorer: (any OrientationScorer)? = nil) {
         let saved = SettingsStore.load()
         self.isFirstRun = saved == nil
         // A task saved last time is still active: its banner comes back with the settings.
@@ -251,6 +254,7 @@ public final class AppState: ObservableObject {
         self.fileActions = fileActions ?? SystemFileActions()
         self.troubleshooterService = troubleshooterService ?? SystemTroubleshooterService()
         self.printService = printService ?? SystemPrintService()
+        self.orientationScorer = orientationScorer ?? VisionOrientationScorer()
         self.presets = presetStore.load()
         syncTaskFlow()
         // Clear page spill files left behind by a previous run.
@@ -650,8 +654,9 @@ public final class AppState: ObservableObject {
                 : manualSide == .back ? .turnedOverBacks
                 : manualSide == .front ? .turnedOverFronts
                 : .asScanned
+            let scorer = self.orientationScorer
             let cleaned: ProcessedScan = try await Task.detached(priority: .userInitiated) {
-                try PageProcessor.forScan(s, arrangement: arrangement)
+                try PageProcessor.forScan(s, arrangement: arrangement, scorer: scorer)
                     .process(scanned, shouldContinue: { !flag.isCancelled })
             }.value
             guard self.switchGeneration == generation else { return }
@@ -719,6 +724,9 @@ public final class AppState: ObservableObject {
                     }
                     // " 2 look blank and will be skipped.", " Found 2 separator pages: 3 documents to save."
                     self.statusMessage += self.queueScanNote(processed, options: s.document)
+                    if PageProcessor.turnsPagesUpright(s) && !scorer.isAvailable {
+                        self.statusMessage += PageTurns.unavailableNote
+                    }
                 } else {
                     self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
                     try await self.saveImmediately(processed, settings: s, flag: flag)
@@ -1108,6 +1116,29 @@ public final class AppState: ObservableObject {
             updated = updated.withAlternate(version)
         }
         scannedPages[idx] = updated
+    }
+
+    /// Whether pages can be turned upright: text recognition can read them.
+    public var canTurnPagesUpright: Bool { orientationScorer.isAvailable }
+
+    /// One click on a turned page's turn button: the turn is undone and the page saved the way it
+    /// was scanned; a second click turns it upright again. The preview turns at once, the spool file
+    /// through the page's rotation when it is saved (`ScannedPage.withUprightToggled`); behind a swap
+    /// still reading its file, like a turn by hand. Twin of the Windows `AppViewModel.TogglePageUpright`.
+    public func togglePageUpright(id: UUID) {
+        guard !isBusy else { return }
+        if pageEditChain != nil {
+            enqueuePageEdit { state in state.applyUprightToggle(id: id) }
+        } else {
+            applyUprightToggle(id: id)
+        }
+    }
+
+    private func applyUprightToggle(id: UUID) {
+        guard let idx = scannedPages.firstIndex(where: { $0.id == id }), scannedPages[idx].upright != nil else { return }
+        let toggled = scannedPages[idx].withUprightToggled()
+        scannedPages[idx] = toggled
+        statusMessage = PageTurns.toggleNote(toggled, number: idx + 1)
     }
 
     /// One click on a cropped or straightened page's swap button: the page as scanned is shown, and

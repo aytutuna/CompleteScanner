@@ -17,6 +17,15 @@ public interface IPageStep
 }
 
 /// <summary>
+/// A step that can take long enough to be stopped part way: <see cref="PageProcessor.Process"/>
+/// hands it the token it was given.
+/// </summary>
+public interface ICancellablePageStep : IPageStep
+{
+    ScannedPage Apply(ScannedPage page, CancellationToken token);
+}
+
+/// <summary>
 /// Checks whether the page is blank (<see cref="BlankPageDetector"/>) and records the result on
 /// it; the pixels are not changed. Runs before any adjustment, on the page as scanned.
 /// </summary>
@@ -58,6 +67,32 @@ public sealed class SeparatorStep : IPageStep
 
     public ScannedPage Apply(ScannedPage page) =>
         page.WithPatch(PatchCodeDetector.Detect(page.Image, page.Dpi)?.Code);
+}
+
+/// <summary>
+/// Turns the page upright when its text reads clearly better another way up
+/// (<see cref="OrientationDecision.Check"/>, reading with <paramref name="scorer"/>), recording the
+/// turn so one click undoes it (<see cref="ScannedPage.TurnedUpright"/>). Blank pages and separator
+/// sheets are not read; a page the reading is not sure about, or that takes longer than
+/// <paramref name="maxSeconds"/>, stays as it is. Runs after the separator check, before the
+/// adjustments, on the page as cropped and straightened. <paramref name="clock"/> (seconds) is for
+/// tests.
+/// </summary>
+public sealed class OrientationStep(IOrientationScorer scorer, double maxSeconds = OrientationDecision.MaxSecondsPerPage,
+                                    Func<double>? clock = null) : ICancellablePageStep
+{
+    public IOrientationScorer Scorer { get; } = scorer;
+    public double MaxSeconds { get; } = maxSeconds;
+    public string Name => "orientation";
+
+    public ScannedPage Apply(ScannedPage page) => Apply(page, CancellationToken.None);
+
+    public ScannedPage Apply(ScannedPage page, CancellationToken token)
+    {
+        if (page.Blank?.IsBlank == true || page.Patch is not null) return page;
+        var check = OrientationDecision.Check(page.Image, page.Dpi, Scorer, token, MaxSeconds, clock);
+        return check.Verdict == OrientationVerdict.Turned ? page.TurnedUpright(check.QuarterTurns) : page;
+    }
 }
 
 /// <summary>
@@ -105,8 +140,8 @@ public sealed record ProcessedScan(IReadOnlyList<ScannedPage> Arranged, IReadOnl
 /// The clean-up stage between the scanner and the page queue, the same for every scanner: the
 /// pages are put in reading order with their sides (two-sided scans), then every step runs on
 /// every page in order. The order of the steps is fixed: <see cref="ForScan"/> builds them from
-/// the settings: blank check (document pages), crop and straighten, separator sheets, then
-/// adjustments. Later page features slot in between (turning pages upright before the adjustments).
+/// the settings: blank check (document pages), crop and straighten, separator sheets, turning
+/// pages upright, then adjustments.
 /// </summary>
 public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
                                   ScanArrangement arrangement = ScanArrangement.AsScanned,
@@ -121,9 +156,11 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// collected in the document queue (whether or not blank pages are left out, so the page
     /// strip can flag them), crop and straighten when asked for those pages, the separator-sheet
     /// check for those pages (whether or not the stack is split, so a split chosen later finds
-    /// them), then the adjustments unless they change nothing.
+    /// them), turning those pages upright when asked for and <paramref name="scorer"/> can read text,
+    /// then the adjustments unless they change nothing.
     /// </summary>
-    public static PageProcessor ForScan(ScanSettings settings, ScanArrangement arrangement = ScanArrangement.AsScanned)
+    public static PageProcessor ForScan(ScanSettings settings, ScanArrangement arrangement = ScanArrangement.AsScanned,
+                                        IOrientationScorer? scorer = null)
     {
         var steps = new List<IPageStep>();
         if (ChecksBlankPages(settings))
@@ -137,6 +174,10 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
         if (ChecksBlankPages(settings))
         {
             steps.Add(new SeparatorStep());
+        }
+        if (TurnsPagesUpright(settings) && scorer is { IsAvailable: true })
+        {
+            steps.Add(new OrientationStep(scorer));
         }
         if (!(settings.Adjustments.IsIdentity && settings.ColorMode == ColorMode.Color))
         {
@@ -162,8 +203,17 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
         ChecksBlankPages(settings) && (settings.Document.AutoCrop || settings.Document.AutoStraighten);
 
     /// <summary>
+    /// Whether scans with these settings are turned upright: asked for, on document pages collected
+    /// in the queue, where the page strip shows a turned page and one click undoes the turn. Pages
+    /// saved as soon as they are scanned are never turned unseen.
+    /// </summary>
+    public static bool TurnsPagesUpright(ScanSettings settings) =>
+        ChecksBlankPages(settings) && settings.Document.AutoRotate;
+
+    /// <summary>
     /// Arranges the pages, then runs every step on every page. <paramref name="token"/> is checked
-    /// before each page and each step.
+    /// before each page and each step, and handed to the steps that can stop part way
+    /// (<see cref="ICancellablePageStep"/>).
     /// </summary>
     public ProcessedScan Process(IReadOnlyList<ScannedPage> scanned, CancellationToken token = default)
     {
@@ -183,7 +233,7 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
             foreach (var step in Steps)
             {
                 token.ThrowIfCancellationRequested();
-                current = step.Apply(current);
+                current = step is ICancellablePageStep cancellable ? cancellable.Apply(current, token) : step.Apply(current);
             }
             pages.Add(current);
         }

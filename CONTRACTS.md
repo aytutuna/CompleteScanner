@@ -16,6 +16,7 @@ Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Core/DocumentSides.swift`, `Core/PaperSize.swift` — two-sided scanning (which page is which side of which sheet, turning a stack over by hand) and paper sizes (see below).
 - `Sources/CompleteScannerKit/Pipeline/PageProcessor.swift`, `BlankPageDetector.swift`, `RgbaImage.swift`, `GrayImage.swift`, `BackgroundMap.swift`, `MaskOps.swift` — the page clean-up stage every scanned page goes through, blank-page detection, and the image toolkit the page analyses share (see below).
 - `Sources/CompleteScannerKit/Pipeline/DocumentGeometry.swift` — crop to the page and straighten it: the sheet's edges on the scanner's background, the skew of the text lines, and what is done to the page (see below).
+- `Sources/CompleteScannerKit/Pipeline/Orientation.swift` (+ `VisionOrientationScorer` in `Output/OCRService.swift`) — rotate pages upright: which way up a page reads by text recognition, the turn and its one-click undo (see below).
 - `Sources/CompleteScannerKit/Pipeline/IdCard.swift`, `App/AppState+IdCard.swift`, `UI/IdCardReviewView.swift` — the ID card task: both sides of a card found on the glass and laid out on one page at real size (see below).
 - `Sources/CompleteScannerKit/Output/PrintLayout.swift`, `App/PrintController.swift`, `App/AppState+Copy.swift` — copy and print: the Copy task, printing the ID card's page and the ruler test page, at real size (see below).
 - `Sources/CompleteScannerKit/Output/OCRText.swift`, `TextExport.swift`, `DocxWriter.swift`, `ZipStore.swift` — text output: OCR lines in reading order and paragraphs, the text file, the Word document and its zip package, Copy Text (see below).
@@ -445,6 +446,12 @@ Twins of `windows/CompleteScanner.Core/RgbaImage.cs`, `GrayImage.cs` (`GrayImage
 //   public func withGeometry(_ corrected: CGImage, geometry: PageGeometry) -> ScannedPage   // the page as it was becomes the alternate
 //   public func withAlternate(_ alternate: PageVersion?) -> ScannedPage
 //   public func withVersionsSwapped(_ shown: CGImage) -> ScannedPage   // shown = the other version's preview, turned like the page; no alternate: unchanged
+// For rotate pages upright it gains `upright: UprightTurn?` (nil: not turned; see
+// Pipeline/Orientation.swift below); copyMeta(from:) and every with… copy it:
+//   public func withUpright(_ upright: UprightTurn?) -> ScannedPage
+//   public func turnedUpright(_ quarterTurns: Int) -> ScannedPage   // pixels (and the alternate's in memory) turned clockwise, the turn recorded;
+//                                                                    // the rotation grows only when a spool file holds the unturned page; 0 turns: unchanged
+//   public func withUprightToggled() -> ScannedPage                 // undo, or make again, through the page's rotation like a turn by hand; not turned: unchanged
 public enum BlankSensitivity: String, Codable, CaseIterable, Identifiable, Sendable {
     case medium, low, high                         // first case = default and fallback
     public var label: String                       // "Low", "Medium", "High"
@@ -459,6 +466,7 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
     public var autoStraighten: Bool = false        // "autoStraighten"
     public var splitMode: SplitMode = .none         // "splitMode" (see Core/DocumentSplitter.swift below)
     public var splitSheetCount: Int = 1             // "splitSheetCount"; read through DocumentSplitter.clampSheetCount
+    public var autoRotate: Bool = false             // "autoRotate" (see Pipeline/Orientation.swift below)
 }
 
 public struct BlankPageOptions: Equatable, Sendable {
@@ -480,9 +488,16 @@ public enum BlankPageDetector {
 }
 
 public protocol PageStep { var name: String { get }; func apply(_ page: ScannedPage) -> ScannedPage }
+/// A step that can stop part way: `process` hands it its `shouldContinue` (C# `ICancellablePageStep`, the token).
+public protocol CancellablePageStep: PageStep { func apply(_ page: ScannedPage, shouldContinue: () -> Bool) throws -> ScannedPage }
 public struct BlankDetectionStep: PageStep { public let options: BlankPageOptions }   // "blank"
 public struct GeometryStep: PageStep { public let crop: Bool; public let straighten: Bool }   // "geometry": DocumentGeometry.correct, then withGeometry
 public struct SeparatorStep: PageStep { public init() }   // "separator": PatchCodeDetector.detect, then withPatch
+public struct OrientationStep: CancellablePageStep {        // "orientation": OrientationDecision.check, then turnedUpright
+    public let scorer: any OrientationScorer; public let maxSeconds: Double
+    public init(scorer: any OrientationScorer, maxSeconds: Double = OrientationDecision.maxSecondsPerPage,
+                clock: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime })
+}   // blank pages (blank?.isBlank) and separator sheets (patch != nil) are not read
 public struct AdjustmentStep: PageStep { public let adjustments: AdjustmentSettings; public let colorMode: ColorMode }   // "adjust" (the alternate's pixels too)
 public enum ScanArrangement: Sendable { case asScanned, twoSided, turnedOverFronts, turnedOverBacks }
 public struct ProcessedScan { public let arranged: [ScannedPage]; public let pages: [ScannedPage]; public var blankCount: Int }
@@ -490,15 +505,19 @@ public struct PageProcessor {
     public let steps: [any PageStep]; public let arrangement: ScanArrangement; public let binding: DuplexBinding
     public init(steps: [any PageStep], arrangement: ScanArrangement = .asScanned, binding: DuplexBinding = .longEdge)
     /// Blank check (when `checksBlankPages`), crop and straighten (when `correctsGeometry`), the
-    /// separator-sheet check (when `checksBlankPages`, whatever the split), then adjustments (unless
-    /// they change nothing).
-    public static func forScan(_ settings: ScanSettings, arrangement: ScanArrangement = .asScanned) -> PageProcessor
+    /// separator-sheet check (when `checksBlankPages`, whatever the split), turning pages upright (when
+    /// `turnsPagesUpright` and `scorer?.isAvailable`), then adjustments (unless they change nothing).
+    public static func forScan(_ settings: ScanSettings, arrangement: ScanArrangement = .asScanned,
+                               scorer: (any OrientationScorer)? = nil) -> PageProcessor
     /// Document queue flow and documentMultiPage: pages saved at once are never checked.
     public static func checksBlankPages(_ settings: ScanSettings) -> Bool
     /// checksBlankPages and (autoCrop or autoStraighten): pages saved at once are never changed unseen.
     public static func correctsGeometry(_ settings: ScanSettings) -> Bool
+    /// checksBlankPages and autoRotate: pages saved at once are never turned unseen.
+    public static func turnsPagesUpright(_ settings: ScanSettings) -> Bool
     /// Arranges (DocumentSides.arrangeTwoSided / markManual), then every step on every page in
-    /// order; throws ScanError.cancelled when `shouldContinue` says no (asked before each page and step).
+    /// order; throws ScanError.cancelled when `shouldContinue` says no (asked before each page and
+    /// step, and handed to a CancellablePageStep).
     public func process(_ scanned: [ScannedPage], shouldContinue: () -> Bool = { true }) throws -> ProcessedScan
 }
 public enum PageFilter {
@@ -583,6 +602,56 @@ public enum DocumentGeometry {
 }
 ```
 Twin of `windows/CompleteScanner.Core/DocumentGeometry.cs` (`TextAxis`, `TextLayout`, `GeometryBasis`, `GeometryAction`, `PageGeometry`, `GeometryPlan`, `GeometryCorrection`, `PageRejection`, `PageSearch`, `DocumentGeometry` with the same members in PascalCase); `DocumentGeometryTests` are the same cases on both sides, on the same synthetic pages (`TestPages.textPage`, `turned`, `sheetOnBackdrop`, drawn with fixed-point sines and cosines, checked by checksum). Everything works on the page's gray copy at the analysis resolution and changes the full-resolution pixels once (`RgbaImage.extractRotated` or `cropped`), so both platforms compute the same plan; the full-resolution snap of the sheet's edges goes through `PhotoDetector.refineRegion`, which draws with CoreGraphics on the Mac and with `RgbaImage` on Windows, and is only taken when no edge moves by more than `refineTolerance` analysis pixels. The rules: the backdrop is the median of a thin outer ring, with a threshold widened on textured backdrops; the sheet is the largest region of what differs from it (closed, holes filled, strands cut), taken only when it covers 15–99 % of the scan, fills ≥ 90 % of its rectangle, is at most 5 times as long as wide, has no more than 8 text-like marks around it and nothing beside it as large as 2 % of it; a sheet with more than 10 % of its outline on the scan's edge takes its angle from the text and its crop is the smallest rectangle at that angle around it; a sheet's edges win over the text; turns under 0.2° are left alone, sheets beyond 15° are cropped along their box, text skew is searched over ±7° (a best angle at the end of the sweep is not trusted); turning a scan in place never cuts off content from its corners (the canvas grows instead, its outermost 0.02 in excepted); and the dark lines along the edges of an upright crop (shadow, backdrop) are trimmed, at most 0.04 in.
+
+### Pipeline/Orientation.swift (+ DocumentOptions, ScannedPage in Core/Models.swift), VisionOrientationScorer in Output/OCRService.swift
+
+```swift
+public struct OrientationScore: Equatable, Sendable {
+    public let letters: Int; public let wordLetters: Int  // letters and digits read; those in words that look like words
+    public init(letters: Int, wordLetters: Int)
+    public static let none: OrientationScore
+    public static func of(_ lines: [String]) -> OrientationScore      // words split at white space
+    public static func wordScore(_ word: String) -> Int  // punctuation around it dropped; >= 2 long; a number, or letters (parts joined by - ' ’)
+                                                         // in one case each: lower, CAPS, Capitalized or a script without case; else 0
+    public var readsClearly: Bool                        // wordLetters >= clearWordLetters && wordLetters >= clearShare * letters
+}
+public protocol OrientationScorer {                       // C# IOrientationScorer
+    var isAvailable: Bool { get }
+    func score(_ image: RgbaImage) throws -> OrientationScore        // the image as it is; C# also takes a CancellationToken
+}
+public enum OrientationVerdict: Sendable { case upright, turned, unsure, noText, outOfTime }
+public struct CandidateScore: Equatable, Sendable { public let quarterTurns: Int; public let score: OrientationScore }
+public struct OrientationCheck: Equatable, Sendable {
+    public let verdict: OrientationVerdict; public let quarterTurns: Int   // clockwise turns that make the page upright; 0 unless .turned
+    public let scores: [CandidateScore]; public let layout: TextLayout; public let seconds: Double
+    public var passes: Int { get }
+}
+public enum OrientationDecision {
+    // analysisMaxSide 1600, minWordLetters 20, margin 2.0, clearWordLetters 150, clearShare 0.85, maxSecondsPerPage 3
+    public static func candidates(_ layout: TextLayout) -> [Int]   // [0, 2] across, [1, 3] down, [0, 2, 1, 3] not clear
+                                                                   // (axis unknown or confidence < minConfidence), [] under minInkPoints
+    public static func choose(_ scored: [CandidateScore]) -> Int?  // best wordLetters >= minWordLetters and >= margin × every other; else nil
+    public static func analysisSize(width: Int, height: Int) -> (width: Int, height: Int)   // longest side at most 1600, rounded half to even
+    public static func analysisImage(_ image: RgbaImage) -> RgbaImage
+    public static func check(_ image: RgbaImage, dpi: Int, scorer: any OrientationScorer,
+                             maxSeconds: Double = maxSecondsPerPage, clock: @escaping () -> Double = { … },
+                             shouldContinue: () -> Bool = { true }) throws -> OrientationCheck
+}
+public struct UprightTurn: Equatable, Sendable { public var quarterTurns: Int; public var undone: Bool }   // not persisted
+public enum PageTurns {
+    public static func caption(_ page: ScannedPage) -> String?      // "Turned upright 180°", "… 90° clockwise", "… 90° counterclockwise", "Turned back as scanned"
+    public static func toggleLabel(_ page: ScannedPage) -> String?  // "Undo turn", "Turn upright again"
+    public static func toggleNote(_ page: ScannedPage, number: Int) -> String   // "Page 3 is turned upright again." / "… turned back as scanned. It is saved that way."
+    public static func scanNote(_ added: [ScannedPage]) -> String   // " 2 turned upright."
+    public static let unavailableNote: String                       // " Pages were not turned upright: no text recognition language is installed."
+    public static func hint(_ settings: ScanSettings, available: Bool) -> String
+}
+// Output/OCRService.swift:
+//   OCRService.orientationScore(in image: CGImage) throws -> OrientationScore   // VNRecognizeTextRequest .fast, no language
+//                                                    // correction, lines whose top candidate is more than 0.3 sure
+//   public struct VisionOrientationScorer: OrientationScorer { public init() }   // always available
+```
+Twin of `windows/CompleteScanner.Core/Orientation.cs` (`OrientationScore.Of` / `WordScore` / `ReadsClearly`, `IOrientationScorer`, `OrientationVerdict`, `CandidateScore`, `OrientationCheck`, `OrientationDecision`, `UprightTurn`, `PageTurns`), `OrientationStep` and `ICancellablePageStep` in `PageProcessor.cs`, `DocumentOptions.AutoRotate` and `ScannedPage.Upright` / `WithUpright` / `TurnedUpright` / `WithUprightToggled` in `Models.cs`; the scorers are `WindowsOrientationScorer` (`windows/CompleteScanner.App/Services/WindowsOrientationScorer.cs`: the recognizer of the user's languages, else the first installed, one recognizer only) and `VisionOrientationScorer`. `OrientationTests` are the same cases on both sides, on `TestPages.textPage` with a dark square in its top left corner, read by a stand-in scorer that tells the way up by that corner and answers like real OCR (well upright, words that are not words upside down, next to nothing sideways), and the rotate cases of `PageProcessorTests`, `ModelsCompatTests` and `ScanTaskTests` match. The rules: a page's lines of text (`DocumentGeometry.estimateTextLayout` on its gray copy) choose the ways up worth reading; each is read once on a copy at most 1600 px long, turned in Core (`rotatedQuarterTurns`), the likeliest first; a reading that is clear is taken at once when it is the page as it is (an upright page costs one reading) or, once the page was read the opposite way up (180° from it), has twice the letters in words of every way read before it (so a sideways page is always read both quarter turns); otherwise every way worth reading is read and the most letters in words win with at least 20 and twice as many as any other way; no new reading starts after 3 s, a failed reading leaves the page, blank pages (as checked) and separator sheets are never read. `OrientationStep` runs after the separator check and before the adjustments, on pages collected in the queue only (`turnsPagesUpright`), and only when the scorer can read; `TaskCatalog.apply` turns `autoRotate` on for `.twoSided` only. A turned page's pixels, and its alternate's, are turned before it is spooled (the spool files hold the page upright, its rotation stays 0); undoing goes through the rotation (`withUprightToggled`) whenever either version has a spool file (pixels in memory turn at once and ignore the rotation when saved), so the spool files are never rewritten and a turn by hand adds to it. The Windows turn button's glyph (U+E72C, the twin of `arrow.clockwise`) differs from the hover bar's rotate (U+E7AD). `AppState` takes an optional `orientationScorer:` (default `VisionOrientationScorer()`), passes it to `forScan` in `performScan`, adds `PageTurns.scanNote` to the status after a scan (`queueScanNote`) and `unavailableNote` when pages were to be turned and the scorer cannot read, and offers `canTurnPagesUpright` and `togglePageUpright(id:)` (behind a swap still reading its file, like a turn by hand; the status gives `toggleNote`). Windows has the same in `AppViewModel` (`orientationScorer` constructor parameter, `CanTurnPagesUpright`, `TogglePageUpright`, `PageItem.UprightCaption` / `UprightToggleLabel` / `UprightToolTip`), the inspector's **Rotate pages upright** switch and its hint, and the page's turn button in `MainWindow.xaml`. The Mac shows the switch under Straighten pages (`InspectorView.autoRotateRow`) and the turn button under the page beside the swap button (`PagesStripView`).
 
 ### Pipeline/IdCard.swift (+ TaskOptions in Core/Models.swift), App/AppState+IdCard.swift
 
@@ -1059,7 +1128,10 @@ public struct OCRLine {
 
 public enum OCRService {
     public static func recognizeLines(in image: CGImage, languages: [String]) throws -> [OCRLine]
+    /// Fast reading for rotate pages upright (see Pipeline/Orientation.swift).
+    public static func orientationScore(in image: CGImage) throws -> OrientationScore
 }
+public struct VisionOrientationScorer: OrientationScorer { public init() }
 ```
 
 ### Output/ImageExporter.swift

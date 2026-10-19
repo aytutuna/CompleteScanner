@@ -45,6 +45,7 @@ struct PagesStripView: View {
                                 onRotate: { state.rotatePage(id: page.id) },
                                 onToggle: { state.togglePageInclusion(id: page.id) },
                                 onSwap: { state.togglePageGeometry(id: page.id) },
+                                onUpright: { state.togglePageUpright(id: page.id) },
                                 onCopyText: { state.copyPageText(id: page.id) },
                                 onBreak: { state.toggleDocumentBreak(id: page.id) },
                                 onName: {
@@ -170,6 +171,8 @@ fileprivate struct PageThumbnailCell: View {
     let onToggle: () -> Void
     /// Show the page as scanned, or cropped and straightened again (`AppState.togglePageGeometry`).
     let onSwap: () -> Void
+    /// Undo the turn that made the page upright, or make it again (`AppState.togglePageUpright`).
+    let onUpright: () -> Void
     /// The page's text, read with OCR, on the pasteboard (`AppState.copyPageText`).
     let onCopyText: () -> Void
     /// Start a new document at the page, or join it to the one before (`AppState.toggleDocumentBreak`).
@@ -213,6 +216,7 @@ fileprivate struct PageThumbnailCell: View {
                         .help(DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? "")
                 }
                 geometryToggle
+                uprightToggle
             }
         }
         .accessibilityElement(children: .contain)
@@ -229,11 +233,18 @@ fileprivate struct PageThumbnailCell: View {
                 Button("Name This Document\u{2026}", action: onName)
             }
         }
-        // Re-render when the page is rotated or shown as scanned (the cell keeps its identity, so
-        // a plain run-once task would show stale pixels).
-        .task(id: page.rotationQuarterTurns * 2 + (page.showsOriginal ? 1 : 0)) {
+        // Re-render when the page is rotated, shown as scanned or turned back (the cell keeps its
+        // identity, so a plain run-once task would show stale pixels).
+        .task(id: thumbnailKey) {
             thumbnail = stripThumbnail(page.image, maxDimension: 200)
         }
+    }
+
+    /// What the thumbnail shows: the page's turn, the version shown and whether a turn upright was undone.
+    private var thumbnailKey: Int {
+        let undone = page.upright?.undone == true ? 8 : 0
+        let original = page.showsOriginal ? 1 : 0
+        return page.rotationQuarterTurns * 2 + original + undone
     }
 
     /// "Page 3", or "Page 3 · back" for a page of a two-sided stack.
@@ -242,8 +253,8 @@ fileprivate struct PageThumbnailCell: View {
         return "Page \(pageNumber) \u{00B7} \(side == .front ? "front" : "back")"
     }
 
-    /// "Page 3, Sheet 2 · back, Blank, skipped, Straightened 1.5°" for screen readers; the first page
-    /// of a document after the first starts with its title ("Document 2, Page 3").
+    /// "Page 3, Sheet 2 · back, Blank, skipped, Straightened 1.5°, Turned upright 180°" for screen
+    /// readers; the first page of a document after the first starts with its title ("Document 2, Page 3").
     private var accessibilityName: String {
         var name = "Page \(pageNumber)"
         if let title = split.dividerTitle { name = "\(title), \(name)" }
@@ -258,7 +269,26 @@ fileprivate struct PageThumbnailCell: View {
         if let caption = PageCorrections.caption(page) {
             name += ", \(caption)"
         }
+        if let turn = PageTurns.caption(page) {
+            name += ", \(turn)"
+        }
         return name
+    }
+
+    /// A page turned upright: one click (always shown, not only on hover) turns it back as scanned,
+    /// and again. What was done and what a click does show on hover and to screen readers.
+    @ViewBuilder
+    private var uprightToggle: some View {
+        if let label = PageTurns.toggleLabel(page), let caption = PageTurns.caption(page) {
+            Button(action: onUpright) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.caption2)
+            }
+            .buttonStyle(.borderless)
+            .help("\(caption). \(label).")
+            .accessibilityLabel(label)
+            .accessibilityHint(caption)
+        }
     }
 
     /// A page crop and straighten changed: one click (always shown, not only on hover) shows it as

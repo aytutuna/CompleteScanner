@@ -68,6 +68,7 @@ internal static class CompatFixtures
         settings.Document.AutoStraighten = true;
         settings.Document.SplitMode = SplitMode.SheetCount;
         settings.Document.SplitSheetCount = 3;
+        settings.Document.AutoRotate = true;
         settings.TaskOptions.IdCardPaper = IdCardPaper.Letter;
         settings.TaskOptions.IdCardSaveSidesAsImages = true;
         settings.TaskOptions.CopyCount = 3;
@@ -136,7 +137,7 @@ internal static class CompatFixtures
         + "      \"duplex\": \"manual\",\n      \"backBinding\": \"shortEdge\",\n      \"paperSize\": \"a4\",\n"
         + "      \"document\": {\n        \"removeBlankPages\": true,\n        \"blankSensitivity\": \"high\",\n"
         + "        \"autoCrop\": true,\n        \"autoStraighten\": true,\n        \"splitMode\": \"sheetCount\",\n"
-        + "        \"splitSheetCount\": 3\n      },\n"
+        + "        \"splitSheetCount\": 3,\n        \"autoRotate\": true\n      },\n"
         + "      \"taskOptions\": {\n        \"idCardPaper\": \"letter\",\n        \"idCardSaveSidesAsImages\": true,\n"
         + "        \"copyCount\": 3,\n        \"copyFitToPage\": true,\n        \"copyPrinterName\": \"Office printer\",\n"
         + "        \"copyAlsoSavePdf\": true,\n        \"receiptNameByDate\": false,\n        \"receiptCombine\": true\n      }\n");
@@ -799,6 +800,50 @@ public class ModelsCompatTests
         Assert.True(original.Document.AutoCrop);
         Assert.True(original.Document.AutoStraighten);
         Assert.NotEqual(original.Document, clone.Document);
+    }
+
+    // MARK: - Rotate pages upright (CONTRACTS.md, rule 6)
+
+    [Fact]
+    public void RotatePagesUpright_IsOffByDefault_AndInFilesWithoutIt()
+    {
+        Assert.False(new ScanSettings().Document.AutoRotate);
+        var presets = Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize);
+        Assert.False(presets[0].Settings.Document.AutoRotate);
+        // A "document" object written before it existed keeps its other settings.
+        var older = Decode<ScanSettings>("""{"document": {"removeBlankPages": true, "autoStraighten": true, "splitMode": "blankSheet"}}""");
+        Assert.Equal((true, true, SplitMode.BlankSheet, false),
+                     (older.Document.RemoveBlankPages, older.Document.AutoStraighten, older.Document.SplitMode, older.Document.AutoRotate));
+    }
+
+    [Fact]
+    public void CorruptRotatePagesUpright_FallsBackToOff_RestIntact()
+    {
+        var settings = Decode<ScanSettings>("""{"resolution": 150, "document": {"autoStraighten": true, "autoRotate": "yes"}}""");
+        Assert.False(settings.Document.AutoRotate);
+        Assert.True(settings.Document.AutoStraighten);
+        Assert.Equal(150, settings.Resolution);
+        Assert.False(Decode<ScanSettings>("""{"document": {"autoRotate": null}}""").Document.AutoRotate);
+        Assert.True(Decode<ScanSettings>("""{"document": {"autoRotate": true}}""").Document.AutoRotate);
+    }
+
+    [Fact]
+    public void RotatePagesUpright_RoundTrips_AndCloneIsIndependent()
+    {
+        foreach (bool rotate in new[] { false, true })
+        {
+            var settings = new ScanSettings();
+            settings.Document.AutoRotate = rotate;
+            var back = Decode<ScanSettings>(CompatFixtures.Encode(settings));
+            Assert.Equal(rotate, back.Document.AutoRotate);
+            Assert.Equal(settings.Document, back.Document);
+        }
+        var original = CompatFixtures.NonDefaultSettings();
+        var clone = original.Clone();
+        clone.Document.AutoRotate = false;
+        Assert.True(original.Document.AutoRotate);
+        Assert.NotEqual(original.Document, clone.Document);
+        Assert.NotEqual(original.Document.GetHashCode(), clone.Document.GetHashCode());
     }
 
     // MARK: - Task options (CONTRACTS.md, rule 6)

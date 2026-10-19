@@ -185,6 +185,16 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertTrue(TaskCatalog.apply(.twoSided, to: ScanSettings()).document.autoStraighten)
     }
 
+    func test_apply_onlyTheTwoSidedTaskTurnsPagesUpright() {
+        var current = customized()
+        current.document.autoRotate = true
+        for task in ScanTask.allCases {
+            XCTAssertEqual(TaskCatalog.apply(task, to: current).document.autoRotate, task == .twoSided, task.rawValue)
+        }
+        XCTAssertTrue(current.document.autoRotate)
+        XCTAssertTrue(TaskCatalog.apply(.twoSided, to: ScanSettings()).document.autoRotate)
+    }
+
     func test_twoSided_isATwoSidedFeederPDF() {
         XCTAssertEqual(TaskCatalog.definition(.twoSided).steps[0].primaryActionLabel, "Scan stack")
         var s = TaskCatalog.apply(.twoSided, to: ScanSettings())

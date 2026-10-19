@@ -11,6 +11,13 @@ public protocol PageStep {
     func apply(_ page: ScannedPage) -> ScannedPage
 }
 
+/// A step that can take long enough to be stopped part way: `PageProcessor.process` hands it the
+/// `shouldContinue` it was given. Twin of C# `ICancellablePageStep`.
+public protocol CancellablePageStep: PageStep {
+    /// Throws `ScanError.cancelled` when `shouldContinue` says no.
+    func apply(_ page: ScannedPage, shouldContinue: () -> Bool) throws -> ScannedPage
+}
+
 /// Checks whether the page is blank (`BlankPageDetector`) and records the result on it; the
 /// pixels are not changed. Runs before any adjustment, on the page as scanned.
 public struct BlankDetectionStep: PageStep {
@@ -58,6 +65,39 @@ public struct SeparatorStep: PageStep {
 
     public func apply(_ page: ScannedPage) -> ScannedPage {
         page.withPatch(PatchCodeDetector.detect(page.image, dpi: page.dpi)?.code)
+    }
+}
+
+/// Turns the page upright when its text reads clearly better another way up
+/// (`OrientationDecision.check`, reading with `scorer`), recording the turn so one click undoes it
+/// (`ScannedPage.turnedUpright`). Blank pages and separator sheets are not read; a page the reading is
+/// not sure about, or that takes longer than `maxSeconds`, stays as it is. Runs after the separator
+/// check, before the adjustments, on the page as cropped and straightened. `clock` (seconds) is for
+/// tests. Twin of C# `OrientationStep`.
+public struct OrientationStep: CancellablePageStep {
+    public let scorer: any OrientationScorer
+    public let maxSeconds: Double
+    private let clock: () -> Double
+    public var name: String { "orientation" }
+
+    public init(scorer: any OrientationScorer, maxSeconds: Double = OrientationDecision.maxSecondsPerPage,
+                clock: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime }) {
+        self.scorer = scorer
+        self.maxSeconds = maxSeconds
+        self.clock = clock
+    }
+
+    /// Reads the page with nothing to stop it (`ScanError.cancelled` cannot happen then).
+    public func apply(_ page: ScannedPage) -> ScannedPage {
+        (try? apply(page, shouldContinue: { true })) ?? page
+    }
+
+    public func apply(_ page: ScannedPage, shouldContinue: () -> Bool) throws -> ScannedPage {
+        if page.blank?.isBlank == true || page.patch != nil { return page }
+        guard let pixels = RgbaImage(cgImage: page.image) else { return page }
+        let check = try OrientationDecision.check(pixels, dpi: page.dpi, scorer: scorer, maxSeconds: maxSeconds,
+                                                  clock: clock, shouldContinue: shouldContinue)
+        return check.verdict == .turned ? page.turnedUpright(check.quarterTurns) : page
     }
 }
 
@@ -109,9 +149,8 @@ public struct ProcessedScan {
 /// The clean-up stage between the scanner and the page queue, the same for every scanner: the
 /// pages are put in reading order with their sides (two-sided scans), then every step runs on
 /// every page in order. The order of the steps is fixed: `forScan` builds them from the settings:
-/// blank check (document pages), crop and straighten, separator sheets, then adjustments. Later
-/// page features slot in between (turning pages upright before the adjustments). Twin of C#
-/// `PageProcessor`.
+/// blank check (document pages), crop and straighten, separator sheets, turning pages upright, then
+/// adjustments. Twin of C# `PageProcessor`.
 public struct PageProcessor {
     public let steps: [any PageStep]
     public let arrangement: ScanArrangement
@@ -126,9 +165,11 @@ public struct PageProcessor {
     /// The steps for a scan made with `settings`: the blank-page check for pages collected in the
     /// document queue (whether or not blank pages are left out, so the page strip can flag them),
     /// crop and straighten when asked for those pages, the separator-sheet check for those pages
-    /// (whether or not the stack is split, so a split chosen later finds them), then the adjustments
-    /// unless they change nothing.
-    public static func forScan(_ settings: ScanSettings, arrangement: ScanArrangement = .asScanned) -> PageProcessor {
+    /// (whether or not the stack is split, so a split chosen later finds them), turning those pages
+    /// upright when asked for and `scorer` can read text, then the adjustments unless they change
+    /// nothing.
+    public static func forScan(_ settings: ScanSettings, arrangement: ScanArrangement = .asScanned,
+                               scorer: (any OrientationScorer)? = nil) -> PageProcessor {
         var steps: [any PageStep] = []
         if checksBlankPages(settings) {
             steps.append(BlankDetectionStep(options: BlankPageOptions(sensitivity: settings.document.blankSensitivity)))
@@ -138,6 +179,9 @@ public struct PageProcessor {
         }
         if checksBlankPages(settings) {
             steps.append(SeparatorStep())
+        }
+        if turnsPagesUpright(settings), let scorer, scorer.isAvailable {
+            steps.append(OrientationStep(scorer: scorer))
         }
         if !(settings.adjustments.isIdentity && settings.colorMode == .color) {
             steps.append(AdjustmentStep(adjustments: settings.adjustments, colorMode: settings.colorMode))
@@ -159,8 +203,16 @@ public struct PageProcessor {
         checksBlankPages(settings) && (settings.document.autoCrop || settings.document.autoStraighten)
     }
 
+    /// Whether scans with these settings are turned upright: asked for, on document pages collected
+    /// in the queue, where the page strip shows a turned page and one click undoes the turn. Pages
+    /// saved as soon as they are scanned are never turned unseen.
+    public static func turnsPagesUpright(_ settings: ScanSettings) -> Bool {
+        checksBlankPages(settings) && settings.document.autoRotate
+    }
+
     /// Arranges the pages, then runs every step on every page. `shouldContinue` is asked before
-    /// each page and each step; when it says no, `ScanError.cancelled` is thrown.
+    /// each page and each step, and handed to the steps that can stop part way
+    /// (`CancellablePageStep`); when it says no, `ScanError.cancelled` is thrown.
     public func process(_ scanned: [ScannedPage], shouldContinue: () -> Bool = { true }) throws -> ProcessedScan {
         guard shouldContinue() else { throw ScanError.cancelled }
         let arranged: [ScannedPage]
@@ -177,7 +229,11 @@ public struct PageProcessor {
             var current = page
             for step in steps {
                 guard shouldContinue() else { throw ScanError.cancelled }
-                current = step.apply(current)
+                if let cancellable = step as? any CancellablePageStep {
+                    current = try cancellable.apply(current, shouldContinue: shouldContinue)
+                } else {
+                    current = step.apply(current)
+                }
             }
             pages.append(current)
         }

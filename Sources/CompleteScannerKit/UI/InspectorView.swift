@@ -505,6 +505,7 @@ struct InspectorView: View {
             alsoSaveTextRow
             blankPagesRow
             geometryRow
+            autoRotateRow
             splitRow
         }
     }
@@ -627,6 +628,24 @@ struct InspectorView: View {
                 .help(hint)
             Toggle("Straighten pages", isOn: $state.settings.document.autoStraighten)
                 .disabled(!collecting)
+                .help(hint)
+            Text(hint)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Rotate pages upright: runs on pages collected in the queue only, where a turned page shows an
+    /// undo button, and needs text recognition; otherwise the switch is off and says why. Twin of the
+    /// Windows inspector's "Rotate pages upright".
+    private var autoRotateRow: some View {
+        let collecting = state.settings.documentMultiPage && !state.isCopyFlow && !state.isReceiptFlow
+        let available = state.canTurnPagesUpright
+        let hint = PageTurns.hint(state.settings, available: available)
+        return VStack(alignment: .leading, spacing: 6) {
+            Toggle("Rotate pages upright", isOn: $state.settings.document.autoRotate)
+                .disabled(!collecting || !available)
                 .help(hint)
             Text(hint)
                 .font(.caption)

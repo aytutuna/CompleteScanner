@@ -95,6 +95,64 @@ public class PageProcessorTests
         Assert.Equal((true, false), (((GeometryStep)PageProcessor.ForScan(s).Steps[1]).Crop, ((GeometryStep)PageProcessor.ForScan(s).Steps[1]).Straighten));
     }
 
+    /// <summary>Text recognition that can or cannot run, reading nothing.</summary>
+    private sealed class StubScorer(bool available) : IOrientationScorer
+    {
+        public bool IsAvailable => available;
+        public OrientationScore Score(RgbaImage image, CancellationToken token) => OrientationScore.None;
+    }
+
+    [Fact]
+    public void ForScan_RotatePagesUpright_ReadsAfterTheSeparatorCheck_WhenTextCanBeRead()
+    {
+        var s = new ScanSettings();
+        var scorer = new StubScorer(true);
+        Assert.False(PageProcessor.TurnsPagesUpright(s));
+        Assert.Equal(["blank", "separator"], PageProcessor.ForScan(s, scorer: scorer).Steps.Select(step => step.Name));
+        s.Document.AutoRotate = true;
+        Assert.True(PageProcessor.TurnsPagesUpright(s));
+        var processor = PageProcessor.ForScan(s, scorer: scorer);
+        Assert.Equal(["blank", "separator", "orientation"], processor.Steps.Select(step => step.Name));
+        Assert.Same(scorer, ((OrientationStep)processor.Steps[2]).Scorer);
+        Assert.Equal(OrientationDecision.MaxSecondsPerPage, ((OrientationStep)processor.Steps[2]).MaxSeconds);
+        s.Document.AutoStraighten = true;
+        s.Adjustments.Brightness = 0.25;
+        Assert.Equal(["blank", "geometry", "separator", "orientation", "adjust"],
+                     PageProcessor.ForScan(s, scorer: scorer).Steps.Select(step => step.Name));
+        // No text recognition: the pages are not turned.
+        Assert.DoesNotContain("orientation", PageProcessor.ForScan(s).Steps.Select(step => step.Name));
+        Assert.DoesNotContain("orientation", PageProcessor.ForScan(s, scorer: new StubScorer(false)).Steps.Select(step => step.Name));
+        // Pages saved at once, and photos, are never turned unseen.
+        foreach (var other in new[] { new ScanSettings { Intent = ScanIntent.Photo }, new ScanSettings { DocumentMultiPage = false } })
+        {
+            other.Document.AutoRotate = true;
+            Assert.False(PageProcessor.TurnsPagesUpright(other));
+            Assert.DoesNotContain("orientation", PageProcessor.ForScan(other, scorer: scorer).Steps.Select(step => step.Name));
+        }
+    }
+
+    /// <summary>A step that records the token it was handed.</summary>
+    private sealed class TokenStep : ICancellablePageStep
+    {
+        public List<CancellationToken> Tokens { get; } = [];
+        public string Name => "token";
+        public ScannedPage Apply(ScannedPage page) => throw new InvalidOperationException("Process hands the token on.");
+        public ScannedPage Apply(ScannedPage page, CancellationToken token)
+        {
+            Tokens.Add(token);
+            return page;
+        }
+    }
+
+    [Fact]
+    public void Process_HandsTheTokenToStepsThatCanStopPartWay()
+    {
+        using var source = new CancellationTokenSource();
+        var step = new TokenStep();
+        new PageProcessor([step]).Process([Page(BlankImage), Page(TextImage)], source.Token);
+        Assert.Equal([source.Token, source.Token], step.Tokens);
+    }
+
     [Fact]
     public void ForScan_SeparatorSheets_AreLookedForOnCollectedDocumentPages_WhetherOrNotTheStackIsSplit()
     {

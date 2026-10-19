@@ -12,8 +12,8 @@ extension AppState {
     public var queueSavePlan: SavePlan { SavePlan.make(scannedPages, options: settings.document) }
 
     /// The status after a scan's pages were queued: the blank pages among them (not counting the
-    /// separators), what crop and straighten did, and the separator pages found with the documents
-    /// the queue now makes.
+    /// separators), what crop and straighten did, the pages turned upright, and the separator pages
+    /// found with the documents the queue now makes.
     func queueScanNote(_ added: [ScannedPage], options: DocumentOptions) -> String {
         let plan = queuePlan
         var separatorIDs = Set<UUID>()
@@ -23,7 +23,7 @@ extension AppState {
         let notSeparators = added.filter { !separatorIDs.contains($0.id) }
         let separatorsAdded = added.count - notSeparators.count
         return PageFilter.scanNote(notSeparators, options: options) + PageCorrections.scanNote(added)
-            + DocumentSplitter.scanNote(plan, separatorsAdded: separatorsAdded)
+            + PageTurns.scanNote(added) + DocumentSplitter.scanNote(plan, separatorsAdded: separatorsAdded)
     }
 
     /// One click on the gap before a queued page: a new document starts there, or the page joins

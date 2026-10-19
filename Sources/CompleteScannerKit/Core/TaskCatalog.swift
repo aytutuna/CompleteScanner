@@ -158,12 +158,12 @@ public enum TaskCatalog {
     /// format, JPEG quality, PDF size, the after-save action, the text beside a PDF (off: only the
     /// Scan to Word task saves text), the photo and document switches,
     /// searchable PDF, adjustments, two-sided scanning, skipping blank pages, crop and straighten,
-    /// file name and the task itself. The destination folder, the photo detection tuning, the
+    /// turning pages upright, file name and the task itself. The destination folder, the photo detection tuning, the
     /// legacy OCR languages, the paper size, the edge backs are turned on, how much counts as blank
     /// and the choices of each task (`taskOptions`) are kept: they describe the user's paper and how
     /// they want a task done, not the task. The two-sided task asks for `.both`, skips blank pages
-    /// (the empty backs of one-sided sheets) and straightens pages the feeder pulled in at a slant;
-    /// no task crops yet; `SettingsAdapter` turns `.both` into turning over by hand on a feeder that
+    /// (the empty backs of one-sided sheets), straightens pages the feeder pulled in at a slant and
+    /// turns upright the sheets put in the wrong way round; no task crops yet; `SettingsAdapter` turns `.both` into turning over by hand on a feeder that
     /// scans one side. The ID card task makes no searchable PDF: the numbers on an ID are better not
     /// indexed; neither does the Copy task, whose PDF (when one is saved too) is a record of the paper
     /// copy. The Receipts task scans in grayscale (thermal print has no color) into Compact PDFs, named
@@ -187,6 +187,7 @@ public enum TaskCatalog {
         s.document.removeBlankPages = task == .twoSided || task == .batch
         s.document.autoCrop = false
         s.document.autoStraighten = task == .twoSided
+        s.document.autoRotate = task == .twoSided
         s.document.splitMode = task == .batch ? .separatorSheet : SplitMode.none
         switch task {
         case .document:

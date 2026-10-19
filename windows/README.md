@@ -23,8 +23,9 @@ UI per platform** architecture:
   scanner, whichever backends list it) is shared with macOS. So is the page clean-up stage
   (`PageProcessor.cs`: the steps every scanned page goes through before it is queued) and the
   image toolkit it works with (`GrayImage.cs`, `BackgroundMap.cs`, `MaskOps.cs` next to
-  `RgbaImage.cs`), starting with blank-page detection (`BlankPageDetector.cs`) and crop and
-  straighten (`DocumentGeometry.cs`), the ID card task (`IdCard.cs`: finding the card on the
+  `RgbaImage.cs`), starting with blank-page detection (`BlankPageDetector.cs`), crop and
+  straighten (`DocumentGeometry.cs`) and rotating pages upright (`Orientation.cs`: which way up a
+  page reads; the reading itself is the platform's OCR), the ID card task (`IdCard.cs`: finding the card on the
   glass, laying both sides out at real size and drawing the page), copy and print
   (`PrintLayout.cs`: where a page goes on a printer's paper at real size or fitted, copies, the
   ruler test page), text output (`OcrText.cs`: OCR lines in reading order and paragraphs;
@@ -230,6 +231,51 @@ their paper or left alone (a card with a tassel); beds with two or three photos 
 and a bed with one photo card at -4° was cut out at -4.004°.
 **To check on real hardware:** shadows from real lids (often on two sides only), feeder scans
 with a black or grey backing, and very thin or translucent paper.
+
+### Rotate pages upright
+
+**Rotate pages upright** (the inspector's **Output** section, under crop and straighten) turns a
+page put in upside down or sideways the right way up by reading its text with Windows OCR
+(`WindowsOrientationScorer`: the recognizer of the user's languages, else the first installed).
+It is off unless a task turns it on: the **Two-sided document** task does, since sheets go into a
+feeder the wrong way round. Like crop and straighten it runs on pages collected in the queue only,
+after the separator-sheet check and before the adjustments, and a page saved at once is never
+turned, so the switch is greyed out then; without an OCR language it is greyed out too, and a
+scan that should have turned pages says so. A turned page carries a small turn button at its top
+right in the page strip, always shown ("Turned upright 180°. Undo turn."); one click turns it back
+as scanned, and it is saved that way, and a second click turns it upright again. The turn is in
+the page's spool files; undoing it goes through the page's rotation like a turn by hand, so the
+two add up. The status after a scan says how many pages were turned (" 2 turned upright.").
+
+How a page is judged (`OrientationDecision`): its lines of text, found as for straightening, say
+which ways up are worth reading (as it is and upside down for lines across the page, a quarter
+turn either way for lines down it, all four when that is not clear); blank pages, separator
+sheets and pages with too little ink are not read at all. Each way up is read once, on a copy at
+most 1600 pixels long, the likeliest first. A reading where at least 150 letters fall in words that
+look like words, and words are at least 85 % of what was read, is taken at once, so an upright page
+costs one reading; a clear reading of the page turned is taken at once only when the page was
+already read the opposite way up (180° from it) and with twice the letters in words of every way
+read before it, so a sideways page is always read both quarter turns. Otherwise every way worth
+reading is read, and the way up with the most letters in words wins when it has at least 20 and
+twice as many as any other way; anything closer is left as scanned. Text read upside down
+still gives letters, but few words ("suo!umqxa", "RTtnJqoed"), which is what tells the ways apart.
+No new reading starts after 3 seconds on one page, a reading that fails leaves the page, and Cancel
+stops between readings.
+
+Checked here with Windows OCR (en-US) on six public-domain scans behind the website's pictures (the
+Clara Barton letter, typed, as archived and as laid on a lid; the Annie Oakley letter, handwritten
+under a printed letterhead; the Thanksgiving menu's cover and inside; the menu laid on a lid), each
+as it is and turned 90°, 180° and 270°: all 24 came out upright at 300 dpi and all 24 at 150 dpi.
+With only a band across the middle of each page (a quarter of its height), 21 came out upright and
+3 were left as scanned (the Barton letter's band turned, which reads 315 letters in words the right
+way up and 178 the opposite way: not twice as many); none was turned wrong. Seven photos (a beach
+scene, cabinet cards, postcards, houses), each turned all four ways, were all left as they were.
+Time per 300 dpi page, reading included: 450 ms median, 770 ms at most (one reading for an upright
+page, two for the others, four for the menu cover, whose decorative type gives no clear line
+direction); at 150 dpi 250 to 350 ms median. Through the view model, six pages at 150 dpi took
+between 100 and 250 ms more a page with the switch on (runs vary).
+**To check on real hardware:** pages from real feeders put in the wrong way round, forms and
+tables with little running text, pages in other scripts with the matching OCR language.
 
 ### ID card
 
@@ -653,6 +699,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | TWAIN backend (`Scanning/Twain`) | **Experimental, untested against hardware** — see [TWAIN](#twain) below. The scan logic in Core (negotiation choices, the acquisition state machine, strip and bitmap conversion, paper sizes, error mapping, 32-bit driver detection) is covered by `TwainScanLoopTests`, `TwainRasterTests` and `TwainScanRequestsTests` through a fake transport. Driving the view model with the real session class over a scripted transport checked flatbed, feeder, preview, empty feeder, a jam after two sheets (pages kept, reason shown), cancel while the driver is silent (returns at once, the source is reset and disabled in the background), switching away (the source is closed without waiting), the driver-window switch and its saved choice (kept when connecting finds the scanner off), a driver stuck while enabling (reported after the start limit, the next scan refused at once, the late scan stopped when the driver answers), and that a scanner only TWAIN lists is never opened unless the user picks it. On a PC without a TWAIN Data Source Manager the backend lists nothing and `devices.txt` says why; the app starts normally. **Unverified:** real drivers, NTwain's message loop with them, the TWAIN Working Group sample source (not installed here) |
 | Two-sided scanning and paper size (`DocumentSides`, `PaperSize`) | Covered by `DocumentSidesTests`, `PaperSizeTests` and the sides cases of `ModelsCompatTests`, `ScanTaskTests`, `SettingsAdapterTests` and `MockScannerTests` (same cases as macOS), plus the backend requests in `EsclTests`, `TwainScanRequestsTests` and `WiaErrorsTests`. Checked by driving the view model with the demo scanner (both sides in one pass on the long and the short edge, a jam keeping one sheet's two sides, turning over by hand with matching counts, a mismatch, scanning the backs again, combining anyway, keeping the fronts, a jam during the fronts (the steps stay at the fronts, the rest of them scanned as fronts, Done with fronts), a stack scanned in parts (Scan more fronts), a scanner whose capabilities could not be read on connect asked for both sides by a one-sided feeder (pages kept one-sided, capabilities read after the scan), earlier pages keeping their place, the two-sided task on two-sided and one-sided feeders, paper sizes on the feeder and the glass, the saved PDFs' page counts) and by building the window without showing it: the Sides, Flip on and Paper size choices with their greyed-out items and reasons, the banner's two steps, Scan more fronts, Done with fronts and the mismatch choices, the side badges and the screen reader names in the page strip and the Two-sided document card, rendered off screen in light and dark. **Unverified:** real drivers (see [Two-sided scanning and paper size](#two-sided-scanning-and-paper-size)) |
 | Crop and straighten (`DocumentGeometry`, `GeometryStep`, `PageCorrections`) | Covered by `DocumentGeometryTests`, the crop and straighten cases of `PageProcessorTests`, `ModelsCompatTests`, `ScanTaskTests` and `MaskOpsTests` (same cases as macOS, on the same synthetic pages checked by checksum). Checked on public-domain scans laid at known angles on a lid and a dark backdrop, on archive scans as they were captured, and by driving the view model with those scans (scan, the strip's captions, both versions spooled, show as scanned and back, turning a page, saving whichever version is shown, removing and clearing pages, the switches off and pages saved at once, the two-sided task) and by building the window without showing it: the switches and their hint, the swap button and its glyphs, rendered off screen. **Unverified:** real lids, feeder backings and thin paper (see [Crop and straighten](#crop-and-straighten)) |
+| Rotate pages upright (`OrientationDecision`, `OrientationStep`, `PageTurns`, `WindowsOrientationScorer`) | Covered by `OrientationTests` and the rotate cases of `PageProcessorTests`, `ModelsCompatTests` and `ScanTaskTests` (same cases as macOS, on the same synthetic page read by a stand-in scorer). Checked with Windows OCR on public-domain letters and menus turned every way and on photos (see [Rotate pages upright](#rotate-pages-upright)), by driving the view model with those scans (scan, the strip's captions, the spool files and what a save writes, undo and redo, two quick clicks, a turn by hand before and after, Keep and Skip, saving, the switch off, pages saved at once, no OCR language, the two-sided task) and by building the window without showing it: the switch and its hint, the turn button beside the side badge and the swap button, screen-reader names, rendered off screen in light and dark. **Unverified:** Vision on the Mac (CI runs the stand-in only), real feeders |
 | ID card (`IdCard`, the review) | Covered by `IdCardTests` (paper, steps, layout on Letter and A4, scaled to fit, the composed page in pixels and as a 612 × 792 pt PDF page, the detector on a synthetic bed with a card turned 7° among other objects, the back taking the front's place, moved to another resolution and refused for another part of the glass, the page at most 600 dpi, Skip only for the card's back) and the ID card cases of `ScanTaskTests`, `ModelsCompatTests`, `TaskFlowTests` and `MockScannerTests` (same cases as macOS). Checked by driving the view model with the demo scanner's sample card (front, back, the review, turning and swapping the sides, fixing a crop, Letter and A4, saving a PDF at 612 × 792 pt with no text layer, a PNG page at 300 dpi with the front as an image, skipping the back, scanning a side again, discarding, leaving the task, picking a task again) and with a white-on-white back (at the front's resolution, at twice it, and with another selection), a scanner going away with the review open and between the sides (no switch until the card is saved, discarded or the task left), a page saved from a 1200 dpi scan (A4 at 600 dpi, the side at 1200), the stage cleared on leaving with no side held, checking that nothing goes to the history or the page spool and that the stage is cleared, and by building the window without showing it: the task card, the banner's steps and Skip back side (and no Skip for the backs of a stack turned over by hand), Mode and Source locked while a side is held, Leave the task and picking a task asking first (Cancel keeps the card, Discard drops it), the review with both sides, the front only, the not-at-real-size warning, the paper and format pickers, rendered off screen in light and dark. **Unverified:** real cards on real lids (see [ID card](#id-card)), printing at real size |
 | Blank pages (`BlankPageDetector`, `PageProcessor`, `PageFilter`, image toolkit) | Covered by `BlankPageDetectorTests`, `PageProcessorTests`, `GrayImageTests`, `RgbaImageTests`, `MaskOpsTests` and the blank-page cases of `ModelsCompatTests`, `ScanTaskTests` and `MockScannerTests` (same cases as macOS; `MaskOpsTests` also pins PhotoDetector's regions on the demo bed to the last bit, unchanged by moving the mask code out of it). Checked on public-domain scans of letters, menus and photos (none taken for blank, at any level, with or without their dark surroundings) and on blank backs made from them (all found blank), and by driving the view model with the demo scanner (flagging, Skip blank pages turned on and off with pages queued, Keep and Skip per page, rotating a flagged page, saving 5 of 6 pages, nothing to save, pages saved at once keeping every page, the two-sided task, turning over by hand) and by building the window without showing it: the switch, the levels, the badges, Keep and Skip, the strip label, Save PDF's count, rendered off screen in light and dark. **Unverified:** blank backs from real scanners (see [Blank pages](#blank-pages)) |
 | Copy and print (`PrintLayout`, `PrintService`, the Copies section) | The layout is covered by `PrintLayoutTests` (real size on A4 and Letter, a whole glass cut off on A4, printer margins, a selection centred, turning only when that cuts off less, fit with and without turning, never enlarged, units, printer paper, copies, the ruler page by pixel, the texts) and the copy cases of `ScanTaskTests`, `ModelsCompatTests`, `PaperSizeTests` and `IdCardTests` (same cases as macOS); the print document by `CompleteScanner.App.Tests` (written to XPS and read back: the page is the paper, each image at its place in 1/96 in, turned pages turned in their pixels, fitted pages placed smaller, copies the printer does not make repeated, every page its own picture, grey images, cancel). Checked by reading the real print system on Windows 11 without printing (the printers, the default printer's Letter paper and printable area, A4 and Letter asked of Microsoft Print to PDF, an unknown printer; the default printer and its ticket compared before and after: unchanged), by driving the view model with the demo scanner and a stand-in printer service that records the jobs (a copy from the corner at real size, the printer's paper area of the glass scanned, A4 asked and scanned, a selection centred, 3 copies on a printer that makes 2 at most, fit to page, grey, also a PDF, the feeder's stack, another printer, a printer gone, a refused job and Cancel while printing, no printer; the ID card printed on Letter at real size with the review kept, A4 on a Letter-only printer, margins reaching the card; Automatic paper following the default printer; the ruler page), with every recorded job's document written to XPS by the app's own code and its geometry read back, and by building the window without showing it: the Copy card, the Copies section and its controls, no printer, the review's Print button, rendered off screen in light and dark. **Not done:** printing to a real printer, including Microsoft Print to PDF (its file name cannot be set without its save dialog). **Unverified:** real printer margins and offsets, measured with the ruler page |
@@ -723,6 +770,12 @@ Known divergences from the macOS app (all documented in the source):
   same gray copy; the snap of the sheet's edges at full resolution draws the region with
   CoreGraphics on the Mac and samples it with `RgbaImage` on Windows, so a crop can differ by a
   pixel or so. The swap button sits under the page in the Mac strip and on the page on Windows.
+- Rotate pages upright: the decision (which ways up are read, when one wins, the 3 s limit) is the
+  same code on both platforms; the reading is the platform's own, Vision's fast recognizer on the
+  Mac (lines it is more than 0.3 sure of) and Windows OCR's recognizer for the user's languages on
+  Windows, so a page with little or unusual text can be turned on one and left on the other. Vision
+  is always there; Windows needs an OCR language installed. The turn button sits under the page in
+  the Mac strip and on the page on Windows.
 - Printing: the layout is the same code on both platforms. Windows prints straight to the chosen
   printer with no dialog; the Mac shows the standard print panel (platform convention), already
   set to the printer, the paper, the copies and 100 %, and saves the copy's PDF only once the user
@@ -875,7 +928,7 @@ Two-sided scanning and the paper size are top-level keys (`"duplex": "off"`, `"b
 "longEdge"`, `"paperSize": "auto"`); a file without them, or with a value this version does not
 know, scans one side on the whole area. Blank pages are in a `"document"` object
 (`"document": {"removeBlankPages": false, "blankSensitivity": "medium", "autoCrop": false,
-"autoStraighten": false}`); a file without it keeps every page and leaves pages as scanned, and a
+"autoStraighten": false, "autoRotate": false}`); a file without it keeps every page and leaves pages as scanned, and a
 sensitivity this version does not know reads as Medium. How the user wants a task done is in a
 `"taskOptions"` object (`"taskOptions": {"idCardPaper": "auto", "idCardSaveSidesAsImages": false}`),
 kept when a task is picked; a file without it, or with a paper this version does not know, reads as

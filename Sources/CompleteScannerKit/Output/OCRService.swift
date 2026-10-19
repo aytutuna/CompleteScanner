@@ -50,4 +50,45 @@ public enum OCRService {
         }
     }
 
+    /// The candidates Vision must be at least this sure of to count when turning pages upright.
+    static let orientationMinConfidence: Float = 0.3
+
+    /// What fast text recognition reads on `image` as it is, for turning pages upright
+    /// (`OrientationDecision`): the lines Vision is more than `orientationMinConfidence` sure of,
+    /// with no language correction, so text read the wrong way up is not mended into words. Throws
+    /// `ScanError.scanFailed` when the Vision handler fails.
+    public static func orientationScore(in image: CGImage) throws -> OrientationScore {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .fast
+        request.usesLanguageCorrection = false
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        do {
+            try handler.perform([request])
+        } catch {
+            throw ScanError.scanFailed("OCR failed: \(error.localizedDescription)")
+        }
+        let lines: [String] = (request.results ?? []).compactMap { observation in
+            guard let candidate = observation.topCandidates(1).first,
+                  candidate.confidence > orientationMinConfidence else { return nil }
+            return candidate.string
+        }
+        return OrientationScore.of(lines)
+    }
+}
+
+/// Reads a page for turning pages upright (`OrientationDecision`) with Vision's fast text
+/// recognition (`OCRService.orientationScore(in:)`). The Mac counterpart of the Windows
+/// `WindowsOrientationScorer`.
+public struct VisionOrientationScorer: OrientationScorer {
+    public init() {}
+
+    /// Vision's text recognition is always there on macOS 14.
+    public var isAvailable: Bool { true }
+
+    public func score(_ image: RgbaImage) throws -> OrientationScore {
+        guard let cgImage = image.makeCGImage() else {
+            throw ScanError.scanFailed("OCR failed: the page could not be prepared for reading.")
+        }
+        return try OCRService.orientationScore(in: cgImage)
+    }
 }

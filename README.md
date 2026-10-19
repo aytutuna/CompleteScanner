@@ -73,6 +73,11 @@ scanners** — including the Epson Perfection V39 II.
   unclear is left as scanned, a crop never cuts into the sheet, and turning a page never cuts off
   anything in its corners. A changed page has a small arrow in the page strip that shows it as
   scanned, and back. The Two-sided document task straightens pages.
+- **Rotate pages upright**: a page put in upside down or sideways is turned the right way up by
+  reading its text (Vision on the Mac, Windows OCR on Windows). Only a page whose text reads clearly
+  better one way is turned; blank pages, separator sheets, photos and pages the reading is unsure
+  about are left as scanned. A turned page has a small turn button in the page strip that turns it
+  back as scanned, and again. The Two-sided document task turns pages upright.
 - **ID card**: copies of an ID card or driving licence for a bank, a rental or a job. Scan the
   front, turn the card over where it lies and scan the back (or skip it when nothing is printed
   there); the card is found on the glass, cut out and straightened, and both sides go on one A4 or

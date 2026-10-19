@@ -1211,9 +1211,11 @@ public partial class MainWindow : Window
             }
             AutoCropBox.IsChecked = s.Document.AutoCrop;
             AutoStraightenBox.IsChecked = s.Document.AutoStraighten;
+            AutoRotateBox.IsChecked = s.Document.AutoRotate;
             SyncPdfSizeOptions();
             SyncBlankPageOptions();
             SyncGeometryOptions();
+            SyncAutoRotateOptions();
             SyncCapabilityPickers();
         }
         finally
@@ -1269,6 +1271,7 @@ public partial class MainWindow : Window
         SyncPdfSizeOptions();
         SyncBlankPageOptions();
         SyncGeometryOptions();
+        SyncAutoRotateOptions();
         RefreshFromViewModel();
     }
 
@@ -1382,6 +1385,46 @@ public partial class MainWindow : Window
         SyncGeometryOptions();
         ViewModel.SettingsEdited();
         RefreshFromViewModel();
+    }
+
+    /// <summary>
+    /// Turning pages upright runs on pages collected in the queue only, where a turned page shows an
+    /// undo button, and needs a text recognition language: otherwise the switch is off and says why.
+    /// </summary>
+    private void SyncAutoRotateOptions()
+    {
+        var s = ViewModel.Settings;
+        var flow = TaskCatalog.FlowOf(s);
+        bool collecting = s.DocumentMultiPage && flow != TaskFlowKind.Copy && flow != TaskFlowKind.ReceiptSplit;
+        bool available = ViewModel.CanTurnPagesUpright;
+        AutoRotateBox.IsEnabled = collecting && available;
+        string hint = PageTurns.Hint(s, available);
+        AutoRotateHint.Text = hint;
+        AutoRotateBox.ToolTip = hint;
+        AutomationProperties.SetHelpText(AutoRotateBox, hint);
+    }
+
+    private void AutoRotate_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_updatingUi || !IsLoaded) return;
+        ViewModel.Settings.Document.AutoRotate = AutoRotateBox.IsChecked == true;
+        SyncAutoRotateOptions();
+        ViewModel.SettingsEdited();
+        RefreshFromViewModel();
+    }
+
+    private async void PageUpright_Click(object sender, RoutedEventArgs e)
+    {
+        if (PageIdOf(sender) is not { } id) return;
+        await ViewModel.TogglePageUpright(id);
+        RefreshFromViewModel();
+        // The page was replaced (its pixels turned): its new container takes the focus, so the
+        // keyboard stays on the page.
+        int index = IndexOfPage(id);
+        if (index >= 0 && PageList.ItemContainerGenerator.ContainerFromIndex(index) is ListBoxItem container)
+        {
+            container.Focus();
+        }
     }
 
     private async void PageGeometry_Click(object sender, RoutedEventArgs e)

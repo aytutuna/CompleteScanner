@@ -79,6 +79,28 @@ private struct BarStep: PageStep {
     }
 }
 
+/// Text recognition that can or cannot run, reading nothing.
+private struct StubScorer: OrientationScorer {
+    let isAvailable: Bool
+    func score(_ image: RgbaImage) throws -> OrientationScore { OrientationScore.none }
+}
+
+/// A step that records whether it was handed `shouldContinue`, and what it said.
+private final class AskingStep: CancellablePageStep {
+    private(set) var answers: [Bool] = []
+    var name: String { "asking" }
+
+    func apply(_ page: ScannedPage) -> ScannedPage {
+        XCTFail("process hands shouldContinue on")
+        return page
+    }
+
+    func apply(_ page: ScannedPage, shouldContinue: () -> Bool) throws -> ScannedPage {
+        answers.append(shouldContinue())
+        return page
+    }
+}
+
 final class PageProcessorTests: XCTestCase {
 
     // MARK: The steps a scan gets
@@ -148,6 +170,43 @@ final class PageProcessorTests: XCTestCase {
             XCTAssertFalse(PageProcessor.correctsGeometry(s))
             XCTAssertFalse(PageProcessor.forScan(s).steps.map(\.name).contains("geometry"))
         }
+    }
+
+    func test_forScan_rotatePagesUpright_readsAfterTheSeparatorCheck_whenTextCanBeRead() throws {
+        var s = ScanSettings()
+        let scorer = StubScorer(isAvailable: true)
+        XCTAssertFalse(PageProcessor.turnsPagesUpright(s))
+        XCTAssertEqual(PageProcessor.forScan(s, scorer: scorer).steps.map(\.name), ["blank", "separator"])
+        s.document.autoRotate = true
+        XCTAssertTrue(PageProcessor.turnsPagesUpright(s))
+        let processor = PageProcessor.forScan(s, scorer: scorer)
+        XCTAssertEqual(processor.steps.map(\.name), ["blank", "separator", "orientation"])
+        let step = try XCTUnwrap(processor.steps[2] as? OrientationStep)
+        XCTAssertTrue(step.scorer is StubScorer)
+        XCTAssertEqual(step.maxSeconds, OrientationDecision.maxSecondsPerPage)
+        s.document.autoStraighten = true
+        s.adjustments.brightness = 0.25
+        XCTAssertEqual(PageProcessor.forScan(s, scorer: scorer).steps.map(\.name),
+                       ["blank", "geometry", "separator", "orientation", "adjust"])
+        // No text recognition: the pages are not turned.
+        XCTAssertFalse(PageProcessor.forScan(s).steps.map(\.name).contains("orientation"))
+        XCTAssertFalse(PageProcessor.forScan(s, scorer: StubScorer(isAvailable: false)).steps.map(\.name).contains("orientation"))
+        // Pages saved at once, and photos, are never turned unseen.
+        var photos = ScanSettings()
+        photos.intent = .photo
+        var atOnce = ScanSettings()
+        atOnce.documentMultiPage = false
+        for var other in [photos, atOnce] {
+            other.document.autoRotate = true
+            XCTAssertFalse(PageProcessor.turnsPagesUpright(other))
+            XCTAssertFalse(PageProcessor.forScan(other, scorer: scorer).steps.map(\.name).contains("orientation"))
+        }
+    }
+
+    func test_process_handsShouldContinueToStepsThatCanStopPartWay() throws {
+        let step = AskingStep()
+        _ = try PageProcessor(steps: [step]).process([page(blankImage), page(textImage)], shouldContinue: { true })
+        XCTAssertEqual(step.answers, [true, true])
     }
 
     func test_forScan_separatorSheets_areLookedForOnCollectedDocumentPages_whetherOrNotTheStackIsSplit() throws {

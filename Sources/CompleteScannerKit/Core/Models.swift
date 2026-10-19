@@ -399,6 +399,9 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
     public var splitMode: SplitMode = .none
     /// The sheets in each document for `.sheetCount`; read through `DocumentSplitter.clampSheetCount` (1 to 999).
     public var splitSheetCount: Int = 1
+    /// Each page that is upside down or sideways is turned upright when its text makes that clear
+    /// (`OrientationDecision`). One click in the page strip undoes the turn.
+    public var autoRotate: Bool = false
 
     public init() {}
 
@@ -410,6 +413,7 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
         case autoStraighten
         case splitMode
         case splitSheetCount
+        case autoRotate
     }
 }
 
@@ -424,6 +428,7 @@ extension DocumentOptions {
         autoStraighten = container.decodeLenient(forKey: .autoStraighten, default: autoStraighten)
         splitMode = container.decodeLenient(forKey: .splitMode, default: splitMode)
         splitSheetCount = container.decodeLenient(forKey: .splitSheetCount, default: splitSheetCount)
+        autoRotate = container.decodeLenient(forKey: .autoRotate, default: autoRotate)
     }
 }
 
@@ -643,6 +648,9 @@ public struct ScannedPage: Identifiable {
     /// The name the user gave the document this page belongs to (the {label} naming token); nil for
     /// none. A document takes the first name among its pages.
     public var documentLabel: String?
+    /// What turning pages upright did to the page (`OrientationDecision`): the turn it was given, and
+    /// whether the user turned it back; nil when it was not turned.
+    public var upright: UprightTurn?
 
     /// The page was cropped or straightened and the other version is at hand: one click swaps them.
     public var canSwapVersions: Bool { geometry != nil && alternate != nil }
@@ -675,8 +683,9 @@ public struct ScannedPage: Identifiable {
 
     /// This page carrying what the scan recorded about `source`: its side and sheet, the
     /// blank-page check, the user's keep or skip, what crop and straighten did and which version is
-    /// shown, the patch code found on it, and the user's document break and document name. Pixels,
-    /// id, file, rotation and the other version stay this page's. Twin of C# `ScannedPage.CopyMeta`.
+    /// shown, the patch code found on it, the user's document break and document name, and the turn
+    /// that made it upright. Pixels, id, file, rotation and the other version stay this page's. Twin
+    /// of C# `ScannedPage.CopyMeta`.
     public func copyMeta(from source: ScannedPage) -> ScannedPage {
         var page = self
         page.side = source.side
@@ -688,6 +697,7 @@ public struct ScannedPage: Identifiable {
         page.patch = source.patch
         page.documentBreak = source.documentBreak
         page.documentLabel = source.documentLabel
+        page.upright = source.upright
         return page
     }
 
@@ -705,6 +715,7 @@ public struct ScannedPage: Identifiable {
         page.patch = patch
         page.documentBreak = documentBreak
         page.documentLabel = documentLabel
+        page.upright = upright
         page.alternate = PageVersion(image: image, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }
@@ -735,6 +746,7 @@ public struct ScannedPage: Identifiable {
         page.patch = patch
         page.documentBreak = documentBreak
         page.documentLabel = documentLabel
+        page.upright = upright
         page.alternate = PageVersion(image: fileURL == nil ? image : nil, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }
@@ -779,6 +791,51 @@ public struct ScannedPage: Identifiable {
         var page = self
         page.side = side
         page.sheetIndex = sheetIndex
+        return page
+    }
+
+    /// This page with what turning pages upright did to it (nil: not turned); the pixels are not changed.
+    public func withUpright(_ upright: UprightTurn?) -> ScannedPage {
+        var page = self
+        page.upright = upright
+        return page
+    }
+
+    /// This page turned upright by the clean-up stage (`OrientationStep`): its pixels and the other
+    /// version's pixels in memory turned `quarterTurns` quarter turns clockwise, and the turn recorded
+    /// (`upright`). A page not yet spooled is turned for good (its pixels are the page); a spooled
+    /// page's file is turned when it is saved, through its rotation. No turn returns the page as it
+    /// is. Twin of C# `ScannedPage.TurnedUpright`.
+    public func turnedUpright(_ quarterTurns: Int) -> ScannedPage {
+        let turns = ((quarterTurns % 4) + 4) % 4
+        guard turns != 0 else { return self }
+        return turned(turns).withUpright(UprightTurn(quarterTurns: turns))
+    }
+
+    /// One click on a turned page's turn button: the turn is undone (the page goes back the way it
+    /// was scanned), or made again. The pixels in memory turn at once, and the spool file through the
+    /// page's rotation, applied when it is saved, as a turn by hand. A page that was not turned is
+    /// returned as it is. Twin of C# `ScannedPage.WithUprightToggled`.
+    public func withUprightToggled() -> ScannedPage {
+        guard let turn = upright else { return self }
+        let back = turn.undone ? turn.quarterTurns : (4 - turn.quarterTurns) % 4
+        var toggled = turn
+        toggled.undone = !turn.undone
+        return turned(back).withUpright(toggled)
+    }
+
+    /// The page turned `turns` (1 to 3) quarter turns clockwise: the pixels in memory (the other
+    /// version's too); the rotation grows only when a spool file holds an unturned version, this one
+    /// or the other (the rotation turns both files, and pixels in memory ignore it).
+    private func turned(_ turns: Int) -> ScannedPage {
+        var page = withImage(ImagePipeline.rotate(image, quarterTurns: turns), fileURL: fileURL, fullPixelSize: fullPixelSize)
+        page.rotationQuarterTurns = fileURL == nil && alternate?.fileURL == nil
+            ? rotationQuarterTurns
+            : (rotationQuarterTurns + turns) % 4
+        if var version = alternate, let other = version.image {
+            version.image = ImagePipeline.rotate(other, quarterTurns: turns)
+            page = page.withAlternate(version)
+        }
         return page
     }
 }

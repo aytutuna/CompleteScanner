@@ -167,9 +167,21 @@ public sealed class PageItem : INotifyPropertyChanged
     public string GeometryGlyph => Page.ShowsOriginal ? "\uE7A6" : "\uE7A7";
 
     /// <summary>
+    /// "Turned upright 180°", "Turned back as scanned", or null for a page not turned upright
+    /// (<see cref="PageTurns.Caption"/>).
+    /// </summary>
+    public string? UprightCaption => PageTurns.Caption(Page);
+
+    /// <summary>What the page's turn button does ("Undo turn", "Turn upright again"); null when it has none.</summary>
+    public string? UprightToggleLabel => PageTurns.ToggleLabel(Page);
+
+    /// <summary>The turn button's tooltip: what was done to the page, then what a click does.</summary>
+    public string? UprightToolTip => UprightToggleLabel is { } label ? $"{UprightCaption}. {label}." : null;
+
+    /// <summary>
     /// The page's name for screen readers: "Page 3, Sheet 2 · back, Blank, skipped, Straightened
-    /// 1.5°", or "Page 3"; the first page of a document after the first starts with its title
-    /// ("Document 2, Page 3").
+    /// 1.5°, Turned upright 180°", or "Page 3"; the first page of a document after the first starts
+    /// with its title ("Document 2, Page 3").
     /// </summary>
     /// <param name="number">The page's position in the queue, from 1.</param>
     public string AccessibleName(int number)
@@ -178,7 +190,8 @@ public sealed class PageItem : INotifyPropertyChanged
         if (DividerTitle is { } title) name = $"{title}, {name}";
         if (_split?.SeparatorNote is { } note) name = $"{name}, {note}";
         else if (BlankBadge is { } badge) name = $"{name}, {badge}";
-        return GeometryCaption is { } caption ? $"{name}, {caption}" : name;
+        if (GeometryCaption is { } caption) name = $"{name}, {caption}";
+        return UprightCaption is { } turn ? $"{name}, {turn}" : name;
     }
 }
 
@@ -472,6 +485,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     private readonly IReadOnlyList<IScannerBackend> _backends;
     private readonly PresetStore _presetStore;
     private readonly IOcrService _ocrService;
+    /// <summary>Reads pages for "Rotate pages upright" (<see cref="OrientationStep"/>).</summary>
+    private readonly IOrientationScorer _orientation;
     /// <summary>Opens, shows, shares and copies saved files through Windows (a stand-in in tests).</summary>
     private readonly IFileActions _fileActions;
     private readonly Dispatcher _dispatcher;
@@ -554,7 +569,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                         IOcrService? ocrService = null,
                         IFileActions? fileActions = null,
                         ISystemDiagnostics? systemDiagnostics = null,
-                        IPrintService? printService = null)
+                        IPrintService? printService = null,
+                        IOrientationScorer? orientationScorer = null)
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
         var saved = SettingsStore.Load();
@@ -579,6 +595,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         _fileActions = fileActions ?? new WindowsFileActions(MainWindowHandle);
         _system = systemDiagnostics ?? new WindowsSystemDiagnostics();
         _print = printService ?? new WindowsPrintService();
+        _orientation = orientationScorer ?? new WindowsOrientationScorer();
         foreach (var preset in _presetStore.Load()) Presets.Add(preset);
         _renderTimer = new DispatcherTimer(DispatcherPriority.Normal, _dispatcher) { Interval = CanvasRenderDebounce };
         _renderTimer.Tick += (_, _) =>
@@ -1244,7 +1261,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                 : manualSide == PageSide.Back ? ScanArrangement.TurnedOverBacks
                 : manualSide == PageSide.Front ? ScanArrangement.TurnedOverFronts
                 : ScanArrangement.AsScanned;
-            var processor = PageProcessor.ForScan(s, arrangement);
+            var processor = PageProcessor.ForScan(s, arrangement, _orientation);
             var cleaned = await Task.Run(() => processor.Process(scanned, token), token);
             if (_switchGeneration != generation) return;
             token.ThrowIfCancellationRequested();
@@ -1310,6 +1327,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                             StatusMessage = $"Added {n} page{(n == 1 ? "" : "s")} — {ScannedPages.Count} in queue. Scan more or {OutputFormats.SaveTitle(Settings.Format)}.";
                         }
                         StatusMessage += QueueScanNote(processed, s.Document);
+                        if (PageProcessor.TurnsPagesUpright(s) && !_orientation.IsAvailable) StatusMessage += PageTurns.UnavailableNote;
                     }
                     else
                     {
@@ -1915,6 +1933,51 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             var swapped = current.WithVersionsSwapped(other.Shown);
             ScannedPages[index] = new PageItem(swapped, other.Thumbnail, Settings.Document);
             StatusMessage = PageCorrections.SwapNote(swapped, index + 1);
+            NotifyAll();
+        }
+    }
+
+    /// <summary>Whether pages can be turned upright: text recognition can read them (a recognizer language is installed).</summary>
+    public bool CanTurnPagesUpright => _orientation.IsAvailable;
+
+    /// <summary>
+    /// One click on a turned page's turn button: the turn is undone and the page saved the way it was
+    /// scanned; a second click turns it upright again. The preview turns at once, the spool file
+    /// through the page's rotation when it is saved (<see cref="ScannedPage.WithUprightToggled"/>);
+    /// it runs after the swaps and turns clicked before it (<see cref="RotatePage"/>).
+    /// </summary>
+    public Task TogglePageUpright(Guid id)
+    {
+        if (IsBusy) return Task.CompletedTask;
+        var previous = _pageRotateChain;
+        var task = Run();
+        _pageRotateChain = Settled(task);
+        return task;
+
+        async Task Run()
+        {
+            await Settled(previous);
+            var item = ScannedPages.FirstOrDefault(p => p.Page.Id == id);
+            if (item?.Page.Upright is null) return;
+            PageItem toggled;
+            try
+            {
+                toggled = await Task.Run(() => new PageItem(item.Page.WithUprightToggled()));
+            }
+            catch (Exception e)
+            {
+                ErrorMessage = $"The page could not be turned: {e.Message}";
+                NotifyAll();
+                return;
+            }
+            // The page may have been removed, saved or kept meanwhile: the turned pixels take the
+            // page's facts as they are now, with the turn's new state.
+            int index = IndexOfPage(id);
+            if (index < 0) return;
+            var current = ScannedPages[index].Page;
+            var page = toggled.Page.CopyMeta(current).WithUpright(toggled.Page.Upright);
+            ScannedPages[index] = new PageItem(page, toggled.Thumbnail, Settings.Document);
+            StatusMessage = PageTurns.ToggleNote(page, index + 1);
             NotifyAll();
         }
     }

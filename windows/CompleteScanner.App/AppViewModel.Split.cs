@@ -44,8 +44,8 @@ public sealed partial class AppViewModel
 
     /// <summary>
     /// The status after a scan's pages were queued: the blank pages among them (not counting the
-    /// separators), what crop and straighten did, and the separator pages found with the documents
-    /// the queue now makes.
+    /// separators), what crop and straighten did, the pages turned upright, and the separator pages
+    /// found with the documents the queue now makes.
     /// </summary>
     private string QueueScanNote(IReadOnlyList<ScannedPage> added, DocumentOptions options)
     {
@@ -55,7 +55,7 @@ public sealed partial class AppViewModel
         var notSeparators = added.Where(page => !separatorIds.Contains(page.Id)).ToList();
         int separatorsAdded = added.Count - notSeparators.Count;
         return PageFilter.ScanNote(notSeparators, options) + PageCorrections.ScanNote(added)
-               + DocumentSplitter.ScanNote(plan, separatorsAdded);
+               + PageTurns.ScanNote(added) + DocumentSplitter.ScanNote(plan, separatorsAdded);
     }
 
     /// <summary>

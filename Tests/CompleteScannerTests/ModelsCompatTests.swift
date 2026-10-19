@@ -60,6 +60,7 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.document.autoStraighten = true
     settings.document.splitMode = .sheetCount
     settings.document.splitSheetCount = 3
+    settings.document.autoRotate = true
     settings.taskOptions.idCardPaper = .letter
     settings.taskOptions.idCardSaveSidesAsImages = true
     settings.taskOptions.copyCount = 3
@@ -120,7 +121,7 @@ private let presetsJSONBeforePDFSize = """
 private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
     .replacingOccurrences(
         of: "\"documentMultiPage\" : false",
-        with: "\"document\" : {\n        \"autoCrop\" : true,\n        \"autoStraighten\" : true,\n"
+        with: "\"document\" : {\n        \"autoCrop\" : true,\n        \"autoRotate\" : true,\n        \"autoStraighten\" : true,\n"
             + "        \"blankSensitivity\" : \"high\",\n        \"removeBlankPages\" : true,\n"
             + "        \"splitMode\" : \"sheetCount\",\n        \"splitSheetCount\" : 3\n      },\n"
             + "      \"documentMultiPage\" : false")
@@ -693,6 +694,45 @@ final class ModelsCompatTests: XCTestCase {
         copy.document.autoStraighten = false
         XCTAssertTrue(original.document.autoCrop)
         XCTAssertTrue(original.document.autoStraighten)
+        XCTAssertNotEqual(original.document, copy.document)
+    }
+
+    // MARK: Rotate pages upright (CONTRACTS.md, rule 6)
+
+    func test_rotatePagesUpright_isOffByDefault_andInFilesWithoutIt() throws {
+        XCTAssertFalse(ScanSettings().document.autoRotate)
+        let presets = try decode([Preset].self, presetsJSONBeforePDFSize)
+        XCTAssertFalse(presets[0].settings.document.autoRotate)
+        // A "document" object written before it existed keeps its other settings.
+        let older = try decode(ScanSettings.self,
+                               #"{"document": {"removeBlankPages": true, "autoStraighten": true, "splitMode": "blankSheet"}}"#)
+        XCTAssertTrue(older.document.removeBlankPages)
+        XCTAssertTrue(older.document.autoStraighten)
+        XCTAssertEqual(older.document.splitMode, .blankSheet)
+        XCTAssertFalse(older.document.autoRotate)
+    }
+
+    func test_corruptRotatePagesUpright_fallsBackToOff_restIntact() throws {
+        let settings = try decode(ScanSettings.self, #"{"resolution": 150, "document": {"autoStraighten": true, "autoRotate": "yes"}}"#)
+        XCTAssertFalse(settings.document.autoRotate)
+        XCTAssertTrue(settings.document.autoStraighten)
+        XCTAssertEqual(settings.resolution, 150)
+        XCTAssertFalse(try decode(ScanSettings.self, #"{"document": {"autoRotate": null}}"#).document.autoRotate)
+        XCTAssertTrue(try decode(ScanSettings.self, #"{"document": {"autoRotate": true}}"#).document.autoRotate)
+    }
+
+    func test_rotatePagesUpright_roundTrips_andCopyIsIndependent() throws {
+        for rotate in [false, true] {
+            var settings = ScanSettings()
+            settings.document.autoRotate = rotate
+            let back = try JSONDecoder().decode(ScanSettings.self, from: encode(settings))
+            XCTAssertEqual(back.document.autoRotate, rotate)
+            XCTAssertEqual(back.document, settings.document)
+        }
+        let original = nonDefaultSettings()
+        var copy = original
+        copy.document.autoRotate = false
+        XCTAssertTrue(original.document.autoRotate)
         XCTAssertNotEqual(original.document, copy.document)
     }
 

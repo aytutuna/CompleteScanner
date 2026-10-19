@@ -218,6 +218,19 @@ public class ScanTaskTests
     }
 
     [Fact]
+    public void Apply_OnlyTheTwoSidedTaskTurnsPagesUpright()
+    {
+        var current = Customized();
+        current.Document.AutoRotate = true;
+        foreach (var task in ScanTasks.All)
+        {
+            Assert.Equal(task == ScanTask.TwoSided, TaskCatalog.Apply(task, current).Document.AutoRotate);
+        }
+        Assert.True(current.Document.AutoRotate);
+        Assert.True(TaskCatalog.Apply(ScanTask.TwoSided, new ScanSettings()).Document.AutoRotate);
+    }
+
+    [Fact]
     public void TwoSided_IsATwoSidedFeederPdf()
     {
         var definition = TaskCatalog.Definition(ScanTask.TwoSided);

@@ -478,15 +478,22 @@ public sealed class DocumentOptions : IEquatable<DocumentOptions>
     /// <summary>The sheets in each document for <see cref="SplitMode.SheetCount"/>; read through <see cref="DocumentSplitter.ClampSheetCount"/> (1 to 999).</summary>
     public int SplitSheetCount { get; set; } = 1;
 
+    /// <summary>
+    /// Each page that is upside down or sideways is turned upright when its text makes that clear
+    /// (<see cref="OrientationDecision"/>). One click in the page strip undoes the turn. Written
+    /// after the earlier keys.
+    /// </summary>
+    public bool AutoRotate { get; set; } = false;
+
     public DocumentOptions Clone() => (DocumentOptions)MemberwiseClone();
 
     public bool Equals(DocumentOptions? other) =>
         other is not null && RemoveBlankPages == other.RemoveBlankPages && BlankSensitivity == other.BlankSensitivity
         && AutoCrop == other.AutoCrop && AutoStraighten == other.AutoStraighten
-        && SplitMode == other.SplitMode && SplitSheetCount == other.SplitSheetCount;
+        && SplitMode == other.SplitMode && SplitSheetCount == other.SplitSheetCount && AutoRotate == other.AutoRotate;
     public override bool Equals(object? obj) => Equals(obj as DocumentOptions);
     public override int GetHashCode() =>
-        HashCode.Combine(RemoveBlankPages, BlankSensitivity, AutoCrop, AutoStraighten, SplitMode, SplitSheetCount);
+        HashCode.Combine(RemoveBlankPages, BlankSensitivity, AutoCrop, AutoStraighten, SplitMode, SplitSheetCount, AutoRotate);
 }
 
 /// <summary>
@@ -730,6 +737,12 @@ public sealed class ScannedPage
     /// </summary>
     public string? DocumentLabel { get; init; }
 
+    /// <summary>
+    /// What turning pages upright did to the page (<see cref="OrientationDecision"/>): the turn it
+    /// was given, and whether the user turned it back; null when it was not turned.
+    /// </summary>
+    public UprightTurn? Upright { get; init; }
+
     public ScannedPage(RgbaImage image, int dpi, ColorMode colorMode, Guid? id = null,
                        DateTime? createdAt = null, string? filePath = null, SizeD? fullPixelSize = null)
     {
@@ -761,8 +774,9 @@ public sealed class ScannedPage
     /// <summary>
     /// This page carrying what the scan recorded about <paramref name="source"/>: its side and
     /// sheet, the blank-page check, the user's keep or skip, what crop and straighten did and
-    /// which version is shown, the patch code found on it, and the user's document break and
-    /// document name. Pixels, id, file, rotation and the other version stay this page's.
+    /// which version is shown, the patch code found on it, the user's document break and
+    /// document name, and the turn that made it upright. Pixels, id, file, rotation and the other
+    /// version stay this page's.
     /// </summary>
     public ScannedPage CopyMeta(ScannedPage source) =>
         new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
@@ -777,6 +791,7 @@ public sealed class ScannedPage
             Patch = source.Patch,
             DocumentBreak = source.DocumentBreak,
             DocumentLabel = source.DocumentLabel,
+            Upright = source.Upright,
             Alternate = Alternate,
         };
 
@@ -794,6 +809,7 @@ public sealed class ScannedPage
             Patch = Patch,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
+            Upright = Upright,
             Alternate = Alternate,
         };
 
@@ -811,6 +827,7 @@ public sealed class ScannedPage
             Patch = Patch,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
+            Upright = Upright,
             Alternate = Alternate,
         };
 
@@ -828,6 +845,7 @@ public sealed class ScannedPage
             Patch = Patch,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
+            Upright = Upright,
             Alternate = Alternate,
         };
 
@@ -845,6 +863,7 @@ public sealed class ScannedPage
             Patch = patch,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
+            Upright = Upright,
             Alternate = Alternate,
         };
 
@@ -862,6 +881,7 @@ public sealed class ScannedPage
             Patch = Patch,
             DocumentBreak = documentBreak,
             DocumentLabel = DocumentLabel,
+            Upright = Upright,
             Alternate = Alternate,
         };
 
@@ -879,6 +899,7 @@ public sealed class ScannedPage
             Patch = Patch,
             DocumentBreak = DocumentBreak,
             DocumentLabel = documentLabel,
+            Upright = Upright,
             Alternate = Alternate,
         };
 
@@ -899,8 +920,67 @@ public sealed class ScannedPage
             Patch = Patch,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
+            Upright = Upright,
             Alternate = new PageVersion(Image, FilePath, FullPixelSize),
         };
+
+    /// <summary>This page with what turning pages upright did to it (null: not turned); the pixels are not changed.</summary>
+    public ScannedPage WithUpright(UprightTurn? upright) =>
+        new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = Side,
+            SheetIndex = SheetIndex,
+            Blank = Blank,
+            Inclusion = Inclusion,
+            Geometry = Geometry,
+            ShowsOriginal = ShowsOriginal,
+            Patch = Patch,
+            DocumentBreak = DocumentBreak,
+            DocumentLabel = DocumentLabel,
+            Upright = upright,
+            Alternate = Alternate,
+        };
+
+    /// <summary>
+    /// This page turned upright by the clean-up stage (<see cref="OrientationStep"/>): its pixels and
+    /// the other version's pixels in memory turned <paramref name="quarterTurns"/> quarter turns
+    /// clockwise, and the turn recorded (<see cref="Upright"/>). A page not yet spooled is turned for
+    /// good (its pixels are the page); a spooled page's file is turned when it is saved, through its
+    /// rotation. No turn returns the page as it is.
+    /// </summary>
+    public ScannedPage TurnedUpright(int quarterTurns)
+    {
+        int turns = ((quarterTurns % 4) + 4) % 4;
+        return turns == 0 ? this : Turned(turns).WithUpright(new UprightTurn(turns));
+    }
+
+    /// <summary>
+    /// One click on a turned page's turn button: the turn is undone (the page goes back the way it
+    /// was scanned), or made again. The pixels in memory turn at once, and the spool file through
+    /// the page's rotation, applied when it is saved, as a turn by hand. A page that was not turned
+    /// is returned as it is.
+    /// </summary>
+    public ScannedPage WithUprightToggled()
+    {
+        if (Upright is not { } turn) return this;
+        int back = turn.Undone ? turn.QuarterTurns : (4 - turn.QuarterTurns) % 4;
+        return Turned(back).WithUpright(turn with { Undone = !turn.Undone });
+    }
+
+    /// <summary>
+    /// The page turned <paramref name="turns"/> (1 to 3) quarter turns clockwise: the pixels in memory
+    /// (the other version's too); the rotation grows only when a spool file holds an unturned version,
+    /// this one or the other (the rotation turns both files, and pixels in memory ignore it).
+    /// </summary>
+    private ScannedPage Turned(int turns) =>
+        new ScannedPage(ImagePipeline.Rotate(Image, turns), Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        {
+            RotationQuarterTurns = FilePath is null && Alternate?.FilePath is null
+                ? RotationQuarterTurns
+                : (RotationQuarterTurns + turns) % 4,
+            Alternate = Alternate is { Image: { } other } version ? version with { Image = ImagePipeline.Rotate(other, turns) } : Alternate,
+        }.CopyMeta(this);
 
     /// <summary>This page with another version not shown (null: none).</summary>
     public ScannedPage WithAlternate(PageVersion? alternate) =>
@@ -916,6 +996,7 @@ public sealed class ScannedPage
             Patch = Patch,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
+            Upright = Upright,
             Alternate = alternate,
         };
 
@@ -941,6 +1022,7 @@ public sealed class ScannedPage
             Patch = Patch,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
+            Upright = Upright,
             Alternate = new PageVersion(FilePath is null ? Image : null, FilePath, FullPixelSize),
         };
     }
