@@ -6,6 +6,16 @@ using CompleteScanner.Core;
 namespace CompleteScanner.App.Services;
 
 /// <summary>
+/// An in-place rewrite failed after the original was already gone; the finished new
+/// version could not be moved into place either and was left at <see cref="TempPath"/>.
+/// </summary>
+public sealed class TempFileKeptException(string tempPath, Exception inner)
+    : IOException($"The new version was kept as {tempPath}.", inner)
+{
+    public string TempPath { get; } = tempPath;
+}
+
+/// <summary>
 /// RgbaImage ↔ WPF bitmap conversion plus file export with DPI metadata — the Windows
 /// counterpart of Sources/CompleteScannerKit/Output/ImageExporter.swift (which uses ImageIO).
 /// Uses only WPF's built-in encoders, so no package dependencies.
@@ -66,6 +76,20 @@ public static class WpfImageCodec
     /// </summary>
     public static void Save(RgbaImage image, string path, OutputFormat format, int dpi, double jpegQuality)
     {
+        var encoder = CreateEncoder(image, format, dpi, jpegQuality);
+        try
+        {
+            using var stream = File.Create(path);
+            encoder.Save(stream);
+        }
+        catch (Exception e) when (e is not ScanException)
+        {
+            throw ScanException.ExportFailed($"Could not write {Path.GetFileName(path)}: {e.Message}");
+        }
+    }
+
+    private static BitmapEncoder CreateEncoder(RgbaImage image, OutputFormat format, int dpi, double jpegQuality)
+    {
         BitmapEncoder encoder = format switch
         {
             OutputFormat.Jpeg => new JpegBitmapEncoder
@@ -77,16 +101,125 @@ public static class WpfImageCodec
             _ => throw ScanException.Unsupported("Use PdfBuilder to write PDF files."),
         };
         encoder.Frames.Add(BitmapFrame.Create(WithDpi(image, dpi)));
+        return encoder;
+    }
+
+    /// <summary>
+    /// Export a NEW file: <see cref="Save"/> into a hidden temporary file in the same folder,
+    /// then move it to <paramref name="path"/> — or, when that name was taken meanwhile, to
+    /// the next free " 2", " 3", … name. An existing file is never replaced, and a failed
+    /// or interrupted write never leaves a truncated file under the final name.
+    /// Returns the path actually written.
+    /// </summary>
+    public static string SaveAsNew(RgbaImage image, string path, OutputFormat format, int dpi,
+                                   double jpegQuality)
+    {
+        var encoder = CreateEncoder(image, format, dpi, jpegQuality);
+        string tmp = WriteTempFile(path, encoder.Save);
         try
         {
-            using var stream = File.Create(path);
-            encoder.Save(stream);
+            string written = NamingTemplate.MoveToFreePath(tmp, path);
+            SetHidden(written, false); // in case clearing the temp file's attribute failed
+            return written;
         }
-        catch (Exception e) when (e is not ScanException)
+        catch (Exception e)
         {
+            try { File.Delete(tmp); } catch { /* best effort */ }
             throw ScanException.ExportFailed($"Could not write {Path.GetFileName(path)}: {e.Message}");
         }
     }
+
+    /// <summary>
+    /// Rewrite an existing file in place: run <paramref name="write"/> into a hidden temporary
+    /// file in the same folder, then swap it over <paramref name="path"/> atomically. A failed
+    /// write removes the temporary file and leaves the original untouched.
+    /// </summary>
+    public static void ReplaceAtomically(string path, Action<Stream> write) =>
+        ReplaceAtomically(path, write, (tmp, target) =>
+            File.Replace(tmp, target, destinationBackupFileName: null, ignoreMetadataErrors: true));
+
+    /// <param name="replace">The swap step (File.Replace in production; replaceable for tests).</param>
+    internal static void ReplaceAtomically(string path, Action<Stream> write, Action<string, string> replace)
+    {
+        string tmp = WriteTempFile(path, write);
+        try
+        {
+            if (File.Exists(path)) replace(tmp, path);
+            else File.Move(tmp, path);
+        }
+        catch (Exception e)
+        {
+            // ReplaceFile can fail AFTER it has removed the original (it then reports
+            // ERROR_UNABLE_TO_MOVE_REPLACEMENT): the finished temporary file is the only copy
+            // left, so move it into place instead of deleting it.
+            if (!File.Exists(path) && File.Exists(tmp))
+            {
+                try
+                {
+                    NamingTemplate.MoveToFreePath(tmp, path);
+                    return;
+                }
+                catch
+                {
+                    // Keep it (visible, so the stale-temp sweep leaves it alone) and say where.
+                    throw new TempFileKeptException(tmp, e);
+                }
+            }
+            try { File.Delete(tmp); } catch { /* best effort */ }
+            throw ScanException.ExportFailed($"Could not write {Path.GetFileName(path)}: {e.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Write a ".{guid}.{ext}.tmp" file beside <paramref name="path"/>. It carries the Hidden
+    /// attribute while it is being written (like PdfBuilder's temporary PDF), so a write cut
+    /// off by a crash leaves a hidden orphan that <see cref="SavedFiles.SweepStaleTempFiles"/>
+    /// can recognize; the attribute is cleared once the file is complete, before any move.
+    /// </summary>
+    private static string WriteTempFile(string path, Action<Stream> write)
+    {
+        string directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        string tmp = Path.Combine(directory, $".{Guid.NewGuid()}{Path.GetExtension(path)}.tmp");
+        try
+        {
+            using (var stream = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                SetHidden(tmp, true);
+                write(stream);
+            }
+            // Clear Hidden first: moves and replaces carry the source's attributes along.
+            SetHidden(tmp, false);
+            return tmp;
+        }
+        catch (Exception e)
+        {
+            try { File.Delete(tmp); } catch { /* best effort */ }
+            if (e is ScanException) throw;
+            throw ScanException.ExportFailed($"Could not write {Path.GetFileName(path)}: {e.Message}");
+        }
+    }
+
+    /// <summary>Best-effort toggle of the Hidden attribute; a temp file left visible is only cosmetic.</summary>
+    private static void SetHidden(string path, bool hidden)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(path);
+            var updated = hidden ? attributes | FileAttributes.Hidden : attributes & ~FileAttributes.Hidden;
+            if (updated != attributes) File.SetAttributes(path, updated);
+        }
+        catch
+        {
+            // best effort
+        }
+    }
+
+    /// <summary>
+    /// A small display bitmap (long side at most <paramref name="maxSide"/>), frozen so it can
+    /// be built on a worker thread and handed to the UI.
+    /// </summary>
+    public static BitmapSource ToThumbnail(RgbaImage image, int maxSide) =>
+        ToBitmapSource(ScanHistory.MakePreview(image, maxSide));
 
     /// <summary>JPEG-encode for embedding into a PDF page (see Core.PdfBuilder).</summary>
     public static byte[] EncodeJpeg(RgbaImage image, int dpi, double quality = 0.9)

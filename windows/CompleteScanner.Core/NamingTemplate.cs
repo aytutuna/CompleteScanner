@@ -76,6 +76,42 @@ public sealed partial class NamingTemplate
         return candidate;
     }
 
+    /// <summary>Give up after this many names that were taken between the check and the move.</summary>
+    private const int MaxMoveAttempts = 1000;
+
+    /// <summary>
+    /// Move <paramref name="sourceFile"/> to <paramref name="path"/> without ever replacing an
+    /// existing file. <see cref="UniquePath"/> only checks a name; another writer can take it
+    /// before the file lands. Here the existence check and the move are one rename that fails
+    /// when the name is taken, and the next free " 2", " 3", … name is tried instead.
+    /// Returns the path the file was moved to.
+    /// </summary>
+    public static string MoveToFreePath(string sourceFile, string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        string directory = Path.GetDirectoryName(fullPath)!;
+        string baseName = Path.GetFileNameWithoutExtension(fullPath);
+        string extension = Path.GetExtension(fullPath);
+        string candidate = fullPath;
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(sourceFile, candidate, overwrite: false);
+                return candidate;
+            }
+            catch (IOException) when (attempt < MaxMoveAttempts && File.Exists(candidate))
+            {
+                int suffix = 2;
+                do
+                {
+                    candidate = Path.Combine(directory, $"{baseName} {suffix}{extension}");
+                    suffix += 1;
+                } while (File.Exists(candidate));
+            }
+        }
+    }
+
     /// <summary>
     /// Make the name safe for the filesystem: no path separators or Windows-reserved
     /// characters, no leading/trailing whitespace, no doubled spaces, never empty.

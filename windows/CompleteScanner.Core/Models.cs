@@ -35,6 +35,17 @@ public enum OutputFormat
     Tiff,
 }
 
+/// <summary>
+/// The app's color scheme: follow Windows, or force light or dark. An app preference, kept
+/// apart from <see cref="ScanSettings"/> so that applying a preset never changes it.
+/// </summary>
+public enum AppAppearance
+{
+    System,
+    Light,
+    Dark,
+}
+
 public static class ModelLabels
 {
     public static string Label(this ScanIntent intent) => intent switch
@@ -89,7 +100,7 @@ public sealed class AdjustmentSettings : IEquatable<AdjustmentSettings>
     public double Contrast { get; set; } = 1.0;
     /// <summary>0 ... 2, neutral 1</summary>
     public double Saturation { get; set; } = 1.0;
-    /// <summary>0 ... 2, neutral 0</summary>
+    /// <summary>-2 ... 2, neutral 0; positive sharpens, negative softens (Gaussian blur)</summary>
     public double Sharpness { get; set; } = 0.0;
     /// <summary>Reduce moiré from scanning printed material.</summary>
     public bool Descreen { get; set; } = false;
@@ -147,6 +158,11 @@ public sealed class ScanSettings
     public bool DocumentMultiPage { get; set; } = true;
     /// <summary>Run OCR and embed an invisible text layer in saved PDFs.</summary>
     public bool PdfSearchable { get; set; } = true;
+    /// <summary>
+    /// No longer used: recognition is universal (see <see cref="IOcrService"/>). Kept so
+    /// settings and preset files written by older versions still round-trip unchanged.
+    /// </summary>
+    [Obsolete("OCR recognizes every supported language automatically; this setting is ignored.")]
     public List<string> OcrLanguages { get; set; } = ["en-US"];
 
     public AdjustmentSettings Adjustments { get; set; } = new();
@@ -157,7 +173,9 @@ public sealed class ScanSettings
     public ScanSettings Clone()
     {
         var copy = (ScanSettings)MemberwiseClone();
+#pragma warning disable CS0618 // deep-copy the legacy field so the clone stays independent
         copy.OcrLanguages = [.. OcrLanguages];
+#pragma warning restore CS0618
         copy.Adjustments = Adjustments.Clone();
         return copy;
     }
@@ -186,6 +204,12 @@ public sealed class ScannedPage
     /// so physical page size stays correct even if only the preview is available.
     /// </summary>
     public SizeD? FullPixelSize { get; }
+    /// <summary>
+    /// User-requested rotation applied at save time (0...3 quarter turns clockwise).
+    /// <see cref="Image"/> already shows the rotation; the full-resolution original (spool
+    /// file) stays unrotated until <see cref="PdfBuilder.PreparePage"/> applies it.
+    /// </summary>
+    public int RotationQuarterTurns { get; set; } = 0;
 
     public ScannedPage(RgbaImage image, int dpi, ColorMode colorMode, Guid? id = null,
                        DateTime? createdAt = null, string? filePath = null, SizeD? fullPixelSize = null)
@@ -198,6 +222,17 @@ public sealed class ScannedPage
         FilePath = filePath;
         FullPixelSize = fullPixelSize;
     }
+
+    /// <summary>
+    /// The page turned 90° clockwise: the in-memory image is rotated right away (thumbnails
+    /// follow it) while the spool file stays untouched and the accumulated turn count is
+    /// applied at save time. Port of AppState.rotatePage(id:).
+    /// </summary>
+    public ScannedPage RotatedClockwise() =>
+        new(ImagePipeline.Rotate(Image, 1), Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        {
+            RotationQuarterTurns = (RotationQuarterTurns + 1) % 4,
+        };
 }
 
 /// <summary>
@@ -266,16 +301,102 @@ public sealed class DetectedPhoto
     public DetectedPhotoRegion Region { get; }
     public RgbaImage Image { get; }
     public int Dpi { get; }
+    /// <summary>
+    /// The scanned page this photo was extracted from — a multi-sheet (ADF) photo scan
+    /// produces photos from several pages, and manual re-cropping must use the right one.
+    /// </summary>
+    public Guid? SourcePageId { get; }
     public bool Included { get; set; } = true;
     /// <summary>Extra user-requested rotation applied at save time (0...3 quarter turns clockwise).</summary>
     public int RotationQuarterTurns { get; set; } = 0;
 
-    public DetectedPhoto(DetectedPhotoRegion region, RgbaImage image, int dpi, Guid? id = null)
+    public DetectedPhoto(DetectedPhotoRegion region, RgbaImage image, int dpi, Guid? id = null,
+                         Guid? sourcePageId = null)
     {
         Id = id ?? Guid.NewGuid();
         Region = region;
         Image = image;
         Dpi = dpi;
+        SourcePageId = sourcePageId;
+    }
+
+    /// <summary>
+    /// Manual crop correction: the same photo (id, source page, inclusion, rotation) with a
+    /// user-adjusted region and its re-extracted pixels (see
+    /// <see cref="PhotoDetector.ExtractPhoto"/>). Port of AppState.recropPhoto(id:region:).
+    /// </summary>
+    public DetectedPhoto Recropped(DetectedPhotoRegion region, RgbaImage image) =>
+        new(region, image, Dpi, Id, SourcePageId)
+        {
+            Included = Included,
+            RotationQuarterTurns = RotationQuarterTurns,
+        };
+}
+
+/// <summary>
+/// One entry in the session's scan history ("Scans" tab): a small preview of every scan
+/// as it happened, newest first.
+/// </summary>
+public sealed class ScanHistoryEntry
+{
+    public Guid Id { get; }
+    public DateTime Date { get; }
+    public ScanIntent Intent { get; }
+    public int Dpi { get; }
+    /// <summary>Downsampled preview (≤ ~700 px long side) — history never retains full pixels.</summary>
+    public RgbaImage Thumbnail { get; }
+    /// <summary>True pixel dimensions of the original scan.</summary>
+    public SizeD PixelSize { get; }
+
+    public ScanHistoryEntry(DateTime date, ScanIntent intent, int dpi, RgbaImage thumbnail,
+                            SizeD pixelSize, Guid? id = null)
+    {
+        Id = id ?? Guid.NewGuid();
+        Date = date;
+        Intent = intent;
+        Dpi = dpi;
+        Thumbnail = thumbnail;
+        PixelSize = pixelSize;
+    }
+}
+
+/// <summary>
+/// The scan-history bookkeeping from AppState's scan handler, extracted so every shell
+/// records history identically.
+/// </summary>
+public static class ScanHistory
+{
+    /// <summary>Long side of a history thumbnail, in pixels.</summary>
+    public const int ThumbnailMaxSide = 700;
+    /// <summary>Entries kept; older ones are dropped.</summary>
+    public const int MaxEntries = 50;
+
+    /// <summary>One entry per raw (unadjusted, unspooled) scanned page, in scan order.</summary>
+    public static List<ScanHistoryEntry> MakeEntries(IReadOnlyList<ScannedPage> rawPages,
+                                                     ScanIntent intent, DateTime date) =>
+        rawPages.Select(page => new ScanHistoryEntry(
+            date, intent, page.Dpi, MakePreview(page.Image, ThumbnailMaxSide),
+            new SizeD(page.Image.Width, page.Image.Height))).ToList();
+
+    /// <summary>
+    /// Insert a batch at the front of <paramref name="history"/> (newest first, so the last
+    /// page of the batch leads) and drop everything beyond <see cref="MaxEntries"/>.
+    /// </summary>
+    public static void Record(List<ScanHistoryEntry> history, IReadOnlyList<ScanHistoryEntry> entries)
+    {
+        history.InsertRange(0, entries.Reverse());
+        if (history.Count > MaxEntries)
+            history.RemoveRange(MaxEntries, history.Count - MaxEntries);
+    }
+
+    /// <summary>Downscale so the long side is at most <paramref name="maxSide"/>; smaller images pass through.</summary>
+    public static RgbaImage MakePreview(RgbaImage image, int maxSide)
+    {
+        int longSide = Math.Max(image.Width, image.Height);
+        if (longSide <= maxSide) return image;
+        double scale = (double)maxSide / longSide;
+        return image.Resized(Math.Max(1, (int)(image.Width * scale)),
+                             Math.Max(1, (int)(image.Height * scale)));
     }
 }
 

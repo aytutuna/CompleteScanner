@@ -123,18 +123,27 @@ public sealed class RgbaImage
     }
 
     /// <summary>
-    /// Extract a rotated rectangle as an upright image: output pixel (u, v) in the
-    /// rectangle's local frame samples the source at
+    /// Extract a rotated rectangle as an upright image: the center of output pixel (u, v)
+    /// in the rectangle's local frame samples the source at
     ///   ix = center.X + u*cos(a) - v*sin(a)
     ///   iy = center.Y + u*sin(a) + v*cos(a)
     /// — exactly the <see cref="DetectedPhotoRegion"/> corner convention (top-left origin,
     /// y down, positive angle clockwise on screen). Samples bilinearly; areas outside the
     /// source are white, matching the Swift extractor's white fill.
     /// </summary>
-    public RgbaImage? ExtractRotated(PointD center, SizeD size, double angleDegrees)
+    public RgbaImage? ExtractRotated(PointD center, SizeD size, double angleDegrees) =>
+        ExtractRotated(center, size, angleDegrees, 255, 255, 255);
+
+    /// <summary>
+    /// <see cref="ExtractRotated(PointD, SizeD, double)"/> with a custom (opaque) color for
+    /// areas outside the source.
+    /// </summary>
+    public RgbaImage? ExtractRotated(PointD center, SizeD size, double angleDegrees,
+                                     byte fillR, byte fillG, byte fillB)
     {
-        int outW = (int)Math.Round(size.Width);
-        int outH = (int)Math.Round(size.Height);
+        // Swift's .rounded() rounds halves away from zero (300.5 -> 301), not to even.
+        int outW = (int)Math.Round(size.Width, MidpointRounding.AwayFromZero);
+        int outH = (int)Math.Round(size.Height, MidpointRounding.AwayFromZero);
         if (outW <= 0 || outH <= 0) return null;
 
         double a = angleDegrees * Math.PI / 180;
@@ -148,7 +157,10 @@ public sealed class RgbaImage
                 double u = ox - (outW - 1) / 2.0;
                 double sx = center.X + u * cos - v * sin;
                 double sy = center.Y + u * sin + v * cos;
-                SampleBilinear(sx, sy, output, (oy * outW + ox) * 4, 255, 255, 255);
+                // Region coordinates are continuous (pixel i spans [i, i+1), center i + 0.5);
+                // SampleBilinear indexes pixel centers, hence the half-pixel shift — the same
+                // pixel-center mapping CG applies when the Swift extractor draws the source.
+                SampleBilinear(sx - 0.5, sy - 0.5, output, (oy * outW + ox) * 4, fillR, fillG, fillB);
             }
         }
         return new RgbaImage(outW, outH, output);

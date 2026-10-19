@@ -114,15 +114,25 @@ public sealed class EsclScannerBackend : IScannerBackend
             MakeAndModel = FirstLocal(xml, "MakeAndModel")?.Value,
             HasAdf = FirstLocal(xml, "Adf") is not null,
         };
+        // Resolutions arrive as discrete values and/or min/max/step ranges; ResolutionList
+        // applies the same accuracy rules as the macOS backend (eSCL reports no optical
+        // resolution, so nothing is dropped as interpolated).
+        var supported = new HashSet<int>();
         foreach (var res in xml.Descendants().Where(e => e.Name.LocalName == "DiscreteResolution"))
         {
-            if (int.TryParse(FirstLocal(res, "XResolution")?.Value, out int dpi)
-                && !caps.Resolutions.Contains(dpi))
+            if (int.TryParse(FirstLocal(res, "XResolution")?.Value, out int dpi)) supported.Add(dpi);
+        }
+        foreach (var range in xml.Descendants().Where(e => e.Name.LocalName == "XResolutionRange"))
+        {
+            if (int.TryParse(FirstLocal(range, "Min")?.Value, out int min)
+                && int.TryParse(FirstLocal(range, "Max")?.Value, out int max)
+                && min > 0 && max >= min)
             {
-                caps.Resolutions.Add(dpi);
+                int step = int.TryParse(FirstLocal(range, "Step")?.Value, out int s) ? s : 1;
+                supported.UnionWith(ResolutionList.ExpandRange(min, max, step));
             }
         }
-        caps.Resolutions.Sort();
+        caps.Resolutions = ResolutionList.Build(preferred: null, supported, nativeResolution: 0);
         // Platen dimensions arrive in 1/300ths of an inch.
         if (FirstLocal(xml, "Platen") is { } platen)
         {

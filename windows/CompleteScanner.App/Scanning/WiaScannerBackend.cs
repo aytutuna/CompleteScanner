@@ -13,7 +13,7 @@ namespace CompleteScanner.App.Scanning;
 /// or scanner attached. The WIA property IDs and flow follow the documented WIA Automation
 /// model (DeviceManager → DeviceInfos → Connect → Items → Transfer), but expect to iterate
 /// against a real device. Known scaffold limitations:
-///   - devices are enumerated once per StartBrowsing (WIA hot-plug events are not wired up);
+///   - hot-plug is detected by polling (see the watchdog below), not WIA device events;
 ///   - Transfer() is synchronous with no progress callbacks — progress is coarse;
 ///   - CancelScan() cannot abort an in-flight WIA transfer, it only discards the result.
 /// </summary>
@@ -32,6 +32,7 @@ public sealed class WiaScannerBackend : IScannerBackend
     internal const string HorizontalBedSize = "3074";   // thousandths of an inch
     internal const string VerticalBedSize = "3075";
     internal const string DocumentHandlingSelect = "3088"; // 1 = FEEDER, 2 = FLATBED
+    internal const string OpticalXResolution = "3090";
     internal const int HandlingFeeder = 1;
     internal const int HandlingFlatbed = 2;
 
@@ -46,32 +47,142 @@ public sealed class WiaScannerBackend : IScannerBackend
 
     internal const uint PaperEmptyHResult = 0x80210003;  // WIA_ERROR_PAPER_EMPTY
 
+    /// <summary>First delay of the hot-plug watchdog; doubled after each fruitless poll.</summary>
+    internal static readonly TimeSpan InitialRebrowseDelay = TimeSpan.FromSeconds(10);
+    /// <summary>Upper bound of the watchdog backoff.</summary>
+    internal static readonly TimeSpan MaxRebrowseDelay = TimeSpan.FromSeconds(60);
+
+    private SynchronizationContext? _context;
+    private CancellationTokenSource? _watchdog;
+    /// <summary>Bumped by every Start/StopBrowsing; enumeration results from an older generation are dropped.</summary>
+    private int _browseGeneration;
+    private bool _refreshing;
+
+    /// <summary>
+    /// Enumerate once now, then keep re-enumerating so the list follows the hardware without
+    /// a restart: a scanner plugged in later appears, and an unplugged one disappears (the
+    /// macOS backend gets both from ICDeviceBrowser add/remove callbacks; WIA device events
+    /// are not wired up here, so this polls). While no scanner is listed the poll starts at
+    /// 10 s and doubles up to 60 s; while one is listed it runs every 60 s. A session that
+    /// finds its device gone also triggers an immediate re-enumeration. Enumeration runs on
+    /// a background STA thread, so the UI thread never blocks on WIA.
+    /// </summary>
     public void StartBrowsing()
     {
+        if (_watchdog is not null) return;
+        _context = SynchronizationContext.Current;
+        _browseGeneration++;
+        // An enumeration still running from before a Stop is stale; don't let it block this one.
+        _refreshing = false;
+        _watchdog = new CancellationTokenSource();
         RefreshDevices();
+        _ = RunWatchdog(_watchdog.Token);
     }
 
     public void StopBrowsing()
     {
+        _watchdog?.Cancel();
+        _watchdog?.Dispose();
+        _watchdog = null;
+        _browseGeneration++;
         if (_devices.Count == 0) return;
         _devices.Clear();
         DevicesChanged?.Invoke();
     }
 
-    /// <summary>Re-enumerate WIA scanners (call again to pick up newly plugged devices).</summary>
+    private async Task RunWatchdog(CancellationToken token)
+    {
+        var delay = InitialRebrowseDelay;
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(delay, token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            Post(() =>
+            {
+                if (token.IsCancellationRequested) return;
+                RefreshDevices();
+            });
+            // Read the count without marshaling: a stale value only shifts the next delay.
+            delay = NextRebrowseDelay(delay, devicesListed: _devices.Count > 0);
+        }
+    }
+
+    /// <summary>
+    /// The watchdog's next poll interval: backing off (doubling up to the ceiling) while no
+    /// scanner is listed, and the ceiling while one is — slow enough to stay cheap, fast
+    /// enough that an unplugged scanner leaves the list.
+    /// </summary>
+    internal static TimeSpan NextRebrowseDelay(TimeSpan current, bool devicesListed) =>
+        devicesListed
+            ? MaxRebrowseDelay
+            : TimeSpan.FromTicks(Math.Min(current.Ticks * 2, MaxRebrowseDelay.Ticks));
+
+    /// <summary>A session found its device missing: re-enumerate now (callable from any thread).</summary>
+    internal void DeviceLost() => Post(() =>
+    {
+        if (_watchdog is not null) RefreshDevices();
+    });
+
+    /// <summary>
+    /// Re-enumerate WIA scanners in the background (call again to pick up newly plugged
+    /// devices). Overlapping calls are coalesced.
+    /// </summary>
     public void RefreshDevices()
     {
+        if (_refreshing) return;
+        _refreshing = true;
+        int generation = _browseGeneration;
+        var thread = new Thread(() =>
+        {
+            var found = EnumerateScanners();
+            Post(() =>
+            {
+                _refreshing = false;
+                // A Stop/Start since this enumeration began makes its result stale.
+                if (generation != _browseGeneration) return;
+                ReplaceDevices(found);
+            });
+        })
+        {
+            IsBackground = true,
+            Name = "WIA enumeration",
+        };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+    }
+
+    /// <summary>Run on the thread that started browsing (the UI thread in the app).</summary>
+    private void Post(Action action)
+    {
+        if (_context is { } context) context.Post(_ => action(), null);
+        else lock (_devices) action();
+    }
+
+    private static List<ScannerInfo> EnumerateScanners()
+    {
         var found = new List<ScannerInfo>();
+        // The watchdog may enumerate for hours: release every COM object deterministically
+        // rather than leaving them to the finalizer of a thread that has already exited.
+        var comObjects = new List<object>();
         try
         {
             var managerType = Type.GetTypeFromProgID("WIA.DeviceManager");
-            if (managerType is null) { ReplaceDevices(found); return; }
+            if (managerType is null) return found;
             dynamic manager = Activator.CreateInstance(managerType)!;
+            comObjects.Add(manager);
             dynamic infos = manager.DeviceInfos;
+            comObjects.Add(infos);
             int count = infos.Count;
             for (int i = 1; i <= count; i++) // WIA collections are 1-based
             {
                 dynamic info = infos[i];
+                comObjects.Add(info);
                 if ((int)info.Type != ScannerDeviceType) continue;
                 string id = (string)info.DeviceID;
                 string name = TryGetProperty(info.Properties, "Name") as string ?? "Scanner";
@@ -82,7 +193,21 @@ public sealed class WiaScannerBackend : IScannerBackend
         {
             // WIA not available (service disabled, no devices): expose nothing.
         }
-        ReplaceDevices(found);
+        finally
+        {
+            for (int i = comObjects.Count - 1; i >= 0; i--)
+            {
+                try
+                {
+                    if (Marshal.IsComObject(comObjects[i])) Marshal.FinalReleaseComObject(comObjects[i]);
+                }
+                catch
+                {
+                    // best effort
+                }
+            }
+        }
+        return found;
     }
 
     private void ReplaceDevices(List<ScannerInfo> found)
@@ -98,7 +223,7 @@ public sealed class WiaScannerBackend : IScannerBackend
         var info = _devices.FirstOrDefault(d => d.Id == deviceId)
             ?? throw ScanException.DeviceUnavailable("The selected scanner is not connected.");
         string wiaId = deviceId["wia:".Length..];
-        return Task.FromResult<IScannerSession>(new WiaScannerSession(info, wiaId));
+        return Task.FromResult<IScannerSession>(new WiaScannerSession(info, wiaId, DeviceLost));
     }
 
     internal static object? TryGetProperty(dynamic properties, string idOrName)
@@ -127,7 +252,8 @@ public sealed class WiaScannerBackend : IScannerBackend
     }
 }
 
-internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId) : IScannerSession
+/// <param name="deviceLost">Called (on the WIA thread) when the device is no longer connected.</param>
+internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Action deviceLost) : IScannerSession
 {
     public ScannerInfo Info { get; } = info;
     public Action<ScanProgress>? ProgressHandler { get; set; }
@@ -142,16 +268,18 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId) : 
         try
         {
             // Physical bed size arrives in thousandths of an inch.
-            if (ToInt(WiaScannerBackend.TryGetProperty(device.Properties, WiaScannerBackend.HorizontalBedSize)) is { } bw
-                && ToInt(WiaScannerBackend.TryGetProperty(device.Properties, WiaScannerBackend.VerticalBedSize)) is { } bh
-                && bw > 0 && bh > 0)
+            object? bedWidth = WiaScannerBackend.TryGetProperty(device.Properties, WiaScannerBackend.HorizontalBedSize);
+            object? bedHeight = WiaScannerBackend.TryGetProperty(device.Properties, WiaScannerBackend.VerticalBedSize);
+            if (ToInt(bedWidth) is int bw && ToInt(bedHeight) is int bh && bw > 0 && bh > 0)
             {
                 _bedInches = new SizeD(bw / 1000.0, bh / 1000.0);
                 caps.FlatbedSizeInches = _bedInches;
             }
-            // The automation layer exposes no clean "supported resolutions" list; offer the
-            // common ladder (the session snaps to whatever the driver accepts on scan).
-            caps.SupportedResolutions = [75, 150, 200, 300, 600, 1200];
+            // The item's resolution property advertises its valid values as a list or a
+            // range; when the driver reports neither, offer the common ladder (the session
+            // snaps to whatever the driver accepts on scan).
+            List<int>? resolutions = ReadResolutions(device);
+            caps.SupportedResolutions = resolutions ?? [75, 150, 200, 300, 600, 1200];
             var sources = new List<ScanSource> { ScanSource.Flatbed };
             if (WiaScannerBackend.TryGetProperty(device.Properties, WiaScannerBackend.DocumentHandlingSelect) is not null)
             {
@@ -316,7 +444,60 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId) : 
                 }
             }
         }
+        // Unplugged: refresh the device list now rather than at the next poll, so the
+        // sidebar drops it and the app can switch to another scanner.
+        deviceLost();
         throw ScanException.DeviceUnavailable($"{Info.Name} is no longer connected.");
+    }
+
+    /// <summary>
+    /// The device's real resolution list via <see cref="ResolutionList.Build"/>: the valid
+    /// values of the item's horizontal-resolution property (WiaSubType List = 2 or Range = 1),
+    /// capped at the optical resolution. null when the driver does not expose them.
+    /// </summary>
+    private static List<int>? ReadResolutions(dynamic device)
+    {
+        try
+        {
+            // Resolutions are per functional unit: read the flatbed's, like the macOS
+            // backend, rather than whatever unit the driver last had selected.
+            WiaScannerBackend.TrySetProperty(device.Properties,
+                WiaScannerBackend.DocumentHandlingSelect, WiaScannerBackend.HandlingFlatbed);
+            dynamic item = device.Items[1];
+            dynamic property = item.Properties[WiaScannerBackend.HorizontalResolution];
+            int subType = Convert.ToInt32((object)property.SubType);
+            var supported = new List<int>();
+            if (subType == 2)
+            {
+                dynamic values = property.SubTypeValues;
+                int count = values.Count;
+                for (int i = 1; i <= count; i++) // WIA vectors are 1-based
+                {
+                    object value = values[i];
+                    int dpi = Convert.ToInt32(value);
+                    if (dpi > 0) supported.Add(dpi);
+                }
+            }
+            else if (subType == 1)
+            {
+                int min = Convert.ToInt32((object)property.SubTypeMin);
+                int max = Convert.ToInt32((object)property.SubTypeMax);
+                int step = Convert.ToInt32((object)property.SubTypeStep);
+                supported.AddRange(ResolutionList.ExpandRange(min, max, step).Where(v => v > 0));
+            }
+            else
+            {
+                return null;
+            }
+            object? optical = WiaScannerBackend.TryGetProperty(device.Properties, WiaScannerBackend.OpticalXResolution);
+            int native = ToInt(optical) ?? 0;
+            var list = ResolutionList.Build(preferred: null, supported, native);
+            return list.Count > 0 ? list : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static int? ToInt(object? value) => value is null ? null : Convert.ToInt32(value);

@@ -94,6 +94,22 @@ public static class SettingsStore
     public static void Save(ScanSettings settings) => StoreFiles.Write(settings, StoreFiles.SettingsPath);
 }
 
+/// <summary>App-wide preferences that are not scan settings (and so never part of a preset).</summary>
+public sealed class AppPreferences
+{
+    public AppAppearance Appearance { get; set; } = AppAppearance.System;
+}
+
+public static class AppPreferencesStore
+{
+    /// <summary>The saved preferences, or defaults when none were saved or the file does not decode.</summary>
+    public static AppPreferences Load() =>
+        StoreFiles.Read<AppPreferences>(StoreFiles.PreferencesPath) ?? new AppPreferences();
+
+    public static void Save(AppPreferences preferences) =>
+        StoreFiles.Write(preferences, StoreFiles.PreferencesPath);
+}
+
 /// <summary>
 /// JSON storage under %APPDATA%\CompleteScanner\ (the Windows analogue of
 /// ~/Library/Application Support/CompleteScanner/), created on demand.
@@ -113,6 +129,7 @@ internal static class StoreFiles
 
     internal static string PresetsPath => Path.Combine(Directory, "presets.json");
     internal static string SettingsPath => Path.Combine(Directory, "settings.json");
+    internal static string PreferencesPath => Path.Combine(Directory, "preferences.json");
 
     /// <summary>null when the file is missing or does not decode.</summary>
     internal static T? Read<T>(string path) where T : class

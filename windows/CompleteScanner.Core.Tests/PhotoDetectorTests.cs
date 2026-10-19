@@ -176,4 +176,156 @@ public class PhotoDetectorTests
         Assert.True(regions[0].Center.DistanceTo(keeper.Center) <= 25,
                     "Surviving region should be the large photo");
     }
+
+    // MARK: - Full-resolution edge refinement (step 11)
+    //
+    // Windows-side tests: the Swift suite exercises refinement only through the tests
+    // above. The synthetic bed has hard, pixel-exact edges, so an axis-aligned photo's
+    // true extent is known to the pixel.
+
+    /// <summary>The bed's luminance as the detector measures it (0.96 → byte 245).</summary>
+    private const double BedLuminance = 245 / 255.0;
+
+    private static readonly (double R, double G, double B) Red = (0.80, 0.12, 0.12);
+
+    [Fact]
+    public void RefineTrimsBedSlivers()
+    {
+        var photo = new BedPhoto(new PointD(600, 700), new SizeD(400, 300), 0, Red);
+        var bed = RenderBed([photo]);
+        // A loose, off-center fit: ~15 px of bed on every side, more on two.
+        var loose = new DetectedPhotoRegion(new PointD(606, 694), new SizeD(430, 330), 0);
+
+        var refined = PhotoDetector.RefineRegion(loose, bed, BedLuminance);
+        Assert.NotNull(refined);
+        Assert.True(Math.Abs(refined!.Size.Width - 400) <= 1, $"width {refined.Size.Width}");
+        Assert.True(Math.Abs(refined.Size.Height - 300) <= 1, $"height {refined.Size.Height}");
+        Assert.True(refined.Center.DistanceTo(photo.Center) <= 1, $"center {refined.Center}");
+        Assert.Equal(0, refined.AngleDegrees);
+    }
+
+    [Fact]
+    public void RefineGrowsTightFitToPhotoEdges()
+    {
+        var photo = new BedPhoto(new PointD(600, 700), new SizeD(400, 300), 0, Red);
+        var bed = RenderBed([photo]);
+        var tight = new DetectedPhotoRegion(new PointD(597, 703), new SizeD(380, 284), 0);
+
+        var refined = PhotoDetector.RefineRegion(tight, bed, BedLuminance);
+        Assert.NotNull(refined);
+        Assert.True(Math.Abs(refined!.Size.Width - 400) <= 1, $"width {refined.Size.Width}");
+        Assert.True(Math.Abs(refined.Size.Height - 300) <= 1, $"height {refined.Size.Height}");
+        Assert.True(refined.Center.DistanceTo(photo.Center) <= 1, $"center {refined.Center}");
+    }
+
+    [Fact]
+    public void RefineMapsCenterShiftThroughRotation()
+    {
+        // A rotated photo fitted with the right angle but an off-center, loose rect: the
+        // upright-frame shift must be rotated back into image coordinates.
+        var photo = new BedPhoto(new PointD(640, 800), new SizeD(420, 300), 20, Red);
+        var bed = RenderBed([photo]);
+        var loose = new DetectedPhotoRegion(new PointD(652, 790), new SizeD(450, 330), 20);
+
+        var refined = PhotoDetector.RefineRegion(loose, bed, BedLuminance);
+        Assert.NotNull(refined);
+        Assert.True(refined!.Center.DistanceTo(photo.Center) <= 1.5, $"center {refined.Center}");
+        Assert.True(Math.Abs(refined.Size.Width - 420) <= 2, $"width {refined.Size.Width}");
+        Assert.True(Math.Abs(refined.Size.Height - 300) <= 2, $"height {refined.Size.Height}");
+    }
+
+    [Fact]
+    public void ExtractRotatedMapsPixelCentersExactly()
+    {
+        // Region coordinates are continuous (pixel i spans [i, i+1)), so an integer-aligned,
+        // unrotated region must reproduce the source pixels exactly — no half-pixel blur.
+        var source = new RgbaImage(20, 12, [.. Enumerable.Range(0, 20 * 12 * 4).Select(i => (byte)(i * 37 % 251))]);
+        var whole = source.ExtractRotated(new PointD(10, 6), new SizeD(20, 12), 0);
+        Assert.NotNull(whole);
+        Assert.Equal(source.Pixels, whole!.Pixels);
+
+        // A single pixel (5, 3) is the region centered at (5.5, 3.5).
+        var one = source.ExtractRotated(new PointD(5.5, 3.5), new SizeD(1, 1), 0)!;
+        Assert.Equal(source.Pixels.AsSpan((3 * 20 + 5) * 4, 3).ToArray(), one.Pixels.AsSpan(0, 3).ToArray());
+    }
+
+    [Theory]
+    [InlineData(300.5, 10.5, 301, 11)]
+    [InlineData(2.5, 4.5, 3, 5)]
+    [InlineData(2.49, 0.5, 2, 1)]
+    public void ExtractRotatedRoundsHalfSizesAwayFromZero(double width, double height,
+                                                         int expectedWidth, int expectedHeight)
+    {
+        // Swift's extractPhoto sizes its output with .rounded() (halves away from zero);
+        // banker's rounding would give 300 x 10 and 2 x 4 (and nothing at all for 0.5).
+        var source = RgbaImage.Filled(400, 40, 90, 90, 90);
+        var extracted = source.ExtractRotated(new PointD(200, 20), new SizeD(width, height), 0);
+        Assert.NotNull(extracted);
+        Assert.Equal(expectedWidth, extracted!.Width);
+        Assert.Equal(expectedHeight, extracted.Height);
+
+        var photo = PhotoDetector.ExtractPhoto(source, new DetectedPhotoRegion(new PointD(200, 20),
+                                               new SizeD(width, height), 0), deskew: true);
+        Assert.Equal(expectedWidth, photo!.Width);
+    }
+
+    [Fact]
+    public void RefineKeepsOriginalWhenRegionIsBackground()
+    {
+        var bed = RenderBed([]);
+        var region = new DetectedPhotoRegion(new PointD(600, 700), new SizeD(400, 300), 0);
+        Assert.Null(PhotoDetector.RefineRegion(region, bed, BedLuminance));
+    }
+
+    [Fact]
+    public void DetectedAxisAlignedPhotoIsPixelExact()
+    {
+        var photo = new BedPhoto(new PointD(600, 700), new SizeD(400, 300), 0, Red);
+        var regions = PhotoDetector.DetectRegions(RenderBed([photo]), 150);
+        Assert.Single(regions);
+        Assert.True(Math.Abs(regions[0].Size.Width - 400) <= 1, $"width {regions[0].Size.Width}");
+        Assert.True(Math.Abs(regions[0].Size.Height - 300) <= 1, $"height {regions[0].Size.Height}");
+        Assert.True(regions[0].Center.DistanceTo(photo.Center) <= 1, $"center {regions[0].Center}");
+    }
+
+    [Fact]
+    public void RefinementKeepsWhitePrintBorder()
+    {
+        // A dark print with a 16 px pure-white border. The white differs from the 0.96 bed
+        // by only ~0.04 luminance — below the detection threshold, so the low-res mask finds
+        // just the dark interior; refinement must grow the region out over the border.
+        var border = new BedPhoto(new PointD(600, 700), new SizeD(432, 332), 0, (1.0, 1.0, 1.0));
+        var interior = new BedPhoto(new PointD(600, 700), new SizeD(400, 300), 0, (0.15, 0.20, 0.35));
+        var regions = PhotoDetector.DetectRegions(RenderBed([border, interior]), 150);
+        Assert.Single(regions);
+        Assert.True(Math.Abs(regions[0].Size.Width - 432) <= 2, $"width {regions[0].Size.Width}");
+        Assert.True(Math.Abs(regions[0].Size.Height - 332) <= 2, $"height {regions[0].Size.Height}");
+        Assert.True(regions[0].Center.DistanceTo(border.Center) <= 1.5, $"center {regions[0].Center}");
+    }
+
+    [Fact]
+    public void RefinementDoesNotAbsorbNeighborAcrossGap()
+    {
+        // Two prints 12 px apart — inside each other's 24 px refinement margin, but
+        // separated by a clean background gap.
+        var left = new BedPhoto(new PointD(400, 600), new SizeD(400, 300), 0, Red);
+        var right = new BedPhoto(new PointD(812, 600), new SizeD(400, 300), 0, (0.10, 0.25, 0.80));
+        var regions = PhotoDetector.DetectRegions(RenderBed([left, right]), 150);
+        Assert.Equal(2, regions.Count);
+        foreach (var expected in new[] { left, right })
+        {
+            var match = NearestRegion(expected.Center, regions)!;
+            Assert.True(Math.Abs(match.Size.Width - 400) <= 1, $"width {match.Size.Width} at {expected.Center}");
+            Assert.True(Math.Abs(match.Size.Height - 300) <= 1, $"height {match.Size.Height} at {expected.Center}");
+            Assert.True(match.Center.DistanceTo(expected.Center) <= 1, $"center {match.Center}");
+        }
+
+        // A deliberately loose fit whose edge ends inside the gap (x 600...612), with the
+        // neighbor well within the margin ring, still stops at the gap.
+        var loose = new DetectedPhotoRegion(new PointD(404, 600), new SizeD(412, 320), 0);
+        var refined = PhotoDetector.RefineRegion(loose, RenderBed([left, right]), BedLuminance);
+        Assert.NotNull(refined);
+        Assert.True(Math.Abs(refined!.Size.Width - 400) <= 1, $"width {refined.Size.Width}");
+        Assert.True(refined.Center.DistanceTo(left.Center) <= 1, $"center {refined.Center}");
+    }
 }

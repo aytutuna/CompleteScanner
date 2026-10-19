@@ -112,8 +112,16 @@ public static class PhotoDetector
         if (regions.Count > options.MaxPhotoCount)
             regions.RemoveRange(options.MaxPhotoCount, regions.Count - options.MaxPhotoCount);
 
-        // 10. Merge near-duplicates, apply the edge inset, and sort row-major.
+        // 10. Merge near-duplicates.
         regions = MergeOverlapping(regions);
+
+        // 11. Snap each region to the true photo edges at FULL resolution. The low-res
+        // mask bleeds a few pixels at the borders — visible as background slivers around
+        // extracted photos — and its loose threshold can shave off a photo's white print
+        // border; both are corrected here.
+        regions = regions.Select(r => RefineRegion(r, image, background) ?? r).ToList();
+
+        // 12. Apply the edge inset and sort row-major.
         if (options.EdgeInsetPixels > 0)
         {
             double shrink = options.EdgeInsetPixels * 2.0;
@@ -141,6 +149,106 @@ public static class PhotoDetector
         // sampling the source through the region's own corner mapping lands the region
         // axis-aligned and centered in the output.
         return image.ExtractRotated(region.Center, region.Size, region.AngleDegrees);
+    }
+
+    // MARK: - Full-resolution edge refinement
+
+    /// <summary>
+    /// Re-fit one detected region against the full-resolution pixels.
+    ///
+    /// The region (plus a margin) is rendered upright, then each side is scanned from the
+    /// outside for the first row/column that is not background. The background test is
+    /// deliberately much tighter than the detection threshold: a photo's white print
+    /// border usually differs only slightly from the bed glass, and the faint edge shadow
+    /// a lying photo casts differs clearly — so borders are kept while bed background is
+    /// trimmed exactly. Returns null (caller keeps the unrefined region) when the result
+    /// would be degenerate.
+    /// </summary>
+    internal static DetectedPhotoRegion? RefineRegion(DetectedPhotoRegion region, RgbaImage image,
+                                                      double backgroundLuminance)
+    {
+        double bg = backgroundLuminance;
+        double margin = Math.Max(24.0, 0.05 * Math.Min(region.Size.Width, region.Size.Height));
+        int cw = (int)Math.Round(region.Size.Width + 2 * margin, MidpointRounding.AwayFromZero);
+        int ch = (int)Math.Round(region.Size.Height + 2 * margin, MidpointRounding.AwayFromZero);
+        if (cw < 8 || ch < 8 || (long)cw * ch > 60_000_000) return null;
+        var rgba = RasterizeRotated(image, region.Center, region.AngleDegrees, cw, ch, bg);
+        if (rgba is null) return null;
+
+        const double lumTolerance = 0.035;
+        const double satTolerance = 0.06;
+        bool IsBackground(int index)
+        {
+            double r = rgba[index * 4] / 255.0;
+            double g = rgba[index * 4 + 1] / 255.0;
+            double b = rgba[index * 4 + 2] / 255.0;
+            double lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            double sat = Math.Max(r, Math.Max(g, b)) - Math.Min(r, Math.Min(g, b));
+            return Math.Abs(lum - bg) < lumTolerance && sat < satTolerance;
+        }
+        // A line is still "background" while ≥92% of its pixels are (tolerates dust).
+        const double backgroundShare = 0.92;
+        bool RowIsBackground(int y)
+        {
+            int count = 0;
+            for (int x = 0; x < cw; x++) if (IsBackground(y * cw + x)) count++;
+            return count >= backgroundShare * cw;
+        }
+        bool ColumnIsBackground(int x)
+        {
+            int count = 0;
+            for (int y = 0; y < ch; y++) if (IsBackground(y * cw + x)) count++;
+            return count >= backgroundShare * ch;
+        }
+
+        // Each side starts at the ORIGINAL detected edge (index `m` from the buffer
+        // border): first trim inward over background lines (removes bed slivers), then
+        // grow outward across contiguous non-background lines (recovers white print
+        // borders and edge shadows). Growth stops at the first background line, so a
+        // neighboring photo inside the margin ring — always separated by a background
+        // gap — is never absorbed.
+        int m = (int)Math.Round(margin, MidpointRounding.AwayFromZero);
+        int top = Math.Min(m, ch - 1);
+        while (top < ch - 1 && RowIsBackground(top)) top++;
+        while (top > 0 && !RowIsBackground(top - 1)) top--;
+        int bottom = Math.Max(ch - 1 - m, top);
+        while (bottom > top && RowIsBackground(bottom)) bottom--;
+        while (bottom < ch - 1 && !RowIsBackground(bottom + 1)) bottom++;
+        int left = Math.Min(m, cw - 1);
+        while (left < cw - 1 && ColumnIsBackground(left)) left++;
+        while (left > 0 && !ColumnIsBackground(left - 1)) left--;
+        int right = Math.Max(cw - 1 - m, left);
+        while (right > left && ColumnIsBackground(right)) right--;
+        while (right < cw - 1 && !ColumnIsBackground(right + 1)) right++;
+
+        double newW = right - left + 1;
+        double newH = bottom - top + 1;
+        // Safety: keep the original detection if refinement collapsed (glare, unusual
+        // bed color) — better a slightly loose crop than a destroyed one.
+        if (newW < 8 || newH < 8 || newW * newH < 0.3 * (region.Size.Width * region.Size.Height))
+            return null;
+
+        // Center shift in the upright frame, rotated back into image coordinates.
+        double dx = (left + right + 1) / 2.0 - cw / 2.0;
+        double dy = (top + bottom + 1) / 2.0 - ch / 2.0;
+        double a = region.AngleDegrees * Math.PI / 180;
+        double c = Math.Cos(a), s = Math.Sin(a);
+        var center = new PointD(region.Center.X + dx * c - dy * s,
+                                region.Center.Y + dx * s + dy * c);
+        return new DetectedPhotoRegion(center, new SizeD(newW, newH), region.AngleDegrees);
+    }
+
+    /// <summary>
+    /// Render the rotated region upright into an RGBA8 buffer (rows top-to-bottom), the same
+    /// transform <see cref="ExtractPhoto"/> uses; areas outside the source are filled with
+    /// the bed's background gray so they read as background during refinement.
+    /// </summary>
+    private static byte[]? RasterizeRotated(RgbaImage image, PointD center, double angleDegrees,
+                                            int width, int height, double fillGray)
+    {
+        byte gray = (byte)Math.Clamp(Math.Round(fillGray * 255), 0, 255);
+        return image.ExtractRotated(center, new SizeD(width, height), angleDegrees,
+                                    gray, gray, gray)?.Pixels;
     }
 
     // MARK: - Morphology (square kernel, separable passes)

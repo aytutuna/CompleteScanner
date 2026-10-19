@@ -44,3 +44,82 @@ public interface IScannerSession
     void CancelScan();
     Task CloseAsync();
 }
+
+/// <summary>
+/// The resolutions a device really offers, up to and including its true maximum. Port of
+/// ICScannerBackend.resolutionList(for:) as a pure function so every backend (WIA, eSCL)
+/// applies the same accuracy rules.
+/// </summary>
+public static class ResolutionList
+{
+    /// <summary>Standard ladder used to thin a huge contiguous range.</summary>
+    public static readonly IReadOnlyList<int> StandardLadder =
+        [50, 72, 75, 100, 150, 200, 240, 300, 400, 600, 800,
+         1200, 1600, 2400, 3200, 4800, 6400, 9600, 12800];
+
+    /// <summary>
+    /// Accuracy rules, in order:
+    /// 1. <paramref name="preferred"/> — when the driver provides it, that IS the device's
+    ///    accurate list; use it verbatim.
+    /// 2. Otherwise <paramref name="supported"/>: a small discrete set (≤ 64 values) is used
+    ///    as-is; a huge contiguous range is thinned to the standard ladder plus its min and max.
+    /// In both fallback shapes, values above <paramref name="nativeResolution"/> (the optical
+    /// resolution; ≤ 0 = unknown) are software interpolation, not hardware capability — they
+    /// are dropped so the picker never advertises resolutions the scanner can't deliver.
+    /// </summary>
+    /// <returns>Ascending, without duplicates. Non-positive values are never listed.</returns>
+    public static List<int> Build(IEnumerable<int>? preferred, IEnumerable<int> supported,
+                                  int nativeResolution)
+    {
+        var preferredSet = preferred?.Where(dpi => dpi > 0).ToHashSet() ?? [];
+        if (preferredSet.Count > 0)
+        {
+            return [.. preferredSet.Order()];
+        }
+
+        var supportedSet = supported.Where(dpi => dpi > 0).ToHashSet();
+        if (supportedSet.Count == 0) return [];
+        int minDpi = supportedSet.Min(), maxDpi = supportedSet.Max();
+
+        var set = new HashSet<int>();
+        if (supportedSet.Count <= 64)
+        {
+            // A discrete list (even a generous one): offer every reported value.
+            set.UnionWith(supportedSet);
+        }
+        else
+        {
+            set.UnionWith(StandardLadder.Where(supportedSet.Contains));
+            set.Add(minDpi);
+            set.Add(maxDpi);
+        }
+        if (nativeResolution > 0)
+        {
+            set.RemoveWhere(dpi => dpi > nativeResolution);
+            if (supportedSet.Contains(nativeResolution)) set.Add(nativeResolution);
+        }
+        return [.. set.Order()];
+    }
+
+    /// <summary>
+    /// Upper bound for <see cref="ExpandRange"/>: far above any real optical resolution, but
+    /// keeps a hostile or broken device (e.g. max = int.MaxValue, step = 1) from making the
+    /// expansion enumerate billions of values.
+    /// </summary>
+    public const int MaxRangeDpi = 100_000;
+
+    /// <summary>
+    /// The values of a min/max/step range (eSCL ResolutionRange, WIA range properties), for
+    /// feeding <see cref="Build"/>'s <c>supported</c> argument. A non-positive step means 1;
+    /// values on the range's lattice that are ≤ 0 or above <see cref="MaxRangeDpi"/> are
+    /// skipped, so at most <see cref="MaxRangeDpi"/> values are produced.
+    /// </summary>
+    public static IEnumerable<int> ExpandRange(int min, int max, int step)
+    {
+        if (step <= 0) step = 1;
+        long first = min;
+        if (first <= 0) first += ((1 - first) + step - 1) / step * step; // first positive lattice value
+        long last = Math.Min(max, MaxRangeDpi);
+        for (long dpi = first; dpi <= last; dpi += step) yield return (int)dpi;
+    }
+}

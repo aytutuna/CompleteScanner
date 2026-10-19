@@ -111,4 +111,70 @@ public class NamingTemplateTests
             Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public void MoveToFreePathMovesToAFreeName()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"NamingTemplateTests-{Guid.NewGuid()}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string source = Path.Combine(dir, ".tmp");
+            File.WriteAllText(source, "new");
+            string target = Path.Combine(dir, "Report.pdf");
+            Assert.Equal(target, NamingTemplate.MoveToFreePath(source, target));
+            Assert.Equal("new", File.ReadAllText(target));
+            Assert.False(File.Exists(source));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MoveToFreePathNeverOverwritesAndTakesTheNextFreeSuffix()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"NamingTemplateTests-{Guid.NewGuid()}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            // The name was free when it was picked, then two other files landed.
+            string target = Path.Combine(dir, "Report.pdf");
+            File.WriteAllText(target, "first");
+            File.WriteAllText(Path.Combine(dir, "Report 2.pdf"), "second");
+            string source = Path.Combine(dir, ".tmp");
+            File.WriteAllText(source, "new");
+
+            string written = NamingTemplate.MoveToFreePath(source, target);
+
+            Assert.Equal(Path.Combine(dir, "Report 3.pdf"), written);
+            Assert.Equal("first", File.ReadAllText(target));
+            Assert.Equal("second", File.ReadAllText(Path.Combine(dir, "Report 2.pdf")));
+            Assert.Equal("new", File.ReadAllText(written));
+            Assert.False(File.Exists(source));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MoveToFreePathRethrowsOtherFailures()
+    {
+        string dir = Path.Combine(Path.GetTempPath(), $"NamingTemplateTests-{Guid.NewGuid()}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            // A missing source is not a name collision: no retry loop, the error surfaces.
+            Assert.Throws<FileNotFoundException>(() =>
+                NamingTemplate.MoveToFreePath(Path.Combine(dir, "missing"), Path.Combine(dir, "Report.pdf")));
+            Assert.Empty(Directory.GetFiles(dir));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }
