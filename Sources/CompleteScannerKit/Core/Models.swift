@@ -248,6 +248,53 @@ public enum PageInclusion: String, Sendable {
     case skip
 }
 
+/// Where a stack of collected pages is split into separate documents (`DocumentOptions.splitMode`,
+/// `DocumentSplitter`). `.none` comes first: it is the default and the fallback for a mode a newer
+/// version adds (barcodes). Shown in `displayOrder`. Twin of C# `SplitMode` (`ModelLabels.Label` /
+/// `Hint`, `SplitModes.DisplayOrder`).
+public enum SplitMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// The pages are saved as one document.
+    case none
+    /// At each separator sheet with a patch code (`PatchCodeDetector`); the sheet is left out.
+    case separatorSheet
+    /// At each empty sheet (with both sides scanned, only a sheet blank on both sides); the sheet is left out.
+    case blankSheet
+    /// Every `DocumentOptions.splitSheetCount` sheets.
+    case sheetCount
+
+    public var id: String { rawValue }
+    public var label: String {
+        switch self {
+        case .none: return "Off"
+        case .separatorSheet: return "At separator sheets"
+        case .blankSheet: return "At blank sheets"
+        case .sheetCount: return "Every N sheets"
+        }
+    }
+
+    /// One line saying how the stack is split, shown under the picker.
+    public var hint: String {
+        switch self {
+        case .none: return "All the pages are saved as one document."
+        case .separatorSheet: return "Put a separator sheet (Patch T) in front of each document after the first. It is found and left out, and a new document starts after it."
+        case .blankSheet: return "Put an empty sheet between documents; it is left out. With both sides scanned, only a sheet blank on both sides splits."
+        case .sheetCount: return "A new document starts every few sheets, for forms that all have the same number of sheets."
+        }
+    }
+
+    /// The modes as the inspector lists them.
+    public static let displayOrder: [SplitMode] = [.none, .separatorSheet, .blankSheet, .sheetCount]
+}
+
+/// The user's say over whether a new document starts at a queued page (`ScannedPage.documentBreak`):
+/// `.automatic` follows the split setting; `.split` and `.join` are one click on the gap before the
+/// page, whatever the setting. Not stored in settings files. Twin of C# `DocumentBreak`.
+public enum DocumentBreak: String, Sendable {
+    case automatic
+    case split
+    case join
+}
+
 // MARK: - Settings
 
 public struct AdjustmentSettings: Codable, Equatable, Sendable {
@@ -346,6 +393,12 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
     /// Each page that lies at a slant is turned straight, by its edges or its lines of text
     /// (`DocumentGeometry`). One click in the page strip shows a page as scanned.
     public var autoStraighten: Bool = false
+    /// Where the collected pages are split into separate documents when they are saved
+    /// (`DocumentSplitter`): at separator sheets, at blank sheets or every few sheets. The page
+    /// strip shows the documents before saving, and one click joins or splits them. Off unless chosen.
+    public var splitMode: SplitMode = .none
+    /// The sheets in each document for `.sheetCount`; read through `DocumentSplitter.clampSheetCount` (1 to 999).
+    public var splitSheetCount: Int = 1
 
     public init() {}
 
@@ -355,6 +408,8 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
         case blankSensitivity
         case autoCrop
         case autoStraighten
+        case splitMode
+        case splitSheetCount
     }
 }
 
@@ -367,6 +422,8 @@ extension DocumentOptions {
         blankSensitivity = container.decodeLenient(forKey: .blankSensitivity, default: blankSensitivity)
         autoCrop = container.decodeLenient(forKey: .autoCrop, default: autoCrop)
         autoStraighten = container.decodeLenient(forKey: .autoStraighten, default: autoStraighten)
+        splitMode = container.decodeLenient(forKey: .splitMode, default: splitMode)
+        splitSheetCount = container.decodeLenient(forKey: .splitSheetCount, default: splitSheetCount)
     }
 }
 
@@ -577,6 +634,15 @@ public struct ScannedPage: Identifiable {
     /// click can swap them; nil when there is none. Its pixels are dropped once it has a spool file.
     /// Pixel steps after crop and straighten change it too (`withAlternate(_:)`).
     public var alternate: PageVersion?
+    /// The patch code found on the page (`PatchCodeDetector`), which makes it a separator sheet; nil
+    /// when none was found or the page was not checked.
+    public var patch: PatchCode?
+    /// Whether the user starts a new document at this page, or joins it to the one before, whatever
+    /// the split setting.
+    public var documentBreak: DocumentBreak = .automatic
+    /// The name the user gave the document this page belongs to (the {label} naming token); nil for
+    /// none. A document takes the first name among its pages.
+    public var documentLabel: String?
 
     /// The page was cropped or straightened and the other version is at hand: one click swaps them.
     public var canSwapVersions: Bool { geometry != nil && alternate != nil }
@@ -608,9 +674,9 @@ public struct ScannedPage: Identifiable {
     }
 
     /// This page carrying what the scan recorded about `source`: its side and sheet, the
-    /// blank-page check, the user's keep or skip, and what crop and straighten did and which
-    /// version is shown. Pixels, id, file, rotation and the other version stay this page's. Twin of
-    /// C# `ScannedPage.CopyMeta`.
+    /// blank-page check, the user's keep or skip, what crop and straighten did and which version is
+    /// shown, the patch code found on it, and the user's document break and document name. Pixels,
+    /// id, file, rotation and the other version stay this page's. Twin of C# `ScannedPage.CopyMeta`.
     public func copyMeta(from source: ScannedPage) -> ScannedPage {
         var page = self
         page.side = source.side
@@ -619,6 +685,9 @@ public struct ScannedPage: Identifiable {
         page.inclusion = source.inclusion
         page.geometry = source.geometry
         page.showsOriginal = source.showsOriginal
+        page.patch = source.patch
+        page.documentBreak = source.documentBreak
+        page.documentLabel = source.documentLabel
         return page
     }
 
@@ -633,6 +702,9 @@ public struct ScannedPage: Identifiable {
         page.inclusion = inclusion
         page.geometry = geometry
         page.showsOriginal = false
+        page.patch = patch
+        page.documentBreak = documentBreak
+        page.documentLabel = documentLabel
         page.alternate = PageVersion(image: image, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }
@@ -660,6 +732,9 @@ public struct ScannedPage: Identifiable {
         page.inclusion = inclusion
         page.geometry = geometry
         page.showsOriginal = !showsOriginal
+        page.patch = patch
+        page.documentBreak = documentBreak
+        page.documentLabel = documentLabel
         page.alternate = PageVersion(image: fileURL == nil ? image : nil, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }
@@ -675,6 +750,27 @@ public struct ScannedPage: Identifiable {
     public func withInclusion(_ inclusion: PageInclusion) -> ScannedPage {
         var page = self
         page.inclusion = inclusion
+        return page
+    }
+
+    /// This page with the patch code found on it (nil: none, the page is no separator sheet).
+    public func withPatch(_ patch: PatchCode?) -> ScannedPage {
+        var page = self
+        page.patch = patch
+        return page
+    }
+
+    /// This page starting a new document, joined to the one before, or following the split setting again.
+    public func withDocumentBreak(_ documentBreak: DocumentBreak) -> ScannedPage {
+        var page = self
+        page.documentBreak = documentBreak
+        return page
+    }
+
+    /// This page carrying the name of its document (nil: none).
+    public func withDocumentLabel(_ documentLabel: String?) -> ScannedPage {
+        var page = self
+        page.documentLabel = documentLabel
         return page
     }
 

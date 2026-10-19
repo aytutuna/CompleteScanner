@@ -17,8 +17,9 @@ public struct NamingTemplate {
 
     /// The file name (without extension) for `context`: the tokens of
     /// `baseFilename(counter:date:intent:index:)`, plus {task} (the task's `fileLabel`, or the
-    /// {intent} text when there is no task) and {docdate} (the date printed on the document,
-    /// yyyy-MM-dd, read from its text; the scan date when there is none).
+    /// {intent} text when there is no task), {docdate} (the date printed on the document,
+    /// yyyy-MM-dd, read from its text; the scan date when there is none) and {label} (the
+    /// document's name, cut to `maxLabelBytes` and sanitized like the rest; empty when it has none).
     public func baseFilename(_ context: NamingContext) -> String {
         let counter = context.counter
         let date = context.date
@@ -44,6 +45,8 @@ public struct NamingTemplate {
             ("{index}", index.map(String.init) ?? ""),
             ("{task}", context.task.map { TaskCatalog.definition($0).fileLabel } ?? context.intent.label),
             ("{docdate}", (context.documentDate ?? DocumentDate(date: date)).text),
+            ("{label}", Self.cutToBytes(context.label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+                                        maxBytes: Self.maxLabelBytes)),
         ]
         for (token, value) in replacements {
             result = result.replacingOccurrences(of: token, with: value)
@@ -56,6 +59,24 @@ public struct NamingTemplate {
         }
 
         return sanitized(result)
+    }
+
+    /// The most UTF-8 bytes {label} adds to a file name: a long document name is cut (between
+    /// characters), so the name stays well within the 255 a file name can have on the Mac and Windows.
+    public static let maxLabelBytes = 120
+
+    /// The first characters of `text` that fit in `maxBytes` bytes of UTF-8; never cuts inside a character.
+    static func cutToBytes(_ text: String, maxBytes: Int) -> String {
+        if text.utf8.count <= maxBytes { return text }
+        var result = ""
+        var bytes = 0
+        for character in text {
+            let size = String(character).utf8.count
+            if bytes + size > maxBytes { break }
+            bytes += size
+            result.append(character)
+        }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// base.ext, appending " 2", " 3", … until the name is free.
@@ -116,15 +137,19 @@ public struct NamingContext: Equatable, Sendable {
     /// The date printed on the document for {docdate} (a receipt's date, read from its text by
     /// `ReceiptDateExtractor`); nil gives the date of `date`.
     public var documentDate: DocumentDate?
+    /// The document's name for {label}: given to it in the page strip when the queue is split into
+    /// documents (`SaveDocument.label`); nil gives an empty text.
+    public var label: String?
 
     public init(counter: Int, date: Date, intent: ScanIntent, index: Int? = nil, task: ScanTask? = nil,
-                documentDate: DocumentDate? = nil) {
+                documentDate: DocumentDate? = nil, label: String? = nil) {
         self.counter = counter
         self.date = date
         self.intent = intent
         self.index = index
         self.task = task
         self.documentDate = documentDate
+        self.label = label
     }
 }
 

@@ -47,6 +47,20 @@ public sealed class GeometryStep(bool crop, bool straighten) : IPageStep
 }
 
 /// <summary>
+/// Looks for a patch code on the page (<see cref="PatchCodeDetector"/>) and records it: the page is
+/// then a separator sheet, used when the stack is split at separator sheets
+/// (<see cref="DocumentSplitter"/>). The pixels are not changed. Runs after crop and straighten,
+/// before the adjustments.
+/// </summary>
+public sealed class SeparatorStep : IPageStep
+{
+    public string Name => "separator";
+
+    public ScannedPage Apply(ScannedPage page) =>
+        page.WithPatch(PatchCodeDetector.Detect(page.Image, page.Dpi)?.Code);
+}
+
+/// <summary>
 /// The image adjustments and the color mode (<see cref="ImagePipeline.Apply"/>), on the page and on
 /// its other version (the page as scanned, kept by crop and straighten), so either can be shown.
 /// </summary>
@@ -91,9 +105,8 @@ public sealed record ProcessedScan(IReadOnlyList<ScannedPage> Arranged, IReadOnl
 /// The clean-up stage between the scanner and the page queue, the same for every scanner: the
 /// pages are put in reading order with their sides (two-sided scans), then every step runs on
 /// every page in order. The order of the steps is fixed: <see cref="ForScan"/> builds them from
-/// the settings: blank check (document pages), crop and straighten, then adjustments. Later page
-/// features slot in between (separator sheets after crop and straighten, turning pages upright
-/// before the adjustments).
+/// the settings: blank check (document pages), crop and straighten, separator sheets, then
+/// adjustments. Later page features slot in between (turning pages upright before the adjustments).
 /// </summary>
 public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
                                   ScanArrangement arrangement = ScanArrangement.AsScanned,
@@ -106,8 +119,9 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// <summary>
     /// The steps for a scan made with <paramref name="settings"/>: the blank-page check for pages
     /// collected in the document queue (whether or not blank pages are left out, so the page
-    /// strip can flag them), crop and straighten when asked for those pages, then the adjustments
-    /// unless they change nothing.
+    /// strip can flag them), crop and straighten when asked for those pages, the separator-sheet
+    /// check for those pages (whether or not the stack is split, so a split chosen later finds
+    /// them), then the adjustments unless they change nothing.
     /// </summary>
     public static PageProcessor ForScan(ScanSettings settings, ScanArrangement arrangement = ScanArrangement.AsScanned)
     {
@@ -119,6 +133,10 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
         if (CorrectsGeometry(settings))
         {
             steps.Add(new GeometryStep(settings.Document.AutoCrop, settings.Document.AutoStraighten));
+        }
+        if (ChecksBlankPages(settings))
+        {
+            steps.Add(new SeparatorStep());
         }
         if (!(settings.Adjustments.IsIdentity && settings.ColorMode == ColorMode.Color))
         {

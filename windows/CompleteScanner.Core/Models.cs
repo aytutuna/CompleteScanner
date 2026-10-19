@@ -113,6 +113,36 @@ public enum PageInclusion
 }
 
 /// <summary>
+/// Where a stack of collected pages is split into separate documents
+/// (<see cref="DocumentOptions.SplitMode"/>, <see cref="DocumentSplitter"/>). <see cref="None"/>
+/// comes first: it is the default and the fallback for a mode a newer version adds (barcodes).
+/// Shown in <see cref="SplitModes.DisplayOrder"/>.
+/// </summary>
+public enum SplitMode
+{
+    /// <summary>The pages are saved as one document.</summary>
+    None,
+    /// <summary>At each separator sheet with a patch code (<see cref="PatchCodeDetector"/>); the sheet is left out.</summary>
+    SeparatorSheet,
+    /// <summary>At each empty sheet (with both sides scanned, only a sheet blank on both sides); the sheet is left out.</summary>
+    BlankSheet,
+    /// <summary>Every <see cref="DocumentOptions.SplitSheetCount"/> sheets.</summary>
+    SheetCount,
+}
+
+/// <summary>
+/// The user's say over whether a new document starts at a queued page (<see cref="ScannedPage.DocumentBreak"/>):
+/// <see cref="Automatic"/> follows the split setting; <see cref="Split"/> and <see cref="Join"/> are
+/// one click on the gap before the page, whatever the setting. Not stored in settings files.
+/// </summary>
+public enum DocumentBreak
+{
+    Automatic,
+    Split,
+    Join,
+}
+
+/// <summary>
 /// The app's color scheme: follow Windows, or force light or dark. An app preference, kept
 /// apart from <see cref="ScanSettings"/> so that applying a preset never changes it.
 /// </summary>
@@ -234,6 +264,25 @@ public static class ModelLabels
         BlankSensitivity.Low => "Only pages with nothing on them count as blank.",
         BlankSensitivity.Medium => "Empty pages count as blank, also with dust, show-through or a lone page number.",
         BlankSensitivity.High => "Pages with a few small marks count as blank too. Check the flagged pages before saving.",
+        _ => "",
+    };
+
+    public static string Label(this SplitMode mode) => mode switch
+    {
+        SplitMode.None => "Off",
+        SplitMode.SeparatorSheet => "At separator sheets",
+        SplitMode.BlankSheet => "At blank sheets",
+        SplitMode.SheetCount => "Every N sheets",
+        _ => mode.ToString(),
+    };
+
+    /// <summary>One line saying how the stack is split, shown under the picker.</summary>
+    public static string Hint(this SplitMode mode) => mode switch
+    {
+        SplitMode.None => "All the pages are saved as one document.",
+        SplitMode.SeparatorSheet => "Put a separator sheet (Patch T) in front of each document after the first. It is found and left out, and a new document starts after it.",
+        SplitMode.BlankSheet => "Put an empty sheet between documents; it is left out. With both sides scanned, only a sheet blank on both sides splits.",
+        SplitMode.SheetCount => "A new document starts every few sheets, for forms that all have the same number of sheets.",
         _ => "",
     };
 
@@ -392,8 +441,8 @@ public sealed class OutputOptions : IEquatable<OutputOptions>
 
 /// <summary>
 /// Settings for the clean-up of document pages, kept together as <see cref="ScanSettings.Document"/>
-/// (the "document" object in settings files). Later page features (split) add their fields here;
-/// every one is off by default.
+/// (the "document" object in settings files): blank pages, crop and straighten, and splitting the
+/// stack into documents. Later page features add their fields here; every one is off by default.
 /// </summary>
 public sealed class DocumentOptions : IEquatable<DocumentOptions>
 {
@@ -418,13 +467,26 @@ public sealed class DocumentOptions : IEquatable<DocumentOptions>
     /// </summary>
     public bool AutoStraighten { get; set; } = false;
 
+    /// <summary>
+    /// Where the collected pages are split into separate documents when they are saved
+    /// (<see cref="DocumentSplitter"/>): at separator sheets, at blank sheets or every few sheets.
+    /// The page strip shows the documents before saving, and one click joins or splits them. Off
+    /// unless chosen.
+    /// </summary>
+    public SplitMode SplitMode { get; set; } = SplitMode.None;
+
+    /// <summary>The sheets in each document for <see cref="SplitMode.SheetCount"/>; read through <see cref="DocumentSplitter.ClampSheetCount"/> (1 to 999).</summary>
+    public int SplitSheetCount { get; set; } = 1;
+
     public DocumentOptions Clone() => (DocumentOptions)MemberwiseClone();
 
     public bool Equals(DocumentOptions? other) =>
         other is not null && RemoveBlankPages == other.RemoveBlankPages && BlankSensitivity == other.BlankSensitivity
-        && AutoCrop == other.AutoCrop && AutoStraighten == other.AutoStraighten;
+        && AutoCrop == other.AutoCrop && AutoStraighten == other.AutoStraighten
+        && SplitMode == other.SplitMode && SplitSheetCount == other.SplitSheetCount;
     public override bool Equals(object? obj) => Equals(obj as DocumentOptions);
-    public override int GetHashCode() => HashCode.Combine(RemoveBlankPages, BlankSensitivity, AutoCrop, AutoStraighten);
+    public override int GetHashCode() =>
+        HashCode.Combine(RemoveBlankPages, BlankSensitivity, AutoCrop, AutoStraighten, SplitMode, SplitSheetCount);
 }
 
 /// <summary>
@@ -484,6 +546,13 @@ public static class BlankSensitivities
     /// <summary>The levels as the inspector lists them: least first.</summary>
     public static IReadOnlyList<BlankSensitivity> DisplayOrder { get; } =
         [BlankSensitivity.Low, BlankSensitivity.Medium, BlankSensitivity.High];
+}
+
+public static class SplitModes
+{
+    /// <summary>The modes as the inspector lists them.</summary>
+    public static IReadOnlyList<SplitMode> DisplayOrder { get; } =
+        [SplitMode.None, SplitMode.SeparatorSheet, SplitMode.BlankSheet, SplitMode.SheetCount];
 }
 
 public sealed class ScanSettings
@@ -646,6 +715,21 @@ public sealed class ScannedPage
     /// <summary>The page was cropped or straightened and the other version is at hand: one click swaps them.</summary>
     public bool CanSwapVersions => Geometry is not null && Alternate is not null;
 
+    /// <summary>
+    /// The patch code found on the page (<see cref="PatchCodeDetector"/>), which makes it a
+    /// separator sheet; null when none was found or the page was not checked.
+    /// </summary>
+    public PatchCode? Patch { get; init; }
+
+    /// <summary>Whether the user starts a new document at this page, or joins it to the one before, whatever the split setting.</summary>
+    public DocumentBreak DocumentBreak { get; init; } = DocumentBreak.Automatic;
+
+    /// <summary>
+    /// The name the user gave the document this page belongs to (the {label} naming token); null
+    /// for none. A document takes the first name among its pages.
+    /// </summary>
+    public string? DocumentLabel { get; init; }
+
     public ScannedPage(RgbaImage image, int dpi, ColorMode colorMode, Guid? id = null,
                        DateTime? createdAt = null, string? filePath = null, SizeD? fullPixelSize = null)
     {
@@ -676,8 +760,9 @@ public sealed class ScannedPage
 
     /// <summary>
     /// This page carrying what the scan recorded about <paramref name="source"/>: its side and
-    /// sheet, the blank-page check, the user's keep or skip, and what crop and straighten did and
-    /// which version is shown. Pixels, id, file, rotation and the other version stay this page's.
+    /// sheet, the blank-page check, the user's keep or skip, what crop and straighten did and
+    /// which version is shown, the patch code found on it, and the user's document break and
+    /// document name. Pixels, id, file, rotation and the other version stay this page's.
     /// </summary>
     public ScannedPage CopyMeta(ScannedPage source) =>
         new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
@@ -689,6 +774,9 @@ public sealed class ScannedPage
             Inclusion = source.Inclusion,
             Geometry = source.Geometry,
             ShowsOriginal = source.ShowsOriginal,
+            Patch = source.Patch,
+            DocumentBreak = source.DocumentBreak,
+            DocumentLabel = source.DocumentLabel,
             Alternate = Alternate,
         };
 
@@ -703,6 +791,9 @@ public sealed class ScannedPage
             Inclusion = Inclusion,
             Geometry = Geometry,
             ShowsOriginal = ShowsOriginal,
+            Patch = Patch,
+            DocumentBreak = DocumentBreak,
+            DocumentLabel = DocumentLabel,
             Alternate = Alternate,
         };
 
@@ -717,6 +808,9 @@ public sealed class ScannedPage
             Inclusion = Inclusion,
             Geometry = Geometry,
             ShowsOriginal = ShowsOriginal,
+            Patch = Patch,
+            DocumentBreak = DocumentBreak,
+            DocumentLabel = DocumentLabel,
             Alternate = Alternate,
         };
 
@@ -731,6 +825,60 @@ public sealed class ScannedPage
             Inclusion = inclusion,
             Geometry = Geometry,
             ShowsOriginal = ShowsOriginal,
+            Patch = Patch,
+            DocumentBreak = DocumentBreak,
+            DocumentLabel = DocumentLabel,
+            Alternate = Alternate,
+        };
+
+    /// <summary>This page with the patch code found on it (null: none, the page is no separator sheet).</summary>
+    public ScannedPage WithPatch(PatchCode? patch) =>
+        new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = Side,
+            SheetIndex = SheetIndex,
+            Blank = Blank,
+            Inclusion = Inclusion,
+            Geometry = Geometry,
+            ShowsOriginal = ShowsOriginal,
+            Patch = patch,
+            DocumentBreak = DocumentBreak,
+            DocumentLabel = DocumentLabel,
+            Alternate = Alternate,
+        };
+
+    /// <summary>This page starting a new document, joined to the one before, or following the split setting again.</summary>
+    public ScannedPage WithDocumentBreak(DocumentBreak documentBreak) =>
+        new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = Side,
+            SheetIndex = SheetIndex,
+            Blank = Blank,
+            Inclusion = Inclusion,
+            Geometry = Geometry,
+            ShowsOriginal = ShowsOriginal,
+            Patch = Patch,
+            DocumentBreak = documentBreak,
+            DocumentLabel = DocumentLabel,
+            Alternate = Alternate,
+        };
+
+    /// <summary>This page carrying the name of its document (null: none).</summary>
+    public ScannedPage WithDocumentLabel(string? documentLabel) =>
+        new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = Side,
+            SheetIndex = SheetIndex,
+            Blank = Blank,
+            Inclusion = Inclusion,
+            Geometry = Geometry,
+            ShowsOriginal = ShowsOriginal,
+            Patch = Patch,
+            DocumentBreak = DocumentBreak,
+            DocumentLabel = documentLabel,
             Alternate = Alternate,
         };
 
@@ -748,6 +896,9 @@ public sealed class ScannedPage
             Inclusion = Inclusion,
             Geometry = geometry,
             ShowsOriginal = false,
+            Patch = Patch,
+            DocumentBreak = DocumentBreak,
+            DocumentLabel = DocumentLabel,
             Alternate = new PageVersion(Image, FilePath, FullPixelSize),
         };
 
@@ -762,6 +913,9 @@ public sealed class ScannedPage
             Inclusion = Inclusion,
             Geometry = Geometry,
             ShowsOriginal = ShowsOriginal,
+            Patch = Patch,
+            DocumentBreak = DocumentBreak,
+            DocumentLabel = DocumentLabel,
             Alternate = alternate,
         };
 
@@ -784,6 +938,9 @@ public sealed class ScannedPage
             Inclusion = Inclusion,
             Geometry = Geometry,
             ShowsOriginal = !ShowsOriginal,
+            Patch = Patch,
+            DocumentBreak = DocumentBreak,
+            DocumentLabel = DocumentLabel,
             Alternate = new PageVersion(FilePath is null ? Image : null, FilePath, FullPixelSize),
         };
     }

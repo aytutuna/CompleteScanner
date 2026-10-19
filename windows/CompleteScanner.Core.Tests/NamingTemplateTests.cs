@@ -148,6 +148,49 @@ public class NamingTemplateTests
     }
 
     [Fact]
+    public void LabelToken_IsTheDocumentsName_Sanitized()
+    {
+        var context = new NamingContext(14, FixedDate(), ScanIntent.Document) { Task = ScanTask.Batch, Label = "Invoice 0042" };
+        Assert.Equal("Document Invoice 0042 2026-08-13 14", Render("Document {label} {date} {counter}", context));
+        Assert.Equal("Invoice 0042", Render("{label}", context with { Label = "  Invoice 0042 " }));
+        // Characters a file name cannot hold become "-"; tokens in a name are not expanded.
+        Assert.Equal("ACME-Smith - 2026 Q3", Render("{label}", context with { Label = "ACME/Smith : 2026 Q3" }));
+        Assert.Equal("{date} 14", Render("{label} {counter}", context with { Label = "{date}" }));
+    }
+
+    [Fact]
+    public void LabelToken_ALongName_IsCutBetweenCharacters_SoTheFileNameFits()
+    {
+        var context = new NamingContext(14, FixedDate(), ScanIntent.Document) { Task = ScanTask.Batch };
+        // 120 bytes of UTF-8 at most.
+        Assert.Equal(new string('a', 120), Render("{label}", context with { Label = new string('a', 300) }));
+        Assert.Equal(new string('a', 120), Render("{label}", context with { Label = new string('a', 120) }));
+        // Three bytes each: 40 of them; four bytes each (two UTF-16 units): 30, never half of one.
+        Assert.Equal(new string('文', 40), Render("{label}", context with { Label = new string('文', 50) }));
+        string emoji = string.Concat(Enumerable.Repeat("😀", 31));
+        Assert.Equal(string.Concat(Enumerable.Repeat("😀", 30)), Render("{label}", context with { Label = emoji }));
+        // Cut before a space: no space is left at the end.
+        Assert.Equal("Document " + new string('b', 119) + " 2026-08-13 14",
+                     Render("Document {label} {date} {counter}", context with { Label = new string('b', 119) + " cut here" }));
+        string longest = Render("Document {label} {date} {counter}", context with { Label = new string('c', 1000) });
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(longest) < 255, longest);
+    }
+
+    [Fact]
+    public void LabelToken_WithoutAName_IsEmpty_AndTheDocumentsIndexIsAdded()
+    {
+        var context = new NamingContext(14, FixedDate(), ScanIntent.Document) { Task = ScanTask.Batch };
+        Assert.Equal("Document 2026-08-13 14", Render("Document {label} {date} {counter}", context));
+        Assert.Equal("Document 2026-08-13 14", Render("Document {label} {date} {counter}", context with { Label = "   " }));
+        // The documents of a split queue are numbered like the photos of a batch.
+        Assert.Equal("Document 2026-08-13 14 2", Render("Document {label} {date} {counter}", context with { Index = 2 }));
+        Assert.Equal("Document Lease 2026-08-13 15 3",
+                     Render("Document {label} {date} {counter}", context with { Counter = 15, Index = 3, Label = "Lease" }));
+        // The old overload has no name.
+        Assert.Equal("Scan", Render("{label}"));
+    }
+
+    [Fact]
     public void DocDateToken_WithoutADocumentDate_IsTheScanDate()
     {
         Assert.Equal("Receipt 2026-08-13 2", Render("Receipt {docdate} {counter}",

@@ -5,31 +5,53 @@ import SwiftUI
 /// Bottom strip listing the document page queue. The parent only shows this view
 /// when `state.scannedPages` is non-empty. Pages that look blank carry a badge; with Skip blank
 /// pages on they are dimmed and left out when saving, and one click on Keep (or Skip) changes
-/// that for the page (`PageFilter`).
+/// that for the page (`PageFilter`). When the queue is split into documents (`DocumentSplitter`)
+/// separator pages are flagged and dimmed, each document's first page is titled, and the gap before
+/// a page splits or joins there with one click; a page's menu also names its document.
 struct PagesStripView: View {
     @EnvironmentObject var state: AppState
+    /// The page whose document is being named (the name alert), and the name typed.
+    @State private var namingPage: UUID?
+    @State private var nameDraft = ""
 
     var body: some View {
         let options = state.settings.document
-        let saveCount = PageFilter.pagesToSave(state.scannedPages, options: options).count
-        let saveTitle = state.settings.format.saveTitle(pageCount: saveCount)
+        let plan = DocumentSplitter.plan(state.scannedPages, options: options)
+        let savePlan = SavePlan.make(state.scannedPages, options: options)
+        let showsBreaks = DocumentSplitter.showsBreaks(plan, options: options)
+        let saveCount = savePlan.pageCount
+        let saveTitle = savePlan.saveTitle(state.settings.format)
         let saveHelp: String = saveCount == 0 && !state.scannedPages.isEmpty ? PageFilter.nothingToSaveMessage : ""
         HStack(spacing: 12) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(Array(state.scannedPages.enumerated()), id: \.element.id) { index, page in
-                        PageThumbnailCell(
-                            page: page,
-                            pageNumber: index + 1,
-                            options: options,
-                            canMoveLeft: index > 0,
-                            canMoveRight: index < state.scannedPages.count - 1,
-                            onRemove: { state.removePage(id: page.id) },
-                            onMove: { state.movePage(id: page.id, by: $0) },
-                            onRotate: { state.rotatePage(id: page.id) },
-                            onToggle: { state.togglePageInclusion(id: page.id) },
-                            onSwap: { state.togglePageGeometry(id: page.id) },
-                            onCopyText: { state.copyPageText(id: page.id) })
+                        HStack(spacing: 4) {
+                            if showsBreaks {
+                                BreakGap(label: DocumentSplitter.breakLabel(plan, index),
+                                         startsDocument: plan.isSplit && plan.pages[index].startsDocument
+                                            && (plan.pages[index].document ?? 1) > 1,
+                                         onToggle: { state.toggleDocumentBreak(id: page.id) })
+                            }
+                            PageThumbnailCell(
+                                page: page,
+                                pageNumber: index + 1,
+                                options: options,
+                                split: PageSplitInfo(plan: plan, index: index, page: page, options: options),
+                                canMoveLeft: index > 0,
+                                canMoveRight: index < state.scannedPages.count - 1,
+                                onRemove: { state.removePage(id: page.id) },
+                                onMove: { state.movePage(id: page.id, by: $0) },
+                                onRotate: { state.rotatePage(id: page.id) },
+                                onToggle: { state.togglePageInclusion(id: page.id) },
+                                onSwap: { state.togglePageGeometry(id: page.id) },
+                                onCopyText: { state.copyPageText(id: page.id) },
+                                onBreak: { state.toggleDocumentBreak(id: page.id) },
+                                onName: {
+                                    nameDraft = state.documentLabel(of: page.id)
+                                    namingPage = page.id
+                                })
+                        }
                     }
                 }
                 .padding(.horizontal, 12)
@@ -40,8 +62,8 @@ struct PagesStripView: View {
                 .padding(.vertical, 10)
 
             VStack(alignment: .trailing, spacing: 6) {
-                // "24 pages in queue, 5 blank skipped"
-                Text(PageFilter.queueSummary(state.scannedPages, options: options))
+                // "24 pages in queue, 5 blank skipped", "9 pages in queue, 3 documents, 2 separator pages skipped"
+                Text(DocumentSplitter.queueSummary(state.scannedPages, options: options))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button {
@@ -62,6 +84,71 @@ struct PagesStripView: View {
         }
         .frame(height: 104)
         .background(.bar)
+        .alert("Name This Document", isPresented: Binding(get: { namingPage != nil },
+                                                           set: { if !$0 { namingPage = nil } })) {
+            TextField("Name", text: $nameDraft)
+            Button("Save") {
+                if let id = namingPage { state.setDocumentLabel(id: id, label: nameDraft) }
+                namingPage = nil
+            }
+            Button("Cancel", role: .cancel) { namingPage = nil }
+        } message: {
+            Text("Used for {label} in the file name.")
+        }
+    }
+}
+
+/// What the split plan says about a queued page, for its cell. Twin of the Windows `PageSplitView`.
+fileprivate struct PageSplitInfo {
+    let badge: String?
+    let isExcluded: Bool
+    let toggleLabel: String?
+    /// "Document 2 · Lease" on the first page of each document when the queue is split.
+    let dividerTitle: String?
+    /// "Separator sheet (Patch T): a new document starts after it. It is not saved."
+    let separatorNote: String?
+    /// The page menu's split or join item.
+    let menuBreakLabel: String?
+    /// The page is saved in a document, so the document can be named.
+    let canNameDocument: Bool
+
+    init(plan: SplitPlan, index: Int, page: ScannedPage, options: DocumentOptions) {
+        badge = DocumentSplitter.badge(plan, index, page: page, options: options)
+        isExcluded = plan.pages[index].role != .content
+        toggleLabel = DocumentSplitter.toggleLabel(plan, index, page: page, options: options)
+        dividerTitle = DocumentSplitter.dividerTitle(plan, index)
+        separatorNote = DocumentSplitter.separatorNote(plan, index, page: page)
+        menuBreakLabel = DocumentSplitter.breakLabel(plan, index)
+        canNameDocument = plan.pages[index].document != nil
+    }
+}
+
+/// The gap before a page while the strip shows documents: one click starts a new document there or
+/// joins the page to the document before. A document's start is drawn as a bar.
+fileprivate struct BreakGap: View {
+    let label: String?
+    let startsDocument: Bool
+    let onToggle: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        if let label {
+            Button(action: onToggle) {
+                Rectangle()
+                    .fill(startsDocument ? Color.accentColor : Color.secondary)
+                    .frame(width: startsDocument ? 3 : 1)
+                    .opacity(startsDocument || hovering ? 1 : 0)
+                    .frame(width: 10)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help(label)
+            .accessibilityLabel(label)
+        } else {
+            Color.clear.frame(width: 10)
+        }
     }
 }
 
@@ -72,6 +159,8 @@ fileprivate struct PageThumbnailCell: View {
     let pageNumber: Int
     /// The blank-page settings the page is shown with.
     let options: DocumentOptions
+    /// Its place in the split plan: badge, separator, document title.
+    let split: PageSplitInfo
     let canMoveLeft: Bool
     let canMoveRight: Bool
     let onRemove: () -> Void
@@ -83,6 +172,10 @@ fileprivate struct PageThumbnailCell: View {
     let onSwap: () -> Void
     /// The page's text, read with OCR, on the pasteboard (`AppState.copyPageText`).
     let onCopyText: () -> Void
+    /// Start a new document at the page, or join it to the one before (`AppState.toggleDocumentBreak`).
+    let onBreak: () -> Void
+    /// Name the page's document (the strip's name alert).
+    let onName: () -> Void
 
     @State private var thumbnail: CGImage?
     @State private var hovering = false
@@ -92,7 +185,7 @@ fileprivate struct PageThumbnailCell: View {
             thumbnailView
                 .frame(height: 58)
                 // Left out when saving: the page is dimmed.
-                .opacity(PageFilter.isExcluded(page, options: options) ? 0.35 : 1)
+                .opacity(split.isExcluded ? 0.35 : 1)
                 .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: 3))
                 .overlay { if hovering { hoverControls } }
@@ -104,10 +197,21 @@ fileprivate struct PageThumbnailCell: View {
 
             // Below the page, clear of the hover controls on it.
             HStack(spacing: 3) {
-                Text(caption)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .help(DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? "")
+                if let title = split.dividerTitle {
+                    // The first page of a document when the queue is split: its title instead.
+                    Text(title)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 90)
+                        .help("\(title), \(caption)")
+                } else {
+                    Text(caption)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .help(DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? "")
+                }
                 geometryToggle
             }
         }
@@ -115,6 +219,15 @@ fileprivate struct PageThumbnailCell: View {
         .accessibilityLabel(accessibilityName)
         .contextMenu {
             Button("Copy Text", action: onCopyText)
+            if split.menuBreakLabel != nil || split.canNameDocument {
+                Divider()
+            }
+            if let label = split.menuBreakLabel {
+                Button(label, action: onBreak)
+            }
+            if split.canNameDocument {
+                Button("Name This Document\u{2026}", action: onName)
+            }
         }
         // Re-render when the page is rotated or shown as scanned (the cell keeps its identity, so
         // a plain run-once task would show stale pixels).
@@ -129,13 +242,17 @@ fileprivate struct PageThumbnailCell: View {
         return "Page \(pageNumber) \u{00B7} \(side == .front ? "front" : "back")"
     }
 
-    /// "Page 3, Sheet 2 · back, Blank, skipped, Straightened 1.5°" for screen readers.
+    /// "Page 3, Sheet 2 · back, Blank, skipped, Straightened 1.5°" for screen readers; the first page
+    /// of a document after the first starts with its title ("Document 2, Page 3").
     private var accessibilityName: String {
         var name = "Page \(pageNumber)"
+        if let title = split.dividerTitle { name = "\(title), \(name)" }
         if let label = DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) {
             name += ", \(label)"
         }
-        if let badge = PageFilter.badge(page, options: options) {
+        if let note = split.separatorNote {
+            name += ", \(note)"
+        } else if let badge = split.badge {
             name += ", \(badge)"
         }
         if let caption = PageCorrections.caption(page) {
@@ -164,7 +281,7 @@ fileprivate struct PageThumbnailCell: View {
     /// with what saving does with the page ("Blank, skipped") on hover and for screen readers.
     @ViewBuilder
     private var blankBadge: some View {
-        if let badge = PageFilter.badge(page, options: options) {
+        if let badge = split.badge {
             Image(systemName: "doc")
                 .font(.caption2)
                 .foregroundStyle(.orange)
@@ -172,7 +289,7 @@ fileprivate struct PageThumbnailCell: View {
                 .padding(.vertical, 2)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 3))
                 .padding(2)
-                .help(badge)
+                .help(split.separatorNote ?? badge)
                 .accessibilityLabel(badge)
         }
     }
@@ -182,8 +299,8 @@ fileprivate struct PageThumbnailCell: View {
     /// land on white paper.
     @ViewBuilder
     private var blankToggle: some View {
-        if let toggleLabel = PageFilter.toggleLabel(page, options: options) {
-            let toggleTitle: String = PageFilter.isExcluded(page, options: options) ? "Keep" : "Skip"
+        if let toggleLabel = split.toggleLabel {
+            let toggleTitle: String = split.isExcluded ? "Keep" : "Skip"
             Button(toggleTitle, action: onToggle)
                 .controlSize(.mini)
                 .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 4, style: .continuous))

@@ -10,7 +10,8 @@ import Foundation
 /// sizes can be tried without hardware. For the ID card task its glass holds a sample card (an
 /// obviously made-up design, no real document), which it turns over after every scan
 /// (`idCardTurnedOver`); for the Receipts task it holds two made-up receipts
-/// (`demoReceiptPlaces`). Twin of C# `MockScannerBackend`.
+/// (`demoReceiptPlaces`); for the Batch task its feeder holds a stack of documents with separator
+/// sheets between them (`batchSeparatorSheets`). Twin of C# `MockScannerBackend`.
 public final class MockScannerBackend: ScannerBackend {
 
     /// Where the demo receipts lie on the glass (centre and size in inches, tilt in degrees), for checks.
@@ -50,6 +51,18 @@ public final class MockScannerBackend: ScannerBackend {
     /// like the back of a one-sided page in a two-sided stack. Empty by default; the app's demo
     /// scanner has a blank back on its second sheet.
     public var feederBlankBackSheets: Set<Int> = []
+
+    /// Sheets the demo feeder holds for the Batch task unless `batchSheetCount` is changed.
+    public static let defaultBatchSheetCount = 7
+
+    /// Sheets a feeder scan for the Batch task delivers, read when the scan starts: a stack of three
+    /// documents with a separator sheet in front of the second and the third (`batchSeparatorSheets`).
+    public var batchSheetCount: Int = MockScannerBackend.defaultBatchSheetCount
+
+    /// The sheets (counted from 0) of the Batch task's stack that are separator sheets, read when the
+    /// scan starts: the Patch T sheet the app prints (`PatchCodeDetector.renderSheet`) on the front,
+    /// blank paper on the back. Sheets 2 and 4 by default: documents of two, one and two sheets.
+    public var batchSeparatorSheets: Set<Int> = [2, 4]
 
     /// The sample ID card on the glass lies with its back up: a scan for the ID card task shows its
     /// back. The demo turns the card over by itself after every such scan, as the user is asked to,
@@ -181,7 +194,12 @@ private final class MockScannerSession: ScannerSession {
     /// (`lastScanDuplex`). An empty feeder or a jam fails like a real one; a jam keeps the sheets
     /// before it.
     private func scanFeeder(settings: ScanSettings, dpi: Int) async throws -> [ScannedPage] {
-        let sheets = backend?.feederSheetCount ?? MockScannerBackend.defaultFeederSheetCount
+        // The Batch task's stack: documents with separator sheets between them.
+        let batch = settings.task == .batch && settings.intent == .document
+        let sheets = batch
+            ? (backend?.batchSheetCount ?? MockScannerBackend.defaultBatchSheetCount)
+            : (backend?.feederSheetCount ?? MockScannerBackend.defaultFeederSheetCount)
+        let separators: Set<Int> = batch ? (backend?.batchSeparatorSheets ?? [2, 4]) : []
         let jamsAfter = backend?.feederJamsAfter
         let twoSided = settings.duplex == .both && (backend?.feederDuplex ?? true)
         let turnedOver = backend?.feederStackTurnedOver ?? false
@@ -207,12 +225,19 @@ private final class MockScannerSession: ScannerSession {
             let sheet = turnedOver && !twoSided ? sheets - 1 - index : index
             let sides: [PageSide] = twoSided ? [.front, .back] : [turnedOver ? .back : .front]
             for side in sides {
-                let blank = side == .back && blankBacks.contains(sheet)
-                let rendered = blank
-                    ? MockBedRenderer.renderBlankBack(dpi: dpi, intent: settings.intent, sheetIndex: sheet,
-                                                      sheetInches: sheetInches)
-                    : MockBedRenderer.renderSheet(dpi: dpi, intent: settings.intent, sheetIndex: sheet,
-                                                  side: side, sheetInches: sheetInches)
+                let separator = separators.contains(sheet)
+                let blank = side == .back && (separator || blankBacks.contains(sheet))
+                let front = separator ? MockBedRenderer.renderSeparatorSheet(dpi: dpi, sheetInches: sheetInches) : nil
+                let rendered: CGImage?
+                if blank {
+                    rendered = MockBedRenderer.renderBlankBack(dpi: dpi, intent: settings.intent, sheetIndex: sheet,
+                                                               sheetInches: sheetInches, frontImage: front)
+                } else if let front {
+                    rendered = front
+                } else {
+                    rendered = MockBedRenderer.renderSheet(dpi: dpi, intent: settings.intent, sheetIndex: sheet,
+                                                           side: side, sheetInches: sheetInches)
+                }
                 guard let image = rendered else {
                     throw ScanError.scanFailed("Could not render the demo scan.")
                 }
@@ -331,11 +356,13 @@ private enum MockBedRenderer {
     }
 
     /// The back of sheet `sheetIndex` when nothing is printed on it, as a scanner sees it: off-white
-    /// paper with noise (σ ≈ 4 levels), a few specks of dust, and the front showing through mirrored
-    /// at a tenth of its darkness. Deterministic for a sheet and size; the same noise and dust as
-    /// the C# demo (the front itself is drawn by CoreGraphics here).
-    static func renderBlankBack(dpi: Int, intent: ScanIntent, sheetIndex: Int, sheetInches size: CGSize? = nil) -> CGImage? {
-        guard let frontImage = renderSheet(dpi: dpi, intent: intent, sheetIndex: sheetIndex, side: .front, sheetInches: size),
+    /// paper with noise (σ ≈ 4 levels), a few specks of dust, and the front (`frontImage`, else the
+    /// sheet's demo front) showing through mirrored at a tenth of its darkness. Deterministic for a
+    /// sheet and size; the same noise and dust as the C# demo (the front itself is drawn by
+    /// CoreGraphics here).
+    static func renderBlankBack(dpi: Int, intent: ScanIntent, sheetIndex: Int, sheetInches size: CGSize? = nil,
+                                frontImage given: CGImage? = nil) -> CGImage? {
+        guard let frontImage = given ?? renderSheet(dpi: dpi, intent: intent, sheetIndex: sheetIndex, side: .front, sheetInches: size),
               let front = RgbaImage(cgImage: frontImage) else { return nil }
         let width = front.width, height = front.height
         var pixels = [UInt8](repeating: 255, count: width * height * 4)
@@ -375,6 +402,24 @@ private enum MockBedRenderer {
             }
         }
         return RgbaImage(width: width, height: height, pixels: pixels).makeCGImage()
+    }
+
+    /// A separator sheet as the demo feeder delivers it: the Patch T sheet the app prints
+    /// (`PatchCodeDetector.renderSheet`), `sheetInches` in size (`sheetInches` by default), on slightly
+    /// off-white paper. Drawn pixel by pixel, the same as the C# demo.
+    static func renderSeparatorSheet(dpi: Int, sheetInches size: CGSize? = nil) -> CGImage? {
+        let inches = size ?? sheetInches
+        let sheet = PatchCodeDetector.renderSheet(.patchT, widthInches: Double(inches.width),
+                                                  heightInches: Double(inches.height), dpi: dpi)
+        var pixels = [UInt8](repeating: 255, count: sheet.width * sheet.height * 4)
+        for i in 0..<sheet.pixels.count {
+            // Toner a little short of black, paper a little short of white.
+            let value: UInt8 = sheet.pixels[i] == 0 ? 28 : 247
+            pixels[i * 4] = value
+            pixels[i * 4 + 1] = value
+            pixels[i * 4 + 2] = value
+        }
+        return RgbaImage(width: sheet.width, height: sheet.height, pixels: pixels).makeCGImage()
     }
 
     // MARK: Receipts

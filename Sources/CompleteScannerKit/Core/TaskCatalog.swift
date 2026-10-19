@@ -22,7 +22,7 @@ public struct TaskDefinition: Equatable, Sendable {
     public let title: String
     public let subtitle: String
     /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-    /// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt".
+    /// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch".
     public let iconKey: String
     public let flow: TaskFlowKind
     /// The scan mode the task uses.
@@ -139,6 +139,14 @@ public enum TaskCatalog {
             steps: [TaskStep(id: "scan", title: "Scan the receipts",
                              prompt: "Lay up to six receipts on the glass with a little space between them, close the lid and scan. Each one is found, straightened and made easy to read; check them before saving.",
                              primaryActionLabel: "Scan receipts", repeats: true)]),
+        TaskDefinition(
+            task: .batch, title: "Batch of separate documents",
+            subtitle: "Scan a stack of documents in one go; each one is saved as its own PDF, split at separator sheets.",
+            iconKey: "batch", flow: .documentQueue, intent: .document, requiredSource: .documentFeeder,
+            fileLabel: "Document",
+            steps: [TaskStep(id: "scan", title: "Scan the stack",
+                             prompt: "Put a separator sheet in front of each document after the first, load the stack in the feeder and scan. Check where the stack is split, then save.",
+                             primaryActionLabel: "Scan stack", repeats: true)]),
     ]
 
     public static func definition(_ task: ScanTask) -> TaskDefinition {
@@ -159,7 +167,9 @@ public enum TaskCatalog {
     /// scans one side. The ID card task makes no searchable PDF: the numbers on an ID are better not
     /// indexed; neither does the Copy task, whose PDF (when one is saved too) is a record of the paper
     /// copy. The Receipts task scans in grayscale (thermal print has no color) into Compact PDFs, named
-    /// by the receipt's date.
+    /// by the receipt's date. Only the Batch task splits the stack into documents (at separator
+    /// sheets, skipping blank pages); the others save one document. The sheets per document of
+    /// `.sheetCount` are kept.
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings {
         var s = current
         s.source = .flatbed
@@ -174,9 +184,10 @@ public enum TaskCatalog {
         s.output.afterSave = AfterSaveAction.none
         s.output.alsoSaveText = false
         s.duplex = .off
-        s.document.removeBlankPages = task == .twoSided
+        s.document.removeBlankPages = task == .twoSided || task == .batch
         s.document.autoCrop = false
         s.document.autoStraighten = task == .twoSided
+        s.document.splitMode = task == .batch ? .separatorSheet : SplitMode.none
         switch task {
         case .document:
             s.intent = .document
@@ -243,6 +254,12 @@ public enum TaskCatalog {
             s.format = .pdf
             s.output.pdfSize = .compact
             s.namingTemplate = "Receipt {docdate} {counter}"
+        case .batch:
+            s.intent = .document
+            s.source = .documentFeeder
+            s.resolution = 300
+            s.format = .pdf
+            s.namingTemplate = "Document {label} {date} {counter}"
         }
         s.taskId = task.rawValue
         return s
@@ -255,6 +272,7 @@ public enum TaskCatalog {
         if settings.intent == .photo {
             return settings.adjustments.restoreFadedColors ? .photoRestore : .photos
         }
+        if settings.document.splitMode != SplitMode.none && settings.documentMultiPage { return .batch }
         if settings.source == .documentFeeder { return settings.duplex == .off ? .feeder : .twoSided }
         if settings.format == .word { return .word }
         if !settings.documentMultiPage && settings.format.isImageFormat { return .quickScan }
@@ -281,14 +299,15 @@ public enum TaskCatalog {
     }
 
     /// The settings still do what the task is for: the same scan mode, and the task's required
-    /// source; for the two-sided task, both sides; for Scan to Word, a Word document. Changing the
-    /// mode by hand (or choosing one side, or another format), or a scanner without that source,
-    /// ends the task.
+    /// source; for the two-sided task, both sides; for Scan to Word, a Word document; for the Batch
+    /// task, a split. Changing the mode by hand (or choosing one side, another format or no split),
+    /// or a scanner without that source, ends the task.
     public static func fits(_ task: ScanTask, _ settings: ScanSettings) -> Bool {
         let taskDefinition = TaskCatalog.definition(task)
         guard settings.intent == taskDefinition.intent else { return false }
         if task == .twoSided && settings.duplex == .off { return false }
         if task == .word && settings.format != .word { return false }
+        if task == .batch && settings.document.splitMode == SplitMode.none { return false }
         if let source = taskDefinition.requiredSource { return settings.source == source }
         return true
     }
@@ -311,7 +330,8 @@ public enum TaskCatalog {
 
     /// One line describing the settings, e.g. "300 dpi · Color · PDF". A PDF size other than the
     /// default `.standard` is named ("300 dpi · Color · Compact PDF"), and so is two-sided feeder
-    /// scanning ("… · Both sides", "… · Both sides, turned by hand"), so the line stays short
+    /// scanning ("… · Both sides", "… · Both sides, turned by hand"), and splitting into documents
+    /// ("… · Split at separator sheets"), so the line stays short
     /// enough for cards and the preset list. A copy says how it prints instead of a format:
     /// "300 dpi · Color · Actual size", "300 dpi · Grayscale · Fit to page · 3 copies".
     public static func summary(_ settings: ScanSettings) -> String {
@@ -327,6 +347,20 @@ public enum TaskCatalog {
             : settings.format.label
         let sides = DocumentSides.effective(settings, capabilities: nil)
         let twoSided = sides == .off ? "" : " \u{00B7} \(sides.label)"
-        return "\(settings.resolution) dpi \u{00B7} \(settings.colorMode.label) \u{00B7} \(format)\(twoSided)"
+        let split = splitSummary(settings).map { " \u{00B7} \($0)" } ?? ""
+        return "\(settings.resolution) dpi \u{00B7} \(settings.colorMode.label) \u{00B7} \(format)\(twoSided)\(split)"
+    }
+
+    /// "Split at separator sheets", "Split at blank sheets", "Split every 3 sheets" for collected
+    /// document pages split into documents; nil otherwise.
+    private static func splitSummary(_ settings: ScanSettings) -> String? {
+        guard settings.intent == .document, settings.documentMultiPage else { return nil }
+        let sheets = DocumentSplitter.clampSheetCount(settings.document.splitSheetCount)
+        switch settings.document.splitMode {
+        case .separatorSheet: return "Split at separator sheets"
+        case .blankSheet: return "Split at blank sheets"
+        case .sheetCount: return sheets == 1 ? "Split every sheet" : "Split every \(sheets) sheets"
+        case .none: return nil
+        }
     }
 }

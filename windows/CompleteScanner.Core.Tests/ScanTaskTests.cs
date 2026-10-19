@@ -10,7 +10,7 @@ public class ScanTaskTests
     [Fact]
     public void RawValues_AreTheStoredNames()
     {
-        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word", "receipt"],
+        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch"],
                      ScanTasks.All.Select(t => t.RawValue()));
     }
 
@@ -30,9 +30,10 @@ public class ScanTaskTests
     {
         Assert.Equal(ScanTasks.All, TaskCatalog.All.Select(d => d.Task));
         Assert.Equal(["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
-                      "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word", "Receipts"],
+                      "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word", "Receipts",
+                      "Batch of separate documents"],
                      TaskCatalog.All.Select(d => d.Title));
-        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt"],
+        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch"],
                      TaskCatalog.All.Select(d => d.IconKey));
         foreach (var definition in TaskCatalog.All)
         {
@@ -68,6 +69,7 @@ public class ScanTaskTests
                 (TaskFlowKind.Copy, ScanIntent.Document, null),
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, null),
                 (TaskFlowKind.ReceiptSplit, ScanIntent.Document, null),
+                (TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.DocumentFeeder),
             ],
             TaskCatalog.All.Select(d => (d.Flow, d.Intent, d.RequiredSource)));
     }
@@ -150,21 +152,22 @@ public class ScanTaskTests
         {
             var s = TaskCatalog.Apply(task, current);
             return (s.Intent, s.Source, s.Resolution, s.Format, s.DocumentMultiPage, s.NamingTemplate,
-                    s.Adjustments.RestoreFadedColors, s.Adjustments.AutoEnhance, s.Output.PdfSize);
+                    s.Adjustments.RestoreFadedColors, s.Adjustments.AutoEnhance, s.Output.PdfSize, s.Document.SplitMode);
         });
         Assert.Equal(
             [
-                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
-                (ScanIntent.Document, ScanSource.DocumentFeeder, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
-                (ScanIntent.Photo, ScanSource.Flatbed, 600, OutputFormat.Jpeg, true, "Photo {date} {counter}", false, false, PdfSizePreset.Standard),
-                (ScanIntent.Photo, ScanSource.Flatbed, 600, OutputFormat.Png, true, "Photo {date} {counter}", true, true, PdfSizePreset.Standard),
-                (ScanIntent.Document, ScanSource.Flatbed, 150, OutputFormat.Jpeg, false, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
-                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Compact),
-                (ScanIntent.Document, ScanSource.DocumentFeeder, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
-                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "ID card {date}", false, false, PdfSizePreset.Standard),
-                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Copy {date} {counter}", false, false, PdfSizePreset.Standard),
-                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Word, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
-                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Receipt {docdate} {counter}", false, false, PdfSizePreset.Compact),
+                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard, SplitMode.None),
+                (ScanIntent.Document, ScanSource.DocumentFeeder, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard, SplitMode.None),
+                (ScanIntent.Photo, ScanSource.Flatbed, 600, OutputFormat.Jpeg, true, "Photo {date} {counter}", false, false, PdfSizePreset.Standard, SplitMode.None),
+                (ScanIntent.Photo, ScanSource.Flatbed, 600, OutputFormat.Png, true, "Photo {date} {counter}", true, true, PdfSizePreset.Standard, SplitMode.None),
+                (ScanIntent.Document, ScanSource.Flatbed, 150, OutputFormat.Jpeg, false, "Scan {date} {counter}", false, false, PdfSizePreset.Standard, SplitMode.None),
+                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Compact, SplitMode.None),
+                (ScanIntent.Document, ScanSource.DocumentFeeder, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard, SplitMode.None),
+                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "ID card {date}", false, false, PdfSizePreset.Standard, SplitMode.None),
+                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Copy {date} {counter}", false, false, PdfSizePreset.Standard, SplitMode.None),
+                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Word, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard, SplitMode.None),
+                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Receipt {docdate} {counter}", false, false, PdfSizePreset.Compact, SplitMode.None),
+                (ScanIntent.Document, ScanSource.DocumentFeeder, 300, OutputFormat.Pdf, true, "Document {label} {date} {counter}", false, false, PdfSizePreset.Standard, SplitMode.SeparatorSheet),
             ],
             rows);
     }
@@ -191,7 +194,7 @@ public class ScanTaskTests
         foreach (var task in ScanTasks.All)
         {
             var s = TaskCatalog.Apply(task, current);
-            Assert.Equal(task == ScanTask.TwoSided, s.Document.RemoveBlankPages);
+            Assert.Equal(task is ScanTask.TwoSided or ScanTask.Batch, s.Document.RemoveBlankPages);
             Assert.Equal(BlankSensitivity.High, s.Document.BlankSensitivity);
         }
         Assert.True(current.Document.RemoveBlankPages);
@@ -447,13 +450,13 @@ public class ScanTaskTests
     public void Availability_FlatbedOnlyScanner_NoFeederTasks()
     {
         var caps = new ScannerCapabilities { Sources = [ScanSource.Flatbed] };
-        foreach (var task in new[] { ScanTask.Feeder, ScanTask.TwoSided })
+        foreach (var task in new[] { ScanTask.Feeder, ScanTask.TwoSided, ScanTask.Batch })
         {
             var availability = TaskCatalog.Availability(task, caps);
             Assert.False(availability.IsAvailable);
             Assert.Equal("This scanner has no document feeder.", availability.Reason);
         }
-        Assert.All(ScanTasks.All.Where(t => t is not (ScanTask.Feeder or ScanTask.TwoSided)),
+        Assert.All(ScanTasks.All.Where(t => t is not (ScanTask.Feeder or ScanTask.TwoSided or ScanTask.Batch)),
                    task => Assert.True(TaskCatalog.Availability(task, caps).IsAvailable));
     }
 
@@ -576,7 +579,7 @@ public class ScanTaskTests
     [Fact]
     public void FileLabels()
     {
-        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy", "Document", "Receipt"],
+        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy", "Document", "Receipt", "Document"],
                      TaskCatalog.All.Select(d => d.FileLabel));
     }
 
@@ -635,5 +638,59 @@ public class ScanTaskTests
             Assert.False(TaskCatalog.Apply(task, current).Output.AlsoSaveText);
         }
         Assert.True(current.Output.AlsoSaveText);
+    }
+
+    [Fact]
+    public void Batch_SplitsAFeederStackAtSeparatorSheets_AndEndsWithoutASplit()
+    {
+        var definition = TaskCatalog.Definition(ScanTask.Batch);
+        Assert.Equal("Scan stack", definition.Steps[0].PrimaryActionLabel);
+        var s = TaskCatalog.Apply(ScanTask.Batch, new ScanSettings());
+        Assert.Equal((ScanIntent.Document, ScanSource.DocumentFeeder, OutputFormat.Pdf, DuplexMode.Off, SplitMode.SeparatorSheet, true),
+                     (s.Intent, s.Source, s.Format, s.Duplex, s.Document.SplitMode, s.Document.RemoveBlankPages));
+        Assert.True(s.DocumentMultiPage && s.PdfSearchable);
+        Assert.Equal(TaskFlowKind.DocumentQueue, TaskCatalog.FlowOf(s));
+        Assert.Equal("300 dpi · Color · PDF · Split at separator sheets", TaskCatalog.Summary(s));
+        Assert.True(TaskCatalog.Fits(ScanTask.Batch, s));
+        // Another split still fits; no split ends the task, as leaving the feeder does.
+        s.Document.SplitMode = SplitMode.BlankSheet;
+        Assert.True(TaskCatalog.Fits(ScanTask.Batch, s));
+        Assert.Equal("300 dpi · Color · PDF · Split at blank sheets", TaskCatalog.Summary(s));
+        s.Document.SplitMode = SplitMode.SheetCount;
+        s.Document.SplitSheetCount = 3;
+        Assert.Equal("300 dpi · Color · PDF · Split every 3 sheets", TaskCatalog.Summary(s));
+        s.Document.SplitSheetCount = 1;
+        Assert.Equal("300 dpi · Color · PDF · Split every sheet", TaskCatalog.Summary(s));
+        s.Document.SplitMode = SplitMode.None;
+        Assert.False(TaskCatalog.Fits(ScanTask.Batch, s));
+        s.Document.SplitMode = SplitMode.SeparatorSheet;
+        s.Source = ScanSource.Flatbed;
+        Assert.False(TaskCatalog.Fits(ScanTask.Batch, s));
+        // Saved at once, nothing is split: the summary says nothing of it.
+        s.DocumentMultiPage = false;
+        Assert.Equal("300 dpi · Color · PDF", TaskCatalog.Summary(s));
+    }
+
+    [Fact]
+    public void Apply_OnlyTheBatchTaskSplits_TheSheetCountIsKept()
+    {
+        var current = Customized();
+        current.Document.SplitMode = SplitMode.BlankSheet;
+        current.Document.SplitSheetCount = 4;
+        foreach (var task in ScanTasks.All)
+        {
+            var s = TaskCatalog.Apply(task, current);
+            Assert.Equal(task == ScanTask.Batch ? SplitMode.SeparatorSheet : SplitMode.None, s.Document.SplitMode);
+            Assert.Equal(4, s.Document.SplitSheetCount);
+        }
+        Assert.Equal(SplitMode.BlankSheet, current.Document.SplitMode);
+        // Without a stored task, split documents look like a batch.
+        var untagged = TaskCatalog.Apply(ScanTask.Batch, new ScanSettings());
+        untagged.TaskId = null;
+        Assert.Equal(ScanTask.Batch, TaskCatalog.Infer(untagged));
+        untagged.Source = ScanSource.Flatbed;
+        Assert.Equal(ScanTask.Batch, TaskCatalog.Infer(untagged));
+        untagged.Document.SplitMode = SplitMode.None;
+        Assert.Equal(ScanTask.Document, TaskCatalog.Infer(untagged));
     }
 }

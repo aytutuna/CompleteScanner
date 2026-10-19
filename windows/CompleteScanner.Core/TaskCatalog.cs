@@ -23,7 +23,7 @@ public enum TaskFlowKind
 /// <summary>A task card: what it is called, how it looks and how its scans are handled.</summary>
 /// <param name="IconKey">
 /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-/// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt".
+/// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch".
 /// </param>
 /// <param name="Intent">The scan mode the task uses.</param>
 /// <param name="RequiredSource">The source the task cannot work without; null when any source does.</param>
@@ -111,6 +111,12 @@ public static class TaskCatalog
             [new TaskStep("scan", "Scan the receipts",
                           "Lay up to six receipts on the glass with a little space between them, close the lid and scan. Each one is found, straightened and made easy to read; check them before saving.",
                           "Scan receipts", Repeats: true)]),
+        new(ScanTask.Batch, "Batch of separate documents",
+            "Scan a stack of documents in one go; each one is saved as its own PDF, split at separator sheets.",
+            "batch", TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.DocumentFeeder, "Document",
+            [new TaskStep("scan", "Scan the stack",
+                          "Put a separator sheet in front of each document after the first, load the stack in the feeder and scan. Check where the stack is split, then save.",
+                          "Scan stack", Repeats: true)]),
     ];
 
     /// <summary>Every task, in start-screen order.</summary>
@@ -135,7 +141,9 @@ public static class TaskCatalog
     /// The ID card task makes no searchable PDF: the numbers on an ID are better not indexed; neither
     /// does the Copy task, whose PDF (when one is saved too) is a record of the paper copy. The
     /// Receipts task scans in grayscale (thermal print has no color) into Compact PDFs, named by
-    /// the receipt's date.
+    /// the receipt's date. Only the Batch task splits the stack into documents (at separator
+    /// sheets, skipping blank pages); the others save one document. The sheets per document of
+    /// <see cref="SplitMode.SheetCount"/> are kept.
     /// </summary>
     public static ScanSettings Apply(ScanTask task, ScanSettings current)
     {
@@ -152,9 +160,10 @@ public static class TaskCatalog
         s.Output.AfterSave = AfterSaveAction.None;
         s.Output.AlsoSaveText = false;
         s.Duplex = DuplexMode.Off;
-        s.Document.RemoveBlankPages = task == ScanTask.TwoSided;
+        s.Document.RemoveBlankPages = task is ScanTask.TwoSided or ScanTask.Batch;
         s.Document.AutoCrop = false;
         s.Document.AutoStraighten = task == ScanTask.TwoSided;
+        s.Document.SplitMode = task == ScanTask.Batch ? SplitMode.SeparatorSheet : SplitMode.None;
         switch (task)
         {
             case ScanTask.Document:
@@ -233,6 +242,13 @@ public static class TaskCatalog
                 s.Output.PdfSize = PdfSizePreset.Compact;
                 s.NamingTemplate = "Receipt {docdate} {counter}";
                 break;
+            case ScanTask.Batch:
+                s.Intent = ScanIntent.Document;
+                s.Source = ScanSource.DocumentFeeder;
+                s.Resolution = 300;
+                s.Format = OutputFormat.Pdf;
+                s.NamingTemplate = "Document {label} {date} {counter}";
+                break;
         }
         s.TaskId = task.RawValue();
         return s;
@@ -249,6 +265,7 @@ public static class TaskCatalog
         {
             return settings.Adjustments.RestoreFadedColors ? ScanTask.PhotoRestore : ScanTask.Photos;
         }
+        if (settings.Document.SplitMode != SplitMode.None && settings.DocumentMultiPage) return ScanTask.Batch;
         if (settings.Source == ScanSource.DocumentFeeder)
         {
             return settings.Duplex == DuplexMode.Off ? ScanTask.Feeder : ScanTask.TwoSided;
@@ -286,9 +303,9 @@ public static class TaskCatalog
 
     /// <summary>
     /// The settings still do what the task is for: the same scan mode, and the task's
-    /// required source; for the two-sided task, both sides; for Scan to Word, a Word document.
-    /// Changing the mode by hand (or choosing one side, or another format), or a scanner without
-    /// that source, ends the task.
+    /// required source; for the two-sided task, both sides; for Scan to Word, a Word document; for
+    /// the Batch task, a split. Changing the mode by hand (or choosing one side, another format or
+    /// no split), or a scanner without that source, ends the task.
     /// </summary>
     public static bool Fits(ScanTask task, ScanSettings settings)
     {
@@ -296,7 +313,8 @@ public static class TaskCatalog
         return settings.Intent == definition.Intent
                && (definition.RequiredSource is not { } source || settings.Source == source)
                && (task != ScanTask.TwoSided || settings.Duplex != DuplexMode.Off)
-               && (task != ScanTask.Word || settings.Format == OutputFormat.Word);
+               && (task != ScanTask.Word || settings.Format == OutputFormat.Word)
+               && (task != ScanTask.Batch || settings.Document.SplitMode != SplitMode.None);
     }
 
     /// <summary>
@@ -319,7 +337,8 @@ public static class TaskCatalog
     /// <summary>
     /// One line describing the settings, e.g. "300 dpi · Color · PDF". A PDF size other than
     /// the default Standard is named ("300 dpi · Color · Compact PDF"), and so is two-sided
-    /// feeder scanning ("… · Both sides", "… · Both sides, turned by hand"), so the line stays
+    /// feeder scanning ("… · Both sides", "… · Both sides, turned by hand"), and splitting into
+    /// documents ("… · Split at separator sheets"), so the line stays
     /// short enough for cards and the preset list. A copy says how it prints instead of a format:
     /// "300 dpi · Color · Actual size", "300 dpi · Grayscale · Fit to page · 3 copies".
     /// </summary>
@@ -337,6 +356,24 @@ public static class TaskCatalog
             : settings.Format.Label();
         var sides = DocumentSides.Effective(settings, null);
         string twoSided = sides == DuplexMode.Off ? "" : $" · {sides.Label()}";
-        return $"{settings.Resolution} dpi · {settings.ColorMode.Label()} · {format}{twoSided}";
+        string split = SplitSummary(settings) is { } text ? $" · {text}" : "";
+        return $"{settings.Resolution} dpi · {settings.ColorMode.Label()} · {format}{twoSided}{split}";
+    }
+
+    /// <summary>
+    /// "Split at separator sheets", "Split at blank sheets", "Split every 3 sheets" for collected
+    /// document pages split into documents; null otherwise.
+    /// </summary>
+    private static string? SplitSummary(ScanSettings settings)
+    {
+        if (settings.Intent != ScanIntent.Document || !settings.DocumentMultiPage) return null;
+        int sheets = DocumentSplitter.ClampSheetCount(settings.Document.SplitSheetCount);
+        return settings.Document.SplitMode switch
+        {
+            SplitMode.SeparatorSheet => "Split at separator sheets",
+            SplitMode.BlankSheet => "Split at blank sheets",
+            SplitMode.SheetCount => sheets == 1 ? "Split every sheet" : $"Split every {sheets} sheets",
+            _ => null,
+        };
     }
 }

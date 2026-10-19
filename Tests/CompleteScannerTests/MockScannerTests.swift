@@ -407,4 +407,48 @@ final class MockScannerTests: XCTestCase {
         let document = try XCTUnwrap(documentPages.first)
         XCTAssertNotEqual(rgbaPixels(scan.image), rgbaPixels(document.image))
     }
+
+    // MARK: - Batch of separate documents
+
+    @MainActor
+    func test_theBatchStack_hasSeparatorSheetsTheSplitterFinds() async throws {
+        let (backend, session) = try await open()
+        XCTAssertEqual(backend.batchSheetCount, MockScannerBackend.defaultBatchSheetCount)
+        XCTAssertEqual(backend.batchSeparatorSheets, [2, 4])
+        var settings = TaskCatalog.apply(.batch, to: ScanSettings())
+        settings.resolution = mockDPI
+        let pages = try await session.performScan(settings: settings, selection: nil)
+        XCTAssertEqual(pages.count, 7)
+        XCTAssertEqual(pages.map { PatchCodeDetector.detect($0.image, dpi: $0.dpi)?.code },
+                       [nil, nil, .patchT, nil, .patchT, nil, nil])
+        // The documents' sheets keep their numbers.
+        XCTAssertEqual([0, 1, 3, 5, 6].map { sheetMarks(pages[$0].image) }, [1, 2, 4, 6, 7])
+        // Through the page processor and the splitter: three documents of two, one and two sheets.
+        let processed = try PageProcessor.forScan(settings).process(pages).pages
+        XCTAssertEqual(DocumentSplitter.plan(processed, options: settings.document).documents.map(\.pages),
+                       [[0, 1], [3], [5, 6]])
+        // Both sides: a separator's back is blank paper, and the whole sheet is left out.
+        settings.duplex = .both
+        let scanned = try await session.performScan(settings: settings, selection: nil)
+        let twoSided = try PageProcessor.forScan(settings, arrangement: .twoSided).process(scanned).pages
+        XCTAssertEqual(twoSided.count, 14)
+        XCTAssertEqual(twoSided[5].blank?.isBlank, true)
+        XCTAssertEqual(DocumentSplitter.plan(twoSided, options: settings.document).documents.map(\.pages),
+                       [[0, 1, 2, 3], [6, 7], [10, 11, 12, 13]])
+    }
+
+    @MainActor
+    func test_otherTasks_keepTheUsualStack() async throws {
+        let (backend, session) = try await open()
+        backend.batchSheetCount = 2
+        let pages = try await session.performScan(settings: feederSettings(), selection: nil)
+        XCTAssertEqual(pages.count, 3)
+        for page in pages {
+            XCTAssertNil(PatchCodeDetector.detect(page.image, dpi: page.dpi))
+        }
+        var batch = TaskCatalog.apply(.batch, to: ScanSettings())
+        batch.resolution = mockDPI
+        let batchPages = try await session.performScan(settings: batch, selection: nil)
+        XCTAssertEqual(batchPages.count, 2)
+    }
 }

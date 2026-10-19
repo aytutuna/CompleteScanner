@@ -47,6 +47,20 @@ public struct GeometryStep: PageStep {
     }
 }
 
+/// Looks for a patch code on the page (`PatchCodeDetector`) and records it: the page is then a
+/// separator sheet, used when the stack is split at separator sheets (`DocumentSplitter`). The
+/// pixels are not changed. Runs after crop and straighten, before the adjustments. Twin of C#
+/// `SeparatorStep`.
+public struct SeparatorStep: PageStep {
+    public var name: String { "separator" }
+
+    public init() {}
+
+    public func apply(_ page: ScannedPage) -> ScannedPage {
+        page.withPatch(PatchCodeDetector.detect(page.image, dpi: page.dpi)?.code)
+    }
+}
+
 /// The image adjustments and the color mode (`ImagePipeline.apply`), on the page and on its other
 /// version (the page as scanned, kept by crop and straighten), so either can be shown.
 public struct AdjustmentStep: PageStep {
@@ -95,9 +109,9 @@ public struct ProcessedScan {
 /// The clean-up stage between the scanner and the page queue, the same for every scanner: the
 /// pages are put in reading order with their sides (two-sided scans), then every step runs on
 /// every page in order. The order of the steps is fixed: `forScan` builds them from the settings:
-/// blank check (document pages), crop and straighten, then adjustments. Later page features slot
-/// in between (separator sheets after crop and straighten, turning pages upright before the
-/// adjustments). Twin of C# `PageProcessor`.
+/// blank check (document pages), crop and straighten, separator sheets, then adjustments. Later
+/// page features slot in between (turning pages upright before the adjustments). Twin of C#
+/// `PageProcessor`.
 public struct PageProcessor {
     public let steps: [any PageStep]
     public let arrangement: ScanArrangement
@@ -111,8 +125,9 @@ public struct PageProcessor {
 
     /// The steps for a scan made with `settings`: the blank-page check for pages collected in the
     /// document queue (whether or not blank pages are left out, so the page strip can flag them),
-    /// crop and straighten when asked for those pages, then the adjustments unless they change
-    /// nothing.
+    /// crop and straighten when asked for those pages, the separator-sheet check for those pages
+    /// (whether or not the stack is split, so a split chosen later finds them), then the adjustments
+    /// unless they change nothing.
     public static func forScan(_ settings: ScanSettings, arrangement: ScanArrangement = .asScanned) -> PageProcessor {
         var steps: [any PageStep] = []
         if checksBlankPages(settings) {
@@ -120,6 +135,9 @@ public struct PageProcessor {
         }
         if correctsGeometry(settings) {
             steps.append(GeometryStep(crop: settings.document.autoCrop, straighten: settings.document.autoStraighten))
+        }
+        if checksBlankPages(settings) {
+            steps.append(SeparatorStep())
         }
         if !(settings.adjustments.isIdentity && settings.colorMode == .color) {
             steps.append(AdjustmentStep(adjustments: settings.adjustments, colorMode: settings.colorMode))

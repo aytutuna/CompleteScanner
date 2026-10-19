@@ -20,6 +20,7 @@ Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Output/PrintLayout.swift`, `App/PrintController.swift`, `App/AppState+Copy.swift` — copy and print: the Copy task, printing the ID card's page and the ruler test page, at real size (see below).
 - `Sources/CompleteScannerKit/Output/OCRText.swift`, `TextExport.swift`, `DocxWriter.swift`, `ZipStore.swift` — text output: OCR lines in reading order and paragraphs, the text file, the Word document and its zip package, Copy Text (see below).
 - `Sources/CompleteScannerKit/Pipeline/ReceiptProcessing.swift`, `App/AppState+Receipts.swift` — the Receipts task: several receipts found on the glass, cleaned up for faded thermal print, and named by the date read from their text (see below).
+- `Sources/CompleteScannerKit/Core/DocumentSplitter.swift`, `Core/SavePlan.swift`, `Pipeline/PatchCodeDetector.swift`, `App/AppState+Split.swift` — splitting a stack into separate documents: separator sheets with patch codes, blank sheets, every N sheets, splitting and joining by hand in the page strip, the {label} token, and saving several files all or nothing (see below).
 - `Sources/CompleteScannerKit/App/AppState.swift` — the `@MainActor ObservableObject` all UI binds to; its task members are in `App/AppState+Tasks.swift`.
 - `Sources/CompleteScannerKit/App/ContentView.swift`, `CompleteScannerApp.swift`.
 
@@ -182,7 +183,7 @@ Twin of `windows/CompleteScanner.Core/DeviceMerge.cs` (`HardwareId`, `Connection
 // wants a task done, kept when a task is picked (see Pipeline/IdCard.swift).
 
 public enum ScanTask: String, CaseIterable, Identifiable, Sendable {
-    case document, feeder, photos, photoRestore, quickScan, email, twoSided, idCard, copy, word, receipt   // add new tasks after these
+    case document, feeder, photos, photoRestore, quickScan, email, twoSided, idCard, copy, word, receipt, batch   // add new tasks after these
     public static func tryParse(_ rawValue: String?) -> ScanTask?
 }
 
@@ -191,7 +192,7 @@ public enum TaskFlowKind: String, Sendable { case documentQueue, photoSplit, idC
 public struct TaskDefinition: Equatable, Sendable {
     public let task: ScanTask
     public let title: String, subtitle: String
-    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt"
+    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch"
     public let flow: TaskFlowKind
     public let intent: ScanIntent
     public let requiredSource: ScanSource?
@@ -214,17 +215,20 @@ public enum TaskCatalog {
     /// (the numbers on an ID are better not indexed) and `.copy` (a copy is for paper) turn
     /// `pdfSearchable` off. Every task turns `output.alsoSaveText` off; `.word` (Scan to Word)
     /// saves a Word document (`format = .word`, 300 dpi, collected pages); `.receipt` scans in
-    /// grayscale (the only task that does) into Compact PDFs named "Receipt {docdate} {counter}".
+    /// grayscale (the only task that does) into Compact PDFs named "Receipt {docdate} {counter}";
+    /// `.batch` (feeder, 300 dpi PDF, "Document {label} {date} {counter}") is the only task that
+    /// splits (`document.splitMode = .separatorSheet`, the others `.none`) and turns
+    /// `removeBlankPages` on with `.twoSided`; every task keeps `document.splitSheetCount`.
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings
     /// The stored task, else the task the settings look like (display and file names only): a
     /// Word document is `.word` (from the feeder, `.feeder`); a scan saved at once as an image is
-    /// `.quickScan`.
+    /// `.quickScan`; collected document pages with a split are `.batch`.
     public static func infer(_ settings: ScanSettings) -> ScanTask
     /// `.copy` also needs a printer: `hasPrinter` false gives `PrintText.noPrinterReason` ("No printer is installed.").
     public static func availability(of task: ScanTask, capabilities: ScannerCapabilities?,
                                     hasPrinter: Bool = true) -> TaskAvailability
     /// Same scan mode and, when the task has one, the required source; `.twoSided` also needs
-    /// `duplex != .off`, `.word` a Word document.
+    /// `duplex != .off`, `.word` a Word document, `.batch` a split (`document.splitMode != .none`).
     public static func fits(_ task: ScanTask, _ settings: ScanSettings) -> Bool
     /// The steps the scan screen guides: `DocumentSides.manualSteps` whenever the settings turn
     /// a stack over by hand (`DocumentSides.usesManualSteps`), otherwise the fitting task's steps;
@@ -234,7 +238,8 @@ public enum TaskCatalog {
     public static func flow(of settings: ScanSettings) -> TaskFlowKind
     /// "300 dpi · Color · PDF"; a PDF size other than `.standard` is named: "300 dpi · Color · Compact PDF";
     /// two-sided feeder scanning too: "… · Both sides", "… · Both sides, turned by hand"; a copy
-    /// (flow `.copy`) says how it prints: "300 dpi · Color · Actual size", "… · Fit to page · 3 copies"
+    /// (flow `.copy`) says how it prints: "300 dpi · Color · Actual size", "… · Fit to page · 3 copies";
+    /// collected document pages that are split say so: "… · Split at separator sheets", "… · Split every 3 sheets"
     public static func summary(_ settings: ScanSettings) -> String
 }
 
@@ -452,6 +457,8 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
     public var blankSensitivity: BlankSensitivity = .medium   // "blankSensitivity"
     public var autoCrop: Bool = false              // "autoCrop"
     public var autoStraighten: Bool = false        // "autoStraighten"
+    public var splitMode: SplitMode = .none         // "splitMode" (see Core/DocumentSplitter.swift below)
+    public var splitSheetCount: Int = 1             // "splitSheetCount"; read through DocumentSplitter.clampSheetCount
 }
 
 public struct BlankPageOptions: Equatable, Sendable {
@@ -475,14 +482,16 @@ public enum BlankPageDetector {
 public protocol PageStep { var name: String { get }; func apply(_ page: ScannedPage) -> ScannedPage }
 public struct BlankDetectionStep: PageStep { public let options: BlankPageOptions }   // "blank"
 public struct GeometryStep: PageStep { public let crop: Bool; public let straighten: Bool }   // "geometry": DocumentGeometry.correct, then withGeometry
+public struct SeparatorStep: PageStep { public init() }   // "separator": PatchCodeDetector.detect, then withPatch
 public struct AdjustmentStep: PageStep { public let adjustments: AdjustmentSettings; public let colorMode: ColorMode }   // "adjust" (the alternate's pixels too)
 public enum ScanArrangement: Sendable { case asScanned, twoSided, turnedOverFronts, turnedOverBacks }
 public struct ProcessedScan { public let arranged: [ScannedPage]; public let pages: [ScannedPage]; public var blankCount: Int }
 public struct PageProcessor {
     public let steps: [any PageStep]; public let arrangement: ScanArrangement; public let binding: DuplexBinding
     public init(steps: [any PageStep], arrangement: ScanArrangement = .asScanned, binding: DuplexBinding = .longEdge)
-    /// Blank check (when `checksBlankPages`), crop and straighten (when `correctsGeometry`), then
-    /// adjustments (unless they change nothing).
+    /// Blank check (when `checksBlankPages`), crop and straighten (when `correctsGeometry`), the
+    /// separator-sheet check (when `checksBlankPages`, whatever the split), then adjustments (unless
+    /// they change nothing).
     public static func forScan(_ settings: ScanSettings, arrangement: ScanArrangement = .asScanned) -> PageProcessor
     /// Document queue flow and documentMultiPage: pages saved at once are never checked.
     public static func checksBlankPages(_ settings: ScanSettings) -> Bool
@@ -1062,6 +1071,115 @@ public enum ImageExporter {
 }
 ```
 
+### Core/DocumentSplitter.swift, Core/SavePlan.swift, Pipeline/PatchCodeDetector.swift, App/AppState+Split.swift
+
+```swift
+// DocumentOptions gains `splitMode: SplitMode` (.none) and `splitSheetCount: Int` (1) in the
+// "document" object. ScannedPage gains `patch: PatchCode?` (what SeparatorStep found),
+// `documentBreak: DocumentBreak` (.automatic) and `documentLabel: String?`; copyMeta(from:),
+// withGeometry and withVersionsSwapped keep them; withPatch(_:), withDocumentBreak(_:) and
+// withDocumentLabel(_:) return the page with one changed.
+public enum SplitMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    case none, separatorSheet, blankSheet, sheetCount     // first case = default and fallback; barcodes come later
+    public var label: String                              // "Off", "At separator sheets", "At blank sheets", "Every N sheets"
+    public var hint: String
+    public static let displayOrder: [SplitMode]
+}
+public enum DocumentBreak: String, Sendable { case automatic, split, join }   // not persisted
+
+public enum PatchCode: String, CaseIterable, Sendable {
+    case patch1, patch2, patch3, patch4, patch6, patchT
+    public var label: String                              // "Patch 1", "Patch T"
+    public var bars: [Bool]                               // reading order, true = wide: 1 = 1100, 2 = 1001, 3 = 1010, 4 = 0110, 6 = 0011, T = 0101
+    public static func fromBars(_ a: Bool, _ b: Bool, _ c: Bool, _ d: Bool) -> PatchCode?   // nil unless exactly two wide
+    public var reversed: PatchCode                        // 1 ↔ 6, 3 ↔ T; 2 and 4 read the same
+}
+public struct PatchCodeHit: Equatable, Sendable { code: PatchCode; verticalBars: Bool; bounds: CGRect; length: Int }   // analysis pixels
+public enum PatchCodeDetector {
+    // Hundredths of an inch: narrowBar 8, wideBar 20, gap 8 (printed); read as narrow 5–12, wide 15–26,
+    // gaps 5–12; quietZone 30; minLength 150; maxStep 2; maxBreak 6; minCoverage 0.5; the sheet's bars
+    // 600 long (less on narrow paper), sheetMargin 100.
+    public static func detect(_ gray: GrayImage) -> PatchCodeHit?        // reduced to the analysis resolution first
+    public static func detect(_ image: RgbaImage, dpi: Int) -> PatchCodeHit?
+    public static func detect(_ image: CGImage, dpi: Int) -> PatchCodeHit?   // Mac only: GrayImage(cgImage:sourceDPI:)
+    /// White; the code across the sheet 1 in from the top and, half a turn round, 1 in from the
+    /// bottom; "SEPARATOR SHEET", the code and how to use and print it in a 5 × 7 dot type between them.
+    public static func renderSheet(_ code: PatchCode, widthInches: Double, heightInches: Double, dpi: Int) -> GrayImage
+}
+public enum SeparatorSheet {                              // the sheet saved as a PDF to print anywhere
+    public static let code: PatchCode                     // .patchT
+    public static let dpi: Int                            // 300
+    public static func paper(regionCode: String?) -> PaperSize    // PaperSizes.defaultForRegion: Letter or A4
+    public static func fileBaseName(_ paper: PaperSize) -> String // "Separator sheet (Patch T, Letter)"
+    public static func savedMessage(_ fileName: String) -> String // "Saved the separator sheet: …. Print it at actual size (100%), …"
+}
+
+public enum PageRole: Sendable { case content, skipped, separator }
+public struct PageFacts: Equatable, Sendable {           // every field defaulted in init
+    sheetIndex: Int?; side: PageSide?; looksBlank: Bool; patch: PatchCode?
+    inclusion: PageInclusion; documentBreak: DocumentBreak; label: String?
+    public static func of(_ page: ScannedPage, options: DocumentOptions) -> PageFacts
+}
+public struct PlannedPage: Equatable, Sendable { role: PageRole; sheet: Int; document: Int?; startsDocument: Bool }   // document from 1
+public struct PlannedDocument: Equatable, Sendable { number: Int; pages: [Int]; label: String? }
+public struct SplitPlan: Equatable, Sendable {
+    pages: [PlannedPage]; documents: [PlannedDocument]
+    var separatorCount: Int; var skippedCount: Int; var pageCount: Int; var isSplit: Bool
+}
+public enum DocumentSplitter {
+    public static let maxSheetCount = 999
+    public static func clampSheetCount(_ count: Int) -> Int
+    public static func sheets(_ facts: [PageFacts]) -> [Int]            // a front with its back right after it share a sheet
+    public static func plan(_ facts: [PageFacts], options: DocumentOptions) -> SplitPlan
+    public static func plan(_ pages: [ScannedPage], options: DocumentOptions) -> SplitPlan
+    public static let maxLabelLength = 100
+    public static func cleaned(_ label: String?) -> String?             // trimmed, cut to maxLabelLength characters, nil when empty
+    /// The labels of `after` once a page's inclusion or break changed from `before`: a document whose
+    /// first saved page changed keeps the name it showed, moved to its new first page (the old first
+    /// page's cleared); otherwise names stay put, also on pages left out, so a document that is gone
+    /// comes back with its name and a document split off has its own first page's name.
+    public static func carriedLabels(_ before: [PageFacts], _ after: [PageFacts], options: DocumentOptions) -> [String?]
+    /// The same once the settings changed too (`before` planned under `beforeOptions`); a name goes to
+    /// one document only, the first holding a page of the document it named.
+    public static func carriedLabels(_ before: [PageFacts], beforeOptions: DocumentOptions, _ after: [PageFacts], options: DocumentOptions) -> [String?]
+    public static func blankPagesAreSeparators(_ options: DocumentOptions, sides: DuplexMode) -> Bool   // blankSheet and one-sided: Skip blank pages has no say
+    public static let blankPagesAreSeparatorsHint: String               // why the switch is off then
+    public static func canToggleBreak(_ plan: SplitPlan, _ index: Int) -> Bool   // a page saved, not the first one
+    public static func toggledBreak(_ facts: [PageFacts], _ index: Int, options: DocumentOptions) -> DocumentBreak   // two clicks undo one
+    public static func toggledInclusion(_ facts: [PageFacts], _ index: Int, options: DocumentOptions) -> PageInclusion
+    public static func showsBreaks(_ plan: SplitPlan, options: DocumentOptions) -> Bool   // a split chosen, or the queue split by hand
+    public static func documentTitle(_ document: PlannedDocument) -> String              // "Document 2 · Lease"
+    public static func dividerTitle(_ plan: SplitPlan, _ index: Int) -> String?          // on each document's first page when split
+    public static func breakLabel(_ plan: SplitPlan, _ index: Int) -> String?            // "Join with document 1", "Start a new document here"
+    public static func badge(_ plan: SplitPlan, _ index: Int, page: ScannedPage, options: DocumentOptions) -> String?        // "Separator", else PageFilter.badge
+    public static func toggleLabel(_ plan: SplitPlan, _ index: Int, page: ScannedPage, options: DocumentOptions) -> String?  // "Keep this page", else PageFilter.toggleLabel
+    public static func separatorNote(_ plan: SplitPlan, _ index: Int, page: ScannedPage) -> String?   // "Separator sheet (Patch T): a new document starts after it. It is not saved."
+    public static func queueSummary(_ pages: [ScannedPage], options: DocumentOptions) -> String       // "9 pages in queue, 3 documents, 2 separator pages skipped"
+    public static func scanNote(_ plan: SplitPlan, separatorsAdded: Int) -> String                    // " Found 2 separator pages: 3 documents to save."
+}
+
+public struct SaveDocument { number: Int; pages: [ScannedPage]; label: String? }
+public struct SavePlan {
+    public var documents: [SaveDocument]; public var separatorPages: Int; public var skippedPages: Int
+    public static func make(_ queue: [ScannedPage], options: DocumentOptions) -> SavePlan
+    public var pageCount: Int; public var isEmpty: Bool; public var isSplit: Bool
+    public func fileIndex(_ document: SaveDocument) -> Int?             // its number when split ({index}), else nil
+    public static func fileKind(_ format: OutputFormat, count: Int) -> String   // "PDFs", "Word documents", "text files"
+    public func saveTitle(_ format: OutputFormat) -> String             // "Save 3 PDFs (7 pages)"; else format.saveTitle(pageCount:)
+    public func leftOutNote() -> String                                 // " — 2 separator pages and 1 skipped page were left out"
+    /// "Saved 3 PDFs (7 pages, 1.2 MB): A.pdf, B.pdf, C.pdf and their text, A.txt, B.txt, C.txt — 2 separator pages…";
+    /// " — no text was found" (all) or " — no text was found in B.txt" for Word and text files with no text.
+    public func savedMessage(_ format: OutputFormat, fileNames: [String], size: String? = nil,
+                             textFileNames: [String] = [], noTextFound: [String] = []) -> String
+    public static func notSavedMessage(_ reason: String) -> String      // "None of the documents was saved; the pages are still in the queue. …"
+    public static func failureReason(_ error: Error) -> String          // ScanError.exportFailed's own message (no second "Saving failed: "), else localizedDescription
+    public static func writeAllOrNothing(_ files: WrittenFiles, _ write: () async throws -> Void) async throws
+}
+public final class WrittenFiles { public private(set) var urls: [URL]; public func add(_ url: URL); public func rollBack() }
+public struct NotSavedError: LocalizedError, Equatable { public let message: String }   // shown as it is; not a scanner failure
+```
+Twins of `windows/CompleteScanner.Core/DocumentSplitter.cs` (`PageRole`, `PageFacts.Of`, `PlannedPage`, `PlannedDocument`, `SplitPlan`, `DocumentSplitter` with the same members in PascalCase), `SavePlan.cs` (`SaveDocument`, `SavePlan.Make` / `FileIndex` / `FileKind` / `SaveTitle` / `LeftOutNote` / `SavedMessage` / `NotSavedMessage` / `WriteAllOrNothingAsync`, `WrittenFiles` with `Paths`), `PatchCode.cs` (`PatchCode`, `PatchCodes.Label` / `Bars` / `FromBars` / `Reversed` / `All`, `PatchCodeHit` with `RectD Bounds`, `PatchCodeDetector.Detect` / `RenderSheet`, `SeparatorSheet`) and `SplitMode`, `SplitModes.DisplayOrder`, `ModelLabels.Label` / `Hint`, `DocumentBreak`, `DocumentOptions.SplitMode` / `SplitSheetCount`, `ScannedPage.Patch` / `DocumentBreak` / `DocumentLabel` / `WithPatch` / `WithDocumentBreak` / `WithDocumentLabel` in `Models.cs`, `SeparatorStep` in `PageProcessor.cs`; `PatchCodeTests`, `DocumentSplitterTests` and `SavePlanTests` are the same cases on both sides, on the same synthetic pages (`TestPages.patchPage`, `ruledTable`, `halfTurned`, `quarterTurned`, checked by checksum, and the separator sheet `renderSheet(.patchT, 8.5, 11, 100)` pinned by checksum, so both platforms draw the same sheet), and the split cases of `ModelsCompatTests`, `ScanTaskTests`, `PageProcessorTests`, `NamingTemplateTests` and `MockScannerTests` match. Everything is decided in Core on the queue as it stands, so the user's edits are page facts (kept, skipped, a split, a join, a name) and saving acts on the same plan the strip shows. The patch code is read like a one-dimensional barcode, along the columns of the page's gray copy at the analysis resolution (and along its rows for bars running down the page): ink is darker than half the paper (its 90th percentile); four runs in a row match when each is narrow or wide, exactly two are wide, the gaps are in range and nothing is printed for 0.3 in before and after them; matches on neighbouring lines with the same code that move by at most 0.02 in are one code, which counts over at least 1.5 in on at least half the lines it spans, so a slant of a few degrees reads (±3° checked) and text, tables and rules do not. Every patch code is a separator: read backwards, 1 and 6, 3 and T are each other. The split: a sheet is a front with its back right after it (the same sheet index); at separator sheets, a sheet with a code on either side is a separator; at blank sheets, a sheet blank on every side (one-sided: each blank page; two-sided: only both sides blank, so the blank back of a printed sheet follows Skip blank pages); separators are left out, separators in a row count once, the next page saved starts a document and documents with no page are dropped; every N sheets counts every sheet, blank ones too; Keep on a page makes its sheet no separator; a split or join at a page wins over the setting; a document's name is the first among its pages saved, and a change that moves a document's first saved page (Keep, Skip, a split or join, or a change of Skip blank pages, what counts as blank or the split) moves its name with it (`carriedLabels`). `SeparatorStep` runs on every page collected in the queue whatever the split (so a split chosen later finds them), after crop and straighten. `AppState` (`App/AppState+Split.swift`): `queuePlan`, `queueSavePlan`, `queueScanNote(_:options:)` (the scan's status: blank pages among the added pages not counting separators, corrections, then `scanNote`), `toggleDocumentBreak(id:)` (and `togglePageInclusion(id:)`) then `carryDocumentLabels(from:options:)`, `carryDocumentLabels(settingsBefore:)` (from `settings`' didSet when `settings.document` changed), `documentLabel(of:)`, `setDocumentLabel(id:label:)` (the name goes on the document's first page, others in it are dropped), `setSplitMode(_:)`, `setSplitSheetCount(_:)`, `saveDocuments(_:settings:queued:flag:)` (called by `savePDF` for a split queue: a file per document, PDF with its text beside it when asked for, or Word or text, named with `index` = the document's number and `label` = its name, all or nothing: a failure or Cancel removes every file written, `NotSavedError(SavePlan.notSavedMessage(SavePlan.failureReason(…)))` or cancelled, the queue kept; the status gives the PDFs' size together, the text files beside them and the files with no text; the last PDF's size is the last document's), `saveSeparatorSheet()` (Patch T as a one-page PDF at 300 dpi on `SeparatorSheet.paper(regionCode:)`, in the scans folder under `SeparatorSheet.fileBaseName`, the next free name; recorded as saved; no printer needed), `printSeparatorSheet()` (Patch T on the printer chosen for copies, on the paper it has, whatever the scan's paper size, 300 dpi, actual size from the corner, one copy); `togglePageInclusion(id:)` goes through `toggledInclusion`, `savePDF` through `SavePlan` (one document saves as before, with its name and `leftOutNote`), `outputURL` gains `label:`. Members relaxed for this file: `textLayer`, `writeTextDocument`, `deleteSpoolFiles`, `destinationDirectory`. Windows has the same members in `AppViewModel.Split.cs` (`QueuePlan`, `QueueSavePlan`, `ToggleDocumentBreak`, `CarryDocumentLabels`, `CarryDocumentLabelsAcrossSettings` (from `SettingsEdited`), `DocumentLabelOf`, `SetDocumentLabel`, `SetSplitMode`, `SetSplitSheetCount`, `SaveDocuments`, `SaveSeparatorSheet`, `PrintSeparatorSheet`; `PageSplitView` on each `PageItem`) and the strip's gap, badges and name box in `MainWindow.xaml` / `MainWindow.Split.cs`.
+
 ### Output/NamingTemplate.swift
 
 ```swift
@@ -1071,11 +1189,14 @@ public struct NamingTemplate {
     /// Tokens: {date}=yyyy-MM-dd, {time}=HH.mm.ss, {year} {month} {day}, {counter} (also {counter:N}
     /// zero-padded), {intent} ("Document"/"Photos"), {index} (photo number in a batch, empty when nil),
     /// {task} (the task's `fileLabel`; the {intent} text without a task), {docdate} (the context's
-    /// `documentDate`, yyyy-MM-dd; the date of `date` without one).
+    /// `documentDate`, yyyy-MM-dd; the date of `date` without one), {label} (the context's `label`,
+    /// trimmed and cut to `maxLabelBytes` bytes of UTF-8 between characters; empty without one;
+    /// tokens in it are not expanded).
     /// Unknown tokens pass through; result sanitized for the filesystem (no "/" or ":").
     public func baseFilename(_ context: NamingContext) -> String
     /// The same without a task (kept for existing callers).
     public func baseFilename(counter: Int, date: Date, intent: ScanIntent, index: Int?) -> String
+    public static let maxLabelBytes = 120
     /// base.ext, appending " 2", " 3", … until the name is free.
     public static func uniqueURL(in directory: URL, base: String, fileExtension: String) -> URL
 }
@@ -1087,8 +1208,9 @@ public struct NamingContext: Equatable, Sendable {
     public var index: Int?          // default nil
     public var task: ScanTask?      // default nil
     public var documentDate: DocumentDate?   // default nil: {docdate} is the scan date
+    public var label: String?                // default nil: {label} is empty
     public init(counter: Int, date: Date, intent: ScanIntent, index: Int? = nil, task: ScanTask? = nil,
-                documentDate: DocumentDate? = nil)
+                documentDate: DocumentDate? = nil, label: String? = nil)
 }
 
 /// A calendar day with no time and no time zone: the date printed on a document.
@@ -1118,17 +1240,17 @@ ImageCaptureCore implementation: `ICDeviceBrowser` (scanner mask, local + bonjou
 ```swift
 public final class MockScannerBackend: ScannerBackend { ... }
 ```
-One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true)`; synthesizes deterministic flatbed images (see task brief). For the ID card task (`settings.task == .idCard`) its glass holds a made-up sample card (ID-1 size, rounded corners, "SAMPLE", a grey photo placeholder, field bars; a barcode and code blocks on the back; no real document and no flags), front down at (2.35, 1.75) in tilted 4°: a scan delivers the side facing the glass and then turns the card over where it lies (`idCardTurnedOver`, tilt mirrored), so scans alternate front, back; a preview shows the side without turning it (C# `IdCardTurnedOver`, drawn pixel by pixel there and with CoreGraphics here). It also has a document feeder (`sources: [.flatbed, .documentFeeder]`, `feederSizeInches` 8.5 × 14, `supportsDuplex` = `feederDuplex`, default true): a feeder scan returns `feederSheetCount` two-sided sheets (default `MockScannerBackend.defaultFeederSheetCount` = 3, read when the scan starts; letter size, or the paper size asked for; the front of sheet *n* carries *n* square marks near its bottom left corner, its back *n* marks near the bottom right, both upright), front and back of each sheet for `.both` on a two-sided feeder, otherwise the side facing up: a one-sided scan with `.manual` turns the stack over (`feederStackTurnedOver`), so the next one delivers the backs, last sheet first; any other feeder scan puts it back the right way up; a scan cut short by a jam leaves the stack as it is; `lastScanDuplex` says whether a scan asked for `.both` scanned both sides; and 0 sheets fails with `ScanError.scannerProblem(.feederEmpty)`. `feederJamsAfter` (default nil) makes the sheet after that many jam: the earlier sheets are returned and `lastScanStop` carries `.paperJam`; a jam on the first sheet fails with `ScanError.scannerProblem(.paperJam)`. `feederBlankBackSheets` (a `Set<Int>` of sheets counted from 0, default empty, read when the scan starts) makes those sheets' backs blank: off-white paper with noise, a few specks of dust and the front showing through mirrored at a tenth of its darkness (`BlankPageDetector` finds them blank; no sheet marks); the app's demo scanner (`AppState`'s default backends) has a blank back on its second sheet. For the Receipts task (`settings.task == .receipt`) the glass holds two made-up receipts ("DEMO CAFE" 3.15 × 3.2 in at (2.4, 3.2) in tilted 3°, "SAMPLE MART" 2.28 × 2.3 in at (6.3, 3.0) in tilted −3°; paper 237, print 153 in a plain stroke type of polylines on a 4 × 6 grid, dated 12.03.2026 and 2026-02-27), drawn pixel by pixel as the C# demo draws them (`MockScannerBackend.demoReceiptPlaces`, C# `MockBedRenderer.ReceiptPlaces`). Same behaviour as the C# `MockScannerBackend` (`FeederSheetCount`, `FeederJamsAfter`, `FeederDuplex`, `FeederStackTurnedOver`, `FeederBlankBackSheets`).
+One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true)`; synthesizes deterministic flatbed images (see task brief). For the ID card task (`settings.task == .idCard`) its glass holds a made-up sample card (ID-1 size, rounded corners, "SAMPLE", a grey photo placeholder, field bars; a barcode and code blocks on the back; no real document and no flags), front down at (2.35, 1.75) in tilted 4°: a scan delivers the side facing the glass and then turns the card over where it lies (`idCardTurnedOver`, tilt mirrored), so scans alternate front, back; a preview shows the side without turning it (C# `IdCardTurnedOver`, drawn pixel by pixel there and with CoreGraphics here). It also has a document feeder (`sources: [.flatbed, .documentFeeder]`, `feederSizeInches` 8.5 × 14, `supportsDuplex` = `feederDuplex`, default true): a feeder scan returns `feederSheetCount` two-sided sheets (default `MockScannerBackend.defaultFeederSheetCount` = 3, read when the scan starts; letter size, or the paper size asked for; the front of sheet *n* carries *n* square marks near its bottom left corner, its back *n* marks near the bottom right, both upright), front and back of each sheet for `.both` on a two-sided feeder, otherwise the side facing up: a one-sided scan with `.manual` turns the stack over (`feederStackTurnedOver`), so the next one delivers the backs, last sheet first; any other feeder scan puts it back the right way up; a scan cut short by a jam leaves the stack as it is; `lastScanDuplex` says whether a scan asked for `.both` scanned both sides; and 0 sheets fails with `ScanError.scannerProblem(.feederEmpty)`. `feederJamsAfter` (default nil) makes the sheet after that many jam: the earlier sheets are returned and `lastScanStop` carries `.paperJam`; a jam on the first sheet fails with `ScanError.scannerProblem(.paperJam)`. `feederBlankBackSheets` (a `Set<Int>` of sheets counted from 0, default empty, read when the scan starts) makes those sheets' backs blank: off-white paper with noise, a few specks of dust and the front showing through mirrored at a tenth of its darkness (`BlankPageDetector` finds them blank; no sheet marks); the app's demo scanner (`AppState`'s default backends) has a blank back on its second sheet. For the Receipts task (`settings.task == .receipt`) the glass holds two made-up receipts ("DEMO CAFE" 3.15 × 3.2 in at (2.4, 3.2) in tilted 3°, "SAMPLE MART" 2.28 × 2.3 in at (6.3, 3.0) in tilted −3°; paper 237, print 153 in a plain stroke type of polylines on a 4 × 6 grid, dated 12.03.2026 and 2026-02-27), drawn pixel by pixel as the C# demo draws them (`MockScannerBackend.demoReceiptPlaces`, C# `MockBedRenderer.ReceiptPlaces`). For the Batch task (`settings.task == .batch`, document mode) the feeder holds `batchSheetCount` sheets (default `defaultBatchSheetCount` = 7) instead of `feederSheetCount`, the sheets in `batchSeparatorSheets` (default [2, 4]) being separator sheets: the Patch T sheet of `PatchCodeDetector.renderSheet` (toner 28, paper 247) on the front and a blank back (`renderBlankBack` with that front showing through); the other sheets keep their marks, so the stack is documents of two, one and two sheets. Same behaviour as the C# `MockScannerBackend` (`FeederSheetCount`, `FeederJamsAfter`, `FeederDuplex`, `FeederStackTurnedOver`, `FeederBlankBackSheets`, `BatchSheetCount`, `BatchSeparatorSheets`).
 
 ### UI files (all `internal`, SwiftUI, bind to `@EnvironmentObject var state: AppState`)
 
 - `UI/SidebarView.swift` — `struct SidebarView: View`: device list + refresh (`refreshScanners()`), the "Why isn't my scanner listed?" button in the Scanners header and link in the empty list, and the troubleshooter sheet (`state.showTroubleshooter`).
 - `UI/TroubleshooterView.swift` — `struct TroubleshooterView: View`: the troubleshooter's checks as cards with their buttons, Refresh, Copy Diagnostics and Done.
-- `UI/InspectorView.swift` — `struct InspectorView: View`: all settings + Overview/Scan/Cancel buttons + presets; the Output section's formats (`OutputFormat.offered(for:)`); the Document section's "Collect pages, then Save …" (the format's `saveTitle`), "Also save text (.txt)" (off, with the reason, when the save writes no PDF and in the ID card and Copy tasks), "Skip blank pages" and "What counts as blank", "Crop to page" and "Straighten pages" (off, with the reason, when each scan is saved at once); for the Copy task a Copies section (Printer, its paper, Copies 1–99, Fit to page with its hint, the margin warning, Also save a PDF, Print Ruler Test Page…; without a printer, the reason and Look Again); for the Receipts task the Output section offers PDF, JPEG, PNG and TIFF only (Word or text shows as PDF), a Receipts section (Name by the receipt's date, One PDF for all receipts, off for image formats, each with its hint; the date's hint says when the template has no {docdate}), "Collect pages" off and the blank-page, crop and straighten switches off with the reason, "Also save text" on for PDF receipts.
+- `UI/InspectorView.swift` — `struct InspectorView: View`: all settings + Overview/Scan/Cancel buttons + presets; the Output section's formats (`OutputFormat.offered(for:)`); the Document section's "Collect pages, then Save …" (the format's `saveTitle`), "Also save text (.txt)" (off, with the reason, when the save writes no PDF and in the ID card and Copy tasks), "Skip blank pages" and "What counts as blank", "Crop to page" and "Straighten pages" (off, with the reason, when each scan is saved at once), "Split into documents" (`SplitMode.displayOrder` through `state.setSplitMode(_:)`, a "Sheets per document" stepper for `.sheetCount` through `setSplitSheetCount(_:)`, the mode's hint, and for `.separatorSheet` Print Separator Sheet… calling `state.printSeparatorSheet()`, off without a printer; the picker off, with the reason, when each scan is saved at once, for copies and for receipts); {label} in the naming tokens popover; for the Copy task a Copies section (Printer, its paper, Copies 1–99, Fit to page with its hint, the margin warning, Also save a PDF, Print Ruler Test Page…; without a printer, the reason and Look Again); for the Receipts task the Output section offers PDF, JPEG, PNG and TIFF only (Word or text shows as PDF), a Receipts section (Name by the receipt's date, One PDF for all receipts, off for image formats, each with its hint; the date's hint says when the template has no {docdate}), "Collect pages" off and the blank-page, crop and straighten switches off with the reason, "Also save text" on for PDF receipts.
 - `UI/StatusBarView.swift` — `struct StatusBarView: View`: status text, progress, and the actions for the files saved last (open, show, share, copy; More adds open with and email).
 - `UI/PreviewCanvasView.swift` — `struct PreviewCanvasView: View`: shows `state.canvasImage`, marquee selection editing `state.selectionRect` (only when `state.overviewImage != nil`).
-- `UI/PagesStripView.swift` — `struct PagesStripView: View`: page-queue thumbnails + Save PDF (or Save Word / Save Text: `format.saveTitle(pageCount:)`) / Clear; Copy Text in each page's context menu (`state.copyPageText(id:)`); the queue summary, each flagged page's badge and its Keep or Skip button (always shown), left-out pages dimmed, Save PDF counting the pages it writes; under a cropped or straightened page, its swap button (always shown: `PageCorrections.toggleLabel`, help = caption and label) calling `state.togglePageGeometry(id:)`.
+- `UI/PagesStripView.swift` — `struct PagesStripView: View`: page-queue thumbnails + Save PDF (or Save Word / Save Text: `format.saveTitle(pageCount:)`; "Save 3 PDFs (7 pages)" for a split queue: `SavePlan.saveTitle`) / Clear; the queue summary is `DocumentSplitter.queueSummary`; while `DocumentSplitter.showsBreaks`, a gap before each page (`breakLabel`, a bar where a document starts) calling `state.toggleDocumentBreak(id:)`; the first page of each document titled (`dividerTitle`) in place of its caption; separator pages badged "Separator" (help: `separatorNote`), dimmed, with Keep; each page's context menu adds its split or join (`breakLabel`) and Name This Document… (an alert with a text field, `state.setDocumentLabel(id:label:)`, prefilled with `documentLabel(of:)`); Copy Text in each page's context menu (`state.copyPageText(id:)`); the queue summary, each flagged page's badge and its Keep or Skip button (always shown), left-out pages dimmed, Save PDF counting the pages it writes; under a cropped or straightened page, its swap button (always shown: `PageCorrections.toggleLabel`, help = caption and label) calling `state.togglePageGeometry(id:)`.
 - `UI/PhotoReviewView.swift` — `struct PhotoReviewView: View`: detected-photo grid sheet with the "After saving" choice; Save via `state.saveReviewedPhotos()`, cancel via `state.cancelPhotoReview()`; titled `state.reviewTitle` and saved with `state.reviewSaveTitle` ("Found 2 receipts", "Save as One PDF" for receipts).
 - `UI/IdCardReviewView.swift` — `struct IdCardReviewView: View`: the ID card's sheet (`state.showIdCardReview`, presented from the detail in `ContentView`): each side with turn, Fix crop (the crop editor) and Scan again, a missing back with Scan the Back, Swap Front and Back, the page picture with its caption and the not-at-real-size warning, and Paper, Save as (PDF or an image format: `format.pageFormat`; a text format chosen in the inspector shows and saves as PDF), "Also save each side as an image", Print…, Discard and Save.
-- `UI/TaskStartView.swift` — `struct TaskStartView: View` (`onOpenScanner: () -> Void`): the start screen's task cards (`state.taskCards`) and preset cards; also `enum TaskSymbols` (icon key → SF Symbol; "receipt" → `receipt`).
+- `UI/TaskStartView.swift` — `struct TaskStartView: View` (`onOpenScanner: () -> Void`): the start screen's task cards (`state.taskCards`) and preset cards; also `enum TaskSymbols` (icon key → SF Symbol; "receipt" → `receipt`, "batch" → `square.stack.3d.down.right`).
 - `UI/TaskBannerView.swift` — `struct TaskBannerView: View` (`definition: TaskDefinition?`, `onChangeTask: () -> Void`): the active task, or turning a stack over by hand without one (`definition` nil), above the preview, with Change Task and a leave-task button (without a task: scan one side only); fronts scanned without moving on (the feeder stopped early), Done with Fronts; while the backs are due, Keep Fronts Only, before any back is scanned Scan More Fronts, and on a count mismatch also Combine Anyway and Scan Back Sides Again; the back of an ID card (`state.canSkipStep`) offers "Skip back side" (`state.skipStep()`); the leave-task button goes through `state.leaveIdCard(then:)`.

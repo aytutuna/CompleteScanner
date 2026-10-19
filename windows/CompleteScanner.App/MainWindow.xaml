@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:CompleteScanner.App"
+        xmlns:core="clr-namespace:CompleteScanner.Core;assembly=CompleteScanner.Core"
         Title="CompleteScanner"
         Width="1200" Height="800" MinWidth="700" MinHeight="560"
         WindowStartupLocation="CenterScreen"
@@ -401,11 +402,38 @@
                                         </ListBox.ItemsPanel>
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
+                                                <DockPanel>
+                                                    <!-- The gap before the page, shown while the strip shows documents:
+                                                         one click starts a new document here or joins the page to the
+                                                         document before. A document's start is drawn as a bar. -->
+                                                    <Button x:Name="BreakButton" DockPanel.Dock="Left" Width="10" Margin="0,0,3,0" VerticalAlignment="Stretch"
+                                                            MinHeight="0" Padding="0"
+                                                            Cursor="Hand" ToolTip="{Binding BreakLabel}"
+                                                            AutomationProperties.Name="{Binding BreakLabel}"
+                                                            Click="PageBreak_Click" Tag="{Binding Page.Id}">
+                                                        <Button.Template>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border Background="Transparent">
+                                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Stretch" />
+                                                                </Border>
+                                                            </ControlTemplate>
+                                                        </Button.Template>
+                                                        <Rectangle x:Name="BreakLine" Width="1" Margin="0,10,0,10"
+                                                                   Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" Opacity="0" />
+                                                    </Button>
                                                 <Grid Width="116" Height="128">
                                                     <!-- The page's text, read with OCR, on the clipboard. -->
+                                                    <!-- Split or join the documents at the page, and name its document. -->
                                                     <Grid.ContextMenu>
                                                         <ContextMenu>
                                                             <MenuItem Header="Copy text" Click="PageCopyText_Click" Tag="{Binding Page.Id}" />
+                                                            <Separator Visibility="{Binding HasSplitMenu, Converter={StaticResource BoolToVisibility}}" />
+                                                            <MenuItem Header="{Binding MenuBreakLabel}"
+                                                                      Visibility="{Binding HasMenuBreak, Converter={StaticResource BoolToVisibility}}"
+                                                                      Click="PageBreak_Click" Tag="{Binding Page.Id}" />
+                                                            <MenuItem Header="Name this document…"
+                                                                      Visibility="{Binding CanNameDocument, Converter={StaticResource BoolToVisibility}}"
+                                                                      Click="PageName_Click" Tag="{Binding Page.Id}" />
                                                         </ContextMenu>
                                                     </Grid.ContextMenu>
                                                     <Border x:Name="Card" Style="{StaticResource CardStyle}" Padding="6"
@@ -419,7 +447,7 @@
                                                     <StackPanel x:Name="BlankInfo" HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                 Margin="0,0,0,10">
                                                         <Border x:Name="BlankBadge" HorizontalAlignment="Center" Padding="6,1,6,2"
-                                                                CornerRadius="4" IsHitTestVisible="False"
+                                                                CornerRadius="4" ToolTip="{Binding BadgeToolTip}"
                                                                 Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
                                                                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                                                             <StackPanel Orientation="Horizontal">
@@ -449,14 +477,23 @@
                                                                 AutomationProperties.Name="{Binding GeometryToggleLabel}"
                                                                 AutomationProperties.HelpText="{Binding GeometryCaption}"
                                                                 Click="PageGeometry_Click" Tag="{Binding Page.Id}" />
-                                                        <!-- Which side of which sheet, for two-sided stacks. -->
-                                                        <Border x:Name="SideBadge" HorizontalAlignment="Left" VerticalAlignment="Top"
-                                                                Padding="5,0,5,1" CornerRadius="4" IsHitTestVisible="False"
-                                                                Background="{DynamicResource SolidBackgroundFillColorQuarternaryBrush}"
-                                                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                                                            <TextBlock Text="{Binding SideLabel}" Style="{StaticResource CaptionText}"
-                                                                       TextWrapping="Wrap" />
-                                                        </Border>
+                                                        <StackPanel>
+                                                            <!-- The first page of each document when the queue is split:
+                                                                 "Document 2 · Lease" (the full name on hover). -->
+                                                            <Border x:Name="DocumentBadge" Style="{StaticResource AccentTagStyle}"
+                                                                    HorizontalAlignment="Left" Margin="0,0,0,2" ToolTip="{Binding DividerTitle}">
+                                                                <TextBlock Text="{Binding DividerTitle}" Style="{StaticResource AccentTagText}"
+                                                                           TextTrimming="CharacterEllipsis" MaxWidth="96" />
+                                                            </Border>
+                                                            <!-- Which side of which sheet, for two-sided stacks. -->
+                                                            <Border x:Name="SideBadge" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                                    Padding="5,0,5,1" CornerRadius="4" IsHitTestVisible="False"
+                                                                    Background="{DynamicResource SolidBackgroundFillColorQuarternaryBrush}"
+                                                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                                                <TextBlock Text="{Binding SideLabel}" Style="{StaticResource CaptionText}"
+                                                                           TextWrapping="Wrap" />
+                                                            </Border>
+                                                        </StackPanel>
                                                     </DockPanel>
                                                     <Border x:Name="Actions" Style="{StaticResource HoverActionBarStyle}"
                                                             HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,6">
@@ -479,7 +516,24 @@
                                                                     Click="PageRight_Click" Tag="{Binding Page.Id}" />
                                                         </StackPanel>
                                                     </Border>
+                                                    <!-- The document's name ({label} in the file name), typed here. -->
+                                                    <Popup x:Name="NamePopup" IsOpen="{Binding IsNaming, Mode=TwoWay}" StaysOpen="False"
+                                                           PlacementTarget="{Binding ElementName=Card}" Placement="Top" AllowsTransparency="True"
+                                                           Opened="NamePopup_Opened" Closed="NamePopup_Closed" Tag="{Binding Page.Id}">
+                                                        <Border Style="{StaticResource CardStyle}" Padding="8" Width="240">
+                                                            <StackPanel>
+                                                                <TextBlock Text="Name this document" Style="{StaticResource CaptionText}" Margin="0,0,0,4" />
+                                                                <TextBox x:Name="NameBox" Text="{Binding NameDraft, UpdateSourceTrigger=PropertyChanged}"
+                                                                         MaxLength="{x:Static core:DocumentSplitter.MaxLabelLength}"
+                                                                         AutomationProperties.Name="Name this document"
+                                                                         KeyDown="NameBox_KeyDown" Tag="{Binding Page.Id}" />
+                                                                <TextBlock Text="Used for {label} in the file name. Enter saves, Esc cancels."
+                                                                           Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </Popup>
                                                 </Grid>
+                                                </DockPanel>
                                                 <DataTemplate.Triggers>
                                                     <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
                                                         <Setter TargetName="Actions" Property="Opacity" Value="1" />
@@ -493,6 +547,31 @@
                                                     <DataTrigger Binding="{Binding SideLabel}" Value="{x:Null}">
                                                         <Setter TargetName="SideBadge" Property="Visibility" Value="Collapsed" />
                                                     </DataTrigger>
+                                                    <DataTrigger Binding="{Binding DividerTitle}" Value="{x:Null}">
+                                                        <Setter TargetName="DocumentBadge" Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsMouseOver, ElementName=BreakButton}" Value="True">
+                                                        <Setter TargetName="BreakLine" Property="Opacity" Value="1" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsKeyboardFocused, ElementName=BreakButton}" Value="True">
+                                                        <Setter TargetName="BreakLine" Property="Opacity" Value="1" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding StartsDocument}" Value="True">
+                                                        <Setter TargetName="BreakLine" Property="Opacity" Value="1" />
+                                                        <Setter TargetName="BreakLine" Property="Width" Value="3" />
+                                                        <Setter TargetName="BreakLine" Property="Margin" Value="0" />
+                                                        <Setter TargetName="BreakLine" Property="Fill" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding ShowsBreaks}" Value="False">
+                                                        <Setter TargetName="BreakButton" Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding ShowsBreaks}" Value="True">
+                                                        <Setter TargetName="BreakButton" Property="Visibility" Value="Hidden" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding HasBreakButton}" Value="True">
+                                                        <Setter TargetName="BreakButton" Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+
                                                     <DataTrigger Binding="{Binding BlankBadge}" Value="{x:Null}">
                                                         <Setter TargetName="BlankBadge" Property="Visibility" Value="Collapsed" />
                                                     </DataTrigger>
@@ -816,6 +895,30 @@
                                                           Checked="Geometry_Changed" Unchecked="Geometry_Changed" />
                                                 <TextBlock x:Name="GeometryHint" Style="{StaticResource CaptionText}"
                                                            TextWrapping="Wrap" Margin="0,0,0,4" />
+                                                <!-- Split the stack into documents: the page strip shows where before
+                                                     saving, and one click on the gap between two pages splits or joins. -->
+                                                <TextBlock Text="Split into documents" Style="{StaticResource FieldLabelText}" Margin="0,8,0,4" />
+                                                <ComboBox x:Name="SplitModeBox" HorizontalAlignment="Stretch"
+                                                          AutomationProperties.Name="Split into documents"
+                                                          ToolTipService.ShowOnDisabled="True"
+                                                          SelectionChanged="SplitMode_Changed" />
+                                                <StackPanel x:Name="SplitCountRow" Margin="0,8,0,0">
+                                                    <TextBlock Text="Sheets per document" Style="{StaticResource FieldLabelText}" />
+                                                    <ComboBox x:Name="SplitCountBox" HorizontalAlignment="Stretch"
+                                                              AutomationProperties.Name="Sheets per document"
+                                                              SelectionChanged="SplitCount_Changed" />
+                                                </StackPanel>
+                                                <TextBlock x:Name="SplitHint" Style="{StaticResource CaptionText}"
+                                                           TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                <!-- The separator sheet: a PDF to print anywhere, or printed here. -->
+                                                <Button x:Name="SaveSeparatorButton" Style="{StaticResource SubtleButtonStyle}"
+                                                        Content="Save separator sheet (PDF)" HorizontalAlignment="Left" Margin="-11,4,0,0"
+                                                        ToolTipService.ShowOnDisabled="True"
+                                                        Click="SaveSeparator_Click" />
+                                                <Button x:Name="PrintSeparatorButton" Style="{StaticResource SubtleButtonStyle}"
+                                                        Content="Print separator sheet" HorizontalAlignment="Left" Margin="-11,0,0,4"
+                                                        ToolTipService.ShowOnDisabled="True"
+                                                        Click="PrintSeparator_Click" />
                                             </StackPanel>
                                             <TextBlock Text="After saving" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />
                                             <ComboBox x:Name="AfterSaveBox" HorizontalAlignment="Stretch"
@@ -836,7 +939,7 @@
                                             <TextBlock Text="File name" Style="{StaticResource FieldLabelText}" />
                                             <TextBox x:Name="TemplateBox" AutomationProperties.Name="File name"
                                                      LostFocus="Setting_Changed" />
-                                            <TextBlock Text="Tokens: {date} {time} {counter} {intent} {task}"
+                                            <TextBlock Text="Tokens: {date} {time} {counter} {intent} {task} {label}"
                                                        Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0" />
                                         </StackPanel>
                                     </Expander>

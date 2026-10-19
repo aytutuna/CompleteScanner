@@ -29,9 +29,11 @@ UI per platform** architecture:
   (`PrintLayout.cs`: where a page goes on a printer's paper at real size or fitted, copies, the
   ruler test page), text output (`OcrText.cs`: OCR lines in reading order and paragraphs;
   `TextExport.cs`, `DocxWriter.cs` and `ZipStore.cs`: the text file, the Word document and its
-  zip package, written by hand so both platforms write the same bytes), and receipts
+  zip package, written by hand so both platforms write the same bytes), receipts
   (`ReceiptProcessing.cs`: finding several receipts on the glass, cleaning up faded thermal
-  print, and reading the receipt's date from its text for the `{docdate}` file name).
+  print, and reading the receipt's date from its text for the `{docdate}` file name), and splitting a
+  stack into documents (`DocumentSplitter.cs`; `PatchCode.cs`: separator sheets with patch codes,
+  read and drawn for printing; `SavePlan.cs`: several files saved all or nothing).
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
   xUnit with the same fixtures, geometry, and tolerances. **This is the contract that keeps
   the Swift and C# cores behaviorally identical** — change an algorithm on one side, port
@@ -63,7 +65,7 @@ The main window has four tabs, like the macOS app:
 
 - **Start** — "What are you scanning?": one card per task (Document to PDF, Multi-page from
   feeder, Photos, Old photo restoration, Quick scan, Email a document, Two-sided document, ID card,
-  Copy) and the user's own presets, each badged
+  Copy, Scan to Word, Receipts, Batch of separate documents) and the user's own presets, each badged
   with its task. Picking a card sets everything up for that task, keeps the save folder, fits
   the settings to the connected scanner and opens **Scan**; a card the scanner cannot do (the
   feeder task on a flatbed-only scanner) is greyed out with the reason. On **Scan** a banner
@@ -103,7 +105,9 @@ Photos mode to see detection/deskew/review, or Document mode to build a PDF. Its
 for the flatbed, so it is off while the feeder is selected). It scans both sides in one pass,
 or, with **Both sides, turned by hand**, the side facing up: it turns its stack over after the
 fronts, as the user would, so the next scan delivers the backs, last sheet first. A paper size
-makes it deliver sheets of that size.
+makes it deliver sheets of that size. For the **Batch of separate documents** task its feeder holds
+seven sheets instead, the third and fifth being separator sheets (the Patch T sheet the app prints,
+with a blank back), so the stack splits into documents of two, one and two sheets.
 
 ### Two-sided scanning and paper size
 
@@ -526,6 +530,75 @@ paper at 0.93 with print at 0.6, tilted 3° either way), printed in a plain stro
 OCR reads, with a date each (12.03.2026 and 2026-02-27): the files come out as "Receipt
 2026-02-27 …" and "Receipt 2026-03-12 …".
 
+### Batch of separate documents
+
+**Split into documents** (the inspector's **Output** section, under the crop and straighten
+switches) saves the collected pages as several files: **At separator sheets**, **At blank sheets**
+or **Every N sheets** (with **Sheets per document**, 1 to 99 in the list, up to 999 in a settings
+file). The **Batch of separate documents** task (feeder only; greyed out on a scanner without one)
+sets it up: 300 dpi, PDF, split at separator sheets, blank pages skipped, named
+`Document {label} {date} {counter}`. The other tasks do not split; the sheets per document are
+kept. Like the blank-page check, splitting needs the pages collected in the queue, so the choice is
+greyed out, with the reason, when each scan is saved at once, for copies and for receipts.
+
+- **Separator sheets**: **Save separator sheet (PDF)** (shown with At separator sheets) saves a
+  Patch T sheet as a one-page PDF in the scans folder, "Separator sheet (Patch T, Letter).pdf" or
+  A4 where that is the usual paper, to print at actual size (100%) on any printer, also on another
+  computer; it needs no printer here, and the saved bar opens it. **Print separator sheet** prints
+  the same sheet at once, at real size, with no dialog, on the printer chosen for copies and on the
+  paper that printer has (whatever paper size the scan asks for). The sheet: the four bars of the
+  code across the sheet 1 in from the top and again, turned half a turn, 1 in from the bottom, so it
+  reads the same fed either way round, and the words "SEPARATOR SHEET", the code and how to use and
+  print it between them. Any patch code counts, also one printed by other software, read either way
+  round (1 and 6, 3 and T read backwards are each other) and at a slant of a few degrees; the whole
+  sheet, both sides, is left out.
+- **Blank sheets**: one-sided, every blank page splits; with both sides scanned only a sheet blank
+  on both sides does, so the blank back of a one-sided page is no separator (it follows Skip blank
+  pages). One-sided, Skip blank pages has no say, so the switch is greyed out and says why. Several
+  separators in a row split once, and a document with nothing in it is not saved.
+- **Every N sheets**: a sheet is a front with its back; blank sheets count too.
+
+Nothing is split unseen. The page strip shows the plan before saving: the first page of each
+document is badged "Document 2" (with its name, "Document 2 · Lease"), a bar in the gap before it;
+separator pages are badged **Separator**, dimmed, with **Keep**, which saves the page and stops
+its sheet from splitting (a second click undoes it); the gap before every other page is a button
+(shown while a split is chosen or the queue is split): one click starts a new document there, one
+click on a document's bar joins it to the document before, and a second click undoes either. A
+page's right-click menu has the same split or join, also without a split chosen, and **Name this
+document…**, which opens a small box over the page: the name is `{label}` in the file name (Enter
+keeps it, Esc cancels, an empty name removes it; up to 100 characters, and the file name takes at
+most 120 bytes of it, cut between characters). The name stays with its document: when its first
+page is skipped (or a page before it is kept again) the name moves to the document's new first
+page, and a document that is gone and comes back has its name back. Moving, turning or removing
+pages keeps every page's facts, and the plan follows the queue as it is. The strip's label counts the documents and
+what is left out ("7 pages in queue, 3 documents, 2 separator pages skipped"), the status after a
+scan says what was found (" Found 2 separator pages: 3 documents to save."), and the save button
+says what it writes: **Save 3 PDFs (5 pages)**.
+
+Saving writes a file per document, each with its own counter and the document's number as
+`{index}` (added at the end when the template has no `{index}`, as for a batch of photos), its text
+beside it with **Also save text**, or a Word document or text file each for those formats. It is all
+or nothing (`SavePlan`): a failure or Cancel part-way removes every file it wrote, text files too,
+and the queue stays as it was ("None of the documents was saved; the pages are still in the
+queue. …"), and the inspector's last PDF size is the one from before. Afterwards the status names
+the files, their size together, the text files beside them, Word or text files with no text found,
+and what was left out ("Saved 3 PDFs (5 pages, 256 KB): … and their text, … — 2 separator pages
+were left out"). A queue that is one document saves as before.
+
+How a patch code is read (`PatchCodeDetector`), on the page's gray copy at 100 dpi, after crop and
+straighten, on every page collected in the queue whatever the split, so a split chosen later finds
+them: along each column (and each row, for bars down the page) the ink, darker than half the paper,
+gives runs; four in a row match when each is narrow (0.05–0.12 in) or wide (0.15–0.26 in), exactly
+two are wide, the gaps are 0.05–0.12 in and nothing is printed for 0.3 in on either side; matches on
+neighbouring lines with the same code, moving by at most 0.02 in from line to line, are one code,
+which counts when read over at least 1.5 in on at least half the lines it spans. Checked on
+synthetic pages (`TestPages`, the same bytes in both test suites): all six codes across and down the
+page, at ±2.5° and ±3°, the separator sheet at 100 and 300 dpi, turned half and a quarter turn, and
+no code found on pages of text, a ruled table with a header band and striped rows, blank pages,
+photos and a sheet on a backdrop. Barcode and QR separators need a barcode library and come later.
+**To check on real hardware:** separator sheets printed on real printers (toner spread, a printer
+that shrinks the page), feeders that skew sheets more than 3°, and very dark or colored paper.
+
 ### Why isn't my scanner listed?
 
 The **?** button next to **Scanners**, the link under the scanner list while only the Demo
@@ -587,6 +660,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | Share, email, open with, copy (`SaveActions`, `FileActions`, `ShareService`) | The choices are covered by `SaveActionsTests` and the after-save cases of `ModelsCompatTests` (same cases as macOS). Checked by driving the view model's real save paths with a stand-in for Windows (each after-save action after a PDF, a file saved at once and a photo batch; the Email task sharing; no share window; a refused action; a moved file; a cancelled save running nothing), by building the real clipboard data and share package without placing them anywhere, and by building the window without showing it: the bar, its buttons and menu, the narrow layout, the "After saving" choices, the Saved tab's buttons and menus, rendered off screen in light and dark. **Not tried on screen:** the share window, the Open with dialog and the clipboard themselves (checks must not send, open or overwrite anything), and Mail or Outlook as share targets |
 | Troubleshooter (`Troubleshooter`, `SystemDiagnostics`, `TroubleshooterWindow`) | The checks are covered by `TroubleshooterTests` (same cases as macOS) and the Windows service and network values by `WindowsSystemStatusTests`. Checked by driving the view model with stand-in connections and a stand-in for Windows (the snapshot, the order of the checks, devices.txt, Refresh, Copy diagnostics and Settings refused, a busy scanner at connect and at scan, a connection that works clearing it, a cancelled scan not counting), by reading the real WIA service and network on Windows 11 (Running and Public, as `sc query` and `Get-NetConnectionProfile` report, from UI and thread-pool threads), by copying to the real clipboard with the user's clipboard saved and restored, by an address added by hand on loopback where nothing listens, by a discovered scanner (a stand-in service for a loopback scanner) that stays listed, selected and connected across a Refresh when Windows aborts either network watcher, and dropped only once the restarted watcher's first pass did not find it again, and by building the sidebar, error bar and troubleshooter window without showing them: the header button, the empty state's links, the error bar's Troubleshoot (and none on a file or photo error shown later), one card per check with its buttons and screen-reader names (each card a named group in the UI Automation tree), a Refresh while one runs ignored, rendered off screen in light and dark. **Not tried on screen:** opening Windows Settings and the real Add scanner dialog from it. **Unverified:** a stopped or disabled WIA service, a TWAIN install with 32-bit-only drivers, and a scanner that is really busy in another app |
 | Receipts (`ReceiptDetector`, `ReceiptEnhancer`, `ReceiptDateExtractor`, the review) | Covered by `ReceiptTests` (two receipts on a white lid found apart along their paper, cut around their print when the paper is as light as the lid, a 2 × 11 in receipt that is too long for a page but not for a receipt, prices far from the items, two receipts 0.15 in apart, one receipt per feeder sheet, nothing on the glass, a 300 dpi scan, the enhancer on fading paper, little print and a dark logo, the date rules and the 99-case date set, the texts) and the receipt cases of `ScanTaskTests`, `ModelsCompatTests`, `NamingTemplateTests` and `MockScannerTests` (same cases as macOS, on the same synthetic beds checked by checksum). Checked on harder synthetic beds (four receipts on a white lid, an open lid and with invisible paper, 12° tilts, receipts in a column 0.2 in apart, a receipt lying sideways, an 11 in receipt at the glass's edge: all found and held whole; two receipts 0.15 in apart with paper as light as the lid are not told apart), by driving the view model with the demo scanner and Windows OCR (both receipts found and cut along their paper, a gray Compact PDF each with a text layer named by its own date, one PDF for all named by the earliest, JPEG files, the text beside each PDF, today's date without OCR, OCR that fails, a save cancelled while reading, Fix crop, Discard) and by building the window without showing it: the Receipts card, the inspector's Receipts section and its switches, one PDF off for JPEG, the review's title and save button, rendered off screen in light and dark. **Unverified:** real thermal receipts on a real lid (see [Receipts](#receipts)) |
+| Batch of separate documents (`PatchCodeDetector`, `DocumentSplitter`, `SavePlan`, the strip's gaps) | Covered by `PatchCodeTests` (all six codes across and down the page, ±2.5° and ±3°, the separator sheet at 100 and 300 dpi and turned, its bar widths, no code on text, a ruled table, blank pages, photos), `DocumentSplitterTests` (every mode, the two-sided blank-sheet rule, separators in a row, empty documents, every N sheets with an odd last sheet and skipped sheets, splits and joins by hand and their undo, keeping a separator page, names, also across a change of the settings, the strip's texts) and `SavePlanTests` (the documents, the texts, all or nothing on success, failure and cancel), and the split cases of `ModelsCompatTests`, `ScanTaskTests`, `PageProcessorTests`, `NamingTemplateTests` and `MockScannerTests` (same cases as macOS). Checked by driving the view model with the demo scanner's batch stack and stand-ins for OCR, the file actions and the printers (the task's settings and card, three PDFs of 2, 1 and 2 pages named with their number, the separators left out, the queue and its spool files cleared; joining, splitting and undoing by hand, keeping a separator page, naming a document from any of its pages, turning and moving pages; a save whose third file cannot be written and one cancelled during the second document leaving no file and the queue intact, then saved again with the text beside each PDF; three text files; both sides with blank backs skipped and separator backs left out; at blank sheets; every 2 sheets; no split ending the task; the separator sheet printed on Letter and A4 stand-in printers (and on the printer's paper when the scan asks for Legal), read back as Patch T, and refused without a printer, then saved as a PDF without one, a page of the usual paper read back as Patch T, and saved again under the next free name; a named first page skipped and kept again with the name following it, and left out and saved again by a change of what counts as blank, of Skip blank pages and of the split, a 300-character name cut to 100; the PDFs' size, the text files beside them and "no text was found" in the status; the last PDF size put back after a failed or cancelled save; another task unchanged) and by building the window without showing it: the card, the Split into documents choice and its hint, Print separator sheet, Sheets per document, the strip's badges, gaps and bars, a click on a gap joining two documents, the save button and label, the name box's 100-character limit, Save separator sheet (PDF) and its hint, Skip blank pages greyed out with the reason at blank sheets one-sided and back with both sides, the choice greyed out when each scan is saved at once, rendered off screen in light and dark. **Not tried on screen:** the name box (a popup window) and the page menu. **Unverified:** printed separator sheets scanned by real feeders (see [Batch of separate documents](#batch-of-separate-documents)) |
 | eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — see [Network scanners](#network-scanners-escl) below for discovery, adding by address and HTTPS. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the paper size's region, clamped to the feeder (the feeder's own sheet size for Automatic, at most 17 in tall); two-sided feeder jobs send `<scan:Duplex>true</scan:Duplex>` and use the two-sided feeder's capabilities (`AdfDuplexInputCaps`) when the device lists them, and a device that lists no two-sided feeding scans one side and says so; black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. The protocol client (`EsclClient`, `EsclScannerSession`) is covered by `EsclClientTests` through a stub HTTP handler. Checked against local fake eSCL servers (plain and HTTPS), not a real device |
 
 Known divergences from the macOS app (all documented in the source):

@@ -412,6 +412,71 @@ internal static class TestPages
         return points;
     }
 
+    // MARK: - Patch codes
+
+    /// <summary>The turn of ±2.5°, as fixed-point sine and cosine.</summary>
+    public static readonly Turn Plus2Point5 = new(2859, 65474);
+    public static readonly Turn Minus2Point5 = new(-2859, 65474);
+
+    /// <summary>
+    /// A separator sheet drawn at the standard widths at 100 dpi (narrow bars and gaps 8 px, wide
+    /// bars 20 px, value 20) on noisy paper: <paramref name="code"/>'s bars <paramref name="length"/>
+    /// px long, across the page from (275, 200) down, or with <paramref name="vertical"/> down the
+    /// page from (200, 400) across; five lines of text from y 850; the whole page turned clockwise
+    /// by <paramref name="turn"/>.
+    /// </summary>
+    public static GrayImage PatchPage(PatchCode code, bool vertical, Turn turn, int length = 300)
+    {
+        var page = Noisy(0x9A7C0DE5, 245, p =>
+        {
+            int pos = 200;
+            foreach (bool wide in code.Bars())
+            {
+                int thickness = wide ? 20 : 8;
+                if (vertical) Fill(p, pos, 400, thickness, length, 20);
+                else Fill(p, 275, pos, length, thickness, 20);
+                pos += thickness + 8;
+            }
+            var rng = new Rng(0x9A7C0DE6);
+            for (int line = 0; line < 5; line++) TextLine(p, 100, 850 + line * 28, 650, 40, rng);
+        });
+        return Turned(page, turn, 245);
+    }
+
+    /// <summary>
+    /// A ruled table on noisy paper, long lines that are no patch code: a dark header band 24 px
+    /// tall with a 2 px rule under it, 20 more rules every 28 px, four column rules, and under the
+    /// table ten stripes 6 px tall, 8 px apart.
+    /// </summary>
+    public static GrayImage RuledTable() => Noisy(0x7AB1E000, 245, p =>
+    {
+        Fill(p, 100, 150, 650, 24, 40);
+        for (int row = 0; row <= 20; row++) Fill(p, 100, 174 + row * 28, 650, 2, 40);
+        foreach (int x in new[] { 100, 300, 500, 748 }) Fill(p, x, 150, 2, 24 + 20 * 28 + 2, 40);
+        for (int k = 0; k < 10; k++) Fill(p, 100, 820 + k * 14, 650, 6, 40);
+    });
+
+    /// <summary>The page turned half a turn (each pixel to the opposite corner).</summary>
+    public static GrayImage HalfTurned(GrayImage page)
+    {
+        var p = new byte[page.Pixels.Length];
+        for (int i = 0; i < p.Length; i++) p[i] = page.Pixels[p.Length - 1 - i];
+        return new GrayImage(page.Width, page.Height, p, page.Dpi);
+    }
+
+    /// <summary>The page turned a quarter turn clockwise.</summary>
+    public static GrayImage QuarterTurned(GrayImage page)
+    {
+        int w = page.Width, h = page.Height;
+        var p = new byte[w * h];
+        // The new page is h wide and w tall; its pixel (x, y) is the old (y, h - 1 - x).
+        for (int y = 0; y < w; y++)
+        {
+            for (int x = 0; x < h; x++) p[y * h + x] = page.Pixels[(h - 1 - x) * w + y];
+        }
+        return new GrayImage(h, w, p, page.Dpi);
+    }
+
     /// <summary>Division rounding down (toward minus infinity), for negative offsets too.</summary>
     public static long FloorDiv(long a, long b) => a >= 0 ? a / b : -((-a + b - 1) / b);
 

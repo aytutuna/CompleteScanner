@@ -45,7 +45,7 @@ public class PageProcessorTests
             s.Document.RemoveBlankPages = remove;
             s.Document.BlankSensitivity = BlankSensitivity.High;
             var processor = PageProcessor.ForScan(s);
-            Assert.Equal(["blank"], processor.Steps.Select(step => step.Name));
+            Assert.Equal(["blank", "separator"], processor.Steps.Select(step => step.Name));
             Assert.Equal(BlankSensitivity.High, ((BlankDetectionStep)processor.Steps[0]).Options.Sensitivity);
         }
     }
@@ -55,10 +55,10 @@ public class PageProcessorTests
     {
         var s = new ScanSettings();
         s.Adjustments.Brightness = 0.25;
-        Assert.Equal(["blank", "adjust"], PageProcessor.ForScan(s).Steps.Select(step => step.Name));
+        Assert.Equal(["blank", "separator", "adjust"], PageProcessor.ForScan(s).Steps.Select(step => step.Name));
         var gray = new ScanSettings { ColorMode = ColorMode.Grayscale };
-        Assert.Equal(["blank", "adjust"], PageProcessor.ForScan(gray).Steps.Select(step => step.Name));
-        var adjust = (AdjustmentStep)PageProcessor.ForScan(gray).Steps[1];
+        Assert.Equal(["blank", "separator", "adjust"], PageProcessor.ForScan(gray).Steps.Select(step => step.Name));
+        var adjust = (AdjustmentStep)PageProcessor.ForScan(gray).Steps[2];
         Assert.Equal(ColorMode.Grayscale, adjust.ColorMode);
     }
 
@@ -87,12 +87,35 @@ public class PageProcessorTests
         s.Adjustments.Brightness = 0.25;
         Assert.True(PageProcessor.CorrectsGeometry(s));
         var processor = PageProcessor.ForScan(s);
-        Assert.Equal(["blank", "geometry", "adjust"], processor.Steps.Select(step => step.Name));
+        Assert.Equal(["blank", "geometry", "separator", "adjust"], processor.Steps.Select(step => step.Name));
         var step = (GeometryStep)processor.Steps[1];
         Assert.Equal((false, true), (step.Crop, step.Straighten));
         s.Document.AutoCrop = true;
         s.Document.AutoStraighten = false;
         Assert.Equal((true, false), (((GeometryStep)PageProcessor.ForScan(s).Steps[1]).Crop, ((GeometryStep)PageProcessor.ForScan(s).Steps[1]).Straighten));
+    }
+
+    [Fact]
+    public void ForScan_SeparatorSheets_AreLookedForOnCollectedDocumentPages_WhetherOrNotTheStackIsSplit()
+    {
+        foreach (var mode in SplitModes.DisplayOrder)
+        {
+            var s = new ScanSettings();
+            s.Document.SplitMode = mode;
+            Assert.Contains("separator", PageProcessor.ForScan(s).Steps.Select(step => step.Name));
+        }
+        foreach (var s in new[] { new ScanSettings { Intent = ScanIntent.Photo }, new ScanSettings { DocumentMultiPage = false } })
+        {
+            s.Document.SplitMode = SplitMode.SeparatorSheet;
+            Assert.DoesNotContain("separator", PageProcessor.ForScan(s).Steps.Select(step => step.Name));
+        }
+        // The check records the code and keeps every other fact of the page.
+        var page = new ScannedPage(PatchCodeDetector.RenderSheet(PatchCode.Patch2, 8.5, 11, 150).ToRgba(), 150, ColorMode.Color)
+            .WithSide(PageSide.Front, 3).WithInclusion(PageInclusion.Keep);
+        var processed = PageProcessor.ForScan(new ScanSettings()).Process([page]).Pages[0];
+        Assert.Equal(PatchCode.Patch2, processed.Patch);
+        Assert.Equal((PageSide.Front, 3, PageInclusion.Keep), (processed.Side, processed.SheetIndex, processed.Inclusion));
+        Assert.False(processed.Blank!.IsBlank);
     }
 
     [Fact]

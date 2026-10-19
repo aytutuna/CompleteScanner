@@ -89,7 +89,7 @@ final class PageProcessorTests: XCTestCase {
             s.document.removeBlankPages = remove
             s.document.blankSensitivity = .high
             let processor = PageProcessor.forScan(s)
-            XCTAssertEqual(processor.steps.map(\.name), ["blank"])
+            XCTAssertEqual(processor.steps.map(\.name), ["blank", "separator"])
             let step = try XCTUnwrap(processor.steps[0] as? BlankDetectionStep)
             XCTAssertEqual(step.options.sensitivity, .high)
         }
@@ -98,11 +98,11 @@ final class PageProcessorTests: XCTestCase {
     func test_forScan_adjustmentsComeAfterTheBlankCheck_onlyWhenTheyChangeSomething() throws {
         var s = ScanSettings()
         s.adjustments.brightness = 0.25
-        XCTAssertEqual(PageProcessor.forScan(s).steps.map(\.name), ["blank", "adjust"])
+        XCTAssertEqual(PageProcessor.forScan(s).steps.map(\.name), ["blank", "separator", "adjust"])
         var gray = ScanSettings()
         gray.colorMode = .grayscale
-        XCTAssertEqual(PageProcessor.forScan(gray).steps.map(\.name), ["blank", "adjust"])
-        let adjust = try XCTUnwrap(PageProcessor.forScan(gray).steps[1] as? AdjustmentStep)
+        XCTAssertEqual(PageProcessor.forScan(gray).steps.map(\.name), ["blank", "separator", "adjust"])
+        let adjust = try XCTUnwrap(PageProcessor.forScan(gray).steps[2] as? AdjustmentStep)
         XCTAssertEqual(adjust.colorMode, .grayscale)
     }
 
@@ -128,7 +128,7 @@ final class PageProcessorTests: XCTestCase {
         s.adjustments.brightness = 0.25
         XCTAssertTrue(PageProcessor.correctsGeometry(s))
         let processor = PageProcessor.forScan(s)
-        XCTAssertEqual(processor.steps.map(\.name), ["blank", "geometry", "adjust"])
+        XCTAssertEqual(processor.steps.map(\.name), ["blank", "geometry", "separator", "adjust"])
         let step = try XCTUnwrap(processor.steps[1] as? GeometryStep)
         XCTAssertEqual([step.crop, step.straighten], [false, true])
         s.document.autoCrop = true
@@ -148,6 +148,33 @@ final class PageProcessorTests: XCTestCase {
             XCTAssertFalse(PageProcessor.correctsGeometry(s))
             XCTAssertFalse(PageProcessor.forScan(s).steps.map(\.name).contains("geometry"))
         }
+    }
+
+    func test_forScan_separatorSheets_areLookedForOnCollectedDocumentPages_whetherOrNotTheStackIsSplit() throws {
+        for mode in SplitMode.displayOrder {
+            var s = ScanSettings()
+            s.document.splitMode = mode
+            XCTAssertTrue(PageProcessor.forScan(s).steps.map(\.name).contains("separator"))
+        }
+        var photos = ScanSettings()
+        photos.intent = .photo
+        var atOnce = ScanSettings()
+        atOnce.documentMultiPage = false
+        for var s in [photos, atOnce] {
+            s.document.splitMode = .separatorSheet
+            XCTAssertFalse(PageProcessor.forScan(s).steps.map(\.name).contains("separator"))
+        }
+        // The check records the code and keeps every other fact of the page.
+        let sheet = try XCTUnwrap(PatchCodeDetector.renderSheet(.patch2, widthInches: 8.5, heightInches: 11, dpi: 150)
+            .toRgba().makeCGImage())
+        let scanned = ScannedPage(image: sheet, dpi: 150, colorMode: .color)
+            .withSide(.front, sheetIndex: 3).withInclusion(.keep)
+        let processed = try PageProcessor.forScan(ScanSettings()).process([scanned]).pages[0]
+        XCTAssertEqual(processed.patch, .patch2)
+        XCTAssertEqual(processed.side, .front)
+        XCTAssertEqual(processed.sheetIndex, 3)
+        XCTAssertEqual(processed.inclusion, .keep)
+        XCTAssertEqual(processed.blank?.isBlank, false)
     }
 
     func test_forScan_takesTheBackBindingAndArrangement() {

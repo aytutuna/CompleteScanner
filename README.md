@@ -105,6 +105,18 @@ scanners** — including the Epson Perfection V39 II.
   out expiry and "valid until" dates; today's date is used when none is found. The text is read
   once per receipt, for the date, the PDF's text layer and, if you like, a .txt beside each PDF.
   From the feeder, each sheet is one receipt.
+- **Batch of separate documents**: feed a whole stack of documents at once and get a file for
+  each. Put a separator sheet in front of every document after the first: **Save separator
+  sheet** saves one as a PDF to print at actual size on any printer, and **Print separator sheet**
+  prints one at once (a Patch T sheet, the standard patch code document scanners use; any patch
+  code works, either way round, at a slant of a few degrees). Instead of separator sheets the stack
+  can be split at empty sheets (with both sides scanned, only a sheet empty on both sides splits,
+  so the blank backs of one-sided pages do not) or every few sheets. Nothing is split behind your
+  back: the page strip shows each document before saving, separator pages are marked and left
+  out, one click on the gap between two pages starts a new document there or joins it to the one
+  before, a separator page can be kept, and a document can be named (`{label}` in the file name).
+  **Save 3 PDFs** writes them all or nothing: a save that fails or is cancelled leaves no file
+  and keeps the pages. Word and text files are split the same way.
 - **"Why isn't my scanner listed?"**: a troubleshooter, from the **?** button next to
   **Scanners**, the empty scanner list and an error about a scanner. It checks, in plain
   language, whether macOS is looking for scanners and what the last failure was (a scanner that
@@ -120,19 +132,21 @@ scanners** — including the Epson Perfection V39 II.
   black-and-white threshold.
 - **Start screen**: pick what you are scanning (Document to PDF, Multi-page from feeder,
   Photos, Old photo restoration, Quick scan, Email a document, Two-sided document, ID card, Copy,
-  Scan to Word, Receipts) and everything is set up for it, with a short
+  Scan to Word, Receipts, Batch of separate documents) and everything is set up for it, with a short
   guide on the scan screen. Tasks the connected scanner cannot do are greyed out with the
   reason (Copy also needs a printer). The app remembers the task you used last.
 - **Presets**: save your own settings as presets; they appear on the start screen too.
   Starter presets from earlier versions stay.
 - **File naming templates**: `{date}`, `{time}`, `{counter}`, `{counter:4}`, `{intent}`,
   `{index}`, `{task}`, `{docdate}` (the date printed on the document, for receipts; the scan date
-  otherwise) tokens; automatic collision-free numbering.
+  otherwise), `{label}` (a document's name, given in the page strip) tokens; automatic
+  collision-free numbering.
 - **Demo Scanner**: a built-in simulated device so you can try every feature (including OCR,
   photo splitting and a document feeder with three two-sided sheets, which it scans one side or
   both; the second sheet's back is blank; for the ID card task a made-up sample card, which it
   turns over after each scan; for the Receipts task two made-up receipts with faded print and a
-  date each) with no hardware connected.
+  date each; for the Batch task a stack of seven sheets with two separator sheets in it) with no
+  hardware connected.
 
 ## Build & run
 

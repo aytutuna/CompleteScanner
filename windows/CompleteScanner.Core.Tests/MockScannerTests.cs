@@ -386,4 +386,45 @@ public class MockScannerTests
         var document = Assert.Single(await session.PerformScanAsync(new ScanSettings { Resolution = 150 }, selection: null));
         Assert.NotEqual(scan.Image.Pixels, document.Image.Pixels);
     }
+
+    // MARK: - Batch of separate documents
+
+    [Fact]
+    public async Task TheBatchStack_HasSeparatorSheetsTheSplitterFinds()
+    {
+        var (backend, session) = await Open();
+        Assert.Equal(MockScannerBackend.DefaultBatchSheetCount, backend.BatchSheetCount);
+        Assert.Equal([2, 4], backend.BatchSeparatorSheets.Order());
+        var settings = TaskCatalog.Apply(ScanTask.Batch, new ScanSettings());
+        settings.Resolution = Dpi;
+        var pages = await session.PerformScanAsync(settings, selection: null);
+        Assert.Equal(7, pages.Count);
+        Assert.Equal([PatchCode.PatchT, PatchCode.PatchT], pages.Select(p => PatchCodeDetector.Detect(p.Image, p.Dpi)?.Code).OfType<PatchCode>());
+        Assert.Equal([false, false, true, false, true, false, false], pages.Select(p => PatchCodeDetector.Detect(p.Image, p.Dpi) is not null));
+        // The documents' sheets keep their numbers.
+        Assert.Equal([1, 2, 4, 6, 7], pages.Where((_, i) => i is not (2 or 4)).Select(p => SheetMarks(p.Image)));
+        // Through the page processor and the splitter: three documents of two, one and two sheets.
+        var processed = PageProcessor.ForScan(settings).Process(pages).Pages;
+        var plan = DocumentSplitter.Plan(processed, settings.Document);
+        Assert.Equal([[0, 1], [3], [5, 6]], plan.Documents.Select(d => d.Pages.ToArray()));
+        // Both sides: a separator's back is blank paper, and the whole sheet is left out.
+        settings.Duplex = DuplexMode.Both;
+        var twoSided = PageProcessor.ForScan(settings, ScanArrangement.TwoSided).Process(await session.PerformScanAsync(settings, selection: null)).Pages;
+        Assert.Equal(14, twoSided.Count);
+        Assert.True(twoSided[5].Blank?.IsBlank);
+        Assert.Equal([[0, 1, 2, 3], [6, 7], [10, 11, 12, 13]], DocumentSplitter.Plan(twoSided, settings.Document).Documents.Select(d => d.Pages.ToArray()));
+    }
+
+    [Fact]
+    public async Task OtherTasks_KeepTheUsualStack()
+    {
+        var (backend, session) = await Open();
+        backend.BatchSheetCount = 2;
+        var pages = await session.PerformScanAsync(FeederSettings(), selection: null);
+        Assert.Equal(3, pages.Count);
+        Assert.All(pages, p => Assert.Null(PatchCodeDetector.Detect(p.Image, p.Dpi)));
+        var batch = TaskCatalog.Apply(ScanTask.Batch, new ScanSettings());
+        batch.Resolution = Dpi;
+        Assert.Equal(2, (await session.PerformScanAsync(batch, selection: null)).Count);
+    }
 }

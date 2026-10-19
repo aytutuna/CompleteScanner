@@ -65,6 +65,8 @@ public final class AppState: ObservableObject {
             // the task's source) ends; its steps follow the task (AppState+Tasks.swift).
             if let task = settings.task, !TaskCatalog.fits(task, settings) { settings.taskId = nil }
             syncTaskFlow()
+            // A named document whose first page the settings now leave out keeps its name.
+            if settings.document != oldValue.document { carryDocumentLabels(settingsBefore: oldValue.document) }
             scheduleSettingsSave()
             // ImageCaptureCore tells whether the feeder scans both sides only once it is used.
             if settings.source == .documentFeeder && oldValue.source != .documentFeeder { checkFeederDuplexSoon() }
@@ -656,8 +658,6 @@ public final class AppState: ObservableObject {
             if flag.isCancelled { throw ScanError.cancelled }
             let raw = cleaned.arranged
             let processed = cleaned.pages
-            // " 2 look blank and will be skipped." after the pages added to the queue.
-            let blankNote = PageFilter.scanNote(processed, options: s.document) + PageCorrections.scanNote(processed)
 
             // The canvas shows the RAW scan: PreviewCanvasView applies the current
             // adjustment settings to it live, so slider changes are visible
@@ -717,7 +717,8 @@ public final class AppState: ObservableObject {
                     } else {
                         self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") — \(self.scannedPages.count) in queue. Scan more or \(self.settings.format.saveTitle)."
                     }
-                    self.statusMessage += blankNote
+                    // " 2 look blank and will be skipped.", " Found 2 separator pages: 3 documents to save."
+                    self.statusMessage += self.queueScanNote(processed, options: s.document)
                 } else {
                     self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
                     try await self.saveImmediately(processed, settings: s, flag: flag)
@@ -848,19 +849,25 @@ public final class AppState: ObservableObject {
             await self.pageEditChain?.value
             let queued = self.scannedPages
             guard !queued.isEmpty else { return }
-            // Pages flagged in the strip (blank, or skipped by hand) are left out now, and only now.
-            let pages = PageFilter.pagesToSave(queued, options: s.document)
-            guard !pages.isEmpty else {
+            // Pages flagged in the strip (blank, separator sheets, or skipped by hand) are left out
+            // now, and only now; the documents are the ones the strip shows.
+            let plan = SavePlan.make(queued, options: s.document)
+            guard !plan.isEmpty else {
                 self.errorMessage = PageFilter.nothingToSaveMessage
-                self.statusMessage = PageFilter.queueSummary(queued, options: s.document) + "."
+                self.statusMessage = DocumentSplitter.queueSummary(queued, options: s.document) + "."
                 return
             }
-            let skipped = queued.count - pages.count
-            let left = skipped == 0 ? "" : " — \(skipped) skipped page\(skipped == 1 ? " was" : "s were") left out"
+            if plan.isSplit {
+                try await self.saveDocuments(plan, settings: s, queued: queued, flag: flag)
+                return
+            }
+            let document = plan.documents[0]
+            let pages = document.pages
+            let left = plan.leftOutNote()
             let format = s.format.queueFormat
             if format.isTextFormat {
                 self.statusMessage = "Reading the text of the pages…"
-                let url = try self.outputURL(fileExtension: format.fileExtension)
+                let url = try self.outputURL(fileExtension: format.fileExtension, label: document.label)
                 let hasText = try await Task.detached(priority: .userInitiated) {
                     try Self.writeTextDocument(pages: pages, format: format, to: url,
                                                shouldContinue: { !flag.isCancelled }) { [weak self] msg in
@@ -878,7 +885,7 @@ public final class AppState: ObservableObject {
             }
             let text = s.output.alsoSaveText ? PDFTextCollector() : nil
             self.statusMessage = s.pdfSearchable || text != nil ? "Running OCR and building PDF…" : "Building PDF…"
-            let url = try self.outputURL(fileExtension: "pdf")
+            let url = try self.outputURL(fileExtension: "pdf", label: document.label)
             let textResult = try await Task.detached(priority: .userInitiated) { () throws -> (url: URL?, problem: String?)? in
                 try Self.writePDFAtomically(pages: pages, pdfSize: s.output.pdfSize, to: url,
                                             textLayer: Self.textLayer(searchable: s.pdfSearchable, collecting: text,
@@ -1167,15 +1174,18 @@ public final class AppState: ObservableObject {
     }
 
     /// One click on a queued page's Keep or Skip button: the page is saved or left out, whatever
-    /// the blank-page setting says; a second click goes back to what the setting says. Twin of the
-    /// Windows `AppViewModel.TogglePageInclusion`.
+    /// the blank-page setting says (a separator page kept is saved, and its sheet no longer splits);
+    /// a second click goes back to what the settings say. Twin of the Windows
+    /// `AppViewModel.TogglePageInclusion`.
     public func togglePageInclusion(id: UUID) {
         guard !isBusy, let idx = scannedPages.firstIndex(where: { $0.id == id }) else { return }
-        let page = scannedPages[idx]
-        let updated = page.withInclusion(PageFilter.toggled(page, options: settings.document))
+        let facts = scannedPages.map { PageFacts.of($0, options: settings.document) }
+        let updated = scannedPages[idx].withInclusion(DocumentSplitter.toggledInclusion(facts, idx, options: settings.document))
         scannedPages[idx] = updated
-        let summary = PageFilter.queueSummary(scannedPages, options: settings.document)
-        statusMessage = PageFilter.isExcluded(updated, options: settings.document)
+        // A document whose first page is now left out (or now saved) keeps its name.
+        carryDocumentLabels(from: facts)
+        let summary = DocumentSplitter.queueSummary(scannedPages, options: settings.document)
+        statusMessage = DocumentSplitter.plan(scannedPages, options: settings.document).pages[idx].role != .content
             ? "Page \(idx + 1) will be left out when you save. \(summary)."
             : "Page \(idx + 1) will be saved. \(summary)."
     }
@@ -1573,7 +1583,7 @@ public final class AppState: ObservableObject {
     /// The text layer of a PDF being saved: OCR reads each page once, for the searchable text
     /// layer (when `searchable`) and for the text file beside the PDF (when `collecting`, which
     /// keeps the lines, or the first OCR error, page by page).
-    nonisolated fileprivate static func textLayer(searchable: Bool, collecting text: PDFTextCollector?,
+    nonisolated static func textLayer(searchable: Bool, collecting text: PDFTextCollector?,
                                                   pages: [ScannedPage]) -> PDFTextLayer? {
         guard searchable || text != nil else { return nil }
         return { index, prepared in
@@ -1612,7 +1622,7 @@ public final class AppState: ObservableObject {
     /// Reads the text of every page with OCR, on full-resolution pixels with the page's rotation,
     /// and writes it as a Word document or a text file (`format`). A page whose text cannot be read
     /// fails the save, saying why. Returns whether any text was found.
-    nonisolated fileprivate static func writeTextDocument(pages: [ScannedPage], format: OutputFormat, to url: URL,
+    nonisolated static func writeTextDocument(pages: [ScannedPage], format: OutputFormat, to url: URL,
                                                           shouldContinue: () -> Bool,
                                                           progress: (String) -> Void) throws -> Bool {
         var ocrPages: [OCRPage] = []
@@ -1674,7 +1684,7 @@ public final class AppState: ObservableObject {
         }
     }
 
-    private func deleteSpoolFiles(of pages: [ScannedPage]) {
+    func deleteSpoolFiles(of pages: [ScannedPage]) {
         for page in pages {
             for url in [page.fileURL, page.alternate?.fileURL].compactMap({ $0 }) {
                 try? FileManager.default.removeItem(at: url)
@@ -1682,7 +1692,7 @@ public final class AppState: ObservableObject {
         }
     }
 
-    private func destinationDirectory() throws -> URL {
+    func destinationDirectory() throws -> URL {
         let url = URL(fileURLWithPath: (settings.destinationPath as NSString).expandingTildeInPath, isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
@@ -1695,11 +1705,13 @@ public final class AppState: ObservableObject {
         return value
     }
 
-    func outputURL(fileExtension: String, index: Int? = nil, documentDate: DocumentDate? = nil) throws -> URL {
+    func outputURL(fileExtension: String, index: Int? = nil, documentDate: DocumentDate? = nil,
+                   label: String? = nil) throws -> URL {
         let dir = try destinationDirectory()
         let base = NamingTemplate(settings.namingTemplate)
             .baseFilename(NamingContext(counter: nextCounter(), date: Date(), intent: settings.intent,
-                                        index: index, task: TaskCatalog.infer(settings), documentDate: documentDate))
+                                        index: index, task: TaskCatalog.infer(settings), documentDate: documentDate,
+                                        label: label))
         return NamingTemplate.uniqueURL(in: dir, base: base, fileExtension: fileExtension)
     }
 

@@ -130,6 +130,56 @@ final class NamingTemplateTests: XCTestCase {
         XCTAssertEqual(renderContext("{docdate} scanned {date}", context), "2026-03-05 scanned 2026-08-13")
     }
 
+    func test_labelToken_isTheDocumentsName_sanitized() {
+        var context = NamingContext(counter: 14, date: fixedDate(), intent: .document, task: .batch, label: "Invoice 0042")
+        XCTAssertEqual(renderContext("Document {label} {date} {counter}", context), "Document Invoice 0042 2026-08-13 14")
+        context.label = "  Invoice 0042 "
+        XCTAssertEqual(renderContext("{label}", context), "Invoice 0042")
+        // Characters a file name cannot hold become "-"; tokens in a name are not expanded.
+        context.label = "ACME/Smith : 2026 Q3"
+        XCTAssertEqual(renderContext("{label}", context), "ACME-Smith - 2026 Q3")
+        context.label = "{date}"
+        XCTAssertEqual(renderContext("{label} {counter}", context), "{date} 14")
+    }
+
+    func test_labelToken_aLongName_isCutBetweenCharacters_soTheFileNameFits() {
+        var context = NamingContext(counter: 14, date: fixedDate(), intent: .document, task: .batch)
+        // 120 bytes of UTF-8 at most.
+        context.label = String(repeating: "a", count: 300)
+        XCTAssertEqual(renderContext("{label}", context), String(repeating: "a", count: 120))
+        context.label = String(repeating: "a", count: 120)
+        XCTAssertEqual(renderContext("{label}", context), String(repeating: "a", count: 120))
+        // Three bytes each: 40 of them; four bytes each: 30, never half of one.
+        context.label = String(repeating: "文", count: 50)
+        XCTAssertEqual(renderContext("{label}", context), String(repeating: "文", count: 40))
+        context.label = String(repeating: "😀", count: 31)
+        XCTAssertEqual(renderContext("{label}", context), String(repeating: "😀", count: 30))
+        // Cut before a space: no space is left at the end.
+        context.label = String(repeating: "b", count: 119) + " cut here"
+        XCTAssertEqual(renderContext("Document {label} {date} {counter}", context),
+                       "Document " + String(repeating: "b", count: 119) + " 2026-08-13 14")
+        context.label = String(repeating: "c", count: 1000)
+        let longest = renderContext("Document {label} {date} {counter}", context)
+        XCTAssertLessThan(longest.utf8.count, 255, longest)
+    }
+
+    func test_labelToken_withoutAName_isEmpty_andTheDocumentsIndexIsAdded() {
+        var context = NamingContext(counter: 14, date: fixedDate(), intent: .document, task: .batch)
+        XCTAssertEqual(renderContext("Document {label} {date} {counter}", context), "Document 2026-08-13 14")
+        context.label = "   "
+        XCTAssertEqual(renderContext("Document {label} {date} {counter}", context), "Document 2026-08-13 14")
+        // The documents of a split queue are numbered like the photos of a batch.
+        context.label = nil
+        context.index = 2
+        XCTAssertEqual(renderContext("Document {label} {date} {counter}", context), "Document 2026-08-13 14 2")
+        context.counter = 15
+        context.index = 3
+        context.label = "Lease"
+        XCTAssertEqual(renderContext("Document {label} {date} {counter}", context), "Document Lease 2026-08-13 15 3")
+        // The old overload has no name.
+        XCTAssertEqual(render("{label}"), "Scan")
+    }
+
     func test_docDateToken_withoutADocumentDate_isTheScanDate() {
         XCTAssertEqual(renderContext("Receipt {docdate} {counter}",
                                      NamingContext(counter: 2, date: fixedDate(), intent: .document, task: .receipt)),

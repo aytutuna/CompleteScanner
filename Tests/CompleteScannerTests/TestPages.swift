@@ -392,6 +392,62 @@ enum TestPages {
     }
 
     /// Division rounding down (toward minus infinity), for negative offsets too.
+    // MARK: - Patch codes
+
+    /// The turn of ±2.5°, as fixed-point sine and cosine.
+    static let plus2Point5 = Turn(sin: 2859, cos: 65474)
+    static let minus2Point5 = Turn(sin: -2859, cos: 65474)
+
+    /// A separator sheet drawn at the standard widths at 100 dpi (narrow bars and gaps 8 px, wide bars
+    /// 20 px, value 20) on noisy paper: `code`'s bars `length` px long, across the page from (275, 200)
+    /// down, or with `vertical` down the page from (200, 400) across; five lines of text from y 850;
+    /// the whole page turned clockwise by `turn`.
+    static func patchPage(_ code: PatchCode, vertical: Bool, _ turn: Turn, length: Int = 300) -> GrayImage {
+        let page = noisy(0x9A7C_0DE5, 245) { p in
+            var pos = 200
+            for wide in code.bars {
+                let thickness = wide ? 20 : 8
+                if vertical {
+                    fill(&p, pos, 400, thickness, length, 20)
+                } else {
+                    fill(&p, 275, pos, length, thickness, 20)
+                }
+                pos += thickness + 8
+            }
+            let rng = Rng(0x9A7C_0DE6)
+            for line in 0..<5 { textLine(&p, 100, 850 + line * 28, 650, 40, rng) }
+        }
+        return turned(page, turn, fill: 245)
+    }
+
+    /// A ruled table on noisy paper, long lines that are no patch code: a dark header band 24 px tall
+    /// with a 2 px rule under it, 20 more rules every 28 px, four column rules, and under the table
+    /// ten stripes 6 px tall, 8 px apart.
+    static func ruledTable() -> GrayImage {
+        noisy(0x7AB1_E000, 245) { p in
+            fill(&p, 100, 150, 650, 24, 40)
+            for row in 0...20 { fill(&p, 100, 174 + row * 28, 650, 2, 40) }
+            for x in [100, 300, 500, 748] { fill(&p, x, 150, 2, 24 + 20 * 28 + 2, 40) }
+            for k in 0..<10 { fill(&p, 100, 820 + k * 14, 650, 6, 40) }
+        }
+    }
+
+    /// The page turned half a turn (each pixel to the opposite corner).
+    static func halfTurned(_ page: GrayImage) -> GrayImage {
+        GrayImage(width: page.width, height: page.height, pixels: Array(page.pixels.reversed()), dpi: page.dpi)
+    }
+
+    /// The page turned a quarter turn clockwise.
+    static func quarterTurned(_ page: GrayImage) -> GrayImage {
+        let w = page.width, h = page.height
+        var p = [UInt8](repeating: 0, count: w * h)
+        // The new page is h wide and w tall; its pixel (x, y) is the old (y, h - 1 - x).
+        for y in 0..<w {
+            for x in 0..<h { p[y * h + x] = page.pixels[(h - 1 - x) * w + y] }
+        }
+        return GrayImage(width: h, height: w, pixels: p, dpi: page.dpi)
+    }
+
     static func floorDiv(_ a: Int, _ b: Int) -> Int {
         a >= 0 ? a / b : -((-a + b - 1) / b)
     }

@@ -66,6 +66,8 @@ internal static class CompatFixtures
         settings.Document.BlankSensitivity = BlankSensitivity.High;
         settings.Document.AutoCrop = true;
         settings.Document.AutoStraighten = true;
+        settings.Document.SplitMode = SplitMode.SheetCount;
+        settings.Document.SplitSheetCount = 3;
         settings.TaskOptions.IdCardPaper = IdCardPaper.Letter;
         settings.TaskOptions.IdCardSaveSidesAsImages = true;
         settings.TaskOptions.CopyCount = 3;
@@ -133,7 +135,8 @@ internal static class CompatFixtures
         + "        \"alsoSaveText\": true\n      },\n"
         + "      \"duplex\": \"manual\",\n      \"backBinding\": \"shortEdge\",\n      \"paperSize\": \"a4\",\n"
         + "      \"document\": {\n        \"removeBlankPages\": true,\n        \"blankSensitivity\": \"high\",\n"
-        + "        \"autoCrop\": true,\n        \"autoStraighten\": true\n      },\n"
+        + "        \"autoCrop\": true,\n        \"autoStraighten\": true,\n        \"splitMode\": \"sheetCount\",\n"
+        + "        \"splitSheetCount\": 3\n      },\n"
         + "      \"taskOptions\": {\n        \"idCardPaper\": \"letter\",\n        \"idCardSaveSidesAsImages\": true,\n"
         + "        \"copyCount\": 3,\n        \"copyFitToPage\": true,\n        \"copyPrinterName\": \"Office printer\",\n"
         + "        \"copyAlsoSavePdf\": true,\n        \"receiptNameByDate\": false,\n        \"receiptCombine\": true\n      }\n");
@@ -675,6 +678,76 @@ public class ModelsCompatTests
         clone.Document.BlankSensitivity = BlankSensitivity.Low;
         Assert.True(original.Document.RemoveBlankPages);
         Assert.Equal(BlankSensitivity.High, original.Document.BlankSensitivity);
+    }
+
+    // MARK: - Splitting into documents (CONTRACTS.md, rule 6)
+
+    [Fact]
+    public void Split_IsOffByDefault_AndInFilesWithoutIt()
+    {
+        var document = new ScanSettings().Document;
+        Assert.Equal((SplitMode.None, 1), (document.SplitMode, document.SplitSheetCount));
+        var presets = Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize);
+        Assert.Equal((SplitMode.None, 1), (presets[0].Settings.Document.SplitMode, presets[0].Settings.Document.SplitSheetCount));
+        // A "document" object written before splitting existed keeps its other settings.
+        var older = Decode<ScanSettings>("""{"document": {"removeBlankPages": true, "blankSensitivity": "low", "autoStraighten": true}}""");
+        Assert.Equal((true, BlankSensitivity.Low, true, SplitMode.None, 1),
+                     (older.Document.RemoveBlankPages, older.Document.BlankSensitivity, older.Document.AutoStraighten,
+                      older.Document.SplitMode, older.Document.SplitSheetCount));
+    }
+
+    [Fact]
+    public void UnknownOrCorruptSplit_FallsBackToOff_RestIntact()
+    {
+        // A mode of a newer version (barcodes), a wrong case, a number, a null: off; a corrupt count: 1.
+        foreach (string document in new[]
+                 {
+                     """ "document": {"removeBlankPages": true, "splitMode": "barcode", "splitSheetCount": 4} """,
+                     """ "document": {"removeBlankPages": true, "splitMode": "SeparatorSheet", "splitSheetCount": 4} """,
+                     """ "document": {"removeBlankPages": true, "splitMode": 1, "splitSheetCount": 4} """,
+                     """ "document": {"removeBlankPages": true, "splitMode": null, "splitSheetCount": 4} """,
+                 })
+        {
+            var settings = Decode<ScanSettings>("{\"resolution\": 150, " + document + ", \"pdfSearchable\": false}");
+            Assert.Equal((SplitMode.None, 4, true), (settings.Document.SplitMode, settings.Document.SplitSheetCount, settings.Document.RemoveBlankPages));
+            Assert.Equal(150, settings.Resolution);
+            Assert.False(settings.PdfSearchable);
+        }
+        var count = Decode<ScanSettings>("""{"document": {"splitMode": "blankSheet", "splitSheetCount": "three"}}""");
+        Assert.Equal((SplitMode.BlankSheet, 1), (count.Document.SplitMode, count.Document.SplitSheetCount));
+    }
+
+    [Fact]
+    public void Split_RoundTrips_AndCloneIsIndependent()
+    {
+        foreach (var mode in SplitModes.DisplayOrder)
+        {
+            var settings = new ScanSettings();
+            settings.Document.SplitMode = mode;
+            settings.Document.SplitSheetCount = 7;
+            var back = Decode<ScanSettings>(CompatFixtures.Encode(settings));
+            Assert.Equal((mode, 7), (back.Document.SplitMode, back.Document.SplitSheetCount));
+            Assert.Equal(settings.Document, back.Document);
+            var clone = settings.Clone();
+            clone.Document.SplitMode = SplitMode.None;
+            clone.Document.SplitSheetCount = 2;
+            Assert.Equal((mode, 7), (settings.Document.SplitMode, settings.Document.SplitSheetCount));
+        }
+        Assert.Equal(["separatorSheet", "blankSheet", "sheetCount"],
+                     new[] { SplitMode.SeparatorSheet, SplitMode.BlankSheet, SplitMode.SheetCount }.Select(mode =>
+                     {
+                         var settings = new ScanSettings();
+                         settings.Document.SplitMode = mode;
+                         using var json = JsonDocument.Parse(CompatFixtures.Encode(settings));
+                         return json.RootElement.GetProperty("document").GetProperty("splitMode").GetString();
+                     }));
+    }
+
+    [Fact]
+    public void SplitLabelsAndHints()
+    {
+        Assert.Equal(["Off", "At separator sheets", "At blank sheets", "Every N sheets"], SplitModes.DisplayOrder.Select(m => m.Label()));
+        Assert.All(SplitModes.DisplayOrder, mode => Assert.False(string.IsNullOrWhiteSpace(mode.Hint())));
     }
 
     // MARK: - Crop and straighten (CONTRACTS.md, rule 6)

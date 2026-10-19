@@ -9,7 +9,8 @@ namespace CompleteScanner.Core;
 /// paper sizes can be tried without hardware. For the ID card task its glass holds a sample card
 /// (an obviously made-up design, no real document), which it turns over after every scan
 /// (<see cref="IdCardTurnedOver"/>); for the Receipts task it holds two made-up receipts
-/// (<see cref="MockBedRenderer.RenderReceiptBed"/>). Port of
+/// (<see cref="MockBedRenderer.RenderReceiptBed"/>); for the Batch task its feeder holds a stack of
+/// documents with separator sheets between them (<see cref="BatchSeparatorSheets"/>). Port of
 /// Sources/CompleteScannerKit/Backends/MockScannerBackend.swift.
 ///
 /// Divergence from the macOS mock: the demo document page renders text-shaped bars rather
@@ -64,6 +65,23 @@ public sealed class MockScannerBackend : IScannerBackend
     /// scanner has a blank back on its second sheet.
     /// </summary>
     public IReadOnlyCollection<int> FeederBlankBackSheets { get; set; } = [];
+
+    /// <summary>Sheets the demo feeder holds for the Batch task unless <see cref="BatchSheetCount"/> is changed.</summary>
+    public const int DefaultBatchSheetCount = 7;
+
+    /// <summary>
+    /// Sheets a feeder scan for the Batch task delivers, read when the scan starts: a stack of
+    /// three documents with a separator sheet in front of the second and the third
+    /// (<see cref="BatchSeparatorSheets"/>).
+    /// </summary>
+    public int BatchSheetCount { get; set; } = DefaultBatchSheetCount;
+
+    /// <summary>
+    /// The sheets (counted from 0) of the Batch task's stack that are separator sheets, read when the
+    /// scan starts: the Patch T sheet the app prints (<see cref="PatchCodeDetector.RenderSheet"/>) on
+    /// the front, blank paper on the back. Sheets 2 and 4 by default: documents of two, one and two sheets.
+    /// </summary>
+    public IReadOnlyCollection<int> BatchSeparatorSheets { get; set; } = [2, 4];
 
     /// <summary>
     /// The sample ID card on the glass lies with its back up: a scan for the ID card task shows its
@@ -183,7 +201,10 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
     /// </summary>
     private async Task<IReadOnlyList<ScannedPage>> ScanFeeder(ScanSettings settings, int dpi)
     {
-        int sheets = backend.FeederSheetCount;
+        // The Batch task's stack: documents with separator sheets between them.
+        bool batch = settings.Task == ScanTask.Batch && settings.Intent == ScanIntent.Document;
+        int sheets = batch ? backend.BatchSheetCount : backend.FeederSheetCount;
+        var separators = batch ? backend.BatchSeparatorSheets.ToHashSet() : [];
         int? jamsAfter = backend.FeederJamsAfter;
         bool twoSided = settings.Duplex == DuplexMode.Both && backend.FeederDuplex;
         bool turnedOver = backend.FeederStackTurnedOver;
@@ -215,10 +236,14 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
                 : [turnedOver ? PageSide.Back : PageSide.Front];
             foreach (var side in sides)
             {
-                bool blank = side == PageSide.Back && blankBacks.Contains(sheet);
-                var image = await Task.Run(() => blank
-                    ? MockBedRenderer.RenderBlankBack(dpi, settings.Intent, sheet, sheetInches)
-                    : MockBedRenderer.RenderSheet(dpi, settings.Intent, sheet, side, sheetInches));
+                bool separator = separators.Contains(sheet);
+                bool blank = side == PageSide.Back && (separator || blankBacks.Contains(sheet));
+                var image = await Task.Run(() =>
+                {
+                    var front = separator ? MockBedRenderer.RenderSeparatorSheet(dpi, sheetInches) : null;
+                    if (blank) return MockBedRenderer.RenderBlankBack(dpi, settings.Intent, sheet, sheetInches, front);
+                    return front ?? MockBedRenderer.RenderSheet(dpi, settings.Intent, sheet, side, sheetInches);
+                });
                 pages.Add(new ScannedPage(image, dpi, settings.ColorMode));
             }
             await SleepCheckingCancellation(0.15);
@@ -325,11 +350,13 @@ internal static class MockBedRenderer
     /// <summary>
     /// The back of sheet <paramref name="sheetIndex"/> when nothing is printed on it, as a scanner
     /// sees it: off-white paper with noise (σ ≈ 4 levels), a few specks of dust, and the front
-    /// showing through mirrored at a tenth of its darkness. Deterministic for a sheet and size.
+    /// (<paramref name="frontImage"/>, else the sheet's demo front) showing through mirrored at a
+    /// tenth of its darkness. Deterministic for a sheet and size.
     /// </summary>
-    public static RgbaImage RenderBlankBack(int dpi, ScanIntent intent, int sheetIndex, SizeD? sheetInches = null)
+    public static RgbaImage RenderBlankBack(int dpi, ScanIntent intent, int sheetIndex, SizeD? sheetInches = null,
+                                           RgbaImage? frontImage = null)
     {
-        var front = RenderSheet(dpi, intent, sheetIndex, PageSide.Front, sheetInches);
+        var front = frontImage ?? RenderSheet(dpi, intent, sheetIndex, PageSide.Front, sheetInches);
         int width = front.Width, height = front.Height;
         var pixels = new byte[width * height * 4];
         uint state = 0x9E3779B9u ^ (uint)(sheetIndex + 1) * 2654435761u;
@@ -365,6 +392,28 @@ internal static class MockBedRenderer
             FillRect(image, x, y, size, size, 70, 70, 70);
         }
         return image;
+    }
+
+    /// <summary>
+    /// A separator sheet as the demo feeder delivers it: the Patch T sheet the app prints
+    /// (<see cref="PatchCodeDetector.RenderSheet"/>), <paramref name="sheetInches"/> in size
+    /// (<see cref="SheetInches"/> by default), on slightly off-white paper.
+    /// </summary>
+    public static RgbaImage RenderSeparatorSheet(int dpi, SizeD? sheetInches = null)
+    {
+        var size = sheetInches ?? SheetInches;
+        var sheet = PatchCodeDetector.RenderSheet(PatchCode.PatchT, size.Width, size.Height, dpi);
+        var pixels = new byte[sheet.Width * sheet.Height * 4];
+        for (int i = 0; i < sheet.Pixels.Length; i++)
+        {
+            // Toner a little short of black, paper a little short of white.
+            byte value = sheet.Pixels[i] == 0 ? (byte)28 : (byte)247;
+            pixels[i * 4] = value;
+            pixels[i * 4 + 1] = value;
+            pixels[i * 4 + 2] = value;
+            pixels[i * 4 + 3] = 255;
+        }
+        return new RgbaImage(sheet.Width, sheet.Height, pixels);
     }
 
     // MARK: ID card

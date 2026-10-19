@@ -43,7 +43,7 @@ final class ScanTaskTests: XCTestCase {
     func test_rawValues_areTheStoredNames() {
         XCTAssertEqual(ScanTask.allCases.map(\.rawValue),
                        ["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word",
-                        "receipt"])
+                        "receipt", "batch"])
     }
 
     func test_tryParse_isExact() {
@@ -61,10 +61,11 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertEqual(TaskCatalog.all.map(\.task), ScanTask.allCases)
         XCTAssertEqual(TaskCatalog.all.map(\.title),
                        ["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
-                        "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word", "Receipts"])
+                        "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word", "Receipts",
+                        "Batch of separate documents"])
         XCTAssertEqual(TaskCatalog.all.map(\.iconKey),
                        ["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word",
-                        "receipt"])
+                        "receipt", "batch"])
         for definition in TaskCatalog.all {
             XCTAssertEqual(TaskCatalog.definition(definition.task), definition)
             XCTAssertFalse(definition.subtitle.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -85,12 +86,12 @@ final class ScanTaskTests: XCTestCase {
     func test_definitions_flowIntentAndRequiredSource() {
         XCTAssertEqual(TaskCatalog.all.map(\.flow),
                        [.documentQueue, .documentQueue, .photoSplit, .photoSplit, .documentQueue, .documentQueue,
-                        .documentQueue, .idCard, .copy, .documentQueue, .receiptSplit])
+                        .documentQueue, .idCard, .copy, .documentQueue, .receiptSplit, .documentQueue])
         XCTAssertEqual(TaskCatalog.all.map(\.intent),
                        [.document, .document, .photo, .photo, .document, .document, .document, .document, .document,
-                        .document, .document])
+                        .document, .document, .document])
         XCTAssertEqual(TaskCatalog.all.map(\.requiredSource),
-                       [nil, .documentFeeder, nil, nil, .flatbed, nil, .documentFeeder, .flatbed, nil, nil, nil])
+                       [nil, .documentFeeder, nil, nil, .flatbed, nil, .documentFeeder, .flatbed, nil, nil, nil, .documentFeeder])
     }
 
     func test_apply_keepsDestinationAndDetectionTuning_andLeavesTheInputAlone() {
@@ -130,20 +131,21 @@ final class ScanTaskTests: XCTestCase {
             let s = TaskCatalog.apply(task, to: current)
             return "\(s.intent.rawValue) \(s.source.rawValue) \(s.resolution) \(s.format.rawValue) "
                 + "\(s.documentMultiPage) \(s.namingTemplate) \(s.adjustments.restoreFadedColors) \(s.adjustments.autoEnhance) "
-                + s.output.pdfSize.rawValue
+                + "\(s.output.pdfSize.rawValue) \(s.document.splitMode.rawValue)"
         }
         XCTAssertEqual(rows, [
-            "document flatbed 300 pdf true Scan {date} {counter} false false standard",
-            "document documentFeeder 300 pdf true Scan {date} {counter} false false standard",
-            "photo flatbed 600 jpeg true Photo {date} {counter} false false standard",
-            "photo flatbed 600 png true Photo {date} {counter} true true standard",
-            "document flatbed 150 jpeg false Scan {date} {counter} false false standard",
-            "document flatbed 300 pdf true Scan {date} {counter} false false compact",
-            "document documentFeeder 300 pdf true Scan {date} {counter} false false standard",
-            "document flatbed 300 pdf true ID card {date} false false standard",
-            "document flatbed 300 pdf true Copy {date} {counter} false false standard",
-            "document flatbed 300 word true Scan {date} {counter} false false standard",
-            "document flatbed 300 pdf true Receipt {docdate} {counter} false false compact",
+            "document flatbed 300 pdf true Scan {date} {counter} false false standard none",
+            "document documentFeeder 300 pdf true Scan {date} {counter} false false standard none",
+            "photo flatbed 600 jpeg true Photo {date} {counter} false false standard none",
+            "photo flatbed 600 png true Photo {date} {counter} true true standard none",
+            "document flatbed 150 jpeg false Scan {date} {counter} false false standard none",
+            "document flatbed 300 pdf true Scan {date} {counter} false false compact none",
+            "document documentFeeder 300 pdf true Scan {date} {counter} false false standard none",
+            "document flatbed 300 pdf true ID card {date} false false standard none",
+            "document flatbed 300 pdf true Copy {date} {counter} false false standard none",
+            "document flatbed 300 word true Scan {date} {counter} false false standard none",
+            "document flatbed 300 pdf true Receipt {docdate} {counter} false false compact none",
+            "document documentFeeder 300 pdf true Document {label} {date} {counter} false false standard separatorSheet",
         ])
     }
 
@@ -163,7 +165,7 @@ final class ScanTaskTests: XCTestCase {
         current.document.blankSensitivity = .high
         for task in ScanTask.allCases {
             let s = TaskCatalog.apply(task, to: current)
-            XCTAssertEqual(s.document.removeBlankPages, task == .twoSided, task.rawValue)
+            XCTAssertEqual(s.document.removeBlankPages, task == .twoSided || task == .batch, task.rawValue)
             XCTAssertEqual(s.document.blankSensitivity, .high, task.rawValue)
         }
         XCTAssertTrue(current.document.removeBlankPages)
@@ -417,12 +419,12 @@ final class ScanTaskTests: XCTestCase {
 
     func test_availability_flatbedOnlyScanner_noFeederTasks() {
         let caps = ScannerCapabilities(sources: [.flatbed])
-        for task in [ScanTask.feeder, .twoSided] {
+        for task in [ScanTask.feeder, .twoSided, .batch] {
             let availability = TaskCatalog.availability(of: task, capabilities: caps)
             XCTAssertFalse(availability.isAvailable)
             XCTAssertEqual(availability.reason, "This scanner has no document feeder.")
         }
-        for task in ScanTask.allCases where task != .feeder && task != .twoSided {
+        for task in ScanTask.allCases where task != .feeder && task != .twoSided && task != .batch {
             XCTAssertTrue(TaskCatalog.availability(of: task, capabilities: caps).isAvailable, task.rawValue)
         }
     }
@@ -552,7 +554,7 @@ final class ScanTaskTests: XCTestCase {
     func test_fileLabels() {
         XCTAssertEqual(TaskCatalog.all.map(\.fileLabel),
                        ["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy",
-                        "Document", "Receipt"])
+                        "Document", "Receipt", "Document"])
     }
 
     func test_word_savesTheTextAsAWordDocument_andEndsWithAnotherFormat() {
@@ -610,5 +612,58 @@ final class ScanTaskTests: XCTestCase {
             XCTAssertFalse(TaskCatalog.apply(task, to: current).output.alsoSaveText, task.rawValue)
         }
         XCTAssertTrue(current.output.alsoSaveText)
+    }
+
+    func test_batch_splitsAFeederStackAtSeparatorSheets_andEndsWithoutASplit() {
+        let definition = TaskCatalog.definition(.batch)
+        XCTAssertEqual(definition.steps[0].primaryActionLabel, "Scan stack")
+        var s = TaskCatalog.apply(.batch, to: ScanSettings())
+        XCTAssertEqual(s.intent, .document)
+        XCTAssertEqual(s.source, .documentFeeder)
+        XCTAssertEqual(s.format, .pdf)
+        XCTAssertEqual(s.duplex, .off)
+        XCTAssertEqual(s.document.splitMode, .separatorSheet)
+        XCTAssertTrue(s.document.removeBlankPages)
+        XCTAssertTrue(s.documentMultiPage && s.pdfSearchable)
+        XCTAssertEqual(TaskCatalog.flow(of: s), .documentQueue)
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi · Color · PDF · Split at separator sheets")
+        XCTAssertTrue(TaskCatalog.fits(.batch, s))
+        // Another split still fits; no split ends the task, as leaving the feeder does.
+        s.document.splitMode = .blankSheet
+        XCTAssertTrue(TaskCatalog.fits(.batch, s))
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi · Color · PDF · Split at blank sheets")
+        s.document.splitMode = .sheetCount
+        s.document.splitSheetCount = 3
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi · Color · PDF · Split every 3 sheets")
+        s.document.splitSheetCount = 1
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi · Color · PDF · Split every sheet")
+        s.document.splitMode = .none
+        XCTAssertFalse(TaskCatalog.fits(.batch, s))
+        s.document.splitMode = .separatorSheet
+        s.source = .flatbed
+        XCTAssertFalse(TaskCatalog.fits(.batch, s))
+        // Saved at once, nothing is split: the summary says nothing of it.
+        s.documentMultiPage = false
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi · Color · PDF")
+    }
+
+    func test_apply_onlyTheBatchTaskSplits_theSheetCountIsKept() {
+        var current = customized()
+        current.document.splitMode = .blankSheet
+        current.document.splitSheetCount = 4
+        for task in ScanTask.allCases {
+            let s = TaskCatalog.apply(task, to: current)
+            XCTAssertEqual(s.document.splitMode, task == .batch ? .separatorSheet : SplitMode.none, task.rawValue)
+            XCTAssertEqual(s.document.splitSheetCount, 4, task.rawValue)
+        }
+        XCTAssertEqual(current.document.splitMode, .blankSheet)
+        // Without a stored task, split documents look like a batch.
+        var untagged = TaskCatalog.apply(.batch, to: ScanSettings())
+        untagged.taskId = nil
+        XCTAssertEqual(TaskCatalog.infer(untagged), .batch)
+        untagged.source = .flatbed
+        XCTAssertEqual(TaskCatalog.infer(untagged), .batch)
+        untagged.document.splitMode = .none
+        XCTAssertEqual(TaskCatalog.infer(untagged), .document)
     }
 }

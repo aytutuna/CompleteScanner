@@ -58,6 +58,8 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.document.blankSensitivity = .high
     settings.document.autoCrop = true
     settings.document.autoStraighten = true
+    settings.document.splitMode = .sheetCount
+    settings.document.splitSheetCount = 3
     settings.taskOptions.idCardPaper = .letter
     settings.taskOptions.idCardSaveSidesAsImages = true
     settings.taskOptions.copyCount = 3
@@ -119,7 +121,8 @@ private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
     .replacingOccurrences(
         of: "\"documentMultiPage\" : false",
         with: "\"document\" : {\n        \"autoCrop\" : true,\n        \"autoStraighten\" : true,\n"
-            + "        \"blankSensitivity\" : \"high\",\n        \"removeBlankPages\" : true\n      },\n"
+            + "        \"blankSensitivity\" : \"high\",\n        \"removeBlankPages\" : true,\n"
+            + "        \"splitMode\" : \"sheetCount\",\n        \"splitSheetCount\" : 3\n      },\n"
             + "      \"documentMultiPage\" : false")
     .replacingOccurrences(
         of: "\"pdfSearchable\" : false",
@@ -570,6 +573,76 @@ final class ModelsCompatTests: XCTestCase {
         copy.document.blankSensitivity = .low
         XCTAssertTrue(original.document.removeBlankPages)
         XCTAssertEqual(original.document.blankSensitivity, .high)
+    }
+
+    // MARK: Splitting into documents (CONTRACTS.md, rule 6)
+
+    func test_split_isOffByDefault_andInFilesWithoutIt() throws {
+        let document = ScanSettings().document
+        XCTAssertEqual(document.splitMode, SplitMode.none)
+        XCTAssertEqual(document.splitSheetCount, 1)
+        let presets = try decode([Preset].self, presetsJSONBeforePDFSize)
+        XCTAssertEqual(presets[0].settings.document.splitMode, SplitMode.none)
+        XCTAssertEqual(presets[0].settings.document.splitSheetCount, 1)
+        // A "document" object written before splitting existed keeps its other settings.
+        let older = try decode(ScanSettings.self,
+                               #"{"document": {"removeBlankPages": true, "blankSensitivity": "low", "autoStraighten": true}}"#)
+        XCTAssertTrue(older.document.removeBlankPages)
+        XCTAssertEqual(older.document.blankSensitivity, .low)
+        XCTAssertTrue(older.document.autoStraighten)
+        XCTAssertEqual(older.document.splitMode, SplitMode.none)
+        XCTAssertEqual(older.document.splitSheetCount, 1)
+    }
+
+    func test_unknownOrCorruptSplit_fallsBackToOff_restIntact() throws {
+        // A mode of a newer version (barcodes), a wrong case, a number, a null: off; a corrupt count: 1.
+        for document in [
+            #""document": {"removeBlankPages": true, "splitMode": "barcode", "splitSheetCount": 4}"#,
+            #""document": {"removeBlankPages": true, "splitMode": "SeparatorSheet", "splitSheetCount": 4}"#,
+            #""document": {"removeBlankPages": true, "splitMode": 1, "splitSheetCount": 4}"#,
+            #""document": {"removeBlankPages": true, "splitMode": null, "splitSheetCount": 4}"#,
+        ] {
+            let settings = try decode(ScanSettings.self, #"{"resolution": 150, "# + document + #", "pdfSearchable": false}"#)
+            XCTAssertEqual(settings.document.splitMode, SplitMode.none, document)
+            XCTAssertEqual(settings.document.splitSheetCount, 4, document)
+            XCTAssertTrue(settings.document.removeBlankPages, document)
+            XCTAssertEqual(settings.resolution, 150)
+            XCTAssertFalse(settings.pdfSearchable)
+        }
+        let count = try decode(ScanSettings.self, #"{"document": {"splitMode": "blankSheet", "splitSheetCount": "three"}}"#)
+        XCTAssertEqual(count.document.splitMode, .blankSheet)
+        XCTAssertEqual(count.document.splitSheetCount, 1)
+    }
+
+    func test_split_roundTrips_andCopyIsIndependent() throws {
+        for mode in SplitMode.displayOrder {
+            var settings = ScanSettings()
+            settings.document.splitMode = mode
+            settings.document.splitSheetCount = 7
+            let back = try JSONDecoder().decode(ScanSettings.self, from: encode(settings))
+            XCTAssertEqual(back.document.splitMode, mode)
+            XCTAssertEqual(back.document.splitSheetCount, 7)
+            XCTAssertEqual(back.document, settings.document)
+            var copy = settings
+            copy.document.splitMode = .none
+            copy.document.splitSheetCount = 2
+            XCTAssertEqual(settings.document.splitMode, mode)
+            XCTAssertEqual(settings.document.splitSheetCount, 7)
+        }
+        let written = try [SplitMode.separatorSheet, .blankSheet, .sheetCount].map { mode -> String? in
+            var settings = ScanSettings()
+            settings.document.splitMode = mode
+            let document = try XCTUnwrap(jsonObject(encode(settings))["document"] as? [String: Any])
+            return document["splitMode"] as? String
+        }
+        XCTAssertEqual(written, ["separatorSheet", "blankSheet", "sheetCount"])
+    }
+
+    func test_splitLabelsAndHints() {
+        XCTAssertEqual(SplitMode.displayOrder.map(\.label), ["Off", "At separator sheets", "At blank sheets", "Every N sheets"])
+        for mode in SplitMode.displayOrder {
+            XCTAssertFalse(mode.hint.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
     }
 
     // MARK: Crop and straighten (CONTRACTS.md, rule 6)

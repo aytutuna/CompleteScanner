@@ -68,17 +68,85 @@ public sealed class PageItem : INotifyPropertyChanged
         }
     }
 
+    private PageSplitView? _split;
+
+    /// <summary>
+    /// What the split plan says about the page (its document, the gap before it, separator pages);
+    /// the view model keeps it current. Null until then: the page is shown as the blank-page
+    /// settings say.
+    /// </summary>
+    public PageSplitView? Split
+    {
+        get => _split;
+        set
+        {
+            if (Equals(_split, value)) return;
+            _split = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        }
+    }
+
     /// <summary>"Sheet 2 · back" for a page of a two-sided stack; null for other pages.</summary>
     public string? SideLabel => DocumentSides.SideLabel(Page.Side, Page.SheetIndex);
 
-    /// <summary>"Blank, skipped", "Skipped", "Looks blank", or null (<see cref="PageFilter.Badge"/>).</summary>
-    public string? BlankBadge => PageFilter.Badge(Page, _options);
+    /// <summary>
+    /// "Separator", "Blank, skipped", "Skipped", "Looks blank", or null
+    /// (<see cref="DocumentSplitter.Badge"/>, <see cref="PageFilter.Badge"/>).
+    /// </summary>
+    public string? BlankBadge => _split is { } split ? split.Badge : PageFilter.Badge(Page, _options);
 
     /// <summary>Saving the queue leaves this page out.</summary>
-    public bool IsExcluded => PageFilter.IsExcluded(Page, _options);
+    public bool IsExcluded => _split?.IsExcluded ?? PageFilter.IsExcluded(Page, _options);
 
     /// <summary>What the page's one-click button does ("Keep this page", "Skip this page"); null when it has none.</summary>
-    public string? ToggleLabel => PageFilter.ToggleLabel(Page, _options);
+    public string? ToggleLabel => _split is { } split ? split.ToggleLabel : PageFilter.ToggleLabel(Page, _options);
+
+    /// <summary>The badge's tooltip: what a separator page is, else the badge itself.</summary>
+    public string? BadgeToolTip => _split?.SeparatorNote ?? BlankBadge;
+
+    /// <summary>"Document 2 · Lease" on the first page of each document when the queue is split; null otherwise.</summary>
+    public string? DividerTitle => _split?.DividerTitle;
+
+    /// <summary>What a click on the gap before the page does ("Start a new document here", "Join with document 1"); null: no gap button.</summary>
+    public string? BreakLabel => _split?.BreakLabel;
+
+    /// <summary>The page menu's split or join item; null when the page cannot start a document.</summary>
+    public string? MenuBreakLabel => _split?.MenuBreakLabel;
+
+    /// <summary>The page starts a document after the first: the gap before it is drawn as a divider.</summary>
+    public bool StartsDocument => _split?.StartsDocument == true;
+
+    /// <summary>The strip shows where documents start, so the page has room for the gap before it.</summary>
+    public bool ShowsBreaks => _split?.ShowsBreaks == true;
+
+    /// <summary>The page is saved in a document, so the document can be named from its menu.</summary>
+    public bool CanNameDocument => _split?.Document is not null;
+
+    /// <summary>The strip shows a gap button before the page.</summary>
+    public bool HasBreakButton => BreakLabel is not null;
+
+    /// <summary>The page's menu offers to split or join here.</summary>
+    public bool HasMenuBreak => MenuBreakLabel is not null;
+
+    /// <summary>The page's menu has a split or name item.</summary>
+    public bool HasSplitMenu => HasMenuBreak || CanNameDocument;
+
+    private bool _isNaming;
+
+    /// <summary>The name box of the page's document is open (the strip's popup).</summary>
+    public bool IsNaming
+    {
+        get => _isNaming;
+        set
+        {
+            if (_isNaming == value) return;
+            _isNaming = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsNaming)));
+        }
+    }
+
+    /// <summary>The name being typed in the name box.</summary>
+    public string NameDraft { get; set; } = "";
 
     /// <summary>The button's short text: "Keep" for a left-out page, "Skip" otherwise.</summary>
     public string? ToggleText => ToggleLabel is null ? null : IsExcluded ? "Keep" : "Skip";
@@ -100,13 +168,16 @@ public sealed class PageItem : INotifyPropertyChanged
 
     /// <summary>
     /// The page's name for screen readers: "Page 3, Sheet 2 · back, Blank, skipped, Straightened
-    /// 1.5°", or "Page 3".
+    /// 1.5°", or "Page 3"; the first page of a document after the first starts with its title
+    /// ("Document 2, Page 3").
     /// </summary>
     /// <param name="number">The page's position in the queue, from 1.</param>
     public string AccessibleName(int number)
     {
         string name = SideLabel is { } label ? $"Page {number}, {label}" : $"Page {number}";
-        if (BlankBadge is { } badge) name = $"{name}, {badge}";
+        if (DividerTitle is { } title) name = $"{title}, {name}";
+        if (_split?.SeparatorNote is { } note) name = $"{name}, {note}";
+        else if (BlankBadge is { } badge) name = $"{name}, {badge}";
         return GeometryCaption is { } caption ? $"{name}, {caption}" : name;
     }
 }
@@ -490,6 +561,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         IsFirstRun = saved is null;
         // A task saved last time is still active: its banner comes back with the settings.
         Settings = saved ?? new ScanSettings();
+        _labelsCarriedUnder = Settings.Document.Clone();
         SyncTaskFlow();
         _backends = backends ?? [new Scanning.WiaScannerBackend(),
                                  new Scanning.EsclScannerBackend(),
@@ -537,10 +609,11 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
 
-    /// <summary>The page strip shows every page under the current blank-page settings.</summary>
+    /// <summary>The page strip shows every page under the current blank-page and split settings.</summary>
     private void SyncPageOptions()
     {
         foreach (var item in ScannedPages) item.Options = Settings.Document;
+        SyncPagePlan();
     }
 
     /// <summary>Call after mutating Settings from the UI: debounced persist + live preview refresh.</summary>
@@ -549,6 +622,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         // A feeder that scans one side turns two-sided scanning into turning over by hand.
         if (Settings.Duplex == DuplexMode.Both && EffectiveDuplex == DuplexMode.Manual) Settings.Duplex = DuplexMode.Manual;
         SyncTaskFlow();
+        // A named document whose first page the settings now leave out keeps its name.
+        CarryDocumentLabelsAcrossSettings();
         // The page strip's badges follow the blank-page settings.
         SyncPageOptions();
         // The Copies section shows the paper the printer is asked for.
@@ -1176,7 +1251,6 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             var raw = cleaned.Arranged;
             var processed = cleaned.Pages.ToList();
             // " 2 look blank and will be skipped. 3 straightened." after the pages added to the queue.
-            string blankNote = PageFilter.ScanNote(processed, s.Document) + PageCorrections.ScanNote(processed);
 
             // The canvas shows the RAW scan through the live adjustments (only a downsampled
             // copy is retained), and every scanned page is recorded in the session history.
@@ -1235,7 +1309,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                         {
                             StatusMessage = $"Added {n} page{(n == 1 ? "" : "s")} — {ScannedPages.Count} in queue. Scan more or {OutputFormats.SaveTitle(Settings.Format)}.";
                         }
-                        StatusMessage += blankNote;
+                        StatusMessage += QueueScanNote(processed, s.Document);
                     }
                     else
                     {
@@ -1375,22 +1449,29 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             await Settled(_pageRotateChain);
             var queued = ScannedPages.Select(p => p.Page).ToList();
             if (queued.Count == 0) return;
-            // Pages flagged in the strip (blank, or skipped by hand) are left out now, and only now.
-            var pages = PageFilter.PagesToSave(queued, s.Document);
-            if (pages.Count == 0)
+            // Pages flagged in the strip (blank, separator sheets, or skipped by hand) are left out
+            // now, and only now; the documents are the ones the strip shows.
+            var plan = SavePlan.Make(queued, s.Document);
+            if (plan.IsEmpty)
             {
                 ErrorMessage = PageFilter.NothingToSaveMessage;
-                StatusMessage = PageFilter.QueueSummary(queued, s.Document) + ".";
+                StatusMessage = DocumentSplitter.QueueSummary(queued, s.Document) + ".";
                 return;
             }
-            int skipped = queued.Count - pages.Count;
-            string left = skipped == 0 ? "" : $" — {skipped} skipped page{(skipped == 1 ? " was" : "s were")} left out";
+            if (plan.IsSplit)
+            {
+                await SaveDocuments(plan, s, queued, token);
+                return;
+            }
+            var document = plan.Documents[0];
+            var pages = document.Pages.ToList();
+            string left = plan.LeftOutNote();
             var format = OutputFormats.QueueFormat(s.Format);
             if (format.IsTextFormat())
             {
                 StatusMessage = "Reading the text of the pages…";
                 NotifyAll();
-                var (written, hasText) = await WriteTextDocument(pages, format, OutputPath(s, format.FileExtension()), token);
+                var (written, hasText) = await WriteTextDocument(pages, format, OutputPath(s, format.FileExtension(), label: document.Label), token);
                 MarkSaved([written]);
                 DeleteSpoolFiles(queued);
                 ScannedPages.Clear();
@@ -1402,7 +1483,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             var text = s.Output.AlsoSaveText ? new PdfText() : null;
             StatusMessage = s.PdfSearchable || text is not null ? "Running OCR and building PDF…" : "Building PDF…";
             NotifyAll();
-            string path = await WritePdfAtomically(pages, s, OutputPath(s, "pdf"), token, text);
+            string path = await WritePdfAtomically(pages, s, OutputPath(s, "pdf", label: document.Label), token, text);
             string? textPath = text is null ? null : await WriteTextBeside(path, text);
             MarkSaved([path]);
             DeleteSpoolFiles(queued);
@@ -1761,13 +1842,18 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         int index = IndexOfPage(id);
         if (index < 0) return;
         var item = ScannedPages[index];
-        var page = item.Page.WithInclusion(PageFilter.Toggled(item.Page, Settings.Document));
+        var facts = ScannedPages.Select(p => PageFacts.Of(p.Page, Settings.Document)).ToList();
+        // Separator pages count: a separator page kept is saved, and its sheet no longer splits.
+        var page = item.Page.WithInclusion(DocumentSplitter.ToggledInclusion(facts, index, Settings.Document));
         // Updated in place, not replaced: a replaced item gets a new container in the strip,
         // and the Keep or Skip button the user pressed (and its keyboard focus) goes with the old one.
         item.Options = Settings.Document;
         item.Page = page;
-        string summary = PageFilter.QueueSummary([.. ScannedPages.Select(p => p.Page)], Settings.Document);
-        StatusMessage = PageFilter.IsExcluded(page, Settings.Document)
+        // A document whose first page is now left out (or now saved) keeps its name.
+        CarryDocumentLabels(facts);
+        var queued = ScannedPages.Select(p => p.Page).ToList();
+        string summary = DocumentSplitter.QueueSummary(queued, Settings.Document);
+        StatusMessage = DocumentSplitter.Plan(queued, Settings.Document).Pages[index].Role != PageRole.Content
             ? $"Page {index + 1} will be left out when you save. {summary}."
             : $"Page {index + 1} will be saved. {summary}.";
         NotifyAll();
@@ -3059,7 +3145,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// writers move into place without replacing and pick the next free name if another
     /// file took this one meanwhile.
     /// </summary>
-    private string OutputPath(ScanSettings s, string fileExtension, int? index = null, DocumentDate? documentDate = null)
+    private string OutputPath(ScanSettings s, string fileExtension, int? index = null, DocumentDate? documentDate = null,
+                              string? label = null)
     {
         string dir = Environment.ExpandEnvironmentVariables(s.DestinationPath);
         Directory.CreateDirectory(dir);
@@ -3069,6 +3156,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                 Index = index,
                 Task = TaskCatalog.Infer(s),
                 DocumentDate = documentDate,
+                Label = label,
             });
         return NamingTemplate.UniquePath(dir, baseName, fileExtension);
     }

@@ -460,6 +460,7 @@ struct InspectorView: View {
                 namingTokenRow("{intent}", "\u{201C}Document\u{201D} or \u{201C}Photos\u{201D}")
                 namingTokenRow("{index}", "Photo number within a batch")
                 namingTokenRow("{task}", "The task, e.g. \u{201C}Document\u{201D} or \u{201C}Photo\u{201D}")
+                namingTokenRow("{label}", "The document\u{2019}s name, given in the page strip")
             }
         }
         .padding(14)
@@ -504,6 +505,68 @@ struct InspectorView: View {
             alsoSaveTextRow
             blankPagesRow
             geometryRow
+            splitRow
+        }
+    }
+
+    /// Split the stack into documents: the page strip shows where before saving, and one click on
+    /// the gap between two pages splits or joins there. Pages collected in the queue only; with each
+    /// scan saved at once, for copies and receipts, the choice is off and says why. Separator sheets
+    /// are printed on the printer chosen for copies. Twin of the Windows inspector's "Split into
+    /// documents".
+    private var splitRow: some View {
+        let isCopy = state.isCopyFlow
+        let isReceipts = state.isReceiptFlow
+        let collecting = state.settings.documentMultiPage && !isCopy && !isReceipts
+        let mode = state.settings.document.splitMode
+        let hint: String
+        if isCopy {
+            hint = "Copies print every page as scanned: nothing is split."
+        } else if isReceipts {
+            hint = "Each receipt is saved on its own."
+        } else if !collecting {
+            hint = "Only for pages collected before saving: a scan saved at once is one file."
+        } else if mode == SplitMode.none {
+            hint = mode.hint + " Control-click a page to start a new document there."
+        } else {
+            hint = mode.hint + " Check the page strip before saving: click the gap between two pages to split or join there."
+        }
+        return VStack(alignment: .leading, spacing: 6) {
+            Picker("Split into documents", selection: Binding(get: { state.settings.document.splitMode },
+                                                              set: { state.setSplitMode($0) })) {
+                ForEach(SplitMode.displayOrder) { choice in
+                    Text(choice.label).tag(choice)
+                }
+            }
+            .disabled(!collecting || state.isBusy)
+            .help(hint)
+            if collecting && mode == .sheetCount {
+                Stepper(value: Binding(get: { DocumentSplitter.clampSheetCount(state.settings.document.splitSheetCount) },
+                                       set: { state.setSplitSheetCount($0) }),
+                        in: 1...DocumentSplitter.maxSheetCount) {
+                    LabeledContent("Sheets per document",
+                                   value: "\(DocumentSplitter.clampSheetCount(state.settings.document.splitSheetCount))")
+                }
+            }
+            Text(hint)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if collecting && mode == .separatorSheet {
+                // A PDF in the scans folder, to print on any printer; or printed at once.
+                Button("Save Separator Sheet (PDF)") {
+                    state.saveSeparatorSheet()
+                }
+                .disabled(state.isBusy)
+                .help("Saves a Patch T separator sheet (\(SeparatorSheet.paper(regionCode: AppState.regionCode).label)) as a PDF in the scans folder. Print it at actual size (100%) on any printer.")
+                Button("Print Separator Sheet\u{2026}") {
+                    state.printSeparatorSheet()
+                }
+                .disabled(!state.hasPrinter || state.isBusy)
+                .help(state.hasPrinter
+                      ? "Prints a Patch T separator sheet at actual size on \(state.copyPrinterName ?? "the default printer"), on the paper it has. Print as many as you need."
+                      : PrintText.noPrinterReason + " Save the separator sheet as a PDF to print it elsewhere.")
+            }
         }
     }
 
@@ -580,11 +643,16 @@ struct InspectorView: View {
         let isCopy = state.isCopyFlow
         let isReceipts = state.isReceiptFlow
         let collecting = state.settings.documentMultiPage && !isCopy && !isReceipts
+        // One-sided at blank sheets, every blank page is a separator: the switch has no say.
+        let separators = collecting
+            && DocumentSplitter.blankPagesAreSeparators(state.settings.document, sides: state.effectiveDuplex)
         let hint: String
         if isCopy {
             hint = "Copies print every page as scanned: blank pages are not left out."
         } else if isReceipts {
             hint = "Receipts are found on the glass and checked before saving: there are no blank pages to leave out."
+        } else if separators {
+            hint = DocumentSplitter.blankPagesAreSeparatorsHint
         } else if collecting {
             hint = state.settings.document.removeBlankPages
                 ? "Blank pages are marked in the page strip and left out when you save. Click Keep on a page to save it."
@@ -594,7 +662,7 @@ struct InspectorView: View {
         }
         return VStack(alignment: .leading, spacing: 6) {
             Toggle("Skip blank pages", isOn: $state.settings.document.removeBlankPages)
-                .disabled(!collecting)
+                .disabled(!collecting || separators)
                 .help(hint)
             Text(hint)
                 .font(.caption)

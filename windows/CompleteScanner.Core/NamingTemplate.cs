@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace CompleteScanner.Core;
@@ -33,7 +34,8 @@ public sealed partial class NamingTemplate
     /// <see cref="BaseFilename(int, DateTime, ScanIntent, int?)"/>, plus {task} (the task's
     /// <see cref="TaskDefinition.FileLabel"/>, or the {intent} text when there is no task) and
     /// {docdate} (the date printed on the document, yyyy-MM-dd, read from its text; the scan date
-    /// when there is none).
+    /// when there is none) and {label} (the document's name, cut to <see cref="MaxLabelBytes"/> and
+    /// sanitized like the rest; empty when it has none).
     /// </summary>
     public string BaseFilename(NamingContext context)
     {
@@ -63,6 +65,7 @@ public sealed partial class NamingTemplate
             ("{index}", index?.ToString(CultureInfo.InvariantCulture) ?? ""),
             ("{task}", context.Task is { } task ? TaskCatalog.Definition(task).FileLabel : context.Intent.Label()),
             ("{docdate}", (context.DocumentDate ?? Core.DocumentDate.Of(date)).ToString()),
+            ("{label}", CutToBytes(context.Label?.Trim() ?? "", MaxLabelBytes)),
         };
         foreach (var (token, value) in replacements)
         {
@@ -77,6 +80,30 @@ public sealed partial class NamingTemplate
         }
 
         return Sanitized(result);
+    }
+
+    /// <summary>
+    /// The most UTF-8 bytes {label} adds to a file name: a long document name is cut (between
+    /// characters), so the name stays well within the 255 a file name can have on Windows and the Mac.
+    /// </summary>
+    public const int MaxLabelBytes = 120;
+
+    /// <summary>The first characters of <paramref name="text"/> that fit in <paramref name="maxBytes"/> bytes of UTF-8; never cuts inside a character.</summary>
+    internal static string CutToBytes(string text, int maxBytes)
+    {
+        if (Encoding.UTF8.GetByteCount(text) <= maxBytes) return text;
+        var result = new StringBuilder();
+        int bytes = 0;
+        var elements = StringInfo.GetTextElementEnumerator(text);
+        while (elements.MoveNext())
+        {
+            string element = elements.GetTextElement();
+            int size = Encoding.UTF8.GetByteCount(element);
+            if (bytes + size > maxBytes) break;
+            bytes += size;
+            result.Append(element);
+        }
+        return result.ToString().TrimEnd();
     }
 
     /// <summary>base.ext, appending " 2", " 3", … until the name is free.</summary>
@@ -173,6 +200,12 @@ public sealed record NamingContext(int Counter, DateTime Date, ScanIntent Intent
     /// <see cref="ReceiptDateExtractor"/>); null gives the date of <see cref="Date"/>.
     /// </summary>
     public DocumentDate? DocumentDate { get; init; }
+
+    /// <summary>
+    /// The document's name for {label}: given to it in the page strip when the queue is split into
+    /// documents (<see cref="SaveDocument.Label"/>); null gives an empty text.
+    /// </summary>
+    public string? Label { get; init; }
 }
 
 /// <summary>

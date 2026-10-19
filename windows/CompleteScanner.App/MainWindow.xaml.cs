@@ -54,6 +54,7 @@ public partial class MainWindow : Window
         FormatBox.ItemsSource = OutputFormats.Offered(ViewModel.Settings.Intent).Select(f => f.Label()).ToList();
         BuildPdfSizeSegments();
         BuildBlankSensitivitySegments();
+        BuildSplitChoices();
         AfterSaveBox.ItemsSource = AfterSaveItems();
         ReviewAfterSaveBox.ItemsSource = AfterSaveItems();
         foreach (var binding in Enum.GetValues<DuplexBinding>())
@@ -280,11 +281,13 @@ public partial class MainWindow : Window
 
         int pageCount = ViewModel.ScannedPages.Count;
         var queued = ViewModel.ScannedPages.Select(item => item.Page).ToList();
-        // Pages flagged blank (with Skip blank pages on) or skipped by hand are left out when saving.
-        int saveCount = PageFilter.PagesToSave(queued, ViewModel.Settings.Document).Count;
+        // Pages flagged blank (with Skip blank pages on), separator sheets and pages skipped by hand
+        // are left out when saving; a split queue is saved as several files ("Save 3 PDFs").
+        var savePlan = SavePlan.Make(queued, ViewModel.Settings.Document);
+        int saveCount = savePlan.PageCount;
         PageStrip.Visibility = pageCount > 0 ? Visibility.Visible : Visibility.Collapsed;
-        PageStripLabel.Text = PageFilter.QueueSummary(queued, ViewModel.Settings.Document);
-        SavePdfButton.Content = OutputFormats.SaveTitle(ViewModel.Settings.Format, saveCount);
+        PageStripLabel.Text = DocumentSplitter.QueueSummary(queued, ViewModel.Settings.Document);
+        SavePdfButton.Content = savePlan.SaveTitle(ViewModel.Settings.Format);
         // The PDF glyph for a PDF, a plain document for a Word document or text file.
         global::CompleteScanner.App.Icon.SetGlyph(SavePdfButton,
             OutputFormats.QueueFormat(ViewModel.Settings.Format) == OutputFormat.Pdf ? "" : "");
@@ -310,6 +313,7 @@ public partial class MainWindow : Window
         SyncTaskBanner();
         SyncCopyOptions();
         SyncReceiptOptions();
+        SyncSplitOptions();
         StartView.Refresh();
         // As on macOS, the settings (and presets, which replace them) are frozen while an
         // operation runs: it works from a snapshot, and edits made meanwhile would not apply.
@@ -1300,11 +1304,15 @@ public partial class MainWindow : Window
         bool copy = flow == TaskFlowKind.Copy;
         bool receipts = flow == TaskFlowKind.ReceiptSplit;
         bool collecting = s.DocumentMultiPage && !copy && !receipts;
-        SkipBlankBox.IsEnabled = collecting;
+        // One-sided at blank sheets, every blank page is a separator: the switch has no say.
+        bool separators = collecting && DocumentSplitter.BlankPagesAreSeparators(s.Document, ViewModel.EffectiveDuplex);
+        SkipBlankBox.IsEnabled = collecting && !separators;
         string hint = copy
             ? "Copies print every page as scanned: blank pages are not left out."
             : receipts
             ? "Receipts are found on the glass and checked before saving: there are no blank pages to leave out."
+            : separators
+            ? DocumentSplitter.BlankPagesAreSeparatorsHint
             : collecting
             ? s.Document.RemoveBlankPages
                 ? "Blank pages are marked in the page strip and left out when you save. Click Keep on a page to save it."
