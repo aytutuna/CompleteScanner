@@ -15,7 +15,7 @@ public struct TaskDefinition: Equatable, Sendable {
     public let title: String
     public let subtitle: String
     /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-    /// "photos", "restore", "quick", "email".
+    /// "photos", "restore", "quick", "email", "twoSided".
     public let iconKey: String
     public let flow: TaskFlowKind
     /// The scan mode the task uses.
@@ -94,6 +94,14 @@ public enum TaskCatalog {
             steps: [TaskStep(id: "scan", title: "Scan each page",
                              prompt: "Place a page face down on the glass and scan it. Repeat for every page, then save the PDF: the share window opens so you can email it.",
                              primaryActionLabel: "Scan page", repeats: true)]),
+        TaskDefinition(
+            task: .twoSided, title: "Two-sided document",
+            subtitle: "Both sides of every sheet in the feeder, in page order, in one PDF.",
+            iconKey: "twoSided", flow: .documentQueue, intent: .document, requiredSource: .documentFeeder,
+            fileLabel: "Document",
+            steps: [TaskStep(id: "scan", title: "Scan the stack",
+                             prompt: "Load the pages in the document feeder and scan: both sides of every sheet are scanned and put in order. Then save the PDF.",
+                             primaryActionLabel: "Scan stack", repeats: true)]),
     ]
 
     public static func definition(_ task: ScanTask) -> TaskDefinition {
@@ -103,8 +111,10 @@ public enum TaskCatalog {
 
     /// `current` with the task's settings laid over it: mode, source, resolution, color,
     /// format, JPEG quality, PDF size, the after-save action, the photo and document switches,
-    /// searchable PDF, adjustments, file name and the task itself. The destination folder, the photo detection tuning and
-    /// the legacy OCR languages are kept.
+    /// searchable PDF, adjustments, two-sided scanning, file name and the task itself. The destination folder, the photo detection tuning,
+    /// the legacy OCR languages, the paper size and the edge backs are turned on are kept: they
+    /// describe the user's paper, not the task. The two-sided task asks for `.both`;
+    /// `SettingsAdapter` turns that into turning over by hand on a feeder that scans one side.
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings {
         var s = current
         s.source = .flatbed
@@ -117,6 +127,7 @@ public enum TaskCatalog {
         s.adjustments = AdjustmentSettings()
         s.output.pdfSize = .standard
         s.output.afterSave = AfterSaveAction.none
+        s.duplex = .off
         switch task {
         case .document:
             s.intent = .document
@@ -154,6 +165,13 @@ public enum TaskCatalog {
             s.output.pdfSize = .compact
             s.output.afterSave = .share
             s.namingTemplate = "Scan {date} {counter}"
+        case .twoSided:
+            s.intent = .document
+            s.source = .documentFeeder
+            s.resolution = 300
+            s.format = .pdf
+            s.duplex = .both
+            s.namingTemplate = "Scan {date} {counter}"
         }
         s.taskId = task.rawValue
         return s
@@ -166,7 +184,7 @@ public enum TaskCatalog {
         if settings.intent == .photo {
             return settings.adjustments.restoreFadedColors ? .photoRestore : .photos
         }
-        if settings.source == .documentFeeder { return .feeder }
+        if settings.source == .documentFeeder { return settings.duplex == .off ? .feeder : .twoSided }
         if !settings.documentMultiPage && settings.format != .pdf { return .quickScan }
         return .document
     }
@@ -186,12 +204,23 @@ public enum TaskCatalog {
     }
 
     /// The settings still do what the task is for: the same scan mode, and the task's required
-    /// source. Changing the mode by hand, or a scanner without that source, ends the task.
+    /// source; for the two-sided task, both sides. Changing the mode by hand (or choosing one
+    /// side), or a scanner without that source, ends the task.
     public static func fits(_ task: ScanTask, _ settings: ScanSettings) -> Bool {
         let taskDefinition = TaskCatalog.definition(task)
         guard settings.intent == taskDefinition.intent else { return false }
+        if task == .twoSided && settings.duplex == .off { return false }
         if let source = taskDefinition.requiredSource { return settings.source == source }
         return true
+    }
+
+    /// The steps the scan screen guides: turning the stack over by hand
+    /// (`DocumentSides.manualSteps`) whenever these settings scan both sides that way, otherwise
+    /// the stored task's steps while it fits; nil when there is nothing to guide.
+    public static func guidedSteps(_ settings: ScanSettings, capabilities: ScannerCapabilities?) -> [TaskStep]? {
+        if DocumentSides.usesManualSteps(settings, capabilities: capabilities) { return DocumentSides.manualSteps }
+        guard let task = settings.task, fits(task, settings) else { return nil }
+        return TaskCatalog.definition(task).steps
     }
 
     /// How a scan with these settings is handled: the stored task's flow while it fits,
@@ -202,12 +231,15 @@ public enum TaskCatalog {
     }
 
     /// One line describing the settings, e.g. "300 dpi · Color · PDF". A PDF size other than the
-    /// default `.standard` is named ("300 dpi · Color · Compact PDF"), so the line stays short
+    /// default `.standard` is named ("300 dpi · Color · Compact PDF"), and so is two-sided feeder
+    /// scanning ("… · Both sides", "… · Both sides, turned by hand"), so the line stays short
     /// enough for cards and the preset list.
     public static func summary(_ settings: ScanSettings) -> String {
         let format = settings.format == .pdf && settings.output.pdfSize != .standard
             ? "\(settings.output.pdfSize.label) \(settings.format.label)"
             : settings.format.label
-        return "\(settings.resolution) dpi \u{00B7} \(settings.colorMode.label) \u{00B7} \(format)"
+        let sides = DocumentSides.effective(settings, capabilities: nil)
+        let twoSided = sides == .off ? "" : " \u{00B7} \(sides.label)"
+        return "\(settings.resolution) dpi \u{00B7} \(settings.colorMode.label) \u{00B7} \(format)\(twoSided)"
     }
 }

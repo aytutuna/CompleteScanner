@@ -134,6 +134,22 @@ public static class TwainSizes
     }
 
     /// <summary>
+    /// The TWSS value of an app paper size; <see cref="None"/> for Automatic and for the ID
+    /// card, which TWAIN has no size for (its business card is 90 × 55 mm).
+    /// </summary>
+    public static int FromPaperSize(PaperSize size) => size switch
+    {
+        PaperSize.Letter => UsLetter,
+        PaperSize.Legal => UsLegal,
+        PaperSize.Executive => UsExecutive,
+        PaperSize.A4 => A4,
+        PaperSize.A5 => A5,
+        PaperSize.A6 => A6,
+        PaperSize.B5Jis => JisB5,
+        _ => None,
+    };
+
+    /// <summary>
     /// The area every listed size fits in (the widest width by the tallest height): the
     /// biggest sheet a feeder that reports sizes rather than a physical area takes. Null when
     /// none has fixed dimensions.

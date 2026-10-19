@@ -45,11 +45,19 @@ public final class AppState: ObservableObject {
     @Published public private(set) var capabilities: ScannerCapabilities?
     @Published public var settings: ScanSettings {
         didSet {
+            // A feeder known to scan one side turns two-sided scanning into turning over by hand
+            // (one not asked yet is taken to scan both: `sidesCapabilities`).
+            if settings.duplex == .both,
+               DocumentSides.effective(settings, capabilities: sidesCapabilities) == .manual {
+                settings.duplex = .manual
+            }
             // A task the settings no longer fit (the mode changed by hand, or a scanner without
             // the task's source) ends; its steps follow the task (AppState+Tasks.swift).
             if let task = settings.task, !TaskCatalog.fits(task, settings) { settings.taskId = nil }
             syncTaskFlow()
             scheduleSettingsSave()
+            // ImageCaptureCore tells whether the feeder scans both sides only once it is used.
+            if settings.source == .documentFeeder && oldValue.source != .documentFeeder { checkFeederDuplexSoon() }
         }
     }
 
@@ -71,7 +79,7 @@ public final class AppState: ObservableObject {
     /// Normalized (0...1) crop rect within the flatbed, origin top-left. nil = full bed.
     @Published public var selectionRect: CGRect?
 
-    @Published public private(set) var scannedPages: [ScannedPage] = []
+    @Published public internal(set) var scannedPages: [ScannedPage] = []
     @Published public var detectedPhotos: [DetectedPhoto] = []
     @Published public var showPhotoReview = false
     /// This session's scans, newest first (small previews only) — the "Scans" tab.
@@ -100,10 +108,29 @@ public final class AppState: ObservableObject {
 
     /// No settings were saved before this start: the app opens on the start screen.
     public let isFirstRun: Bool
-    /// Where the user is in the active task; nil without one (see AppState+Tasks.swift).
+    /// Where the user is in the guided steps: the active task's, or turning a stack over by hand
+    /// (`DocumentSides.manualSteps`); nil when nothing is guided (see AppState+Tasks.swift).
     @Published public internal(set) var taskFlow: TaskFlow?
-    /// The task `taskFlow` was made for.
+    /// The task `taskFlow` was made for (nil for turning over by hand).
     var flowTask: ScanTask?
+    /// `taskFlow` guides turning a stack over by hand.
+    var flowIsManual = false
+    /// Turning over by hand, the fronts and backs did not pair up, e.g. "3 fronts but 2 backs";
+    /// nil otherwise. The user scans the backs again, combines the pages as they are, or keeps
+    /// the fronts only.
+    @Published public internal(set) var sidesMismatch: String?
+    /// Whether the connected scanner's feeder scans both sides is known: ImageCaptureCore reports it
+    /// only once the feeder has been selected (`ScannerSession.feederSupportsDuplex`). Set once the
+    /// scanner has answered; one that did not answer is asked again the next time.
+    var feederDuplexChecked = false
+
+    /// The capabilities the sides are decided with (the settings, the steps, the inspector): until
+    /// a session that tells only once the feeder is selected has answered, its feeder is taken to
+    /// scan both sides (`DocumentSides.capabilitiesForSides`).
+    var sidesCapabilities: ScannerCapabilities? {
+        let known = feederDuplexChecked || !(session?.feederDuplexNeedsSelection ?? false)
+        return DocumentSides.capabilitiesForSides(capabilities, duplexKnown: known)
+    }
 
     // MARK: Private
 
@@ -129,6 +156,9 @@ public final class AppState: ObservableObject {
     private var settingsSaveTask: Task<Void, Never>?
     /// The current exclusive operation's cancel flag (nil when idle).
     private var currentCancelFlag: CancelFlag?
+    /// The feeder check under way (`checkFeederDuplex`): scans and previews wait for it, since the
+    /// session selects one unit at a time.
+    private var feederDuplexCheck: Task<Void, Never>?
 
     /// Image shown in the preview canvas.
     public var canvasImage: CGImage? { overviewImage ?? lastScanImage }
@@ -299,6 +329,8 @@ public final class AppState: ObservableObject {
         session = nil
         sessionDeviceID = nil
         capabilities = nil
+        feederDuplexChecked = false
+        feederDuplexCheck = nil
         // The preview, marquee and detections belong to the previous device's bed.
         overviewImage = nil
         lastScanImage = nil
@@ -329,8 +361,13 @@ public final class AppState: ObservableObject {
             sessionDeviceID = id
             let caps = try await s.capabilities()
             capabilities = caps
+            // Settings that use the feeder need to know whether it scans both sides first.
+            if settings.source == .documentFeeder || !caps.sources.contains(.flatbed) {
+                await checkFeederDuplex()
+            }
+            guard selectedDeviceID == id else { return }
             // A task the scanner cannot do (the feeder task on a flatbed) ends here.
-            let adapted = SettingsAdapter.adapt(settings, to: caps)
+            let adapted = SettingsAdapter.adapt(settings, to: sidesCapabilities)
             settings = adapted.settings
             statusMessage = Self.withNotes("Ready — \(s.info.name)", adapted.notes)
         } catch {
@@ -350,6 +387,9 @@ public final class AppState: ObservableObject {
         }
         let generation = switchGeneration
         runExclusive { flag in
+            // The session selects one unit at a time: a feeder check under way goes first.
+            await self.feederDuplexCheck?.value
+            guard self.switchGeneration == generation else { return }
             self.statusMessage = "Scanning overview…"
             let image = try await session.performOverviewScan(settings: self.settings)
             // Discard results that arrive after the user switched devices.
@@ -364,17 +404,43 @@ public final class AppState: ObservableObject {
         guard let session else { return noDevice() }
         let generation = switchGeneration
         runExclusive { flag in
+            if self.settings.source == .documentFeeder { await self.checkFeederDuplex() }
+            guard self.switchGeneration == generation else { return }
             self.statusMessage = "Scanning…"
-            let raw = try await session.performScan(settings: self.settings,
-                                                   selection: self.settings.source == .flatbed ? self.selectionRect : nil)
+            // One snapshot for the whole scan. The scanner is asked for a two-sided scan only
+            // when its feeder can do one; turning the stack over by hand scans one side at a
+            // time, and the steps say which.
+            var scanSettings = self.settings
+            let sides = DocumentSides.effective(scanSettings, capabilities: self.sidesCapabilities)
+            scanSettings.duplex = sides
+            let s = scanSettings
+            let manualSide: PageSide? = sides == .manual && self.isTurningOverByHand
+                ? (self.taskFlow?.current?.id == DocumentSides.backsStepID ? .back : .front)
+                : nil
+            // The flatbed scans the selection, else the paper size's part of the glass.
+            let paperArea: CGRect? = self.capabilities.flatMap {
+                PaperSizes.flatbedSelection(s.paperSize, bed: $0.flatbedSizeInches)
+            }
+            let selection: CGRect? = s.source == .flatbed ? (self.selectionRect ?? paperArea) : nil
+            let scanned = try await session.performScan(settings: s, selection: selection)
             // Discard results that arrive after the user switched devices.
             guard self.switchGeneration == generation else { return }
-            guard !raw.isEmpty else { throw ScanError.scanFailed("The scanner returned no pages.") }
+            guard !scanned.isEmpty else { throw ScanError.scanFailed("The scanner returned no pages.") }
             if flag.isCancelled { throw ScanError.cancelled }
             // A feeder batch cut short (a jam, a dropped connection) still returns its pages;
             // once they are handled the user is told the stack was not finished.
             let stop = session.lastScanStop
-            let s = self.settings
+            // A scanner that fell back to one side (its feeder could not scan both, or was never
+            // asked) delivered one side of each sheet.
+            let twoSided = sides == .both && session.lastScanDuplex != false
+            // Two-sided pages in reading order with their sides marked, the backs turned upright.
+            let raw: [ScannedPage] = try await Task.detached(priority: .userInitiated) {
+                if flag.isCancelled { throw ScanError.cancelled }
+                if twoSided { return DocumentSides.arrangeTwoSided(scanned, binding: s.backBinding) }
+                if let manualSide { return DocumentSides.markManual(scanned, side: manualSide, binding: s.backBinding) }
+                return scanned
+            }.value
+            guard self.switchGeneration == generation else { return }
             self.statusMessage = "Processing…"
             // Pixel-heavy work runs off the main actor so the UI stays live; the cancel
             // flag is polled between pages.
@@ -387,8 +453,7 @@ public final class AppState: ObservableObject {
                         continue
                     }
                     let adjusted = ImagePipeline.apply(s.adjustments, to: page.image, colorMode: s.colorMode)
-                    result.append(ScannedPage(image: adjusted, dpi: page.dpi, colorMode: s.colorMode,
-                                              id: page.id, createdAt: page.createdAt))
+                    result.append(page.withImage(adjusted, colorMode: s.colorMode))
                 }
                 return result
             }.value
@@ -440,10 +505,19 @@ public final class AppState: ObservableObject {
                     self.recordCaptures(spooled.map(\.id))
                     self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
                     let n = processed.count
-                    self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") — \(self.scannedPages.count) in queue. Scan more or Save PDF."
+                    if let manualSide {
+                        self.afterTurnedOverScan(manualSide, count: n, stopped: stop != nil)
+                    } else if twoSided {
+                        let sheets = Set(processed.compactMap(\.sheetIndex)).count
+                        self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") from \(sheets) sheet\(sheets == 1 ? "" : "s"), both sides — \(self.scannedPages.count) in queue. Scan more or Save PDF."
+                    } else if sides == .both {
+                        self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s"), one side of each sheet: the scanner did not scan both sides — \(self.scannedPages.count) in queue. Scan more or Save PDF."
+                    } else {
+                        self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") — \(self.scannedPages.count) in queue. Scan more or Save PDF."
+                    }
                 } else {
                     self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
-                    try await self.saveImmediately(processed, flag: flag)
+                    try await self.saveImmediately(processed, settings: s, flag: flag)
                     self.recordCaptures(processed.map(\.id))
                 }
             case .photoSplit:
@@ -472,7 +546,22 @@ public final class AppState: ObservableObject {
             if let stop {
                 self.errorMessage = stop.message(pagesKept: raw.count)
             }
+            if self.capabilities == nil { await self.readCapabilitiesAfterScan(session, generation: generation) }
         }
+    }
+
+    /// The capabilities could not be read on connect (the scanner was off, say) yet a scan just
+    /// worked: read them now, so the inspector shows what the scanner can do and the next scan
+    /// knows whether its feeder scans both sides. Still unknown when that fails too. Twin of the
+    /// Windows `AppViewModel.ReadCapabilitiesAfterScan`.
+    private func readCapabilitiesAfterScan(_ session: any ScannerSession, generation: Int) async {
+        guard let caps = try? await session.capabilities() else { return }
+        guard switchGeneration == generation, capabilities == nil else { return }
+        capabilities = caps
+        let adapted = SettingsAdapter.adapt(settings, to: sidesCapabilities)
+        settings = adapted.settings
+        syncTaskFlow()
+        statusMessage = Self.withNotes(statusMessage, adapted.notes)
     }
 
     private nonisolated static func splitPhotos(from page: ScannedPage, settings s: ScanSettings) -> [DetectedPhoto] {
@@ -524,15 +613,15 @@ public final class AppState: ObservableObject {
             self.notePDFSize(of: url)
             self.deleteSpoolFiles(of: pages)
             self.scannedPages = []
-            self.taskFlow?.reset()
+            self.resetFlow()
             self.statusMessage = "Saved \(pages.count)-page PDF: \(url.lastPathComponent)\(self.pdfSizeSuffix)"
             self.runAfterSave(s.output.afterSave, saved: [url])
         }
     }
 
-    /// Used when documentMultiPage is off: write each scan to disk as soon as it lands.
-    private func saveImmediately(_ pages: [ScannedPage], flag: CancelFlag) async throws {
-        let s = settings
+    /// Used when documentMultiPage is off: write each scan to disk as soon as it lands, with the
+    /// settings it was scanned with.
+    private func saveImmediately(_ pages: [ScannedPage], settings s: ScanSettings, flag: CancelFlag) async throws {
         var saved: [URL] = []
         if s.format == .pdf {
             let url = try outputURL(fileExtension: "pdf")
@@ -585,7 +674,7 @@ public final class AppState: ObservableObject {
             self.detectedPhotos = []
             self.showPhotoReview = false
             self.photoSourceImages = [:]
-            self.taskFlow?.reset()
+            self.resetFlow()
             self.statusMessage = "Saved \(saved.count) photo\(saved.count == 1 ? "" : "s") to \(s.destinationPath)"
             self.runAfterSave(s.output.afterSave, saved: saved)
         }
@@ -595,7 +684,7 @@ public final class AppState: ObservableObject {
         detectedPhotos = []
         showPhotoReview = false
         photoSourceImages = [:]
-        taskFlow?.reset()
+        resetFlow()
         statusMessage = "Photo batch discarded."
         endOfWork()
     }
@@ -655,10 +744,9 @@ public final class AppState: ObservableObject {
         guard !isBusy else { return }
         guard let idx = scannedPages.firstIndex(where: { $0.id == id }) else { return }
         let page = scannedPages[idx]
-        var updated = ScannedPage(image: ImagePipeline.rotate(page.image, quarterTurns: 1),
-                                  dpi: page.dpi, colorMode: page.colorMode,
-                                  id: page.id, createdAt: page.createdAt,
-                                  fileURL: page.fileURL, fullPixelSize: page.fullPixelSize)
+        // withImage keeps the page's facts (its side and sheet) and its spool file.
+        var updated = page.withImage(ImagePipeline.rotate(page.image, quarterTurns: 1),
+                                     fileURL: page.fileURL, fullPixelSize: page.fullPixelSize)
         updated.rotationQuarterTurns = (page.rotationQuarterTurns + 1) % 4
         scannedPages[idx] = updated
     }
@@ -667,8 +755,180 @@ public final class AppState: ObservableObject {
         guard !isBusy else { return }
         deleteSpoolFiles(of: scannedPages)
         scannedPages = []
-        taskFlow?.reset()
+        resetFlow()
         statusMessage = "Page queue cleared."
+    }
+
+    // MARK: Two-sided scanning
+
+    /// Reads whether the connected scanner's feeder scans both sides, for sessions that tell only
+    /// once the feeder is selected (ImageCaptureCore). Selecting it can take a while on a sleeping
+    /// scanner, so this runs only when the feeder is used, until the scanner has answered (one that
+    /// did not answer is asked again the next time). A check under way is waited for, never
+    /// started twice. Once the answer is in, a feeder that scans one side turns "Both sides" into
+    /// turning over by hand, and the steps follow. Other backends report it in their capabilities.
+    func checkFeederDuplex() async {
+        if let running = feederDuplexCheck {
+            await running.value
+            return
+        }
+        guard !feederDuplexChecked, let session, session.feederDuplexNeedsSelection,
+              capabilities?.sources.contains(.documentFeeder) == true else { return }
+        let generation = switchGeneration
+        let check = Task { @MainActor [weak self] in
+            guard let self, self.switchGeneration == generation, let session = self.session else { return }
+            let supported = await session.feederSupportsDuplex()
+            // A check for a scanner no longer connected is dropped (switchSession starts over).
+            guard self.switchGeneration == generation else { return }
+            self.feederDuplexCheck = nil
+            // nil: no answer this time; asked again the next time the feeder is used.
+            guard let supported else { return }
+            self.feederDuplexChecked = true
+            self.capabilities?.supportsDuplex = supported
+            self.feederDuplexAnswered()
+        }
+        feederDuplexCheck = check
+        await check.value
+    }
+
+    /// The scanner said whether its feeder scans both sides: one that scans one side turns "Both
+    /// sides" into turning over by hand (the settings' didSet brings the steps); otherwise the
+    /// steps follow the capabilities.
+    private func feederDuplexAnswered() {
+        if settings.duplex == .both,
+           DocumentSides.effective(settings, capabilities: sidesCapabilities) == .manual {
+            settings.duplex = .manual
+            statusMessage = "This scanner's feeder scans one side at a time, so you'll turn the stack over by hand."
+        } else {
+            syncTaskFlow()
+        }
+    }
+
+    /// `checkFeederDuplex` for a change of source in the inspector or a task.
+    private func checkFeederDuplexSoon() {
+        guard !feederDuplexChecked, feederDuplexCheck == nil, session != nil, !isBusy else { return }
+        Task { @MainActor [weak self] in
+            await self?.checkFeederDuplex()
+        }
+    }
+
+    /// What to do while the fronts are scanned a part at a time.
+    private static let moreFrontsPrompt =
+        "Load the sheets not scanned yet and scan more fronts; once every front is scanned, choose Done with Fronts."
+
+    /// After a scan of a stack turned over by hand: the fronts move the steps on to the backs,
+    /// unless the feeder stopped early (`stopped`, a jam): then the steps stay at the fronts so the
+    /// rest of them can be scanned (`finishFronts()` moves on). The backs put the stack in reading
+    /// order when they pair up with the fronts, otherwise the mismatch is shown (`sidesMismatch`).
+    /// Twin of the Windows `AppViewModel.AfterTurnedOverScan`.
+    private func afterTurnedOverScan(_ side: PageSide, count: Int, stopped: Bool) {
+        guard taskFlow != nil else { return }
+        if side == .front {
+            if stopped {
+                statusMessage = "Scanned \(count) front side\(count == 1 ? "" : "s") before the feeder stopped. \(Self.moreFrontsPrompt)"
+                return
+            }
+            taskFlow?.advance()
+            statusMessage = "Scanned \(count) front side\(count == 1 ? "" : "s"). Turn the stack over and scan the back sides."
+            return
+        }
+        collateTurnedOverStack(combineAnyway: false)
+    }
+
+    /// Every front is scanned: on to the backs (after a batch cut short, or more fronts).
+    public func finishFronts() {
+        guard !isBusy, canFinishFronts, taskFlow != nil else { return }
+        let fronts = queuedCaptures(DocumentSides.frontsStepID)
+        taskFlow?.advance()
+        statusMessage = "\(fronts) front side\(fronts == 1 ? "" : "s") scanned. Turn the stack over and scan the back sides."
+    }
+
+    /// Back to the fronts before any back was scanned, keeping the fronts scanned so far: for a
+    /// stack larger than the feeder holds, scanned a part at a time.
+    public func scanMoreFronts() {
+        guard !isBusy, canScanMoreFronts, var flow = taskFlow else { return }
+        // Retake makes the fronts the current step; the fronts already scanned are kept, in order.
+        for id in flow.retake(stepID: DocumentSides.frontsStepID) {
+            flow.record(stepID: DocumentSides.frontsStepID, captureID: id)
+        }
+        taskFlow = flow
+        sidesMismatch = nil
+        statusMessage = Self.moreFrontsPrompt
+    }
+
+    /// How many captures of a step are still in the queue.
+    func queuedCaptures(_ stepID: String) -> Int {
+        guard let flow = taskFlow else { return 0 }
+        let queued = Set(scannedPages.map(\.id))
+        return flow.captures(for: stepID).filter { queued.contains($0) }.count
+    }
+
+    /// Puts the fronts and backs of the stack in reading order in the queue, unless their counts
+    /// differ and `combineAnyway` is false: then the mismatch is shown and the steps stay at the backs.
+    private func collateTurnedOverStack(combineAnyway: Bool) {
+        guard let flow = taskFlow else { return }
+        let collation = DocumentSides.collateQueue(scannedPages.map(\.id),
+                                                   fronts: flow.captures(for: DocumentSides.frontsStepID),
+                                                   backs: flow.captures(for: DocumentSides.backsStepID))
+        let counts = collation.interleave
+        if counts.mismatch && !combineAnyway {
+            sidesMismatch = counts.mismatchMessage
+            statusMessage = "\(counts.mismatchMessage ?? ""). Scan the rest of the back sides, scan them again, or combine the pages as they are."
+            return
+        }
+        var byID: [UUID: ScannedPage] = [:]
+        for page in scannedPages { byID[page.id] = page }
+        scannedPages = collation.order.compactMap { id -> ScannedPage? in
+            guard let page = byID[id] else { return nil }
+            guard let position = collation.positions[id] else { return page }
+            return page.withSide(position.side, sheetIndex: position.sheetIndex)
+        }
+        resetFlow()
+        let sheets = max(counts.fronts, counts.backs)
+        let pages = counts.fronts + counts.backs
+        statusMessage = "Put \(sheets) sheet\(sheets == 1 ? "" : "s") in order (\(pages) page\(pages == 1 ? "" : "s")) — \(scannedPages.count) in queue. Scan another stack or Save PDF."
+    }
+
+    /// The backs did not pair up with the fronts, but the pages are combined as they are (the
+    /// extra pages at the end).
+    public func combineSidesAnyway() {
+        guard !isBusy, awaitingBacks else { return }
+        collateTurnedOverStack(combineAnyway: true)
+    }
+
+    /// The back sides scanned so far leave the queue, to be scanned again.
+    public func scanBacksAgain() {
+        guard !isBusy, awaitingBacks, taskFlow != nil else { return }
+        let removed = taskFlow?.retake(stepID: DocumentSides.backsStepID) ?? []
+        removeQueuedPages(removed)
+        sidesMismatch = nil
+        statusMessage = "Load the turned-over stack in the feeder again and scan the back sides."
+    }
+
+    /// The stack stays one-sided: the backs scanned so far leave the queue, the fronts stay (in
+    /// scan order), and the next scan starts a new stack.
+    public func keepFrontsOnly() {
+        guard !isBusy, awaitingBacks, let flow = taskFlow else { return }
+        removeQueuedPages(flow.captures(for: DocumentSides.backsStepID))
+        let queued = Set(scannedPages.map(\.id))
+        let fronts = flow.captures(for: DocumentSides.frontsStepID).filter { queued.contains($0) }.count
+        resetFlow()
+        statusMessage = "Kept \(fronts) front side\(fronts == 1 ? "" : "s") — \(scannedPages.count) in queue. Scan another stack or Save PDF."
+    }
+
+    /// Stops turning stacks over by hand (the close button of its banner without a task): feeder
+    /// scans are one-sided again. Pages already in the queue stay.
+    public func scanOneSideOnly() {
+        guard !isBusy, settings.duplex != .off else { return }
+        settings.duplex = .off
+        statusMessage = "Scanning one side of each sheet."
+    }
+
+    private func removeQueuedPages(_ ids: [UUID]) {
+        guard !ids.isEmpty else { return }
+        let set = Set(ids)
+        deleteSpoolFiles(of: scannedPages.filter { set.contains($0.id) })
+        scannedPages.removeAll { set.contains($0.id) }
     }
 
     // MARK: Presets
@@ -676,7 +936,7 @@ public final class AppState: ObservableObject {
     /// Replaces the settings with the preset's, fitted to the connected scanner. A preset saved
     /// while a task was active brings that task (and its banner) back.
     public func applyPreset(_ preset: Preset) {
-        let adapted = SettingsAdapter.adapt(preset.settings, to: capabilities)
+        let adapted = SettingsAdapter.adapt(preset.settings, to: sidesCapabilities)
         settings = adapted.settings
         statusMessage = Self.withNotes("Applied preset “\(preset.name)”.", adapted.notes)
     }
@@ -806,9 +1066,8 @@ public final class AppState: ObservableObject {
                 return page
             }
             let preview = makePreview(page.image, maxSide: 1600) ?? page.image
-            return ScannedPage(image: preview, dpi: page.dpi, colorMode: page.colorMode,
-                               id: page.id, createdAt: page.createdAt, fileURL: url,
-                               fullPixelSize: CGSize(width: page.image.width, height: page.image.height))
+            return page.withImage(preview, fileURL: url,
+                                  fullPixelSize: CGSize(width: page.image.width, height: page.image.height))
         }
     }
 

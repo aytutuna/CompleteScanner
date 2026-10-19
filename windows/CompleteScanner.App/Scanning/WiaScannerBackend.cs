@@ -34,8 +34,12 @@ public sealed class WiaScannerBackend : IScannerBackend
     internal const string HorizontalSheetFeedSize = "3076"; // thousandths of an inch
     internal const string VerticalSheetFeedSize = "3077";
     internal const string DocumentHandlingCapabilities = "3086"; // see WiaDocumentHandling (Core)
-    internal const string DocumentHandlingSelect = "3088"; // 1 = FEEDER, 2 = FLATBED
+    internal const string DocumentHandlingSelect = "3088"; // see WiaDocumentHandling.SelectValues (Core)
     internal const string OpticalXResolution = "3090";
+    internal const string Pages = "3096";               // 0 = every sheet in the feeder
+    internal const string PageSize = "3097";            // see WiaDocumentHandling.PageSize (Core)
+    internal const string PageWidth = "3098";           // thousandths of an inch
+    internal const string PageHeight = "3099";
     internal const int HandlingFeeder = 1;
     internal const int HandlingFlatbed = 2;
 
@@ -276,10 +280,20 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
     private volatile ScanStop? _lastScanStop;
     public ScanStop? LastScanStop => _lastScanStop;
 
+    /// <summary>Written on the WIA thread before the scan task completes, read after it (null, false, true).</summary>
+    private volatile int _lastScanDuplex = -1;
+    public bool? LastScanDuplex => _lastScanDuplex < 0 ? null : _lastScanDuplex == 1;
+
     private volatile bool _cancelRequested;
     private SizeD _bedInches = new(8.5, 11.7);
+    /// <summary>The feeder's largest sheet, when the device reports it.</summary>
+    private SizeD? _feederInches;
     /// <summary>The sources the device reported (null until the capabilities are read).</summary>
     private List<ScanSource>? _sources;
+    /// <summary>The feeder scans both sides, as the device reported (null until the capabilities are read).</summary>
+    private bool? _supportsDuplex;
+    /// <summary>The source selected by the last <see cref="PrepareItemCore"/> scans both sides (WIA thread only).</summary>
+    private bool _preparedTwoSided;
 
     public Task<ScannerCapabilities> GetCapabilitiesAsync() => RunSta(() =>
     {
@@ -296,6 +310,7 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
             caps.Sources = sources;
             caps.SupportsOverview = sources.Contains(ScanSource.Flatbed);
             caps.SupportsDuplex = WiaDocumentHandling.SupportsDuplex(handling);
+            _supportsDuplex = caps.SupportsDuplex;
 
             // Physical bed and feeder sizes arrive in thousandths of an inch.
             object? bedWidth = WiaScannerBackend.TryGetProperty(device.Properties, WiaScannerBackend.HorizontalBedSize);
@@ -310,6 +325,7 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
                 caps.FeederSizeInches = WiaDocumentHandling.FeederSizeInches(
                     ToInt(WiaScannerBackend.TryGetProperty(device.Properties, WiaScannerBackend.HorizontalSheetFeedSize)),
                     ToInt(WiaScannerBackend.TryGetProperty(device.Properties, WiaScannerBackend.VerticalSheetFeedSize)));
+                _feederInches = caps.FeederSizeInches;
             }
             // The item's resolution property advertises its valid values as a list or a
             // range; when the driver reports neither, offer the common ladder (the session
@@ -337,7 +353,8 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
             dynamic device = Connect();
             try
             {
-                object item = PrepareItem(device, 150, ScanSource.Flatbed, ColorMode.Color, null);
+                object item = PrepareItem(device, 150, ScanSource.Flatbed, ColorMode.Color, null, false,
+                                          PaperSize.Auto);
                 try
                 {
                     return Transfer(item);
@@ -357,6 +374,7 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
     public Task<IReadOnlyList<ScannedPage>> PerformScanAsync(ScanSettings settings, RectD? selection)
     {
         _lastScanStop = null;
+        _lastScanDuplex = -1;
         return RunSta<IReadOnlyList<ScannedPage>>(() =>
         {
             _cancelRequested = false;
@@ -368,8 +386,15 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
             try
             {
                 bool feeder = settings.Source == ScanSource.DocumentFeeder;
+                // Two-sided feeder scans deliver front, back, front, back… (FRONT_FIRST). A
+                // feeder the device reported as one-sided is not asked.
+                bool askedBoth = feeder && settings.Duplex == DuplexMode.Both;
                 object item = PrepareItem(device, settings.Resolution, settings.Source, settings.ColorMode,
-                                           feeder ? null : selection);
+                                           feeder ? null : selection,
+                                           askedBoth && _supportsDuplex != false,
+                                           feeder ? settings.PaperSize : PaperSize.Auto);
+                // Whether the driver took two-sided feeding, so the app knows what the pages are.
+                if (askedBoth) _lastScanDuplex = _preparedTwoSided ? 1 : 0;
                 try
                 {
                     if (feeder)
@@ -437,11 +462,12 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
     /// Select the source and set resolution, color and area on the item to scan. WIA errors
     /// (a busy or offline device, ...) become <see cref="ScanException"/>s via <see cref="WiaErrors"/>.
     /// </summary>
-    private dynamic PrepareItem(dynamic device, int dpi, ScanSource source, ColorMode colorMode, RectD? selection)
+    private dynamic PrepareItem(dynamic device, int dpi, ScanSource source, ColorMode colorMode, RectD? selection,
+                                bool duplex, PaperSize paperSize)
     {
         try
         {
-            return PrepareItemCore(device, dpi, source, colorMode, selection);
+            return PrepareItemCore(device, dpi, source, colorMode, selection, duplex, paperSize);
         }
         catch (COMException e)
         {
@@ -449,10 +475,38 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
         }
     }
 
-    private dynamic PrepareItemCore(dynamic device, int dpi, ScanSource source, ColorMode colorMode, RectD? selection)
+    private dynamic PrepareItemCore(dynamic device, int dpi, ScanSource source, ColorMode colorMode, RectD? selection,
+                                    bool duplex, PaperSize paperSize)
     {
-        WiaScannerBackend.TrySetProperty(device.Properties, WiaScannerBackend.DocumentHandlingSelect,
-            source == ScanSource.DocumentFeeder ? WiaScannerBackend.HandlingFeeder : WiaScannerBackend.HandlingFlatbed);
+        // The first value the driver accepts: two-sided drivers that refuse FRONT_FIRST get
+        // FEEDER | DUPLEX, and drivers that refuse two-sided feeding the feeder alone.
+        dynamic properties = device.Properties;
+        int? selected = WiaDocumentHandling.SelectSource(source, duplex, value =>
+            (bool)WiaScannerBackend.TrySetProperty(properties, WiaScannerBackend.DocumentHandlingSelect, value));
+        // A driver that took none of them may already have the feeder selected (single-source
+        // drivers can make the property read-only): scan that, with its own sides. A feeder
+        // that is not selected would scan whatever source is (the flatbed, over and over).
+        // Drivers without the property keep their one source.
+        if (selected is null && source == ScanSource.DocumentFeeder
+            && (object?)WiaScannerBackend.TryGetProperty(properties, WiaScannerBackend.DocumentHandlingSelect) is { } current)
+        {
+            selected = WiaDocumentHandling.FeederAlreadySelected(ToInt(current))
+                ?? throw ScanException.ScanFailed("The scanner did not accept its document feeder as the source.");
+        }
+        _preparedTwoSided = WiaDocumentHandling.ScansBothSides(selected);
+        // Two-sided: every sheet in the feeder, both of its sides; one-sided feeding keeps the
+        // driver's own page count, as before.
+        if (_preparedTwoSided) WiaScannerBackend.TrySetProperty(device.Properties, WiaScannerBackend.Pages, WiaDocumentHandling.AllPages);
+        var page = source == ScanSource.DocumentFeeder ? WiaDocumentHandling.PageSize(paperSize) : null;
+        if (page is not null)
+        {
+            WiaScannerBackend.TrySetProperty(device.Properties, WiaScannerBackend.PageSize, page.Value.PageSize);
+            if (page.Value.PageSize == WiaDocumentHandling.PageCustom)
+            {
+                WiaScannerBackend.TrySetProperty(device.Properties, WiaScannerBackend.PageWidth, page.Value.WidthThousandths);
+                WiaScannerBackend.TrySetProperty(device.Properties, WiaScannerBackend.PageHeight, page.Value.HeightThousandths);
+            }
+        }
 
         dynamic item = device.Items[1];
         var props = item.Properties;
@@ -464,6 +518,17 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
         });
         WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.HorizontalResolution, dpi);
         WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.VerticalResolution, dpi);
+
+        // The paper's area on the feeder, in pixels at the chosen resolution, for drivers that
+        // take the extents rather than the page size.
+        if (page is not null && _feederInches is { } feederMax)
+        {
+            var region = PaperSizes.FeederRegionInches(paperSize, feederMax);
+            WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.XPos, 0);
+            WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.YPos, 0);
+            WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.XExtent, (int)Math.Round(region.Width * dpi));
+            WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.YExtent, (int)Math.Round(region.Height * dpi));
+        }
 
         // Scan area in pixels at the chosen resolution; the selection is a normalized
         // top-left-origin rect of the bed.

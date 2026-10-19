@@ -288,6 +288,79 @@ public class EsclTests
     }
 
     [Fact]
+    public void TwoSidedFeederRequestSnapshot()
+    {
+        var caps = EsclCapabilitiesParser.Parse(PlatenAndDuplexAdf);
+        var request = EsclScanRequest.Create(caps, ScanSource.DocumentFeeder, ColorMode.Color, 300, selection: null,
+                                             duplex: true);
+        Assert.True(request.Duplex);
+        string expected = string.Join("\n",
+            """<?xml version="1.0" encoding="UTF-8"?>""",
+            """<scan:ScanSettings xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03" xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">""",
+            "  <pwg:Version>2.0</pwg:Version>",
+            "  <pwg:ScanRegions>",
+            "    <pwg:ScanRegion>",
+            "      <pwg:ContentRegionUnits>escl:ThreeHundredthsOfInches</pwg:ContentRegionUnits>",
+            "      <pwg:XOffset>0</pwg:XOffset>",
+            "      <pwg:YOffset>0</pwg:YOffset>",
+            "      <pwg:Width>2550</pwg:Width>",
+            "      <pwg:Height>4200</pwg:Height>",
+            "    </pwg:ScanRegion>",
+            "  </pwg:ScanRegions>",
+            "  <pwg:InputSource>Feeder</pwg:InputSource>",
+            "  <scan:ColorMode>RGB24</scan:ColorMode>",
+            "  <scan:XResolution>300</scan:XResolution>",
+            "  <scan:YResolution>300</scan:YResolution>",
+            "  <scan:Duplex>true</scan:Duplex>",
+            "  <pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>",
+            "</scan:ScanSettings>",
+            "");
+        Assert.Equal(expected, request.ToXml());
+    }
+
+    [Fact]
+    public void TwoSidedIsAskedForOnlyFromATwoSidedFeeder()
+    {
+        var duplexAdf = EsclCapabilitiesParser.Parse(PlatenAndDuplexAdf);
+        var flatbed = EsclScanRequest.Create(duplexAdf, ScanSource.Flatbed, ColorMode.Color, 300, null, duplex: true);
+        Assert.False(flatbed.Duplex);
+        Assert.DoesNotContain("Duplex", flatbed.ToXml());
+        var oneSided = EsclScanRequest.Create(duplexAdf, ScanSource.DocumentFeeder, ColorMode.Color, 300, null);
+        Assert.False(oneSided.Duplex);
+        Assert.DoesNotContain("Duplex", oneSided.ToXml());
+
+        var simplexOnly = EsclCapabilitiesParser.Parse(FeederOnly);
+        var request = EsclScanRequest.Create(simplexOnly, ScanSource.DocumentFeeder, ColorMode.Color, 300, null, duplex: true);
+        Assert.False(request.Duplex);
+        Assert.DoesNotContain("Duplex", request.ToXml());
+
+        // Two-sided announced only as an AdfOption: the feeder's own capabilities are used.
+        var optionOnly = EsclCapabilitiesParser.Parse(DuplexOption);
+        Assert.Null(optionOnly.AdfDuplex);
+        Assert.True(EsclScanRequest.Create(optionOnly, ScanSource.DocumentFeeder, ColorMode.Color, 300, null, duplex: true).Duplex);
+    }
+
+    [Fact]
+    public void FeederRequestUsesThePaperSize()
+    {
+        var caps = EsclCapabilitiesParser.Parse(PlatenAndDuplexAdf);
+        EsclRegion Region(PaperSize size) =>
+            EsclScanRequest.Create(caps, ScanSource.DocumentFeeder, ColorMode.Color, 300, null, paperSize: size).Region;
+        Assert.Equal(new EsclRegion(0, 0, 2480, 3508), Region(PaperSize.A4));
+        Assert.Equal(new EsclRegion(0, 0, 2550, 3300), Region(PaperSize.Letter));
+        Assert.Equal(new EsclRegion(0, 0, 2550, 4200), Region(PaperSize.Legal));
+        Assert.Equal(new EsclRegion(0, 0, 2550, 4200), Region(PaperSize.Auto));
+        // A long-paper feeder: Automatic is capped, a paper size is not needed to be.
+        var longPaper = EsclCapabilitiesParser.Parse(FeederOnly);
+        Assert.Equal(new EsclRegion(0, 0, 2550, 3300),
+                     EsclScanRequest.Create(longPaper, ScanSource.DocumentFeeder, ColorMode.Color, 300, null,
+                                            paperSize: PaperSize.Letter).Region);
+        // The flatbed takes the paper size as a selection (the app's job), not here.
+        Assert.Equal(new EsclRegion(0, 0, 2550, 3508),
+                     EsclScanRequest.Create(caps, ScanSource.Flatbed, ColorMode.Color, 300, null, paperSize: PaperSize.A5).Region);
+    }
+
+    [Fact]
     public void BlackAndWhiteIsRequestedAsGrayscale()
     {
         // The device offers BlackAndWhite1, but not as PNG/TIFF: 1-bit JPEG is what devices reject.

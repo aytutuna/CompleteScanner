@@ -58,13 +58,17 @@ internal static class CompatFixtures
         settings.Adjustments.BlackWhiteThreshold = 0.375;
         settings.Output.PdfSize = PdfSizePreset.Compact;
         settings.Output.AfterSave = AfterSaveAction.Share;
+        settings.Duplex = DuplexMode.Manual;
+        settings.BackBinding = DuplexBinding.ShortEdge;
+        settings.PaperSize = PaperSize.A4;
         return settings;
     }
 
     /// <summary>
     /// <see cref="NonDefaultSettings"/> as a presets file written by the serializer before
     /// tolerant decoding existed (indented, camelCase, every property present), and before the
-    /// PDF size and the after-save action existed: it has no "output" object.
+    /// PDF size, the after-save action and two-sided scanning existed: it has no "output",
+    /// "duplex", "backBinding" or "paperSize".
     /// </summary>
     public const string PresetsJsonBeforePdfSize = """
         [
@@ -107,11 +111,12 @@ internal static class CompatFixtures
 
     /// <summary>
     /// <see cref="NonDefaultSettings"/> as this version writes it: <see cref="PresetsJsonBeforePdfSize"/>
-    /// with the "output" object after the earlier keys.
+    /// with the "output" object, then the sides and the paper size, after the earlier keys.
     /// </summary>
     public static readonly string CurrentFormatPresetsJson = PresetsJsonBeforePdfSize.ReplaceLineEndings("\n").Replace(
         "        \"blackWhiteThreshold\": 0.375\n      }\n",
-        "        \"blackWhiteThreshold\": 0.375\n      },\n      \"output\": {\n        \"pdfSize\": \"compact\",\n        \"afterSave\": \"share\"\n      }\n");
+        "        \"blackWhiteThreshold\": 0.375\n      },\n      \"output\": {\n        \"pdfSize\": \"compact\",\n        \"afterSave\": \"share\"\n      },\n"
+        + "      \"duplex\": \"manual\",\n      \"backBinding\": \"shortEdge\",\n      \"paperSize\": \"a4\"\n");
 
     /// <summary>Field-by-field equality, including the legacy OCR languages.</summary>
     public static void AssertSettingsEqual(ScanSettings expected, ScanSettings actual)
@@ -260,7 +265,7 @@ public class ModelsCompatTests
     public void KeysFromNewerVersions_AreIgnored()
     {
         var settings = Decode<ScanSettings>("""
-            {"resolution": 200, "duplex": "both", "hologram": {"depth": 3}}
+            {"resolution": 200, "staple": "corner", "hologram": {"depth": 3}}
             """);
         var expected = new ScanSettings { Resolution = 200 };
         CompatFixtures.AssertSettingsEqual(expected, settings);
@@ -299,7 +304,7 @@ public class ModelsCompatTests
                 "intent", "source", "resolution", "colorMode", "format", "jpegQuality",
                 "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
                 "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
-                "pdfSearchable", "ocrLanguages", "adjustments", "output",
+                "pdfSearchable", "ocrLanguages", "adjustments", "output", "duplex", "backBinding", "paperSize",
             ],
             settings.RootElement.EnumerateObject().Select(p => p.Name));
         var adjustments = settings.RootElement.GetProperty("adjustments");
@@ -391,7 +396,7 @@ public class ModelsCompatTests
                 "intent", "source", "resolution", "colorMode", "format", "jpegQuality",
                 "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
                 "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
-                "pdfSearchable", "ocrLanguages", "adjustments", "taskId", "output",
+                "pdfSearchable", "ocrLanguages", "adjustments", "taskId", "output", "duplex", "backBinding", "paperSize",
             ],
             written.RootElement.EnumerateObject().Select(p => p.Name));
         Assert.Equal("document", written.RootElement.GetProperty("taskId").GetString());
@@ -415,6 +420,9 @@ public class ModelsCompatTests
         var expected = CompatFixtures.NonDefaultSettings();
         expected.Output.PdfSize = PdfSizePreset.Standard;
         expected.Output.AfterSave = AfterSaveAction.None;
+        expected.Duplex = DuplexMode.Off;
+        expected.BackBinding = DuplexBinding.LongEdge;
+        expected.PaperSize = PaperSize.Auto;
         CompatFixtures.AssertSettingsEqual(expected, presets[0].Settings);
         Assert.Equal(PdfSizePreset.Standard, Decode<ScanSettings>("{}").Output.PdfSize);
         Assert.Equal(PdfSizePreset.Standard, Decode<ScanSettings>("""{"output": {}}""").Output.PdfSize);
@@ -460,6 +468,66 @@ public class ModelsCompatTests
         Assert.NotSame(settings.Output, clone.Output);
         clone.Output.PdfSize = PdfSizePreset.Best;
         Assert.Equal(PdfSizePreset.Smallest, settings.Output.PdfSize);
+    }
+
+    // MARK: - Two-sided scanning and paper size (CONTRACTS.md, rule 6)
+
+    [Fact]
+    public void Sides_FirstMembersAreTheDefaults()
+    {
+        static string Name<T>(T value) => JsonSerializer.Serialize(value, StoreFiles.JsonOptions).Trim('"');
+        Assert.Equal(["off", "both", "manual"], Enum.GetValues<DuplexMode>().Select(Name));
+        Assert.Equal(["longEdge", "shortEdge"], Enum.GetValues<DuplexBinding>().Select(Name));
+        Assert.Equal(["auto", "letter", "legal", "executive", "a4", "a5", "a6", "b5Jis", "idCard"],
+                     Enum.GetValues<PaperSize>().Select(Name));
+        var settings = new ScanSettings();
+        Assert.Equal((DuplexMode.Off, DuplexBinding.LongEdge, PaperSize.Auto),
+                     (settings.Duplex, settings.BackBinding, settings.PaperSize));
+    }
+
+    [Fact]
+    public void SettingsWithoutSides_ScanOneSideOnTheWholeArea()
+    {
+        var settings = Decode<ScanSettings>("""{"resolution": 150, "source": "documentFeeder"}""");
+        Assert.Equal((DuplexMode.Off, DuplexBinding.LongEdge, PaperSize.Auto, 150),
+                     (settings.Duplex, settings.BackBinding, settings.PaperSize, settings.Resolution));
+    }
+
+    [Fact]
+    public void UnknownOrCorruptSides_FallBackToTheDefaults_RestIntact()
+    {
+        foreach (string sides in new[]
+                 {
+                     """ "duplex": "triple", "backBinding": "spiral", "paperSize": "tabloid" """,
+                     """ "duplex": "Both", "backBinding": "LongEdge", "paperSize": "A4" """,
+                     """ "duplex": 1, "backBinding": true, "paperSize": {"width": 8} """,
+                     """ "duplex": null, "backBinding": null, "paperSize": null """,
+                 })
+        {
+            var settings = Decode<ScanSettings>($$"""{"resolution": 150, {{sides}}, "pdfSearchable": false}""");
+            Assert.Equal((DuplexMode.Off, DuplexBinding.LongEdge, PaperSize.Auto),
+                         (settings.Duplex, settings.BackBinding, settings.PaperSize));
+            Assert.Equal(150, settings.Resolution);
+            Assert.False(settings.PdfSearchable);
+        }
+        var known = Decode<ScanSettings>("""{"duplex": "both", "backBinding": "shortEdge", "paperSize": "b5Jis"}""");
+        Assert.Equal((DuplexMode.Both, DuplexBinding.ShortEdge, PaperSize.B5Jis), (known.Duplex, known.BackBinding, known.PaperSize));
+    }
+
+    [Fact]
+    public void Sides_RoundTrip()
+    {
+        foreach (var duplex in Enum.GetValues<DuplexMode>())
+        {
+            foreach (var paper in Enum.GetValues<PaperSize>())
+            {
+                var settings = new ScanSettings { Duplex = duplex, BackBinding = DuplexBinding.ShortEdge, PaperSize = paper };
+                var back = Decode<ScanSettings>(CompatFixtures.Encode(settings));
+                Assert.Equal((duplex, DuplexBinding.ShortEdge, paper), (back.Duplex, back.BackBinding, back.PaperSize));
+            }
+        }
+        var clone = CompatFixtures.NonDefaultSettings().Clone();
+        Assert.Equal((DuplexMode.Manual, DuplexBinding.ShortEdge, PaperSize.A4), (clone.Duplex, clone.BackBinding, clone.PaperSize));
     }
 
     [Fact]

@@ -7,6 +7,8 @@ public enum SettingsChange
 {
     Source,
     Resolution,
+    Duplex,
+    PaperSize,
 }
 
 /// <summary>A setting changed to suit the scanner, with a sentence saying so.</summary>
@@ -17,9 +19,10 @@ public sealed record AdaptedSettings(ScanSettings Settings, IReadOnlyList<Settin
 
 /// <summary>
 /// Fits settings to what a scanner offers: a source it has (the first one it lists when the
-/// chosen one is missing; the flatbed when it lists none) and the nearest resolution it
-/// supports. Used whenever settings meet a scanner: applying a preset or task, and
-/// connecting to another scanner.
+/// chosen one is missing; the flatbed when it lists none), two-sided feeder scans by hand when
+/// its feeder scans one side, a paper size that fits the glass or the feeder (Automatic
+/// otherwise), and the nearest resolution it supports. Used whenever settings meet a scanner:
+/// applying a preset or task, and connecting to another scanner.
 /// </summary>
 public static class SettingsAdapter
 {
@@ -44,6 +47,22 @@ public static class SettingsAdapter
                     : "This scanner has no document feeder, so the flatbed is used."));
                 s.Source = fallback;
             }
+        }
+
+        if (s.Source == ScanSource.DocumentFeeder && s.Duplex == DuplexMode.Both && !capabilities.SupportsDuplex)
+        {
+            notes.Add(new SettingsNote(SettingsChange.Duplex,
+                "This scanner's feeder scans one side at a time, so you'll turn the stack over by hand."));
+            s.Duplex = DuplexMode.Manual;
+        }
+
+        bool feeder = s.Source == ScanSource.DocumentFeeder;
+        var area = feeder ? capabilities.FeederSizeInches : capabilities.FlatbedSizeInches;
+        if (!PaperSizes.Fits(s.PaperSize, area))
+        {
+            notes.Add(new SettingsNote(SettingsChange.PaperSize,
+                $"{s.PaperSize.Label()} paper does not fit this scanner's {(feeder ? "feeder" : "glass")}, so the paper size is Automatic."));
+            s.PaperSize = PaperSize.Auto;
         }
 
         int resolution = capabilities.NearestResolution(s.Resolution);

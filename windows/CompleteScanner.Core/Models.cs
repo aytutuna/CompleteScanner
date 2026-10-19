@@ -54,6 +54,32 @@ public enum PdfSizePreset
 }
 
 /// <summary>
+/// Which sides of each sheet a feeder scan captures (<see cref="ScanSettings.Duplex"/>). Only
+/// the document feeder scans two-sided; on the flatbed the setting is ignored. See
+/// <see cref="DocumentSides"/>.
+/// </summary>
+public enum DuplexMode
+{
+    /// <summary>The front of each sheet only.</summary>
+    Off,
+    /// <summary>Both sides in one pass, by a feeder that can.</summary>
+    Both,
+    /// <summary>Both sides by hand: the fronts are scanned, the stack is turned over, then the backs are scanned.</summary>
+    Manual,
+}
+
+/// <summary>
+/// Along which edge the back sides are turned (<see cref="ScanSettings.BackBinding"/>): the long
+/// edge, like the pages of a book (backs come out upright), or the short edge, like a wall
+/// calendar (backs come out upside down and are turned upright).
+/// </summary>
+public enum DuplexBinding
+{
+    LongEdge,
+    ShortEdge,
+}
+
+/// <summary>
 /// The app's color scheme: follow Windows, or force light or dark. An app preference, kept
 /// apart from <see cref="ScanSettings"/> so that applying a preset never changes it.
 /// </summary>
@@ -133,6 +159,30 @@ public static class ModelLabels
         AfterSaveAction.Reveal => "Show the saved files in their folder.",
         AfterSaveAction.Share => "Open the share window to email the saved files or send them to an app.",
         _ => "",
+    };
+
+    public static string Label(this DuplexMode mode) => mode switch
+    {
+        DuplexMode.Off => "One side",
+        DuplexMode.Both => "Both sides",
+        DuplexMode.Manual => "Both sides, turned by hand",
+        _ => mode.ToString(),
+    };
+
+    /// <summary>One line saying what the choice does, shown under the sides picker.</summary>
+    public static string Hint(this DuplexMode mode) => mode switch
+    {
+        DuplexMode.Off => "Only the front of each sheet is scanned.",
+        DuplexMode.Both => "The feeder scans both sides of every sheet in one pass.",
+        DuplexMode.Manual => "Scan the fronts, turn the stack over, then scan the backs. The pages are put in order.",
+        _ => "",
+    };
+
+    public static string Label(this DuplexBinding binding) => binding switch
+    {
+        DuplexBinding.LongEdge => "Long edge (like a book)",
+        DuplexBinding.ShortEdge => "Short edge (like a calendar)",
+        _ => binding.ToString(),
     };
 
     public static string Label(this FileAction action) => action switch
@@ -274,6 +324,23 @@ public sealed class ScanSettings
     /// <summary>Settings for the saved files (the PDF size, the after-save action). Written after the earlier keys.</summary>
     public OutputOptions Output { get; set; } = new();
 
+    /// <summary>
+    /// Which sides of each sheet a feeder scan captures. Read by the backends (two-sided feeder
+    /// scans) and the app (turning the stack over by hand); ignored on the flatbed. Settings
+    /// without it scan one side.
+    /// </summary>
+    public DuplexMode Duplex { get; set; } = DuplexMode.Off;
+
+    /// <summary>Along which edge the back sides are turned; the backs of short-edge sheets are turned upright.</summary>
+    public DuplexBinding BackBinding { get; set; } = DuplexBinding.LongEdge;
+
+    /// <summary>
+    /// The size of the paper scanned (<see cref="PaperSizes"/>): the area of the glass scanned
+    /// when no area is selected, or the sheet the feeder is asked for. Automatic scans the whole
+    /// glass, or the feeder's own sheet size.
+    /// </summary>
+    public PaperSize PaperSize { get; set; } = PaperSize.Auto;
+
     public static string DefaultDestinationPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "CompleteScanner");
 
@@ -319,6 +386,12 @@ public sealed class ScannedPage
     /// </summary>
     public int RotationQuarterTurns { get; set; } = 0;
 
+    /// <summary>Which side of its sheet this page is, for two-sided scans; null for one-sided ones.</summary>
+    public PageSide? Side { get; init; }
+
+    /// <summary>The sheet of the stack this page belongs to (0 = first), for two-sided scans; null otherwise.</summary>
+    public int? SheetIndex { get; init; }
+
     public ScannedPage(RgbaImage image, int dpi, ColorMode colorMode, Guid? id = null,
                        DateTime? createdAt = null, string? filePath = null, SizeD? fullPixelSize = null)
     {
@@ -332,15 +405,51 @@ public sealed class ScannedPage
     }
 
     /// <summary>
+    /// The same page with other pixels: adjusted, or a preview backed by a spool file. The id,
+    /// resolution, creation time, rotation and what the scan recorded about the page
+    /// (<see cref="CopyMeta"/>) are kept; the color mode is <paramref name="colorMode"/> when
+    /// given; the spool file and full size are the ones given (none by default), since the old
+    /// ones belong to the old pixels. Every place that rebuilds a page goes through this, so new
+    /// page facts survive.
+    /// </summary>
+    public ScannedPage WithImage(RgbaImage image, ColorMode? colorMode = null, string? filePath = null,
+                                 SizeD? fullPixelSize = null) =>
+        new ScannedPage(image, Dpi, colorMode ?? ColorMode, Id, CreatedAt, filePath, fullPixelSize)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+        }.CopyMeta(this);
+
+    /// <summary>
+    /// This page carrying what the scan recorded about <paramref name="source"/>: its side and
+    /// sheet. Pixels, id, file and rotation stay this page's.
+    /// </summary>
+    public ScannedPage CopyMeta(ScannedPage source) =>
+        new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = source.Side,
+            SheetIndex = source.SheetIndex,
+        };
+
+    /// <summary>This page as <paramref name="side"/> of sheet <paramref name="sheetIndex"/> (both null: not two-sided).</summary>
+    public ScannedPage WithSide(PageSide? side, int? sheetIndex) =>
+        new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = side,
+            SheetIndex = sheetIndex,
+        };
+
+    /// <summary>
     /// The page turned 90° clockwise: the in-memory image is rotated right away (thumbnails
     /// follow it) while the spool file stays untouched and the accumulated turn count is
     /// applied at save time. Port of AppState.rotatePage(id:).
     /// </summary>
     public ScannedPage RotatedClockwise() =>
-        new(ImagePipeline.Rotate(Image, 1), Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        new ScannedPage(ImagePipeline.Rotate(Image, 1), Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
         {
             RotationQuarterTurns = (RotationQuarterTurns + 1) % 4,
-        };
+        }.CopyMeta(this);
 }
 
 /// <summary>
@@ -539,7 +648,10 @@ public sealed class ScannerCapabilities
     /// or does not report it.
     /// </summary>
     public SizeD? FeederSizeInches { get; set; }
-    /// <summary>The document feeder can scan both sides in one pass (reported only; not used yet).</summary>
+    /// <summary>
+    /// The document feeder can scan both sides in one pass. Without it, two-sided scanning is
+    /// done by turning the stack over by hand (<see cref="DocumentSides.Effective"/>).
+    /// </summary>
     public bool SupportsDuplex { get; set; }
 
     public int NearestResolution(int dpi) =>

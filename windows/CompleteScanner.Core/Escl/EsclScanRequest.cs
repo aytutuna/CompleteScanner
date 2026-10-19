@@ -26,14 +26,20 @@ public sealed class EsclScanRequest
     public required string DocumentFormat { get; init; }
     public required int Resolution { get; init; }
     public required EsclRegion Region { get; init; }
+    /// <summary>Scan both sides of each sheet (feeder jobs on a device with a two-sided feeder only).</summary>
+    public bool Duplex { get; init; }
 
     /// <summary>
     /// Choose the job settings for a scan.
     /// <list type="bullet">
     /// <item>Flatbed: the whole platen, or <paramref name="selection"/> (normalized 0...1,
     /// top-left origin) of it.</item>
-    /// <item>Feeder: the feeder's own maximum sheet size (height capped at
-    /// <see cref="MaxFeederHeightInches"/>); the selection is ignored.</item>
+    /// <item>Feeder: <paramref name="paperSize"/> from the top-left corner, clamped to the
+    /// feeder's largest sheet; for Automatic the feeder's own maximum sheet size (height capped
+    /// at <see cref="MaxFeederHeightInches"/>). The selection is ignored.</item>
+    /// <item>Two-sided (<paramref name="duplex"/>): only for feeder jobs on a device that lists
+    /// two-sided feeding; the job then uses the feeder's two-sided capabilities when it lists
+    /// them separately.</item>
     /// <item>Black &amp; white is requested as 8-bit grayscale: most devices reject 1-bit
     /// JPEG, and the app's image pipeline thresholds the page afterwards, as it does for
     /// every non-color scan.</item>
@@ -42,16 +48,20 @@ public sealed class EsclScanRequest
     /// </list>
     /// </summary>
     public static EsclScanRequest Create(EsclCapabilities caps, ScanSource source, ColorMode colorMode,
-                                         int dpi, RectD? selection)
+                                         int dpi, RectD? selection, bool duplex = false,
+                                         PaperSize paperSize = PaperSize.Auto)
     {
         bool feeder = source == ScanSource.DocumentFeeder;
-        var input = caps.InputCaps(source);
+        bool twoSided = feeder && duplex && caps.SupportsDuplex;
+        var input = twoSided ? caps.AdfDuplex ?? caps.Feeder : caps.InputCaps(source);
 
         SizeD area;
         if (feeder)
         {
-            var max = caps.Feeder?.MaxSizeInches ?? caps.Platen?.MaxSizeInches ?? EsclCapabilities.DefaultAreaInches;
-            area = new SizeD(max.Width, Math.Min(max.Height, MaxFeederHeightInches));
+            var max = input?.MaxSizeInches ?? caps.Feeder?.MaxSizeInches ?? caps.Platen?.MaxSizeInches
+                      ?? EsclCapabilities.DefaultAreaInches;
+            var paper = PaperSizes.FeederRegionInches(paperSize, max);
+            area = new SizeD(paper.Width, Math.Min(paper.Height, MaxFeederHeightInches));
         }
         else
         {
@@ -77,6 +87,7 @@ public sealed class EsclScanRequest
             DocumentFormat = Pick(formatPreference, input?.DocumentFormats, StringComparer.OrdinalIgnoreCase),
             Resolution = resolution,
             Region = region,
+            Duplex = twoSided,
         };
     }
 
@@ -144,6 +155,8 @@ public sealed class EsclScanRequest
         Line($"  <scan:ColorMode>{Escape(ColorMode)}</scan:ColorMode>");
         Line($"  <scan:XResolution>{N(Resolution)}</scan:XResolution>");
         Line($"  <scan:YResolution>{N(Resolution)}</scan:YResolution>");
+        // After the resolutions, where sane-airscan writes it; left out for one-sided jobs.
+        if (Duplex) Line("  <scan:Duplex>true</scan:Duplex>");
         Line($"  <pwg:DocumentFormat>{Escape(DocumentFormat)}</pwg:DocumentFormat>");
         Line("</scan:ScanSettings>");
         return xml.ToString();

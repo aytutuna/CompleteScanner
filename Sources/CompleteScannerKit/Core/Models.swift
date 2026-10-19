@@ -101,6 +101,52 @@ public enum PDFSizePreset: String, Codable, CaseIterable, Identifiable, Sendable
     public static let displayOrder: [PDFSizePreset] = [.best, .standard, .compact, .smallest]
 }
 
+/// Which sides of each sheet a feeder scan captures (`ScanSettings.duplex`). Only the document
+/// feeder scans two-sided; on the flatbed the setting is ignored. See `DocumentSides`. Twin of C#
+/// `DuplexMode` (`ModelLabels.Label` / `Hint`).
+public enum DuplexMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// The front of each sheet only.
+    case off
+    /// Both sides in one pass, by a feeder that can.
+    case both
+    /// Both sides by hand: the fronts are scanned, the stack is turned over, then the backs are scanned.
+    case manual
+
+    public var id: String { rawValue }
+    public var label: String {
+        switch self {
+        case .off: return "One side"
+        case .both: return "Both sides"
+        case .manual: return "Both sides, turned by hand"
+        }
+    }
+
+    /// One line saying what the choice does, shown under the sides picker.
+    public var hint: String {
+        switch self {
+        case .off: return "Only the front of each sheet is scanned."
+        case .both: return "The feeder scans both sides of every sheet in one pass."
+        case .manual: return "Scan the fronts, turn the stack over, then scan the backs. The pages are put in order."
+        }
+    }
+}
+
+/// Along which edge the back sides are turned (`ScanSettings.backBinding`): the long edge, like
+/// the pages of a book (backs come out upright), or the short edge, like a wall calendar (backs
+/// come out upside down and are turned upright). Twin of C# `DuplexBinding`.
+public enum DuplexBinding: String, Codable, CaseIterable, Identifiable, Sendable {
+    case longEdge
+    case shortEdge
+
+    public var id: String { rawValue }
+    public var label: String {
+        switch self {
+        case .longEdge: return "Long edge (like a book)"
+        case .shortEdge: return "Short edge (like a calendar)"
+        }
+    }
+}
+
 // MARK: - Settings
 
 public struct AdjustmentSettings: Codable, Equatable, Sendable {
@@ -216,6 +262,19 @@ public struct ScanSettings: Codable, Equatable, Sendable {
     /// Settings for the saved files (the PDF size, the after-save action).
     public var output: OutputOptions = OutputOptions()
 
+    /// Which sides of each sheet a feeder scan captures. Read by the backends (two-sided feeder
+    /// scans) and the app (turning the stack over by hand); ignored on the flatbed. Settings
+    /// without it scan one side.
+    public var duplex: DuplexMode = .off
+
+    /// Along which edge the back sides are turned; the backs of short-edge sheets are turned upright.
+    public var backBinding: DuplexBinding = .longEdge
+
+    /// The size of the paper scanned (`PaperSizes`): the area of the glass scanned when no area
+    /// is selected, or the sheet the feeder is asked for. Automatic scans the whole glass, or the
+    /// feeder's own sheet size.
+    public var paperSize: PaperSize = .auto
+
     public init() {}
 
     /// The task of `taskId`, when this version knows it.
@@ -233,6 +292,7 @@ public struct ScanSettings: Codable, Equatable, Sendable {
         case adjustments
         case taskId
         case output
+        case duplex, backBinding, paperSize
     }
 }
 
@@ -260,6 +320,9 @@ extension ScanSettings {
         adjustments = container.decodeLenient(forKey: .adjustments, default: adjustments)
         taskId = container.decodeLenient(forKey: .taskId, default: taskId)
         output = container.decodeLenient(forKey: .output, default: output)
+        duplex = container.decodeLenient(forKey: .duplex, default: duplex)
+        backBinding = container.decodeLenient(forKey: .backBinding, default: backBinding)
+        paperSize = container.decodeLenient(forKey: .paperSize, default: paperSize)
     }
 }
 
@@ -284,6 +347,10 @@ public struct ScannedPage: Identifiable {
     /// `image` already shows the rotation; the full-resolution original (spool file)
     /// stays unrotated until PDFBuilder applies it.
     public var rotationQuarterTurns: Int = 0
+    /// Which side of its sheet this page is, for two-sided scans; nil for one-sided ones.
+    public var side: PageSide?
+    /// The sheet of the stack this page belongs to (0 = first), for two-sided scans; nil otherwise.
+    public var sheetIndex: Int?
 
     public init(image: CGImage, dpi: Int, colorMode: ColorMode, id: UUID = UUID(),
                 createdAt: Date = Date(), fileURL: URL? = nil, fullPixelSize: CGSize? = nil) {
@@ -294,6 +361,37 @@ public struct ScannedPage: Identifiable {
         self.createdAt = createdAt
         self.fileURL = fileURL
         self.fullPixelSize = fullPixelSize
+    }
+
+    /// The same page with other pixels: adjusted, or a preview backed by a spool file. The id,
+    /// resolution, creation time, rotation and what the scan recorded about the page
+    /// (`copyMeta(from:)`) are kept; the color mode is `colorMode` when given; the spool file
+    /// and full size are the ones given (none by default), since the old ones belong to the old
+    /// pixels. Every place that rebuilds a page goes through this, so new page facts survive.
+    /// Twin of C# `ScannedPage.WithImage`.
+    public func withImage(_ image: CGImage, colorMode: ColorMode? = nil, fileURL: URL? = nil,
+                          fullPixelSize: CGSize? = nil) -> ScannedPage {
+        var page = ScannedPage(image: image, dpi: dpi, colorMode: colorMode ?? self.colorMode, id: id,
+                               createdAt: createdAt, fileURL: fileURL, fullPixelSize: fullPixelSize)
+        page.rotationQuarterTurns = rotationQuarterTurns
+        return page.copyMeta(from: self)
+    }
+
+    /// This page carrying what the scan recorded about `source`: its side and sheet. Pixels, id,
+    /// file and rotation stay this page's. Twin of C# `ScannedPage.CopyMeta`.
+    public func copyMeta(from source: ScannedPage) -> ScannedPage {
+        var page = self
+        page.side = source.side
+        page.sheetIndex = source.sheetIndex
+        return page
+    }
+
+    /// This page as `side` of sheet `sheetIndex` (both nil: not two-sided).
+    public func withSide(_ side: PageSide?, sheetIndex: Int?) -> ScannedPage {
+        var page = self
+        page.side = side
+        page.sheetIndex = sheetIndex
+        return page
     }
 }
 
@@ -421,7 +519,9 @@ public struct ScannerCapabilities: Equatable, Sendable {
     /// Largest sheet the document feeder takes, in inches; nil when the device has no feeder
     /// or does not report it.
     public var feederSizeInches: CGSize?
-    /// The document feeder can scan both sides in one pass (reported only; not used yet).
+    /// The document feeder can scan both sides in one pass. Without it, two-sided scanning is
+    /// done by turning the stack over by hand (`DocumentSides.effective`). ImageCaptureCore
+    /// reports it only once the feeder has been selected (`ScannerSession.feederSupportsDuplex`).
     public var supportsDuplex: Bool
 
     public init(supportedResolutions: [Int] = [75, 150, 200, 300, 600, 1200],

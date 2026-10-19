@@ -11,14 +11,31 @@ using CompleteScanner.Core;
 namespace CompleteScanner.App;
 
 /// <summary>A page in the queue strip, wrapped with its display thumbnail.</summary>
-public sealed class PageItem(ScannedPage page)
+public sealed class PageItem
 {
     /// <summary>Long side of a strip thumbnail, in pixels.</summary>
     public const int ThumbnailMaxSide = 240;
 
-    public ScannedPage Page { get; } = page;
-    /// <summary>Built from the (already rotated) in-memory image; construct off the UI thread.</summary>
-    public BitmapSource Thumbnail { get; } = WpfImageCodec.ToThumbnail(page.Image, ThumbnailMaxSide);
+    /// <summary>Builds the thumbnail from the (already rotated) in-memory image; construct off the UI thread.</summary>
+    public PageItem(ScannedPage page) : this(page, WpfImageCodec.ToThumbnail(page.Image, ThumbnailMaxSide)) { }
+
+    /// <summary>The page with a thumbnail already made: the same pixels with other page facts (its side and sheet).</summary>
+    public PageItem(ScannedPage page, BitmapSource thumbnail)
+    {
+        Page = page;
+        Thumbnail = thumbnail;
+    }
+
+    public ScannedPage Page { get; }
+    public BitmapSource Thumbnail { get; }
+
+    /// <summary>"Sheet 2 · back" for a page of a two-sided stack; null for other pages.</summary>
+    public string? SideLabel => DocumentSides.SideLabel(Page.Side, Page.SheetIndex);
+
+    /// <summary>The page's name for screen readers: "Page 3, Sheet 2 · back", or "Page 3".</summary>
+    /// <param name="number">The page's position in the queue, from 1.</param>
+    public string AccessibleName(int number) =>
+        SideLabel is { } label ? $"Page {number}, {label}" : $"Page {number}";
 }
 
 /// <summary>A detected photo in the review grid, wrapped with its display thumbnail.</summary>
@@ -189,13 +206,46 @@ public sealed class AppViewModel : INotifyPropertyChanged
 
     public TaskDefinition? ActiveTaskDefinition => ActiveTask is { } task ? TaskCatalog.Definition(task) : null;
 
-    /// <summary>Where the user is in the active task; null without one.</summary>
+    /// <summary>
+    /// Where the user is in the guided steps: the active task's, or turning a stack over by
+    /// hand (<see cref="DocumentSides.ManualSteps"/>); null when nothing is guided.
+    /// </summary>
     public TaskFlow? Flow { get; private set; }
-    /// <summary>The task <see cref="Flow"/> was made for.</summary>
-    private ScanTask? _flowTask;
+    /// <summary>What <see cref="Flow"/> was made for: a task, or (Manual) turning the stack over by hand.</summary>
+    private (ScanTask? Task, bool Manual) _flowKey;
 
     /// <summary>Caption of the Scan button: the current step's action ("Scan page"), or "Scan".</summary>
     public string PrimaryActionLabel => Flow?.Current?.PrimaryActionLabel ?? "Scan";
+
+    /// <summary>The steps guide turning a stack over by hand: fronts, then backs.</summary>
+    public bool IsTurningOverByHand => Flow is not null && _flowKey.Manual;
+
+    /// <summary>Turning over by hand, the backs are next (or were scanned and did not pair up).</summary>
+    public bool AwaitingBacks => IsTurningOverByHand && Flow?.Current?.Id == DocumentSides.BacksStepId;
+
+    /// <summary>
+    /// Turning over by hand, fronts are in the queue but the stack was not turned over yet (the
+    /// feeder stopped early, or more fronts were asked for): <see cref="FinishFronts"/> moves on
+    /// to the backs.
+    /// </summary>
+    public bool CanFinishFronts =>
+        IsTurningOverByHand && Flow?.Current?.Id == DocumentSides.FrontsStepId && QueuedCaptures(DocumentSides.FrontsStepId) > 0;
+
+    /// <summary>
+    /// The backs are due but none was scanned yet: <see cref="ScanMoreFronts"/> goes back to the
+    /// fronts, for a stack larger than the feeder holds.
+    /// </summary>
+    public bool CanScanMoreFronts => AwaitingBacks && QueuedCaptures(DocumentSides.BacksStepId) == 0;
+
+    /// <summary>
+    /// The fronts and backs of a stack turned over by hand did not pair up, e.g. "3 fronts but 2
+    /// backs"; null otherwise. The user scans the backs again, combines the pages as they are,
+    /// or keeps the fronts only.
+    /// </summary>
+    public string? SidesMismatch { get; private set; }
+
+    /// <summary>How the next scan captures the sheets (one side, both, or turned over by hand).</summary>
+    public DuplexMode EffectiveDuplex => DocumentSides.Effective(Settings, Capabilities);
 
     /// <summary>The start screen's task cards, with what the connected scanner can do.</summary>
     public IReadOnlyList<TaskCardItem> TaskCards =>
@@ -338,6 +388,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
     /// <summary>Call after mutating Settings from the UI: debounced persist + live preview refresh.</summary>
     public void SettingsEdited()
     {
+        // A feeder that scans one side turns two-sided scanning into turning over by hand.
+        if (Settings.Duplex == DuplexMode.Both && EffectiveDuplex == DuplexMode.Manual) Settings.Duplex = DuplexMode.Manual;
         SyncTaskFlow();
         _settingsSaveTimer?.Stop();
         _settingsSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
@@ -762,20 +814,41 @@ public sealed class AppViewModel : INotifyPropertyChanged
         // again to tag each page), and processing, history and saving must all agree with
         // what was actually scanned.
         var s = Settings.Clone();
-        var selection = s.Source == ScanSource.Flatbed ? SelectionRect : null;
+        // The backend is asked for a two-sided scan only when its feeder can do one; turning
+        // the stack over by hand scans one side at a time, and the steps say which.
+        var sides = DocumentSides.Effective(s, Capabilities);
+        s.Duplex = sides;
+        PageSide? manualSide = sides == DuplexMode.Manual && IsTurningOverByHand && Flow?.Current is { } step
+            ? step.Id == DocumentSides.BacksStepId ? PageSide.Back : PageSide.Front
+            : null;
+        // The flatbed scans the selection, else the paper size's part of the glass.
+        var selection = s.Source == ScanSource.Flatbed
+            ? SelectionRect ?? (Capabilities is { } caps ? PaperSizes.FlatbedSelection(s.PaperSize, caps.FlatbedSizeInches) : null)
+            : null;
         return RunExclusive(async token =>
         {
             StatusMessage = "Scanning…";
             // The bar of the previous save makes way for the new scan.
             SavedBarPaths = null;
             NotifyAll();
-            var raw = await session.PerformScanAsync(s, selection);
+            var scanned = await session.PerformScanAsync(s, selection);
             // Discard results that arrive after the user switched devices.
             if (_switchGeneration != generation) return;
-            if (raw.Count == 0) throw ScanException.ScanFailed("The scanner returned no pages.");
+            if (scanned.Count == 0) throw ScanException.ScanFailed("The scanner returned no pages.");
             // A feeder batch cut short (a jam, a dropped connection) still returns its pages;
             // once they are handled the user is told the stack was not finished.
             var stop = session.LastScanStop;
+            // A scanner that fell back to one side (its feeder or driver could not scan both, or
+            // its capabilities were never read) delivered one side of each sheet.
+            bool twoSided = sides == DuplexMode.Both && session.LastScanDuplex != false;
+            token.ThrowIfCancellationRequested();
+            // Two-sided pages in reading order with their sides marked, the backs turned upright.
+            IReadOnlyList<ScannedPage> raw = twoSided
+                ? await Task.Run(() => DocumentSides.ArrangeTwoSided(scanned, s.BackBinding), token)
+                : manualSide is { } side
+                    ? await Task.Run(() => DocumentSides.MarkManual(scanned, side, s.BackBinding), token)
+                    : scanned;
+            if (_switchGeneration != generation) return;
             token.ThrowIfCancellationRequested();
             StatusMessage = "Processing…";
             NotifyAll();
@@ -793,7 +866,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
                         continue;
                     }
                     var adjusted = ImagePipeline.Apply(s.Adjustments, page.Image, s.ColorMode);
-                    result.Add(new ScannedPage(adjusted, page.Dpi, s.ColorMode, page.Id, page.CreatedAt));
+                    result.Add(page.WithImage(adjusted, s.ColorMode));
                 }
                 return result;
             }, token);
@@ -838,7 +911,23 @@ public sealed class AppViewModel : INotifyPropertyChanged
                         RecordCaptures(spooled.Select(item => item.Page.Id));
                         SetLastScan(rawPreview);
                         int n = processed.Count;
-                        StatusMessage = $"Added {n} page{(n == 1 ? "" : "s")} — {ScannedPages.Count} in queue. Scan more or Save PDF.";
+                        if (manualSide is { } scannedSide)
+                        {
+                            AfterTurnedOverScan(scannedSide, n, stopped: stop is not null);
+                        }
+                        else if (twoSided)
+                        {
+                            int sheets = processed.Select(p => p.SheetIndex).Distinct().Count();
+                            StatusMessage = $"Added {n} page{(n == 1 ? "" : "s")} from {sheets} sheet{(sheets == 1 ? "" : "s")}, both sides — {ScannedPages.Count} in queue. Scan more or Save PDF.";
+                        }
+                        else if (sides == DuplexMode.Both)
+                        {
+                            StatusMessage = $"Added {n} page{(n == 1 ? "" : "s")}, one side of each sheet: the scanner did not scan both sides — {ScannedPages.Count} in queue. Scan more or Save PDF.";
+                        }
+                        else
+                        {
+                            StatusMessage = $"Added {n} page{(n == 1 ? "" : "s")} — {ScannedPages.Count} in queue. Scan more or Save PDF.";
+                        }
                     }
                     else
                     {
@@ -874,8 +963,33 @@ public sealed class AppViewModel : INotifyPropertyChanged
                     break;
             }
             if (stop is not null) ErrorMessage = stop.Message(raw.Count);
+            if (Capabilities is null) await ReadCapabilitiesAfterScan(session, generation);
             NotifyAll();
         });
+    }
+
+    /// <summary>
+    /// The capabilities could not be read on connect (the scanner was off, say) yet a scan just
+    /// worked: read them now, so the inspector shows what the scanner can do and the next scan
+    /// knows whether its feeder scans both sides. Still unknown when that fails too.
+    /// </summary>
+    private async Task ReadCapabilitiesAfterScan(IScannerSession session, int generation)
+    {
+        ScannerCapabilities caps;
+        try
+        {
+            caps = await session.GetCapabilitiesAsync();
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            return;
+        }
+        if (_switchGeneration != generation || !ReferenceEquals(_session, session) || Capabilities is not null) return;
+        Capabilities = caps;
+        var adapted = SettingsAdapter.Adapt(Settings, caps);
+        Settings = adapted.Settings;
+        SyncTaskFlow();
+        StatusMessage = WithNotes(StatusMessage, adapted.Notes);
     }
 
     private static List<DetectedPhoto> SplitPhotos(ScannedPage page, ScanSettings s, CancellationToken token)
@@ -935,7 +1049,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             MarkSaved([path]);
             DeleteSpoolFiles(pages);
             ScannedPages.Clear();
-            Flow?.Reset();
+            ResetFlow();
             StatusMessage = $"Saved {pages.Count}-page PDF: {Path.GetFileName(path)}{PdfSizeSuffix()}";
             RunAfterSave(s.Output.AfterSave, [path]);
         });
@@ -1017,7 +1131,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             DetectedPhotos = [];
             ShowPhotoReview = false;
             _photoSourceImages = [];
-            Flow?.Reset();
+            ResetFlow();
             StatusMessage = $"Saved {saved.Count} photo{(saved.Count == 1 ? "" : "s")} to {s.DestinationPath}";
             RunAfterSave(s.Output.AfterSave, saved);
         });
@@ -1052,7 +1166,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
         DetectedPhotos = [];
         ShowPhotoReview = false;
         _photoSourceImages = [];
-        Flow?.Reset();
+        ResetFlow();
         StatusMessage = "Photo batch discarded.";
         NotifyAll();
         EndOfWork();
@@ -1224,7 +1338,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
         if (IsBusy) return;
         DeleteSpoolFiles(ScannedPages.Select(p => p.Page));
         ScannedPages.Clear();
-        Flow?.Reset();
+        ResetFlow();
         StatusMessage = "Page queue cleared.";
         NotifyAll();
     }
@@ -1284,24 +1398,182 @@ public sealed class AppViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Keeps the task and its steps in line with the settings: a task the settings no longer
-    /// fit (the mode was changed by hand, or the scanner lacks the task's source) ends, and an
-    /// active task without steps gets them. A task id this version does not know stays stored,
-    /// without steps.
+    /// Stops turning stacks over by hand (the close button of its banner without a task):
+    /// feeder scans are one-sided again. Pages already in the queue stay.
+    /// </summary>
+    public void ScanOneSideOnly()
+    {
+        if (IsBusy || Settings.Duplex == DuplexMode.Off) return;
+        Settings.Duplex = DuplexMode.Off;
+        SettingsEdited();
+        StatusMessage = "Scanning one side of each sheet.";
+        NotifyAll();
+    }
+
+    /// <summary>
+    /// Keeps the guided steps in line with the settings: a task the settings no longer fit
+    /// (the mode was changed by hand, or the scanner lacks the task's source) ends; turning
+    /// stacks over by hand gets its own steps (<see cref="TaskCatalog.GuidedSteps"/>), whatever
+    /// the task; an active task gets its steps. A task id this version does not know stays
+    /// stored, without steps. Steps already under way are kept while they still apply.
     /// </summary>
     private void SyncTaskFlow()
     {
         if (Settings.Task is { } task && !TaskCatalog.Fits(task, Settings)) Settings.TaskId = null;
-        if (Settings.Task is not { } active)
+        bool manual = DocumentSides.UsesManualSteps(Settings, Capabilities);
+        (ScanTask?, bool) key = manual ? (null, true) : (Settings.Task, false);
+        if (TaskCatalog.GuidedSteps(Settings, Capabilities) is not { } steps)
         {
             Flow = null;
-            _flowTask = null;
+            _flowKey = default;
+            SidesMismatch = null;
         }
-        else if (Flow is null || _flowTask != active)
+        else if (Flow is null || _flowKey != key)
         {
-            Flow = new TaskFlow(TaskCatalog.Definition(active).Steps);
-            _flowTask = active;
+            Flow = new TaskFlow(steps);
+            _flowKey = key;
+            SidesMismatch = null;
         }
+    }
+
+    /// <summary>Back to the first step with nothing captured; a stack's count mismatch goes with it.</summary>
+    private void ResetFlow()
+    {
+        Flow?.Reset();
+        SidesMismatch = null;
+    }
+
+    // MARK: Turning a stack over by hand
+
+    /// <summary>
+    /// After a scan of a stack turned over by hand: the fronts move the steps on to the backs,
+    /// unless the feeder stopped early (<paramref name="stopped"/>, a jam): then the steps stay
+    /// at the fronts so the rest of them can be scanned (<see cref="FinishFronts"/> moves on).
+    /// The backs put the stack in reading order when they pair up with the fronts, otherwise
+    /// the mismatch is shown (<see cref="SidesMismatch"/>).
+    /// </summary>
+    private void AfterTurnedOverScan(PageSide side, int count, bool stopped)
+    {
+        if (Flow is null) return;
+        if (side == PageSide.Front)
+        {
+            if (stopped)
+            {
+                StatusMessage = $"Scanned {count} front side{(count == 1 ? "" : "s")} before the feeder stopped. {MoreFrontsPrompt}";
+                return;
+            }
+            Flow.Advance();
+            StatusMessage = $"Scanned {count} front side{(count == 1 ? "" : "s")}. Turn the stack over and scan the back sides.";
+            return;
+        }
+        CollateTurnedOverStack(combineAnyway: false);
+    }
+
+    /// <summary>What to do while the fronts are scanned a part at a time.</summary>
+    private const string MoreFrontsPrompt =
+        "Load the sheets not scanned yet and scan more fronts; once every front is scanned, choose Done with fronts.";
+
+    /// <summary>Every front is scanned: on to the backs (after a batch cut short, or more fronts).</summary>
+    public void FinishFronts()
+    {
+        if (IsBusy || !CanFinishFronts || Flow is null) return;
+        int fronts = QueuedCaptures(DocumentSides.FrontsStepId);
+        Flow.Advance();
+        StatusMessage = $"{fronts} front side{(fronts == 1 ? "" : "s")} scanned. Turn the stack over and scan the back sides.";
+        NotifyAll();
+    }
+
+    /// <summary>
+    /// Back to the fronts before any back was scanned, keeping the fronts scanned so far: for a
+    /// stack larger than the feeder holds, scanned a part at a time.
+    /// </summary>
+    public void ScanMoreFronts()
+    {
+        if (IsBusy || !CanScanMoreFronts || Flow is null) return;
+        // Retake makes the fronts the current step; the fronts already scanned are kept, in order.
+        foreach (var id in Flow.Retake(DocumentSides.FrontsStepId)) Flow.Record(DocumentSides.FrontsStepId, id);
+        SidesMismatch = null;
+        StatusMessage = MoreFrontsPrompt;
+        NotifyAll();
+    }
+
+    /// <summary>How many captures of a step are still in the queue.</summary>
+    private int QueuedCaptures(string stepId)
+    {
+        if (Flow is null) return 0;
+        var queued = ScannedPages.Select(item => item.Page.Id).ToHashSet();
+        return Flow.Captures(stepId).Count(queued.Contains);
+    }
+
+    /// <summary>
+    /// Puts the fronts and backs of the stack in reading order in the queue, unless their counts
+    /// differ and <paramref name="combineAnyway"/> is false: then the mismatch is shown and the
+    /// steps stay at the backs.
+    /// </summary>
+    private void CollateTurnedOverStack(bool combineAnyway)
+    {
+        if (Flow is null) return;
+        var collation = DocumentSides.CollateQueue([.. ScannedPages.Select(item => item.Page.Id)],
+                                                   Flow.Captures(DocumentSides.FrontsStepId),
+                                                   Flow.Captures(DocumentSides.BacksStepId));
+        var counts = collation.Interleave;
+        if (counts.Mismatch && !combineAnyway)
+        {
+            SidesMismatch = counts.MismatchMessage;
+            StatusMessage = $"{SidesMismatch}. Scan the rest of the back sides, scan them again, or combine the pages as they are.";
+            return;
+        }
+        var items = ScannedPages.ToDictionary(item => item.Page.Id);
+        var ordered = collation.Order.Select(id => collation.Positions.TryGetValue(id, out var position)
+            ? new PageItem(items[id].Page.WithSide(position.Side, position.SheetIndex), items[id].Thumbnail)
+            : items[id]).ToList();
+        ScannedPages.Clear();
+        foreach (var item in ordered) ScannedPages.Add(item);
+        ResetFlow();
+        int sheets = Math.Max(counts.Fronts, counts.Backs);
+        int pages = counts.Fronts + counts.Backs;
+        StatusMessage = $"Put {sheets} sheet{(sheets == 1 ? "" : "s")} in order ({pages} page{(pages == 1 ? "" : "s")}) — {ScannedPages.Count} in queue. Scan another stack or Save PDF.";
+    }
+
+    /// <summary>The backs did not pair up with the fronts, but the pages are combined as they are (the extra pages at the end).</summary>
+    public void CombineSidesAnyway()
+    {
+        if (IsBusy || !AwaitingBacks) return;
+        CollateTurnedOverStack(combineAnyway: true);
+        NotifyAll();
+    }
+
+    /// <summary>The back sides scanned so far leave the queue, to be scanned again.</summary>
+    public void ScanBacksAgain()
+    {
+        if (IsBusy || !AwaitingBacks || Flow is null) return;
+        RemoveQueuedPages(Flow.Retake(DocumentSides.BacksStepId));
+        SidesMismatch = null;
+        StatusMessage = "Load the turned-over stack in the feeder again and scan the back sides.";
+        NotifyAll();
+    }
+
+    /// <summary>
+    /// The stack stays one-sided: the backs scanned so far leave the queue, the fronts stay
+    /// (in scan order), and the next scan starts a new stack.
+    /// </summary>
+    public void KeepFrontsOnly()
+    {
+        if (IsBusy || !AwaitingBacks || Flow is null) return;
+        RemoveQueuedPages(Flow.Captures(DocumentSides.BacksStepId));
+        int fronts = Flow.Captures(DocumentSides.FrontsStepId).Count(id => ScannedPages.Any(item => item.Page.Id == id));
+        ResetFlow();
+        StatusMessage = $"Kept {fronts} front side{(fronts == 1 ? "" : "s")} — {ScannedPages.Count} in queue. Scan another stack or Save PDF.";
+        NotifyAll();
+    }
+
+    private void RemoveQueuedPages(IReadOnlyCollection<Guid> ids)
+    {
+        if (ids.Count == 0) return;
+        var set = ids.ToHashSet();
+        var removed = ScannedPages.Where(item => set.Contains(item.Page.Id)).ToList();
+        DeleteSpoolFiles(removed.Select(item => item.Page));
+        foreach (var item in removed) ScannedPages.Remove(item);
     }
 
     /// <summary>Notes the current step of the active task what a scan produced (page or photo ids).</summary>
@@ -1580,8 +1852,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
                 return page;
             }
             var preview = ScanHistory.MakePreview(page.Image, 1600);
-            return new ScannedPage(preview, page.Dpi, page.ColorMode, page.Id, page.CreatedAt,
-                                   path, new SizeD(page.Image.Width, page.Image.Height));
+            return page.WithImage(preview, filePath: path, fullPixelSize: new SizeD(page.Image.Width, page.Image.Height));
         }).ToList();
     }
 

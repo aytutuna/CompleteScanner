@@ -46,7 +46,7 @@ dotnet run --project CompleteScanner.App     # launch the app
 The main window has four tabs, like the macOS app:
 
 - **Start** — "What are you scanning?": one card per task (Document to PDF, Multi-page from
-  feeder, Photos, Old photo restoration, Quick scan, Email a document) and the user's own presets, each badged
+  feeder, Photos, Old photo restoration, Quick scan, Email a document, Two-sided document) and the user's own presets, each badged
   with its task. Picking a card sets everything up for that task, keeps the save folder, fits
   the settings to the connected scanner and opens **Scan**; a card the scanner cannot do (the
   feeder task on a flatbed-only scanner) is greyed out with the reason. On **Scan** a banner
@@ -82,8 +82,51 @@ missing aliases can be spotted on real hardware.
 
 Pick **Demo Scanner** in the sidebar to exercise everything without hardware: scan in
 Photos mode to see detection/deskew/review, or Document mode to build a PDF. Its
-**Document Feeder (ADF)** source delivers three numbered letter-size sheets per scan
-(Preview is for the flatbed, so it is off while the feeder is selected).
+**Document Feeder (ADF)** source holds three numbered two-sided letter-size sheets (Preview is
+for the flatbed, so it is off while the feeder is selected). It scans both sides in one pass,
+or, with **Both sides, turned by hand**, the side facing up: it turns its stack over after the
+fronts, as the user would, so the next scan delivers the backs, last sheet first. A paper size
+makes it deliver sheets of that size.
+
+### Two-sided scanning and paper size
+
+The inspector's **Scanner** section has, for scanners with a feeder, **Sides**: **One side**,
+**Both sides** (a feeder that scans both sides in one pass) or **Both sides, turned by hand**.
+The choice is used while the feeder is the source; on the flatbed it is greyed out with the
+reason. On a feeder that scans one side, **Both sides** is greyed out with the reason (and
+settings or presets that ask for it are turned into **turned by hand**, with a note), and
+turning over by hand is greyed out for photos and when each scan is saved at once, since it
+needs the page queue. With both sides, **Flip on** says how the sheets turn: on the **Long
+edge** like a book (backs come out upright) or on the **Short edge** like a calendar (backs come
+out upside down and are turned upright). **Paper size** (Automatic, then the usual size where
+the user lives, Letter or A4, then the others) sets the sheet the feeder is asked for, and on the
+glass the area scanned from its corner when nothing is selected on the preview; sizes larger
+than the glass or the feeder are greyed out with the reason. Each page in the strip is badged
+with its sheet and side ("Sheet 2 · back").
+
+- **Both sides in one pass**: one scan; the pages come front, back, front, back… and are queued
+  in that order, the backs turned upright for short-edge sheets. A scanner that falls back to one
+  side (its driver refuses two-sided feeding, or its capabilities could not be read on connect)
+  says so, and its pages are queued as one-sided pages.
+- **Turned over by hand**: a banner guides two steps, **Scan fronts**, then **Scan backs** after
+  turning the stack over as a whole. The backs come last sheet first and are put after their
+  fronts. When the feeder stops early (a jam) the steps stay at the fronts: the rest of them is
+  scanned next, and **Done with fronts** moves on to the backs. A stack larger than the feeder
+  holds is scanned a part at a time: **Scan more fronts** goes back to the fronts until the first
+  back is scanned. When the counts differ ("3 fronts but 2 backs") the banner says so and offers
+  **Combine anyway** (the extra pages at the end), **Scan back sides again** (the backs leave the
+  queue) and **Keep fronts only**; scanning again adds the rest of the backs. Without a task the
+  banner's close button goes back to one side. Screen readers name each page by its place and
+  side ("Page 3, Sheet 2 · back").
+- **Two-sided document** task: a 300 dpi PDF of both sides through the feeder; on a feeder that
+  scans one side its card says "Both sides, turned by hand" and the task guides the two steps.
+
+The order and orientation of the pages each scanner delivers are decided in Core
+(`DocumentSides`) for every connection. **To check on real hardware:** the page order and back
+orientation WIA, eSCL, TWAIN and ImageCaptureCore drivers deliver for two-sided scans (front
+first, backs not already turned), whether WIA drivers take FRONT_FIRST and the paper size
+properties, eSCL feeder regions on center-fed feeders, and TWAIN drivers that discard blank backs
+(odd page counts).
 
 ### PDF size
 
@@ -169,13 +212,14 @@ stand-in in checks.
 | Core algorithms (detector, geometry, pipeline, naming, PDF) | Ported line-by-line from the tested Swift originals; **`dotnet test` passes** (the conformance suite mirroring the macOS tests) |
 | Demo scanner + WPF shell | **Verified on Windows 11:** the app launches and connects to the Demo Scanner; driving the view-model, Photos-mode scans detect, re-crop and save the demo photos, Document-mode scans queue, rotate and save a multi-page PDF (with the OCR pass), cancelled scans/OCR/PDF saves leave no files, and scan history fills. All three tabs, the photo review and the crop editor were checked on screen (including the 700×560 minimum window); a hands-on interactive walkthrough is still to do |
 | Windows OCR (`WindowsOcrService`) | **Verified on Windows 11** against rendered text (line boxes come back in the bottom-left-origin Core convention); needs a language pack installed |
-| WIA backend (`WiaScannerBackend`) | **Experimental, untested against hardware** — documented WIA Automation flow; enumeration runs off the UI thread and re-polls (every 10 s backing off to 60 s while no scanner is present, every 60 s while one is), so scanners plugged in or unplugged later show up without a restart. The sources come from the device's document-handling capabilities, so a feeder-only scanner offers no flatbed and no preview; the feeder's sheet size and two-sided support are reported; a feeder batch uses one connection; WIA error codes become plain messages (an empty feeder says "Load paper in the feeder, then scan again."); a batch that fails partway keeps the sheets already scanned and tells the user how many were kept and why it stopped. Expect to iterate with a real scanner attached |
+| WIA backend (`WiaScannerBackend`) | **Experimental, untested against hardware** — documented WIA Automation flow; enumeration runs off the UI thread and re-polls (every 10 s backing off to 60 s while no scanner is present, every 60 s while one is), so scanners plugged in or unplugged later show up without a restart. The sources come from the device's document-handling capabilities, so a feeder-only scanner offers no flatbed and no preview; the feeder's sheet size and two-sided support are reported; two-sided feeder scans select FEEDER, DUPLEX and FRONT_FIRST (without FRONT_FIRST for a driver that refuses it, the feeder alone, one side, for a driver that refuses two-sided feeding, which the app is told) and every sheet (`WIA_DPS_PAGES` 0); a driver that takes no feeder selection at all scans the feeder only when it is already selected (single-source drivers can make the selection read-only), with the sides it has selected, and otherwise fails rather than scanning another source; a feeder paper size is set through `WIA_DPS_PAGE_SIZE` (the custom size and width/height for sizes WIA has no name for) and the item's extents; a feeder batch uses one connection; WIA error codes become plain messages (an empty feeder says "Load paper in the feeder, then scan again."); a batch that fails partway keeps the sheets already scanned and tells the user how many were kept and why it stopped. Expect to iterate with a real scanner attached |
 | Task start screen (`TaskCatalog`, `TaskFlow`, `SettingsAdapter`) | Covered by `ScanTaskTests`, `TaskFlowTests`, `SettingsAdapterTests` and the task cases in `ModelsCompatTests` (same cases as macOS). Checked by driving the view model with the demo scanner and fake flatbed-only and feeder-only scanners (each task's settings, scans and file names, the task ending when the mode is changed by hand or the scanner lacks its source, the reasons on unavailable cards, presets and scanner switches going through `SettingsAdapter`, the task coming back after a restart), and by building the window without showing it: tabs, cards, banner, keyboard navigation, screen-reader names and the banner's announcements of the task and of each new step, rendered off screen in light and dark |
 | PDF sizes (`PdfImageEncoding`, `ColorAnalysis`) | Covered by `PdfImageEncodingTests`, `ColorAnalysisTests`, the gray-JPEG cases in `PdfBuilderTests` and the size cases in `ModelsCompatTests` and `ScanTaskTests` (same cases as macOS). Checked by driving the view model's real save path with two public-domain document scans in every color mode and size (image size and color space as planned, page size unchanged, every PDF renders through Windows.Data.Pdf close to the scan, sizes shrink in order; see [PDF size](#pdf-size)) and by building the window without showing it: the size control, its hint and last-size line, hiding it for other formats and Photos, the Email card, rendered off screen in light and dark |
 | One row per scanner (`DeviceMerge`, connection chooser) | Matching rules, ranking and the saved choice are covered by `DeviceMergeTests` (same table as macOS) and were checked by driving the view model with fake WIA and TWAIN backends: one row, WIA preferred, a later-appearing better connection taken over once the running scan ends, the user's choice saved and used at the next start, a choice made during a scan applied after it. A saved choice is keyed by the eSCL UUID or the model name, whichever the current set of connections yields, so it lapses when that set changes (see above). **Unverified with real drivers:** the names real WIA, eSCL and TWAIN drivers report; `devices.txt` collects them |
 | TWAIN backend (`Scanning/Twain`) | **Experimental, untested against hardware** — see [TWAIN](#twain) below. The scan logic in Core (negotiation choices, the acquisition state machine, strip and bitmap conversion, paper sizes, error mapping, 32-bit driver detection) is covered by `TwainScanLoopTests`, `TwainRasterTests` and `TwainScanRequestsTests` through a fake transport. Driving the view model with the real session class over a scripted transport checked flatbed, feeder, preview, empty feeder, a jam after two sheets (pages kept, reason shown), cancel while the driver is silent (returns at once, the source is reset and disabled in the background), switching away (the source is closed without waiting), the driver-window switch and its saved choice (kept when connecting finds the scanner off), a driver stuck while enabling (reported after the start limit, the next scan refused at once, the late scan stopped when the driver answers), and that a scanner only TWAIN lists is never opened unless the user picks it. On a PC without a TWAIN Data Source Manager the backend lists nothing and `devices.txt` says why; the app starts normally. **Unverified:** real drivers, NTwain's message loop with them, the TWAIN Working Group sample source (not installed here) |
+| Two-sided scanning and paper size (`DocumentSides`, `PaperSize`) | Covered by `DocumentSidesTests`, `PaperSizeTests` and the sides cases of `ModelsCompatTests`, `ScanTaskTests`, `SettingsAdapterTests` and `MockScannerTests` (same cases as macOS), plus the backend requests in `EsclTests`, `TwainScanRequestsTests` and `WiaErrorsTests`. Checked by driving the view model with the demo scanner (both sides in one pass on the long and the short edge, a jam keeping one sheet's two sides, turning over by hand with matching counts, a mismatch, scanning the backs again, combining anyway, keeping the fronts, a jam during the fronts (the steps stay at the fronts, the rest of them scanned as fronts, Done with fronts), a stack scanned in parts (Scan more fronts), a scanner whose capabilities could not be read on connect asked for both sides by a one-sided feeder (pages kept one-sided, capabilities read after the scan), earlier pages keeping their place, the two-sided task on two-sided and one-sided feeders, paper sizes on the feeder and the glass, the saved PDFs' page counts) and by building the window without showing it: the Sides, Flip on and Paper size choices with their greyed-out items and reasons, the banner's two steps, Scan more fronts, Done with fronts and the mismatch choices, the side badges and the screen reader names in the page strip and the Two-sided document card, rendered off screen in light and dark. **Unverified:** real drivers (see [Two-sided scanning and paper size](#two-sided-scanning-and-paper-size)) |
 | Share, email, open with, copy (`SaveActions`, `FileActions`, `ShareService`) | The choices are covered by `SaveActionsTests` and the after-save cases of `ModelsCompatTests` (same cases as macOS). Checked by driving the view model's real save paths with a stand-in for Windows (each after-save action after a PDF, a file saved at once and a photo batch; the Email task sharing; no share window; a refused action; a moved file; a cancelled save running nothing), by building the real clipboard data and share package without placing them anywhere, and by building the window without showing it: the bar, its buttons and menu, the narrow layout, the "After saving" choices, the Saved tab's buttons and menus, rendered off screen in light and dark. **Not tried on screen:** the share window, the Open with dialog and the clipboard themselves (checks must not send, open or overwrite anything), and Mail or Outlook as share targets |
-| eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — see [Network scanners](#network-scanners-escl) below for discovery, adding by address and HTTPS. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the feeder's own sheet size (at most 17 in tall); black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. The protocol client (`EsclClient`, `EsclScannerSession`) is covered by `EsclClientTests` through a stub HTTP handler. Checked against local fake eSCL servers (plain and HTTPS), not a real device |
+| eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — see [Network scanners](#network-scanners-escl) below for discovery, adding by address and HTTPS. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the paper size's region, clamped to the feeder (the feeder's own sheet size for Automatic, at most 17 in tall); two-sided feeder jobs send `<scan:Duplex>true</scan:Duplex>` and use the two-sided feeder's capabilities (`AdfDuplexInputCaps`) when the device lists them, and a device that lists no two-sided feeding scans one side and says so; black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. The protocol client (`EsclClient`, `EsclScannerSession`) is covered by `EsclClientTests` through a stub HTTP handler. Checked against local fake eSCL servers (plain and HTTPS), not a real device |
 
 Known divergences from the macOS app (all documented in the source):
 
@@ -212,6 +256,13 @@ Known divergences from the macOS app (all documented in the source):
   (no Simple MAPI), so Email opens the share window, where Mail and Outlook are listed. The
   actions after a save are a bar above the window on Windows and buttons in the status bar on
   the Mac.
+- Two-sided scanning: the Windows connections report whether the feeder scans both sides when
+  they connect; ImageCaptureCore tells only once the feeder is selected, which can take a while on
+  a sleeping scanner, so the Mac asks when the feeder is first used, again until the scanner has
+  answered (until then it offers both sides, and a scan asked for both sides on a feeder that
+  turns out to scan one says so). Scans and previews wait for a check under way. The Mac also reorders a feeder that reads the last sheet first
+  (`reverseFeederPageOrder`). The Mac inspector leaves out choices it cannot use and says why;
+  Windows greys them out with the reason.
 - PDF sizes: Windows writes the planned JPEG into its own PDF writer. The Mac, whose PDFs come
   from CoreGraphics, encodes the same plan with ImageIO and draws a JPEG-backed image, which
   CoreGraphics is expected to store unchanged; this, and the resulting file sizes, still need
@@ -255,8 +306,13 @@ same scanners through ImageCaptureCore.
   is scanned as 1-bit by the scanner, unlike eSCL.
 - **Feeder.** A feeder batch scans until the feeder is empty. An empty feeder before the
   first sheet says "Load paper in the feeder"; a jam or double feed later keeps the sheets
-  already scanned and says why. Two-sided scanning is switched off for now (it comes with the
-  two-sided milestone), so a driver that defaults to it still scans one side.
+  already scanned and says why. Two-sided scanning (`CAP_DUPLEXENABLED`) is switched on only
+  when both sides are asked for and the source reports a two-sided feeder (`CAP_DUPLEX`), so a
+  driver that defaults to it otherwise still scans one side. The pages are arranged as fronts
+  and backs only when the source confirms it scanned both sides: `CAP_DUPLEXENABLED` read back
+  after it is set, or, with the scanner's own window, after the scan (the user may have turned it
+  off there); when it cannot be confirmed the pages are kept one-sided. A feeder paper size is asked for
+  as the source's own size (`ICAP_SUPPORTEDSIZES`) when it lists it, otherwise as the frame.
 - **The scanner's own settings window.** For TWAIN connections the Scanner section of the
   inspector has **Use the scanner's own settings window**: Scan then opens the driver's
   window, where resolution, color, area and source are chosen and the scan is started; the
@@ -329,7 +385,10 @@ trusted certificates (`escl-trust.json`). The scan settings and presets remember
 they were set up for as text (`"taskId": "document"`), left out when there is none, so a task
 added by a newer version is kept by an older one. They also hold an `"output"` object with the
 PDF size and the after-save action (`"output": {"pdfSize": "standard", "afterSave": "none"}`); a
-file without them, or with a value this version does not know, reads as Standard and Do nothing. A first run starts without presets: the task
+file without them, or with a value this version does not know, reads as Standard and Do nothing.
+Two-sided scanning and the paper size are top-level keys (`"duplex": "off"`, `"backBinding":
+"longEdge"`, `"paperSize": "auto"`); a file without them, or with a value this version does not
+know, scans one side on the whole area. A first run starts without presets: the task
 cards replaced the five starter presets earlier versions wrote, and presets files that already
 hold them keep them. They load across versions the same way as on macOS (`../CONTRACTS.md`, rule 6): a value this version does not understand resets only
 that setting; a file that cannot be decoded is kept next to it as

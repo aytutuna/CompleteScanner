@@ -24,6 +24,9 @@ private func customized() -> ScanSettings {
     s.adjustments.descreen = true
     s.adjustments.blackWhiteThreshold = 0.25
     s.output.pdfSize = .smallest
+    s.duplex = .manual
+    s.backBinding = .shortEdge
+    s.paperSize = .legal
     return s
 }
 
@@ -31,7 +34,7 @@ final class ScanTaskTests: XCTestCase {
 
     func test_rawValues_areTheStoredNames() {
         XCTAssertEqual(ScanTask.allCases.map(\.rawValue),
-                       ["document", "feeder", "photos", "photoRestore", "quickScan", "email"])
+                       ["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided"])
     }
 
     func test_tryParse_isExact() {
@@ -49,8 +52,9 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertEqual(TaskCatalog.all.map(\.task), ScanTask.allCases)
         XCTAssertEqual(TaskCatalog.all.map(\.title),
                        ["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
-                        "Email a document"])
-        XCTAssertEqual(TaskCatalog.all.map(\.iconKey), ["document", "feeder", "photos", "restore", "quick", "email"])
+                        "Email a document", "Two-sided document"])
+        XCTAssertEqual(TaskCatalog.all.map(\.iconKey),
+                       ["document", "feeder", "photos", "restore", "quick", "email", "twoSided"])
         for definition in TaskCatalog.all {
             XCTAssertEqual(TaskCatalog.definition(definition.task), definition)
             XCTAssertFalse(definition.subtitle.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -67,9 +71,12 @@ final class ScanTaskTests: XCTestCase {
 
     func test_definitions_flowIntentAndRequiredSource() {
         XCTAssertEqual(TaskCatalog.all.map(\.flow),
-                       [.documentQueue, .documentQueue, .photoSplit, .photoSplit, .documentQueue, .documentQueue])
-        XCTAssertEqual(TaskCatalog.all.map(\.intent), [.document, .document, .photo, .photo, .document, .document])
-        XCTAssertEqual(TaskCatalog.all.map(\.requiredSource), [nil, .documentFeeder, nil, nil, .flatbed, nil])
+                       [.documentQueue, .documentQueue, .photoSplit, .photoSplit, .documentQueue, .documentQueue,
+                        .documentQueue])
+        XCTAssertEqual(TaskCatalog.all.map(\.intent),
+                       [.document, .document, .photo, .photo, .document, .document, .document])
+        XCTAssertEqual(TaskCatalog.all.map(\.requiredSource),
+                       [nil, .documentFeeder, nil, nil, .flatbed, nil, .documentFeeder])
     }
 
     func test_apply_keepsDestinationAndDetectionTuning_andLeavesTheInputAlone() {
@@ -106,7 +113,60 @@ final class ScanTaskTests: XCTestCase {
             "photo flatbed 600 png true Photo {date} {counter} true true standard",
             "document flatbed 150 jpeg false Scan {date} {counter} false false standard",
             "document flatbed 300 pdf true Scan {date} {counter} false false compact",
+            "document documentFeeder 300 pdf true Scan {date} {counter} false false standard",
         ])
+    }
+
+    func test_apply_onlyTheTwoSidedTaskScansBothSides_thePaperIsKept() {
+        let current = customized()
+        for task in ScanTask.allCases {
+            let s = TaskCatalog.apply(task, to: current)
+            XCTAssertEqual(s.duplex, task == .twoSided ? .both : .off, task.rawValue)
+            XCTAssertEqual(s.backBinding, .shortEdge)
+            XCTAssertEqual(s.paperSize, .legal)
+        }
+    }
+
+    func test_twoSided_isATwoSidedFeederPDF() {
+        XCTAssertEqual(TaskCatalog.definition(.twoSided).steps[0].primaryActionLabel, "Scan stack")
+        var s = TaskCatalog.apply(.twoSided, to: ScanSettings())
+        XCTAssertEqual(s.intent, .document)
+        XCTAssertEqual(s.source, .documentFeeder)
+        XCTAssertEqual(s.format, .pdf)
+        XCTAssertEqual(s.duplex, .both)
+        XCTAssertTrue(TaskCatalog.fits(.twoSided, s))
+        s.duplex = .manual
+        XCTAssertTrue(TaskCatalog.fits(.twoSided, s))
+        // One side by hand ends the task, as leaving the feeder does.
+        s.duplex = .off
+        XCTAssertFalse(TaskCatalog.fits(.twoSided, s))
+        s.duplex = .both
+        s.source = .flatbed
+        XCTAssertFalse(TaskCatalog.fits(.twoSided, s))
+    }
+
+    func test_guidedSteps_turningOverByHandWinsOverTheTask() {
+        XCTAssertNil(TaskCatalog.guidedSteps(ScanSettings(), capabilities: nil))
+        XCTAssertEqual(TaskCatalog.guidedSteps(TaskCatalog.apply(.document, to: ScanSettings()), capabilities: nil),
+                       TaskCatalog.definition(.document).steps)
+        var unknown = ScanSettings()
+        unknown.taskId = "whiteboard"
+        XCTAssertNil(TaskCatalog.guidedSteps(unknown, capabilities: nil))
+
+        let twoSided = TaskCatalog.apply(.twoSided, to: ScanSettings())
+        let duplexFeeder = ScannerCapabilities(sources: [.documentFeeder], supportsDuplex: true)
+        let simplexFeeder = ScannerCapabilities(sources: [.documentFeeder], supportsDuplex: false)
+        XCTAssertEqual(TaskCatalog.guidedSteps(twoSided, capabilities: duplexFeeder), TaskCatalog.definition(.twoSided).steps)
+        XCTAssertEqual(TaskCatalog.guidedSteps(twoSided, capabilities: simplexFeeder), DocumentSides.manualSteps)
+
+        // Without a task, too.
+        var byHand = ScanSettings()
+        byHand.source = .documentFeeder
+        byHand.duplex = .manual
+        XCTAssertEqual(TaskCatalog.guidedSteps(byHand, capabilities: nil), DocumentSides.manualSteps)
+        // Each scan saved at once: nothing to guide.
+        byHand.documentMultiPage = false
+        XCTAssertNil(TaskCatalog.guidedSteps(byHand, capabilities: nil))
     }
 
     func test_apply_resetsAdjustmentsToTheTasks() {
@@ -138,6 +198,12 @@ final class ScanTaskTests: XCTestCase {
             $0.adjustments.restoreFadedColors = true
         }, .photoRestore)
         XCTAssertEqual(infer { $0.source = .documentFeeder }, .feeder)
+        XCTAssertEqual(infer {
+            $0.source = .documentFeeder
+            $0.duplex = .manual
+        }, .twoSided)
+        // Two-sided on the flatbed means nothing: still a document.
+        XCTAssertEqual(infer { $0.duplex = .both }, .document)
         XCTAssertEqual(infer {
             $0.documentMultiPage = false
             $0.format = .jpeg
@@ -184,12 +250,14 @@ final class ScanTaskTests: XCTestCase {
         }
     }
 
-    func test_availability_flatbedOnlyScanner_noFeederTask() {
+    func test_availability_flatbedOnlyScanner_noFeederTasks() {
         let caps = ScannerCapabilities(sources: [.flatbed])
-        let feeder = TaskCatalog.availability(of: .feeder, capabilities: caps)
-        XCTAssertFalse(feeder.isAvailable)
-        XCTAssertEqual(feeder.reason, "This scanner has no document feeder.")
-        for task in ScanTask.allCases where task != .feeder {
+        for task in [ScanTask.feeder, .twoSided] {
+            let availability = TaskCatalog.availability(of: task, capabilities: caps)
+            XCTAssertFalse(availability.isAvailable)
+            XCTAssertEqual(availability.reason, "This scanner has no document feeder.")
+        }
+        for task in ScanTask.allCases where task != .feeder && task != .twoSided {
             XCTAssertTrue(TaskCatalog.availability(of: task, capabilities: caps).isAvailable, task.rawValue)
         }
     }
@@ -277,6 +345,18 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertEqual(TaskCatalog.summary(TaskCatalog.apply(.document, to: best)), "300 dpi \u{00B7} Color \u{00B7} PDF")
     }
 
+    func test_summary_namesTwoSidedFeederScans() {
+        let twoSided = TaskCatalog.apply(.twoSided, to: ScanSettings())
+        XCTAssertEqual(TaskCatalog.summary(twoSided), "300 dpi \u{00B7} Color \u{00B7} PDF \u{00B7} Both sides")
+        let simplexFeeder = ScannerCapabilities(sources: [.documentFeeder], supportsDuplex: false)
+        XCTAssertEqual(TaskCatalog.summary(SettingsAdapter.adapt(twoSided, to: simplexFeeder).settings),
+                       "300 dpi \u{00B7} Color \u{00B7} PDF \u{00B7} Both sides, turned by hand")
+        // On the flatbed the setting does nothing, so it is not named.
+        var flatbed = ScanSettings()
+        flatbed.duplex = .both
+        XCTAssertEqual(TaskCatalog.summary(flatbed), "300 dpi \u{00B7} Color \u{00B7} PDF")
+    }
+
     func test_email_isACompactDocumentPDF_onAnyScanner() {
         var email = TaskCatalog.apply(.email, to: customized())
         XCTAssertEqual(email.intent, .document)
@@ -304,6 +384,6 @@ final class ScanTaskTests: XCTestCase {
 
     func test_fileLabels() {
         XCTAssertEqual(TaskCatalog.all.map(\.fileLabel),
-                       ["Document", "Document", "Photo", "Restored photo", "Scan", "Document"])
+                       ["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document"])
     }
 }

@@ -12,6 +12,7 @@ enum TaskSymbols {
         case "restore": return "wand.and.stars"
         case "quick": return "bolt"
         case "email": return "envelope"
+        case "twoSided": return "arrow.left.arrow.right.square"
         default: return "scanner"
         }
     }

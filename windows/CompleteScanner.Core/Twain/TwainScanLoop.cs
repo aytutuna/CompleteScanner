@@ -30,6 +30,12 @@ public sealed class TwainScanResult
     public bool DriverStuck { get; set; }
     /// <summary>A memory transfer came in a format the app cannot read: use native transfers from now on.</summary>
     public bool UseNativeTransfers { get; set; }
+    /// <summary>
+    /// The pages alternate front, back: two-sided was asked for and the source confirmed
+    /// CAP_DUPLEXENABLED (read after the scan when its own window was shown). False when it
+    /// could not be confirmed, so one-sided pages are never paired up as sheets.
+    /// </summary>
+    public bool Duplex { get; set; }
 
     /// <summary>The pages, or <see cref="Error"/> thrown.</summary>
     public List<TwainPage> PagesOrThrow() => Error is { } error ? throw error : Pages;
@@ -56,6 +62,8 @@ public sealed class TwainScanResult
 /// the first image has no limit while the driver's own window is open (the user is in it),
 /// nor has a native transfer once its image was announced (the source sends nothing until
 /// the whole image is scanned, however long that takes); cancelling still ends both.</item>
+/// <item>A two-sided request reports <see cref="TwainScanResult.Duplex"/> only when the
+/// source confirms CAP_DUPLEXENABLED.</item>
 /// </list>
 /// </summary>
 public static class TwainScanLoop
@@ -286,6 +294,16 @@ public static class TwainScanLoop
             return result;
         }
         result.Pages.AddRange(pages);
+        if (request.Duplex)
+        {
+            // What the source really did, not what was asked. The user can turn two-sided off
+            // in the driver's window: read it back once the source is disabled again; a stuck
+            // source cannot be asked, and is taken as one-sided.
+            bool? enabled = !request.ShowDriverWindow ? applied.DuplexEnabled
+                : result.DriverStuck ? null
+                : transport.ReadDuplexEnabled();
+            result.Duplex = enabled == true;
+        }
         return result;
     }
 

@@ -74,6 +74,15 @@ public class TwainScanLoopTests
             Calls.Add("disable");
             return DisableSucceeds;
         }
+
+        /// <summary>CAP_DUPLEXENABLED once the acquisition is over (what the user left in the driver's window).</summary>
+        public bool? DuplexAfterScan { get; init; }
+
+        public bool? ReadDuplexEnabled()
+        {
+            Calls.Add("read duplex");
+            return DuplexAfterScan;
+        }
     }
 
     private static readonly TwainLoopTimeouts Timeouts =
@@ -441,6 +450,75 @@ public class TwainScanLoopTests
         Assert.True(transport.EnabledWithWindow);
         Assert.Equal(Timeout.InfiniteTimeSpan, transport.Waits[0]);
         Assert.Single(result.Pages);
+    }
+
+    private static TwainScanRequest TwoSided(bool driverWindow = false) =>
+        Feeder() with { Duplex = true, ShowDriverWindow = driverWindow };
+
+    private static TwainEvent[] FourSheets() =>
+        [.. GrayPage(1), .. GrayPage(2), .. GrayPage(3), .. GrayPage(4), new TwainFinished()];
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, false)]   // the source refused two-sided
+    [InlineData(null, false)]    // CAP_DUPLEXENABLED not supported: cannot be confirmed
+    public void TwoSided_IsWhatTheSourceSettledOn(bool? duplexEnabled, bool expected)
+    {
+        var transport = new FakeTransport(FourSheets())
+        {
+            Applied = new TwainApplied(TwainTransferMechanisms.Memory, DuplexEnabled: duplexEnabled),
+        };
+        var result = Run(transport, TwoSided());
+
+        Assert.Equal(4, result.Pages.Count);
+        Assert.Equal(expected, result.Duplex);
+        // Without the driver's window nothing can change it after negotiation.
+        Assert.DoesNotContain("read duplex", transport.Calls);
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, false)]   // the user turned two-sided off in the driver's window
+    [InlineData(null, false)]    // unreadable afterwards: cannot be confirmed
+    public void TwoSidedWithTheDriversWindow_IsReadAfterTheScan(bool? afterScan, bool expected)
+    {
+        var transport = new FakeTransport(FourSheets())
+        {
+            Applied = new TwainApplied(TwainTransferMechanisms.Memory, DuplexEnabled: true),
+            DuplexAfterScan = afterScan,
+        };
+        var result = Run(transport, TwoSided(driverWindow: true));
+
+        Assert.Equal(4, result.Pages.Count);
+        Assert.Equal(expected, result.Duplex);
+        // Read once the source is disabled again (state 4).
+        Assert.Equal(["apply", "enable", "disable", "read duplex"], transport.Calls);
+    }
+
+    [Fact]
+    public void TwoSided_NotAskedOrDriverStuck_IsOneSided()
+    {
+        // One-sided request: never two-sided, never read.
+        var oneSided = new FakeTransport(FourSheets())
+        {
+            Applied = new TwainApplied(TwainTransferMechanisms.Memory, DuplexEnabled: true),
+            DuplexAfterScan = true,
+        };
+        Assert.False(Run(oneSided, Feeder()).Duplex);
+        Assert.DoesNotContain("read duplex", oneSided.Calls);
+
+        // A source that did not get back to state 4 is not asked, and cannot confirm it.
+        var stuck = new FakeTransport(FourSheets())
+        {
+            Applied = new TwainApplied(TwainTransferMechanisms.Memory, DuplexEnabled: true),
+            DuplexAfterScan = true,
+            DisableSucceeds = false,
+        };
+        var result = Run(stuck, TwoSided(driverWindow: true));
+        Assert.True(result.DriverStuck);
+        Assert.Equal(4, result.Pages.Count);
+        Assert.False(result.Duplex);
+        Assert.DoesNotContain("read duplex", stuck.Calls);
     }
 
     [Fact]

@@ -10,7 +10,7 @@ public class ScanTaskTests
     [Fact]
     public void RawValues_AreTheStoredNames()
     {
-        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email"],
+        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided"],
                      ScanTasks.All.Select(t => t.RawValue()));
     }
 
@@ -30,9 +30,10 @@ public class ScanTaskTests
     {
         Assert.Equal(ScanTasks.All, TaskCatalog.All.Select(d => d.Task));
         Assert.Equal(["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
-                      "Email a document"],
+                      "Email a document", "Two-sided document"],
                      TaskCatalog.All.Select(d => d.Title));
-        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email"], TaskCatalog.All.Select(d => d.IconKey));
+        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided"],
+                     TaskCatalog.All.Select(d => d.IconKey));
         foreach (var definition in TaskCatalog.All)
         {
             Assert.Same(definition, TaskCatalog.Definition(definition.Task));
@@ -58,6 +59,7 @@ public class ScanTaskTests
                 (TaskFlowKind.PhotoSplit, ScanIntent.Photo, null),
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.Flatbed),
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, null),
+                (TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.DocumentFeeder),
             ],
             TaskCatalog.All.Select(d => (d.Flow, d.Intent, d.RequiredSource)));
     }
@@ -85,6 +87,9 @@ public class ScanTaskTests
         s.Adjustments.Descreen = true;
         s.Adjustments.BlackWhiteThreshold = 0.25;
         s.Output.PdfSize = PdfSizePreset.Smallest;
+        s.Duplex = DuplexMode.Manual;
+        s.BackBinding = DuplexBinding.ShortEdge;
+        s.PaperSize = PaperSize.Legal;
         return s;
     }
 
@@ -130,8 +135,63 @@ public class ScanTaskTests
                 (ScanIntent.Photo, ScanSource.Flatbed, 600, OutputFormat.Png, true, "Photo {date} {counter}", true, true, PdfSizePreset.Standard),
                 (ScanIntent.Document, ScanSource.Flatbed, 150, OutputFormat.Jpeg, false, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
                 (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Compact),
+                (ScanIntent.Document, ScanSource.DocumentFeeder, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
             ],
             rows);
+    }
+
+    [Fact]
+    public void Apply_OnlyTheTwoSidedTaskScansBothSides_ThePaperIsKept()
+    {
+        var current = Customized();
+        foreach (var task in ScanTasks.All)
+        {
+            var s = TaskCatalog.Apply(task, current);
+            Assert.Equal(task == ScanTask.TwoSided ? DuplexMode.Both : DuplexMode.Off, s.Duplex);
+            Assert.Equal(DuplexBinding.ShortEdge, s.BackBinding);
+            Assert.Equal(PaperSize.Legal, s.PaperSize);
+        }
+    }
+
+    [Fact]
+    public void TwoSided_IsATwoSidedFeederPdf()
+    {
+        var definition = TaskCatalog.Definition(ScanTask.TwoSided);
+        Assert.Equal("Scan stack", definition.Steps[0].PrimaryActionLabel);
+        var s = TaskCatalog.Apply(ScanTask.TwoSided, new ScanSettings());
+        Assert.Equal((ScanIntent.Document, ScanSource.DocumentFeeder, OutputFormat.Pdf, DuplexMode.Both),
+                     (s.Intent, s.Source, s.Format, s.Duplex));
+        Assert.True(TaskCatalog.Fits(ScanTask.TwoSided, s));
+        s.Duplex = DuplexMode.Manual;
+        Assert.True(TaskCatalog.Fits(ScanTask.TwoSided, s));
+        // One side by hand ends the task, as leaving the feeder does.
+        s.Duplex = DuplexMode.Off;
+        Assert.False(TaskCatalog.Fits(ScanTask.TwoSided, s));
+        s.Duplex = DuplexMode.Both;
+        s.Source = ScanSource.Flatbed;
+        Assert.False(TaskCatalog.Fits(ScanTask.TwoSided, s));
+    }
+
+    [Fact]
+    public void GuidedSteps_TurningOverByHandWinsOverTheTask()
+    {
+        Assert.Null(TaskCatalog.GuidedSteps(new ScanSettings(), null));
+        Assert.Equal(TaskCatalog.Definition(ScanTask.Document).Steps,
+                     TaskCatalog.GuidedSteps(TaskCatalog.Apply(ScanTask.Document, new ScanSettings()), null));
+        Assert.Null(TaskCatalog.GuidedSteps(new ScanSettings { TaskId = "whiteboard" }, null));
+
+        var twoSided = TaskCatalog.Apply(ScanTask.TwoSided, new ScanSettings());
+        var duplexFeeder = new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder], SupportsDuplex = true };
+        var simplexFeeder = new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder], SupportsDuplex = false };
+        Assert.Equal(TaskCatalog.Definition(ScanTask.TwoSided).Steps, TaskCatalog.GuidedSteps(twoSided, duplexFeeder));
+        Assert.Equal(DocumentSides.ManualSteps, TaskCatalog.GuidedSteps(twoSided, simplexFeeder));
+
+        // Without a task, too.
+        var byHand = new ScanSettings { Source = ScanSource.DocumentFeeder, Duplex = DuplexMode.Manual };
+        Assert.Equal(DocumentSides.ManualSteps, TaskCatalog.GuidedSteps(byHand, null));
+        // Each scan saved at once: nothing to guide.
+        byHand.DocumentMultiPage = false;
+        Assert.Null(TaskCatalog.GuidedSteps(byHand, null));
     }
 
     [Fact]
@@ -168,6 +228,13 @@ public class ScanTaskTests
             s.Adjustments.RestoreFadedColors = true;
         }));
         Assert.Equal(ScanTask.Feeder, Infer(s => s.Source = ScanSource.DocumentFeeder));
+        Assert.Equal(ScanTask.TwoSided, Infer(s =>
+        {
+            s.Source = ScanSource.DocumentFeeder;
+            s.Duplex = DuplexMode.Manual;
+        }));
+        // Two-sided on the flatbed means nothing: still a document.
+        Assert.Equal(ScanTask.Document, Infer(s => s.Duplex = DuplexMode.Both));
         Assert.Equal(ScanTask.QuickScan, Infer(s =>
         {
             s.DocumentMultiPage = false;
@@ -208,13 +275,16 @@ public class ScanTaskTests
     }
 
     [Fact]
-    public void Availability_FlatbedOnlyScanner_NoFeederTask()
+    public void Availability_FlatbedOnlyScanner_NoFeederTasks()
     {
         var caps = new ScannerCapabilities { Sources = [ScanSource.Flatbed] };
-        var feeder = TaskCatalog.Availability(ScanTask.Feeder, caps);
-        Assert.False(feeder.IsAvailable);
-        Assert.Equal("This scanner has no document feeder.", feeder.Reason);
-        Assert.All(ScanTasks.All.Where(t => t != ScanTask.Feeder),
+        foreach (var task in new[] { ScanTask.Feeder, ScanTask.TwoSided })
+        {
+            var availability = TaskCatalog.Availability(task, caps);
+            Assert.False(availability.IsAvailable);
+            Assert.Equal("This scanner has no document feeder.", availability.Reason);
+        }
+        Assert.All(ScanTasks.All.Where(t => t is not (ScanTask.Feeder or ScanTask.TwoSided)),
                    task => Assert.True(TaskCatalog.Availability(task, caps).IsAvailable));
     }
 
@@ -298,6 +368,18 @@ public class ScanTaskTests
     }
 
     [Fact]
+    public void Summary_NamesTwoSidedFeederScans()
+    {
+        var twoSided = TaskCatalog.Apply(ScanTask.TwoSided, new ScanSettings());
+        Assert.Equal("300 dpi · Color · PDF · Both sides", TaskCatalog.Summary(twoSided));
+        var simplexFeeder = new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder], SupportsDuplex = false };
+        Assert.Equal("300 dpi · Color · PDF · Both sides, turned by hand",
+                     TaskCatalog.Summary(SettingsAdapter.Adapt(twoSided, simplexFeeder).Settings));
+        // On the flatbed the setting does nothing, so it is not named.
+        Assert.Equal("300 dpi · Color · PDF", TaskCatalog.Summary(new ScanSettings { Duplex = DuplexMode.Both }));
+    }
+
+    [Fact]
     public void Email_IsACompactDocumentPdf_OnAnyScanner()
     {
         var email = TaskCatalog.Apply(ScanTask.Email, Customized());
@@ -322,7 +404,7 @@ public class ScanTaskTests
     [Fact]
     public void FileLabels()
     {
-        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document"],
+        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document"],
                      TaskCatalog.All.Select(d => d.FileLabel));
     }
 }

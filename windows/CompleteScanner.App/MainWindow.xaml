@@ -297,6 +297,40 @@
                                                        TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                                             <TextBlock x:Name="TaskBannerPrompt" Style="{StaticResource SecondaryBodyText}"
                                                        TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                            <!-- Turning a stack over by hand: moving on from the fronts, the
+                                                 backs' choices, and the count mismatch ("3 fronts but 2 backs")
+                                                 when there is one. -->
+                                            <StackPanel x:Name="SidesActions" Visibility="Collapsed" Margin="0,6,0,0">
+                                                <DockPanel x:Name="SidesNotice" Visibility="Collapsed" Margin="0,0,0,4">
+                                                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource GlyphText}" Text="&#xE7BA;"
+                                                               Margin="0,0,8,0" VerticalAlignment="Top" Padding="0,2,0,0"
+                                                               Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                                                    <TextBlock x:Name="SidesNoticeText" Style="{StaticResource BodyText}" TextWrapping="Wrap"
+                                                               AutomationProperties.LiveSetting="Assertive" />
+                                                </DockPanel>
+                                                <WrapPanel Margin="-11,0,0,0">
+                                                    <Button x:Name="FinishFrontsButton" Style="{StaticResource SubtleButtonStyle}"
+                                                            local:Icon.Glyph="&#xE8AB;" Content="Done with fronts" Margin="0,0,4,0"
+                                                            ToolTip="Every front side is scanned: turn the stack over and scan the back sides"
+                                                            Click="FinishFronts_Click" />
+                                                    <Button x:Name="CombineSidesButton" Style="{StaticResource SubtleButtonStyle}"
+                                                            local:Icon.Glyph="&#xE73E;" Content="Combine anyway" Margin="0,0,4,0"
+                                                            ToolTip="Put the pages in order as they are; the extra pages go at the end"
+                                                            Click="CombineSides_Click" />
+                                                    <Button x:Name="ScanBacksAgainButton" Style="{StaticResource SubtleButtonStyle}"
+                                                            local:Icon.Glyph="&#xE72C;" Content="Scan back sides again" Margin="0,0,4,0"
+                                                            ToolTip="Remove the back sides scanned so far and scan them again"
+                                                            Click="ScanBacksAgain_Click" />
+                                                    <Button x:Name="MoreFrontsButton" Style="{StaticResource SubtleButtonStyle}"
+                                                            local:Icon.Glyph="&#xE710;" Content="Scan more fronts" Margin="0,0,4,0"
+                                                            ToolTip="The stack did not fit in the feeder: scan the fronts of the other sheets before turning it over"
+                                                            Click="MoreFronts_Click" />
+                                                    <Button x:Name="KeepFrontsButton" Style="{StaticResource SubtleButtonStyle}"
+                                                            local:Icon.Glyph="&#xE8A5;" Content="Keep fronts only"
+                                                            ToolTip="Leave out the back sides: the fronts stay as they are"
+                                                            Click="KeepFronts_Click" />
+                                                </WrapPanel>
+                                            </StackPanel>
                                         </StackPanel>
                                     </DockPanel>
                                 </GroupBox>
@@ -359,10 +393,19 @@
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
                                                 <Grid Width="116" Height="128">
-                                                    <Border x:Name="Card" Style="{StaticResource CardStyle}" Padding="6">
+                                                    <Border x:Name="Card" Style="{StaticResource CardStyle}" Padding="6"
+                                                            ToolTip="{Binding SideLabel}">
                                                         <Image Source="{Binding Thumbnail}" MaxHeight="112" MaxWidth="104"
                                                                Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                RenderOptions.BitmapScalingMode="HighQuality" />
+                                                    </Border>
+                                                    <!-- Which side of which sheet, for two-sided stacks. -->
+                                                    <Border x:Name="SideBadge" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                            Margin="4,4,0,0" Padding="5,0,5,1" CornerRadius="4" IsHitTestVisible="False"
+                                                            Background="{DynamicResource SolidBackgroundFillColorQuarternaryBrush}"
+                                                            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                                        <TextBlock Text="{Binding SideLabel}" Style="{StaticResource CaptionText}"
+                                                                   TextWrapping="NoWrap" />
                                                     </Border>
                                                     <Border x:Name="Actions" Style="{StaticResource HoverActionBarStyle}"
                                                             HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,6">
@@ -395,6 +438,9 @@
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
                                                         <Setter TargetName="Actions" Property="Opacity" Value="1" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding SideLabel}" Value="{x:Null}">
+                                                        <Setter TargetName="SideBadge" Property="Visibility" Value="Collapsed" />
                                                     </DataTrigger>
                                                     <!-- Last, so it wins: a frozen page shows no actions. -->
                                                     <DataTrigger Binding="{Binding IsEnabled, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="False">
@@ -444,6 +490,31 @@
                                             <ComboBox x:Name="SourceBox" Margin="{StaticResource FieldSpacing}"
                                                       HorizontalAlignment="Stretch" AutomationProperties.Name="Source"
                                                       SelectionChanged="Setting_Changed" />
+                                            <!-- Feeder sheets: one side, both, or turned over by hand. Choices the
+                                                 scanner or the settings cannot do are greyed out with the reason;
+                                                 the whole group is left out for a scanner without a feeder. -->
+                                            <StackPanel x:Name="SidesOptions" Margin="{StaticResource FieldSpacing}">
+                                                <TextBlock Text="Sides" Style="{StaticResource FieldLabelText}" />
+                                                <ComboBox x:Name="SidesBox" HorizontalAlignment="Stretch"
+                                                          AutomationProperties.Name="Sides"
+                                                          ToolTipService.ShowOnDisabled="True"
+                                                          SelectionChanged="Sides_Changed" />
+                                                <TextBlock x:Name="SidesHint" Style="{StaticResource CaptionText}"
+                                                           TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                <StackPanel x:Name="BackBindingOptions" Margin="0,8,0,0">
+                                                    <TextBlock Text="Flip on" Style="{StaticResource FieldLabelText}" />
+                                                    <ComboBox x:Name="BackBindingBox" HorizontalAlignment="Stretch"
+                                                              AutomationProperties.Name="Back sides flip on"
+                                                              ToolTip="How the sheets turn: the backs of short-edge sheets are turned upright."
+                                                              SelectionChanged="Sides_Changed" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <TextBlock Text="Paper size" Style="{StaticResource FieldLabelText}" />
+                                            <ComboBox x:Name="PaperSizeBox" HorizontalAlignment="Stretch"
+                                                      AutomationProperties.Name="Paper size"
+                                                      SelectionChanged="PaperSize_Changed" />
+                                            <TextBlock x:Name="PaperSizeHint" Style="{StaticResource CaptionText}"
+                                                       TextWrapping="Wrap" Margin="0,4,0,12" />
                                             <TextBlock Text="Resolution" Style="{StaticResource FieldLabelText}" />
                                             <ComboBox x:Name="ResolutionBox" HorizontalAlignment="Stretch"
                                                       AutomationProperties.Name="Resolution" ItemStringFormat="{}{0} dpi"

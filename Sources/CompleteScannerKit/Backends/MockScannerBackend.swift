@@ -5,7 +5,9 @@ import Foundation
 /// A demo scanner that needs no hardware: it renders deterministic synthetic
 /// flatbed images with CoreGraphics, so the whole app (overview, selection,
 /// photo splitting, OCR, PDF export) can be exercised end to end. It also has a
-/// document feeder holding `feederSheetCount` letter-size sheets.
+/// document feeder holding `feederSheetCount` two-sided letter-size sheets, which it scans one
+/// side or both (`feederDuplex`), so two-sided scanning, turning the stack over by hand and paper
+/// sizes can be tried without hardware. Twin of C# `MockScannerBackend`.
 public final class MockScannerBackend: ScannerBackend {
 
     /// Sheets the demo feeder holds unless `feederSheetCount` is changed.
@@ -23,6 +25,17 @@ public final class MockScannerBackend: ScannerBackend {
     /// batch stopped; a jam on the first sheet fails the scan with
     /// `ScanError.scannerProblem(.paperJam)`. nil (the default) never jams.
     public var feederJamsAfter: Int?
+
+    /// The feeder scans both sides in one pass (reported as `ScannerCapabilities.supportsDuplex`,
+    /// read when the capabilities are read). Default true; false shows a feeder that scans one side.
+    public var feederDuplex: Bool = true
+
+    /// The stack in the feeder is turned over: a one-sided scan delivers the backs, last sheet
+    /// first. The demo turns its stack over by itself after every one-sided scan made for turning
+    /// over by hand (`.manual`), as the user is asked to; any other feeder scan puts it back the
+    /// right way up. A scan cut short by a jam leaves it as it is: the user clears the jam and
+    /// scans the rest of the same side. Settable to start from either side.
+    public var feederStackTurnedOver: Bool = false
 
     public init() {}
 
@@ -55,6 +68,7 @@ private final class MockScannerSession: ScannerSession {
     let info: ScannerInfo
     var progressHandler: ((ScanProgress) -> Void)?
     private(set) var lastScanStop: ScanStop?
+    private(set) var lastScanDuplex: Bool?
 
     private var cancelRequested = false
     /// Source of the feeder's settings, read at the start of each feeder scan.
@@ -72,8 +86,8 @@ private final class MockScannerSession: ScannerSession {
                             sources: [.flatbed, .documentFeeder],
                             flatbedSizeInches: Self.bedSizeInches,
                             supportsOverview: true,
-                            feederSizeInches: MockBedRenderer.sheetInches,
-                            supportsDuplex: false)
+                            feederSizeInches: MockBedRenderer.feederMaxInches,
+                            supportsDuplex: backend?.feederDuplex ?? true)
     }
 
     func performOverviewScan(settings: ScanSettings) async throws -> CGImage {
@@ -88,6 +102,7 @@ private final class MockScannerSession: ScannerSession {
     func performScan(settings: ScanSettings, selection: CGRect?) async throws -> [ScannedPage] {
         cancelRequested = false
         lastScanStop = nil
+        lastScanDuplex = nil
         let dpi = min(settings.resolution, 600) // cap memory use
         if settings.source == .documentFeeder {
             return try await scanFeeder(settings: settings, dpi: dpi)
@@ -122,14 +137,23 @@ private final class MockScannerSession: ScannerSession {
         return [ScannedPage(image: image, dpi: dpi, colorMode: settings.colorMode)]
     }
 
-    /// The demo feeder: one letter-size sheet per page (the selection does not apply), each
-    /// marked with its sheet number; an empty feeder or a jam fails like a real one.
+    /// The demo feeder (the selection does not apply): one sheet per page, the paper size asked
+    /// for (letter for Automatic), each side marked with its sheet number. Two-sided (when asked
+    /// for and `feederDuplex`) it delivers front, back, front, back…; one-sided it delivers the
+    /// side facing up (`feederStackTurnedOver`), and says so when both sides were asked for
+    /// (`lastScanDuplex`). An empty feeder or a jam fails like a real one; a jam keeps the sheets
+    /// before it.
     private func scanFeeder(settings: ScanSettings, dpi: Int) async throws -> [ScannedPage] {
         let sheets = backend?.feederSheetCount ?? MockScannerBackend.defaultFeederSheetCount
         let jamsAfter = backend?.feederJamsAfter
+        let twoSided = settings.duplex == .both && (backend?.feederDuplex ?? true)
+        let turnedOver = backend?.feederStackTurnedOver ?? false
+        let region = PaperSizes.feederRegionInches(settings.paperSize, max: MockBedRenderer.feederMaxInches)
+        let sheetInches = settings.paperSize == .auto ? MockBedRenderer.sheetInches : region.size
         progressHandler?(ScanProgress(fraction: 0.1, message: "Warming up…"))
         try await sleepCheckingCancellation(seconds: 0.25)
         guard sheets > 0 else { throw ScanError.scannerProblem(.feederEmpty) }
+        lastScanDuplex = settings.duplex == .both ? twoSided : nil
 
         var pages: [ScannedPage] = []
         for index in 0..<sheets {
@@ -141,11 +165,22 @@ private final class MockScannerSession: ScannerSession {
             }
             progressHandler?(ScanProgress(fraction: 0.1 + 0.9 * Double(index) / Double(sheets),
                                           message: "Scanning sheet \(index + 1) of \(sheets)…"))
-            guard let image = MockBedRenderer.renderSheet(dpi: dpi, intent: settings.intent, sheetIndex: index) else {
-                throw ScanError.scanFailed("Could not render the demo scan.")
+            // A turned-over stack feeds its last sheet first, showing the backs.
+            let sheet = turnedOver && !twoSided ? sheets - 1 - index : index
+            let sides: [PageSide] = twoSided ? [.front, .back] : [turnedOver ? .back : .front]
+            for side in sides {
+                guard let image = MockBedRenderer.renderSheet(dpi: dpi, intent: settings.intent, sheetIndex: sheet,
+                                                              side: side, sheetInches: sheetInches) else {
+                    throw ScanError.scanFailed("Could not render the demo scan.")
+                }
+                pages.append(ScannedPage(image: image, dpi: dpi, colorMode: settings.colorMode))
             }
             try await sleepCheckingCancellation(seconds: 0.15)
-            pages.append(ScannedPage(image: image, dpi: dpi, colorMode: settings.colorMode))
+        }
+        // The user turns the stack over between the two scans of turning over by hand, and loads
+        // it the right way up for any other scan; after a jam the rest of the same side comes next.
+        if lastScanStop == nil {
+            backend?.feederStackTurnedOver = settings.duplex == .manual && !twoSided && !turnedOver
         }
         return pages
     }
@@ -170,8 +205,10 @@ private final class MockScannerSession: ScannerSession {
 private enum MockBedRenderer {
 
     static let bedInches = CGSize(width: 8.5, height: 11.7)
-    /// Sheet size of the demo feeder (US Letter).
+    /// Sheet size of the demo feeder's stack (US Letter), scanned when the paper size is Automatic.
     static let sheetInches = CGSize(width: 8.5, height: 11)
+    /// The largest sheet the demo feeder takes (US Legal).
+    static let feederMaxInches = CGSize(width: 8.5, height: 14)
 
     static func renderBed(dpi: Int, intent: ScanIntent) -> CGImage? {
         let scale = CGFloat(dpi)
@@ -204,13 +241,18 @@ private enum MockBedRenderer {
         return ctx.makeImage()
     }
 
-    /// One sheet from the demo feeder (`sheetInches`). Document sheets are the demo page
-    /// edge to edge with `sheetIndex + 1` marks near the bottom; photo sheets hold one of the
-    /// demo photos, centered, cycling through them.
-    static func renderSheet(dpi: Int, intent: ScanIntent, sheetIndex: Int) -> CGImage? {
+    /// One side of a sheet from the demo feeder, `sheetInches` in size (`MockBedRenderer.sheetInches`
+    /// by default). The front of a document sheet is the demo page edge to edge with
+    /// `sheetIndex + 1` marks near the bottom left; its back is a shorter page with as many marks
+    /// near the bottom right, both upright, as a two-sided feeder delivers long-edge sheets. A photo
+    /// sheet's front holds one of the demo photos, centered, cycling through them; its back is
+    /// blank paper with a short pencilled note.
+    static func renderSheet(dpi: Int, intent: ScanIntent, sheetIndex: Int, side: PageSide = .front,
+                            sheetInches size: CGSize? = nil) -> CGImage? {
+        let sheetSize = size ?? sheetInches
         let scale = CGFloat(dpi)
-        let width = Int(sheetInches.width * scale)
-        let height = Int(sheetInches.height * scale)
+        let width = max(1, Int(sheetSize.width * scale))
+        let height = max(1, Int(sheetSize.height * scale))
         guard width > 0, height > 0,
               let space = CGColorSpace(name: CGColorSpace.sRGB),
               let ctx = CGContext(data: nil, width: width, height: height,
@@ -223,17 +265,24 @@ private enum MockBedRenderer {
         ctx.translateBy(x: 0, y: CGFloat(height))
         ctx.scaleBy(x: 1, y: -1)
 
-        switch intent {
-        case .photo:
+        let page = CGRect(x: 0, y: 0, width: sheetSize.width, height: sheetSize.height)
+        switch (intent, side) {
+        case (.photo, .back):
+            // A note pencilled on the back of the print.
+            ctx.setFillColor(gray(1.0))
+            ctx.fill(CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height)))
+            ctx.setFillColor(rgb(0.47, 0.47, 0.50))
+            ctx.fill(CGRect(x: 0.75 * scale, y: 0.9 * scale, width: 2.2 * scale, height: 0.12 * scale))
+        case (.photo, .front):
             drawBedBackground(in: ctx, width: CGFloat(width), height: CGFloat(height))
             let design = sheetIndex % photos.count
             var centered = photos[design]
-            centered.centerInches = CGPoint(x: sheetInches.width / 2, y: sheetInches.height / 2)
+            centered.centerInches = CGPoint(x: sheetSize.width / 2, y: sheetSize.height / 2)
             drawPhotos(in: ctx, scale: scale, items: [centered], firstDesign: design)
-        case .document:
-            drawDocument(in: ctx, scale: scale,
-                         pageInches: CGRect(x: 0, y: 0, width: sheetInches.width, height: sheetInches.height),
-                         sheetIndex: sheetIndex)
+        case (.document, .back):
+            drawDocumentBack(in: ctx, scale: scale, pageInches: page, sheetIndex: sheetIndex)
+        case (.document, .front):
+            drawDocument(in: ctx, scale: scale, pageInches: page, sheetIndex: sheetIndex)
         }
         return ctx.makeImage()
     }
@@ -393,6 +442,48 @@ private enum MockBedRenderer {
             for mark in 0...sheetIndex {
                 ctx.fill(CGRect(x: left + CGFloat(mark) * pitch, y: markY, width: side, height: side))
             }
+        }
+    }
+
+    private static let documentBackBody = [
+        "This is the back of a demo sheet. Two-sided scans put it",
+        "right after the front of the same sheet, upright, so the",
+        "saved document reads in order from the first page to the",
+        "last one.",
+        "",
+        "The marks below tell the sheets apart.",
+    ]
+
+    /// The back of a demo sheet: a short paragraph and `sheetIndex + 1` square marks near the
+    /// bottom right, so backs can be told from fronts and their orientation seen.
+    private static func drawDocumentBack(in ctx: CGContext, scale: CGFloat, pageInches: CGRect, sheetIndex: Int) {
+        let page = CGRect(x: pageInches.minX * scale, y: pageInches.minY * scale,
+                          width: pageInches.width * scale,
+                          height: pageInches.height * scale)
+        ctx.setFillColor(gray(1.0))
+        ctx.fill(page)
+
+        let textColor = rgb(0.22, 0.22, 0.24)
+        let bodySize = 12 * scale / 72
+        let left = page.minX + 0.75 * scale
+        var y = page.minY + 0.9 * scale
+        for line in documentBackBody {
+            if !line.isEmpty {
+                drawTextLine(line, in: ctx, topLeft: CGPoint(x: left, y: y),
+                             fontSize: bodySize, bold: false, color: textColor)
+            }
+            y += bodySize * 1.55
+        }
+
+        // Sheet marks: 0.2 in squares, 0.35 in apart, the first one's right edge 0.75 in from the
+        // page's right edge, their top 0.9 in above the bottom edge.
+        let side = 0.2 * scale
+        let pitch = 0.35 * scale
+        let right = page.maxX - 0.75 * scale
+        let markY = page.maxY - 0.9 * scale
+        ctx.setFillColor(textColor)
+        for mark in 0...sheetIndex {
+            ctx.fill(CGRect(x: right - side - CGFloat(mark) * pitch, y: markY, width: side, height: side))
         }
     }
 

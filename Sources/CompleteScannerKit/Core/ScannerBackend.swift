@@ -35,10 +35,30 @@ public protocol ScannerSession: AnyObject {
     /// Sessions that never stop a batch early can leave the default.
     var lastScanStop: ScanStop? { get }
 
+    /// Whether the last `performScan` asked for both sides of each sheet (`.both` on the feeder)
+    /// scanned both: false when the scanner fell back to one side (its feeder cannot), so the
+    /// app does not arrange the pages as fronts and backs. nil when both sides were not asked
+    /// for, or when the session cannot tell. Reset by every scan.
+    var lastScanDuplex: Bool? { get }
+
+    /// The session tells whether the feeder scans both sides only once the feeder is selected
+    /// (`feederSupportsDuplex`, ImageCaptureCore); until then `capabilities().supportsDuplex`
+    /// means "not known yet". Default false: the capabilities say it.
+    var feederDuplexNeedsSelection: Bool { get }
+
+    /// Whether the feeder scans both sides, for sessions that can tell only once the feeder is
+    /// selected (ImageCaptureCore): selecting it can take a while on a sleeping scanner, so the
+    /// app asks only when the feeder is used. nil: not known this time (the scanner did not
+    /// answer, or another operation runs), or already in `capabilities()`.
+    func feederSupportsDuplex() async -> Bool?
+
     func cancelScan()
     func close() async
 }
 
 extension ScannerSession {
     public var lastScanStop: ScanStop? { nil }
+    public var lastScanDuplex: Bool? { nil }
+    public var feederDuplexNeedsSelection: Bool { false }
+    public func feederSupportsDuplex() async -> Bool? { nil }
 }

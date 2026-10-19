@@ -78,6 +78,68 @@ public class TwainScanRequestsTests
 
     // MARK: - Scan requests
 
+    [Fact]
+    public void ForScan_TwoSidedOnlyFromATwoSidedFeeder()
+    {
+        var caps = FlatbedAndFeeder();
+        var feeder = Settings(ScanSource.DocumentFeeder);
+        Assert.False(TwainScanRequests.ForScan(feeder, null, caps).Duplex);
+        feeder.Duplex = DuplexMode.Both;
+        Assert.True(TwainScanRequests.ForScan(feeder, null, caps).Duplex);
+        // Turning over by hand scans one side at a time.
+        feeder.Duplex = DuplexMode.Manual;
+        Assert.False(TwainScanRequests.ForScan(feeder, null, caps).Duplex);
+        var flatbed = Settings();
+        flatbed.Duplex = DuplexMode.Both;
+        Assert.False(TwainScanRequests.ForScan(flatbed, null, caps).Duplex);
+        feeder.Duplex = DuplexMode.Both;
+        var oneSided = new TwainDeviceCaps { HasFlatbed = true, HasFeeder = true, DuplexKind = TwainDuplexKinds.None };
+        Assert.False(TwainScanRequests.ForScan(feeder, null, oneSided).Duplex);
+    }
+
+    [Fact]
+    public void ForScan_FeederPaperSize_ListedSizeOrFrame()
+    {
+        var settings = Settings(ScanSource.DocumentFeeder);
+        settings.PaperSize = PaperSize.A4;
+        var unlisted = TwainScanRequests.ForScan(settings, null, FlatbedAndFeeder());
+        Assert.Equal(TwainSizes.None, unlisted.SupportedSize);
+        Assert.Equal(8.2677, unlisted.FrameInches!.Value.Width, 4);
+        Assert.Equal(11.6929, unlisted.FrameInches!.Value.Height, 4);
+
+        var listing = new TwainDeviceCaps
+        {
+            HasFlatbed = false,
+            HasFeeder = true,
+            SupportedSizes = [TwainSizes.A4, TwainSizes.UsLetter, TwainSizes.UsLegal],
+        };
+        Assert.Equal(TwainSizes.A4, TwainScanRequests.ForScan(settings, null, listing).SupportedSize);
+        // Larger than the feeder: clamped to its largest sheet.
+        settings.PaperSize = PaperSize.Legal;
+        var small = new TwainDeviceCaps { HasFlatbed = false, HasFeeder = true, FeederSizeInches = new SizeD(8.5, 11) };
+        Assert.Equal(new RectD(0, 0, 8.5, 11), TwainScanRequests.ForScan(settings, null, small).FrameInches);
+        // The flatbed takes the paper size as a selection (the app's job).
+        var flatbed = Settings();
+        flatbed.PaperSize = PaperSize.A5;
+        Assert.Equal(TwainSizes.None, TwainScanRequests.ForScan(flatbed, null, FlatbedAndFeeder()).SupportedSize);
+    }
+
+    [Fact]
+    public void TwainSizes_FromPaperSize()
+    {
+        Assert.Equal(
+            [TwainSizes.None, TwainSizes.UsLetter, TwainSizes.UsLegal, TwainSizes.UsExecutive, TwainSizes.A4,
+             TwainSizes.A5, TwainSizes.A6, TwainSizes.JisB5, TwainSizes.None],
+            PaperSizes.All.Select(TwainSizes.FromPaperSize));
+        foreach (var size in PaperSizes.All.Where(s => TwainSizes.FromPaperSize(s) != TwainSizes.None))
+        {
+            var twain = TwainSizes.Inches(TwainSizes.FromPaperSize(size))!.Value;
+            var app = PaperSizes.Inches(size)!.Value;
+            Assert.Equal(app.Width, twain.Width, 2);
+            Assert.Equal(app.Height, twain.Height, 2);
+        }
+    }
+
     [Theory]
     [InlineData(ColorMode.Color, TwainPixelTypes.Rgb, 8)]
     [InlineData(ColorMode.Grayscale, TwainPixelTypes.Gray, 8)]

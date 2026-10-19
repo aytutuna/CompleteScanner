@@ -58,8 +58,9 @@
                                     <TextBlock x:Name="FooterGlyph" DockPanel.Dock="Left" Style="{StaticResource GlyphText}"
                                                FontSize="12" Text="&#xE946;" Margin="0,1,6,0" VerticalAlignment="Top"
                                                Visibility="Collapsed" />
+                                    <!-- Up to two lines, as on macOS: two-sided scanning by hand makes the line long. -->
                                     <TextBlock x:Name="Footer" Text="{Binding Summary}" Style="{StaticResource CaptionText}"
-                                               TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                               TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="34"
                                                Typography.NumeralAlignment="Tabular" />
                                 </DockPanel>
                                 <TextBlock Text="{Binding Subtitle}" Style="{StaticResource CaptionText}"

@@ -91,8 +91,8 @@ struct ContentView: View {
         // windows), is user-resizable, and can be toggled to give the page preview
         // the whole window.
         VStack(spacing: 0) {
-            if let task = state.activeTaskDefinition {
-                TaskBannerView(definition: task, onChangeTask: { detailTab = .start })
+            if state.activeTaskDefinition != nil || state.isTurningOverByHand {
+                TaskBannerView(definition: state.activeTaskDefinition, onChangeTask: { detailTab = .start })
                 Divider()
             }
             PreviewCanvasView()

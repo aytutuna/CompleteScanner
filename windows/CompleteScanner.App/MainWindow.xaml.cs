@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Automation.Peers;
@@ -30,6 +31,14 @@ public partial class MainWindow : Window
         DeviceList.ItemsSource = ViewModel.Devices;
         PresetList.ItemsSource = ViewModel.Presets;
         PageList.ItemsSource = ViewModel.ScannedPages;
+        // Screen readers name each page by its place and side: when items are made, and after
+        // any change to the queue once layout has caught up (a removed page renumbers the rest).
+        PageList.ItemContainerGenerator.StatusChanged += (_, _) =>
+        {
+            if (PageList.ItemContainerGenerator.Status == GeneratorStatus.ContainersGenerated) NamePageItems();
+        };
+        ViewModel.ScannedPages.CollectionChanged += (_, _) =>
+            Dispatcher.InvokeAsync(NamePageItems, System.Windows.Threading.DispatcherPriority.Loaded);
         HistoryView.Attach(ViewModel);
         SavedView.Attach(ViewModel, ShowError);
         StartView.Attach(ViewModel);
@@ -45,6 +54,10 @@ public partial class MainWindow : Window
         BuildPdfSizeSegments();
         AfterSaveBox.ItemsSource = AfterSaveItems();
         ReviewAfterSaveBox.ItemsSource = AfterSaveItems();
+        foreach (var binding in Enum.GetValues<DuplexBinding>())
+        {
+            BackBindingBox.Items.Add(new ComboBoxItem { Content = binding.Label(), Tag = binding });
+        }
 
         Loaded += (_, _) =>
         {
@@ -459,29 +472,117 @@ public partial class MainWindow : Window
 
     // MARK: - Tasks
 
-    /// <summary>The banner above the stage: the active task and what to do now; hidden without a task.</summary>
+    /// <summary>Title of the banner that guides turning a stack over by hand without a task.</summary>
+    internal const string TurningOverTitle = "Two-sided scanning";
+
+    /// <summary>
+    /// The banner above the stage: the active task, or turning a stack over by hand, and what to
+    /// do now; hidden when nothing is guided. Fronts scanned without moving on to the backs (the
+    /// feeder stopped early) offer "Done with fronts". While the backs are due it offers keeping
+    /// the fronts only and, before any back is scanned, scanning more fronts; when the counts did
+    /// not pair up, scanning the backs again or combining the pages as they are.
+    /// </summary>
     private void SyncTaskBanner()
     {
-        if (ViewModel.ActiveTaskDefinition is not { } task)
+        var task = ViewModel.ActiveTaskDefinition;
+        bool turningOver = ViewModel.IsTurningOverByHand;
+        if (task is null && !turningOver)
         {
             TaskBanner.Visibility = Visibility.Collapsed;
             return;
         }
-        string name = $"Task: {task.Title}";
+        string title = task?.Title ?? TurningOverTitle;
+        string name = task is null ? title : $"Task: {title}";
         bool sameTaskShown = TaskBanner.Visibility == Visibility.Visible && AutomationProperties.GetName(TaskBannerGroup) == name;
         TaskBanner.Visibility = Visibility.Visible;
-        TaskBannerGlyph.Text = TaskIcons.Glyph(task.IconKey);
+        TaskBannerGlyph.Text = TaskIcons.Glyph(task?.IconKey ?? "twoSided");
         var flow = ViewModel.Flow;
         var step = flow?.Current;
         TaskBannerTitle.Text = flow is { StepCount: > 1 } && step is not null
-            ? $"{task.Title} · Step {flow.StepIndex + 1} of {flow.StepCount}: {step.Title}"
-            : task.Title;
-        string prompt = step?.Prompt ?? task.Subtitle;
+            ? $"{title} · Step {flow.StepIndex + 1} of {flow.StepCount}: {step.Title}"
+            : title;
+        string prompt = step?.Prompt ?? task?.Subtitle ?? DuplexMode.Manual.Hint();
         bool promptChanged = TaskBannerPrompt.Text != prompt;
         TaskBannerPrompt.Text = prompt;
         AutomationProperties.SetName(TaskBannerGroup, name);
-        // A new step of the same task (the ID card's back after its front) is read out.
+        // A new step of the same task (the backs after the fronts) is read out.
         if (sameTaskShown && promptChanged) AnnounceWhenShown(TaskBannerPrompt);
+
+        // Without a task the close button stops turning stacks over by hand.
+        string exitName = task is not null ? "Leave the task" : "Scan one side only";
+        AutomationProperties.SetName(ExitTaskButton, exitName);
+        ExitTaskButton.ToolTip = task is not null
+            ? "Leave the task. Its settings stay, without the guidance."
+            : "Stop turning stacks over by hand: scan one side of each sheet.";
+
+        bool awaitingBacks = ViewModel.AwaitingBacks;
+        bool finishFronts = ViewModel.CanFinishFronts;
+        SidesActions.Visibility = awaitingBacks || finishFronts ? Visibility.Visible : Visibility.Collapsed;
+        FinishFrontsButton.Visibility = finishFronts ? Visibility.Visible : Visibility.Collapsed;
+        MoreFrontsButton.Visibility = ViewModel.CanScanMoreFronts ? Visibility.Visible : Visibility.Collapsed;
+        KeepFrontsButton.Visibility = awaitingBacks ? Visibility.Visible : Visibility.Collapsed;
+        string? mismatch = awaitingBacks ? ViewModel.SidesMismatch : null;
+        string notice = mismatch is null
+            ? ""
+            : $"{mismatch}. Scan the rest of the back sides, scan them again, or combine the pages as they are.";
+        bool noticeChanged = SidesNoticeText.Text != notice;
+        SidesNoticeText.Text = notice;
+        SidesNotice.Visibility = mismatch is null ? Visibility.Collapsed : Visibility.Visible;
+        CombineSidesButton.Visibility = mismatch is null ? Visibility.Collapsed : Visibility.Visible;
+        ScanBacksAgainButton.Visibility = mismatch is null ? Visibility.Collapsed : Visibility.Visible;
+        SidesActions.IsEnabled = !ViewModel.IsBusy;
+        if (mismatch is not null && noticeChanged) AnnounceWhenShown(SidesNoticeText);
+    }
+
+    /// <summary>
+    /// Names the items of the page strip for screen readers: "Page 3, Sheet 2 · back". The badge
+    /// and tooltip inside an item are not read, and an item is otherwise named after its type.
+    /// </summary>
+    private void NamePageItems()
+    {
+        for (int i = 0; i < PageList.Items.Count; i++)
+        {
+            if (PageList.Items[i] is PageItem item
+                && PageList.ItemContainerGenerator.ContainerFromIndex(i) is ListBoxItem container)
+            {
+                AutomationProperties.SetName(container, item.AccessibleName(i + 1));
+            }
+        }
+    }
+
+    private void FinishFronts_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.FinishFronts();
+        RefreshFromViewModel();
+        ScanButton.Focus();
+    }
+
+    private void MoreFronts_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ScanMoreFronts();
+        RefreshFromViewModel();
+        ScanButton.Focus();
+    }
+
+    private void CombineSides_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.CombineSidesAnyway();
+        RefreshFromViewModel();
+        ScanButton.Focus();
+    }
+
+    private void ScanBacksAgain_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ScanBacksAgain();
+        RefreshFromViewModel();
+        ScanButton.Focus();
+    }
+
+    private void KeepFronts_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.KeepFrontsOnly();
+        RefreshFromViewModel();
+        ScanButton.Focus();
     }
 
     /// <summary>
@@ -564,7 +665,9 @@ public partial class MainWindow : Window
 
     private void ExitTask_Click(object sender, RoutedEventArgs e)
     {
-        ViewModel.ExitTask();
+        if (ViewModel.ActiveTask is not null) ViewModel.ExitTask();
+        else ViewModel.ScanOneSideOnly();
+        PushSettingsToUi();
         RefreshFromViewModel();
         ScanButton.Focus();
     }
@@ -672,11 +775,126 @@ public partial class MainWindow : Window
                 SourceBox.ItemsSource = sourceLabels;
             }
             SourceBox.SelectedItem = ViewModel.Settings.Source.Label();
+            SyncSidesOptions();
+            SyncPaperSizeOptions();
         }
         finally
         {
             _updatingUi = wasUpdating;
         }
+    }
+
+    // MARK: - Sides and paper size
+
+    /// <summary>The reasons the sides choices were last built with, so unchanged items are not rebuilt.</summary>
+    private string? _sidesSignature;
+    /// <summary>The source and area the paper sizes were last built for.</summary>
+    private string? _paperSignature;
+
+    /// <summary>
+    /// The sides choice: shown for scanners with a feeder, usable while the feeder is the
+    /// source. "Both sides" is greyed out (with the reason) on a feeder that scans one side, and
+    /// turning over by hand when the settings cannot guide it (photos, or each scan saved at
+    /// once). Call with <see cref="_updatingUi"/> set.
+    /// </summary>
+    private void SyncSidesOptions()
+    {
+        var s = ViewModel.Settings;
+        var caps = ViewModel.Capabilities;
+        bool hasFeeder = caps?.Sources.Contains(ScanSource.DocumentFeeder) ?? false;
+        SidesOptions.Visibility = hasFeeder ? Visibility.Visible : Visibility.Collapsed;
+        if (!hasFeeder) return;
+        bool feeder = s.Source == ScanSource.DocumentFeeder;
+        string? bothReason = caps is { SupportsDuplex: false } ? DocumentSides.OneSidedFeederReason : null;
+        string? manualReason = DocumentSides.ManualUnavailableReason(s);
+        string signature = $"{bothReason}\u001f{manualReason}";
+        if (signature != _sidesSignature)
+        {
+            _sidesSignature = signature;
+            SidesBox.Items.Clear();
+            foreach (var mode in Enum.GetValues<DuplexMode>())
+            {
+                string? reason = mode switch
+                {
+                    DuplexMode.Both => bothReason,
+                    DuplexMode.Manual => manualReason,
+                    _ => null,
+                };
+                var item = new ComboBoxItem
+                {
+                    Content = mode.Label(),
+                    Tag = mode,
+                    IsEnabled = reason is null,
+                    ToolTip = reason ?? mode.Hint(),
+                };
+                ToolTipService.SetShowOnDisabled(item, true);
+                AutomationProperties.SetHelpText(item, reason ?? mode.Hint());
+                SidesBox.Items.Add(item);
+            }
+        }
+        SidesBox.SelectedItem = SidesBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (DuplexMode)i.Tag == s.Duplex);
+        SidesBox.IsEnabled = feeder;
+        SidesHint.Text = !feeder ? DocumentSides.FeederOnlyReason
+            : s.Duplex == DuplexMode.Manual && manualReason is not null ? manualReason
+            : s.Duplex == DuplexMode.Off && bothReason is not null ? $"{s.Duplex.Hint()} {bothReason}"
+            : s.Duplex.Hint();
+        BackBindingOptions.Visibility = feeder && s.Duplex != DuplexMode.Off ? Visibility.Visible : Visibility.Collapsed;
+        BackBindingBox.SelectedItem = BackBindingBox.Items.OfType<ComboBoxItem>()
+            .FirstOrDefault(i => (DuplexBinding)i.Tag == s.BackBinding);
+    }
+
+    /// <summary>
+    /// The paper sizes, Automatic and the usual size where the user lives first. Sizes larger
+    /// than the glass or the feeder (whichever is the source) are greyed out with the reason.
+    /// Call with <see cref="_updatingUi"/> set.
+    /// </summary>
+    private void SyncPaperSizeOptions()
+    {
+        var s = ViewModel.Settings;
+        var caps = ViewModel.Capabilities;
+        SizeD? area = caps is null ? null
+            : s.Source == ScanSource.DocumentFeeder ? caps.FeederSizeInches : caps.FlatbedSizeInches;
+        string signature = $"{s.Source}\u001f{area}";
+        if (signature != _paperSignature)
+        {
+            _paperSignature = signature;
+            PaperSizeBox.Items.Clear();
+            foreach (var size in PaperSizes.DisplayOrder(RegionInfo.CurrentRegion.TwoLetterISORegionName))
+            {
+                bool fits = PaperSizes.Fits(size, area);
+                string tip = fits ? PaperSizes.Hint(size, s.Source) : PaperSizes.DoesNotFitReason(s.Source);
+                var item = new ComboBoxItem
+                {
+                    Content = size == PaperSize.Auto ? size.Label() : $"{size.Label()}  ({size.Detail()})",
+                    Tag = size,
+                    IsEnabled = fits,
+                    ToolTip = tip,
+                };
+                ToolTipService.SetShowOnDisabled(item, true);
+                AutomationProperties.SetHelpText(item, tip);
+                PaperSizeBox.Items.Add(item);
+            }
+        }
+        PaperSizeBox.SelectedItem = PaperSizeBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (PaperSize)i.Tag == s.PaperSize);
+        PaperSizeHint.Text = PaperSizes.Hint(s.PaperSize, s.Source);
+    }
+
+    private void Sides_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingUi || !IsLoaded) return;
+        var s = ViewModel.Settings;
+        if (SidesBox.SelectedItem is ComboBoxItem { Tag: DuplexMode mode }) s.Duplex = mode;
+        if (BackBindingBox.SelectedItem is ComboBoxItem { Tag: DuplexBinding binding }) s.BackBinding = binding;
+        ViewModel.SettingsEdited();
+        RefreshFromViewModel();
+    }
+
+    private void PaperSize_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingUi || !IsLoaded) return;
+        if (PaperSizeBox.SelectedItem is ComboBoxItem { Tag: PaperSize size }) ViewModel.Settings.PaperSize = size;
+        ViewModel.SettingsEdited();
+        RefreshFromViewModel();
     }
 
     private void PushSettingsToUi()

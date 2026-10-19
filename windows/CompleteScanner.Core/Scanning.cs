@@ -48,6 +48,15 @@ public interface IScannerSession
     /// </summary>
     ScanStop? LastScanStop => null;
 
+    /// <summary>
+    /// Whether the last <see cref="PerformScanAsync"/> asked for both sides of each sheet
+    /// (<see cref="DuplexMode.Both"/> on the feeder) scanned both: false when the scanner fell
+    /// back to one side (its feeder cannot, or its driver refused), so the app does not arrange
+    /// the pages as fronts and backs. null when both sides were not asked for, or when the
+    /// session cannot tell. Reset by every scan.
+    /// </summary>
+    bool? LastScanDuplex => null;
+
     void CancelScan();
     Task CloseAsync();
 }

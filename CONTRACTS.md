@@ -12,6 +12,7 @@ Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Core/ScanTask.swift`, `TaskCatalog.swift`, `TaskFlow.swift`, `SettingsAdapter.swift` — the start screen's tasks, their guided steps, and fitting settings to a scanner (see below).
 - `Sources/CompleteScannerKit/Output/PDFImageEncoding.swift`, `Pipeline/ColorAnalysis.swift` — the PDF sizes: how each page image is stored in a PDF (see below).
 - `Sources/CompleteScannerKit/Core/SaveActions.swift`, `App/FileActions.swift` — what can be done with saved files (open, open with, show in Finder, share, email, copy) and the after-save action (see below).
+- `Sources/CompleteScannerKit/Core/DocumentSides.swift`, `Core/PaperSize.swift` — two-sided scanning (which page is which side of which sheet, turning a stack over by hand) and paper sizes (see below).
 - `Sources/CompleteScannerKit/App/AppState.swift` — the `@MainActor ObservableObject` all UI binds to; its task members are in `App/AppState+Tasks.swift`.
 - `Sources/CompleteScannerKit/App/ContentView.swift`, `CompleteScannerApp.swift`.
 
@@ -67,6 +68,16 @@ public struct ScanStop: Equatable, Sendable {
 // ScannerSession gains `var lastScanStop: ScanStop? { get }` (default nil): set by a scan
 // that keeps its pages after a mid-batch failure, reset by every scan. AppState shows
 // `message(pagesKept:)` as an error once the pages are handled.
+// ScannerSession also has `func feederSupportsDuplex() async -> Bool?` (default nil) and
+// `var feederDuplexNeedsSelection: Bool { get }` (default false): for backends that can tell
+// whether the feeder scans both sides only once it is selected (ImageCaptureCore, true). AppState
+// asks only when the feeder is used, until the scanner answers (nil = no answer this time); scans
+// and previews wait for a check under way. Until then its feeder is taken to scan both sides
+// (`AppState.sidesCapabilities`, `DocumentSides.capabilitiesForSides`).
+// ScannerSession also has `var lastScanDuplex: Bool? { get }` (default nil; C#
+// `IScannerSession.LastScanDuplex`): whether a feeder scan asked for `.both` scanned both sides,
+// false when the scanner fell back to one side; reset by every scan. The app arranges the pages as
+// fronts and backs only when it is not false.
 ```
 Twin of `windows/CompleteScanner.Core/Troubleshooting.cs` (`ScanException.ForProblem` / `ScanException.Problem`): same cases, same text. Backends report fixable scanner conditions this way rather than as `scanFailed` text.
 
@@ -108,7 +119,7 @@ Twin of `windows/CompleteScanner.Core/DeviceMerge.cs` (`HardwareId`, `Connection
 // not as the enum: a task id of a newer version reads as no task and is written back unchanged.
 
 public enum ScanTask: String, CaseIterable, Identifiable, Sendable {
-    case document, feeder, photos, photoRestore, quickScan, email   // add new tasks after these
+    case document, feeder, photos, photoRestore, quickScan, email, twoSided   // add new tasks after these
     public static func tryParse(_ rawValue: String?) -> ScanTask?
 }
 
@@ -117,7 +128,7 @@ public enum TaskFlowKind: String, Sendable { case documentQueue, photoSplit }
 public struct TaskDefinition: Equatable, Sendable {
     public let task: ScanTask
     public let title: String, subtitle: String
-    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick", "email"
+    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick", "email", "twoSided"
     public let flow: TaskFlowKind
     public let intent: ScanIntent
     public let requiredSource: ScanSource?
@@ -135,16 +146,23 @@ public enum TaskCatalog {
     public static let all: [TaskDefinition]                 // start-screen order
     public static func definition(_ task: ScanTask) -> TaskDefinition
     /// The task's settings over `current`; keeps the destination folder, the photo detection
-    /// tuning and the legacy OCR languages; sets `taskId`.
+    /// tuning, the legacy OCR languages, the paper size and the back binding; sets `taskId`.
+    /// Only `.twoSided` sets `duplex` (`.both`); the others set `.off`.
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings
     /// The stored task, else the task the settings look like (display and file names only).
     public static func infer(_ settings: ScanSettings) -> ScanTask
     public static func availability(of task: ScanTask, capabilities: ScannerCapabilities?) -> TaskAvailability
-    /// Same scan mode and, when the task has one, the required source.
+    /// Same scan mode and, when the task has one, the required source; `.twoSided` also needs
+    /// `duplex != .off`.
     public static func fits(_ task: ScanTask, _ settings: ScanSettings) -> Bool
+    /// The steps the scan screen guides: `DocumentSides.manualSteps` whenever the settings turn
+    /// a stack over by hand (`DocumentSides.usesManualSteps`), otherwise the fitting task's steps;
+    /// nil when nothing is guided.
+    public static func guidedSteps(_ settings: ScanSettings, capabilities: ScannerCapabilities?) -> [TaskStep]?
     /// The stored task's flow while it fits, otherwise by intent. The scan handler switches on it.
     public static func flow(of settings: ScanSettings) -> TaskFlowKind
-    /// "300 dpi · Color · PDF"; a PDF size other than `.standard` is named: "300 dpi · Color · Compact PDF"
+    /// "300 dpi · Color · PDF"; a PDF size other than `.standard` is named: "300 dpi · Color · Compact PDF";
+    /// two-sided feeder scanning too: "… · Both sides", "… · Both sides, turned by hand"
     public static func summary(_ settings: ScanSettings) -> String
 }
 
@@ -176,17 +194,99 @@ Twins of `windows/CompleteScanner.Core/ScanTask.cs`, `TaskCatalog.cs` and `TaskF
 ### Core/SettingsAdapter.swift
 
 ```swift
-public enum SettingsChange: String, Sendable { case source, resolution }
+public enum SettingsChange: String, Sendable { case source, resolution, duplex, paperSize }
 public struct SettingsNote: Equatable, Sendable { public let change: SettingsChange; public let message: String }
 public struct AdaptedSettings: Equatable, Sendable { public let settings: ScanSettings; public let notes: [SettingsNote] }
 
 public enum SettingsAdapter {
     /// A source the scanner has (its first one when the chosen one is missing, the flatbed when it
-    /// lists none) and the nearest resolution it supports; unchanged when `capabilities` is nil.
+    /// lists none), `.both` turned into `.manual` for a feeder source on a scanner without
+    /// `supportsDuplex`, `.auto` for a paper size larger than the glass or the feeder (whichever is
+    /// the source; kept when that size is unknown), and the nearest resolution it supports, with a
+    /// note for each change in that order; unchanged when `capabilities` is nil.
     public static func adapt(_ settings: ScanSettings, to capabilities: ScannerCapabilities?) -> AdaptedSettings
 }
 ```
 Twin of `windows/CompleteScanner.Core/SettingsAdapter.cs` (same note texts); `SettingsAdapterTests` on both sides. Every place settings meet a scanner goes through it: applying a preset or task, and connecting to a scanner.
+
+### Core/DocumentSides.swift, Core/PaperSize.swift (+ ScanSettings, ScannedPage in Core/Models.swift)
+
+```swift
+// ScanSettings gains `duplex: DuplexMode` (.off), `backBinding: DuplexBinding` (.longEdge) and
+// `paperSize: PaperSize` (.auto): top-level keys "duplex", "backBinding", "paperSize", read by the
+// backends. ScannedPage gains `side: PageSide?` and `sheetIndex: Int?` (nil for one-sided pages).
+public enum DuplexMode: String, Codable, CaseIterable, Identifiable, Sendable { case off, both, manual }   // label, hint
+public enum DuplexBinding: String, Codable, CaseIterable, Identifiable, Sendable { case longEdge, shortEdge } // label
+public enum PageSide: String, Sendable { case front, back }
+
+extension ScannedPage {   // in the struct itself; every place that rebuilds a page uses these
+    /// Same id, dpi, creation time, rotation, side and sheet; the color mode when given; the file
+    /// and full size given (none by default).
+    public func withImage(_ image: CGImage, colorMode: ColorMode? = nil, fileURL: URL? = nil,
+                          fullPixelSize: CGSize? = nil) -> ScannedPage
+    public func copyMeta(from source: ScannedPage) -> ScannedPage           // side and sheet of `source`
+    public func withSide(_ side: PageSide?, sheetIndex: Int?) -> ScannedPage
+}
+
+public struct SidedTransfer: Equatable, Sendable { transferIndex, sheetIndex: Int; side: PageSide }
+public struct ManualPage: Equatable, Sendable { batch: PageSide; index, sheetIndex: Int }
+public struct ManualInterleave: Equatable, Sendable {
+    order: [ManualPage]; fronts, backs: Int
+    var mismatch: Bool; var mismatchMessage: String?   // "3 fronts but 2 backs"
+}
+public struct SheetPosition: Equatable, Hashable, Sendable { sheetIndex: Int; side: PageSide }
+public struct QueueCollation: Equatable, Sendable { order: [UUID]; positions: [UUID: SheetPosition]; interleave: ManualInterleave }
+
+public enum DocumentSides {
+    public static let feederOnlyReason: String, oneSidedFeederReason: String
+    public static let frontsStepID = "fronts", backsStepID = "backs"
+    public static let manualSteps: [TaskStep]           // "Scan fronts", "Scan backs" (skippable, no capture required)
+    /// Reading order (by sheet, front first) of a feeder scan's transfers; two-sided transfers come
+    /// front, back, …; an odd last one is a front only; `reverseOrder` numbers sheets from the end.
+    public static func assignSides(transferCount: Int, duplex: Bool, reverseOrder: Bool = false) -> [SidedTransfer]
+    /// Fronts and backs scanned separately; turning the stack over reverses the backs. Counts
+    /// that differ pair as far as they go, the rest follows, and `mismatch` is set (never nil).
+    public static func interleaveManual(fronts: Int, backs: Int, backsReversed: Bool = true) -> ManualInterleave
+    public static func backQuarterTurns(_ binding: DuplexBinding) -> Int    // 2 for short edge, else 0
+    /// `.off` unless the feeder is the source; `.both` on a feeder without duplex is `.manual`.
+    public static func effective(_ settings: ScanSettings, capabilities: ScannerCapabilities?) -> DuplexMode
+    /// While whether the feeder scans both sides is not known (`duplexKnown` false), a scanner
+    /// with a feeder is taken to (a copy with `supportsDuplex` true); otherwise unchanged.
+    public static func capabilitiesForSides(_ capabilities: ScannerCapabilities?, duplexKnown: Bool) -> ScannerCapabilities?
+    /// Effective `.manual`, document queue flow, collect pages.
+    public static func usesManualSteps(_ settings: ScanSettings, capabilities: ScannerCapabilities?) -> Bool
+    public static func manualUnavailableReason(_ settings: ScanSettings) -> String?
+    public static func countMessage(fronts: Int, backs: Int) -> String
+    public static func sideLabel(side: PageSide?, sheetIndex: Int?) -> String?   // "Sheet 2 · back", "Front"
+    /// Pages of a two-sided scan in reading order, marked, backs turned upright for `binding`.
+    public static func arrangeTwoSided(_ pages: [ScannedPage], binding: DuplexBinding, reverseOrder: Bool = false) -> [ScannedPage]
+    /// One scan of a stack turned over by hand, marked as fronts or backs (backs turned upright;
+    /// a spooled page's file turns at save time through `rotationQuarterTurns`).
+    public static func markManual(_ pages: [ScannedPage], side: PageSide, binding: DuplexBinding) -> [ScannedPage]
+    /// The queue with the stack in reading order where its first page was; pages no longer queued are left out.
+    public static func collateQueue(_ queue: [UUID], fronts: [UUID], backs: [UUID], backsReversed: Bool = true) -> QueueCollation
+}
+
+public enum PaperSize: String, Codable, CaseIterable, Identifiable, Sendable {
+    case auto, letter, legal, executive, a4, a5, a6, b5Jis, idCard   // first case = default and fallback
+    public var label: String       // "Automatic", "Letter", "B5 (JIS)", "ID card"
+    public var detail: String      // "8.5 × 11 in", "210 × 297 mm"
+}
+public enum PaperSizes {
+    public static let fitTolerance: Double                 // 0.05 in
+    public static let letterRegions: [String]              // the ICU Letter list (14 codes)
+    public static func inches(_ size: PaperSize) -> CGSize?    // portrait; nil for .auto
+    public static func parse(_ text: String?) -> PaperSize    // case-insensitive raw value, else .auto
+    public static func defaultForRegion(_ regionCode: String?) -> PaperSize   // .letter or .a4
+    public static func displayOrder(region: String?) -> [PaperSize]           // auto, the usual size, the rest
+    public static func fits(_ size: PaperSize, in area: CGSize?) -> Bool
+    public static func flatbedSelection(_ size: PaperSize, bed: CGSize) -> CGRect?   // normalized, top-left
+    public static func feederRegionInches(_ size: PaperSize, max: CGSize) -> CGRect
+    public static func hint(_ size: PaperSize, source: ScanSource) -> String
+    public static func doesNotFitReason(source: ScanSource) -> String
+}
+```
+Twins of `windows/CompleteScanner.Core/DocumentSides.cs` and `PaperSize.cs` (`PaperSizes.Label` / `Detail` / `RawValue` as extensions, `DocumentSides.FrontsStepId` / `ArrangeTwoSided` / `MarkManual` / `CollateQueue`, `ScannedPage.WithImage` / `CopyMeta` / `WithSide`; C# also has `ScannedPage.RotatedClockwise`, which keeps the sides); `DocumentSidesTests`, `PaperSizeTests` and the sides cases of `ModelsCompatTests`, `ScanTaskTests`, `SettingsAdapterTests` and `MockScannerTests` are the same on both sides. Every backend returns the pages of a two-sided scan in reading order, front, back, front, back… (ImageCaptureCore reorders a feeder with `reverseFeederPageOrder`); the app (`AppState.performScan`) asks the backend for `.both` only when `effective` says so, then marks the sides and turns the backs upright (`arrangeTwoSided`, `markManual`) before adjusting, recording history and spooling. Turning a stack over by hand is guided through `TaskFlow` with `manualSteps`, with or without a task (`AppState.isTurningOverByHand`, `awaitingBacks`, `canFinishFronts`, `canScanMoreFronts`, `sidesMismatch`, `finishFronts()`, `scanMoreFronts()`, `combineSidesAnyway()`, `scanBacksAgain()`, `keepFrontsOnly()`, `scanOneSideOnly()`): the fronts advance the steps unless the feeder stopped early (then the rest of the fronts is scanned and `finishFronts()` moves on), `scanMoreFronts()` goes back to the fronts before any back is scanned, the backs are put in order in the queue when the counts pair up, otherwise the mismatch is shown. A scan asked for `.both` whose session says it scanned one side (`lastScanDuplex == false`) is queued one-sided. When the capabilities could not be read on connect, a scan that works reads them again. The flatbed scans `flatbedSelection` of the paper size when nothing is selected; backends ask the feeder for `feederRegionInches`. The demo feeder (`MockScannerBackend.feederDuplex`, `feederStackTurnedOver`) scans its three sheets one side or both.
 
 ### Pipeline/PhotoDetector.swift (+ Pipeline/Geometry.swift)
 
@@ -421,7 +521,7 @@ ImageCaptureCore implementation: `ICDeviceBrowser` (scanner mask, local + bonjou
 ```swift
 public final class MockScannerBackend: ScannerBackend { ... }
 ```
-One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true)`; synthesizes deterministic flatbed images (see task brief). It also has a document feeder (`sources: [.flatbed, .documentFeeder]`, `feederSizeInches` 8.5 × 11): a feeder scan returns `feederSheetCount` letter-size sheets (default `MockScannerBackend.defaultFeederSheetCount` = 3, read when the scan starts; sheet *n* carries *n* square marks near its bottom edge), and 0 sheets fails with `ScanError.scannerProblem(.feederEmpty)`. `feederJamsAfter` (default nil) makes the sheet after that many jam: the earlier sheets are returned and `lastScanStop` carries `.paperJam`; a jam on the first sheet fails with `ScanError.scannerProblem(.paperJam)`. Same behaviour as the C# `MockScannerBackend` (`FeederSheetCount`, `FeederJamsAfter`).
+One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true)`; synthesizes deterministic flatbed images (see task brief). It also has a document feeder (`sources: [.flatbed, .documentFeeder]`, `feederSizeInches` 8.5 × 14, `supportsDuplex` = `feederDuplex`, default true): a feeder scan returns `feederSheetCount` two-sided sheets (default `MockScannerBackend.defaultFeederSheetCount` = 3, read when the scan starts; letter size, or the paper size asked for; the front of sheet *n* carries *n* square marks near its bottom left corner, its back *n* marks near the bottom right, both upright), front and back of each sheet for `.both` on a two-sided feeder, otherwise the side facing up: a one-sided scan with `.manual` turns the stack over (`feederStackTurnedOver`), so the next one delivers the backs, last sheet first; any other feeder scan puts it back the right way up; a scan cut short by a jam leaves the stack as it is; `lastScanDuplex` says whether a scan asked for `.both` scanned both sides; and 0 sheets fails with `ScanError.scannerProblem(.feederEmpty)`. `feederJamsAfter` (default nil) makes the sheet after that many jam: the earlier sheets are returned and `lastScanStop` carries `.paperJam`; a jam on the first sheet fails with `ScanError.scannerProblem(.paperJam)`. Same behaviour as the C# `MockScannerBackend` (`FeederSheetCount`, `FeederJamsAfter`, `FeederDuplex`, `FeederStackTurnedOver`).
 
 ### UI files (all `internal`, SwiftUI, bind to `@EnvironmentObject var state: AppState`)
 
@@ -432,4 +532,4 @@ One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: 
 - `UI/PagesStripView.swift` — `struct PagesStripView: View`: page-queue thumbnails + Save PDF / Clear.
 - `UI/PhotoReviewView.swift` — `struct PhotoReviewView: View`: detected-photo grid sheet with the "After saving" choice; Save via `state.saveReviewedPhotos()`, cancel via `state.cancelPhotoReview()`.
 - `UI/TaskStartView.swift` — `struct TaskStartView: View` (`onOpenScanner: () -> Void`): the start screen's task cards (`state.taskCards`) and preset cards; also `enum TaskSymbols` (icon key → SF Symbol).
-- `UI/TaskBannerView.swift` — `struct TaskBannerView: View` (`definition: TaskDefinition`, `onChangeTask: () -> Void`): the active task above the preview, with Change Task and a leave-task button.
+- `UI/TaskBannerView.swift` — `struct TaskBannerView: View` (`definition: TaskDefinition?`, `onChangeTask: () -> Void`): the active task, or turning a stack over by hand without one (`definition` nil), above the preview, with Change Task and a leave-task button (without a task: scan one side only); fronts scanned without moving on (the feeder stopped early), Done with Fronts; while the backs are due, Keep Fronts Only, before any back is scanned Scan More Fronts, and on a count mismatch also Combine Anyway and Scan Back Sides Again.

@@ -50,12 +50,16 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.adjustments.blackWhiteThreshold = 0.375
     settings.output.pdfSize = .compact
     settings.output.afterSave = .share
+    settings.duplex = .manual
+    settings.backBinding = .shortEdge
+    settings.paperSize = .a4
     return settings
 }
 
 /// `nonDefaultSettings()` as a presets file written by the synthesized Codable
-/// implementation (pretty-printed, sorted keys, every property present), before the PDF size and
-/// the after-save action existed: it has no "output" object.
+/// implementation (pretty-printed, sorted keys, every property present), before the PDF size, the
+/// after-save action and two-sided scanning existed: it has no "output", "duplex", "backBinding"
+/// or "paperSize".
 private let presetsJSONBeforePDFSize = """
 [
   {
@@ -96,10 +100,16 @@ private let presetsJSONBeforePDFSize = """
 """
 
 /// `nonDefaultSettings()` as this version writes it: `presetsJSONBeforePDFSize` with the
-/// "output" object in its sorted place.
-private let currentFormatPresetsJSON = presetsJSONBeforePDFSize.replacingOccurrences(
-    of: "\"pdfSearchable\" : false",
-    with: "\"output\" : {\n        \"afterSave\" : \"share\",\n        \"pdfSize\" : \"compact\"\n      },\n      \"pdfSearchable\" : false")
+/// "output" object, the sides and the paper size in their sorted places.
+private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
+    .replacingOccurrences(
+        of: "\"pdfSearchable\" : false",
+        with: "\"output\" : {\n        \"afterSave\" : \"share\",\n        \"pdfSize\" : \"compact\"\n      },\n"
+            + "      \"paperSize\" : \"a4\",\n      \"pdfSearchable\" : false")
+    .replacingOccurrences(of: "\"colorMode\" : \"grayscale\"",
+                          with: "\"backBinding\" : \"shortEdge\",\n      \"colorMode\" : \"grayscale\"")
+    .replacingOccurrences(of: "\"format\" : \"tiff\"",
+                          with: "\"duplex\" : \"manual\",\n      \"format\" : \"tiff\"")
 
 // MARK: - Decoding compatibility
 
@@ -214,7 +224,7 @@ final class ModelsCompatTests: XCTestCase {
 
     func test_keysFromNewerVersions_areIgnored() throws {
         let settings = try decode(ScanSettings.self, """
-            {"resolution": 200, "duplex": "both", "hologram": {"depth": 3}}
+            {"resolution": 200, "staple": "corner", "hologram": {"depth": 3}}
             """)
         var expected = ScanSettings()
         expected.resolution = 200
@@ -241,7 +251,7 @@ final class ModelsCompatTests: XCTestCase {
             "intent", "source", "resolution", "colorMode", "format", "jpegQuality",
             "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
             "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
-            "pdfSearchable", "ocrLanguages", "adjustments", "output",
+            "pdfSearchable", "ocrLanguages", "adjustments", "output", "duplex", "backBinding", "paperSize",
         ])
         let adjustments = try XCTUnwrap(settings["adjustments"] as? [String: Any])
         XCTAssertEqual(Set(adjustments.keys), [
@@ -314,7 +324,7 @@ final class ModelsCompatTests: XCTestCase {
             "intent", "source", "resolution", "colorMode", "format", "jpegQuality",
             "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
             "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
-            "pdfSearchable", "ocrLanguages", "adjustments", "taskId", "output",
+            "pdfSearchable", "ocrLanguages", "adjustments", "taskId", "output", "duplex", "backBinding", "paperSize",
         ])
         XCTAssertEqual(written["taskId"] as? String, "document")
     }
@@ -332,6 +342,9 @@ final class ModelsCompatTests: XCTestCase {
         var expected = nonDefaultSettings()
         expected.output.pdfSize = .standard
         expected.output.afterSave = AfterSaveAction.none
+        expected.duplex = .off
+        expected.backBinding = .longEdge
+        expected.paperSize = .auto
         XCTAssertEqual(presets[0].settings, expected)
         XCTAssertEqual(try decode(ScanSettings.self, "{}").output.pdfSize, .standard)
         XCTAssertEqual(try decode(ScanSettings.self, #"{"output": {}}"#).output.pdfSize, .standard)
@@ -370,6 +383,64 @@ final class ModelsCompatTests: XCTestCase {
         XCTAssertEqual(copy.output.pdfSize, .smallest)
         copy.output.pdfSize = .best
         XCTAssertEqual(settings.output.pdfSize, .smallest)
+    }
+
+    // MARK: Two-sided scanning and paper size (CONTRACTS.md, rule 6)
+
+    func test_sides_firstCasesAreTheDefaults() {
+        XCTAssertEqual(DuplexMode.allCases.map(\.rawValue), ["off", "both", "manual"])
+        XCTAssertEqual(DuplexBinding.allCases.map(\.rawValue), ["longEdge", "shortEdge"])
+        XCTAssertEqual(PaperSize.allCases.map(\.rawValue),
+                       ["auto", "letter", "legal", "executive", "a4", "a5", "a6", "b5Jis", "idCard"])
+        let settings = ScanSettings()
+        XCTAssertEqual(settings.duplex, .off)
+        XCTAssertEqual(settings.backBinding, .longEdge)
+        XCTAssertEqual(settings.paperSize, .auto)
+    }
+
+    func test_settingsWithoutSides_scanOneSideOnTheWholeArea() throws {
+        let settings = try decode(ScanSettings.self, #"{"resolution": 150, "source": "documentFeeder"}"#)
+        XCTAssertEqual(settings.duplex, .off)
+        XCTAssertEqual(settings.backBinding, .longEdge)
+        XCTAssertEqual(settings.paperSize, .auto)
+        XCTAssertEqual(settings.resolution, 150)
+    }
+
+    func test_unknownOrCorruptSides_fallBackToTheDefaults_restIntact() throws {
+        for sides in [#""duplex": "triple", "backBinding": "spiral", "paperSize": "tabloid""#,
+                      #""duplex": "Both", "backBinding": "LongEdge", "paperSize": "A4""#,
+                      #""duplex": 1, "backBinding": true, "paperSize": {"width": 8}"#,
+                      #""duplex": null, "backBinding": null, "paperSize": null"#] {
+            let settings = try decode(ScanSettings.self, #"{"resolution": 150, "# + sides + #", "pdfSearchable": false}"#)
+            XCTAssertEqual(settings.duplex, .off, sides)
+            XCTAssertEqual(settings.backBinding, .longEdge, sides)
+            XCTAssertEqual(settings.paperSize, .auto, sides)
+            XCTAssertEqual(settings.resolution, 150, sides)
+            XCTAssertFalse(settings.pdfSearchable, sides)
+        }
+        let known = try decode(ScanSettings.self, #"{"duplex": "both", "backBinding": "shortEdge", "paperSize": "b5Jis"}"#)
+        XCTAssertEqual(known.duplex, .both)
+        XCTAssertEqual(known.backBinding, .shortEdge)
+        XCTAssertEqual(known.paperSize, .b5Jis)
+    }
+
+    func test_sides_roundTrip() throws {
+        for duplex in DuplexMode.allCases {
+            for paper in PaperSize.allCases {
+                var settings = ScanSettings()
+                settings.duplex = duplex
+                settings.backBinding = .shortEdge
+                settings.paperSize = paper
+                let back = try JSONDecoder().decode(ScanSettings.self, from: encode(settings))
+                XCTAssertEqual(back.duplex, duplex)
+                XCTAssertEqual(back.backBinding, .shortEdge)
+                XCTAssertEqual(back.paperSize, paper)
+            }
+        }
+        let copy = nonDefaultSettings()
+        XCTAssertEqual(copy.duplex, .manual)
+        XCTAssertEqual(copy.backBinding, .shortEdge)
+        XCTAssertEqual(copy.paperSize, .a4)
     }
 
     func test_copy_carriesTheTask() {

@@ -78,6 +78,10 @@ struct InspectorView: View {
                     Text(source.label).tag(source)
                 }
             }
+            if availableSources.contains(.documentFeeder) {
+                sidesRows
+            }
+            paperSizeRow
             Picker("Resolution", selection: $state.settings.resolution) {
                 ForEach(availableResolutions, id: \.self) { dpi in
                     Text("\(dpi) dpi").tag(dpi)
@@ -97,6 +101,98 @@ struct InspectorView: View {
 
     private var availableResolutions: [Int] {
         state.capabilities?.supportedResolutions ?? AppState.fallbackResolutions
+    }
+
+    // MARK: Sides and paper size
+
+    private var feederSelected: Bool { state.settings.source == .documentFeeder }
+
+    /// Why "Both sides" is left out: the feeder is known to scan one side at a time (one not asked
+    /// yet is taken to scan both).
+    private var bothSidesReason: String? {
+        guard let caps = state.sidesCapabilities, !caps.supportsDuplex else { return nil }
+        return DocumentSides.oneSidedFeederReason
+    }
+
+    /// The sides the scanner and the settings can do (the chosen one is always listed); the
+    /// caption says why a choice is left out. Twin of the Windows inspector's "Sides".
+    private var offeredSides: [DuplexMode] {
+        DuplexMode.allCases.filter { mode in
+            switch mode {
+            case .off: return true
+            case .both: return bothSidesReason == nil || state.settings.duplex == .both
+            case .manual:
+                return DocumentSides.manualUnavailableReason(state.settings) == nil || state.settings.duplex == .manual
+            }
+        }
+    }
+
+    private var sidesCaption: String {
+        let s = state.settings
+        guard feederSelected else { return DocumentSides.feederOnlyReason }
+        if s.duplex == .manual, let reason = DocumentSides.manualUnavailableReason(s) { return reason }
+        if s.duplex == .off, let reason = bothSidesReason { return "\(s.duplex.hint) \(reason)" }
+        return s.duplex.hint
+    }
+
+    /// One side, both, or turned over by hand, for scanners with a feeder; usable while the
+    /// feeder is the source. With both sides, along which edge the sheets turn.
+    @ViewBuilder
+    private var sidesRows: some View {
+        Picker("Sides", selection: $state.settings.duplex) {
+            ForEach(offeredSides) { mode in
+                Text(mode.label).tag(mode)
+            }
+        }
+        .disabled(!feederSelected)
+        .help(sidesCaption)
+        Text(sidesCaption)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        if feederSelected && state.settings.duplex != .off {
+            Picker("Flip on", selection: $state.settings.backBinding) {
+                ForEach(DuplexBinding.allCases) { binding in
+                    Text(binding.label).tag(binding)
+                }
+            }
+            .help("How the sheets turn: the backs of short-edge sheets are turned upright.")
+        }
+    }
+
+    /// The glass or the feeder, whichever is the source; nil when unknown.
+    private var paperArea: CGSize? {
+        guard let caps = state.capabilities else { return nil }
+        return feederSelected ? caps.feederSizeInches : caps.flatbedSizeInches
+    }
+
+    /// Automatic, the usual size where the user lives, then the others; sizes larger than the
+    /// glass or the feeder are left out (the chosen one is always listed).
+    private var offeredPaperSizes: [PaperSize] {
+        PaperSizes.displayOrder(region: Locale.current.region?.identifier).filter { size in
+            PaperSizes.fits(size, in: paperArea) || size == state.settings.paperSize
+        }
+    }
+
+    private var paperSizeRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("Paper size", selection: $state.settings.paperSize) {
+                ForEach(offeredPaperSizes) { size in
+                    Text(size == .auto ? size.label : "\(size.label) (\(size.detail))").tag(size)
+                }
+            }
+            .help(PaperSizes.hint(state.settings.paperSize, source: state.settings.source))
+            Text(PaperSizes.hint(state.settings.paperSize, source: state.settings.source))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if offeredPaperSizes.count < PaperSize.allCases.count {
+                Text("Sizes larger than this scanner's \(feederSelected ? "feeder" : "glass") takes are left out.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     // MARK: Output

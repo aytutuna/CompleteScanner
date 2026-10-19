@@ -100,6 +100,86 @@ public class WiaErrorsTests
     }
 
     [Fact]
+    public void HandlingSelect_TwoSidedFrontFirstThenWithoutThenOneSided()
+    {
+        Assert.Equal([0x002], WiaDocumentHandling.SelectValues(ScanSource.Flatbed, duplex: true));
+        Assert.Equal([0x001], WiaDocumentHandling.SelectValues(ScanSource.DocumentFeeder, duplex: false));
+        Assert.Equal([0x00D, 0x005, 0x001], WiaDocumentHandling.SelectValues(ScanSource.DocumentFeeder, duplex: true));
+        Assert.Equal(0, WiaDocumentHandling.AllPages);
+    }
+
+    [Fact]
+    public void SelectSource_TheFirstValueTheDriverTakes()
+    {
+        var offered = new List<int>();
+        bool Takes(int value, params int[] accepted)
+        {
+            offered.Add(value);
+            return accepted.Contains(value);
+        }
+
+        // A two-sided driver that takes FRONT_FIRST: two-sided.
+        int? selected = WiaDocumentHandling.SelectSource(ScanSource.DocumentFeeder, duplex: true, v => Takes(v, 0x00D, 0x005, 0x001));
+        Assert.Equal(0x00D, selected);
+        Assert.True(WiaDocumentHandling.ScansBothSides(selected));
+        Assert.Equal([0x00D], offered);
+
+        // One that refuses FRONT_FIRST: still two-sided.
+        offered.Clear();
+        selected = WiaDocumentHandling.SelectSource(ScanSource.DocumentFeeder, duplex: true, v => Takes(v, 0x005, 0x001));
+        Assert.Equal(0x005, selected);
+        Assert.True(WiaDocumentHandling.ScansBothSides(selected));
+
+        // A one-sided feeder refuses DUPLEX: the feeder alone, one side, never the flatbed.
+        offered.Clear();
+        selected = WiaDocumentHandling.SelectSource(ScanSource.DocumentFeeder, duplex: true, v => Takes(v, 0x001, 0x002));
+        Assert.Equal(0x001, selected);
+        Assert.False(WiaDocumentHandling.ScansBothSides(selected));
+        Assert.Equal([0x00D, 0x005, 0x001], offered);
+
+        // Nothing taken.
+        selected = WiaDocumentHandling.SelectSource(ScanSource.DocumentFeeder, duplex: false, _ => false);
+        Assert.Null(selected);
+        Assert.False(WiaDocumentHandling.ScansBothSides(selected));
+        Assert.Equal(0x002, WiaDocumentHandling.SelectSource(ScanSource.Flatbed, duplex: true, _ => true));
+    }
+
+    [Fact]
+    public void FeederAlreadySelected_WhenTheDriverTakesNoValue()
+    {
+        // A feeder-only driver with a read-only FEEDER: rejects every write, but scans the feeder, one side.
+        int? selected = WiaDocumentHandling.SelectSource(ScanSource.DocumentFeeder, duplex: true, _ => false)
+                        ?? WiaDocumentHandling.FeederAlreadySelected(0x001);
+        Assert.Equal(0x001, selected);
+        Assert.False(WiaDocumentHandling.ScansBothSides(selected));
+
+        // Read-only two-sided feeding: both sides.
+        selected = WiaDocumentHandling.FeederAlreadySelected(0x005);
+        Assert.Equal(0x005, selected);
+        Assert.True(WiaDocumentHandling.ScansBothSides(selected));
+        Assert.True(WiaDocumentHandling.ScansBothSides(WiaDocumentHandling.FeederAlreadySelected(0x00D)));
+
+        // The flatbed selected (or nothing readable): the feeder is not, and the scan must not go ahead.
+        Assert.Null(WiaDocumentHandling.FeederAlreadySelected(0x002));
+        Assert.Null(WiaDocumentHandling.FeederAlreadySelected(0));
+        Assert.Null(WiaDocumentHandling.FeederAlreadySelected(null));
+    }
+
+    [Fact]
+    public void PageSizes_NamedOrCustom()
+    {
+        Assert.Null(WiaDocumentHandling.PageSize(PaperSize.Auto));
+        Assert.Equal((1, 0, 0), WiaDocumentHandling.PageSize(PaperSize.Letter));
+        Assert.Equal((3, 0, 0), WiaDocumentHandling.PageSize(PaperSize.Legal));
+        Assert.Equal((0, 0, 0), WiaDocumentHandling.PageSize(PaperSize.A4));
+        Assert.Equal((11, 0, 0), WiaDocumentHandling.PageSize(PaperSize.A5));
+        Assert.Equal((12, 0, 0), WiaDocumentHandling.PageSize(PaperSize.A6));
+        Assert.Equal((44, 0, 0), WiaDocumentHandling.PageSize(PaperSize.B5Jis));
+        Assert.Equal((2, 7250, 10500), WiaDocumentHandling.PageSize(PaperSize.Executive));
+        Assert.Equal((2, 2125, 3370), WiaDocumentHandling.PageSize(PaperSize.IdCard));
+    }
+
+    [Fact]
     public void FeederSizeComesFromThousandthsOfAnInch()
     {
         Assert.Equal(new SizeD(8.5, 14), WiaDocumentHandling.FeederSizeInches(8500, 14000));

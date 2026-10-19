@@ -4,7 +4,9 @@ namespace CompleteScanner.Core;
 /// A demo scanner that needs no hardware: it renders deterministic synthetic flatbed
 /// images in pure C#, so the whole app (overview, selection, photo splitting, PDF export)
 /// can be exercised end to end. It also has a document feeder holding
-/// <see cref="FeederSheetCount"/> letter-size sheets. Port of
+/// <see cref="FeederSheetCount"/> two-sided letter-size sheets, which it scans one side or
+/// both (<see cref="FeederDuplex"/>), so two-sided scanning, turning the stack over by hand and
+/// paper sizes can be tried without hardware. Port of
 /// Sources/CompleteScannerKit/Backends/MockScannerBackend.swift.
 ///
 /// Divergence from the macOS mock: the demo document page renders text-shaped bars rather
@@ -36,6 +38,22 @@ public sealed class MockScannerBackend : IScannerBackend
     /// </summary>
     public int? FeederJamsAfter { get; set; }
 
+    /// <summary>
+    /// The feeder scans both sides in one pass (reported as <see cref="ScannerCapabilities.SupportsDuplex"/>,
+    /// read when the capabilities are read). Default true; false shows a feeder that scans one side.
+    /// </summary>
+    public bool FeederDuplex { get; set; } = true;
+
+    /// <summary>
+    /// The stack in the feeder is turned over: a one-sided scan delivers the backs, last sheet
+    /// first. The demo turns its stack over by itself after every one-sided scan made for
+    /// turning over by hand (<see cref="DuplexMode.Manual"/>), as the user is asked to; any
+    /// other feeder scan puts it back the right way up. A scan cut short by a jam leaves it as
+    /// it is: the user clears the jam and scans the rest of the same side. Settable to start
+    /// from either side.
+    /// </summary>
+    public bool FeederStackTurnedOver { get; set; }
+
     public void StartBrowsing()
     {
         if (_devices.Count > 0) return;
@@ -64,6 +82,7 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
     public ScannerInfo Info { get; } = info;
     public Action<ScanProgress>? ProgressHandler { get; set; }
     public ScanStop? LastScanStop { get; private set; }
+    public bool? LastScanDuplex { get; private set; }
 
     private volatile bool _cancelRequested;
 
@@ -76,8 +95,8 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
             Sources = [ScanSource.Flatbed, ScanSource.DocumentFeeder],
             FlatbedSizeInches = BedSizeInches,
             SupportsOverview = true,
-            FeederSizeInches = MockBedRenderer.SheetInches,
-            SupportsDuplex = false,
+            FeederSizeInches = MockBedRenderer.FeederMaxInches,
+            SupportsDuplex = backend.FeederDuplex,
         });
 
     public Task<RgbaImage> PerformOverviewScanAsync(ScanSettings settings)
@@ -91,6 +110,7 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
     {
         _cancelRequested = false;
         LastScanStop = null;
+        LastScanDuplex = null;
         int dpi = Math.Min(settings.Resolution, 600); // cap memory use
         if (settings.Source == ScanSource.DocumentFeeder) return await ScanFeeder(settings, dpi);
 
@@ -123,16 +143,28 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
     }
 
     /// <summary>
-    /// The demo feeder: one letter-size sheet per page (the selection does not apply), each
-    /// marked with its sheet number; an empty feeder or a jam fails like a real one.
+    /// The demo feeder (the selection does not apply): one sheet per page, the paper size
+    /// asked for (letter for Automatic), each side marked with its sheet number. Two-sided
+    /// (when asked for and <see cref="MockScannerBackend.FeederDuplex"/>) it delivers front,
+    /// back, front, back…; one-sided it delivers the side facing up
+    /// (<see cref="MockScannerBackend.FeederStackTurnedOver"/>), and says so when both sides were
+    /// asked for (<see cref="LastScanDuplex"/>). An empty feeder or a jam fails like a real one;
+    /// a jam keeps the sheets before it.
     /// </summary>
     private async Task<IReadOnlyList<ScannedPage>> ScanFeeder(ScanSettings settings, int dpi)
     {
         int sheets = backend.FeederSheetCount;
         int? jamsAfter = backend.FeederJamsAfter;
+        bool twoSided = settings.Duplex == DuplexMode.Both && backend.FeederDuplex;
+        bool turnedOver = backend.FeederStackTurnedOver;
+        var region = PaperSizes.FeederRegionInches(settings.PaperSize, MockBedRenderer.FeederMaxInches);
+        var sheetInches = settings.PaperSize == PaperSize.Auto
+            ? MockBedRenderer.SheetInches
+            : new SizeD(region.Width, region.Height);
         ProgressHandler?.Invoke(new ScanProgress(0.1, "Warming up…"));
         await SleepCheckingCancellation(0.25);
         if (sheets <= 0) throw ScanException.ForProblem(ScannerProblem.FeederEmpty);
+        LastScanDuplex = settings.Duplex == DuplexMode.Both ? twoSided : null;
 
         var pages = new List<ScannedPage>();
         for (int index = 0; index < sheets; index++)
@@ -146,10 +178,23 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
             }
             ProgressHandler?.Invoke(new ScanProgress(0.1 + 0.9 * index / sheets,
                                                      $"Scanning sheet {index + 1} of {sheets}…"));
-            int sheet = index;
-            var image = await Task.Run(() => MockBedRenderer.RenderSheet(dpi, settings.Intent, sheet));
+            // A turned-over stack feeds its last sheet first, showing the backs.
+            int sheet = turnedOver && !twoSided ? sheets - 1 - index : index;
+            PageSide[] sides = twoSided ? [PageSide.Front, PageSide.Back]
+                : [turnedOver ? PageSide.Back : PageSide.Front];
+            foreach (var side in sides)
+            {
+                var image = await Task.Run(() => MockBedRenderer.RenderSheet(dpi, settings.Intent, sheet, side, sheetInches));
+                pages.Add(new ScannedPage(image, dpi, settings.ColorMode));
+            }
             await SleepCheckingCancellation(0.15);
-            pages.Add(new ScannedPage(image, dpi, settings.ColorMode));
+        }
+        // The user turns the stack over between the two scans of turning over by hand, and
+        // loads it the right way up for any other scan; after a jam the rest of the same side
+        // comes next.
+        if (LastScanStop is null)
+        {
+            backend.FeederStackTurnedOver = settings.Duplex == DuplexMode.Manual && !twoSided && !turnedOver;
         }
         return pages;
     }
@@ -173,8 +218,10 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
 internal static class MockBedRenderer
 {
     private static readonly SizeD BedInches = new(8.5, 11.7);
-    /// <summary>Sheet size of the demo feeder (US Letter).</summary>
+    /// <summary>Sheet size of the demo feeder's stack (US Letter), scanned when the paper size is Automatic.</summary>
     public static readonly SizeD SheetInches = new(8.5, 11);
+    /// <summary>The largest sheet the demo feeder takes (US Legal).</summary>
+    public static readonly SizeD FeederMaxInches = new(8.5, 14);
 
     public static RgbaImage RenderBed(int dpi, ScanIntent intent)
     {
@@ -200,29 +247,42 @@ internal static class MockBedRenderer
     }
 
     /// <summary>
-    /// One sheet from the demo feeder (<see cref="SheetInches"/>). Document sheets are the demo
-    /// page edge to edge with <paramref name="sheetIndex"/> + 1 marks near the bottom; photo
-    /// sheets hold one of the demo photos, centered, cycling through them.
+    /// One side of a sheet from the demo feeder, <paramref name="sheetInches"/> in size
+    /// (<see cref="SheetInches"/> by default). The front of a document sheet is the demo page
+    /// edge to edge with <paramref name="sheetIndex"/> + 1 marks near the bottom left; its back
+    /// is a shorter page with as many marks near the bottom right, both upright, as a two-sided
+    /// feeder delivers long-edge sheets. A photo sheet's front holds one of the demo photos,
+    /// centered, cycling through them; its back is blank paper with a short pencilled note.
     /// </summary>
-    public static RgbaImage RenderSheet(int dpi, ScanIntent intent, int sheetIndex)
+    public static RgbaImage RenderSheet(int dpi, ScanIntent intent, int sheetIndex,
+                                        PageSide side = PageSide.Front, SizeD? sheetInches = null)
     {
+        var sheetSize = sheetInches ?? SheetInches;
         double scale = dpi;
-        int width = (int)(SheetInches.Width * scale);
-        int height = (int)(SheetInches.Height * scale);
+        int width = Math.Max(1, (int)(sheetSize.Width * scale));
+        int height = Math.Max(1, (int)(sheetSize.Height * scale));
         var image = RgbaImage.Filled(width, height, 255, 255, 255);
+        var page = new RectD(0, 0, sheetSize.Width, sheetSize.Height);
         switch (intent)
         {
+            case ScanIntent.Photo when side == PageSide.Back:
+                // A note pencilled on the back of the print.
+                FillRect(image, 0.75 * scale, 0.9 * scale, 2.2 * scale, 0.12 * scale, 120, 120, 128);
+                break;
             case ScanIntent.Photo:
                 DrawBedBackground(image);
                 int design = sheetIndex % Photos.Length;
                 var centered = Photos[design] with
                 {
-                    CenterInches = new PointD(SheetInches.Width / 2, SheetInches.Height / 2),
+                    CenterInches = new PointD(sheetSize.Width / 2, sheetSize.Height / 2),
                 };
                 DrawPhotos(image, scale, [centered], firstDesign: design);
                 break;
+            case ScanIntent.Document when side == PageSide.Back:
+                DrawDocumentBack(image, scale, page, sheetIndex);
+                break;
             case ScanIntent.Document:
-                DrawDocument(image, scale, new RectD(0, 0, SheetInches.Width, SheetInches.Height), sheetIndex);
+                DrawDocument(image, scale, page, sheetIndex);
                 break;
         }
         return image;
@@ -416,6 +476,38 @@ internal static class MockBedRenderer
             {
                 FillRect(image, left + mark * pitch, markY, side, side, 56, 56, 61);
             }
+        }
+    }
+
+    /// <summary>
+    /// The back of a demo sheet: a short paragraph (six text bars) and
+    /// <paramref name="sheetIndex"/> + 1 square marks near the bottom right, so backs can be
+    /// told from fronts and their orientation seen.
+    /// </summary>
+    private static void DrawDocumentBack(RgbaImage image, double scale, RectD pageInches, int sheetIndex)
+    {
+        double pageX = pageInches.X * scale, pageY = pageInches.Y * scale;
+        double pageW = pageInches.Width * scale, pageH = pageInches.Height * scale;
+        FillRect(image, pageX, pageY, pageW, pageH, 255, 255, 255);
+
+        int[] lineChars = [48, 55, 51, 30, 0, 44, 22];
+        double bodySize = 12 * scale / 72;
+        double left = pageX + 0.75 * scale;
+        double y = pageY + 0.9 * scale;
+        foreach (int chars in lineChars)
+        {
+            if (chars > 0) FillRect(image, left, y, chars * 0.5 * bodySize, bodySize * 0.6, 56, 56, 61);
+            y += bodySize * 1.55;
+        }
+
+        // Sheet marks: 0.2 in squares, 0.35 in apart, the first one's right edge 0.75 in from
+        // the page's right edge, their top 0.9 in above the bottom edge.
+        double side = 0.2 * scale, pitch = 0.35 * scale;
+        double right = pageX + pageW - 0.75 * scale;
+        double markY = pageY + pageH - 0.9 * scale;
+        for (int mark = 0; mark <= sheetIndex; mark++)
+        {
+            FillRect(image, right - side - mark * pitch, markY, side, side, 56, 56, 61);
         }
     }
 

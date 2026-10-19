@@ -9,8 +9,14 @@ namespace CompleteScanner.Core;
 /// <param name="TransferCount">CAP_XFERCOUNT: -1 (as many as the source sends: a feeder batch, or whatever the driver's window starts) or 1.</param>
 /// <param name="ShowDriverWindow">Scan through the source's own settings window; the other values are only its starting point.</param>
 /// <param name="PreferMemory">Use memory transfers when the source and format allow them; otherwise native.</param>
+/// <param name="Duplex">CAP_DUPLEXENABLED: scan both sides of each sheet (feeder scans on a two-sided feeder only). Images then alternate front, back.</param>
+/// <param name="SupportedSize">
+/// ICAP_SUPPORTEDSIZES to ask for (a <see cref="TwainSizes"/> value the source lists), which
+/// takes the place of <paramref name="FrameInches"/>; <see cref="TwainSizes.None"/> uses the frame.
+/// </param>
 public sealed record TwainScanRequest(bool Feeder, int PixelType, int BitDepth, int Resolution, RectD? FrameInches,
-                                      int TransferCount, bool ShowDriverWindow, bool PreferMemory)
+                                      int TransferCount, bool ShowDriverWindow, bool PreferMemory,
+                                      bool Duplex = false, int SupportedSize = TwainSizes.None)
 {
     /// <summary>The color mode of the pages this request produces.</summary>
     public ColorMode ColorMode => PixelType switch
@@ -64,8 +70,10 @@ public static class TwainScanRequests
     /// not list falls back to the next richer one.</item>
     /// <item>The resolution snaps to the nearest one the source lists.</item>
     /// <item>Flatbed: the whole bed or <paramref name="selection"/> (normalized 0...1,
-    /// top-left origin) of it. Feeder: its own largest sheet, at most
+    /// top-left origin) of it. Feeder: the paper size, clamped to its largest sheet (as a
+    /// TWSS size when the source lists that size); for Automatic its own largest sheet, at most
     /// <see cref="EsclScanRequest.MaxFeederHeightInches"/> tall, like the other backends.</item>
+    /// <item>Two-sided when asked for (<see cref="DuplexMode.Both"/>) on a feeder that can (CAP_DUPLEX).</item>
     /// <item>The source's own window is used when asked for or when the source cannot scan without it.
     /// The user may switch to the feeder there, so the app then accepts any number of images.</item>
     /// </list>
@@ -77,12 +85,23 @@ public static class TwainScanRequests
         int pixelType = PickPixelType(settings.ColorMode, caps.PixelTypes);
         var bed = caps.FlatbedSizeInches ?? DefaultBedInches;
         RectD? frame;
+        int supportedSize = TwainSizes.None;
         if (feeder)
         {
             var sheet = caps.FeederSizeInches ?? TwainSizes.Largest(caps.SupportedSizes);
-            frame = sheet is { } size
-                ? new RectD(0, 0, size.Width, Math.Min(size.Height, EsclScanRequest.MaxFeederHeightInches))
-                : null;
+            if (PaperSizes.Inches(settings.PaperSize) is { } paper)
+            {
+                var region = PaperSizes.FeederRegionInches(settings.PaperSize, sheet ?? paper);
+                frame = new RectD(0, 0, region.Width, Math.Min(region.Height, EsclScanRequest.MaxFeederHeightInches));
+                int listed = TwainSizes.FromPaperSize(settings.PaperSize);
+                if (listed != TwainSizes.None && caps.SupportedSizes.Contains(listed)) supportedSize = listed;
+            }
+            else
+            {
+                frame = sheet is { } size
+                    ? new RectD(0, 0, size.Width, Math.Min(size.Height, EsclScanRequest.MaxFeederHeightInches))
+                    : null;
+            }
         }
         else
         {
@@ -97,7 +116,9 @@ public static class TwainScanRequests
             FrameInches: frame,
             TransferCount: feeder || driverWindow ? -1 : 1,
             ShowDriverWindow: driverWindow,
-            PreferMemory: caps.MemoryTransfer && !preferNative);
+            PreferMemory: caps.MemoryTransfer && !preferNative,
+            Duplex: feeder && settings.Duplex == DuplexMode.Both && caps.DuplexKind != TwainDuplexKinds.None,
+            SupportedSize: supportedSize);
     }
 
     /// <summary>The request for a preview: the whole flatbed in color at <see cref="OverviewResolution"/>, never through the driver's window.</summary>

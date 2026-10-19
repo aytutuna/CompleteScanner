@@ -14,7 +14,7 @@ public enum TaskFlowKind
 /// <summary>A task card: what it is called, how it looks and how its scans are handled.</summary>
 /// <param name="IconKey">
 /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-/// "photos", "restore", "quick", "email".
+/// "photos", "restore", "quick", "email", "twoSided".
 /// </param>
 /// <param name="Intent">The scan mode the task uses.</param>
 /// <param name="RequiredSource">The source the task cannot work without; null when any source does.</param>
@@ -74,6 +74,12 @@ public static class TaskCatalog
             [new TaskStep("scan", "Scan each page",
                           "Place a page face down on the glass and scan it. Repeat for every page, then save the PDF: the share window opens so you can email it.",
                           "Scan page", Repeats: true)]),
+        new(ScanTask.TwoSided, "Two-sided document",
+            "Both sides of every sheet in the feeder, in page order, in one PDF.",
+            "twoSided", TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.DocumentFeeder, "Document",
+            [new TaskStep("scan", "Scan the stack",
+                          "Load the pages in the document feeder and scan: both sides of every sheet are scanned and put in order. Then save the PDF.",
+                          "Scan stack", Repeats: true)]),
     ];
 
     /// <summary>Every task, in start-screen order.</summary>
@@ -84,9 +90,12 @@ public static class TaskCatalog
     /// <summary>
     /// <paramref name="current"/> with the task's settings laid over it: mode, source,
     /// resolution, color, format, JPEG quality, PDF size, the after-save action, the photo and
-    /// document switches, searchable PDF, adjustments, file name and the task itself. The destination folder, the photo
-    /// detection tuning and the legacy OCR languages are kept. <paramref name="current"/> is
-    /// not changed.
+    /// document switches, searchable PDF, adjustments, two-sided scanning, file name and the task itself. The destination folder, the photo
+    /// detection tuning, the legacy OCR languages, the paper size and the edge backs are turned
+    /// on are kept: they describe the user's paper, not the task. <paramref name="current"/> is
+    /// not changed. The two-sided task asks for <see cref="DuplexMode.Both"/>;
+    /// <see cref="SettingsAdapter"/> turns that into turning over by hand on a feeder that scans
+    /// one side.
     /// </summary>
     public static ScanSettings Apply(ScanTask task, ScanSettings current)
     {
@@ -101,6 +110,7 @@ public static class TaskCatalog
         s.Adjustments = new AdjustmentSettings();
         s.Output.PdfSize = PdfSizePreset.Standard;
         s.Output.AfterSave = AfterSaveAction.None;
+        s.Duplex = DuplexMode.Off;
         switch (task)
         {
             case ScanTask.Document:
@@ -145,6 +155,14 @@ public static class TaskCatalog
                 s.Output.AfterSave = AfterSaveAction.Share;
                 s.NamingTemplate = "Scan {date} {counter}";
                 break;
+            case ScanTask.TwoSided:
+                s.Intent = ScanIntent.Document;
+                s.Source = ScanSource.DocumentFeeder;
+                s.Resolution = 300;
+                s.Format = OutputFormat.Pdf;
+                s.Duplex = DuplexMode.Both;
+                s.NamingTemplate = "Scan {date} {counter}";
+                break;
         }
         s.TaskId = task.RawValue();
         return s;
@@ -161,7 +179,10 @@ public static class TaskCatalog
         {
             return settings.Adjustments.RestoreFadedColors ? ScanTask.PhotoRestore : ScanTask.Photos;
         }
-        if (settings.Source == ScanSource.DocumentFeeder) return ScanTask.Feeder;
+        if (settings.Source == ScanSource.DocumentFeeder)
+        {
+            return settings.Duplex == DuplexMode.Off ? ScanTask.Feeder : ScanTask.TwoSided;
+        }
         if (!settings.DocumentMultiPage && settings.Format != OutputFormat.Pdf) return ScanTask.QuickScan;
         return ScanTask.Document;
     }
@@ -185,14 +206,26 @@ public static class TaskCatalog
 
     /// <summary>
     /// The settings still do what the task is for: the same scan mode, and the task's
-    /// required source. Changing the mode by hand, or a scanner without that source, ends the
-    /// task.
+    /// required source; for the two-sided task, both sides. Changing the mode by hand (or
+    /// choosing one side), or a scanner without that source, ends the task.
     /// </summary>
     public static bool Fits(ScanTask task, ScanSettings settings)
     {
         var definition = Definition(task);
         return settings.Intent == definition.Intent
-               && (definition.RequiredSource is not { } source || settings.Source == source);
+               && (definition.RequiredSource is not { } source || settings.Source == source)
+               && (task != ScanTask.TwoSided || settings.Duplex != DuplexMode.Off);
+    }
+
+    /// <summary>
+    /// The steps the scan screen guides: turning the stack over by hand
+    /// (<see cref="DocumentSides.ManualSteps"/>) whenever these settings scan both sides that
+    /// way, otherwise the stored task's steps while it fits; null when there is nothing to guide.
+    /// </summary>
+    public static IReadOnlyList<TaskStep>? GuidedSteps(ScanSettings settings, ScannerCapabilities? capabilities)
+    {
+        if (DocumentSides.UsesManualSteps(settings, capabilities)) return DocumentSides.ManualSteps;
+        return settings.Task is { } task && Fits(task, settings) ? Definition(task).Steps : null;
     }
 
     /// <summary>How a scan with these settings is handled: the stored task's flow while it fits, otherwise by mode.</summary>
@@ -203,14 +236,17 @@ public static class TaskCatalog
 
     /// <summary>
     /// One line describing the settings, e.g. "300 dpi · Color · PDF". A PDF size other than
-    /// the default Standard is named ("300 dpi · Color · Compact PDF"), so the line stays short
-    /// enough for cards and the preset list.
+    /// the default Standard is named ("300 dpi · Color · Compact PDF"), and so is two-sided
+    /// feeder scanning ("… · Both sides", "… · Both sides, turned by hand"), so the line stays
+    /// short enough for cards and the preset list.
     /// </summary>
     public static string Summary(ScanSettings settings)
     {
         string format = settings.Format == OutputFormat.Pdf && settings.Output.PdfSize != PdfSizePreset.Standard
             ? $"{settings.Output.PdfSize.Label()} {settings.Format.Label()}"
             : settings.Format.Label();
-        return $"{settings.Resolution} dpi · {settings.ColorMode.Label()} · {format}";
+        var sides = DocumentSides.Effective(settings, null);
+        string twoSided = sides == DuplexMode.Off ? "" : $" · {sides.Label()}";
+        return $"{settings.Resolution} dpi · {settings.ColorMode.Label()} · {format}{twoSided}";
     }
 }

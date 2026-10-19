@@ -40,11 +40,20 @@ scanners** — including the Epson Perfection V39 II.
   a Mail message with it attached, or copy it (an image also as a picture). **After saving** can
   open, show or share the files on its own; the Email a document task shares them. Nothing is
   sent without you sending it.
+- **Two-sided scanning and paper size**: a feeder that scans both sides puts every sheet's
+  front and back in page order; with a feeder that scans one side, scan the fronts, turn the
+  stack over and scan the backs, and the app guides the two steps and puts the pages in order
+  (it says so when the counts do not match: "3 fronts but 2 backs"). A stack larger than the
+  feeder, or one that jams, is scanned a part at a time before turning it over. Back sides of
+  sheets that flip on the short edge (like a calendar) are turned upright. The paper size (Letter, Legal,
+  Executive, A4, A5, A6, B5, ID card, or Automatic) sets the sheet the feeder is asked for, and
+  on the glass the area scanned from its corner when nothing is selected. Each page in the strip
+  says which side of which sheet it is.
 - **Image adjustments**: auto-enhance, brightness / contrast / saturation / sharpness,
   descreen (moiré reduction for printed material), faded-color restoration for old photos,
   black-and-white threshold.
 - **Start screen**: pick what you are scanning (Document to PDF, Multi-page from feeder,
-  Photos, Old photo restoration, Quick scan, Email a document) and everything is set up for it, with a short
+  Photos, Old photo restoration, Quick scan, Email a document, Two-sided document) and everything is set up for it, with a short
   guide on the scan screen. Tasks the connected scanner cannot do are greyed out with the
   reason. The app remembers the task you used last.
 - **Presets**: save your own settings as presets; they appear on the start screen too.
@@ -52,7 +61,8 @@ scanners** — including the Epson Perfection V39 II.
 - **File naming templates**: `{date}`, `{time}`, `{counter}`, `{counter:4}`, `{intent}`,
   `{index}`, `{task}` tokens; automatic collision-free numbering.
 - **Demo Scanner**: a built-in simulated device so you can try every feature (including OCR,
-  photo splitting and a three-sheet document feeder) with no hardware connected.
+  photo splitting and a document feeder with three two-sided sheets, which it scans one side or
+  both) with no hardware connected.
 
 ## Build & run
 

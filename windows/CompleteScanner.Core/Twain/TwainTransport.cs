@@ -39,8 +39,9 @@ public sealed class TwainDeviceCaps
 /// <param name="PixelFlavor">ICAP_PIXELFLAVOR in effect (<see cref="TwainPixelFlavors"/>).</param>
 /// <param name="FeederLoaded">CAP_FEEDERLOADED for a feeder scan when the source detects paper; null when it cannot tell.</param>
 /// <param name="MsbFirst">ICAP_BITORDER in effect for 1-bit memory strips.</param>
+/// <param name="DuplexEnabled">CAP_DUPLEXENABLED in effect, read back after setting it; null when the source does not report it.</param>
 public sealed record TwainApplied(int TransferMechanism, int PixelFlavor = TwainPixelFlavors.Chocolate,
-                                  bool? FeederLoaded = null, bool MsbFirst = true);
+                                  bool? FeederLoaded = null, bool MsbFirst = true, bool? DuplexEnabled = null);
 
 /// <summary>Something the source reported while it is enabled (states 5 to 7).</summary>
 public abstract record TwainEvent;
@@ -104,4 +105,10 @@ public interface ITwainTransport
     /// <paramref name="timeout"/>. False when it is still not disabled: the driver is stuck.
     /// </summary>
     bool Disable(TimeSpan timeout);
+
+    /// <summary>
+    /// CAP_DUPLEXENABLED as the source reports it now (state 4, after an acquisition: what the
+    /// user left in the driver's own window); null when the source does not report it.
+    /// </summary>
+    bool? ReadDuplexEnabled() => null;
 }

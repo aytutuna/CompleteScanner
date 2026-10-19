@@ -13,6 +13,7 @@ public static class TaskIcons
         "restore" => "",
         "quick" => "",
         "email" => "",
+        "twoSided" => "",
         _ => "",
     };
 

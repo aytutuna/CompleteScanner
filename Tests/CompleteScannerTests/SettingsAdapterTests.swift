@@ -1,4 +1,5 @@
 import XCTest
+import CoreGraphics
 import Foundation
 @testable import CompleteScannerKit
 
@@ -105,6 +106,96 @@ final class SettingsAdapterTests: XCTestCase {
         expected.source = .flatbed
         expected.resolution = 300
         XCTAssertEqual(adapted.settings, expected)
+    }
+
+    // MARK: Two-sided scanning and paper size
+
+    private func feederScanner(duplex: Bool, feederSize: CGSize? = nil) -> ScannerCapabilities {
+        ScannerCapabilities(sources: [.flatbed, .documentFeeder], feederSizeInches: feederSize, supportsDuplex: duplex)
+    }
+
+    func test_duplex_oneSidedFeeder_turnsTheStackOverByHand() {
+        var settings = ScanSettings()
+        settings.source = .documentFeeder
+        settings.duplex = .both
+        let adapted = SettingsAdapter.adapt(settings, to: feederScanner(duplex: false))
+        XCTAssertEqual(adapted.settings.duplex, .manual)
+        XCTAssertEqual(adapted.notes, [SettingsNote(change: .duplex,
+                                                    message: "This scanner's feeder scans one side at a time, so you'll turn the stack over by hand.")])
+    }
+
+    func test_duplex_twoSidedFeeder_orTheFlatbed_nothingChanges() {
+        var feeder = ScanSettings()
+        feeder.source = .documentFeeder
+        feeder.duplex = .both
+        var adapted = SettingsAdapter.adapt(feeder, to: feederScanner(duplex: true))
+        XCTAssertEqual(adapted.settings.duplex, .both)
+        XCTAssertEqual(adapted.notes, [])
+
+        // The setting does nothing on the flatbed: it is kept for the feeder.
+        var flatbed = ScanSettings()
+        flatbed.duplex = .both
+        adapted = SettingsAdapter.adapt(flatbed, to: feederScanner(duplex: false))
+        XCTAssertEqual(adapted.settings.duplex, .both)
+        XCTAssertEqual(adapted.notes, [])
+
+        var byHand = ScanSettings()
+        byHand.source = .documentFeeder
+        byHand.duplex = .manual
+        XCTAssertEqual(SettingsAdapter.adapt(byHand, to: feederScanner(duplex: false)).notes, [])
+    }
+
+    func test_duplex_afterFallingBackToTheFeeder() {
+        let caps = ScannerCapabilities(sources: [.documentFeeder], supportsOverview: false)
+        var settings = ScanSettings()
+        settings.duplex = .both
+        let adapted = SettingsAdapter.adapt(settings, to: caps)
+        XCTAssertEqual(adapted.settings.source, .documentFeeder)
+        XCTAssertEqual(adapted.settings.duplex, .manual)
+        XCTAssertEqual(adapted.notes.map(\.change), [.source, .duplex])
+    }
+
+    func test_paperSize_largerThanTheGlass_isAutomatic() {
+        let caps = ScannerCapabilities(flatbedSizeInches: CGSize(width: 8.5, height: 11.7))
+        var settings = ScanSettings()
+        settings.paperSize = .legal
+        let adapted = SettingsAdapter.adapt(settings, to: caps)
+        XCTAssertEqual(adapted.settings.paperSize, .auto)
+        XCTAssertEqual(adapted.notes, [SettingsNote(change: .paperSize,
+                                                    message: "Legal paper does not fit this scanner's glass, so the paper size is Automatic.")])
+        settings.paperSize = .a4
+        XCTAssertEqual(SettingsAdapter.adapt(settings, to: caps).settings.paperSize, .a4)
+    }
+
+    func test_paperSize_largerThanTheFeeder_isAutomatic_unknownFeederSizeKeepsIt() {
+        var settings = ScanSettings()
+        settings.source = .documentFeeder
+        settings.paperSize = .legal
+        let adapted = SettingsAdapter.adapt(settings, to: feederScanner(duplex: true, feederSize: CGSize(width: 8.5, height: 11)))
+        XCTAssertEqual(adapted.settings.paperSize, .auto)
+        XCTAssertEqual(adapted.notes.map(\.message),
+                       ["Legal paper does not fit this scanner's feeder, so the paper size is Automatic."])
+        XCTAssertEqual(SettingsAdapter.adapt(settings, to: feederScanner(duplex: true, feederSize: CGSize(width: 8.5, height: 14)))
+                        .settings.paperSize, .legal)
+        XCTAssertEqual(SettingsAdapter.adapt(settings, to: feederScanner(duplex: true)).settings.paperSize, .legal)
+    }
+
+    func test_twoSidedTask_onAOneSidedFeeder_stillFits() {
+        let adapted = SettingsAdapter.adapt(TaskCatalog.apply(.twoSided, to: ScanSettings()), to: feederScanner(duplex: false))
+        XCTAssertEqual(adapted.settings.duplex, .manual)
+        XCTAssertTrue(TaskCatalog.fits(.twoSided, adapted.settings))
+    }
+
+    func test_twoSidedTask_whileTheFeederIsNotYetAsked_keepsBothSides() {
+        // ImageCaptureCore tells whether the feeder scans both sides only once it is selected.
+        let unknown = DocumentSides.capabilitiesForSides(feederScanner(duplex: false), duplexKnown: false)
+        let task = TaskCatalog.apply(.twoSided, to: ScanSettings())
+        let adapted = SettingsAdapter.adapt(task, to: unknown)
+        XCTAssertEqual(adapted.settings.duplex, .both)
+        XCTAssertEqual(adapted.notes, [])
+        XCTAssertEqual(TaskCatalog.summary(adapted.settings), "300 dpi \u{00B7} Color \u{00B7} PDF \u{00B7} Both sides")
+        XCTAssertNil(TaskCatalog.guidedSteps(adapted.settings, capabilities: unknown)?
+            .first(where: { $0.id == DocumentSides.backsStepID }))
     }
 
     func test_taskSettings_onAFeederOnlyScanner() {

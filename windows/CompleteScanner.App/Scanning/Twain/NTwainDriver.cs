@@ -160,8 +160,13 @@ internal sealed class NTwainDriver : ITwainTransport, IDisposable
                 caps.CapFeederEnabled.SetValue(request.Feeder ? BoolType.True : BoolType.False);
                 if (request.Feeder && caps.CapAutoFeed.IsSupported) caps.CapAutoFeed.SetValue(BoolType.True);
             }
-            // Two-sided scanning is not offered yet: keep a driver that defaults to it on one side.
-            if (caps.CapDuplexEnabled.IsSupported) caps.CapDuplexEnabled.SetValue(BoolType.False);
+            // Both sides only when asked for; a driver that defaults to two-sided scans one side otherwise.
+            // What the source settled on is read back: a refused value leaves the driver's own.
+            if (caps.CapDuplexEnabled.IsSupported)
+            {
+                caps.CapDuplexEnabled.SetValue(request.Duplex ? BoolType.True : BoolType.False);
+            }
+            bool? duplexEnabled = ReadDuplexEnabled();
             if (caps.CapXferCount.IsSupported) caps.CapXferCount.SetValue(request.TransferCount);
 
             caps.ICapPixelType.SetValue((PixelType)request.PixelType);
@@ -172,7 +177,9 @@ internal sealed class NTwainDriver : ITwainTransport, IDisposable
             caps.ICapXResolution.SetValue((float)request.Resolution);
             caps.ICapYResolution.SetValue((float)request.Resolution);
 
-            if (request.FrameInches is { } frame)
+            bool sizeSet = request.SupportedSize != TwainSizes.None && caps.ICapSupportedSizes.IsSupported
+                           && caps.ICapSupportedSizes.SetValue((SupportedSize)request.SupportedSize) == ReturnCode.Success;
+            if (!sizeSet && request.FrameInches is { } frame)
             {
                 // A fixed paper size would override the frame.
                 if (caps.ICapSupportedSizes.IsSupported) caps.ICapSupportedSizes.SetValue(SupportedSize.None);
@@ -214,7 +221,7 @@ internal sealed class NTwainDriver : ITwainTransport, IDisposable
             {
                 feederLoaded = caps.CapFeederLoaded.GetCurrent() == BoolType.True;
             }
-            return new TwainApplied(mechanism, flavor, feederLoaded, msbFirst);
+            return new TwainApplied(mechanism, flavor, feederLoaded, msbFirst, duplexEnabled);
         }
         catch (Exception e) when (e is not TwainException)
         {
@@ -277,6 +284,20 @@ internal sealed class NTwainDriver : ITwainTransport, IDisposable
         var stepDown = Task.Run(StepDown);
         stepDown.Wait(timeout);
         return _session.State <= 4;
+    }
+
+    public bool? ReadDuplexEnabled()
+    {
+        try
+        {
+            var duplexEnabled = _source.Capabilities.CapDuplexEnabled;
+            return duplexEnabled.IsSupported ? duplexEnabled.GetCurrent() == BoolType.True : null;
+        }
+        catch (Exception e)
+        {
+            System.Diagnostics.Trace.TraceWarning($"TWAIN: could not read CAP_DUPLEXENABLED: {e.Message}");
+            return null;
+        }
     }
 
     private void StepDown()

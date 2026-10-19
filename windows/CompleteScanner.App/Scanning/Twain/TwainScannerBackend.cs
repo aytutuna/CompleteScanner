@@ -302,6 +302,10 @@ internal sealed class TwainScannerSession(ScannerInfo info, TwainThread thread, 
     private volatile ScanStop? _lastScanStop;
     public ScanStop? LastScanStop => _lastScanStop;
 
+    /// <summary>Cleared on the calling thread when a scan starts, set there once its pages are in.</summary>
+    private bool? _lastScanDuplex;
+    public bool? LastScanDuplex => _lastScanDuplex;
+
     private TwainDeviceCaps? _caps;
     /// <summary>Set once a memory transfer came in a format the app cannot read.</summary>
     private volatile bool _preferNative;
@@ -348,7 +352,7 @@ internal sealed class TwainScannerSession(ScannerInfo info, TwainThread thread, 
             throw ScanException.Unsupported("This scanner's driver always shows its own window, so it cannot preview.");
         }
         ProgressHandler?.Invoke(new ScanProgress("Scanning overview…"));
-        var pages = await Acquire(TwainScanRequests.ForOverview(caps, _preferNative));
+        var pages = (await Acquire(TwainScanRequests.ForOverview(caps, _preferNative))).PagesOrThrow();
         _lastScanStop = null;
         return pages[0].Image;
     }
@@ -356,12 +360,17 @@ internal sealed class TwainScannerSession(ScannerInfo info, TwainThread thread, 
     public async Task<IReadOnlyList<ScannedPage>> PerformScanAsync(ScanSettings settings, RectD? selection)
     {
         _lastScanStop = null;
+        _lastScanDuplex = null;
         var caps = _caps ?? await ReadCapabilities();
         var request = TwainScanRequests.ForScan(settings, selection, caps, UseDriverWindow, _preferNative);
         ProgressHandler?.Invoke(new ScanProgress(request.ShowDriverWindow
             ? "Choose the settings in the scanner's window, then start the scan there…"
             : "Scanning…"));
-        var pages = await Acquire(request);
+        var result = await Acquire(request);
+        var pages = result.PagesOrThrow();
+        // Two-sided only when the source confirmed it (TwainScanResult.Duplex); a feeder
+        // without CAP_DUPLEX is not asked (TwainScanRequests.ForScan).
+        if (request.Feeder && settings.Duplex == DuplexMode.Both) _lastScanDuplex = result.Duplex;
         return pages.Select(page => new ScannedPage(page.Image, page.Dpi, page.ColorMode)).ToList();
     }
 
@@ -369,9 +378,10 @@ internal sealed class TwainScannerSession(ScannerInfo info, TwainThread thread, 
     /// Runs one acquisition on the TWAIN thread. Getting the scan going has a time limit
     /// (<see cref="StartTimeout"/>; a driver can block there behind a message box), after
     /// which the scan loop's own limits apply. Cancelling returns at once; the scan loop then
-    /// stops the source in the background (the next call waits its turn behind it).
+    /// stops the source in the background (the next call waits its turn behind it). The result
+    /// carries the pages or the error (<see cref="TwainScanResult.PagesOrThrow"/>).
     /// </summary>
-    private async Task<List<TwainPage>> Acquire(TwainScanRequest request)
+    private async Task<TwainScanResult> Acquire(TwainScanRequest request)
     {
         var cancellation = new CancellationTokenSource();
         var previous = Interlocked.Exchange(ref _scanCancellation, cancellation);
@@ -396,7 +406,7 @@ internal sealed class TwainScannerSession(ScannerInfo info, TwainThread thread, 
         }
         if (result.UseNativeTransfers) _preferNative = true;
         if (result.Stop is { } stop) _lastScanStop = stop;
-        return result.PagesOrThrow();
+        return result;
     }
 
     public void CancelScan() => _scanCancellation?.Cancel();

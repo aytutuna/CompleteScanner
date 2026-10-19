@@ -74,15 +74,32 @@ fileprivate struct PageThumbnailCell: View {
                 .overlay { if hovering { hoverControls } }
                 .onHover { hovering = $0 }
 
-            Text("Page \(pageNumber)")
+            Text(caption)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                .help(DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? "")
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(accessibilityName)
         // Re-render when the page is rotated (the cell keeps its identity, so a
         // plain run-once task would show the stale orientation).
         .task(id: page.rotationQuarterTurns) {
             thumbnail = stripThumbnail(page.image, maxDimension: 200)
         }
+    }
+
+    /// "Page 3", or "Page 3 · back" for a page of a two-sided stack.
+    private var caption: String {
+        guard let side = page.side else { return "Page \(pageNumber)" }
+        return "Page \(pageNumber) \u{00B7} \(side == .front ? "front" : "back")"
+    }
+
+    /// "Page 3, Sheet 2 · back" for screen readers.
+    private var accessibilityName: String {
+        guard let label = DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) else {
+            return "Page \(pageNumber)"
+        }
+        return "Page \(pageNumber), \(label)"
     }
 
     private var thumbnailView: some View {

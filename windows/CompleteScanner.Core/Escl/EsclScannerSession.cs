@@ -15,6 +15,7 @@ public sealed class EsclScannerSession(ScannerInfo info, EsclClient client, Escl
     public ScannerInfo Info { get; } = info;
     public Action<ScanProgress>? ProgressHandler { get; set; }
     public ScanStop? LastScanStop { get; private set; }
+    public bool? LastScanDuplex { get; private set; }
 
     /// <summary>The device's capabilities as read when the session opened.</summary>
     public EsclCapabilities EsclCapabilities { get; } = capabilities;
@@ -38,13 +39,21 @@ public sealed class EsclScannerSession(ScannerInfo info, EsclClient client, Escl
     {
         _cancelRequested = false;
         LastScanStop = null;
+        LastScanDuplex = null;
         ProgressHandler?.Invoke(new ScanProgress("Scanning…"));
         // Black & white arrives as grayscale; the app's pipeline thresholds every page that
-        // is not a color scan, so the pages keep the requested color mode.
+        // is not a color scan, so the pages keep the requested color mode. A two-sided job
+        // delivers front, back, front, back…, as the app expects.
         var result = await RunJob(settings.Resolution, settings.ColorMode, settings.Source,
-                                  settings.Source == ScanSource.Flatbed ? selection : null).ConfigureAwait(true);
+                                  settings.Source == ScanSource.Flatbed ? selection : null,
+                                  settings.Duplex == DuplexMode.Both, settings.PaperSize).ConfigureAwait(true);
         if (result.Pages.Count == 0) throw ScanException.ScanFailed("The scanner did not return any image data.");
         LastScanStop = result.Stop;
+        // A device that does not list two-sided feeding scans one side (EsclScanRequest.Create).
+        if (settings.Source == ScanSource.DocumentFeeder && settings.Duplex == DuplexMode.Both)
+        {
+            LastScanDuplex = EsclCapabilities.SupportsDuplex;
+        }
         return result.Pages;
     }
 
@@ -90,9 +99,10 @@ public sealed class EsclScannerSession(ScannerInfo info, EsclClient client, Escl
         Client.Dispose();
     }
 
-    private async Task<EsclJobResult> RunJob(int dpi, ColorMode colorMode, ScanSource source, RectD? selection)
+    private async Task<EsclJobResult> RunJob(int dpi, ColorMode colorMode, ScanSource source, RectD? selection,
+                                             bool duplex = false, PaperSize paperSize = PaperSize.Auto)
     {
-        var request = EsclScanRequest.Create(EsclCapabilities, source, colorMode, dpi, selection);
+        var request = EsclScanRequest.Create(EsclCapabilities, source, colorMode, dpi, selection, duplex, paperSize);
         using var cancellation = new CancellationTokenSource();
         _jobCancellation = cancellation;
         if (_cancelRequested) cancellation.Cancel();

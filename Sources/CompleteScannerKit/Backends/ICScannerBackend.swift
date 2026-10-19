@@ -164,6 +164,9 @@ private final class ICHardwareScannerSession: NSObject, ScannerSession, ICScanne
     let info: ScannerInfo
     var progressHandler: ((ScanProgress) -> Void)?
     private(set) var lastScanStop: ScanStop?
+    private(set) var lastScanDuplex: Bool?
+    /// ImageCaptureCore reports two-sided feeding on the feeder unit, once it is selected.
+    var feederDuplexNeedsSelection: Bool { true }
 
     private let device: ICScannerDevice
 
@@ -260,6 +263,39 @@ private final class ICHardwareScannerSession: NSObject, ScannerSession, ICScanne
         return caps
     }
 
+    /// Whether the feeder scans both sides: ImageCaptureCore reports it on the feeder unit, so
+    /// the feeder is selected (and stays selected, since the app is about to use it). nil while
+    /// another operation runs, without a feeder, or when the scanner does not answer.
+    func feederSupportsDuplex() async -> Bool? {
+        guard !isClosing, openContinuation == nil, selectContinuation == nil,
+              overviewContinuation == nil, scanContinuation == nil,
+              device.availableFunctionalUnitTypes.contains(NSNumber(value: ICScannerFunctionalUnitType.documentFeeder.rawValue))
+        else { return nil }
+        do {
+            try await selectFunctionalUnit(.documentFeeder)
+        } catch {
+            return nil
+        }
+        return (device.selectedFunctionalUnit as? ICScannerFunctionalUnitDocumentFeeder)?.supportsDuplexScanning
+    }
+
+    /// The ImageCaptureCore document type of a paper size (`ICScannerDocumentType` raw values,
+    /// which follow TWAIN's paper sizes); nil for Automatic and the ID card, which has none.
+    private static func documentType(for size: PaperSize) -> ICScannerDocumentType? {
+        let raw: UInt
+        switch size {
+        case .auto, .idCard: return nil
+        case .a4: raw = 1
+        case .b5Jis: raw = 2
+        case .letter: raw = 3
+        case .legal: raw = 4
+        case .a5: raw = 5
+        case .executive: raw = 10
+        case .a6: raw = 13
+        }
+        return ICScannerDocumentType(rawValue: raw)
+    }
+
     // MARK: Overview scan
 
     func performOverviewScan(settings: ScanSettings) async throws -> CGImage {
@@ -288,12 +324,29 @@ private final class ICHardwareScannerSession: NSObject, ScannerSession, ICScanne
         cancelRequested = false
         scannedURLs = []
         lastScanStop = nil
+        lastScanDuplex = nil
 
         let unitType: ICScannerFunctionalUnitType = settings.source == .documentFeeder ? .documentFeeder : .flatbed
         try await selectFunctionalUnit(unitType)
 
         let unit = device.selectedFunctionalUnit
         unit.measurementUnit = .inches
+
+        // The feeder: both sides when asked for and it can, the paper size, and the order it
+        // delivers the sheets in. Back sides are turned upright by the app (DocumentSides), not
+        // through evenPageOrientation, so both platforms treat them the same.
+        var twoSided = false
+        var reverseOrder = false
+        if unitType == .documentFeeder, let feeder = unit as? ICScannerFunctionalUnitDocumentFeeder {
+            twoSided = settings.duplex == .both && feeder.supportsDuplexScanning
+            feeder.duplexScanningEnabled = twoSided
+            if let type = Self.documentType(for: settings.paperSize) {
+                feeder.documentType = type
+            }
+            reverseOrder = feeder.reverseFeederPageOrder
+        }
+        // A feeder that scans one side says so, so the app does not take its pages for pairs.
+        if unitType == .documentFeeder && settings.duplex == .both { lastScanDuplex = twoSided }
 
         let dpi = unit.supportedResolutions.sorted()
             .min(by: { abs($0 - settings.resolution) < abs($1 - settings.resolution) }) ?? settings.resolution
@@ -316,6 +369,9 @@ private final class ICHardwareScannerSession: NSObject, ScannerSession, ICScanne
         let bed = unit.physicalSize
         if bed.width > 0, bed.height > 0 {
             var areaInches = CGRect(x: 0, y: 0, width: bed.width, height: bed.height)
+            if unitType == .documentFeeder {
+                areaInches = PaperSizes.feederRegionInches(settings.paperSize, max: bed)
+            }
             if unitType == .flatbed, let selection {
                 let clamped = selection.standardized.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
                 if clamped.width > 0.001, clamped.height > 0.001 {
@@ -360,6 +416,12 @@ private final class ICHardwareScannerSession: NSObject, ScannerSession, ICScanne
         }
         guard !pages.isEmpty else {
             throw ScanError.scanFailed("The scanner did not return any image data.")
+        }
+        // A feeder that reads the last sheet first: back into reading order, each sheet's front
+        // before its back, as the app expects of every backend.
+        if reverseOrder {
+            pages = DocumentSides.assignSides(transferCount: pages.count, duplex: twoSided, reverseOrder: true)
+                .map { pages[$0.transferIndex] }
         }
         return pages
     }

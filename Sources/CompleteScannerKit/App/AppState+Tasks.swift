@@ -26,11 +26,31 @@ extension AppState {
     /// Caption of the Scan button: the current step's action ("Scan page"), or "Scan".
     public var primaryActionLabel: String { taskFlow?.current?.primaryActionLabel ?? "Scan" }
 
+    /// The steps guide turning a stack over by hand: fronts, then backs.
+    public var isTurningOverByHand: Bool { taskFlow != nil && flowIsManual }
+
+    /// Turning over by hand, the backs are next (or were scanned and did not pair up).
+    public var awaitingBacks: Bool { isTurningOverByHand && taskFlow?.current?.id == DocumentSides.backsStepID }
+
+    /// Turning over by hand, fronts are in the queue but the stack was not turned over yet (the
+    /// feeder stopped early, or more fronts were asked for): `finishFronts()` moves on to the backs.
+    public var canFinishFronts: Bool {
+        isTurningOverByHand && taskFlow?.current?.id == DocumentSides.frontsStepID
+            && queuedCaptures(DocumentSides.frontsStepID) > 0
+    }
+
+    /// The backs are due but none was scanned yet: `scanMoreFronts()` goes back to the fronts, for
+    /// a stack larger than the feeder holds.
+    public var canScanMoreFronts: Bool { awaitingBacks && queuedCaptures(DocumentSides.backsStepID) == 0 }
+
+    /// How the next scan captures the sheets (one side, both, or turned over by hand).
+    public var effectiveDuplex: DuplexMode { DocumentSides.effective(settings, capabilities: sidesCapabilities) }
+
     /// The start screen's task cards, with what the connected scanner can do.
     public var taskCards: [TaskCard] {
         TaskCatalog.all.map { definition in
             let settings = SettingsAdapter.adapt(TaskCatalog.apply(definition.task, to: ScanSettings()),
-                                                 to: capabilities).settings
+                                                 to: sidesCapabilities).settings
             return TaskCard(definition: definition,
                             availability: TaskCatalog.availability(of: definition.task, capabilities: capabilities),
                             isCurrent: activeTask == definition.task,
@@ -50,10 +70,13 @@ extension AppState {
             errorMessage = availability.reason
             return false
         }
-        let adapted = SettingsAdapter.adapt(TaskCatalog.apply(task, to: settings), to: capabilities)
+        // A feeder not asked yet whether it scans both sides is taken to (`sidesCapabilities`); the
+        // check that follows the change of source switches to turning over by hand if it does not.
+        let adapted = SettingsAdapter.adapt(TaskCatalog.apply(task, to: settings), to: sidesCapabilities)
         // Fresh steps, even when the same task is picked again.
         taskFlow = nil
         flowTask = nil
+        flowIsManual = false
         settings = adapted.settings
         statusMessage = Self.withNotes("Ready for \u{201C}\(TaskCatalog.definition(task).title)\u{201D}.",
                                        adapted.notes)
@@ -67,18 +90,33 @@ extension AppState {
         settings.taskId = nil
     }
 
-    /// Keeps the steps in line with the task: an active task without steps gets them, and steps
-    /// go when the task does. A task id this version does not know stays stored, without steps.
+    /// Keeps the guided steps in line with the settings: turning stacks over by hand gets its
+    /// own steps (`TaskCatalog.guidedSteps`), whatever the task; an active task gets its steps;
+    /// steps go when there is nothing to guide. A task id this version does not know stays
+    /// stored, without steps. Steps already under way are kept while they still apply.
     func syncTaskFlow() {
-        guard let active = settings.task else {
+        let caps = sidesCapabilities
+        let manual = DocumentSides.usesManualSteps(settings, capabilities: caps)
+        let task: ScanTask? = manual ? nil : settings.task
+        guard let steps = TaskCatalog.guidedSteps(settings, capabilities: caps) else {
             if taskFlow != nil { taskFlow = nil }
             flowTask = nil
+            flowIsManual = false
+            if sidesMismatch != nil { sidesMismatch = nil }
             return
         }
-        if taskFlow == nil || flowTask != active {
-            taskFlow = TaskFlow(steps: TaskCatalog.definition(active).steps)
-            flowTask = active
+        if taskFlow == nil || flowTask != task || flowIsManual != manual {
+            taskFlow = TaskFlow(steps: steps)
+            flowTask = task
+            flowIsManual = manual
+            if sidesMismatch != nil { sidesMismatch = nil }
         }
+    }
+
+    /// Back to the first step with nothing captured; a stack's count mismatch goes with it.
+    func resetFlow() {
+        taskFlow?.reset()
+        if sidesMismatch != nil { sidesMismatch = nil }
     }
 
     /// Notes the current step of the active task what a scan produced (page or photo ids).

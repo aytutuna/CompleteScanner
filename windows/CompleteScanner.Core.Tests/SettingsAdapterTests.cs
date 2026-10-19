@@ -110,6 +110,98 @@ public class SettingsAdapterTests
         Assert.NotSame(settings.Adjustments, adapted.Settings.Adjustments);
     }
 
+    // MARK: - Two-sided scanning and paper size
+
+    private static ScannerCapabilities FeederScanner(bool duplex, SizeD? feederSize = null) => new()
+    {
+        Sources = [ScanSource.Flatbed, ScanSource.DocumentFeeder],
+        SupportsDuplex = duplex,
+        FeederSizeInches = feederSize,
+    };
+
+    [Fact]
+    public void Duplex_OneSidedFeeder_TurnsTheStackOverByHand()
+    {
+        var settings = new ScanSettings { Source = ScanSource.DocumentFeeder, Duplex = DuplexMode.Both };
+        var adapted = SettingsAdapter.Adapt(settings, FeederScanner(duplex: false));
+        Assert.Equal(DuplexMode.Manual, adapted.Settings.Duplex);
+        var note = Assert.Single(adapted.Notes);
+        Assert.Equal(SettingsChange.Duplex, note.Change);
+        Assert.Equal("This scanner's feeder scans one side at a time, so you'll turn the stack over by hand.", note.Message);
+    }
+
+    [Fact]
+    public void Duplex_TwoSidedFeeder_OrTheFlatbed_NothingChanges()
+    {
+        var feeder = new ScanSettings { Source = ScanSource.DocumentFeeder, Duplex = DuplexMode.Both };
+        var adapted = SettingsAdapter.Adapt(feeder, FeederScanner(duplex: true));
+        Assert.Equal(DuplexMode.Both, adapted.Settings.Duplex);
+        Assert.Empty(adapted.Notes);
+
+        // The setting does nothing on the flatbed: it is kept for the feeder.
+        var flatbed = new ScanSettings { Duplex = DuplexMode.Both };
+        adapted = SettingsAdapter.Adapt(flatbed, FeederScanner(duplex: false));
+        Assert.Equal(DuplexMode.Both, adapted.Settings.Duplex);
+        Assert.Empty(adapted.Notes);
+
+        var byHand = new ScanSettings { Source = ScanSource.DocumentFeeder, Duplex = DuplexMode.Manual };
+        Assert.Empty(SettingsAdapter.Adapt(byHand, FeederScanner(duplex: false)).Notes);
+    }
+
+    [Fact]
+    public void Duplex_AfterFallingBackToTheFeeder()
+    {
+        var caps = new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder], SupportsOverview = false };
+        var adapted = SettingsAdapter.Adapt(new ScanSettings { Duplex = DuplexMode.Both }, caps);
+        Assert.Equal((ScanSource.DocumentFeeder, DuplexMode.Manual), (adapted.Settings.Source, adapted.Settings.Duplex));
+        Assert.Equal([SettingsChange.Source, SettingsChange.Duplex], adapted.Notes.Select(n => n.Change));
+    }
+
+    [Fact]
+    public void PaperSize_LargerThanTheGlass_IsAutomatic()
+    {
+        var caps = new ScannerCapabilities { FlatbedSizeInches = new SizeD(8.5, 11.7) };
+        var adapted = SettingsAdapter.Adapt(new ScanSettings { PaperSize = PaperSize.Legal }, caps);
+        Assert.Equal(PaperSize.Auto, adapted.Settings.PaperSize);
+        var note = Assert.Single(adapted.Notes);
+        Assert.Equal(SettingsChange.PaperSize, note.Change);
+        Assert.Equal("Legal paper does not fit this scanner's glass, so the paper size is Automatic.", note.Message);
+        Assert.Equal(PaperSize.A4, SettingsAdapter.Adapt(new ScanSettings { PaperSize = PaperSize.A4 }, caps).Settings.PaperSize);
+    }
+
+    [Fact]
+    public void PaperSize_LargerThanTheFeeder_IsAutomatic_UnknownFeederSizeKeepsIt()
+    {
+        var settings = new ScanSettings { Source = ScanSource.DocumentFeeder, PaperSize = PaperSize.Legal };
+        var adapted = SettingsAdapter.Adapt(settings, FeederScanner(duplex: true, new SizeD(8.5, 11)));
+        Assert.Equal(PaperSize.Auto, adapted.Settings.PaperSize);
+        Assert.Equal("Legal paper does not fit this scanner's feeder, so the paper size is Automatic.",
+                     Assert.Single(adapted.Notes).Message);
+        Assert.Equal(PaperSize.Legal, SettingsAdapter.Adapt(settings, FeederScanner(duplex: true, new SizeD(8.5, 14))).Settings.PaperSize);
+        Assert.Equal(PaperSize.Legal, SettingsAdapter.Adapt(settings, FeederScanner(duplex: true)).Settings.PaperSize);
+    }
+
+    [Fact]
+    public void TwoSidedTask_OnAOneSidedFeeder_StillFits()
+    {
+        var adapted = SettingsAdapter.Adapt(TaskCatalog.Apply(ScanTask.TwoSided, new ScanSettings()), FeederScanner(duplex: false));
+        Assert.Equal(DuplexMode.Manual, adapted.Settings.Duplex);
+        Assert.True(TaskCatalog.Fits(ScanTask.TwoSided, adapted.Settings));
+    }
+
+    [Fact]
+    public void TwoSidedTask_WhileTheFeederIsNotYetAsked_KeepsBothSides()
+    {
+        // ImageCaptureCore tells whether the feeder scans both sides only once it is selected.
+        var unknown = DocumentSides.CapabilitiesForSides(FeederScanner(duplex: false), duplexKnown: false);
+        var task = TaskCatalog.Apply(ScanTask.TwoSided, new ScanSettings());
+        var adapted = SettingsAdapter.Adapt(task, unknown);
+        Assert.Equal(DuplexMode.Both, adapted.Settings.Duplex);
+        Assert.Empty(adapted.Notes);
+        Assert.Equal("300 dpi · Color · PDF · Both sides", TaskCatalog.Summary(adapted.Settings));
+        Assert.Null(TaskCatalog.GuidedSteps(adapted.Settings, unknown)?.SingleOrDefault(s => s.Id == DocumentSides.BacksStepId));
+    }
+
     [Fact]
     public void TaskSettings_OnAFeederOnlyScanner()
     {
