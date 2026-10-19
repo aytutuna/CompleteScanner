@@ -6,17 +6,37 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: deviceSelection) {
-            Section("Scanners") {
+            Section {
                 ForEach(state.devices) { device in
                     DeviceRow(device: device)
                         .tag(device.id)
                 }
-                if !hasRealDevices {
-                    Text("No scanners found — check the connection/power, or pick Demo Scanner…")
+                if !state.hasRealDevices {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("No scanner found yet. Check that the scanner is on and connected.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Why isn't my scanner listed?") {
+                            state.showTroubleshooter = true
+                        }
+                        .buttonStyle(.link)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.vertical, 4)
+                    }
+                    .padding(.vertical, 4)
+                }
+            } header: {
+                HStack {
+                    Text("Scanners")
+                    Spacer()
+                    Button {
+                        state.showTroubleshooter = true
+                    } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Why isn't my scanner listed?")
+                    .accessibilityLabel("Why isn't my scanner listed?")
                 }
             }
         }
@@ -26,11 +46,15 @@ struct SidebarView: View {
         }
         .toolbar {
             Button {
-                state.start()
+                state.refreshScanners()
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
             .help("Look for scanners again")
+        }
+        .sheet(isPresented: $state.showTroubleshooter) {
+            TroubleshooterView()
+                .environmentObject(state)
         }
     }
 
@@ -43,10 +67,6 @@ struct SidebarView: View {
             get: { state.selectedDeviceID },
             set: { state.userSelectDevice($0) }
         )
-    }
-
-    private var hasRealDevices: Bool {
-        state.devices.contains { !$0.isDemo }
     }
 
     private var footerHint: some View {

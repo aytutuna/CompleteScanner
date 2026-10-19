@@ -294,6 +294,12 @@ public sealed class AppViewModel : INotifyPropertyChanged
     private readonly HashSet<string> _certificateRefused = [];
     /// <summary>The device diagnostics last written (see <see cref="WriteDeviceDiagnostics"/>).</summary>
     private string _lastDeviceReport = "";
+    /// <summary>Reads the WIA service and the network for the troubleshooter; opens Settings and copies (a stand-in in tests).</summary>
+    private readonly ISystemDiagnostics _system;
+    /// <summary>The WIA service and network as last read (<see cref="ReadSystemStateAsync"/>); Unknown until then.</summary>
+    private (ServiceStatus Wia, NetworkStatus Network) _systemState;
+    /// <summary>The last failed connection or scan, for the troubleshooter; cleared by the next one that works.</summary>
+    private ScannerFailure? _lastFailure;
     /// <summary>
     /// A real scanner appeared, the selected one went away, or another connection to it became
     /// the preferred one, during an operation/review; re-evaluate the selection afterwards.
@@ -335,7 +341,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
 
     public AppViewModel(IReadOnlyList<IScannerBackend>? backends = null,
                         IOcrService? ocrService = null,
-                        IFileActions? fileActions = null)
+                        IFileActions? fileActions = null,
+                        ISystemDiagnostics? systemDiagnostics = null)
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
         var saved = SettingsStore.Load();
@@ -356,6 +363,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
         _driverWindowDevices = [.. preferences.TwainDriverWindow.Where(id => id is not null)];
         _ocrService = ocrService ?? new WindowsOcrService();
         _fileActions = fileActions ?? new WindowsFileActions(MainWindowHandle);
+        _system = systemDiagnostics ?? new WindowsSystemDiagnostics();
         foreach (var preset in _presetStore.Load()) Presets.Add(preset);
         _renderTimer = new DispatcherTimer(DispatcherPriority.Normal, _dispatcher) { Interval = CanvasRenderDebounce };
         _renderTimer.Tick += (_, _) =>
@@ -420,6 +428,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
             backend.StartBrowsing();
         }
         MergeDevices();
+        // The troubleshooter's part of devices.txt needs the WIA service and the network.
+        _ = ReadSystemStateAsync();
         // Remove partial files an export cut off by a crash left in the destination folder.
         string folder = DestinationFolder;
         _ = Task.Run(() => SavedFiles.SweepStaleTempFiles(folder, SavedFiles.StaleTempFileAge));
@@ -615,16 +625,14 @@ public sealed class AppViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Writes the raw device names and how they were grouped to
-    /// %LOCALAPPDATA%\CompleteScanner\Logs\devices.txt whenever they change, so the names real
-    /// drivers report can be collected to tune <see cref="DeviceMerge"/>. Best effort.
+    /// Writes the raw device names, how they were grouped, what each connection reports and the
+    /// troubleshooter's checks to %LOCALAPPDATA%\CompleteScanner\Logs\devices.txt whenever they
+    /// change, so the names real drivers report can be collected to tune <see cref="DeviceMerge"/>
+    /// and a user's setup can be read from one file. Best effort.
     /// </summary>
     private void WriteDeviceDiagnostics()
     {
-        string report = DeviceMerge.DiagnosticsReport(DeviceGroups)
-            + string.Concat(_backends.OfType<Scanning.IBackendDiagnostics>()
-                                     .Select(b => b.DiagnosticsReport)
-                                     .Where(text => !string.IsNullOrEmpty(text)));
+        string report = DiagnosticsText(TroubleshootSnapshot());
         if (report == _lastDeviceReport) return;
         _lastDeviceReport = report;
         try
@@ -638,6 +646,131 @@ public sealed class AppViewModel : INotifyPropertyChanged
         {
             System.Diagnostics.Trace.TraceWarning($"Could not write the device diagnostics: {e.Message}");
         }
+    }
+
+    // MARK: Troubleshooter ("Why isn't my scanner listed?")
+
+    /// <summary>A scanner other than the demo scanner is listed; without one the sidebar offers the troubleshooter.</summary>
+    public bool HasRealDevices => DeviceGroups.Any(group => !group.Primary.IsDemo);
+
+    /// <summary>The last failed connection or scan (null after one that worked).</summary>
+    public ScannerFailure? LastFailure => _lastFailure;
+
+    /// <summary>
+    /// <see cref="ErrorMessage"/> is about a scanner that would not connect or scan, so the
+    /// error bar offers the troubleshooter. The window clears it when it shows the error.
+    /// </summary>
+    public bool ErrorSuggestsTroubleshooter { get; set; }
+
+    /// <summary>
+    /// What the troubleshooter looks at now: the scanners listed, the last failure, the WIA
+    /// service and network as last read, and what each connection adds
+    /// (<see cref="IScannerBackendDiagnostics"/>). Read <see cref="ReadSystemStateAsync"/> first
+    /// for a fresh service and network state.
+    /// </summary>
+    public DiscoverySnapshot TroubleshootSnapshot()
+    {
+        var snapshot = new DiscoverySnapshot
+        {
+            Platform = TroubleshootPlatform.Windows,
+            Devices = [.. DeviceGroups.Select(group => group.Primary)],
+            Network = _systemState.Network,
+            WiaService = _systemState.Wia,
+            LastFailure = _lastFailure,
+        };
+        return _backends.OfType<IScannerBackendDiagnostics>().Aggregate(snapshot, (s, backend) => backend.AddStatus(s));
+    }
+
+    /// <summary>
+    /// Reads the WIA service and the network off the UI thread (the network list can be slow to
+    /// answer), then rewrites devices.txt when that changes it. Only reads; never changes either.
+    /// </summary>
+    public async Task ReadSystemStateAsync()
+    {
+        var system = _system;
+        try
+        {
+            _systemState = await Task.Run(() => (system.WiaService(), system.Network()));
+        }
+        catch (Exception e)
+        {
+            // A stand-in that throws: keep what was read before.
+            System.Diagnostics.Trace.TraceWarning($"Could not read the system's state: {e.Message}");
+        }
+        WriteDeviceDiagnostics();
+    }
+
+    /// <summary>
+    /// The troubleshooter's Refresh: every connection that can looks for scanners again
+    /// (<see cref="IScannerBackendDiagnostics.Rescan"/>); the list updates as they answer.
+    /// </summary>
+    public void RefreshScanners()
+    {
+        foreach (var backend in _backends.OfType<IScannerBackendDiagnostics>()) backend.Rescan();
+        _ = ReadSystemStateAsync();
+    }
+
+    /// <summary>
+    /// The text of devices.txt and of Copy diagnostics: how the device list was grouped, what
+    /// each connection reports, then the troubleshooter's checks for <paramref name="snapshot"/>.
+    /// </summary>
+    public string DiagnosticsText(DiscoverySnapshot snapshot) =>
+        DeviceMerge.DiagnosticsReport(DeviceGroups)
+        + string.Concat(_backends.OfType<Scanning.IBackendDiagnostics>()
+                                 .Select(b => b.DiagnosticsReport)
+                                 .Where(text => !string.IsNullOrEmpty(text)))
+        + "\n" + Troubleshooter.Report(snapshot, Troubleshooter.Diagnose(snapshot));
+
+    /// <summary>Copies <see cref="DiagnosticsText"/> to the clipboard; a refusal is reported in <see cref="ErrorMessage"/>.</summary>
+    public bool CopyDiagnostics(DiscoverySnapshot snapshot)
+    {
+        try
+        {
+            _system.CopyText(DiagnosticsText(snapshot));
+            return true;
+        }
+        catch (Exception e)
+        {
+            ErrorMessage = $"Copy diagnostics did not work: {FileActionErrors.Describe(e)}";
+            NotifyAll();
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Opens the Windows Settings page an action names (Printers &amp; scanners, or Network &amp;
+    /// internet); a refusal is reported in <see cref="ErrorMessage"/>. Nothing is changed there.
+    /// </summary>
+    public bool OpenSystemSettings(TroubleshootAction action)
+    {
+        try
+        {
+            _system.OpenSettings(action);
+            return true;
+        }
+        catch (Exception e)
+        {
+            ErrorMessage = $"{Troubleshooter.Label(action, TroubleshootPlatform.Windows)} did not work: {FileActionErrors.Describe(e)}";
+            NotifyAll();
+            return false;
+        }
+    }
+
+    /// <summary>Keeps a failed connection or scan for the troubleshooter (errors that say nothing about the scanner are skipped).</summary>
+    private void RecordFailure(string deviceName, Exception error)
+    {
+        if (Troubleshooter.FailureFrom(deviceName, error) is not { } failure) return;
+        _lastFailure = failure;
+        // Set right after the error it explains, so the error bar offers the troubleshooter.
+        ErrorSuggestsTroubleshooter = true;
+        WriteDeviceDiagnostics();
+    }
+
+    private void ClearFailure()
+    {
+        if (_lastFailure is null) return;
+        _lastFailure = null;
+        WriteDeviceDiagnostics();
     }
 
     /// <summary>Device selection driven by the user (sidebar click).</summary>
@@ -736,6 +869,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             }
             var caps = await session.GetCapabilitiesAsync();
             Capabilities = caps;
+            ClearFailure();
             var adapted = SettingsAdapter.Adapt(Settings, caps);
             Settings = adapted.Settings;
             // A task the scanner cannot do (the feeder task on a flatbed) ends here.
@@ -749,6 +883,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             // this one in the list shows the certificate.
             _certificateRefused.Add(id);
             StatusMessage = $"Could not connect to {name}.";
+            RecordFailure(name, e);
             if (interactive)
             {
                 ErrorMessage = e.Message;
@@ -772,6 +907,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
         {
             ErrorMessage = e.Message;
             StatusMessage = $"Could not connect to {name}.";
+            RecordFailure(name, e);
         }
         NotifyAll();
     }
@@ -799,6 +935,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             var image = await session.PerformOverviewScanAsync(s);
             // Discard results that arrive after the user switched devices.
             if (_switchGeneration != generation) return;
+            ClearFailure();
             token.ThrowIfCancellationRequested();
             OverviewImage = image;
             StatusMessage = "Overview ready — drag on the preview to select an area, then Scan.";
@@ -835,6 +972,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             // Discard results that arrive after the user switched devices.
             if (_switchGeneration != generation) return;
             if (scanned.Count == 0) throw ScanException.ScanFailed("The scanner returned no pages.");
+            ClearFailure();
             // A feeder batch cut short (a jam, a dropped connection) still returns its pages;
             // once they are handled the user is told the stack was not finished.
             var stop = session.LastScanStop;
@@ -2012,6 +2150,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
         {
             ErrorMessage = e.Message;
             StatusMessage = "Ready.";
+            // A scan the scanner refused (busy, offline, ...) is what the troubleshooter explains.
+            if (e is ScanException && _session is { } session) RecordFailure(session.Info.Name, e);
         }
         _operationCts = null;
         Progress = null;

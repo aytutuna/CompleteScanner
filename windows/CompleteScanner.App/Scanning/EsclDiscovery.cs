@@ -31,12 +31,30 @@ internal sealed class EsclDiscovery : IDisposable
         [("_uscans._tcp", true), ("_uscan._tcp", false)];
 
     private readonly object _gate = new();
-    private readonly Dictionary<string, (DeviceInformation Info, bool Secure)> _found = [];
-    private readonly List<DeviceWatcher> _watchers = [];
+    private readonly Dictionary<string, Found> _found = [];
+    /// <summary>
+    /// Services kept from before <see cref="Restart"/> that the new watcher of their type has not
+    /// reported again yet; those it has not reported by the end of its first pass are gone.
+    /// </summary>
+    private readonly HashSet<string> _carried = [];
+    private readonly List<Browse> _browses = [];
     private SynchronizationContext? _context;
     private bool _changePosted;
-    private int _completedPasses;
     private string? _failure;
+
+    /// <summary>A service as found: what Windows reported (null for one added by a harness) and the service read from it.</summary>
+    private sealed record Found(DeviceInformation? Info, bool Secure, EsclService Service);
+
+    /// <summary>One watcher, for one service type.</summary>
+    private sealed class Browse(DeviceWatcher watcher, bool secure)
+    {
+        public DeviceWatcher Watcher { get; } = watcher;
+        public bool Secure { get; } = secure;
+        /// <summary>Its first pass is complete.</summary>
+        public bool Completed { get; set; }
+        /// <summary>Windows stopped it.</summary>
+        public bool Aborted { get; set; }
+    }
 
     /// <summary>The services changed. Raised on the synchronization context <see cref="Start"/> was called on.</summary>
     public event Action? Changed;
@@ -49,9 +67,35 @@ internal sealed class EsclDiscovery : IDisposable
             lock (_gate)
             {
                 if (_failure is not null) return $"unavailable ({_failure})";
-                if (_watchers.Count == 0) return "off";
-                string pass = _completedPasses >= _watchers.Count ? "first pass complete" : "first pass running";
+                if (_browses.Count == 0) return "off";
+                string pass = _browses.All(b => b.Completed) ? "first pass complete" : "first pass running";
                 return $"browsing, {pass}, {_found.Count} service(s)";
+            }
+        }
+    }
+
+    /// <summary>How browsing goes, for the troubleshooter; <see cref="Failure"/> says why it is unavailable.</summary>
+    public DiscoveryStatus State
+    {
+        get
+        {
+            lock (_gate)
+            {
+                if (_failure is not null) return DiscoveryStatus.Unavailable;
+                if (_browses.Count == 0) return DiscoveryStatus.Off;
+                return _browses.All(b => b.Completed) ? DiscoveryStatus.Running : DiscoveryStatus.Searching;
+            }
+        }
+    }
+
+    /// <summary>Why browsing is unavailable, as Windows put it; null while it works.</summary>
+    public string? Failure
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _failure;
             }
         }
     }
@@ -63,7 +107,7 @@ internal sealed class EsclDiscovery : IDisposable
         {
             lock (_gate)
             {
-                return [.. _found.Values.Select(entry => ToService(entry.Info, entry.Secure))];
+                return [.. _found.Values.Select(entry => entry.Service)];
             }
         }
     }
@@ -72,62 +116,113 @@ internal sealed class EsclDiscovery : IDisposable
     {
         lock (_gate)
         {
-            if (_watchers.Count > 0) return;
+            if (_browses.Count > 0) return;
             _context = SynchronizationContext.Current;
-            _failure = null;
-            _completedPasses = 0;
-            try
-            {
-                foreach (var (serviceName, secure) in ServiceTypes)
-                {
-                    string aqs = $"System.Devices.AepService.ProtocolId:=\"{DnssdProtocolId}\" AND "
-                                 + "System.Devices.Dnssd.Domain:=\"local\" AND "
-                                 + $"System.Devices.Dnssd.ServiceName:=\"{serviceName}\"";
-                    var watcher = DeviceInformation.CreateWatcher(aqs, RequestedProperties,
-                                                                  DeviceInformationKind.AssociationEndpointService);
-                    watcher.Added += (_, info) => OnAdded(info, secure);
-                    watcher.Updated += (_, update) => OnUpdated(update);
-                    watcher.Removed += (_, update) => OnRemoved(update);
-                    watcher.EnumerationCompleted += (_, _) => OnEnumerationCompleted();
-                    watcher.Stopped += (sender, _) => OnStopped(sender);
-                    _watchers.Add(watcher);
-                }
-                foreach (var watcher in _watchers) watcher.Start();
-            }
-            catch (Exception e)
-            {
-                // Without the watcher, scanners can still be added by address.
-                _failure = e.Message;
-                StopWatchers();
-            }
+            StartMissing();
         }
         PostChanged();
+    }
+
+    /// <summary>
+    /// Starts again the search for each service type whose watcher Windows stopped (or that would
+    /// not start); a watcher that works is left alone. What was found is kept: the services of a
+    /// restarted type stay listed until its new watcher has made its first pass, and only those
+    /// it did not find again are dropped then. Does nothing while every watcher works.
+    /// </summary>
+    public void Restart()
+    {
+        lock (_gate)
+        {
+            if (_failure is null && _browses.Count == ServiceTypes.Length) return;
+            _context ??= SynchronizationContext.Current;
+            var aborted = _browses.Where(b => b.Aborted).ToList();
+            foreach (var browse in aborted) _browses.Remove(browse);
+            StopWatchers(aborted);
+            StartMissing();
+        }
+        PostChanged();
+    }
+
+    /// <summary>Creates and starts a watcher for each service type that has none. Call under the lock.</summary>
+    private void StartMissing()
+    {
+        _failure = null;
+        var started = new List<Browse>();
+        try
+        {
+            foreach (var (serviceName, secure) in ServiceTypes)
+            {
+                if (_browses.Any(b => b.Secure == secure)) continue;
+                // Its services found so far stay until the new watcher's first pass is complete.
+                foreach (var (id, entry) in _found)
+                {
+                    if (entry.Secure == secure) _carried.Add(id);
+                }
+                string aqs = $"System.Devices.AepService.ProtocolId:=\"{DnssdProtocolId}\" AND "
+                             + "System.Devices.Dnssd.Domain:=\"local\" AND "
+                             + $"System.Devices.Dnssd.ServiceName:=\"{serviceName}\"";
+                var watcher = DeviceInformation.CreateWatcher(aqs, RequestedProperties,
+                                                              DeviceInformationKind.AssociationEndpointService);
+                var browse = new Browse(watcher, secure);
+                watcher.Added += (_, info) => OnAdded(browse, info);
+                watcher.Updated += (_, update) => OnUpdated(browse, update);
+                watcher.Removed += (_, update) => OnRemoved(browse, update);
+                watcher.EnumerationCompleted += (_, _) => OnEnumerationCompleted(browse);
+                watcher.Stopped += (_, _) => OnStopped(browse);
+                started.Add(browse);
+                _browses.Add(browse);
+            }
+            foreach (var browse in started) browse.Watcher.Start();
+        }
+        catch (Exception e)
+        {
+            // Without the watcher, scanners can still be added by address.
+            _failure = e.Message;
+            foreach (var browse in started) _browses.Remove(browse);
+            StopWatchers(started);
+        }
     }
 
     public void Stop()
     {
         lock (_gate)
         {
-            StopWatchers();
+            var stopping = _browses.ToList();
+            _browses.Clear();
+            StopWatchers(stopping);
             _found.Clear();
+            _carried.Clear();
+            _failure = null;
         }
         PostChanged();
     }
 
     public void Dispose() => Stop();
 
-    private void StopWatchers()
+    /// <summary>
+    /// A service as if a watcher had reported it, for harnesses: a stand-in for a scanner on the
+    /// network, listed until <see cref="Stop"/>.
+    /// </summary>
+    internal void AddService(EsclService service)
     {
-        // Forgotten first, so their Stopped events are not taken for Windows aborting them.
-        var stopping = _watchers.ToList();
-        _watchers.Clear();
-        foreach (var watcher in stopping)
+        lock (_gate)
+        {
+            _found[service.Id] = new Found(null, service.Secure, service);
+            _carried.Remove(service.Id);
+        }
+        PostChanged();
+    }
+
+    /// <summary>Stops watchers already forgotten, so their Stopped events are not taken for Windows aborting them.</summary>
+    private static void StopWatchers(IEnumerable<Browse> stopping)
+    {
+        foreach (var browse in stopping)
         {
             try
             {
-                if (watcher.Status is DeviceWatcherStatus.Started or DeviceWatcherStatus.EnumerationCompleted)
+                if (browse.Watcher.Status is DeviceWatcherStatus.Started or DeviceWatcherStatus.EnumerationCompleted)
                 {
-                    watcher.Stop();
+                    browse.Watcher.Stop();
                 }
             }
             catch (Exception)
@@ -137,46 +232,65 @@ internal sealed class EsclDiscovery : IDisposable
         }
     }
 
-    private void OnAdded(DeviceInformation info, bool secure)
+    private void OnAdded(Browse browse, DeviceInformation info)
     {
         lock (_gate)
         {
-            if (_watchers.Count == 0) return;
-            _found[info.Id] = (info, secure);
+            if (!_browses.Contains(browse)) return; // stopped or replaced
+            _found[info.Id] = new Found(info, browse.Secure, ToService(info, browse.Secure));
+            _carried.Remove(info.Id);
         }
         PostChanged();
     }
 
-    private void OnUpdated(DeviceInformationUpdate update)
+    private void OnUpdated(Browse browse, DeviceInformationUpdate update)
     {
         lock (_gate)
         {
-            if (!_found.TryGetValue(update.Id, out var entry)) return;
+            if (!_browses.Contains(browse)) return;
+            if (!_found.TryGetValue(update.Id, out var entry) || entry.Info is null) return;
             entry.Info.Update(update);
+            _found[update.Id] = entry with { Service = ToService(entry.Info, entry.Secure) };
         }
         PostChanged();
     }
 
-    private void OnRemoved(DeviceInformationUpdate update)
+    private void OnRemoved(Browse browse, DeviceInformationUpdate update)
     {
         bool removed;
-        lock (_gate) removed = _found.Remove(update.Id);
+        lock (_gate)
+        {
+            if (!_browses.Contains(browse)) return;
+            removed = _found.Remove(update.Id);
+            _carried.Remove(update.Id);
+        }
         if (removed) PostChanged();
     }
 
-    private void OnEnumerationCompleted()
+    /// <summary>A watcher's first pass is complete: services kept from before a restart that it did not find again are gone.</summary>
+    private void OnEnumerationCompleted(Browse browse)
     {
-        lock (_gate) _completedPasses++;
+        lock (_gate)
+        {
+            if (!_browses.Contains(browse)) return;
+            browse.Completed = true;
+            foreach (string id in _carried.Where(id => _found.TryGetValue(id, out var entry) && entry.Secure == browse.Secure).ToList())
+            {
+                _found.Remove(id);
+                _carried.Remove(id);
+            }
+        }
         PostChanged();
     }
 
     /// <summary>A watcher ended without being stopped here (Windows aborted it): say so in the diagnostics.</summary>
-    private void OnStopped(DeviceWatcher watcher)
+    private void OnStopped(Browse browse)
     {
         lock (_gate)
         {
-            if (!_watchers.Contains(watcher)) return; // stopped by Stop()
-            _failure = $"the Windows device watcher stopped ({watcher.Status})";
+            if (!_browses.Contains(browse)) return; // stopped by Stop() or Restart()
+            browse.Aborted = true;
+            _failure = $"the Windows device watcher stopped ({browse.Watcher.Status})";
         }
         PostChanged();
     }

@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 /// opens sessions on `ICScannerDevice`s. Every ImageCaptureCore delegate
 /// callback pair is bridged to async/await with a `CheckedContinuation` that
 /// is resumed exactly once.
-public final class ICScannerBackend: NSObject, ScannerBackend, ICDeviceBrowserDelegate {
+public final class ICScannerBackend: NSObject, ScannerBackend, ScannerBackendDiagnostics, ICDeviceBrowserDelegate {
 
     public var onDevicesChanged: (() -> Void)?
     public private(set) var devices: [ScannerInfo] = []
@@ -25,6 +25,9 @@ public final class ICScannerBackend: NSObject, ScannerBackend, ICDeviceBrowserDe
     /// could discard it; doubled after each fruitless restart, reset on discovery.
     private static let initialRebrowseDelay: UInt64 = 10_000_000_000
     private var rebrowseDelay: UInt64 = ICScannerBackend.initialRebrowseDelay
+    /// When the current browser started. Neither Refresh nor the watchdog restarts it sooner
+    /// than `initialRebrowseDelay` after that, so a slow enumeration is never cut short.
+    private var browserStartedAt: Date?
 
     public override init() {
         super.init()
@@ -44,9 +47,12 @@ public final class ICScannerBackend: NSObject, ScannerBackend, ICDeviceBrowserDe
                 guard let self, !Task.isCancelled else { return }
                 if self.devices.isEmpty, self.browser != nil {
                     // Only restart while nothing was found: a restart while a session
-                    // is open would tear the device out from under it.
-                    self.restartBrowser()
-                    self.rebrowseDelay = min(self.rebrowseDelay * 2, 60_000_000_000)
+                    // is open would tear the device out from under it. A browser that a
+                    // Refresh restarted moments ago is left to finish first.
+                    if self.browserHadTime {
+                        self.restartBrowser()
+                        self.rebrowseDelay = min(self.rebrowseDelay * 2, 60_000_000_000)
+                    }
                 } else {
                     self.rebrowseDelay = Self.initialRebrowseDelay
                 }
@@ -66,6 +72,36 @@ public final class ICScannerBackend: NSObject, ScannerBackend, ICDeviceBrowserDe
         onDevicesChanged?()
     }
 
+    // MARK: - ScannerBackendDiagnostics
+
+    /// The troubleshooter's view: whether ImageCaptureCore is looking for scanners (USB, Bonjour
+    /// and shared together; it reports no errors of its own).
+    public func addStatus(to snapshot: DiscoverySnapshot) -> DiscoverySnapshot {
+        var result = snapshot
+        result.discovery = browser != nil ? .running : .off
+        return result
+    }
+
+    /// The troubleshooter's Refresh: starts the browser when it is not running, and restarts it
+    /// while nothing is listed (as the watchdog does) once it has run long enough for a slow
+    /// Bonjour or shared enumeration to finish; a younger browser is left to finish. With a
+    /// scanner listed it is left alone: a restart would tear an open session's device out from
+    /// under it.
+    public func rescan() {
+        if browser == nil {
+            startBrowsing()
+        } else if devices.isEmpty, browserHadTime {
+            restartBrowser()
+            rebrowseDelay = Self.initialRebrowseDelay
+        }
+    }
+
+    /// The current browser has run at least `initialRebrowseDelay`.
+    private var browserHadTime: Bool {
+        guard let started = browserStartedAt else { return true }
+        return Date().timeIntervalSince(started) >= Double(Self.initialRebrowseDelay) / 1_000_000_000
+    }
+
     private func startBrowser() {
         let b = ICDeviceBrowser()
         b.delegate = self
@@ -75,6 +111,7 @@ public final class ICScannerBackend: NSObject, ScannerBackend, ICDeviceBrowserDe
                 | ICDeviceLocationTypeMask.bonjour.rawValue
                 | ICDeviceLocationTypeMask.shared.rawValue)!
         browser = b
+        browserStartedAt = Date()
         b.start()
     }
 

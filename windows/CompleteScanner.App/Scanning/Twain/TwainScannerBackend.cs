@@ -20,7 +20,7 @@ namespace CompleteScanner.App.Scanning.Twain;
 ///
 /// Experimental, untested against real TWAIN drivers (see <see cref="NTwainDriver"/>).
 /// </summary>
-public sealed class TwainScannerBackend : IScannerBackend, IBackendDiagnostics
+public sealed class TwainScannerBackend : IScannerBackend, IBackendDiagnostics, IScannerBackendDiagnostics
 {
     /// <summary>Longest wait for the driver list (the data source manager loads every driver to ask its name).</summary>
     internal static readonly TimeSpan EnumerateTimeout = TimeSpan.FromSeconds(60);
@@ -68,6 +68,34 @@ public sealed class TwainScannerBackend : IScannerBackend, IBackendDiagnostics
     public TwainAvailability Availability { get; private set; } = TwainAvailability.Unknown;
 
     public string? DiagnosticsReport { get; private set; }
+
+    /// <summary>Driver files installed only for 32-bit apps, as of the last listing.</summary>
+    private IReadOnlyList<string> _thirtyTwoBitOnly = [];
+
+    /// <summary>The troubleshooter's view: whether TWAIN works, its drivers, and the 32-bit-only ones.</summary>
+    public DiscoverySnapshot AddStatus(DiscoverySnapshot snapshot) => snapshot with
+    {
+        Twain = Availability switch
+        {
+            TwainAvailability.Available => TwainStatus.Available,
+            TwainAvailability.NoDataSourceManager => TwainStatus.NotInstalled,
+            TwainAvailability.Failed => TwainStatus.Failed,
+            _ => TwainStatus.Unknown,
+        },
+        TwainDriverCount = _devices.Count,
+        ThirtyTwoBitOnlyDrivers = _thirtyTwoBitOnly,
+    };
+
+    /// <summary>
+    /// The troubleshooter's Refresh: lists the drivers again when TWAIN was missing or would not
+    /// open. While TWAIN works the list stays as it is (TWAIN has no plug-and-play events, and
+    /// listing again could disturb a scanner in use).
+    /// </summary>
+    public void Rescan()
+    {
+        if (!_browsing || Availability is TwainAvailability.Available or TwainAvailability.Unknown) return;
+        _ = Enumerate(_generation);
+    }
 
     internal TwainThread Worker => _thread.Value;
 
@@ -122,6 +150,7 @@ public sealed class TwainScannerBackend : IScannerBackend, IBackendDiagnostics
             // A failure reported late does not replace a listing that worked in the meantime.
             if (found.Availability == TwainAvailability.Failed && Availability == TwainAvailability.Available) return;
             Availability = found.Availability;
+            _thirtyTwoBitOnly = found.ThirtyTwoBitOnly;
             DiagnosticsReport = TwainDiagnostics.Report(found.Availability, [.. found.Sources.Select(s => s.Name)],
                                                         found.ThirtyTwoBitOnly);
             _devices.Clear();

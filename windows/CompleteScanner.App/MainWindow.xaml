@@ -42,6 +42,13 @@
                     <Button DockPanel.Dock="Right" Style="{StaticResource SmallIconButtonStyle}" Content="&#xE711;"
                             ToolTip="Dismiss" AutomationProperties.Name="Dismiss" VerticalAlignment="Top"
                             Click="InfoBarClose_Click" />
+                    <!-- Shown when the error is a scanner that would not connect or scan. -->
+                    <Button DockPanel.Dock="Right" x:Name="InfoBarTroubleshootButton" Style="{StaticResource SubtleButtonStyle}"
+                            local:Icon.Glyph="&#xE9CE;" Content="Troubleshoot" VerticalAlignment="Top" Margin="8,0,4,0"
+                            Visibility="Collapsed"
+                            ToolTip="Why isn't my scanner listed or working? Checks what can stop it"
+                            AutomationProperties.HelpText="Opens the troubleshooter: checks what stops scanners from appearing or connecting"
+                            Click="Troubleshoot_Click" />
                     <TextBlock x:Name="InfoBarText" Style="{StaticResource BodyText}" TextWrapping="Wrap"
                                VerticalAlignment="Center" AutomationProperties.LiveSetting="Assertive"><Run
                             Text="Something went wrong" FontWeight="SemiBold" /><Run Text="  " /><Run x:Name="InfoBarMessage" /></TextBlock>
@@ -107,8 +114,14 @@
                             ToolTip="Show scanner and preset names"
                             AutomationProperties.Name="Show scanner and preset names"
                             Click="PaneToggle_Click" />
+                    <Button DockPanel.Dock="Right" x:Name="TroubleshootButton" Style="{StaticResource SmallIconButtonStyle}"
+                            Content="&#xE9CE;" Margin="0,4,8,0" VerticalAlignment="Center"
+                            ToolTip="Why isn't my scanner listed?"
+                            AutomationProperties.Name="Why isn't my scanner listed?"
+                            AutomationProperties.HelpText="Opens the troubleshooter: checks what stops scanners from appearing"
+                            Click="Troubleshoot_Click" />
                     <Button DockPanel.Dock="Right" x:Name="AddScannerButton" Style="{StaticResource SmallIconButtonStyle}"
-                            Content="&#xE710;" Margin="0,4,8,0" VerticalAlignment="Center"
+                            Content="&#xE710;" Margin="0,4,2,0" VerticalAlignment="Center"
                             ToolTip="Add a network scanner by its address"
                             AutomationProperties.Name="Add scanner by address"
                             Click="AddScanner_Click" />
@@ -163,24 +176,13 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-                <!-- The empty state; the add button in the header offers the same. -->
-                <TextBlock Grid.Row="2" Margin="16,4" TextWrapping="Wrap">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock" BasedOn="{StaticResource CaptionText}">
-                            <Setter Property="Visibility" Value="Collapsed" />
-                            <Style.Triggers>
-                                <MultiDataTrigger>
-                                    <MultiDataTrigger.Conditions>
-                                        <Condition Binding="{Binding HasItems, ElementName=DeviceList}" Value="False" />
-                                        <Condition Binding="{Binding IsPaneCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}}" Value="False" />
-                                    </MultiDataTrigger.Conditions>
-                                    <Setter Property="Visibility" Value="Visible" />
-                                </MultiDataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style><Run
-                        Text="No scanners found. Check that the scanner is on and connected." /><LineBreak /><Hyperlink
-                        Click="AddScanner_Click">Add a network scanner by address…</Hyperlink>
+                <!-- The empty state while no scanner but the demo scanner is listed (shown from code:
+                     UpdateEmptyDevicesHint); the buttons in the header offer the same. -->
+                <TextBlock Grid.Row="2" x:Name="EmptyDevicesHint" Margin="16,4" TextWrapping="Wrap"
+                           Style="{StaticResource CaptionText}" Visibility="Collapsed"><Run
+                        Text="No scanner found yet. Check that the scanner is on and connected." /><LineBreak /><Hyperlink
+                        x:Name="EmptyTroubleshootLink" Click="Troubleshoot_Click">Why isn't my scanner listed?</Hyperlink><LineBreak /><Hyperlink
+                        x:Name="EmptyAddScannerLink" Click="AddScanner_Click">Add a network scanner by address…</Hyperlink>
                 </TextBlock>
 
                 <DockPanel Grid.Row="3" x:Name="PresetsHeader" Margin="16,16,8,4">

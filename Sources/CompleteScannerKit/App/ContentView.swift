@@ -68,8 +68,12 @@ struct ContentView: View {
         }
         .alert("CompleteScanner", isPresented: Binding(
             get: { state.errorMessage != nil },
-            set: { if !$0 { state.errorMessage = nil } }
+            set: { if !$0 { state.errorMessage = nil; state.errorSuggestsTroubleshooter = false } }
         )) {
+            // A scanner that would not connect or scan: the alert offers the troubleshooter.
+            if state.errorSuggestsTroubleshooter {
+                Button("Troubleshoot\u{2026}") { state.showTroubleshooter = true }
+            }
             Button("OK", role: .cancel) {}
         } message: {
             Text(state.errorMessage ?? "")

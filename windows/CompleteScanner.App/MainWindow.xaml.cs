@@ -123,6 +123,8 @@ public partial class MainWindow : Window
         AutomationProperties.SetName(PaneToggleButton, toggleText);
         ScannersHeader.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         AddScannerButton.Visibility = compact || ViewModel.NetworkScanners is null ? Visibility.Collapsed : Visibility.Visible;
+        TroubleshootButton.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        UpdateEmptyDevicesHint();
         ScannersHeader.Margin = narrow ? new Thickness(0, 0, 16, 0) : new Thickness(16, 8, 16, 6);
         PresetsHeader.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         PresetsDivider.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
@@ -327,17 +329,34 @@ public partial class MainWindow : Window
         if (ViewModel.ErrorMessage is { } error)
         {
             ViewModel.ErrorMessage = null;
+            // A scanner that would not connect or scan: the bar offers the troubleshooter.
+            bool troubleshoot = ViewModel.ErrorSuggestsTroubleshooter;
+            ViewModel.ErrorSuggestsTroubleshooter = false;
             ShowError(error);
+            if (troubleshoot) InfoBarTroubleshootButton.Visibility = Visibility.Visible;
         }
+        UpdateEmptyDevicesHint();
+    }
+
+    /// <summary>
+    /// The sidebar's empty state (the troubleshooter and adding by address) while no scanner but
+    /// the demo scanner is listed; not in the icon rail, where the header buttons are hidden too.
+    /// </summary>
+    private void UpdateEmptyDevicesHint()
+    {
+        EmptyDevicesHint.Visibility = !ViewModel.HasRealDevices && !IsPaneCompact ? Visibility.Visible : Visibility.Collapsed;
+        EmptyAddScannerLink.IsEnabled = ViewModel.NetworkScanners is not null;
     }
 
     /// <summary>
     /// Shows an error in the InfoBar above the window content. It stays until dismissed; a newer
-    /// error replaces the text. Screen readers are told through a live-region event.
+    /// error replaces the text. Screen readers are told through a live-region event. The bar's
+    /// Troubleshoot button is hidden; only a scanner error from the view model shows it again.
     /// </summary>
     private void ShowError(string message)
     {
         InfoBarMessage.Text = message;
+        InfoBarTroubleshootButton.Visibility = Visibility.Collapsed;
         InfoBar.Visibility = Visibility.Visible;
         var peer = UIElementAutomationPeer.FromElement(InfoBarText) ?? UIElementAutomationPeer.CreatePeerForElement(InfoBarText);
         peer?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
@@ -1140,6 +1159,16 @@ public partial class MainWindow : Window
     }
 
     // MARK: - Network scanners
+
+    /// <summary>
+    /// "Why isn't my scanner listed?": the troubleshooter, from the Scanners header, the empty
+    /// list and an error about a scanner. It follows the app while open.
+    /// </summary>
+    private void Troubleshoot_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender == InfoBarTroubleshootButton) InfoBar.Visibility = Visibility.Collapsed;
+        new TroubleshooterWindow(ViewModel) { Owner = this }.ShowDialog();
+    }
 
     /// <summary>"Add scanner by address": the dialog checks and adds it; it is then selected.</summary>
     private void AddScanner_Click(object sender, RoutedEventArgs e)

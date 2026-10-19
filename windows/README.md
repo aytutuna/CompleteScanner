@@ -7,8 +7,9 @@ UI per platform** architecture:
   dependencies**: photo detection (thresholding → morphology → connected components →
   convex hull → rotating calipers), the image adjustment pipeline, naming templates,
   presets/settings persistence, a dependency-free searchable-PDF writer, the scanner
-  backend contract, scanner problems with their user-facing text (`Troubleshooting.cs`),
-  and the hardware-free demo scanner. It is a type-for-type port of the
+  backend contract, scanner problems with their user-facing text (`Troubleshooting.cs`), the
+  "Why isn't my scanner listed?" checks (`Troubleshooter.cs`), and the hardware-free demo
+  scanner. It is a type-for-type port of the
   Swift `CompleteScannerKit` core (see `../CONTRACTS.md` for the shared conventions,
   especially the four coordinate systems). It also holds the testable protocol logic of the
   Windows-only backends, which has no Swift twin because macOS reaches the same scanners
@@ -17,7 +18,8 @@ UI per platform** architecture:
   status parser, the HTTP client and session, DNS-SD TXT records and address parsing, and
   certificate pinning for HTTPS), and the TWAIN scan logic (`Twain/`: the acquisition state machine behind an
   `ITwainTransport` interface, memory-strip and bitmap conversion, the paper-size table and
-  the condition-code mapping). Device merging (`DeviceMerge.cs`: one row per physical
+  the condition-code mapping), and the Windows service and network-category values the
+  troubleshooter reads (`WindowsSystemStatus.cs`). Device merging (`DeviceMerge.cs`: one row per physical
   scanner, whichever backends list it) is shared with macOS.
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
   xUnit with the same fixtures, geometry, and tolerances. **This is the contract that keeps
@@ -204,6 +206,45 @@ offered, what Copy puts on the clipboard, the email route) and carried out by
 `Services/FileActions.cs` and `Services/ShareService.cs`, which the view model takes as a
 stand-in in checks.
 
+### Why isn't my scanner listed?
+
+The **?** button next to **Scanners**, the link under the scanner list while only the Demo
+Scanner is listed, and **Troubleshoot** on an error about a scanner that would not connect or
+scan open a window of checks, each a card with its status (problem, warning, OK or tip), what it
+means in plain language and the buttons that help:
+
+- **The last failure**: a scanner that is busy in another app ("close other apps that may be
+  using it, such as Windows Scan or the scanner maker's app"), another condition the scanner
+  reported (the `ScannerProblem` texts: cover open, jam, offline, …), or a connection that failed,
+  with its message.
+- **The network**: not connected, or connected only to networks whose profile is **Public**, where
+  Windows does not look for devices (**Open network settings**, **Add scanner by address…**).
+- **The Windows scanner service**: Windows Image Acquisition (`stisvc`) running, starting, stopped,
+  disabled or missing, read with `QueryServiceStatus` and `QueryServiceConfig` (read-only access).
+- **TWAIN**: installed with how many drivers, not installed (a warning while no scanner is listed,
+  a tip otherwise), or would not start; and drivers installed only for 32-bit apps, named by file.
+- **The automatic network search** (DNS-SD) and how many scanners it found, and each address
+  added by hand that does not answer, with why.
+- **Tips** that always apply: a USB scanner needs its maker's driver and a direct cable
+  (**Open Windows scanner settings**, `ms-settings:printers`, shows whether Windows sees it);
+  wake the scanner; some scanners work only with their maker's app.
+
+**Refresh** asks every connection to look again: WIA lists its scanners, eSCL checks the addresses
+added by hand and restarts a network search Windows had stopped (only the stopped one; the scanners
+it had found stay listed, and those its new search does not find again are dropped after its first
+pass), and TWAIN lists its drivers again when it was missing or would not start (while TWAIN works
+its list stays as it is). A Refresh while one is running is ignored. The checks are made again as
+the scanner list changes. **Copy diagnostics** copies the checks and the device list
+(the same text as `%LOCALAPPDATA%\CompleteScanner\Logs\devices.txt`, which now ends with the
+checks). The window only reads: it never starts, stops or reconfigures a service or a setting, and
+the Settings buttons only open Windows Settings. Everything is keyboard reachable (Tab goes through
+each card's buttons in reading order; Enter or Esc closes), and screen readers hear each card's
+status with its title (each card is a group named that way, and each button's help text says the
+same). The checks are made in Core (`Troubleshooter.Diagnose` over a
+`DiscoverySnapshot`, with the same cases and wording as the Mac); each connection adds what it
+knows through `IScannerBackendDiagnostics`, and the system's state comes from
+`Services/SystemDiagnostics.cs` (the Network List Manager for the network category).
+
 ## Status — what's verified vs. what needs scanner hardware
 
 | Component | Status |
@@ -219,6 +260,7 @@ stand-in in checks.
 | TWAIN backend (`Scanning/Twain`) | **Experimental, untested against hardware** — see [TWAIN](#twain) below. The scan logic in Core (negotiation choices, the acquisition state machine, strip and bitmap conversion, paper sizes, error mapping, 32-bit driver detection) is covered by `TwainScanLoopTests`, `TwainRasterTests` and `TwainScanRequestsTests` through a fake transport. Driving the view model with the real session class over a scripted transport checked flatbed, feeder, preview, empty feeder, a jam after two sheets (pages kept, reason shown), cancel while the driver is silent (returns at once, the source is reset and disabled in the background), switching away (the source is closed without waiting), the driver-window switch and its saved choice (kept when connecting finds the scanner off), a driver stuck while enabling (reported after the start limit, the next scan refused at once, the late scan stopped when the driver answers), and that a scanner only TWAIN lists is never opened unless the user picks it. On a PC without a TWAIN Data Source Manager the backend lists nothing and `devices.txt` says why; the app starts normally. **Unverified:** real drivers, NTwain's message loop with them, the TWAIN Working Group sample source (not installed here) |
 | Two-sided scanning and paper size (`DocumentSides`, `PaperSize`) | Covered by `DocumentSidesTests`, `PaperSizeTests` and the sides cases of `ModelsCompatTests`, `ScanTaskTests`, `SettingsAdapterTests` and `MockScannerTests` (same cases as macOS), plus the backend requests in `EsclTests`, `TwainScanRequestsTests` and `WiaErrorsTests`. Checked by driving the view model with the demo scanner (both sides in one pass on the long and the short edge, a jam keeping one sheet's two sides, turning over by hand with matching counts, a mismatch, scanning the backs again, combining anyway, keeping the fronts, a jam during the fronts (the steps stay at the fronts, the rest of them scanned as fronts, Done with fronts), a stack scanned in parts (Scan more fronts), a scanner whose capabilities could not be read on connect asked for both sides by a one-sided feeder (pages kept one-sided, capabilities read after the scan), earlier pages keeping their place, the two-sided task on two-sided and one-sided feeders, paper sizes on the feeder and the glass, the saved PDFs' page counts) and by building the window without showing it: the Sides, Flip on and Paper size choices with their greyed-out items and reasons, the banner's two steps, Scan more fronts, Done with fronts and the mismatch choices, the side badges and the screen reader names in the page strip and the Two-sided document card, rendered off screen in light and dark. **Unverified:** real drivers (see [Two-sided scanning and paper size](#two-sided-scanning-and-paper-size)) |
 | Share, email, open with, copy (`SaveActions`, `FileActions`, `ShareService`) | The choices are covered by `SaveActionsTests` and the after-save cases of `ModelsCompatTests` (same cases as macOS). Checked by driving the view model's real save paths with a stand-in for Windows (each after-save action after a PDF, a file saved at once and a photo batch; the Email task sharing; no share window; a refused action; a moved file; a cancelled save running nothing), by building the real clipboard data and share package without placing them anywhere, and by building the window without showing it: the bar, its buttons and menu, the narrow layout, the "After saving" choices, the Saved tab's buttons and menus, rendered off screen in light and dark. **Not tried on screen:** the share window, the Open with dialog and the clipboard themselves (checks must not send, open or overwrite anything), and Mail or Outlook as share targets |
+| Troubleshooter (`Troubleshooter`, `SystemDiagnostics`, `TroubleshooterWindow`) | The checks are covered by `TroubleshooterTests` (same cases as macOS) and the Windows service and network values by `WindowsSystemStatusTests`. Checked by driving the view model with stand-in connections and a stand-in for Windows (the snapshot, the order of the checks, devices.txt, Refresh, Copy diagnostics and Settings refused, a busy scanner at connect and at scan, a connection that works clearing it, a cancelled scan not counting), by reading the real WIA service and network on Windows 11 (Running and Public, as `sc query` and `Get-NetConnectionProfile` report, from UI and thread-pool threads), by copying to the real clipboard with the user's clipboard saved and restored, by an address added by hand on loopback where nothing listens, by a discovered scanner (a stand-in service for a loopback scanner) that stays listed, selected and connected across a Refresh when Windows aborts either network watcher, and dropped only once the restarted watcher's first pass did not find it again, and by building the sidebar, error bar and troubleshooter window without showing them: the header button, the empty state's links, the error bar's Troubleshoot (and none on a file or photo error shown later), one card per check with its buttons and screen-reader names (each card a named group in the UI Automation tree), a Refresh while one runs ignored, rendered off screen in light and dark. **Not tried on screen:** opening Windows Settings and the real Add scanner dialog from it. **Unverified:** a stopped or disabled WIA service, a TWAIN install with 32-bit-only drivers, and a scanner that is really busy in another app |
 | eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — see [Network scanners](#network-scanners-escl) below for discovery, adding by address and HTTPS. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the paper size's region, clamped to the feeder (the feeder's own sheet size for Automatic, at most 17 in tall); two-sided feeder jobs send `<scan:Duplex>true</scan:Duplex>` and use the two-sided feeder's capabilities (`AdfDuplexInputCaps`) when the device lists them, and a device that lists no two-sided feeding scans one side and says so; black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. The protocol client (`EsclClient`, `EsclScannerSession`) is covered by `EsclClientTests` through a stub HTTP handler. Checked against local fake eSCL servers (plain and HTTPS), not a real device |
 
 Known divergences from the macOS app (all documented in the source):
@@ -234,6 +276,13 @@ Known divergences from the macOS app (all documented in the source):
   `TwainRasterTests`, `TwainScanRequestsTests`) have no Swift counterparts: the Mac reaches
   the same scanners through ImageCaptureCore, whose Bonjour browsing also finds network
   scanners. The scanner problems they report (`ScannerProblem`) are shared with macOS.
+- The troubleshooter's checks (`Troubleshooter`) are shared, but each app fills in what it can
+  read. Windows reads the WIA service, the network category, TWAIN and the addresses added by
+  hand (`WindowsSystemStatus.cs` and its `WindowsSystemStatusTests` have no Swift twin); the Mac
+  reads only whether ImageCaptureCore is browsing, since macOS offers no API for its scanner
+  drivers, sharing or the Local Network permission, so those are tips there. The Mac links to
+  Image Capture and to Printers & Scanners instead of adding a scanner by address, which macOS
+  cannot do.
 - Only Windows offers a connection chooser: the Mac merges its USB, Bonjour and shared
   entries for one scanner by ranking alone (USB first) and has no preferences file to keep a
   choice in.
@@ -277,13 +326,16 @@ same scanners through ImageCaptureCore.
 - **What it needs.** The TWAIN Data Source Manager (`C:\Windows\System32\TWAINDSM.dll`) that
   scanner drivers install. The app never ships it (it is LGPL). Without it the TWAIN backend
   lists nothing, and `%LOCALAPPDATA%\CompleteScanner\Logs\devices.txt` says
-  "TWAIN: not installed". The drivers are listed once, at start: a driver installed while
-  the app runs appears after a restart. A listing that fails (the Data Source Manager would
+  "TWAIN: not installed"; the troubleshooter says so too and explains what installs it. The
+  drivers are listed once, at start: a driver installed while TWAIN works appears after a
+  restart (while TWAIN is missing or would not start, the troubleshooter's **Refresh** lists
+  again). A listing that fails (the Data Source Manager would
   not open, or a driver held it up past 60 s) is tried again after 30 s, 1, 2 and then every
   5 minutes, and a listing that finishes late is still used.
 - **64-bit only.** The app can load only 64-bit drivers (`C:\Windows\twain_64`). Drivers
   installed only for 32-bit programs (`C:\Windows\twain_32`) are listed in `devices.txt` as
-  "32-bit only" and cannot be used yet.
+  "32-bit only" and cannot be used yet; the troubleshooter names them and suggests the maker's
+  64-bit driver.
 - **Installed, not connected.** TWAIN lists installed drivers, so a scanner that is off still
   has a row (captioned "TWAIN driver" when no other connection reaches it). Connecting then
   says the scanner is offline. The app therefore never picks such a row on its own (at start,
@@ -344,7 +396,7 @@ row's **via** menu chooses between them.
   each, IPv4, then the `.local` host name, then IPv6 (link-local only with an interface zone).
   A connection that fails, including a failed TLS handshake, moves on to the next address.
 - **Add scanner by address.** The **+** button next to **Scanners** (and the link in the
-  empty list) opens a dialog that takes an IP address, a host name, `host:port` or an
+  empty list and in the troubleshooter) opens a dialog that takes an IP address, a host name, `host:port` or an
   `http(s)://` URL. It checks that an eSCL scanner answers there before adding it, and
   explains what is wrong when nothing does. Addresses are kept in
   `%APPDATA%\CompleteScanner\escl-hosts.json` (a JSON list of strings, the file earlier

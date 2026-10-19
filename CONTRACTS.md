@@ -8,6 +8,7 @@ Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Core/Models.swift` — all shared types (ScanIntent, ColorMode, ScanSource, OutputFormat, AdjustmentSettings, ScanSettings, ScannedPage, DetectedPhotoRegion, DetectedPhoto, ScannerInfo, ScannerCapabilities, ScanProgress, Preset, ScanError).
 - `Sources/CompleteScannerKit/Core/DeviceMerge.swift` — `DeviceGroup` and `DeviceMerge` (one row per physical scanner, see below).
 - `Sources/CompleteScannerKit/Core/Troubleshooting.swift` — `ScannerProblem` and `ScannerProblems.describe` (see below).
+- `Sources/CompleteScannerKit/Core/Troubleshooter.swift`, `App/TroubleshooterService.swift` — "Why isn't my scanner listed?": the discovery snapshot, its checks and what they offer to do (see below).
 - `Sources/CompleteScannerKit/Core/ScannerBackend.swift` — `ScannerBackend` / `ScannerSession` protocols (both `@MainActor`).
 - `Sources/CompleteScannerKit/Core/ScanTask.swift`, `TaskCatalog.swift`, `TaskFlow.swift`, `SettingsAdapter.swift` — the start screen's tasks, their guided steps, and fitting settings to a scanner (see below).
 - `Sources/CompleteScannerKit/Output/PDFImageEncoding.swift`, `Pipeline/ColorAnalysis.swift` — the PDF sizes: how each page image is stored in a PDF (see below).
@@ -19,7 +20,7 @@ Already written (READ THESE FIRST, code against them exactly):
 ## Global rules
 
 1. Write ONLY the files assigned to you. Never edit shared files.
-2. Platform parity and CI. The Windows app under `windows/` is a sibling of this package. Every change to shared core logic (models, settings, naming, pipeline, output, persistence) lands on both platforms in the same change, with mirrored tests: `Tests/CompleteScannerTests` here and `windows/CompleteScanner.Core.Tests` there, same cases. Both suites must be green in CI (`.github/workflows/ci.yml`: `swift build` + `swift test` on macOS, `dotnet test windows/CompleteScanner.sln` on Windows) before a change counts as done. The one exception is the protocol logic of connections only Windows has — WIA, eSCL and TWAIN (`windows/CompleteScanner.Core/WiaErrors.cs`, `Escl/`, `Twain/`): macOS reaches the same scanners through ImageCaptureCore, so that logic and its tests have no Swift twin (see `windows/README.md`). What those connections report to the app (`ScannerInfo`, `ScannerCapabilities`, `ScannerProblem`, `ScanStop`) stays shared.
+2. Platform parity and CI. The Windows app under `windows/` is a sibling of this package. Every change to shared core logic (models, settings, naming, pipeline, output, persistence) lands on both platforms in the same change, with mirrored tests: `Tests/CompleteScannerTests` here and `windows/CompleteScanner.Core.Tests` there, same cases. Both suites must be green in CI (`.github/workflows/ci.yml`: `swift build` + `swift test` on macOS, `dotnet test windows/CompleteScanner.sln` on Windows) before a change counts as done. The one exception is the protocol logic of connections only Windows has — WIA, eSCL and TWAIN (`windows/CompleteScanner.Core/WiaErrors.cs`, `Escl/`, `Twain/`), and the Windows service and network values the troubleshooter reads (`WindowsSystemStatus.cs`): macOS reaches the same scanners through ImageCaptureCore, so that logic and its tests have no Swift twin (see `windows/README.md`). What those connections report to the app (`ScannerInfo`, `ScannerCapabilities`, `ScannerProblem`, `ScanStop`) stays shared.
 3. Any helper function, extension, or type not listed in this document must be `private` or `fileprivate` in your file to avoid cross-file collisions.
 4. Coordinate conventions:
    - Image/region coordinates: pixels, origin TOP-LEFT, x right, y down (see DetectedPhotoRegion doc comment; positive angle = clockwise on screen).
@@ -80,6 +81,60 @@ public struct ScanStop: Equatable, Sendable {
 // fronts and backs only when it is not false.
 ```
 Twin of `windows/CompleteScanner.Core/Troubleshooting.cs` (`ScanException.ForProblem` / `ScanException.Problem`): same cases, same text. Backends report fixable scanner conditions this way rather than as `scanFailed` text.
+
+### Core/Troubleshooter.swift, App/TroubleshooterService.swift
+
+```swift
+public enum TroubleshootPlatform: String, Sendable { case windows, mac }
+public enum NetworkStatus: String, Sendable { case unknown, offline, publicNetwork, privateNetwork, domainNetwork }
+public enum ServiceStatus: String, Sendable { case unknown, running, starting, stopping, stopped, paused, disabled, notInstalled }
+public enum TwainStatus: String, Sendable { case unknown, available, notInstalled, failed }
+public enum DiscoveryStatus: String, Sendable { case unknown, off, searching, running, unavailable }
+public enum CheckStatus: String, CaseIterable, Sendable { case ok, tip, warning, problem }
+public enum TroubleshootAction: String, CaseIterable, Sendable {
+    case refresh, addByAddress, openScannerSettings, openNetworkSettings, openImageCapture, copyDiagnostics
+}
+public struct ManualHostStatus: Equatable, Sendable { address: String; listed: Bool; problem: String? }
+public struct ScannerFailure: Equatable, Sendable { deviceName: String; message: String; problem: ScannerProblem? }
+/// Everything the troubleshooter looks at; defaults (unknown, empty) produce no check. The
+/// Windows-only fields (wiaService, twain…, manualHosts, discoveredCount) stay at their defaults
+/// on the Mac. `init` takes every field, all defaulted, platform `.windows` first.
+public struct DiscoverySnapshot: Equatable, Sendable {
+    platform, devices: [ScannerInfo], network, wiaService, twain, twainDriverCount: Int,
+    thirtyTwoBitOnlyDrivers: [String], discovery, discoveryDetail: String?, discoveredCount: Int,
+    manualHosts: [ManualHostStatus], lastFailure: ScannerFailure?
+    var listedScannerCount: Int { get }            // not the demo scanner
+}
+public struct TroubleshootCheck: Equatable, Sendable { id, status, title, detail, actions: [TroubleshootAction] }
+
+@MainActor public protocol ScannerBackendDiagnostics: AnyObject {   // optional; ScannerBackend is unchanged
+    func addStatus(to snapshot: DiscoverySnapshot) -> DiscoverySnapshot
+    func rescan()                                   // look again; never changes system settings
+}
+
+public enum Troubleshooter {
+    /// Problems, then warnings, then OK, then tips; within each: last failure, network, WIA service,
+    /// TWAIN, 32-bit TWAIN drivers, the search, addresses added by hand, tips. The Mac never gets
+    /// the Windows checks or `.addByAddress`.
+    public static func diagnose(_ snapshot: DiscoverySnapshot) -> [TroubleshootCheck]
+    public static func headline(_ snapshot: DiscoverySnapshot) -> String      // "No scanner found yet", "2 scanners found"
+    public static func summary(_ checks: [TroubleshootCheck]) -> String       // "2 problems and 1 warning found."
+    public static func label(_ action: TroubleshootAction, platform: TroubleshootPlatform) -> String
+    public static func statusLabel(_ status: CheckStatus) -> String           // "OK", "Tip", "Warning", "Problem"
+    public static func report(_ snapshot: DiscoverySnapshot, checks: [TroubleshootCheck]) -> String
+    public static func combineNetworks(_ connected: [NetworkStatus]) -> NetworkStatus
+    /// nil for cancelled, export and unsupported errors (and CancellationError).
+    public static func failure(deviceName: String, error: Error) -> ScannerFailure?
+}
+
+// App/TroubleshooterService.swift: the system side, injected into AppState so tests can stand in for it.
+@MainActor public protocol TroubleshooterService: AnyObject {
+    func open(_ action: TroubleshootAction) throws   // Printers & Scanners, Network, Image Capture
+    func copy(_ text: String) throws                 // NSPasteboard
+}
+@MainActor public final class SystemTroubleshooterService: TroubleshooterService { public init() }
+```
+Twin of `windows/CompleteScanner.Core/Troubleshooter.cs` (`IScannerBackendDiagnostics.AddStatus` / `Rescan`, `Troubleshooter.Diagnose` / `Headline` / `Summary` / `Label` / `StatusLabel` / `Report` / `CombineNetworks` / `FailureFrom`, `DiscoverySnapshot` as a record with init properties); `TroubleshooterTests` are the same cases on both sides. The apps only read the system's state and link to its settings; they never change a service or a setting. `AppState` takes an optional `troubleshooterService:` (default `SystemTroubleshooterService()`), keeps `lastFailure` (the last connection or scan that failed with something the troubleshooter explains, cleared by the next one that works) and `errorSuggestsTroubleshooter` (the error alert then offers Troubleshoot…), and offers `showTroubleshooter`, `hasRealDevices`, `troubleshootSnapshot()`, `refreshScanners()`, `diagnosticsText(_:)`, `copyDiagnostics(_:)` and `openTroubleshootLink(_:)`. `copyDiagnostics(_:)` and `openTroubleshootLink(_:)` return why they did not work (nil when they did) for the troubleshooter's footer and leave `errorMessage` alone, since its alert cannot show over the sheet; Windows reports the same failures in its non-modal error bar as well. `ICScannerBackend` conforms to `ScannerBackendDiagnostics` (browsing or not; Refresh restarts the browser only while nothing is listed and the browser has run at least the watchdog's first delay, 10 s, and the watchdog waits as long after a restart). A Refresh while one is running is ignored on both platforms. devices.txt ends with `Troubleshooter.report`. `UI/TroubleshooterView.swift` (`struct TroubleshooterView: View`) is the sheet, shown from the Scanners header, the empty list and the alert. Windows (`App/Services/SystemDiagnostics.cs`, `TroubleshooterWindow`) also reads the WIA service (`QueryServiceStatus`) and the network category (Network List Manager).
 
 ### Core/DeviceMerge.swift (+ ScannerInfo in Core/Models.swift)
 
@@ -525,7 +580,8 @@ One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: 
 
 ### UI files (all `internal`, SwiftUI, bind to `@EnvironmentObject var state: AppState`)
 
-- `UI/SidebarView.swift` — `struct SidebarView: View`: device list + refresh.
+- `UI/SidebarView.swift` — `struct SidebarView: View`: device list + refresh (`refreshScanners()`), the "Why isn't my scanner listed?" button in the Scanners header and link in the empty list, and the troubleshooter sheet (`state.showTroubleshooter`).
+- `UI/TroubleshooterView.swift` — `struct TroubleshooterView: View`: the troubleshooter's checks as cards with their buttons, Refresh, Copy Diagnostics and Done.
 - `UI/InspectorView.swift` — `struct InspectorView: View`: all settings + Overview/Scan/Cancel buttons + presets.
 - `UI/StatusBarView.swift` — `struct StatusBarView: View`: status text, progress, and the actions for the files saved last (open, show, share, copy; More adds open with and email).
 - `UI/PreviewCanvasView.swift` — `struct PreviewCanvasView: View`: shows `state.canvasImage`, marquee selection editing `state.selectionRect` (only when `state.overviewImage != nil`).

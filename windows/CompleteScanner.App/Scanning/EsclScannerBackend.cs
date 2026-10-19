@@ -24,7 +24,7 @@ namespace CompleteScanner.App.Scanning;
 ///
 /// ⚠ EXPERIMENTAL, UNTESTED AGAINST HARDWARE: checked against a local fake eSCL server.
 /// </summary>
-public sealed class EsclScannerBackend : IScannerBackend, IBackendDiagnostics
+public sealed class EsclScannerBackend : IScannerBackend, IBackendDiagnostics, IScannerBackendDiagnostics
 {
     /// <summary>How often addresses that did not answer are tried again while browsing (harnesses shorten it).</summary>
     internal TimeSpan ReprobeInterval { get; set; } = TimeSpan.FromSeconds(60);
@@ -395,6 +395,34 @@ public sealed class EsclScannerBackend : IScannerBackend, IBackendDiagnostics
         new(address.BaseUri, validator.CreateHandler(), _decode, name, validator, _clientOptions);
 
     // MARK: - Diagnostics
+
+    /// <summary>
+    /// The troubleshooter's view: how the automatic search goes, how many scanners it found,
+    /// and each address added by hand that has been checked, with why nothing answers there.
+    /// </summary>
+    public DiscoverySnapshot AddStatus(DiscoverySnapshot snapshot) => snapshot with
+    {
+        Discovery = _discovery?.State ?? DiscoveryStatus.Unknown,
+        DiscoveryDetail = _discovery?.Failure,
+        DiscoveredCount = _discovered.Count,
+        ManualHosts = [.. snapshot.ManualHosts,
+                       .. _manual.Values.Select(host => new ManualHostStatus(host.Address.ToString(), host.Listed, host.Problem))],
+    };
+
+    /// <summary>
+    /// The troubleshooter's Refresh: checks every address added by hand again now (the regular
+    /// re-check of those that do not answer continues from there) and restarts an automatic
+    /// search that Windows stopped or would not start (<see cref="EsclDiscovery.Restart"/>).
+    /// Scanners already found stay listed meanwhile, and a search that works is left alone.
+    /// </summary>
+    public void Rescan()
+    {
+        if (!_browsing) return;
+        _discovery?.Restart();
+        // A new generation ends the previous check loop, which this one replaces.
+        int generation = ++_browseGeneration;
+        _ = ProbeManualHostsAsync(generation);
+    }
 
     public string? DiagnosticsReport
     {

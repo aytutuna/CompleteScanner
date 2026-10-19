@@ -49,6 +49,16 @@ scanners** — including the Epson Perfection V39 II.
   Executive, A4, A5, A6, B5, ID card, or Automatic) sets the sheet the feeder is asked for, and
   on the glass the area scanned from its corner when nothing is selected. Each page in the strip
   says which side of which sheet it is.
+- **"Why isn't my scanner listed?"**: a troubleshooter, from the **?** button next to
+  **Scanners**, the empty scanner list and an error about a scanner. It checks, in plain
+  language, whether macOS is looking for scanners and what the last failure was (a scanner that
+  is busy in another app or reported a problem). For what macOS does not let it check, it gives
+  tips: a USB scanner needs its maker's driver, a network scanner must be on the same network
+  and the Local Network permission allowed, and a shared scanner needs Scanner Sharing on the
+  other Mac. It offers **Refresh**, **Open Image Capture**, **Open Printers & Scanners** and
+  **Copy Diagnostics**. It only reads; it never changes a setting. On Windows it also checks
+  the Windows Image Acquisition service, the network profile (Public networks hide scanners),
+  TWAIN and 32-bit-only TWAIN drivers, and addresses added by hand.
 - **Image adjustments**: auto-enhance, brightness / contrast / saturation / sharpness,
   descreen (moiré reduction for printed material), faded-color restoration for old photos,
   black-and-white threshold.
@@ -110,11 +120,13 @@ instructions and current status.
 - Any scanner visible to Apple Image Capture will appear here too — that includes most
   Canon/HP/Brother/Fujitsu devices and all AirScan/eSCL network scanners.
 - If a USB scanner is missing: check the cable/power, then install the manufacturer's macOS
-  driver, then click the refresh button in the sidebar.
+  driver, then click the refresh button in the sidebar. **Why isn't my scanner listed?** (the
+  **?** next to **Scanners**) walks through the usual causes.
 - A scanner reachable several ways (an MFP on USB and on the network) is listed once. The app
   connects over USB when it can, then over the network, then through a shared Mac. The names
-  the devices report, and how they were matched, are written to
-  `~/Library/Logs/CompleteScanner/devices.txt`.
+  the devices report, how they were matched and the troubleshooter's checks are written to
+  `~/Library/Logs/CompleteScanner/devices.txt`; **Copy Diagnostics** in the troubleshooter
+  copies the same text.
 
 ## Project layout
 

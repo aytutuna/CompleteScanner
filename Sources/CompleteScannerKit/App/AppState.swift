@@ -106,6 +106,15 @@ public final class AppState: ObservableObject {
 
     @Published public private(set) var presets: [Preset] = []
 
+    /// "Why isn't my scanner listed?" is open (`TroubleshooterView`, shown from the sidebar and
+    /// from an error about a scanner).
+    @Published public var showTroubleshooter = false
+    /// The last failed connection or scan, for the troubleshooter; cleared by the next one that works.
+    @Published public private(set) var lastFailure: ScannerFailure?
+    /// `errorMessage` is about a scanner that would not connect or scan, so its alert offers the
+    /// troubleshooter. Cleared when the alert closes.
+    @Published public var errorSuggestsTroubleshooter = false
+
     /// No settings were saved before this start: the app opens on the start screen.
     public let isFirstRun: Bool
     /// Where the user is in the guided steps: the active task's, or turning a stack over by hand
@@ -138,6 +147,8 @@ public final class AppState: ObservableObject {
     private let presetStore: PresetStore
     /// Opens, shows, shares and copies saved files through macOS (a stand-in in tests).
     private let fileActions: any FileActionService
+    /// Opens Image Capture and System Settings and copies for the troubleshooter (a stand-in in tests).
+    private let troubleshooterService: any TroubleshooterService
     private var session: (any ScannerSession)?
     private var sessionDeviceID: String?
     private var userPickedDevice = false
@@ -166,7 +177,8 @@ public final class AppState: ObservableObject {
     public static let fallbackResolutions = [75, 150, 200, 300, 600, 1200]
 
     public init(backends: [any ScannerBackend]? = nil, presetStore: PresetStore = PresetStore(),
-                fileActions: (any FileActionService)? = nil) {
+                fileActions: (any FileActionService)? = nil,
+                troubleshooterService: (any TroubleshooterService)? = nil) {
         let saved = SettingsStore.load()
         self.isFirstRun = saved == nil
         // A task saved last time is still active: its banner comes back with the settings.
@@ -176,6 +188,7 @@ public final class AppState: ObservableObject {
         self.backends = backends ?? [ICScannerBackend(), MockScannerBackend()]
         self.presetStore = presetStore
         self.fileActions = fileActions ?? SystemFileActions()
+        self.troubleshooterService = troubleshooterService ?? SystemTroubleshooterService()
         self.presets = presetStore.load()
         syncTaskFlow()
         // Clear page spill files left behind by a previous run.
@@ -277,11 +290,12 @@ public final class AppState: ObservableObject {
         if rows != devices { devices = rows }
     }
 
-    /// Writes the raw device names and how they were grouped to
+    /// Writes the raw device names, how they were grouped and the troubleshooter's checks to
     /// ~/Library/Logs/CompleteScanner/devices.txt whenever they change, so the names real
-    /// devices report can be collected to tune `DeviceMerge`. Best effort.
+    /// devices report can be collected to tune `DeviceMerge` and a user's setup can be read
+    /// from one file. Best effort.
     private func writeDeviceDiagnostics() {
-        let report = DeviceMerge.diagnosticsReport(deviceGroups)
+        let report = diagnosticsText(troubleshootSnapshot())
         guard report != lastDeviceReport else { return }
         lastDeviceReport = report
         let fileManager = FileManager.default
@@ -290,6 +304,80 @@ public final class AppState: ObservableObject {
             .appendingPathComponent("CompleteScanner", isDirectory: true)
         try? fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
         try? Data(report.utf8).write(to: folder.appendingPathComponent("devices.txt"), options: .atomic)
+    }
+
+    // MARK: Troubleshooter ("Why isn't my scanner listed?")
+
+    /// A scanner other than the demo scanner is listed; without one the sidebar offers the troubleshooter.
+    public var hasRealDevices: Bool { deviceGroups.contains { !$0.primary.isDemo } }
+
+    /// What the troubleshooter looks at now: the scanners listed, the last failure, and what each
+    /// connection adds (`ScannerBackendDiagnostics`). The Mac reads no service or network state.
+    public func troubleshootSnapshot() -> DiscoverySnapshot {
+        var snapshot = DiscoverySnapshot(platform: .mac, devices: deviceGroups.map { $0.primary },
+                                         lastFailure: lastFailure)
+        for backend in backends {
+            if let diagnostics = backend as? any ScannerBackendDiagnostics {
+                snapshot = diagnostics.addStatus(to: snapshot)
+            }
+        }
+        return snapshot
+    }
+
+    /// The troubleshooter's Refresh: every connection that can looks for scanners again; the list
+    /// updates as they answer.
+    public func refreshScanners() {
+        for backend in backends {
+            if let diagnostics = backend as? any ScannerBackendDiagnostics { diagnostics.rescan() }
+        }
+        mergeDevices()
+    }
+
+    /// The text of devices.txt and of Copy Diagnostics: how the device list was grouped, then the
+    /// troubleshooter's checks for `snapshot`.
+    public func diagnosticsText(_ snapshot: DiscoverySnapshot) -> String {
+        DeviceMerge.diagnosticsReport(deviceGroups) + "\n"
+            + Troubleshooter.report(snapshot, checks: Troubleshooter.diagnose(snapshot))
+    }
+
+    /// Copies `diagnosticsText` to the pasteboard. Returns why it did not work, nil when it did.
+    /// The troubleshooter sheet shows that itself: `errorMessage` is left alone, since its alert
+    /// would only appear behind the sheet, after it closes.
+    @discardableResult
+    public func copyDiagnostics(_ snapshot: DiscoverySnapshot) -> String? {
+        do {
+            try troubleshooterService.copy(diagnosticsText(snapshot))
+            return nil
+        } catch {
+            return "Copy diagnostics did not work: \(Self.describe(error))"
+        }
+    }
+
+    /// Opens Image Capture or the System Settings pane an action names; nothing is changed there.
+    /// Returns why it did not open, nil when it did (shown by the sheet, as for `copyDiagnostics`).
+    @discardableResult
+    public func openTroubleshootLink(_ action: TroubleshootAction) -> String? {
+        do {
+            try troubleshooterService.open(action)
+            return nil
+        } catch {
+            return "\(Troubleshooter.label(action, platform: .mac)) did not work: \(Self.describe(error))"
+        }
+    }
+
+    /// Keeps a failed connection or scan for the troubleshooter (errors that say nothing about the
+    /// scanner are skipped), and lets the error's alert offer it.
+    private func recordFailure(deviceName: String, error: Error) {
+        guard let failure = Troubleshooter.failure(deviceName: deviceName, error: error) else { return }
+        lastFailure = failure
+        errorSuggestsTroubleshooter = true
+        writeDeviceDiagnostics()
+    }
+
+    private func clearFailure() {
+        guard lastFailure != nil else { return }
+        lastFailure = nil
+        writeDeviceDiagnostics()
     }
 
     /// Device selection driven by the user (sidebar click).
@@ -361,6 +449,7 @@ public final class AppState: ObservableObject {
             sessionDeviceID = id
             let caps = try await s.capabilities()
             capabilities = caps
+            clearFailure()
             // Settings that use the feeder need to know whether it scans both sides first.
             if settings.source == .documentFeeder || !caps.sources.contains(.flatbed) {
                 await checkFeederDuplex()
@@ -373,6 +462,7 @@ public final class AppState: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
             statusMessage = "Could not connect to \(name)."
+            recordFailure(deviceName: name, error: error)
         }
     }
 
@@ -394,6 +484,7 @@ public final class AppState: ObservableObject {
             let image = try await session.performOverviewScan(settings: self.settings)
             // Discard results that arrive after the user switched devices.
             guard self.switchGeneration == generation else { return }
+            self.clearFailure()
             if flag.isCancelled { throw ScanError.cancelled }
             self.overviewImage = image
             self.statusMessage = "Overview ready — drag on the preview to select an area, then Scan."
@@ -426,6 +517,7 @@ public final class AppState: ObservableObject {
             // Discard results that arrive after the user switched devices.
             guard self.switchGeneration == generation else { return }
             guard !scanned.isEmpty else { throw ScanError.scanFailed("The scanner returned no pages.") }
+            self.clearFailure()
             if flag.isCancelled { throw ScanError.cancelled }
             // A feeder batch cut short (a jam, a dropped connection) still returns its pages;
             // once they are handled the user is told the stack was not finished.
@@ -1164,6 +1256,10 @@ public final class AppState: ObservableObject {
             } catch {
                 errorMessage = error.localizedDescription
                 statusMessage = "Ready."
+                // A scan the scanner refused (busy, offline, ...) is what the troubleshooter explains.
+                if error is ScanError, let session = self.session {
+                    self.recordFailure(deviceName: session.info.name, error: error)
+                }
             }
             currentCancelFlag = nil
             progress = nil

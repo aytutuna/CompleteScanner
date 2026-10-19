@@ -17,7 +17,7 @@ namespace CompleteScanner.App.Scanning;
 ///   - Transfer() is synchronous with no progress callbacks — progress is coarse;
 ///   - CancelScan() cannot abort an in-flight WIA transfer, it only discards the result.
 /// </summary>
-public sealed class WiaScannerBackend : IScannerBackend
+public sealed class WiaScannerBackend : IScannerBackend, IScannerBackendDiagnostics
 {
     public event Action? DevicesChanged;
 
@@ -127,6 +127,15 @@ public sealed class WiaScannerBackend : IScannerBackend
         devicesListed
             ? MaxRebrowseDelay
             : TimeSpan.FromTicks(Math.Min(current.Ticks * 2, MaxRebrowseDelay.Ticks));
+
+    /// <summary>The WIA service's state is read by the app (Services/SystemDiagnostics.cs); WIA adds nothing else.</summary>
+    public DiscoverySnapshot AddStatus(DiscoverySnapshot snapshot) => snapshot;
+
+    /// <summary>The troubleshooter's Refresh: list the WIA scanners again now, while browsing.</summary>
+    public void Rescan()
+    {
+        if (_watchdog is not null) RefreshDevices();
+    }
 
     /// <summary>A session found its device missing: re-enumerate now (callable from any thread).</summary>
     internal void DeviceLost() => Post(() =>
