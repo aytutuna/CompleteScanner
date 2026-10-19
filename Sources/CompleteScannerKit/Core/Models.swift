@@ -91,6 +91,28 @@ public struct AdjustmentSettings: Codable, Equatable, Sendable {
         !autoEnhance && brightness == 0 && contrast == 1 && saturation == 1
             && sharpness == 0 && !descreen && !restoreFadedColors
     }
+
+    /// Same keys the synthesized implementation used; `encode(to:)` stays synthesized.
+    private enum CodingKeys: String, CodingKey {
+        case autoEnhance, brightness, contrast, saturation, sharpness
+        case descreen, restoreFadedColors, blackWhiteThreshold
+    }
+}
+
+extension AdjustmentSettings {
+    /// Tolerant decoding: a missing or undecodable key keeps the property's default.
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        autoEnhance = container.decodeLenient(forKey: .autoEnhance, default: autoEnhance)
+        brightness = container.decodeLenient(forKey: .brightness, default: brightness)
+        contrast = container.decodeLenient(forKey: .contrast, default: contrast)
+        saturation = container.decodeLenient(forKey: .saturation, default: saturation)
+        sharpness = container.decodeLenient(forKey: .sharpness, default: sharpness)
+        descreen = container.decodeLenient(forKey: .descreen, default: descreen)
+        restoreFadedColors = container.decodeLenient(forKey: .restoreFadedColors, default: restoreFadedColors)
+        blackWhiteThreshold = container.decodeLenient(forKey: .blackWhiteThreshold, default: blackWhiteThreshold)
+    }
 }
 
 public struct ScanSettings: Codable, Equatable, Sendable {
@@ -126,6 +148,39 @@ public struct ScanSettings: Codable, Equatable, Sendable {
 
     public static var defaultDestinationPath: String {
         (NSHomeDirectory() as NSString).appendingPathComponent("Documents/CompleteScanner")
+    }
+
+    /// Same keys the synthesized implementation used; `encode(to:)` stays synthesized.
+    private enum CodingKeys: String, CodingKey {
+        case intent, source, resolution, colorMode, format, jpegQuality, destinationPath, namingTemplate
+        case photoAutoSplit, photoAutoDeskew, photoMinSideInches, photoCropInsetPixels
+        case documentMultiPage, pdfSearchable, ocrLanguages
+        case adjustments
+    }
+}
+
+extension ScanSettings {
+    /// Tolerant decoding: a missing or undecodable key (including an enum value written by a
+    /// newer version, or a corrupt nested `adjustments` object) keeps the property's default.
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        intent = container.decodeLenient(forKey: .intent, default: intent)
+        source = container.decodeLenient(forKey: .source, default: source)
+        resolution = container.decodeLenient(forKey: .resolution, default: resolution)
+        colorMode = container.decodeLenient(forKey: .colorMode, default: colorMode)
+        format = container.decodeLenient(forKey: .format, default: format)
+        jpegQuality = container.decodeLenient(forKey: .jpegQuality, default: jpegQuality)
+        destinationPath = container.decodeLenient(forKey: .destinationPath, default: destinationPath)
+        namingTemplate = container.decodeLenient(forKey: .namingTemplate, default: namingTemplate)
+        photoAutoSplit = container.decodeLenient(forKey: .photoAutoSplit, default: photoAutoSplit)
+        photoAutoDeskew = container.decodeLenient(forKey: .photoAutoDeskew, default: photoAutoDeskew)
+        photoMinSideInches = container.decodeLenient(forKey: .photoMinSideInches, default: photoMinSideInches)
+        photoCropInsetPixels = container.decodeLenient(forKey: .photoCropInsetPixels, default: photoCropInsetPixels)
+        documentMultiPage = container.decodeLenient(forKey: .documentMultiPage, default: documentMultiPage)
+        pdfSearchable = container.decodeLenient(forKey: .pdfSearchable, default: pdfSearchable)
+        ocrLanguages = container.decodeLenient(forKey: .ocrLanguages, default: ocrLanguages)
+        adjustments = container.decodeLenient(forKey: .adjustments, default: adjustments)
     }
 }
 
@@ -308,6 +363,44 @@ public struct Preset: Codable, Identifiable, Equatable {
         self.id = id
         self.name = name
         self.settings = settings
+    }
+
+    /// Name given to a stored preset whose name is missing or unreadable.
+    static let fallbackName = "Untitled preset"
+
+    /// Same keys the synthesized implementation used; `encode(to:)` stays synthesized.
+    private enum CodingKeys: String, CodingKey {
+        case id, name, settings
+    }
+}
+
+extension Preset {
+    /// Tolerant decoding: a missing or undecodable key gets a default (fresh id,
+    /// `fallbackName`, default settings); `settings` itself decodes tolerantly field by field.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(id: container.decodeLenient(forKey: .id, default: UUID()),
+                  name: container.decodeLenient(forKey: .name, default: Preset.fallbackName),
+                  settings: container.decodeLenient(forKey: .settings, default: ScanSettings()))
+    }
+}
+
+// MARK: - Tolerant decoding
+
+extension KeyedDecodingContainer {
+    /// Decodes the value stored under `key`, or returns `fallback` when the key is missing,
+    /// null, or holds something that does not decode as `T` (wrong type, an enum raw value
+    /// this version does not know, a corrupt nested object). Never throws, so one bad field
+    /// only resets that field instead of failing the enclosing settings object or file.
+    ///
+    /// Every stored property of a type persisted in a settings file decodes through this,
+    /// with the property's own default as `fallback`.
+    func decodeLenient<T: Decodable>(forKey key: Key, default fallback: T) -> T {
+        do {
+            return try decodeIfPresent(T.self, forKey: key) ?? fallback
+        } catch {
+            return fallback
+        }
     }
 }
 

@@ -1,0 +1,381 @@
+import XCTest
+import Foundation
+@testable import CompleteScannerKit
+
+// MARK: - Helpers
+
+private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
+    try JSONDecoder().decode(type, from: Data(json.utf8))
+}
+
+/// Encoded exactly the way the stores write files.
+private func encode<T: Encodable>(_ value: T) throws -> Data {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    return try encoder.encode(value)
+}
+
+private func jsonObject(_ data: Data) throws -> [String: Any] {
+    try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+}
+
+private let sampleID = UUID(uuidString: "3F2504E0-4F89-41D3-9A0C-0305E82C3301")!
+
+/// Every field set to a non-default value. Values are exactly representable in binary
+/// so equality after a JSON round trip does not depend on decimal parsing.
+private func nonDefaultSettings() -> ScanSettings {
+    var settings = ScanSettings()
+    settings.intent = .photo
+    settings.source = .documentFeeder
+    settings.resolution = 600
+    settings.colorMode = .grayscale
+    settings.format = .tiff
+    settings.jpegQuality = 0.625
+    settings.destinationPath = "/Users/someone/Scans"
+    settings.namingTemplate = "Receipt {date}"
+    settings.photoAutoSplit = false
+    settings.photoAutoDeskew = false
+    settings.photoMinSideInches = 2.5
+    settings.photoCropInsetPixels = 4
+    settings.documentMultiPage = false
+    settings.pdfSearchable = false
+    settings.ocrLanguages = ["de-DE", "en-US"]
+    settings.adjustments.autoEnhance = true
+    settings.adjustments.brightness = 0.25
+    settings.adjustments.contrast = 1.5
+    settings.adjustments.saturation = 0.75
+    settings.adjustments.sharpness = -0.5
+    settings.adjustments.descreen = true
+    settings.adjustments.restoreFadedColors = true
+    settings.adjustments.blackWhiteThreshold = 0.375
+    return settings
+}
+
+/// `nonDefaultSettings()` as a presets file written by the synthesized Codable
+/// implementation (pretty-printed, sorted keys, every property present).
+private let currentFormatPresetsJSON = """
+[
+  {
+    "id" : "3F2504E0-4F89-41D3-9A0C-0305E82C3301",
+    "name" : "Receipts",
+    "settings" : {
+      "adjustments" : {
+        "autoEnhance" : true,
+        "blackWhiteThreshold" : 0.375,
+        "brightness" : 0.25,
+        "contrast" : 1.5,
+        "descreen" : true,
+        "restoreFadedColors" : true,
+        "saturation" : 0.75,
+        "sharpness" : -0.5
+      },
+      "colorMode" : "grayscale",
+      "destinationPath" : "/Users/someone/Scans",
+      "documentMultiPage" : false,
+      "format" : "tiff",
+      "intent" : "photo",
+      "jpegQuality" : 0.625,
+      "namingTemplate" : "Receipt {date}",
+      "ocrLanguages" : [
+        "de-DE",
+        "en-US"
+      ],
+      "pdfSearchable" : false,
+      "photoAutoDeskew" : false,
+      "photoAutoSplit" : false,
+      "photoCropInsetPixels" : 4,
+      "photoMinSideInches" : 2.5,
+      "resolution" : 600,
+      "source" : "documentFeeder"
+    }
+  }
+]
+"""
+
+// MARK: - Decoding compatibility
+
+final class ModelsCompatTests: XCTestCase {
+
+    func test_emptyObject_decodesToDefaults() throws {
+        XCTAssertEqual(try decode(ScanSettings.self, "{}"), ScanSettings())
+        XCTAssertEqual(try decode(AdjustmentSettings.self, "{}"), AdjustmentSettings())
+    }
+
+    func test_missingKeys_keepPresentValuesAndDefaultTheRest() throws {
+        let settings = try decode(ScanSettings.self, """
+            {"resolution": 600, "colorMode": "grayscale", "adjustments": {"contrast": 1.5}}
+            """)
+        var expected = ScanSettings()
+        expected.resolution = 600
+        expected.colorMode = .grayscale
+        expected.adjustments.contrast = 1.5
+        XCTAssertEqual(settings, expected)
+    }
+
+    func test_presetMissingEverything_getsNameAndDefaultSettings() throws {
+        let preset = try decode(Preset.self, "{}")
+        XCTAssertEqual(preset.name, Preset.fallbackName)
+        XCTAssertEqual(preset.settings, ScanSettings())
+    }
+
+    func test_presetMissingID_getsFreshIDAndKeepsTheRest() throws {
+        let preset = try decode(Preset.self, #"{"name": "Mine", "settings": {"resolution": 150}}"#)
+        XCTAssertEqual(preset.name, "Mine")
+        XCTAssertEqual(preset.settings.resolution, 150)
+    }
+
+    func test_unknownEnumValues_fallBackToDefault_restOfPresetIntact() throws {
+        let json = currentFormatPresetsJSON
+            .replacingOccurrences(of: "\"grayscale\"", with: "\"hyperspectral\"")
+            .replacingOccurrences(of: "\"tiff\"", with: "\"webp\"")
+            .replacingOccurrences(of: "\"photo\"", with: "\"receipt\"")
+            .replacingOccurrences(of: "\"documentFeeder\"", with: "\"transparencyUnit\"")
+        let presets = try decode([Preset].self, json)
+
+        XCTAssertEqual(presets.count, 1)
+        var expected = nonDefaultSettings()
+        expected.colorMode = ScanSettings().colorMode
+        expected.format = ScanSettings().format
+        expected.intent = ScanSettings().intent
+        expected.source = ScanSettings().source
+        XCTAssertEqual(presets[0].id, sampleID)
+        XCTAssertEqual(presets[0].name, "Receipts")
+        XCTAssertEqual(presets[0].settings, expected)
+    }
+
+    func test_wrongTypedField_fallsBackToDefault_restIntact() throws {
+        let settings = try decode(ScanSettings.self, """
+            {"resolution": "high", "pdfSearchable": false, "ocrLanguages": "en-US"}
+            """)
+        var expected = ScanSettings()
+        expected.pdfSearchable = false
+        XCTAssertEqual(settings, expected)
+    }
+
+    func test_corruptNestedObject_resetsOnlyThatField() throws {
+        let settings = try decode(ScanSettings.self, """
+            {"resolution": 1200, "adjustments": "not an object"}
+            """)
+        var expected = ScanSettings()
+        expected.resolution = 1200
+        XCTAssertEqual(settings, expected)
+    }
+
+    func test_corruptNestedField_resetsOnlyThatNestedField() throws {
+        let settings = try decode(ScanSettings.self, """
+            {"adjustments": {"brightness": "bright", "contrast": 2.5, "descreen": true}}
+            """)
+        var expected = ScanSettings()
+        expected.adjustments.contrast = 2.5
+        expected.adjustments.descreen = true
+        XCTAssertEqual(settings, expected)
+    }
+
+    func test_nullValues_fallBackToDefault() throws {
+        let preset = try decode(Preset.self, #"{"name": "Nulls", "settings": null}"#)
+        XCTAssertEqual(preset.name, "Nulls")
+        XCTAssertEqual(preset.settings, ScanSettings())
+
+        let settings = try decode(ScanSettings.self, #"{"resolution": null, "adjustments": null}"#)
+        XCTAssertEqual(settings, ScanSettings())
+    }
+
+    func test_keysFromNewerVersions_areIgnored() throws {
+        let settings = try decode(ScanSettings.self, """
+            {"resolution": 200, "duplex": "both", "output": {"pdfSize": "compact"}}
+            """)
+        var expected = ScanSettings()
+        expected.resolution = 200
+        XCTAssertEqual(settings, expected)
+    }
+
+    func test_currentFormatJSON_decodesIdentically() throws {
+        let presets = try decode([Preset].self, currentFormatPresetsJSON)
+        XCTAssertEqual(presets, [Preset(id: sampleID, name: "Receipts", settings: nonDefaultSettings())])
+    }
+
+    func test_roundTrip_preservesEveryField() throws {
+        let presets = [
+            Preset(id: sampleID, name: "Receipts", settings: nonDefaultSettings()),
+            Preset(name: "Defaults", settings: ScanSettings()),
+        ]
+        let decoded = try JSONDecoder().decode([Preset].self, from: encode(presets))
+        XCTAssertEqual(decoded, presets)
+    }
+
+    func test_encoding_writesTheSameKeysAsBefore() throws {
+        let settings = try jsonObject(encode(nonDefaultSettings()))
+        XCTAssertEqual(Set(settings.keys), [
+            "intent", "source", "resolution", "colorMode", "format", "jpegQuality",
+            "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
+            "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
+            "pdfSearchable", "ocrLanguages", "adjustments",
+        ])
+        let adjustments = try XCTUnwrap(settings["adjustments"] as? [String: Any])
+        XCTAssertEqual(Set(adjustments.keys), [
+            "autoEnhance", "brightness", "contrast", "saturation", "sharpness",
+            "descreen", "restoreFadedColors", "blackWhiteThreshold",
+        ])
+        XCTAssertEqual(settings["colorMode"] as? String, "grayscale")
+        XCTAssertEqual(settings["source"] as? String, "documentFeeder")
+
+        let preset = try jsonObject(encode(Preset(id: sampleID, name: "P", settings: ScanSettings())))
+        XCTAssertEqual(Set(preset.keys), ["id", "name", "settings"])
+        XCTAssertEqual(preset["id"] as? String, sampleID.uuidString)
+    }
+
+    func test_encoding_matchesCurrentFormatFile() throws {
+        let written = try JSONSerialization.jsonObject(
+            with: encode([Preset(id: sampleID, name: "Receipts", settings: nonDefaultSettings())]))
+        let expected = try JSONSerialization.jsonObject(with: Data(currentFormatPresetsJSON.utf8))
+        XCTAssertEqual(written as? NSArray, expected as? NSArray)
+    }
+}
+
+// MARK: - Store files
+
+final class PresetStoreFileTests: XCTestCase {
+    private var directory: URL!
+
+    override func setUpWithError() throws {
+        directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CompleteScannerTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    private var presetsURL: URL { directory.appendingPathComponent("presets.json") }
+    private var settingsURL: URL { directory.appendingPathComponent("settings.json") }
+
+    private func keptFiles(prefix: String) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix(prefix) }
+            .sorted()
+    }
+
+    func test_missingPresetsFile_seedsBuiltInsWithoutKeepingAnything() throws {
+        let presets = PresetStore(directory: directory).load()
+
+        XCTAssertFalse(presets.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: presetsURL.path))
+        XCTAssertEqual(try keptFiles(prefix: "presets.unreadable-"), [])
+        // The seeded file is what the next launch reads.
+        XCTAssertEqual(PresetStore(directory: directory).load(), presets)
+    }
+
+    func test_unreadablePresetsFile_isKeptBeforeSeeding() throws {
+        let garbage = Data("this is not JSON {".utf8)
+        try garbage.write(to: presetsURL)
+
+        let presets = PresetStore(directory: directory).load()
+
+        XCTAssertFalse(presets.isEmpty)
+        let kept = try keptFiles(prefix: "presets.unreadable-")
+        XCTAssertEqual(kept.count, 1)
+        let name = try XCTUnwrap(kept.first)
+        XCTAssertNotNil(name.range(of: #"^presets\.unreadable-\d{8}-\d{6}\.json$"#,
+                                   options: .regularExpression), name)
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent(name)), garbage)
+        // Built-ins were written to a fresh presets.json; the next launch keeps nothing new.
+        XCTAssertEqual(PresetStore(directory: directory).load(), presets)
+        XCTAssertEqual(try keptFiles(prefix: "presets.unreadable-").count, 1)
+    }
+
+    func test_wrongShapePresetsFile_isKept() throws {
+        let wrongShape = Data(#"{"presets": []}"#.utf8)
+        try wrongShape.write(to: presetsURL)
+
+        _ = PresetStore(directory: directory).load()
+
+        let kept = try keptFiles(prefix: "presets.unreadable-")
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent(kept[0])), wrongShape)
+    }
+
+    /// Makes `url` unreadable for the duration of `body`; skipped when running as root,
+    /// where permissions do not stop reads.
+    private func withoutReadPermission(_ url: URL, _ body: () throws -> Void) throws {
+        try XCTSkipIf(getuid() == 0, "file permissions do not apply to root")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+        }
+        try body()
+    }
+
+    func test_inaccessiblePresetsFile_isLeftInPlaceAndNotOverwritten() throws {
+        let saved = [Preset(id: sampleID, name: "Receipts", settings: nonDefaultSettings())]
+        PresetStore(directory: directory).save(saved)
+        let original = try Data(contentsOf: presetsURL)
+
+        try withoutReadPermission(presetsURL) {
+            let presets = PresetStore(directory: directory).load()
+            XCTAssertFalse(presets.isEmpty)
+            XCTAssertNotEqual(presets, saved)
+        }
+
+        XCTAssertEqual(try keptFiles(prefix: "presets.unreadable-"), [])
+        XCTAssertEqual(try Data(contentsOf: presetsURL), original)
+        // Writes stay refused for the session even once the file is readable again.
+        PresetStore(directory: directory).save([])
+        XCTAssertEqual(try Data(contentsOf: presetsURL), original)
+    }
+
+    func test_inaccessibleSettingsFile_isLeftInPlaceAndNotOverwritten() throws {
+        SettingsStore.save(nonDefaultSettings(), directory: directory)
+        let original = try Data(contentsOf: settingsURL)
+
+        try withoutReadPermission(settingsURL) {
+            XCTAssertNil(SettingsStore.load(directory: directory))
+        }
+
+        XCTAssertEqual(try keptFiles(prefix: "settings.unreadable-"), [])
+        XCTAssertEqual(try Data(contentsOf: settingsURL), original)
+        SettingsStore.save(ScanSettings(), directory: directory)
+        XCTAssertEqual(SettingsStore.load(directory: directory), nonDefaultSettings())
+    }
+
+    func test_presetsFileWithUnknownValues_loadsInPlace() throws {
+        let json = currentFormatPresetsJSON.replacingOccurrences(of: "\"tiff\"", with: "\"webp\"")
+        try Data(json.utf8).write(to: presetsURL)
+
+        let presets = PresetStore(directory: directory).load()
+
+        XCTAssertEqual(presets.count, 1)
+        XCTAssertEqual(presets[0].id, sampleID)
+        XCTAssertEqual(presets[0].settings.format, ScanSettings().format)
+        XCTAssertEqual(presets[0].settings.resolution, 600)
+        XCTAssertEqual(try keptFiles(prefix: "presets.unreadable-"), [])
+    }
+
+    func test_presetsSaveThenLoad_roundTrips() throws {
+        let presets = [Preset(id: sampleID, name: "Receipts", settings: nonDefaultSettings())]
+        PresetStore(directory: directory).save(presets)
+        XCTAssertEqual(PresetStore(directory: directory).load(), presets)
+    }
+
+    func test_missingSettingsFile_returnsNilWithoutKeepingAnything() throws {
+        XCTAssertNil(SettingsStore.load(directory: directory))
+        XCTAssertEqual(try keptFiles(prefix: "settings.unreadable-"), [])
+    }
+
+    func test_unreadableSettingsFile_isKept() throws {
+        let garbage = Data([0xFF, 0x00, 0x7B])
+        try garbage.write(to: settingsURL)
+
+        XCTAssertNil(SettingsStore.load(directory: directory))
+
+        let kept = try keptFiles(prefix: "settings.unreadable-")
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent(kept[0])), garbage)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: settingsURL.path))
+    }
+
+    func test_settingsSaveThenLoad_roundTrips() throws {
+        SettingsStore.save(nonDefaultSettings(), directory: directory)
+        XCTAssertEqual(SettingsStore.load(directory: directory), nonDefaultSettings())
+    }
+}
