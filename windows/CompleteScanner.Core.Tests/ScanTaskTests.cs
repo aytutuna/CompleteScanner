@@ -10,7 +10,7 @@ public class ScanTaskTests
     [Fact]
     public void RawValues_AreTheStoredNames()
     {
-        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard"],
+        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy"],
                      ScanTasks.All.Select(t => t.RawValue()));
     }
 
@@ -30,9 +30,9 @@ public class ScanTaskTests
     {
         Assert.Equal(ScanTasks.All, TaskCatalog.All.Select(d => d.Task));
         Assert.Equal(["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
-                      "Email a document", "Two-sided document", "ID card"],
+                      "Email a document", "Two-sided document", "ID card", "Copy"],
                      TaskCatalog.All.Select(d => d.Title));
-        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard"],
+        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy"],
                      TaskCatalog.All.Select(d => d.IconKey));
         foreach (var definition in TaskCatalog.All)
         {
@@ -65,6 +65,7 @@ public class ScanTaskTests
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, null),
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.DocumentFeeder),
                 (TaskFlowKind.IdCard, ScanIntent.Document, ScanSource.Flatbed),
+                (TaskFlowKind.Copy, ScanIntent.Document, null),
             ],
             TaskCatalog.All.Select(d => (d.Flow, d.Intent, d.RequiredSource)));
     }
@@ -97,6 +98,10 @@ public class ScanTaskTests
         s.PaperSize = PaperSize.Legal;
         s.TaskOptions.IdCardPaper = IdCardPaper.Letter;
         s.TaskOptions.IdCardSaveSidesAsImages = true;
+        s.TaskOptions.CopyCount = 4;
+        s.TaskOptions.CopyFitToPage = true;
+        s.TaskOptions.CopyPrinterName = "Office";
+        s.TaskOptions.CopyAlsoSavePdf = true;
         return s;
     }
 
@@ -117,10 +122,12 @@ public class ScanTaskTests
             Assert.Equal(0.9, s.JpegQuality);
             Assert.Equal(ColorMode.Color, s.ColorMode);
             Assert.True(s.PhotoAutoSplit && s.PhotoAutoDeskew);
-            // The ID card's numbers are better not indexed: no text layer.
-            Assert.Equal(task != ScanTask.IdCard, s.PdfSearchable);
+            // The ID card's numbers are better not indexed, and a copy is for paper: no text layer.
+            Assert.Equal(task is not (ScanTask.IdCard or ScanTask.Copy), s.PdfSearchable);
             // How the user wants a task done is kept.
             Assert.Equal((IdCardPaper.Letter, true), (s.TaskOptions.IdCardPaper, s.TaskOptions.IdCardSaveSidesAsImages));
+            Assert.Equal((4, true, "Office", true), (s.TaskOptions.CopyCount, s.TaskOptions.CopyFitToPage,
+                                                     s.TaskOptions.CopyPrinterName, s.TaskOptions.CopyAlsoSavePdf));
             Assert.NotSame(current.TaskOptions, s.TaskOptions);
             Assert.Equal(TaskCatalog.Definition(task).Intent, s.Intent);
             Assert.True(TaskCatalog.Fits(task, s));
@@ -149,6 +156,7 @@ public class ScanTaskTests
                 (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Compact),
                 (ScanIntent.Document, ScanSource.DocumentFeeder, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
                 (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "ID card {date}", false, false, PdfSizePreset.Standard),
+                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Copy {date} {counter}", false, false, PdfSizePreset.Standard),
             ],
             rows);
     }
@@ -245,6 +253,67 @@ public class ScanTaskTests
         var untagged = TaskCatalog.Apply(ScanTask.IdCard, new ScanSettings());
         untagged.TaskId = null;
         Assert.Equal(ScanTask.Document, TaskCatalog.Infer(untagged));
+    }
+
+    [Fact]
+    public void Copy_PrintsAtRealSizeFromAnySource()
+    {
+        var definition = TaskCatalog.Definition(ScanTask.Copy);
+        Assert.Equal("Copy", definition.Steps[0].PrimaryActionLabel);
+        var s = TaskCatalog.Apply(ScanTask.Copy, new ScanSettings());
+        Assert.Equal((ScanIntent.Document, ScanSource.Flatbed, OutputFormat.Pdf, 300, ColorMode.Color, DuplexMode.Off),
+                     (s.Intent, s.Source, s.Format, s.Resolution, s.ColorMode, s.Duplex));
+        Assert.False(s.PdfSearchable);
+        Assert.Equal(AfterSaveAction.None, s.Output.AfterSave);
+        Assert.Equal(TaskFlowKind.Copy, TaskCatalog.FlowOf(s));
+        Assert.Equal(definition.Steps, TaskCatalog.GuidedSteps(s, null));
+        // Printed at real size, one copy, unless chosen otherwise.
+        Assert.Equal((1, false, (string?)null, false), (s.TaskOptions.CopyCount, s.TaskOptions.CopyFitToPage,
+                                                        s.TaskOptions.CopyPrinterName, s.TaskOptions.CopyAlsoSavePdf));
+        // The feeder copies a stack; Photos mode ends the task.
+        s.Source = ScanSource.DocumentFeeder;
+        Assert.True(TaskCatalog.Fits(ScanTask.Copy, s));
+        Assert.Equal(TaskFlowKind.Copy, TaskCatalog.FlowOf(s));
+        s.Intent = ScanIntent.Photo;
+        Assert.False(TaskCatalog.Fits(ScanTask.Copy, s));
+        Assert.Equal(TaskFlowKind.PhotoSplit, TaskCatalog.FlowOf(s));
+        // Settings never look like a copy without the task stored.
+        var untagged = TaskCatalog.Apply(ScanTask.Copy, new ScanSettings());
+        untagged.TaskId = null;
+        Assert.Equal(ScanTask.Document, TaskCatalog.Infer(untagged));
+    }
+
+    [Fact]
+    public void Copy_NeedsAPrinter_TheOtherTasksDoNot()
+    {
+        var unavailable = TaskCatalog.Availability(ScanTask.Copy, null, hasPrinter: false);
+        Assert.False(unavailable.IsAvailable);
+        Assert.Equal("No printer is installed.", unavailable.Reason);
+        Assert.Equal(TaskAvailability.Available, TaskCatalog.Availability(ScanTask.Copy, null, hasPrinter: true));
+        Assert.Equal(TaskAvailability.Available, TaskCatalog.Availability(ScanTask.Copy, null));
+        Assert.All(ScanTasks.All.Where(t => t != ScanTask.Copy),
+                   task => Assert.Equal(TaskAvailability.Available, TaskCatalog.Availability(task, null, hasPrinter: false)));
+        // Any scanner will do: the glass or the feeder.
+        var feederOnly = new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder], SupportsOverview = false };
+        Assert.True(TaskCatalog.Availability(ScanTask.Copy, feederOnly, hasPrinter: true).IsAvailable);
+        Assert.Equal("This scanner has no flatbed.", TaskCatalog.Availability(ScanTask.IdCard, feederOnly, hasPrinter: false).Reason);
+    }
+
+    [Fact]
+    public void Summary_OfACopy_SaysHowItPrints()
+    {
+        var s = TaskCatalog.Apply(ScanTask.Copy, new ScanSettings());
+        Assert.Equal("300 dpi · Color · Actual size", TaskCatalog.Summary(s));
+        s.ColorMode = ColorMode.Grayscale;
+        s.TaskOptions.CopyFitToPage = true;
+        s.TaskOptions.CopyCount = 3;
+        Assert.Equal("300 dpi · Grayscale · Fit to page · 3 copies", TaskCatalog.Summary(s));
+        // A count beyond what can be asked for is read as the most.
+        s.TaskOptions.CopyCount = 500;
+        Assert.Equal("300 dpi · Grayscale · Fit to page · 99 copies", TaskCatalog.Summary(s));
+        // Without the task the settings describe a file again.
+        s.TaskId = null;
+        Assert.Equal("300 dpi · Grayscale · PDF", TaskCatalog.Summary(s));
     }
 
     [Fact]
@@ -482,7 +551,7 @@ public class ScanTaskTests
     [Fact]
     public void FileLabels()
     {
-        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card"],
+        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy"],
                      TaskCatalog.All.Select(d => d.FileLabel));
     }
 }

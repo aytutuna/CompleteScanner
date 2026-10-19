@@ -67,12 +67,22 @@ scanners** — including the Epson Perfection V39 II.
 - **ID card**: copies of an ID card or driving licence for a bank, a rental or a job. Scan the
   front, turn the card over where it lies and scan the back (or skip it when nothing is printed
   there); the card is found on the glass, cut out and straightened, and both sides go on one A4 or
-  Letter page at their real size (85.60 × 53.98 mm), the paper usual where you live unless you pick
-  the other. Check the sides, turn or re-crop one, swap them or scan one again, then save a PDF, or a
+  Letter page at their real size (85.60 × 53.98 mm): the paper in your default printer when it holds
+  A4 or Letter, else the paper usual where you live, unless you pick the other. Check the sides, turn or re-crop one, swap them or scan one again, then save a PDF, or a
   JPEG, PNG or TIFF of the page, and if you like each side as an image too. ID cards are sensitive,
   so nothing leaves the Mac: the scans are kept in memory only, never in the Scans tab, and are
   cleared as soon as the card is saved or discarded; the PDF has no searchable text layer unless you
-  turn it on. Printing the page comes with the Copy task.
+  turn it on. **Print** prints the page at real size on the printer chosen for copies.
+- **Copy**: a photocopier from a scanner and a printer. Put the original on the glass (or a stack in
+  the feeder) and press **Copy**: it is scanned and printed at real size, 1 inch on the glass is 1
+  inch on paper, never scaled to the page unless you turn on **Fit to page**. Choose the printer
+  (the default one unless you pick another), the number of copies (1 to 99) and color or gray; on
+  the glass with Automatic paper size the part of the glass the printer's paper covers is copied,
+  and an area selected on the preview is centred on the paper. The app says when the printer's
+  margins cut the edges ("Edges may be cut by up to 5 mm"). **Also save a PDF** keeps a copy as a
+  file too. **Print ruler test page** prints a 1-inch grid with centimetre ticks to check the size
+  with a ruler. On the Mac the standard print panel opens, already set to the printer, the paper,
+  the copies and 100 %; on Windows the copy goes straight to the printer with no dialog.
 - **"Why isn't my scanner listed?"**: a troubleshooter, from the **?** button next to
   **Scanners**, the empty scanner list and an error about a scanner. It checks, in plain
   language, whether macOS is looking for scanners and what the last failure was (a scanner that
@@ -87,9 +97,9 @@ scanners** — including the Epson Perfection V39 II.
   descreen (moiré reduction for printed material), faded-color restoration for old photos,
   black-and-white threshold.
 - **Start screen**: pick what you are scanning (Document to PDF, Multi-page from feeder,
-  Photos, Old photo restoration, Quick scan, Email a document, Two-sided document, ID card) and everything is set up for it, with a short
+  Photos, Old photo restoration, Quick scan, Email a document, Two-sided document, ID card, Copy) and everything is set up for it, with a short
   guide on the scan screen. Tasks the connected scanner cannot do are greyed out with the
-  reason. The app remembers the task you used last.
+  reason (Copy also needs a printer). The app remembers the task you used last.
 - **Presets**: save your own settings as presets; they appear on the start screen too.
   Starter presets from earlier versions stay.
 - **File naming templates**: `{date}`, `{time}`, `{counter}`, `{counter:4}`, `{intent}`,

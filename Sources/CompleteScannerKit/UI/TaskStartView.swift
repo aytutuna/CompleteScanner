@@ -14,6 +14,7 @@ enum TaskSymbols {
         case "email": return "envelope"
         case "twoSided": return "arrow.left.arrow.right.square"
         case "idCard": return "person.text.rectangle"
+        case "copy": return "printer"
         default: return "scanner"
         }
     }

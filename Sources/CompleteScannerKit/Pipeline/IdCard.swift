@@ -27,18 +27,23 @@ public enum IdCardPaper: String, Codable, CaseIterable, Identifiable, Sendable {
 
 /// Twin of C# `IdCardPapers`.
 public enum IdCardPapers {
-    /// The paper the copy is made on: A4 or Letter as chosen; for Automatic the usual paper in `regionCode`.
-    public static func resolve(_ paper: IdCardPaper, regionCode: String?) -> PaperSize {
+    /// The paper the copy is made on: A4 or Letter as chosen. Automatic is the default printer's paper
+    /// (`printerPaper`) when it is A4 or Letter, else the usual paper in `regionCode`.
+    public static func resolve(_ paper: IdCardPaper, regionCode: String?, printerPaper: PaperSize? = nil) -> PaperSize {
         switch paper {
         case .a4: return .a4
         case .letter: return .letter
-        case .auto: return PaperSizes.defaultForRegion(regionCode)
+        case .auto:
+            if let printerPaper, printerPaper == .a4 || printerPaper == .letter { return printerPaper }
+            return PaperSizes.defaultForRegion(regionCode)
         }
     }
 
-    /// How a picker names a choice: "Automatic (A4)", "A4", "Letter".
-    public static func choiceLabel(_ paper: IdCardPaper, regionCode: String?) -> String {
-        paper == .auto ? "Automatic (\(resolve(paper, regionCode: regionCode).label))" : paper.label
+    /// How a picker names a choice, Automatic with the paper it is now: "Automatic (A4)", "A4", "Letter".
+    public static func choiceLabel(_ paper: IdCardPaper, regionCode: String?, printerPaper: PaperSize? = nil) -> String {
+        paper == .auto
+            ? "Automatic (\(resolve(paper, regionCode: regionCode, printerPaper: printerPaper).label))"
+            : paper.label
     }
 }
 

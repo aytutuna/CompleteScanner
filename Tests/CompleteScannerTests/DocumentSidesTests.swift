@@ -206,6 +206,15 @@ final class DocumentSidesTests: XCTestCase {
         XCTAssertEqual(DocumentSides.manualUnavailableReason(eachSaved),
                        "Turning the stack over by hand needs \u{201C}Collect pages, then Save PDF\u{201D}.")
         XCTAssertNil(DocumentSides.manualUnavailableReason(feeder(.manual)))
+
+        // The Copy task is in Document mode, yet copies are made from one side of each sheet.
+        var copySettings = TaskCatalog.apply(.copy, to: ScanSettings())
+        copySettings.source = .documentFeeder
+        copySettings.duplex = .manual
+        XCTAssertEqual(TaskCatalog.flow(of: copySettings), .copy)
+        XCTAssertFalse(DocumentSides.usesManualSteps(copySettings, capabilities: nil))
+        XCTAssertEqual(DocumentSides.manualUnavailableReason(copySettings),
+                       "Copies are made from one side of each sheet; turn the stack over and copy again.")
     }
 
     // MARK: Pages

@@ -40,6 +40,9 @@ struct InspectorView: View {
     private var settingsForm: some View {
         Form {
             modeSection
+            if state.isCopyFlow {
+                copySection
+            }
             scanSection
             outputSection
             if state.settings.intent == .photo {
@@ -75,6 +78,69 @@ struct InspectorView: View {
     /// them would end the task and drop the card. Leaving the task asks first.
     private static let idCardHeldHint =
         "The ID card task needs the flatbed in Document mode. Save or discard the card, or leave the task, to change this."
+
+    /// What the paper size picker says: for a copy, Automatic on the glass is the printer's paper.
+    private var paperSizeHint: String {
+        state.isCopyFlow
+            ? PrintText.copyPaperHint(state.settings.paperSize, source: state.settings.source)
+            : PaperSizes.hint(state.settings.paperSize, source: state.settings.source)
+    }
+
+    // MARK: Copies
+
+    /// The Copy task: where and how the copies print (AppState+Copy.swift). The print panel opens set
+    /// to these, at 100 %.
+    private var copySection: some View {
+        Section("Copies") {
+            if state.hasPrinter {
+                Picker("Printer", selection: Binding(
+                    get: { state.copyPrinterName ?? "" },
+                    set: { state.setCopyPrinter($0) })) {
+                    ForEach(state.printerNames, id: \.self) { name in
+                        Text(name == state.printService.defaultPrinterName ? "\(name) (default)" : name).tag(name)
+                    }
+                }
+                if !state.copyPaperText.isEmpty {
+                    Text("Paper: \(state.copyPaperText)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Stepper(value: Binding(
+                    get: { PrintCopies.clamp(state.settings.taskOptions.copyCount) },
+                    set: { state.setCopyCount($0) }), in: 1...PrintCopies.maxCount) {
+                    Text("Copies: \(PrintCopies.clamp(state.settings.taskOptions.copyCount))")
+                }
+                Toggle("Fit to page", isOn: Binding(
+                    get: { state.settings.taskOptions.copyFitToPage },
+                    set: { state.setCopyFitToPage($0) }))
+                Text(state.settings.taskOptions.copyFitToPage
+                     ? "Made smaller to fit the paper, never larger. It is not at real size."
+                     : "At real size, like a photocopier: 1 inch on the glass is 1 inch on paper.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let warning = state.copyMarginWarning {
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Toggle("Also save a PDF", isOn: Binding(
+                    get: { state.settings.taskOptions.copyAlsoSavePdf },
+                    set: { state.setCopyAlsoSavePdf($0) }))
+                    .help("Each copy is also saved as a PDF in the save folder")
+                Button("Print Ruler Test Page\u{2026}") {
+                    state.printRulerPage()
+                }
+                .help("Prints a 1-inch grid with centimetre ticks: measure it with a ruler to check that copies come out at real size")
+            } else {
+                Text("No printer is installed. Add one in System Settings \u{2192} Printers & Scanners, then look again.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Look Again") {
+                    state.refreshPrinters()
+                }
+            }
+        }
+    }
 
     // MARK: Scan
 
@@ -190,8 +256,8 @@ struct InspectorView: View {
                     Text(size == .auto ? size.label : "\(size.label) (\(size.detail))").tag(size)
                 }
             }
-            .help(PaperSizes.hint(state.settings.paperSize, source: state.settings.source))
-            Text(PaperSizes.hint(state.settings.paperSize, source: state.settings.source))
+            .help(paperSizeHint)
+            Text(paperSizeHint)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -382,13 +448,16 @@ struct InspectorView: View {
     }
 
     /// Crop and straighten: run on pages collected in the queue only, where a changed page shows a
-    /// swap button; with each scan saved at once the switches are off and say why. Twin of the
-    /// Windows inspector's "Crop to page" and "Straighten pages".
+    /// swap button; with each scan saved at once, and for copies, the switches are off and say why.
+    /// Twin of the Windows inspector's "Crop to page" and "Straighten pages".
     private var geometryRow: some View {
-        let collecting = state.settings.documentMultiPage
+        let isCopy = state.isCopyFlow
+        let collecting = state.settings.documentMultiPage && !isCopy
         let document = state.settings.document
         let hint: String
         switch (collecting, document.autoCrop, document.autoStraighten) {
+        case (false, _, _) where isCopy:
+            hint = "Copies print every page as scanned: pages are not cropped or straightened."
         case (false, _, _):
             hint = "Only for pages collected before saving: a scan saved at once is kept as scanned."
         case (true, true, true):
@@ -416,14 +485,21 @@ struct InspectorView: View {
 
     /// Blank pages: flagged in the page strip, left out when saving. The check runs on pages
     /// collected in the queue only, where flagged pages can be seen and kept; with each scan saved
-    /// at once the switch is off and says why. Twin of the Windows inspector's "Skip blank pages".
+    /// at once, and for copies, the switch is off and says why. Twin of the Windows inspector's "Skip
+    /// blank pages".
     private var blankPagesRow: some View {
-        let collecting = state.settings.documentMultiPage
-        let hint = collecting
-            ? (state.settings.document.removeBlankPages
+        let isCopy = state.isCopyFlow
+        let collecting = state.settings.documentMultiPage && !isCopy
+        let hint: String
+        if isCopy {
+            hint = "Copies print every page as scanned: blank pages are not left out."
+        } else if collecting {
+            hint = state.settings.document.removeBlankPages
                 ? "Blank pages are marked in the page strip and left out when you save. Click Keep on a page to save it."
-                : "Blank pages are marked in the page strip. Click Skip on a page to leave it out.")
-            : "Only for pages collected before saving: a scan saved at once keeps every page."
+                : "Blank pages are marked in the page strip. Click Skip on a page to leave it out."
+        } else {
+            hint = "Only for pages collected before saving: a scan saved at once keeps every page."
+        }
         return VStack(alignment: .leading, spacing: 6) {
             Toggle("Skip blank pages", isOn: $state.settings.document.removeBlankPages)
                 .disabled(!collecting)

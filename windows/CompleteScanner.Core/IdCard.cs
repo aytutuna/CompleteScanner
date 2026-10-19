@@ -7,7 +7,8 @@ namespace CompleteScanner.Core;
 /// <summary>
 /// The page an ID card copy is laid out on (<see cref="TaskOptions.IdCardPaper"/>).
 /// <see cref="Auto"/> comes first: it is the default and the fallback for a value a newer version
-/// adds, and it is the paper usual where the user lives (<see cref="PaperSizes.DefaultForRegion"/>).
+/// adds, and it is the default printer's paper when that is A4 or Letter, else the paper usual where
+/// the user lives (<see cref="PaperSizes.DefaultForRegion"/>).
 /// Stored as "auto", "a4", "letter".
 /// </summary>
 public enum IdCardPaper
@@ -40,16 +41,26 @@ public static class IdCardPapers
     };
 
     /// <summary>The paper the copy is made on: A4 or Letter as chosen; for Automatic the usual paper in <paramref name="regionCode"/>.</summary>
-    public static PaperSize Resolve(IdCardPaper paper, string? regionCode) => paper switch
+    public static PaperSize Resolve(IdCardPaper paper, string? regionCode) => Resolve(paper, regionCode, null);
+
+    /// <summary>
+    /// The paper the copy is made on: A4 or Letter as chosen. Automatic is the default printer's
+    /// paper (<paramref name="printerPaper"/>) when it is A4 or Letter, else the usual paper in
+    /// <paramref name="regionCode"/>.
+    /// </summary>
+    public static PaperSize Resolve(IdCardPaper paper, string? regionCode, PaperSize? printerPaper) => paper switch
     {
         IdCardPaper.A4 => PaperSize.A4,
         IdCardPaper.Letter => PaperSize.Letter,
-        _ => PaperSizes.DefaultForRegion(regionCode),
+        _ => printerPaper is PaperSize.A4 or PaperSize.Letter ? printerPaper.Value : PaperSizes.DefaultForRegion(regionCode),
     };
 
     /// <summary>How a picker names a choice: "Automatic (A4)", "A4", "Letter".</summary>
-    public static string ChoiceLabel(IdCardPaper paper, string? regionCode) =>
-        paper == IdCardPaper.Auto ? $"Automatic ({Resolve(paper, regionCode).Label()})" : paper.Label();
+    public static string ChoiceLabel(IdCardPaper paper, string? regionCode) => ChoiceLabel(paper, regionCode, null);
+
+    /// <summary>How a picker names a choice, Automatic with the paper it is now: "Automatic (A4)", "A4", "Letter".</summary>
+    public static string ChoiceLabel(IdCardPaper paper, string? regionCode, PaperSize? printerPaper) =>
+        paper == IdCardPaper.Auto ? $"Automatic ({Resolve(paper, regionCode, printerPaper).Label()})" : paper.Label();
 }
 
 /// <summary>The guided steps of the ID card task: the front, the back (skippable), then checking and saving.</summary>

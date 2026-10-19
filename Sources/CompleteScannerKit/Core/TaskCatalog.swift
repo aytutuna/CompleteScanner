@@ -9,6 +9,8 @@ public enum TaskFlowKind: String, Sendable {
     case photoSplit
     /// The front and back of a card are found on the bed and laid out on one page (`IdCardComposer`).
     case idCard
+    /// The scan goes straight to the printer at real size (`PrintLayout`), like a photocopier.
+    case copy
 }
 
 /// A task card: what it is called, how it looks and how its scans are handled.
@@ -17,7 +19,7 @@ public struct TaskDefinition: Equatable, Sendable {
     public let title: String
     public let subtitle: String
     /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-    /// "photos", "restore", "quick", "email", "twoSided", "idCard".
+    /// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy".
     public let iconKey: String
     public let flow: TaskFlowKind
     /// The scan mode the task uses.
@@ -110,6 +112,14 @@ public enum TaskCatalog {
             iconKey: "idCard", flow: .idCard, intent: .document, requiredSource: .flatbed,
             fileLabel: "ID card",
             steps: IdCardSteps.steps),
+        TaskDefinition(
+            task: .copy, title: "Copy",
+            subtitle: "Scan straight to the printer at real size, like a photocopier.",
+            iconKey: "copy", flow: .copy, intent: .document, requiredSource: nil,
+            fileLabel: "Copy",
+            steps: [TaskStep(id: "scan", title: "Make a copy",
+                             prompt: "Place the original face down on the glass, or load the feeder, and copy. It prints at real size; choose the printer and the number of copies first.",
+                             primaryActionLabel: "Copy", repeats: true)]),
     ]
 
     public static func definition(_ task: ScanTask) -> TaskDefinition {
@@ -127,7 +137,8 @@ public enum TaskCatalog {
     /// (the empty backs of one-sided sheets) and straightens pages the feeder pulled in at a slant;
     /// no task crops yet; `SettingsAdapter` turns `.both` into turning over by hand on a feeder that
     /// scans one side. The ID card task makes no searchable PDF: the numbers on an ID are better not
-    /// indexed.
+    /// indexed; neither does the Copy task, whose PDF (when one is saved too) is a record of the paper
+    /// copy.
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings {
         var s = current
         s.source = .flatbed
@@ -136,7 +147,7 @@ public enum TaskCatalog {
         s.photoAutoSplit = true
         s.photoAutoDeskew = true
         s.documentMultiPage = true
-        s.pdfSearchable = task != .idCard
+        s.pdfSearchable = task != .idCard && task != .copy
         s.adjustments = AdjustmentSettings()
         s.output.pdfSize = .standard
         s.output.afterSave = AfterSaveAction.none
@@ -193,6 +204,11 @@ public enum TaskCatalog {
             s.resolution = 300
             s.format = .pdf
             s.namingTemplate = "ID card {date}"
+        case .copy:
+            s.intent = .document
+            s.resolution = 300
+            s.format = .pdf
+            s.namingTemplate = "Copy {date} {counter}"
         }
         s.taskId = task.rawValue
         return s
@@ -211,8 +227,13 @@ public enum TaskCatalog {
     }
 
     /// Whether the task can be started with a scanner offering `capabilities` (nil: none
-    /// connected yet, so nothing is ruled out).
-    public static func availability(of task: ScanTask, capabilities: ScannerCapabilities?) -> TaskAvailability {
+    /// connected yet, so nothing is ruled out) and, for the Copy task, a printer (`hasPrinter`: false
+    /// only when it is known that none is installed).
+    public static func availability(of task: ScanTask, capabilities: ScannerCapabilities?,
+                                    hasPrinter: Bool = true) -> TaskAvailability {
+        if task == .copy && !hasPrinter {
+            return TaskAvailability(isAvailable: false, reason: PrintText.noPrinterReason)
+        }
         let taskDefinition = TaskCatalog.definition(task)
         guard let capabilities, let source = taskDefinition.requiredSource,
               !capabilities.sources.contains(source) else {
@@ -254,8 +275,16 @@ public enum TaskCatalog {
     /// One line describing the settings, e.g. "300 dpi · Color · PDF". A PDF size other than the
     /// default `.standard` is named ("300 dpi · Color · Compact PDF"), and so is two-sided feeder
     /// scanning ("… · Both sides", "… · Both sides, turned by hand"), so the line stays short
-    /// enough for cards and the preset list.
+    /// enough for cards and the preset list. A copy says how it prints instead of a format:
+    /// "300 dpi · Color · Actual size", "300 dpi · Grayscale · Fit to page · 3 copies".
     public static func summary(_ settings: ScanSettings) -> String {
+        if flow(of: settings) == .copy {
+            // A copy is paper, not a file: its size and count matter, not the format.
+            let copies = PrintCopies.clamp(settings.taskOptions.copyCount)
+            let mode = PrintText.modeLabel(fitToPage: settings.taskOptions.copyFitToPage)
+            return "\(settings.resolution) dpi \u{00B7} \(settings.colorMode.label) \u{00B7} \(mode)"
+                + (copies > 1 ? " \u{00B7} \(copies) copies" : "")
+        }
         let format = settings.format == .pdf && settings.output.pdfSize != .standard
             ? "\(settings.output.pdfSize.label) \(settings.format.label)"
             : settings.format.label

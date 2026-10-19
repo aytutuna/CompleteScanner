@@ -18,6 +18,7 @@ public enum ScanTask
     Email,
     TwoSided,
     IdCard,
+    Copy,
 }
 
 public static class ScanTasks
@@ -25,7 +26,7 @@ public static class ScanTasks
     /// <summary>Every task, in start-screen order.</summary>
     public static IReadOnlyList<ScanTask> All { get; } = Enum.GetValues<ScanTask>();
 
-    /// <summary>The stored form: "document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard" (the Swift raw values).</summary>
+    /// <summary>The stored form: "document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy" (the Swift raw values).</summary>
     public static string RawValue(this ScanTask task) => task switch
     {
         ScanTask.Document => "document",
@@ -36,6 +37,7 @@ public static class ScanTasks
         ScanTask.Email => "email",
         ScanTask.TwoSided => "twoSided",
         ScanTask.IdCard => "idCard",
+        ScanTask.Copy => "copy",
         _ => throw new ArgumentOutOfRangeException(nameof(task), task, null),
     };
 

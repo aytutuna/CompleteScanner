@@ -9,6 +9,18 @@ namespace CompleteScanner.Core.Tests;
 public class GeometryTests
 {
     [Fact]
+    public void RectD_PrintsItsNumbers_AlsoInsideRecords()
+    {
+        // The text records print by default would hold Standardized and Integral, rectangles too, without end;
+        // a failed assertion on any record holding a rectangle would then crash the test run.
+        Assert.Equal("RectD { X = 0.25, Y = -1, Width = 8, Height = 10.5 }", new RectD(0.25, -1, 8, 10.5).ToString());
+        var paper = PrinterPaper.Make(new SizeD(8.5, 11), new RectD(0.25, 0.25, 8, 10.5));
+        Assert.Contains("RectD { X = 0.25, Y = 0.25, Width = 8, Height = 10.5 }", paper.ToString());
+        var placement = new PrintPlacement(new RectD(0, 0, 1, 2), 1, 0, 0);
+        Assert.Contains("RectD { X = 0, Y = 0, Width = 1, Height = 2 }", placement.ToString());
+    }
+
+    [Fact]
     public void ConvexHullOfSquareKeepsCorners()
     {
         var points = new List<PointD>

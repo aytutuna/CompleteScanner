@@ -29,6 +29,10 @@ private func customized() -> ScanSettings {
     s.paperSize = .legal
     s.taskOptions.idCardPaper = .letter
     s.taskOptions.idCardSaveSidesAsImages = true
+    s.taskOptions.copyCount = 4
+    s.taskOptions.copyFitToPage = true
+    s.taskOptions.copyPrinterName = "Office"
+    s.taskOptions.copyAlsoSavePdf = true
     return s
 }
 
@@ -36,7 +40,7 @@ final class ScanTaskTests: XCTestCase {
 
     func test_rawValues_areTheStoredNames() {
         XCTAssertEqual(ScanTask.allCases.map(\.rawValue),
-                       ["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard"])
+                       ["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy"])
     }
 
     func test_tryParse_isExact() {
@@ -54,9 +58,9 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertEqual(TaskCatalog.all.map(\.task), ScanTask.allCases)
         XCTAssertEqual(TaskCatalog.all.map(\.title),
                        ["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
-                        "Email a document", "Two-sided document", "ID card"])
+                        "Email a document", "Two-sided document", "ID card", "Copy"])
         XCTAssertEqual(TaskCatalog.all.map(\.iconKey),
-                       ["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard"])
+                       ["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy"])
         for definition in TaskCatalog.all {
             XCTAssertEqual(TaskCatalog.definition(definition.task), definition)
             XCTAssertFalse(definition.subtitle.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -77,11 +81,11 @@ final class ScanTaskTests: XCTestCase {
     func test_definitions_flowIntentAndRequiredSource() {
         XCTAssertEqual(TaskCatalog.all.map(\.flow),
                        [.documentQueue, .documentQueue, .photoSplit, .photoSplit, .documentQueue, .documentQueue,
-                        .documentQueue, .idCard])
+                        .documentQueue, .idCard, .copy])
         XCTAssertEqual(TaskCatalog.all.map(\.intent),
-                       [.document, .document, .photo, .photo, .document, .document, .document, .document])
+                       [.document, .document, .photo, .photo, .document, .document, .document, .document, .document])
         XCTAssertEqual(TaskCatalog.all.map(\.requiredSource),
-                       [nil, .documentFeeder, nil, nil, .flatbed, nil, .documentFeeder, .flatbed])
+                       [nil, .documentFeeder, nil, nil, .flatbed, nil, .documentFeeder, .flatbed, nil])
     }
 
     func test_apply_keepsDestinationAndDetectionTuning_andLeavesTheInputAlone() {
@@ -96,11 +100,15 @@ final class ScanTaskTests: XCTestCase {
             XCTAssertEqual(s.jpegQuality, 0.9)
             XCTAssertEqual(s.colorMode, .color)
             XCTAssertTrue(s.photoAutoSplit && s.photoAutoDeskew)
-            // The ID card's numbers are better not indexed: no text layer.
-            XCTAssertEqual(s.pdfSearchable, task != .idCard, task.rawValue)
+            // The ID card's numbers are better not indexed, and a copy is for paper: no text layer.
+            XCTAssertEqual(s.pdfSearchable, task != .idCard && task != .copy, task.rawValue)
             // How the user wants a task done is kept.
             XCTAssertEqual(s.taskOptions.idCardPaper, .letter, task.rawValue)
             XCTAssertTrue(s.taskOptions.idCardSaveSidesAsImages, task.rawValue)
+            XCTAssertEqual(s.taskOptions.copyCount, 4, task.rawValue)
+            XCTAssertTrue(s.taskOptions.copyFitToPage, task.rawValue)
+            XCTAssertEqual(s.taskOptions.copyPrinterName, "Office", task.rawValue)
+            XCTAssertTrue(s.taskOptions.copyAlsoSavePdf, task.rawValue)
             XCTAssertEqual(s.intent, TaskCatalog.definition(task).intent)
             XCTAssertTrue(TaskCatalog.fits(task, s))
             XCTAssertEqual(TaskCatalog.infer(s), task)
@@ -125,6 +133,7 @@ final class ScanTaskTests: XCTestCase {
             "document flatbed 300 pdf true Scan {date} {counter} false false compact",
             "document documentFeeder 300 pdf true Scan {date} {counter} false false standard",
             "document flatbed 300 pdf true ID card {date} false false standard",
+            "document flatbed 300 pdf true Copy {date} {counter} false false standard",
         ])
     }
 
@@ -212,6 +221,69 @@ final class ScanTaskTests: XCTestCase {
         var untagged = TaskCatalog.apply(.idCard, to: ScanSettings())
         untagged.taskId = nil
         XCTAssertEqual(TaskCatalog.infer(untagged), .document)
+    }
+
+    func test_copy_printsAtRealSizeFromAnySource() {
+        let definition = TaskCatalog.definition(.copy)
+        XCTAssertEqual(definition.steps[0].primaryActionLabel, "Copy")
+        var s = TaskCatalog.apply(.copy, to: ScanSettings())
+        XCTAssertEqual(s.intent, .document)
+        XCTAssertEqual(s.source, .flatbed)
+        XCTAssertEqual(s.format, .pdf)
+        XCTAssertEqual(s.resolution, 300)
+        XCTAssertEqual(s.colorMode, .color)
+        XCTAssertEqual(s.duplex, .off)
+        XCTAssertFalse(s.pdfSearchable)
+        XCTAssertEqual(s.output.afterSave, AfterSaveAction.none)
+        XCTAssertEqual(TaskCatalog.flow(of: s), .copy)
+        XCTAssertEqual(TaskCatalog.guidedSteps(s, capabilities: nil), definition.steps)
+        // Printed at real size, one copy, unless chosen otherwise.
+        XCTAssertEqual(s.taskOptions.copyCount, 1)
+        XCTAssertFalse(s.taskOptions.copyFitToPage)
+        XCTAssertNil(s.taskOptions.copyPrinterName)
+        XCTAssertFalse(s.taskOptions.copyAlsoSavePdf)
+        // The feeder copies a stack; Photos mode ends the task.
+        s.source = .documentFeeder
+        XCTAssertTrue(TaskCatalog.fits(.copy, s))
+        XCTAssertEqual(TaskCatalog.flow(of: s), .copy)
+        s.intent = .photo
+        XCTAssertFalse(TaskCatalog.fits(.copy, s))
+        XCTAssertEqual(TaskCatalog.flow(of: s), .photoSplit)
+        // Settings never look like a copy without the task stored.
+        var untagged = TaskCatalog.apply(.copy, to: ScanSettings())
+        untagged.taskId = nil
+        XCTAssertEqual(TaskCatalog.infer(untagged), .document)
+    }
+
+    func test_copy_needsAPrinter_theOtherTasksDoNot() {
+        let unavailable = TaskCatalog.availability(of: .copy, capabilities: nil, hasPrinter: false)
+        XCTAssertFalse(unavailable.isAvailable)
+        XCTAssertEqual(unavailable.reason, "No printer is installed.")
+        XCTAssertEqual(TaskCatalog.availability(of: .copy, capabilities: nil, hasPrinter: true), .available)
+        XCTAssertEqual(TaskCatalog.availability(of: .copy, capabilities: nil), .available)
+        for task in ScanTask.allCases where task != .copy {
+            XCTAssertEqual(TaskCatalog.availability(of: task, capabilities: nil, hasPrinter: false), .available, task.rawValue)
+        }
+        // Any scanner will do: the glass or the feeder.
+        let feederOnly = ScannerCapabilities(sources: [.documentFeeder], supportsOverview: false)
+        XCTAssertTrue(TaskCatalog.availability(of: .copy, capabilities: feederOnly, hasPrinter: true).isAvailable)
+        XCTAssertEqual(TaskCatalog.availability(of: .idCard, capabilities: feederOnly, hasPrinter: false).reason,
+                       "This scanner has no flatbed.")
+    }
+
+    func test_summary_ofACopy_saysHowItPrints() {
+        var s = TaskCatalog.apply(.copy, to: ScanSettings())
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi \u{00B7} Color \u{00B7} Actual size")
+        s.colorMode = .grayscale
+        s.taskOptions.copyFitToPage = true
+        s.taskOptions.copyCount = 3
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi \u{00B7} Grayscale \u{00B7} Fit to page \u{00B7} 3 copies")
+        // A count beyond what can be asked for is read as the most.
+        s.taskOptions.copyCount = 500
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi \u{00B7} Grayscale \u{00B7} Fit to page \u{00B7} 99 copies")
+        // Without the task the settings describe a file again.
+        s.taskId = nil
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi \u{00B7} Grayscale \u{00B7} PDF")
     }
 
     func test_guidedSteps_turningOverByHandWinsOverTheTask() {
@@ -455,6 +527,6 @@ final class ScanTaskTests: XCTestCase {
 
     func test_fileLabels() {
         XCTAssertEqual(TaskCatalog.all.map(\.fileLabel),
-                       ["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card"])
+                       ["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy"])
     }
 }

@@ -97,6 +97,21 @@ final class IdCardTests: XCTestCase {
         XCTAssertEqual(IdCardPapers.choiceLabel(.a4, regionCode: "US"), "A4")
     }
 
+    func test_paper_automaticIsTheDefaultPrintersPaper_whenItIsA4OrLetter() {
+        XCTAssertEqual(IdCardPapers.resolve(.auto, regionCode: "TR", printerPaper: .letter), .letter)
+        XCTAssertEqual(IdCardPapers.resolve(.auto, regionCode: "US", printerPaper: .a4), .a4)
+        // Other paper in the printer, or none known: the region's.
+        XCTAssertEqual(IdCardPapers.resolve(.auto, regionCode: "TR", printerPaper: .legal), .a4)
+        XCTAssertEqual(IdCardPapers.resolve(.auto, regionCode: "US", printerPaper: .a5), .letter)
+        XCTAssertEqual(IdCardPapers.resolve(.auto, regionCode: "US", printerPaper: nil), .letter)
+        // A choice made by hand stands.
+        XCTAssertEqual(IdCardPapers.resolve(.a4, regionCode: "US", printerPaper: .letter), .a4)
+        XCTAssertEqual(IdCardPapers.resolve(.letter, regionCode: "TR", printerPaper: .a4), .letter)
+        XCTAssertEqual(IdCardPapers.choiceLabel(.auto, regionCode: "TR", printerPaper: .letter), "Automatic (Letter)")
+        XCTAssertEqual(IdCardPapers.choiceLabel(.auto, regionCode: "TR", printerPaper: .legal), "Automatic (A4)")
+        XCTAssertEqual(IdCardPapers.choiceLabel(.letter, regionCode: "TR", printerPaper: .a4), "Letter")
+    }
+
     // MARK: Steps
 
     func test_steps_frontThenBackThenReview() {

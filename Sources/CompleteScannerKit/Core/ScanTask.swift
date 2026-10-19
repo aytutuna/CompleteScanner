@@ -14,6 +14,7 @@ public enum ScanTask: String, CaseIterable, Identifiable, Sendable {
     case email
     case twoSided
     case idCard
+    case copy
 
     public var id: String { rawValue }
 

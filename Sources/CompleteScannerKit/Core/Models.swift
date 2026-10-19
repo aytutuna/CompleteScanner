@@ -313,6 +313,16 @@ public struct TaskOptions: Codable, Equatable, Sendable {
     public var idCardPaper: IdCardPaper = .auto
     /// Each side of the ID card is also saved as an image of its own. Off unless chosen.
     public var idCardSaveSidesAsImages: Bool = false
+    /// How many copies the Copy task prints; read through `PrintCopies.clamp` (1 to 99). One unless chosen.
+    public var copyCount: Int = 1
+    /// Copies are made smaller to fit the printable area of the paper. Off: they print at real size,
+    /// like a photocopier.
+    public var copyFitToPage: Bool = false
+    /// The printer the Copy task (and printing the ID card) prints on; nil for the default printer,
+    /// which is also used when this one is no longer installed. Left out of the file when nil.
+    public var copyPrinterName: String?
+    /// Each copy is also saved as a PDF in the save folder. Off unless chosen.
+    public var copyAlsoSavePdf: Bool = false
 
     public init() {}
 
@@ -320,6 +330,10 @@ public struct TaskOptions: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case idCardPaper
         case idCardSaveSidesAsImages
+        case copyCount
+        case copyFitToPage
+        case copyPrinterName
+        case copyAlsoSavePdf
     }
 }
 
@@ -330,6 +344,10 @@ extension TaskOptions {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         idCardPaper = container.decodeLenient(forKey: .idCardPaper, default: idCardPaper)
         idCardSaveSidesAsImages = container.decodeLenient(forKey: .idCardSaveSidesAsImages, default: idCardSaveSidesAsImages)
+        copyCount = container.decodeLenient(forKey: .copyCount, default: copyCount)
+        copyFitToPage = container.decodeLenient(forKey: .copyFitToPage, default: copyFitToPage)
+        copyPrinterName = container.decodeLenient(forKey: .copyPrinterName, default: copyPrinterName)
+        copyAlsoSavePdf = container.decodeLenient(forKey: .copyAlsoSavePdf, default: copyAlsoSavePdf)
     }
 }
 

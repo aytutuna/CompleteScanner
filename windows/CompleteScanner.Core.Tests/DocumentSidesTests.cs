@@ -237,6 +237,15 @@ public class DocumentSidesTests
         Assert.Equal("Turning the stack over by hand needs “Collect pages, then Save PDF”.",
                      DocumentSides.ManualUnavailableReason(eachSaved));
         Assert.Null(DocumentSides.ManualUnavailableReason(Feeder(DuplexMode.Manual)));
+
+        // The Copy task is in Document mode, yet copies are made from one side of each sheet.
+        var copy = TaskCatalog.Apply(ScanTask.Copy, new ScanSettings());
+        copy.Source = ScanSource.DocumentFeeder;
+        copy.Duplex = DuplexMode.Manual;
+        Assert.Equal(TaskFlowKind.Copy, TaskCatalog.FlowOf(copy));
+        Assert.False(DocumentSides.UsesManualSteps(copy, null));
+        Assert.Equal("Copies are made from one side of each sheet; turn the stack over and copy again.",
+                     DocumentSides.ManualUnavailableReason(copy));
     }
 
     // MARK: - Pages

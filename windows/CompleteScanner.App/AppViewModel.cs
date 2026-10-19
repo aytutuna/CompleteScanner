@@ -209,7 +209,7 @@ public sealed class HistoryItem(ScanHistoryEntry entry, BitmapSource thumbnail)
 /// cancellation, scan history, live preview) carries over; only the change-notification
 /// plumbing is WPF-flavored. Must be created and used on a Dispatcher thread.
 /// </summary>
-public sealed class AppViewModel : INotifyPropertyChanged
+public sealed partial class AppViewModel : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -356,8 +356,14 @@ public sealed class AppViewModel : INotifyPropertyChanged
     /// </summary>
     private bool AutoSwitchMustWait => IsBusy || ShowPhotoReview || ShowIdCardReview || HasIdCardCaptures;
 
-    /// <summary>The page the ID card is saved on: the choice in the review; Automatic is the paper usual where the user lives.</summary>
-    public PaperSize IdCardPaperSize => IdCardPapers.Resolve(Settings.TaskOptions.IdCardPaper, RegionCode);
+    /// <summary>
+    /// The page the ID card is saved on: the choice in the review; Automatic is the default printer's
+    /// paper when it is A4 or Letter, else the paper usual where the user lives.
+    /// </summary>
+    public PaperSize IdCardPaperSize => IdCardPapers.Resolve(Settings.TaskOptions.IdCardPaper, RegionCode, _defaultPrinterPaper);
+
+    /// <summary>How the review's paper picker names a choice, Automatic with the paper it is now.</summary>
+    public string IdCardPaperChoiceLabel(IdCardPaper paper) => IdCardPapers.ChoiceLabel(paper, RegionCode, _defaultPrinterPaper);
 
     /// <summary>The user's country or region (two letters), for the paper usual there; null when unknown.</summary>
     public static string? RegionCode
@@ -369,11 +375,11 @@ public sealed class AppViewModel : INotifyPropertyChanged
         }
     }
 
-    /// <summary>The start screen's task cards, with what the connected scanner can do.</summary>
+    /// <summary>The start screen's task cards, with what the connected scanner (and, for Copy, the printers) can do.</summary>
     public IReadOnlyList<TaskCardItem> TaskCards =>
         TaskCatalog.All.Select(definition => new TaskCardItem(
             definition,
-            TaskCatalog.Availability(definition.Task, Capabilities),
+            TaskCatalog.Availability(definition.Task, Capabilities, HasPrinter),
             ActiveTask == definition.Task,
             TaskCatalog.Summary(SettingsAdapter.Adapt(TaskCatalog.Apply(definition.Task, new ScanSettings()),
                                                       Capabilities).Settings))).ToList();
@@ -476,7 +482,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
     public AppViewModel(IReadOnlyList<IScannerBackend>? backends = null,
                         IOcrService? ocrService = null,
                         IFileActions? fileActions = null,
-                        ISystemDiagnostics? systemDiagnostics = null)
+                        ISystemDiagnostics? systemDiagnostics = null,
+                        IPrintService? printService = null)
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
         var saved = SettingsStore.Load();
@@ -499,6 +506,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
         _ocrService = ocrService ?? new WindowsOcrService();
         _fileActions = fileActions ?? new WindowsFileActions(MainWindowHandle);
         _system = systemDiagnostics ?? new WindowsSystemDiagnostics();
+        _print = printService ?? new WindowsPrintService();
         foreach (var preset in _presetStore.Load()) Presets.Add(preset);
         _renderTimer = new DispatcherTimer(DispatcherPriority.Normal, _dispatcher) { Interval = CanvasRenderDebounce };
         _renderTimer.Tick += (_, _) =>
@@ -543,6 +551,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
         SyncTaskFlow();
         // The page strip's badges follow the blank-page settings.
         SyncPageOptions();
+        // The Copies section shows the paper the printer is asked for.
+        if (IsCopyFlow && RequestedPaper(Settings) != _copySetupPaper) _ = RefreshCopySetupAsync();
         _settingsSaveTimer?.Stop();
         _settingsSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
         var snapshot = Settings.Clone();
@@ -574,6 +584,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
         MergeDevices();
         // The troubleshooter's part of devices.txt needs the WIA service and the network.
         _ = ReadSystemStateAsync();
+        // The Copy card needs a printer; Automatic paper for the ID card is the default printer's.
+        _ = RefreshPrintersAsync();
         // Remove partial files an export cut off by a crash left in the destination folder.
         string folder = DestinationFolder;
         _ = Task.Run(() => SavedFiles.SweepStaleTempFiles(folder, SavedFiles.StaleTempFileAge));
@@ -1112,12 +1124,24 @@ public sealed class AppViewModel : INotifyPropertyChanged
             ? step.Id == DocumentSides.BacksStepId ? PageSide.Back : PageSide.Front
             : null;
         // The flatbed scans the selection, else the paper size's part of the glass; an ID card
-        // may lie anywhere on it, so its scans take the whole glass.
+        // may lie anywhere on it, so its scans take the whole glass. A copy with Automatic paper
+        // scans the part the printer's paper covers (PrepareCopyAsync).
         var selection = s.Source == ScanSource.Flatbed
             ? SelectionRect ?? (!idCard && Capabilities is { } caps ? PaperSizes.FlatbedSelection(s.PaperSize, caps.FlatbedSizeInches) : null)
             : null;
+        bool copy = TaskCatalog.FlowOf(s) == TaskFlowKind.Copy;
+        // A copy of an area selected on the preview is centred on the paper; of a page, it lies in the corner.
+        bool areaSelected = s.Source == ScanSource.Flatbed && SelectionRect is not null;
         return RunExclusive(async token =>
         {
+            PrinterSetup? copySetup = null;
+            if (copy)
+            {
+                // The printer goes first: the copy needs one, and its paper says what part of the glass to scan.
+                (copySetup, selection) = await PrepareCopyAsync(s, selection);
+                if (_switchGeneration != generation) return;
+                token.ThrowIfCancellationRequested();
+            }
             StatusMessage = "Scanning…";
             // The bar of the previous save makes way for the new scan.
             SavedBarPaths = null;
@@ -1252,6 +1276,11 @@ public sealed class AppViewModel : INotifyPropertyChanged
                     }
                     SetLastScan(rawPreview);
                     await CaptureIdCardSide(cardSide!.Value, processed[^1], selection, generation, token);
+                    break;
+                case TaskFlowKind.Copy:
+                    SetLastScan(rawPreview);
+                    await PrintCopyPages(processed, s, copySetup!, areaSelected, token);
+                    RecordCaptures(processed.Select(page => page.Id));
                     break;
             }
             if (stop is not null) ErrorMessage = stop.Message(raw.Count);
@@ -1778,10 +1807,12 @@ public sealed class AppViewModel : INotifyPropertyChanged
     public bool StartTask(ScanTask task)
     {
         if (IsBusy) return false;
-        var availability = TaskCatalog.Availability(task, Capabilities);
+        var availability = TaskCatalog.Availability(task, Capabilities, HasPrinter);
         if (!availability.IsAvailable)
         {
             ErrorMessage = availability.Reason;
+            // A printer installed since they were read makes the card available once read again.
+            if (task == ScanTask.Copy && !HasPrinter) PrintersMayHaveChanged();
             NotifyAll();
             return false;
         }
@@ -1792,6 +1823,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
         Flow = null;
         SettingsEdited();
         StatusMessage = WithNotes($"Ready for “{TaskCatalog.Definition(task).Title}”.", adapted.Notes);
+        // Printers come and go: the Copy task reads them again.
+        if (task == ScanTask.Copy) _ = RefreshPrintersAsync();
         NotifyAll();
         return true;
     }

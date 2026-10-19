@@ -46,13 +46,14 @@ extension AppState {
     /// How the next scan captures the sheets (one side, both, or turned over by hand).
     public var effectiveDuplex: DuplexMode { DocumentSides.effective(settings, capabilities: sidesCapabilities) }
 
-    /// The start screen's task cards, with what the connected scanner can do.
+    /// The start screen's task cards, with what the connected scanner (and, for Copy, the printers) can do.
     public var taskCards: [TaskCard] {
         TaskCatalog.all.map { definition in
             let settings = SettingsAdapter.adapt(TaskCatalog.apply(definition.task, to: ScanSettings()),
                                                  to: sidesCapabilities).settings
             return TaskCard(definition: definition,
-                            availability: TaskCatalog.availability(of: definition.task, capabilities: capabilities),
+                            availability: TaskCatalog.availability(of: definition.task, capabilities: capabilities,
+                                                                   hasPrinter: hasPrinter),
                             isCurrent: activeTask == definition.task,
                             summary: TaskCatalog.summary(settings))
         }
@@ -65,7 +66,9 @@ extension AppState {
     @discardableResult
     public func startTask(_ task: ScanTask) -> Bool {
         guard !isBusy else { return false }
-        let availability = TaskCatalog.availability(of: task, capabilities: capabilities)
+        // Printers come and go: the Copy task reads them again.
+        if task == .copy { refreshPrinters() }
+        let availability = TaskCatalog.availability(of: task, capabilities: capabilities, hasPrinter: hasPrinter)
         guard availability.isAvailable else {
             errorMessage = availability.reason
             return false

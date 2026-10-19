@@ -11,12 +11,14 @@ public enum TaskFlowKind
     PhotoSplit,
     /// <summary>The front and back of a card are found on the bed and laid out on one page (<see cref="IdCardComposer"/>).</summary>
     IdCard,
+    /// <summary>The scan goes straight to the printer at real size (<see cref="PrintLayout"/>), like a photocopier.</summary>
+    Copy,
 }
 
 /// <summary>A task card: what it is called, how it looks and how its scans are handled.</summary>
 /// <param name="IconKey">
 /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-/// "photos", "restore", "quick", "email", "twoSided", "idCard".
+/// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy".
 /// </param>
 /// <param name="Intent">The scan mode the task uses.</param>
 /// <param name="RequiredSource">The source the task cannot work without; null when any source does.</param>
@@ -86,6 +88,12 @@ public static class TaskCatalog
             "Both sides of an ID card or driving licence on one page, at real size.",
             "idCard", TaskFlowKind.IdCard, ScanIntent.Document, ScanSource.Flatbed, "ID card",
             IdCardSteps.Steps),
+        new(ScanTask.Copy, "Copy",
+            "Scan straight to the printer at real size, like a photocopier.",
+            "copy", TaskFlowKind.Copy, ScanIntent.Document, null, "Copy",
+            [new TaskStep("scan", "Make a copy",
+                          "Place the original face down on the glass, or load the feeder, and copy. It prints at real size; choose the printer and the number of copies first.",
+                          "Copy", Repeats: true)]),
     ];
 
     /// <summary>Every task, in start-screen order.</summary>
@@ -106,7 +114,8 @@ public static class TaskCatalog
     /// pages (the empty backs of one-sided sheets) and straightens pages the feeder pulled in at a
     /// slant; no task crops yet; <see cref="SettingsAdapter"/> turns
     /// <see cref="DuplexMode.Both"/> into turning over by hand on a feeder that scans one side.
-    /// The ID card task makes no searchable PDF: the numbers on an ID are better not indexed.
+    /// The ID card task makes no searchable PDF: the numbers on an ID are better not indexed; neither
+    /// does the Copy task, whose PDF (when one is saved too) is a record of the paper copy.
     /// </summary>
     public static ScanSettings Apply(ScanTask task, ScanSettings current)
     {
@@ -117,7 +126,7 @@ public static class TaskCatalog
         s.PhotoAutoSplit = true;
         s.PhotoAutoDeskew = true;
         s.DocumentMultiPage = true;
-        s.PdfSearchable = task != ScanTask.IdCard;
+        s.PdfSearchable = task is not (ScanTask.IdCard or ScanTask.Copy);
         s.Adjustments = new AdjustmentSettings();
         s.Output.PdfSize = PdfSizePreset.Standard;
         s.Output.AfterSave = AfterSaveAction.None;
@@ -183,6 +192,12 @@ public static class TaskCatalog
                 s.Format = OutputFormat.Pdf;
                 s.NamingTemplate = "ID card {date}";
                 break;
+            case ScanTask.Copy:
+                s.Intent = ScanIntent.Document;
+                s.Resolution = 300;
+                s.Format = OutputFormat.Pdf;
+                s.NamingTemplate = "Copy {date} {counter}";
+                break;
         }
         s.TaskId = task.RawValue();
         return s;
@@ -211,8 +226,17 @@ public static class TaskCatalog
     /// Whether the task can be started with a scanner offering <paramref name="capabilities"/>
     /// (null: none connected yet, so nothing is ruled out).
     /// </summary>
-    public static TaskAvailability Availability(ScanTask task, ScannerCapabilities? capabilities)
+    public static TaskAvailability Availability(ScanTask task, ScannerCapabilities? capabilities) =>
+        Availability(task, capabilities, hasPrinter: true);
+
+    /// <summary>
+    /// Whether the task can be started with a scanner offering <paramref name="capabilities"/>
+    /// (null: none connected yet, so nothing is ruled out) and, for the Copy task, a printer
+    /// (<paramref name="hasPrinter"/>: false only when it is known that none is installed).
+    /// </summary>
+    public static TaskAvailability Availability(ScanTask task, ScannerCapabilities? capabilities, bool hasPrinter)
     {
+        if (task == ScanTask.Copy && !hasPrinter) return new TaskAvailability(false, PrintText.NoPrinterReason);
         var definition = Definition(task);
         if (capabilities is null || definition.RequiredSource is not { } source
             || capabilities.Sources.Contains(source))
@@ -258,10 +282,18 @@ public static class TaskCatalog
     /// One line describing the settings, e.g. "300 dpi · Color · PDF". A PDF size other than
     /// the default Standard is named ("300 dpi · Color · Compact PDF"), and so is two-sided
     /// feeder scanning ("… · Both sides", "… · Both sides, turned by hand"), so the line stays
-    /// short enough for cards and the preset list.
+    /// short enough for cards and the preset list. A copy says how it prints instead of a format:
+    /// "300 dpi · Color · Actual size", "300 dpi · Grayscale · Fit to page · 3 copies".
     /// </summary>
     public static string Summary(ScanSettings settings)
     {
+        if (FlowOf(settings) == TaskFlowKind.Copy)
+        {
+            // A copy is paper, not a file: its size and count matter, not the format.
+            int copies = PrintCopies.Clamp(settings.TaskOptions.CopyCount);
+            return $"{settings.Resolution} dpi · {settings.ColorMode.Label()} · {PrintText.ModeLabel(settings.TaskOptions.CopyFitToPage)}"
+                   + (copies > 1 ? $" · {copies} copies" : "");
+        }
         string format = settings.Format == OutputFormat.Pdf && settings.Output.PdfSize != PdfSizePreset.Standard
             ? $"{settings.Output.PdfSize.Label()} {settings.Format.Label()}"
             : settings.Format.Label();

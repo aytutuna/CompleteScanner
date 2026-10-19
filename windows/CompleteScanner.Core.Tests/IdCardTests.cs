@@ -89,6 +89,23 @@ public class IdCardTests
         Assert.Equal("A4", IdCardPapers.ChoiceLabel(IdCardPaper.A4, "US"));
     }
 
+    [Fact]
+    public void Paper_AutomaticIsTheDefaultPrintersPaper_WhenItIsA4OrLetter()
+    {
+        Assert.Equal(PaperSize.Letter, IdCardPapers.Resolve(IdCardPaper.Auto, "TR", PaperSize.Letter));
+        Assert.Equal(PaperSize.A4, IdCardPapers.Resolve(IdCardPaper.Auto, "US", PaperSize.A4));
+        // Other paper in the printer, or none known: the region's.
+        Assert.Equal(PaperSize.A4, IdCardPapers.Resolve(IdCardPaper.Auto, "TR", PaperSize.Legal));
+        Assert.Equal(PaperSize.Letter, IdCardPapers.Resolve(IdCardPaper.Auto, "US", PaperSize.A5));
+        Assert.Equal(PaperSize.Letter, IdCardPapers.Resolve(IdCardPaper.Auto, "US", null));
+        // A choice made by hand stands.
+        Assert.Equal(PaperSize.A4, IdCardPapers.Resolve(IdCardPaper.A4, "US", PaperSize.Letter));
+        Assert.Equal(PaperSize.Letter, IdCardPapers.Resolve(IdCardPaper.Letter, "TR", PaperSize.A4));
+        Assert.Equal("Automatic (Letter)", IdCardPapers.ChoiceLabel(IdCardPaper.Auto, "TR", PaperSize.Letter));
+        Assert.Equal("Automatic (A4)", IdCardPapers.ChoiceLabel(IdCardPaper.Auto, "TR", PaperSize.Legal));
+        Assert.Equal("Letter", IdCardPapers.ChoiceLabel(IdCardPaper.Letter, "TR", PaperSize.A4));
+    }
+
     // MARK: - Steps
 
     [Fact]

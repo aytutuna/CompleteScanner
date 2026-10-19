@@ -72,6 +72,24 @@ final class PaperSizeTests: XCTestCase {
         }
     }
 
+    func test_match_thePaperAPrinterReports() {
+        // Windows reports A4 as 793.7 × 1122.5 device-independent pixels (1/96 in).
+        XCTAssertEqual(PaperSizes.match(CGSize(width: 793.700787 / 96, height: 1122.519685 / 96)), .a4)
+        XCTAssertEqual(PaperSizes.match(CGSize(width: 8.5, height: 11)), .letter)
+        // Either way round, within a little rounding.
+        XCTAssertEqual(PaperSizes.match(CGSize(width: 11.02, height: 8.49)), .letter)
+        XCTAssertEqual(PaperSizes.match(CGSize(width: 8.5, height: 14)), .legal)
+        XCTAssertEqual(PaperSizes.match(CGSize(width: 5.83, height: 8.27)), .a5)
+        XCTAssertNil(PaperSizes.match(CGSize(width: 8, height: 10)))
+        XCTAssertNil(PaperSizes.match(CGSize(width: 8.5, height: 11.2)))
+        XCTAssertNil(PaperSizes.match(CGSize(width: 0, height: 0)))
+        for size in PaperSize.allCases {
+            if let inches = PaperSizes.inches(size) {
+                XCTAssertEqual(PaperSizes.match(inches), size)
+            }
+        }
+    }
+
     func test_displayOrder_automaticThenTheUsualSize() {
         XCTAssertEqual(PaperSizes.displayOrder(region: "US"),
                        [.auto, .letter, .legal, .executive, .a4, .a5, .a6, .b5Jis, .idCard])

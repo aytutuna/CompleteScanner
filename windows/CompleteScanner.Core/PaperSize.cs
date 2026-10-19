@@ -1,7 +1,7 @@
 namespace CompleteScanner.Core;
 
 // Port of Sources/CompleteScannerKit/Core/PaperSize.swift: one paper size model for scan areas,
-// and later for the ID card page and printing.
+// the ID card page and printing.
 
 /// <summary>
 /// A paper size (<see cref="ScanSettings.PaperSize"/>). <see cref="Auto"/> comes first: it is
@@ -91,6 +91,22 @@ public static class PaperSizes
     {
         string code = regionCode?.Trim().ToUpperInvariant() ?? "";
         return LetterRegions.Contains(code) ? PaperSize.Letter : PaperSize.A4;
+    }
+
+    /// <summary>
+    /// The named size a sheet of <paramref name="inches"/> is (a printer's paper), either way round,
+    /// each side within <see cref="FitTolerance"/>; null for a size without a name here.
+    /// </summary>
+    public static PaperSize? Match(SizeD inches)
+    {
+        double shortSide = Math.Min(inches.Width, inches.Height), longSide = Math.Max(inches.Width, inches.Height);
+        if (shortSide <= 0) return null;
+        foreach (var size in All)
+        {
+            if (Inches(size) is not { } paper) continue;
+            if (Math.Abs(paper.Width - shortSide) <= FitTolerance && Math.Abs(paper.Height - longSide) <= FitTolerance) return size;
+        }
+        return null;
     }
 
     /// <summary>The sizes as pickers list them: Automatic, the region's usual size, then the others in declaration order.</summary>

@@ -67,6 +67,10 @@ internal static class CompatFixtures
         settings.Document.AutoStraighten = true;
         settings.TaskOptions.IdCardPaper = IdCardPaper.Letter;
         settings.TaskOptions.IdCardSaveSidesAsImages = true;
+        settings.TaskOptions.CopyCount = 3;
+        settings.TaskOptions.CopyFitToPage = true;
+        settings.TaskOptions.CopyPrinterName = "Office printer";
+        settings.TaskOptions.CopyAlsoSavePdf = true;
         return settings;
     }
 
@@ -126,7 +130,9 @@ internal static class CompatFixtures
         + "      \"duplex\": \"manual\",\n      \"backBinding\": \"shortEdge\",\n      \"paperSize\": \"a4\",\n"
         + "      \"document\": {\n        \"removeBlankPages\": true,\n        \"blankSensitivity\": \"high\",\n"
         + "        \"autoCrop\": true,\n        \"autoStraighten\": true\n      },\n"
-        + "      \"taskOptions\": {\n        \"idCardPaper\": \"letter\",\n        \"idCardSaveSidesAsImages\": true\n      }\n");
+        + "      \"taskOptions\": {\n        \"idCardPaper\": \"letter\",\n        \"idCardSaveSidesAsImages\": true,\n"
+        + "        \"copyCount\": 3,\n        \"copyFitToPage\": true,\n        \"copyPrinterName\": \"Office printer\",\n"
+        + "        \"copyAlsoSavePdf\": true\n      }\n");
 
     /// <summary>Field-by-field equality, including the legacy OCR languages.</summary>
     public static void AssertSettingsEqual(ScanSettings expected, ScanSettings actual)
@@ -735,18 +741,69 @@ public class ModelsCompatTests
                 settings.TaskOptions.IdCardSaveSidesAsImages = sides;
                 string json = CompatFixtures.Encode(settings);
                 using var written = JsonDocument.Parse(json);
-                Assert.Equal(["idCardPaper", "idCardSaveSidesAsImages"],
+                // No printer chosen: the key is left out, as Swift leaves out a nil.
+                Assert.Equal(["idCardPaper", "idCardSaveSidesAsImages", "copyCount", "copyFitToPage", "copyAlsoSavePdf"],
                              written.RootElement.GetProperty("taskOptions").EnumerateObject().Select(p => p.Name));
                 Assert.Equal(settings.TaskOptions, Decode<ScanSettings>(json).TaskOptions);
             }
         }
+        var copy = new ScanSettings();
+        copy.TaskOptions.CopyCount = 12;
+        copy.TaskOptions.CopyFitToPage = true;
+        copy.TaskOptions.CopyPrinterName = "Microsoft Print to PDF";
+        copy.TaskOptions.CopyAlsoSavePdf = true;
+        string copyJson = CompatFixtures.Encode(copy);
+        using (var written = JsonDocument.Parse(copyJson))
+        {
+            var options = written.RootElement.GetProperty("taskOptions");
+            Assert.Equal(12, options.GetProperty("copyCount").GetInt32());
+            Assert.Equal("Microsoft Print to PDF", options.GetProperty("copyPrinterName").GetString());
+        }
+        Assert.Equal(copy.TaskOptions, Decode<ScanSettings>(copyJson).TaskOptions);
         var original = CompatFixtures.NonDefaultSettings();
         var clone = original.Clone();
         Assert.NotSame(original.TaskOptions, clone.TaskOptions);
         Assert.Equal(original.TaskOptions, clone.TaskOptions);
         clone.TaskOptions.IdCardPaper = IdCardPaper.A4;
         clone.TaskOptions.IdCardSaveSidesAsImages = false;
+        clone.TaskOptions.CopyCount = 1;
+        clone.TaskOptions.CopyPrinterName = null;
         Assert.Equal((IdCardPaper.Letter, true), (original.TaskOptions.IdCardPaper, original.TaskOptions.IdCardSaveSidesAsImages));
+        Assert.Equal((3, "Office printer"), (original.TaskOptions.CopyCount, original.TaskOptions.CopyPrinterName));
+    }
+
+    [Fact]
+    public void CopyOptions_OneCopyAtRealSizeOnTheDefaultPrinter_ByDefaultAndInFilesWithoutThem()
+    {
+        var options = new ScanSettings().TaskOptions;
+        Assert.Equal((1, false, (string?)null, false),
+                     (options.CopyCount, options.CopyFitToPage, options.CopyPrinterName, options.CopyAlsoSavePdf));
+        // Files of the ID card version have task options without the copy keys.
+        var idCardOnly = Decode<ScanSettings>("""{"taskOptions": {"idCardPaper": "a4", "idCardSaveSidesAsImages": true}}""").TaskOptions;
+        Assert.Equal((IdCardPaper.A4, true), (idCardOnly.IdCardPaper, idCardOnly.IdCardSaveSidesAsImages));
+        Assert.Equal((1, false, (string?)null, false),
+                     (idCardOnly.CopyCount, idCardOnly.CopyFitToPage, idCardOnly.CopyPrinterName, idCardOnly.CopyAlsoSavePdf));
+    }
+
+    [Fact]
+    public void CorruptCopyOptions_FallBackOneByOne_RestIntact()
+    {
+        var options = Decode<ScanSettings>("""
+            {"resolution": 150, "taskOptions": {"idCardPaper": "letter", "copyCount": "three", "copyFitToPage": 1,
+             "copyPrinterName": 42, "copyAlsoSavePdf": true}, "pdfSearchable": false}
+            """);
+        Assert.Equal(150, options.Resolution);
+        Assert.False(options.PdfSearchable);
+        Assert.Equal(IdCardPaper.Letter, options.TaskOptions.IdCardPaper);
+        Assert.Equal((1, false, (string?)null, true),
+                     (options.TaskOptions.CopyCount, options.TaskOptions.CopyFitToPage,
+                      options.TaskOptions.CopyPrinterName, options.TaskOptions.CopyAlsoSavePdf));
+        var nulls = Decode<ScanSettings>("""{"taskOptions": {"copyCount": null, "copyPrinterName": null, "copyFitToPage": true}}""").TaskOptions;
+        Assert.Equal((1, true, (string?)null), (nulls.CopyCount, nulls.CopyFitToPage, nulls.CopyPrinterName));
+        // A count out of range is kept as written and read through PrintCopies.Clamp.
+        var many = Decode<ScanSettings>("""{"taskOptions": {"copyCount": 500}}""").TaskOptions;
+        Assert.Equal(500, many.CopyCount);
+        Assert.Equal(99, PrintCopies.Clamp(many.CopyCount));
     }
 
     [Fact]

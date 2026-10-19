@@ -8,6 +8,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CompleteScanner.Core.Tests"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CompleteScanner.App", "CompleteScanner.App\CompleteScanner.App.csproj", "{1A5A210C-0003-4A6B-9E5B-3B1B62C90003}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CompleteScanner.App.Tests", "CompleteScanner.App.Tests\CompleteScanner.App.Tests.csproj", "{1A5A210C-0004-4A6B-9E5B-3B1B62C90004}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,6 +28,10 @@ Global
 		{1A5A210C-0003-4A6B-9E5B-3B1B62C90003}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1A5A210C-0003-4A6B-9E5B-3B1B62C90003}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1A5A210C-0003-4A6B-9E5B-3B1B62C90003}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1A5A210C-0004-4A6B-9E5B-3B1B62C90004}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1A5A210C-0004-4A6B-9E5B-3B1B62C90004}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1A5A210C-0004-4A6B-9E5B-3B1B62C90004}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1A5A210C-0004-4A6B-9E5B-3B1B62C90004}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

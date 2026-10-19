@@ -85,6 +85,25 @@ public class PaperSizeTests
     }
 
     [Fact]
+    public void Match_ThePaperAPrinterReports()
+    {
+        // Windows reports A4 as 793.7 × 1122.5 device-independent pixels (1/96 in).
+        Assert.Equal(PaperSize.A4, PaperSizes.Match(new SizeD(793.700787 / 96, 1122.519685 / 96)));
+        Assert.Equal(PaperSize.Letter, PaperSizes.Match(new SizeD(8.5, 11)));
+        // Either way round, within a little rounding.
+        Assert.Equal(PaperSize.Letter, PaperSizes.Match(new SizeD(11.02, 8.49)));
+        Assert.Equal(PaperSize.Legal, PaperSizes.Match(new SizeD(8.5, 14)));
+        Assert.Equal(PaperSize.A5, PaperSizes.Match(new SizeD(5.83, 8.27)));
+        Assert.Null(PaperSizes.Match(new SizeD(8, 10)));
+        Assert.Null(PaperSizes.Match(new SizeD(8.5, 11.2)));
+        Assert.Null(PaperSizes.Match(new SizeD(0, 0)));
+        foreach (var size in PaperSizes.All)
+        {
+            if (PaperSizes.Inches(size) is { } inches) Assert.Equal(size, PaperSizes.Match(inches));
+        }
+    }
+
+    [Fact]
     public void DisplayOrder_AutomaticThenTheUsualSize()
     {
         Assert.Equal(

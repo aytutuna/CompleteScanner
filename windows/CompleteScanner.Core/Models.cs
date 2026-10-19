@@ -364,12 +364,31 @@ public sealed class TaskOptions : IEquatable<TaskOptions>
     /// <summary>Each side of the ID card is also saved as an image of its own. Off unless chosen.</summary>
     public bool IdCardSaveSidesAsImages { get; set; } = false;
 
+    /// <summary>How many copies the Copy task prints; read through <see cref="PrintCopies.Clamp"/> (1 to 99). One unless chosen.</summary>
+    public int CopyCount { get; set; } = 1;
+
+    /// <summary>Copies are made smaller to fit the printable area of the paper. Off: they print at real size, like a photocopier.</summary>
+    public bool CopyFitToPage { get; set; } = false;
+
+    /// <summary>
+    /// The printer the Copy task (and printing the ID card) prints on; null for the default printer,
+    /// which is also used when this one is no longer installed. Left out of the file when null.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CopyPrinterName { get; set; }
+
+    /// <summary>Each copy is also saved as a PDF in the save folder. Off unless chosen.</summary>
+    public bool CopyAlsoSavePdf { get; set; } = false;
+
     public TaskOptions Clone() => (TaskOptions)MemberwiseClone();
 
     public bool Equals(TaskOptions? other) =>
-        other is not null && IdCardPaper == other.IdCardPaper && IdCardSaveSidesAsImages == other.IdCardSaveSidesAsImages;
+        other is not null && IdCardPaper == other.IdCardPaper && IdCardSaveSidesAsImages == other.IdCardSaveSidesAsImages
+        && CopyCount == other.CopyCount && CopyFitToPage == other.CopyFitToPage
+        && CopyPrinterName == other.CopyPrinterName && CopyAlsoSavePdf == other.CopyAlsoSavePdf;
     public override bool Equals(object? obj) => Equals(obj as TaskOptions);
-    public override int GetHashCode() => HashCode.Combine(IdCardPaper, IdCardSaveSidesAsImages);
+    public override int GetHashCode() =>
+        HashCode.Combine(IdCardPaper, IdCardSaveSidesAsImages, CopyCount, CopyFitToPage, CopyPrinterName, CopyAlsoSavePdf);
 }
 
 public static class BlankSensitivities

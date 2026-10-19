@@ -173,7 +173,10 @@ public static class DocumentSides
     /// </summary>
     public static string? ManualUnavailableReason(ScanSettings settings)
     {
-        if (TaskCatalog.FlowOf(settings) != TaskFlowKind.DocumentQueue)
+        var flow = TaskCatalog.FlowOf(settings);
+        if (flow == TaskFlowKind.Copy)
+            return "Copies are made from one side of each sheet; turn the stack over and copy again.";
+        if (flow != TaskFlowKind.DocumentQueue)
             return "Turning the stack over by hand works for documents, not photos.";
         if (!settings.DocumentMultiPage)
             return "Turning the stack over by hand needs “Collect pages, then Save PDF”.";

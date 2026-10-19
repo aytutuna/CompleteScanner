@@ -176,7 +176,11 @@ public enum DocumentSides {
     /// Why turning over by hand cannot be guided with these settings; nil when it can (also when
     /// the settings do not ask for it).
     public static func manualUnavailableReason(_ settings: ScanSettings) -> String? {
-        if TaskCatalog.flow(of: settings) != .documentQueue {
+        let flow = TaskCatalog.flow(of: settings)
+        if flow == .copy {
+            return "Copies are made from one side of each sheet; turn the stack over and copy again."
+        }
+        if flow != .documentQueue {
             return "Turning the stack over by hand works for documents, not photos."
         }
         if !settings.documentMultiPage {

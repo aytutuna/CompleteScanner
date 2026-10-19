@@ -48,6 +48,14 @@ public readonly record struct RectD(double X, double Y, double Width, double Hei
             return new RectD(x1, y1, x2 - x1, y2 - y1);
         }
     }
+
+    /// <summary>
+    /// The four numbers only. The text records print by default would also hold <see cref="Standardized"/> and
+    /// <see cref="Integral"/>, rectangles themselves, without end; records holding a rectangle
+    /// print it through this.
+    /// </summary>
+    public override string ToString() =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"RectD {{ X = {X}, Y = {Y}, Width = {Width}, Height = {Height} }}");
 }
 
 /// <summary>

@@ -24,12 +24,17 @@ UI per platform** architecture:
   (`PageProcessor.cs`: the steps every scanned page goes through before it is queued) and the
   image toolkit it works with (`GrayImage.cs`, `BackgroundMap.cs`, `MaskOps.cs` next to
   `RgbaImage.cs`), starting with blank-page detection (`BlankPageDetector.cs`) and crop and
-  straighten (`DocumentGeometry.cs`), and the ID card task (`IdCard.cs`: finding the card on the
-  glass, laying both sides out at real size and drawing the page).
+  straighten (`DocumentGeometry.cs`), the ID card task (`IdCard.cs`: finding the card on the
+  glass, laying both sides out at real size and drawing the page), and copy and print
+  (`PrintLayout.cs`: where a page goes on a printer's paper at real size or fitted, copies, the
+  ruler test page).
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
   xUnit with the same fixtures, geometry, and tolerances. **This is the contract that keeps
   the Swift and C# cores behaviorally identical** — change an algorithm on one side, port
   the change, and both suites must stay green.
+- **`CompleteScanner.App.Tests`** — checks of the app's own Windows code that need WPF but no
+  window and no device: the print document is written to an XPS file and read back (paper size,
+  where each image lands, copies, grey, cancel). Nothing is sent to a printer.
 - **`CompleteScanner.App`** — the native Windows shell (WPF, .NET 10): main window with
   sidebar/inspector/preview-canvas/page-strip/photo-review, a view-model porting the macOS
   `AppState` orchestration, and Windows service implementations (WIA, eSCL and TWAIN
@@ -46,14 +51,15 @@ Studio 2026 (18.0+), the first Visual Studio release that supports .NET 10.
 
 ```powershell
 cd windows
-dotnet test                                  # run the conformance suite
+dotnet test                                  # the conformance suite and the app's print-document checks
 dotnet run --project CompleteScanner.App     # launch the app
 ```
 
 The main window has four tabs, like the macOS app:
 
 - **Start** — "What are you scanning?": one card per task (Document to PDF, Multi-page from
-  feeder, Photos, Old photo restoration, Quick scan, Email a document, Two-sided document) and the user's own presets, each badged
+  feeder, Photos, Old photo restoration, Quick scan, Email a document, Two-sided document, ID card,
+  Copy) and the user's own presets, each badged
   with its task. Picking a card sets everything up for that task, keeps the save folder, fits
   the settings to the connected scanner and opens **Scan**; a card the scanner cannot do (the
   feeder task on a flatbed-only scanner) is greyed out with the reason. On **Scan** a banner
@@ -239,11 +245,16 @@ The review shows both sides, each with **Turn**, **Fix crop** (the crop editor, 
 came from) and **Scan again**, **Swap front and back**, and the page they go on: centred, the front
 1 in from the top, the back 0.5 in under it, at real size; a side too large for that (a crop fixed
 to the whole glass) is made smaller with a warning that the copy is not at real size. **Paper** is
-Automatic (the paper usual in the user's region: Letter in the US, Canada, Mexico and the other
-Letter countries, A4 elsewhere), A4 or Letter; **Save as** is the inspector's format: a PDF page
+Automatic (the default printer's paper when it holds A4 or Letter, read from Windows; otherwise the
+paper usual in the user's region: Letter in the US, Canada, Mexico and the other Letter countries, A4
+elsewhere), A4 or Letter; **Save as** is the inspector's format: a PDF page
 the size of the paper, or a JPEG, PNG or TIFF of it at the scan's resolution (at most 600 dpi), so
 it prints at real size either way; **Also save each side as an image** adds "… front" and "… back" images (JPEG for a
 PDF, at the scan's full resolution). The file is named "ID card {date}". Saving is all or nothing.
+**Print** prints the page at real size, one copy, on the printer chosen for copies (see
+[Copy and print](#copy-and-print)), with no dialog: the sides are laid out on the paper the printer
+prints on (the review's paper when the printer has it), and the status says when the printer's
+margins reach a card. The review stays open, so the card can still be saved or discarded.
 
 ID cards are sensitive, so the task keeps as little as it can: the scans are never written to the
 page spool and never added to the Scans tab, they stay in memory only while the review needs them,
@@ -254,10 +265,58 @@ and the task sets the after-save action to Do nothing. Closing the window with a
 
 The demo scanner has a made-up sample card (ID-1 size, "SAMPLE", a grey photo placeholder and
 field bars; a barcode and code blocks on the back) near the top-left corner of its glass, tilted
-4°; it turns the card over after each ID card scan. Printing the page comes with the Copy task
-(M13); until then Automatic does not read the default printer's paper.
+4°; it turns the card over after each ID card scan.
 **To check on real hardware:** light or white cards on a white lid, glossy cards with glare,
 cards with holograms, and the real size of a printed copy measured with a ruler.
+
+### Copy and print
+
+The **Copy** task (any scanner; greyed out with "No printer is installed." when Windows lists no
+printer) makes the scanner and a printer a photocopier: the main button is **Copy**, which scans and
+prints straight away, at real size: a page scanned at 300 dpi prints at its pixels / 300 inches, 1
+inch on the glass is 1 inch on paper, and nothing is scaled to the page unless **Fit to page** is on
+(then it is made smaller, never larger, to fit the part of the paper the printer prints on, turned a
+quarter when that makes it larger, and centred). The inspector's **Copies** section has the
+**Printer** (the default printer unless another is chosen; a chosen printer that is no longer
+installed falls back to the default, and choosing the default follows the default), its paper,
+the **Number of copies** (1 to 99), **Fit to page**, **Also save a PDF** and **Print ruler test
+page**; color or grey is the inspector's Color. On the glass with nothing selected and Automatic
+paper size, the part of the glass the printer's paper covers is scanned from the corner, as a copier
+copies the sheet it prints on; another paper size is asked of the printer too; an area selected on
+the preview is centred on the paper; the feeder copies a whole stack. The status says what was sent
+("Sent 2 pages to Office Laser, 3 copies.") and what the printer's margins cut off ("Edges may be cut
+by up to 5 mm (printer margins).", or "Larger than the paper: …" for a scan larger than the paper);
+the inspector says the same before copying. Copies are scanned like any scan (they are in the Scans
+tab) but never queued or spooled, so they are printed as scanned: no page is left out as blank,
+cropped or straightened (those switches are off for the task, saying so); **Also save a PDF** saves
+each copy as "Copy {date} {counter}" after it has gone to the printer, and also when printing failed
+(the error then names the PDF), so the scanned pages are not lost; a Cancel while the PDF is written
+says the copy was sent and the PDF not saved. Without a printer the section says so and has **Look
+again**.
+
+Printing uses System.Printing and the XPS print path, which ship with WPF (no package), and opens no
+dialog: `WindowsPrintService` reads the printers (`LocalPrintServer`), takes the printer's own
+ticket, portrait at 100 %, asks for the chosen paper when the printer lists it (else prints on its
+own paper and lays the page out on that), lets the printer make the copies (collated) when its
+capabilities say it can make that many and, for several pages, that it collates, and otherwise puts
+the pages in the job that many times; whatever the printer's saved preferences say, the job sets its
+copy count, one page per sheet, one-sided printing, and grey output for a grey or black-and-white scan or colour for a
+colour one (`WindowsPrintService.ApplyJobSettings`), and writes one paper-sized page per page
+with the image at its place in 1/96 inch, each page drawn only when the writer asks for it. The page
+images are stored losslessly as plain bitmaps: the XPS writer keeps a single picture for every
+JPEG-backed bitmap in a document, so JPEG frames would print the first page on every page. Cancel
+cancels the writer, which drops the job. The printer list, the default printer's paper and its
+printable area are read when the app starts, when the window comes back to the front, when the
+start screen is shown, when the Copy task is picked, when the printer list is opened and with **Look
+again**; reading never changes a printer or its settings. A print system that cannot be read (the
+Print Spooler stopped, say) is not taken for "no printer": the Copy task stays offered.
+
+**Print ruler test page** prints a page with a grey 1-inch grid from the paper's corner and black
+centimetre ticks along the first inch line (longer every 5 cm), at real size, to measure with a
+ruler.
+**To check on real hardware:** a real printer's margins and whether a driver offsets the page by its
+margin (measure the ruler page), copies and collation, grey output, and drivers that do not report
+an imageable area.
 
 ### PDF size
 
@@ -391,6 +450,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | Crop and straighten (`DocumentGeometry`, `GeometryStep`, `PageCorrections`) | Covered by `DocumentGeometryTests`, the crop and straighten cases of `PageProcessorTests`, `ModelsCompatTests`, `ScanTaskTests` and `MaskOpsTests` (same cases as macOS, on the same synthetic pages checked by checksum). Checked on public-domain scans laid at known angles on a lid and a dark backdrop, on archive scans as they were captured, and by driving the view model with those scans (scan, the strip's captions, both versions spooled, show as scanned and back, turning a page, saving whichever version is shown, removing and clearing pages, the switches off and pages saved at once, the two-sided task) and by building the window without showing it: the switches and their hint, the swap button and its glyphs, rendered off screen. **Unverified:** real lids, feeder backings and thin paper (see [Crop and straighten](#crop-and-straighten)) |
 | ID card (`IdCard`, the review) | Covered by `IdCardTests` (paper, steps, layout on Letter and A4, scaled to fit, the composed page in pixels and as a 612 × 792 pt PDF page, the detector on a synthetic bed with a card turned 7° among other objects, the back taking the front's place, moved to another resolution and refused for another part of the glass, the page at most 600 dpi, Skip only for the card's back) and the ID card cases of `ScanTaskTests`, `ModelsCompatTests`, `TaskFlowTests` and `MockScannerTests` (same cases as macOS). Checked by driving the view model with the demo scanner's sample card (front, back, the review, turning and swapping the sides, fixing a crop, Letter and A4, saving a PDF at 612 × 792 pt with no text layer, a PNG page at 300 dpi with the front as an image, skipping the back, scanning a side again, discarding, leaving the task, picking a task again) and with a white-on-white back (at the front's resolution, at twice it, and with another selection), a scanner going away with the review open and between the sides (no switch until the card is saved, discarded or the task left), a page saved from a 1200 dpi scan (A4 at 600 dpi, the side at 1200), the stage cleared on leaving with no side held, checking that nothing goes to the history or the page spool and that the stage is cleared, and by building the window without showing it: the task card, the banner's steps and Skip back side (and no Skip for the backs of a stack turned over by hand), Mode and Source locked while a side is held, Leave the task and picking a task asking first (Cancel keeps the card, Discard drops it), the review with both sides, the front only, the not-at-real-size warning, the paper and format pickers, rendered off screen in light and dark. **Unverified:** real cards on real lids (see [ID card](#id-card)), printing at real size |
 | Blank pages (`BlankPageDetector`, `PageProcessor`, `PageFilter`, image toolkit) | Covered by `BlankPageDetectorTests`, `PageProcessorTests`, `GrayImageTests`, `RgbaImageTests`, `MaskOpsTests` and the blank-page cases of `ModelsCompatTests`, `ScanTaskTests` and `MockScannerTests` (same cases as macOS; `MaskOpsTests` also pins PhotoDetector's regions on the demo bed to the last bit, unchanged by moving the mask code out of it). Checked on public-domain scans of letters, menus and photos (none taken for blank, at any level, with or without their dark surroundings) and on blank backs made from them (all found blank), and by driving the view model with the demo scanner (flagging, Skip blank pages turned on and off with pages queued, Keep and Skip per page, rotating a flagged page, saving 5 of 6 pages, nothing to save, pages saved at once keeping every page, the two-sided task, turning over by hand) and by building the window without showing it: the switch, the levels, the badges, Keep and Skip, the strip label, Save PDF's count, rendered off screen in light and dark. **Unverified:** blank backs from real scanners (see [Blank pages](#blank-pages)) |
+| Copy and print (`PrintLayout`, `PrintService`, the Copies section) | The layout is covered by `PrintLayoutTests` (real size on A4 and Letter, a whole glass cut off on A4, printer margins, a selection centred, turning only when that cuts off less, fit with and without turning, never enlarged, units, printer paper, copies, the ruler page by pixel, the texts) and the copy cases of `ScanTaskTests`, `ModelsCompatTests`, `PaperSizeTests` and `IdCardTests` (same cases as macOS); the print document by `CompleteScanner.App.Tests` (written to XPS and read back: the page is the paper, each image at its place in 1/96 in, turned pages turned in their pixels, fitted pages placed smaller, copies the printer does not make repeated, every page its own picture, grey images, cancel). Checked by reading the real print system on Windows 11 without printing (the printers, the default printer's Letter paper and printable area, A4 and Letter asked of Microsoft Print to PDF, an unknown printer; the default printer and its ticket compared before and after: unchanged), by driving the view model with the demo scanner and a stand-in printer service that records the jobs (a copy from the corner at real size, the printer's paper area of the glass scanned, A4 asked and scanned, a selection centred, 3 copies on a printer that makes 2 at most, fit to page, grey, also a PDF, the feeder's stack, another printer, a printer gone, a refused job and Cancel while printing, no printer; the ID card printed on Letter at real size with the review kept, A4 on a Letter-only printer, margins reaching the card; Automatic paper following the default printer; the ruler page), with every recorded job's document written to XPS by the app's own code and its geometry read back, and by building the window without showing it: the Copy card, the Copies section and its controls, no printer, the review's Print button, rendered off screen in light and dark. **Not done:** printing to a real printer, including Microsoft Print to PDF (its file name cannot be set without its save dialog). **Unverified:** real printer margins and offsets, measured with the ruler page |
 | Share, email, open with, copy (`SaveActions`, `FileActions`, `ShareService`) | The choices are covered by `SaveActionsTests` and the after-save cases of `ModelsCompatTests` (same cases as macOS). Checked by driving the view model's real save paths with a stand-in for Windows (each after-save action after a PDF, a file saved at once and a photo batch; the Email task sharing; no share window; a refused action; a moved file; a cancelled save running nothing), by building the real clipboard data and share package without placing them anywhere, and by building the window without showing it: the bar, its buttons and menu, the narrow layout, the "After saving" choices, the Saved tab's buttons and menus, rendered off screen in light and dark. **Not tried on screen:** the share window, the Open with dialog and the clipboard themselves (checks must not send, open or overwrite anything), and Mail or Outlook as share targets |
 | Troubleshooter (`Troubleshooter`, `SystemDiagnostics`, `TroubleshooterWindow`) | The checks are covered by `TroubleshooterTests` (same cases as macOS) and the Windows service and network values by `WindowsSystemStatusTests`. Checked by driving the view model with stand-in connections and a stand-in for Windows (the snapshot, the order of the checks, devices.txt, Refresh, Copy diagnostics and Settings refused, a busy scanner at connect and at scan, a connection that works clearing it, a cancelled scan not counting), by reading the real WIA service and network on Windows 11 (Running and Public, as `sc query` and `Get-NetConnectionProfile` report, from UI and thread-pool threads), by copying to the real clipboard with the user's clipboard saved and restored, by an address added by hand on loopback where nothing listens, by a discovered scanner (a stand-in service for a loopback scanner) that stays listed, selected and connected across a Refresh when Windows aborts either network watcher, and dropped only once the restarted watcher's first pass did not find it again, and by building the sidebar, error bar and troubleshooter window without showing them: the header button, the empty state's links, the error bar's Troubleshoot (and none on a file or photo error shown later), one card per check with its buttons and screen-reader names (each card a named group in the UI Automation tree), a Refresh while one runs ignored, rendered off screen in light and dark. **Not tried on screen:** opening Windows Settings and the real Add scanner dialog from it. **Unverified:** a stopped or disabled WIA service, a TWAIN install with 32-bit-only drivers, and a scanner that is really busy in another app |
 | eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — see [Network scanners](#network-scanners-escl) below for discovery, adding by address and HTTPS. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the paper size's region, clamped to the feeder (the feeder's own sheet size for Automatic, at most 17 in tall); two-sided feeder jobs send `<scan:Duplex>true</scan:Duplex>` and use the two-sided feeder's capabilities (`AdfDuplexInputCaps`) when the device lists them, and a device that lists no two-sided feeding scans one side and says so; black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. The protocol client (`EsclClient`, `EsclScannerSession`) is covered by `EsclClientTests` through a stub HTTP handler. Checked against local fake eSCL servers (plain and HTTPS), not a real device |
@@ -453,6 +513,12 @@ Known divergences from the macOS app (all documented in the source):
   same gray copy; the snap of the sheet's edges at full resolution draws the region with
   CoreGraphics on the Mac and samples it with `RgbaImage` on Windows, so a crop can differ by a
   pixel or so. The swap button sits under the page in the Mac strip and on the page on Windows.
+- Printing: the layout is the same code on both platforms. Windows prints straight to the chosen
+  printer with no dialog; the Mac shows the standard print panel (platform convention), already
+  set to the printer, the paper, the copies and 100 %, and saves the copy's PDF only once the user
+  printed. The Mac's printer makes the copies itself; Windows repeats the pages for a printer that
+  cannot make that many. The Windows test project for the print document has no Swift twin; the Mac
+  checks its print PDF in `PrintDocumentTests.swift`.
 - ID card: the detector, layout and page are the same code on both platforms; the side is cut out
   with `RgbaImage` on Windows and with CoreGraphics on the Mac, so a side can differ by a pixel or
   so. The review is an overlay on Windows and a sheet on the Mac. Closing the window with an

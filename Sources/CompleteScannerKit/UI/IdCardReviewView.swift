@@ -94,7 +94,7 @@ struct IdCardReviewView: View {
                     get: { state.settings.taskOptions.idCardPaper },
                     set: { state.setIdCardPaper($0) })) {
                     ForEach(IdCardPaper.allCases) { paper in
-                        Text(IdCardPapers.choiceLabel(paper, regionCode: AppState.regionCode)).tag(paper)
+                        Text(state.idCardPaperChoiceLabel(paper)).tag(paper)
                     }
                 }
                 .pickerStyle(.menu)
@@ -111,6 +111,13 @@ struct IdCardReviewView: View {
                     .toggleStyle(.checkbox)
                     .help("Each side is saved as a picture of its own too, next to the page")
                 Spacer()
+                Button("Print\u{2026}") {
+                    state.printIdCard()
+                }
+                .disabled(state.idCardFront == nil || state.isBusy || !state.hasPrinter)
+                .help(state.hasPrinter
+                      ? "Print the page at real size on \(state.copyPrinterName ?? "the default printer")"
+                      : PrintText.noPrinterMessage)
                 Button("Discard") {
                     state.discardIdCard()
                 }

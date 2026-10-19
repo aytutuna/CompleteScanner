@@ -17,6 +17,7 @@ Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Pipeline/PageProcessor.swift`, `BlankPageDetector.swift`, `RgbaImage.swift`, `GrayImage.swift`, `BackgroundMap.swift`, `MaskOps.swift` — the page clean-up stage every scanned page goes through, blank-page detection, and the image toolkit the page analyses share (see below).
 - `Sources/CompleteScannerKit/Pipeline/DocumentGeometry.swift` — crop to the page and straighten it: the sheet's edges on the scanner's background, the skew of the text lines, and what is done to the page (see below).
 - `Sources/CompleteScannerKit/Pipeline/IdCard.swift`, `App/AppState+IdCard.swift`, `UI/IdCardReviewView.swift` — the ID card task: both sides of a card found on the glass and laid out on one page at real size (see below).
+- `Sources/CompleteScannerKit/Output/PrintLayout.swift`, `App/PrintController.swift`, `App/AppState+Copy.swift` — copy and print: the Copy task, printing the ID card's page and the ruler test page, at real size (see below).
 - `Sources/CompleteScannerKit/App/AppState.swift` — the `@MainActor ObservableObject` all UI binds to; its task members are in `App/AppState+Tasks.swift`.
 - `Sources/CompleteScannerKit/App/ContentView.swift`, `CompleteScannerApp.swift`.
 
@@ -179,16 +180,16 @@ Twin of `windows/CompleteScanner.Core/DeviceMerge.cs` (`HardwareId`, `Connection
 // wants a task done, kept when a task is picked (see Pipeline/IdCard.swift).
 
 public enum ScanTask: String, CaseIterable, Identifiable, Sendable {
-    case document, feeder, photos, photoRestore, quickScan, email, twoSided, idCard   // add new tasks after these
+    case document, feeder, photos, photoRestore, quickScan, email, twoSided, idCard, copy   // add new tasks after these
     public static func tryParse(_ rawValue: String?) -> ScanTask?
 }
 
-public enum TaskFlowKind: String, Sendable { case documentQueue, photoSplit, idCard }
+public enum TaskFlowKind: String, Sendable { case documentQueue, photoSplit, idCard, copy }
 
 public struct TaskDefinition: Equatable, Sendable {
     public let task: ScanTask
     public let title: String, subtitle: String
-    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard"
+    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy"
     public let flow: TaskFlowKind
     public let intent: ScanIntent
     public let requiredSource: ScanSource?
@@ -208,11 +209,14 @@ public enum TaskCatalog {
     /// The task's settings over `current`; keeps the destination folder, the photo detection
     /// tuning, the legacy OCR languages, the paper size, the back binding and `taskOptions`; sets
     /// `taskId`. Only `.twoSided` sets `duplex` (`.both`); the others set `.off`. Only `.idCard`
-    /// turns `pdfSearchable` off (the numbers on an ID are better not indexed).
+    /// (the numbers on an ID are better not indexed) and `.copy` (a copy is for paper) turn
+    /// `pdfSearchable` off.
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings
     /// The stored task, else the task the settings look like (display and file names only).
     public static func infer(_ settings: ScanSettings) -> ScanTask
-    public static func availability(of task: ScanTask, capabilities: ScannerCapabilities?) -> TaskAvailability
+    /// `.copy` also needs a printer: `hasPrinter` false gives `PrintText.noPrinterReason` ("No printer is installed.").
+    public static func availability(of task: ScanTask, capabilities: ScannerCapabilities?,
+                                    hasPrinter: Bool = true) -> TaskAvailability
     /// Same scan mode and, when the task has one, the required source; `.twoSided` also needs
     /// `duplex != .off`.
     public static func fits(_ task: ScanTask, _ settings: ScanSettings) -> Bool
@@ -223,7 +227,8 @@ public enum TaskCatalog {
     /// The stored task's flow while it fits, otherwise by intent. The scan handler switches on it.
     public static func flow(of settings: ScanSettings) -> TaskFlowKind
     /// "300 dpi · Color · PDF"; a PDF size other than `.standard` is named: "300 dpi · Color · Compact PDF";
-    /// two-sided feeder scanning too: "… · Both sides", "… · Both sides, turned by hand"
+    /// two-sided feeder scanning too: "… · Both sides", "… · Both sides, turned by hand"; a copy
+    /// (flow `.copy`) says how it prints: "300 dpi · Color · Actual size", "… · Fit to page · 3 copies"
     public static func summary(_ settings: ScanSettings) -> String
 }
 
@@ -316,6 +321,8 @@ public enum DocumentSides {
     public static func capabilitiesForSides(_ capabilities: ScannerCapabilities?, duplexKnown: Bool) -> ScannerCapabilities?
     /// Effective `.manual`, document queue flow, collect pages.
     public static func usesManualSteps(_ settings: ScanSettings, capabilities: ScannerCapabilities?) -> Bool
+    /// The Copy task: "Copies are made from one side of each sheet; turn the stack over and copy again.";
+    /// another flow than the queue: "… works for documents, not photos."; not collecting pages: "… needs …".
     public static func manualUnavailableReason(_ settings: ScanSettings) -> String?
     public static func countMessage(fronts: Int, backs: Int) -> String
     public static func sideLabel(side: PageSide?, sheetIndex: Int?) -> String?   // "Sheet 2 · back", "Front"
@@ -339,6 +346,7 @@ public enum PaperSizes {
     public static func inches(_ size: PaperSize) -> CGSize?    // portrait; nil for .auto
     public static func parse(_ text: String?) -> PaperSize    // case-insensitive raw value, else .auto
     public static func defaultForRegion(_ regionCode: String?) -> PaperSize   // .letter or .a4
+    public static func match(_ inches: CGSize) -> PaperSize?   // a printer's paper, either way round, within fitTolerance
     public static func displayOrder(region: String?) -> [PaperSize]           // auto, the usual size, the rest
     public static func fits(_ size: PaperSize, in area: CGSize?) -> Bool
     public static func flatbedSelection(_ size: PaperSize, bed: CGSize) -> CGRect?   // normalized, top-left
@@ -558,14 +566,19 @@ Twin of `windows/CompleteScanner.Core/DocumentGeometry.cs` (`TextAxis`, `TextLay
 public struct TaskOptions: Codable, Equatable, Sendable {
     public var idCardPaper: IdCardPaper = .auto               // "idCardPaper"
     public var idCardSaveSidesAsImages: Bool = false          // "idCardSaveSidesAsImages"
+    public var copyCount: Int = 1                             // "copyCount"; read through PrintCopies.clamp (1...99)
+    public var copyFitToPage: Bool = false                    // "copyFitToPage"
+    public var copyPrinterName: String?                       // "copyPrinterName"; nil: the default printer (left out of the file)
+    public var copyAlsoSavePdf: Bool = false                  // "copyAlsoSavePdf"
 }
 public enum IdCardPaper: String, Codable, CaseIterable, Identifiable, Sendable {
     case auto, a4, letter                                     // first case = default and fallback
     public var label: String                                  // "Automatic", "A4", "Letter"
 }
 public enum IdCardPapers {
-    public static func resolve(_ paper: IdCardPaper, regionCode: String?) -> PaperSize   // .auto: PaperSizes.defaultForRegion
-    public static func choiceLabel(_ paper: IdCardPaper, regionCode: String?) -> String  // "Automatic (A4)", "Letter"
+    /// .auto: `printerPaper` (the default printer's) when it is .a4 or .letter, else PaperSizes.defaultForRegion
+    public static func resolve(_ paper: IdCardPaper, regionCode: String?, printerPaper: PaperSize? = nil) -> PaperSize
+    public static func choiceLabel(_ paper: IdCardPaper, regionCode: String?, printerPaper: PaperSize? = nil) -> String  // "Automatic (A4)", "Letter"
 }
 public enum IdCardSteps {
     public static let frontStepID = "front", backStepID = "back", reviewStepID = "review"
@@ -624,7 +637,81 @@ public enum IdCardComposer {
     public static func sideFileBase(_ baseName: String, side: PageSide) -> String   // "ID card 2026-10-19 front"
 }
 ```
-Twin of `windows/CompleteScanner.Core/IdCard.cs` (`IdCardPaper`, `IdCardPapers.Resolve` / `ChoiceLabel` / `Label` / `RawValue`, `IdCardSteps.FrontStepId` / `Steps` / `SideOf` / `StepId` / `OffersSkip`, `IdCardScanArea`, `IdCardPickKind`, `IdCardPick`, `IdCardDetector`, `IdCardLayoutResult`, `IdCardLayout`, `IdCardSide`, `IdCardComposer`) and `TaskOptions` in `Models.cs`; `IdCardTests` are the same cases on both sides, on the same synthetic beds, and the task-options cases of `ModelsCompatTests`, the ID card cases of `ScanTaskTests` and `MockScannerTests` match. The task (`ScanTask.idCard`, flow `.idCard`, flatbed only, 300 dpi color PDF, not searchable, "ID card {date}") is guided by `IdCardSteps.steps`. `AppState.performScan` scans the whole glass for it (no paper-size area), finds the card on the scan the step is at (`IdCardDetector.detect`; a back that does not stand out takes the front's place, `frontPlaceOnBack`, only when both scans cover the same part of the glass: `idCardScanAreas`) and records it (`recordIdCardSide`): the front moves on to the back, a front scanned again goes past a back already scanned or skipped, and once the sides are in the review opens (`showIdCardReview`, `UI/IdCardReviewView.swift`; Scan at the review step opens it again). ID card scans are never spooled and never added to the scan history; their scans stay in memory (`idCardSourceImages`, read by `photoSource(for:)`) only while the sides do, so the crop editor works on them unchanged (`recropPhoto` routes a side to `recropIdCardSide`). `AppState+IdCard.swift`: `idCardFront`, `idCardBack`, `idCardFrontNote`, `idCardBackNote`, `idCardPreview` (the page at 40 dpi), `idCardLayoutCaption`, `idCardSizeWarning`, `isIdCardFlow`, `hasIdCardCaptures`, `idCardPaperSize` (`regionCode`: the user's region), `rotateIdCardSide(_:)`, `swapIdCardSides()`, `retakeIdCardSide(_:)`, `setIdCardPaper(_:)`, `refreshIdCardPreview()`, `saveIdCard()` (the page as a PDF or in the chosen image format at `IdCardComposer.pageDPI`, at most 600 dpi, and each side as an image at the scan's resolution when `idCardSaveSidesAsImages`; all or nothing) and `discardIdCard()`. Saving, discarding, leaving the task or picking a task again drops everything of the card from memory and clears the stage, also when no side was held (a scan whose card was not found, a cancelled one, a preview) (`clearIdCard(clearCanvas:)`). While a side is held: the app's own scanner switches wait (`autoSwitchMustWait` in `mergeDevices`/`endOfWork`; Windows `AutoSwitchMustWait`, also for `ChooseConnection`, `SelectAddedDevice` and the certificate fallback), the inspector's Mode and Source are disabled, and leaving the task, picking a task or applying a preset goes through `leaveIdCard(then:)`, which asks Discard / Cancel (`pendingIdCardLeave`, an alert in `ContentView`; `discardIdCard(andThen:)`; Windows `MainWindow.ConfirmDropIdCard`). None of these is possible while a scan runs (the banner's leave button is disabled then, and `exitTask()` and `leaveIdCard(then:)` refuse), and a scan of the card that still finishes outside the steps keeps nothing: `recordIdCardSide` drops it and clears the stage (`dropIdCardScanOutsideTask()`; Windows `CaptureIdCardSide`, `DropIdCardScanOutsideTask`), so a side is never held without the task. Skip is offered only for the card's back (`canSkipStep`). Windows has the same members in `AppViewModel` (`IdCardFront` / `IdCardBack` as `PhotoItem`, `RecropIdCardSide`, `IdCardSource`, `SetIdCardSaveSidesAsImages`, `SaveIdCard`, `DiscardIdCard`, `SkipStep`) and the review as an overlay in `MainWindow.xaml`. Printing the page waits for the Copy task (M13); Automatic paper is the region's usual paper until then, not the printer's.
+Twin of `windows/CompleteScanner.Core/IdCard.cs` (`IdCardPaper`, `IdCardPapers.Resolve` / `ChoiceLabel` / `Label` / `RawValue`, `IdCardSteps.FrontStepId` / `Steps` / `SideOf` / `StepId` / `OffersSkip`, `IdCardScanArea`, `IdCardPickKind`, `IdCardPick`, `IdCardDetector`, `IdCardLayoutResult`, `IdCardLayout`, `IdCardSide`, `IdCardComposer`) and `TaskOptions` in `Models.cs`; `IdCardTests` are the same cases on both sides, on the same synthetic beds, and the task-options cases of `ModelsCompatTests`, the ID card cases of `ScanTaskTests` and `MockScannerTests` match. The task (`ScanTask.idCard`, flow `.idCard`, flatbed only, 300 dpi color PDF, not searchable, "ID card {date}") is guided by `IdCardSteps.steps`. `AppState.performScan` scans the whole glass for it (no paper-size area), finds the card on the scan the step is at (`IdCardDetector.detect`; a back that does not stand out takes the front's place, `frontPlaceOnBack`, only when both scans cover the same part of the glass: `idCardScanAreas`) and records it (`recordIdCardSide`): the front moves on to the back, a front scanned again goes past a back already scanned or skipped, and once the sides are in the review opens (`showIdCardReview`, `UI/IdCardReviewView.swift`; Scan at the review step opens it again). ID card scans are never spooled and never added to the scan history; their scans stay in memory (`idCardSourceImages`, read by `photoSource(for:)`) only while the sides do, so the crop editor works on them unchanged (`recropPhoto` routes a side to `recropIdCardSide`). `AppState+IdCard.swift`: `idCardFront`, `idCardBack`, `idCardFrontNote`, `idCardBackNote`, `idCardPreview` (the page at 40 dpi), `idCardLayoutCaption`, `idCardSizeWarning`, `isIdCardFlow`, `hasIdCardCaptures`, `idCardPaperSize` (`regionCode`: the user's region; `defaultPrinterPaper`: the default printer's), `idCardPaperChoiceLabel(_:)`, `rotateIdCardSide(_:)`, `swapIdCardSides()`, `retakeIdCardSide(_:)`, `setIdCardPaper(_:)`, `refreshIdCardPreview()`, `saveIdCard()` (the page as a PDF or in the chosen image format at `IdCardComposer.pageDPI`, at most 600 dpi, and each side as an image at the scan's resolution when `idCardSaveSidesAsImages`; all or nothing) and `discardIdCard()`. Saving, discarding, leaving the task or picking a task again drops everything of the card from memory and clears the stage, also when no side was held (a scan whose card was not found, a cancelled one, a preview) (`clearIdCard(clearCanvas:)`). While a side is held: the app's own scanner switches wait (`autoSwitchMustWait` in `mergeDevices`/`endOfWork`; Windows `AutoSwitchMustWait`, also for `ChooseConnection`, `SelectAddedDevice` and the certificate fallback), the inspector's Mode and Source are disabled, and leaving the task, picking a task or applying a preset goes through `leaveIdCard(then:)`, which asks Discard / Cancel (`pendingIdCardLeave`, an alert in `ContentView`; `discardIdCard(andThen:)`; Windows `MainWindow.ConfirmDropIdCard`). None of these is possible while a scan runs (the banner's leave button is disabled then, and `exitTask()` and `leaveIdCard(then:)` refuse), and a scan of the card that still finishes outside the steps keeps nothing: `recordIdCardSide` drops it and clears the stage (`dropIdCardScanOutsideTask()`; Windows `CaptureIdCardSide`, `DropIdCardScanOutsideTask`), so a side is never held without the task. Skip is offered only for the card's back (`canSkipStep`). Windows has the same members in `AppViewModel` (`IdCardFront` / `IdCardBack` as `PhotoItem`, `RecropIdCardSide`, `IdCardSource`, `SetIdCardSaveSidesAsImages`, `SaveIdCard`, `DiscardIdCard`, `SkipStep`, `IdCardPaperChoiceLabel`) and the review as an overlay in `MainWindow.xaml`. The review's Print prints the page (`printIdCard()`, see Copy and print below); Automatic paper is the default printer's paper when that is A4 or Letter (`PaperSizes.match` of what the print system reports), else the region's.
+
+### Output/PrintLayout.swift, App/PrintController.swift, App/AppState+Copy.swift
+
+```swift
+public enum PrintMode: Sendable { case actualSize, fitToPrintable }
+public enum PrintAlign: Sendable { case paperOrigin, center }
+/// Inches, origin at the paper's top-left corner, portrait as fed.
+public struct PrinterPaper: Equatable, Sendable {
+    public let paper: CGSize; public let printable: CGRect
+    public static func make(paper: CGSize, printable: CGRect?) -> PrinterPaper   // clamped; nil or empty: the whole sheet
+    public var size: PaperSize?                  // PaperSizes.match(paper)
+    public var largestMargin: Double
+    public var description: String               // "Letter (8.5 × 11 in)", "8.27 × 11.69 in"
+}
+public struct PrintPlacement: Equatable, Sendable {
+    public let rect: CGRect                      // inches on the paper, top-left origin
+    public let scale: Double; public let quarterTurns: Int; public let clippedInches: Double
+    public var isClipped: Bool                   // clippedInches > PrintLayout.clipWarningInches (0.05)
+}
+public enum PrintLayout {
+    /// Actual size: pixels / dpi, at the paper's corner or centred on the paper, turned a quarter only
+    /// when that cuts off less; clippedInches = how far it runs past the printable area. Fit: smaller
+    /// only, min(pw / w, ph / h, 1) of the printable area, turned when that scales larger, centred in it.
+    public static func place(pixelWidth: Int, pixelHeight: Int, dpi: Int, paper: CGSize, printable: CGRect,
+                             mode: PrintMode, align: PrintAlign) -> PrintPlacement
+    public static func place(pixelWidth: Int, pixelHeight: Int, dpi: Int, on paper: PrinterPaper,
+                             mode: PrintMode, align: PrintAlign) -> PrintPlacement
+    public static func clippedInches(_ rect: CGRect, printable: CGRect) -> Double     // worst side, 0 inside
+    public static func toUnits(_ inches: CGRect, unitsPerInch: Double) -> CGRect       // 96 WPF, 72 points
+    public static func toUnits(_ inches: CGSize, unitsPerInch: Double) -> CGSize
+    public static func align(hasSelection: Bool) -> PrintAlign                         // selection: .center
+    /// "Larger than the paper: up to 6 mm is cut off. Turn on Fit to page to print all of it." or
+    /// "Edges may be cut by up to 7 mm (printer margins)."; nil when nothing worth saying is cut off.
+    public static func clipWarning(_ placement: PrintPlacement, paper: CGSize) -> String?
+    public static func millimetres(_ inches: Double) -> Int                            // rounded up, at least 1
+}
+public struct PrintCopiesPlan: Equatable, Sendable { ticketCopies: Int; documentRepeats: Int }
+public enum PrintCopies {
+    public static let maxCount = 99
+    public static func clamp(_ count: Int) -> Int
+    /// The printer makes the copies when it says it can make that many and, for more than one page, that
+    /// it collates; else the pages are repeated in the job.
+    public static func plan(requested: Int, maxCopyCount: Int?, pageCount: Int = 1, canCollate: Bool = true) -> PrintCopiesPlan
+}
+public enum PrintCalibration {
+    /// White, round(paper × dpi); grey 1-inch grid from the corner; black cm ticks (0.15 in, 0.3 in every
+    /// 5 cm) along the first inch line across and down; lines lineWidth(dpi) = round(dpi / 150) ≥ 1.
+    public static func makeRulerPage(paper: CGSize, dpi: Int) -> RgbaImage
+    public static func lineWidth(_ dpi: Int) -> Int
+    public static func tickPosition(_ k: Int, dpi: Int) -> Int                          // round(dpi + k × dpi / 2.54)
+}
+public enum PrintText {
+    public static let noPrinterReason: String     // "No printer is installed."
+    public static let noPrinterMessage: String    // "No printer is installed. Add a printer, then try again."
+    public static func sent(pageCount: Int, copies: Int, printerName: String) -> String  // "Sent 2 pages to X, 3 copies."
+    public static func modeLabel(fitToPage: Bool) -> String                            // "Actual size", "Fit to page"
+    public static func copyPaperHint(_ size: PaperSize, source: ScanSource) -> String   // Automatic on the glass: the printer's paper
+}
+
+// App/PrintController.swift (the system side, injected into AppState so tests can stand in for it)
+public struct PrintPage { image: CGImage; dpi: Int; placement: PrintPlacement }
+public struct PrinterSetup: Equatable, Sendable { printerName: String; paper: PrinterPaper }
+public struct PrintJob { printerName: String?; jobName: String; paper: PrinterPaper; copies: Int }
+public enum PrintError: LocalizedError, Equatable { case noPrinter, failed(String) }   // not a ScanError
+@MainActor public protocol PrintService: AnyObject {
+    var printerNames: [String] { get }
+    var defaultPrinterName: String? { get }
+    func setup(printerName: String?, requestedPaper: PaperSize?) -> PrinterSetup?   // nil: no printer
+    func print(_ document: Data, job: PrintJob) throws -> Bool                     // the print panel; false: cancelled
+}
+public enum PrintDocument { static func makePDF(pages: [PrintPage], paper: CGSize) -> Data? }   // a page the size of the paper per page
+@MainActor public final class SystemPrintService: PrintService { public init() }   // the paper asked for only when the printer has it (`PrinterPapers.offers`)
+```
+Twins of `windows/CompleteScanner.Core/PrintLayout.cs` (`PrintMode`, `PrintAlign`, `PrinterPaper.Make` / `Size` / `LargestMargin` / `Description`, `PrintPlacement`, `PrintLayout.Place` / `ClippedInches` / `ToUnits` / `AlignFor` / `ClipWarning` / `Millimetres`, `PrintCopiesPlan`, `PrintCopies`, `PrintCalibration`, `PrintText.CopyPaperHint`) and `PaperSizes.Match`; `PrintLayoutTests` are the same cases on both sides, and the copy cases of `ScanTaskTests`, `ModelsCompatTests`, `PaperSizeTests` and `IdCardTests` match. The print system side has no twin: the Mac (`PrintService`, `PrintDocument`, checked by `PrintDocumentTests.swift`, which draws the PDF back into pixels) prints through `PDFDocument.printOperation(for:scalingMode: .pageScaleNone, autoRotate: false)` and the standard print panel, set to the printer, paper (`NSPrintInfo.paperSize`), copies and zero margins; Windows (`windows/CompleteScanner.App/Services/PrintService.cs`: `IPrintService`, `WindowsPrintService`, `PrintDocument`, checked by `windows/CompleteScanner.App.Tests/PrintDocumentTests.cs`, which writes the document to an XPS file and reads it back) sends the job with no dialog through System.Printing and the XPS print path: the queue's own ticket, portrait, 100 % scaling, the paper asked for when the printer lists it, and, whatever the printer's saved preferences say (`WindowsPrintService.ApplyJobSettings`), the copy count of `PrintCopies.plan` (collated; the pages repeated in the job when `MaxCopyCount` is too low or several pages would not be collated, `PrinterSetup.CanCollate`), one page per sheet, one-sided printing, grey output for a grey scan and colour for a colour one; one paper-sized page per page with the image at its placement in 1/96 in, drawn as the writer asks for it, as a plain bitmap (a JPEG-backed one would be stored once and printed on every page). The Copy task (`ScanTask.copy`, flow `.copy`, any source, 300 dpi color, PDF not searchable, "Copy {date} {counter}", step "Make a copy" with the button "Copy") reads the printer first (`setupForPrinting`: the chosen printer, else the default; nil throws `PrintError.noPrinter`); on the glass with nothing selected and Automatic paper it scans the part of the glass the printer's paper covers (`copyScanArea`); the pages are processed as any scan (no blank-page check, no crop; the inspector's blank-page, crop and straighten switches are off for the task and say "Copies print every page as scanned: …"), recorded in the history and never queued or spooled, then printed (`printCopyPages`): each placed at real size against the corner, centred for an area selected on the preview, or fitted with `copyFitToPage`; `copyCount` copies; also saved as a PDF with `copyAlsoSavePdf` once printed, and also when printing failed (the pages are kept nowhere else; the print error then says what became of the PDF), a Cancel while it is written giving "Sent …. PDF not saved (cancelled)."; the status is `PrintText.sent` plus the first `clipWarning`. `AppState+Copy.swift`: `printerNames`, `defaultPrinterPaper`, `copySetup` (stored in AppState.swift), `hasPrinter`, `isCopyFlow`, `copyPrinterName`, `copyPaperText`, `copyMarginWarning`, `refreshPrinters()` (at start, each time the app becomes active, when the Copy task is picked and with Look Again; only reads), `setCopyPrinter(_:)` (the default printer stores nil), `setCopyCount(_:)`, `setCopyFitToPage(_:)`, `setCopyAlsoSavePdf(_:)`, `printIdCard()` (the page composed on the printer's paper at `IdCardComposer.pageDPI`, one copy; the review stays open; the warning when the margins reach a card) and `printRulerPage()` (300 dpi, actual size, from the corner). `AppState` takes an optional `printService:` (default `SystemPrintService()`). Windows has the same members in `AppViewModel.Copy.cs` (`Printers`, `HasPrinter`, `IsCopyFlow`, `CopyPrinterName`, `CopyPaperText`, `CopyMarginWarning`, `RefreshPrintersAsync`, `PrintersMayHaveChanged` (the window back in front, the start screen shown; a print system that cannot be read leaves `HasPrinter` true), `SetCopyPrinter`, `SetCopyCount`, `SetCopyFitToPage`, `SetCopyAlsoSavePdf`, `PrintIdCard`, `PrintRulerPage`; the constructor's optional `printService`), the Copies section of the inspector and the review's Print button in `MainWindow.xaml` / `MainWindow.Copy.cs`. Printing errors are not scanner failures: the troubleshooter does not record them.
 
 ### Pipeline/PhotoDetector.swift (+ Pipeline/Geometry.swift)
 
@@ -867,11 +954,11 @@ One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: 
 
 - `UI/SidebarView.swift` — `struct SidebarView: View`: device list + refresh (`refreshScanners()`), the "Why isn't my scanner listed?" button in the Scanners header and link in the empty list, and the troubleshooter sheet (`state.showTroubleshooter`).
 - `UI/TroubleshooterView.swift` — `struct TroubleshooterView: View`: the troubleshooter's checks as cards with their buttons, Refresh, Copy Diagnostics and Done.
-- `UI/InspectorView.swift` — `struct InspectorView: View`: all settings + Overview/Scan/Cancel buttons + presets; the Document section's "Skip blank pages" and "What counts as blank", "Crop to page" and "Straighten pages" (off, with the reason, when each scan is saved at once).
+- `UI/InspectorView.swift` — `struct InspectorView: View`: all settings + Overview/Scan/Cancel buttons + presets; the Document section's "Skip blank pages" and "What counts as blank", "Crop to page" and "Straighten pages" (off, with the reason, when each scan is saved at once); for the Copy task a Copies section (Printer, its paper, Copies 1–99, Fit to page with its hint, the margin warning, Also save a PDF, Print Ruler Test Page…; without a printer, the reason and Look Again).
 - `UI/StatusBarView.swift` — `struct StatusBarView: View`: status text, progress, and the actions for the files saved last (open, show, share, copy; More adds open with and email).
 - `UI/PreviewCanvasView.swift` — `struct PreviewCanvasView: View`: shows `state.canvasImage`, marquee selection editing `state.selectionRect` (only when `state.overviewImage != nil`).
 - `UI/PagesStripView.swift` — `struct PagesStripView: View`: page-queue thumbnails + Save PDF / Clear; the queue summary, each flagged page's badge and its Keep or Skip button (always shown), left-out pages dimmed, Save PDF counting the pages it writes; under a cropped or straightened page, its swap button (always shown: `PageCorrections.toggleLabel`, help = caption and label) calling `state.togglePageGeometry(id:)`.
 - `UI/PhotoReviewView.swift` — `struct PhotoReviewView: View`: detected-photo grid sheet with the "After saving" choice; Save via `state.saveReviewedPhotos()`, cancel via `state.cancelPhotoReview()`.
-- `UI/IdCardReviewView.swift` — `struct IdCardReviewView: View`: the ID card's sheet (`state.showIdCardReview`, presented from the detail in `ContentView`): each side with turn, Fix crop (the crop editor) and Scan again, a missing back with Scan the Back, Swap Front and Back, the page picture with its caption and the not-at-real-size warning, and Paper, Save as, "Also save each side as an image", Discard and Save.
+- `UI/IdCardReviewView.swift` — `struct IdCardReviewView: View`: the ID card's sheet (`state.showIdCardReview`, presented from the detail in `ContentView`): each side with turn, Fix crop (the crop editor) and Scan again, a missing back with Scan the Back, Swap Front and Back, the page picture with its caption and the not-at-real-size warning, and Paper, Save as, "Also save each side as an image", Print…, Discard and Save.
 - `UI/TaskStartView.swift` — `struct TaskStartView: View` (`onOpenScanner: () -> Void`): the start screen's task cards (`state.taskCards`) and preset cards; also `enum TaskSymbols` (icon key → SF Symbol).
 - `UI/TaskBannerView.swift` — `struct TaskBannerView: View` (`definition: TaskDefinition?`, `onChangeTask: () -> Void`): the active task, or turning a stack over by hand without one (`definition` nil), above the preview, with Change Task and a leave-task button (without a task: scan one side only); fronts scanned without moving on (the feeder stopped early), Done with Fronts; while the backs are due, Keep Fronts Only, before any back is scanned Scan More Fronts, and on a count mismatch also Combine Anyway and Scan Back Sides Again; the back of an ID card (`state.canSkipStep`) offers "Skip back side" (`state.skipStep()`); the leave-task button goes through `state.leaveIdCard(then:)`.

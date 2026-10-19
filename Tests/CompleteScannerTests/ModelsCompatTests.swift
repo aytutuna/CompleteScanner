@@ -59,6 +59,10 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.document.autoStraighten = true
     settings.taskOptions.idCardPaper = .letter
     settings.taskOptions.idCardSaveSidesAsImages = true
+    settings.taskOptions.copyCount = 3
+    settings.taskOptions.copyFitToPage = true
+    settings.taskOptions.copyPrinterName = "Office printer"
+    settings.taskOptions.copyAlsoSavePdf = true
     return settings
 }
 
@@ -123,7 +127,9 @@ private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
     .replacingOccurrences(of: "\"format\" : \"tiff\"",
                           with: "\"duplex\" : \"manual\",\n      \"format\" : \"tiff\"")
     .replacingOccurrences(of: "\"source\" : \"documentFeeder\"",
-                          with: "\"source\" : \"documentFeeder\",\n      \"taskOptions\" : {\n        \"idCardPaper\" : \"letter\",\n"
+                          with: "\"source\" : \"documentFeeder\",\n      \"taskOptions\" : {\n"
+                              + "        \"copyAlsoSavePdf\" : true,\n        \"copyCount\" : 3,\n        \"copyFitToPage\" : true,\n"
+                              + "        \"copyPrinterName\" : \"Office printer\",\n        \"idCardPaper\" : \"letter\",\n"
                               + "        \"idCardSaveSidesAsImages\" : true\n      }")
 
 // MARK: - Decoding compatibility
@@ -620,18 +626,75 @@ final class ModelsCompatTests: XCTestCase {
                 settings.taskOptions.idCardSaveSidesAsImages = sides
                 let data = try encode(settings)
                 let written = try XCTUnwrap(try jsonObject(data)["taskOptions"] as? [String: Any])
-                XCTAssertEqual(Set(written.keys), ["idCardPaper", "idCardSaveSidesAsImages"])
+                // No printer chosen: the key is left out (C# leaves out a null too).
+                XCTAssertEqual(Set(written.keys), ["idCardPaper", "idCardSaveSidesAsImages", "copyCount", "copyFitToPage",
+                                                   "copyAlsoSavePdf"])
                 XCTAssertEqual(written["idCardPaper"] as? String, paper.rawValue)
                 XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: data).taskOptions, settings.taskOptions)
             }
         }
+        var copyOptions = ScanSettings()
+        copyOptions.taskOptions.copyCount = 12
+        copyOptions.taskOptions.copyFitToPage = true
+        copyOptions.taskOptions.copyPrinterName = "Microsoft Print to PDF"
+        copyOptions.taskOptions.copyAlsoSavePdf = true
+        let copyData = try encode(copyOptions)
+        let writtenCopy = try XCTUnwrap(try jsonObject(copyData)["taskOptions"] as? [String: Any])
+        XCTAssertEqual(writtenCopy["copyCount"] as? Int, 12)
+        XCTAssertEqual(writtenCopy["copyPrinterName"] as? String, "Microsoft Print to PDF")
+        XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: copyData).taskOptions, copyOptions.taskOptions)
+
         let original = nonDefaultSettings()
         var copy = original
         XCTAssertEqual(copy.taskOptions, original.taskOptions)
         copy.taskOptions.idCardPaper = .a4
         copy.taskOptions.idCardSaveSidesAsImages = false
+        copy.taskOptions.copyCount = 1
+        copy.taskOptions.copyPrinterName = nil
         XCTAssertEqual(original.taskOptions.idCardPaper, .letter)
         XCTAssertTrue(original.taskOptions.idCardSaveSidesAsImages)
+        XCTAssertEqual(original.taskOptions.copyCount, 3)
+        XCTAssertEqual(original.taskOptions.copyPrinterName, "Office printer")
+    }
+
+    func test_copyOptions_oneCopyAtRealSizeOnTheDefaultPrinter_byDefaultAndInFilesWithoutThem() throws {
+        let options = ScanSettings().taskOptions
+        XCTAssertEqual(options.copyCount, 1)
+        XCTAssertFalse(options.copyFitToPage)
+        XCTAssertNil(options.copyPrinterName)
+        XCTAssertFalse(options.copyAlsoSavePdf)
+        // Files of the ID card version have task options without the copy keys.
+        let idCardOnly = try decode(ScanSettings.self,
+                                    #"{"taskOptions": {"idCardPaper": "a4", "idCardSaveSidesAsImages": true}}"#).taskOptions
+        XCTAssertEqual(idCardOnly.idCardPaper, .a4)
+        XCTAssertTrue(idCardOnly.idCardSaveSidesAsImages)
+        XCTAssertEqual(idCardOnly.copyCount, 1)
+        XCTAssertFalse(idCardOnly.copyFitToPage)
+        XCTAssertNil(idCardOnly.copyPrinterName)
+        XCTAssertFalse(idCardOnly.copyAlsoSavePdf)
+    }
+
+    func test_corruptCopyOptions_fallBackOneByOne_restIntact() throws {
+        let settings = try decode(ScanSettings.self, """
+            {"resolution": 150, "taskOptions": {"idCardPaper": "letter", "copyCount": "three", "copyFitToPage": 1,
+             "copyPrinterName": 42, "copyAlsoSavePdf": true}, "pdfSearchable": false}
+            """)
+        XCTAssertEqual(settings.resolution, 150)
+        XCTAssertFalse(settings.pdfSearchable)
+        XCTAssertEqual(settings.taskOptions.idCardPaper, .letter)
+        XCTAssertEqual(settings.taskOptions.copyCount, 1)
+        XCTAssertFalse(settings.taskOptions.copyFitToPage)
+        XCTAssertNil(settings.taskOptions.copyPrinterName)
+        XCTAssertTrue(settings.taskOptions.copyAlsoSavePdf)
+        let nulls = try decode(ScanSettings.self,
+                               #"{"taskOptions": {"copyCount": null, "copyPrinterName": null, "copyFitToPage": true}}"#).taskOptions
+        XCTAssertEqual(nulls.copyCount, 1)
+        XCTAssertTrue(nulls.copyFitToPage)
+        XCTAssertNil(nulls.copyPrinterName)
+        // A count out of range is kept as written and read through PrintCopies.clamp.
+        let many = try decode(ScanSettings.self, #"{"taskOptions": {"copyCount": 500}}"#).taskOptions
+        XCTAssertEqual(many.copyCount, 500)
+        XCTAssertEqual(PrintCopies.clamp(many.copyCount), 99)
     }
 
     func test_copy_carriesTheTask() {

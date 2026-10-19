@@ -14,10 +14,16 @@ extension AppState {
     /// A side of an ID card is held in memory and not saved yet.
     public var hasIdCardCaptures: Bool { idCardFront != nil || idCardBack != nil }
 
-    /// The page the ID card is saved on: the choice in the review; Automatic is the paper usual
-    /// where the user lives.
+    /// The page the ID card is saved on: the choice in the review; Automatic is the default printer's
+    /// paper when it is A4 or Letter, else the paper usual where the user lives.
     public var idCardPaperSize: PaperSize {
-        IdCardPapers.resolve(settings.taskOptions.idCardPaper, regionCode: Self.regionCode)
+        IdCardPapers.resolve(settings.taskOptions.idCardPaper, regionCode: Self.regionCode,
+                             printerPaper: defaultPrinterPaper)
+    }
+
+    /// How the review's paper picker names a choice, Automatic with the paper it is now.
+    public func idCardPaperChoiceLabel(_ paper: IdCardPaper) -> String {
+        IdCardPapers.choiceLabel(paper, regionCode: Self.regionCode, printerPaper: defaultPrinterPaper)
     }
 
     /// The user's country or region (two letters), for the paper usual there; nil when unknown.

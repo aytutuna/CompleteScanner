@@ -92,6 +92,21 @@ public enum PaperSizes {
         return letterRegions.contains(code) ? .letter : .a4
     }
 
+    /// The named size a sheet of `inches` is (a printer's paper), either way round, each side within
+    /// `fitTolerance`; nil for a size without a name here.
+    public static func match(_ inches: CGSize) -> PaperSize? {
+        let shortSide = min(Double(inches.width), Double(inches.height))
+        let longSide = max(Double(inches.width), Double(inches.height))
+        guard shortSide > 0 else { return nil }
+        for size in PaperSize.allCases {
+            guard let paper = self.inches(size) else { continue }
+            if abs(Double(paper.width) - shortSide) <= fitTolerance && abs(Double(paper.height) - longSide) <= fitTolerance {
+                return size
+            }
+        }
+        return nil
+    }
+
     /// The sizes as pickers list them: Automatic, the region's usual size, then the others in
     /// declaration order.
     public static func displayOrder(region regionCode: String?) -> [PaperSize] {

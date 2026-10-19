@@ -59,6 +59,8 @@ public final class AppState: ObservableObject {
             scheduleSettingsSave()
             // ImageCaptureCore tells whether the feeder scans both sides only once it is used.
             if settings.source == .documentFeeder && oldValue.source != .documentFeeder { checkFeederDuplexSoon() }
+            // The Copies section shows the paper the printer is asked for.
+            if isCopyFlow && Self.requestedPaper(settings) != Self.requestedPaper(oldValue) { refreshCopySetup() }
         }
     }
 
@@ -125,6 +127,15 @@ public final class AppState: ObservableObject {
     /// Bumped for every new picture of the ID card's page; a late one is dropped.
     var idCardPreviewRevision = 0
 
+    /// The installed printers' names, as last read (`refreshPrinters()`, AppState+Copy.swift).
+    @Published public internal(set) var printerNames: [String] = []
+    /// The paper in the default printer, when it is a named size; Automatic paper for the ID card follows it.
+    @Published public internal(set) var defaultPrinterPaper: PaperSize?
+    /// What the printer chosen for copies offers (paper, margins), for the inspector.
+    @Published public internal(set) var copySetup: PrinterSetup?
+    /// Reads the printers again each time the app comes to the front; set once, by `start()`.
+    private var activationObserver: NSObjectProtocol?
+
     @Published public private(set) var isBusy = false
     @Published public private(set) var progress: ScanProgress?
     @Published public internal(set) var statusMessage = "Looking for scanners…"
@@ -179,6 +190,8 @@ public final class AppState: ObservableObject {
     private let fileActions: any FileActionService
     /// Opens Image Capture and System Settings and copies for the troubleshooter (a stand-in in tests).
     private let troubleshooterService: any TroubleshooterService
+    /// Lists the printers and prints through the print panel (a stand-in in tests; AppState+Copy.swift).
+    let printService: any PrintService
     private var session: (any ScannerSession)?
     private var sessionDeviceID: String?
     private var userPickedDevice = false
@@ -212,7 +225,8 @@ public final class AppState: ObservableObject {
 
     public init(backends: [any ScannerBackend]? = nil, presetStore: PresetStore = PresetStore(),
                 fileActions: (any FileActionService)? = nil,
-                troubleshooterService: (any TroubleshooterService)? = nil) {
+                troubleshooterService: (any TroubleshooterService)? = nil,
+                printService: (any PrintService)? = nil) {
         let saved = SettingsStore.load()
         self.isFirstRun = saved == nil
         // A task saved last time is still active: its banner comes back with the settings.
@@ -223,6 +237,7 @@ public final class AppState: ObservableObject {
         self.presetStore = presetStore
         self.fileActions = fileActions ?? SystemFileActions()
         self.troubleshooterService = troubleshooterService ?? SystemTroubleshooterService()
+        self.printService = printService ?? SystemPrintService()
         self.presets = presetStore.load()
         syncTaskFlow()
         // Clear page spill files left behind by a previous run.
@@ -255,6 +270,19 @@ public final class AppState: ObservableObject {
             backend.startBrowsing()
         }
         mergeDevices()
+        // The Copy card needs a printer; Automatic paper for the ID card is the default printer's.
+        refreshPrinters()
+        // A printer added or removed while the app was in the background (in System Settings, say)
+        // is seen when the app is back in front.
+        if activationObserver == nil {
+            activationObserver = NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.refreshPrinters()
+                }
+            }
+        }
     }
 
     /// Rebuilds the scanner list from every backend: entries for the same physical scanner
@@ -553,6 +581,9 @@ public final class AppState: ObservableObject {
             openIdCardReview()
             return
         }
+        let copy = TaskCatalog.flow(of: settings) == .copy
+        // A copy of an area selected on the preview is centred on the paper; of a page, it lies in the corner.
+        let areaSelected = settings.source == .flatbed && selectionRect != nil
         let generation = switchGeneration
         runExclusive { flag in
             if self.settings.source == .documentFeeder { await self.checkFeederDuplex() }
@@ -568,11 +599,21 @@ public final class AppState: ObservableObject {
             let manualSide: PageSide? = sides == .manual && self.isTurningOverByHand
                 ? (self.taskFlow?.current?.id == DocumentSides.backsStepID ? .back : .front)
                 : nil
+            // A copy needs a printer first, and the printer's paper says what part of the glass to scan.
+            var copySetup: PrinterSetup?
+            if copy {
+                guard let setup = self.setupForPrinting(s, requestedPaper: Self.requestedPaper(s)) else {
+                    throw PrintError.noPrinter
+                }
+                copySetup = setup
+            }
             // The flatbed scans the selection, else the paper size's part of the glass; an ID card
-            // may lie anywhere on it, so its scans take the whole glass.
-            let paperArea: CGRect? = idCard ? nil : self.capabilities.flatMap {
+            // may lie anywhere on it, so its scans take the whole glass. A copy with Automatic paper
+            // scans the part the printer's paper covers.
+            var paperArea: CGRect? = idCard ? nil : self.capabilities.flatMap {
                 PaperSizes.flatbedSelection(s.paperSize, bed: $0.flatbedSizeInches)
             }
+            if let copySetup, let area = self.copyScanArea(s, setup: copySetup) { paperArea = area }
             let selection: CGRect? = s.source == .flatbed ? (self.selectionRect ?? paperArea) : nil
             let scanned = try await session.performScan(settings: s, selection: selection)
             // Discard results that arrive after the user switched devices.
@@ -721,6 +762,12 @@ public final class AppState: ObservableObject {
                 guard self.switchGeneration == generation else { return }
                 if flag.isCancelled { throw ScanError.cancelled }
                 self.recordIdCardSide(side, photo: found.0, note: found.1, source: page.image, area: area)
+            case .copy:
+                self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
+                guard let copySetup else { throw PrintError.noPrinter }
+                try await self.printCopyPages(processed, settings: s, setup: copySetup, areaSelected: areaSelected,
+                                              flag: flag)
+                self.recordCaptures(processed.map(\.id))
             }
             if let stop {
                 self.errorMessage = stop.message(pagesKept: raw.count)

@@ -536,6 +536,54 @@
                                         </UniformGrid>
                                     </Border>
 
+                                    <!-- The Copy task only: where and how the copies print. Nothing opens a print
+                                         dialog; the printer list and paper are read from Windows. -->
+                                    <Expander x:Name="CopyOptions" Style="{StaticResource SectionExpanderStyle}"
+                                              AutomationProperties.Name="Copies" Visibility="Collapsed">
+                                        <Expander.Header>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Style="{StaticResource GlyphText}" Text="&#xE749;" Margin="0,0,12,0" />
+                                                <TextBlock Text="Copies" Style="{StaticResource BodyStrongText}" TextWrapping="NoWrap" />
+                                            </StackPanel>
+                                        </Expander.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="Printer" Style="{StaticResource FieldLabelText}" />
+                                            <ComboBox x:Name="CopyPrinterBox" HorizontalAlignment="Stretch"
+                                                      AutomationProperties.Name="Printer"
+                                                      DropDownOpened="CopyPrinterBox_DropDownOpened"
+                                                      SelectionChanged="CopyPrinter_Changed" />
+                                            <TextBlock x:Name="CopyPaperText" Style="{StaticResource CaptionText}"
+                                                       TextWrapping="Wrap" Margin="0,4,0,0" />
+                                            <TextBlock x:Name="CopyNoPrinterText" Style="{StaticResource CaptionText}"
+                                                       TextWrapping="Wrap" Margin="0,4,0,0" Visibility="Collapsed"
+                                                       Text="No printer is installed. Add one in Windows Settings, then look again." />
+                                            <Button x:Name="CopyLookAgainButton" Style="{StaticResource SubtleButtonStyle}"
+                                                    Content="Look again" HorizontalAlignment="Left" Margin="-11,4,0,0"
+                                                    Visibility="Collapsed"
+                                                    ToolTip="Reads the installed printers again"
+                                                    Click="CopyLookAgain_Click" />
+                                            <TextBlock Text="Number of copies" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />
+                                            <ComboBox x:Name="CopyCountBox" HorizontalAlignment="Stretch"
+                                                      AutomationProperties.Name="Number of copies"
+                                                      SelectionChanged="CopyCount_Changed" />
+                                            <CheckBox x:Name="CopyFitBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,12,0,0"
+                                                      Content="Fit to page"
+                                                      Checked="CopyFit_Changed" Unchecked="CopyFit_Changed" />
+                                            <TextBlock x:Name="CopyFitHint" Style="{StaticResource CaptionText}"
+                                                       TextWrapping="Wrap" Margin="0,0,0,4" />
+                                            <TextBlock x:Name="CopyMarginText" Style="{StaticResource CaptionText}"
+                                                       TextWrapping="Wrap" Margin="0,0,0,4" Visibility="Collapsed" />
+                                            <CheckBox x:Name="CopyPdfBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,8,0,0"
+                                                      Content="Also save a PDF"
+                                                      ToolTip="Each copy is also saved as a PDF in the save folder"
+                                                      Checked="CopyPdf_Changed" Unchecked="CopyPdf_Changed" />
+                                            <Button x:Name="RulerButton" Style="{StaticResource SubtleButtonStyle}"
+                                                    Content="Print ruler test page" HorizontalAlignment="Left" Margin="-11,8,0,0"
+                                                    ToolTip="Prints a 1-inch grid with centimetre ticks: measure it with a ruler to check that copies come out at real size"
+                                                    Click="RulerPage_Click" />
+                                        </StackPanel>
+                                    </Expander>
+
                                     <Expander Style="{StaticResource SectionExpanderStyle}" AutomationProperties.Name="Scanner">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">
@@ -918,6 +966,10 @@
                     <Border DockPanel.Dock="Bottom" Padding="24,16">
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Bottom">
+                                <Button x:Name="IdCardPrintButton" Style="{StaticResource IconTextButtonStyle}"
+                                        local:Icon.Glyph="&#xE749;" Content="Print" MinWidth="110" Margin="0,0,8,0"
+                                        ToolTipService.ShowOnDisabled="True"
+                                        Click="IdCardPrint_Click" />
                                 <Button x:Name="IdCardDiscardButton" Style="{StaticResource IconTextButtonStyle}"
                                         local:Icon.Glyph="&#xE74D;" Content="Discard" MinWidth="110"
                                         ToolTip="Drop both sides without saving them"

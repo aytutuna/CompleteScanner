@@ -62,18 +62,25 @@ public partial class MainWindow : Window
         }
         foreach (var paper in IdCardPapers.All)
         {
-            IdCardPaperBox.Items.Add(new ComboBoxItem { Content = IdCardPapers.ChoiceLabel(paper, AppViewModel.RegionCode), Tag = paper });
+            IdCardPaperBox.Items.Add(new ComboBoxItem { Content = ViewModel.IdCardPaperChoiceLabel(paper), Tag = paper });
         }
         foreach (var format in Enum.GetValues<OutputFormat>())
         {
             IdCardFormatBox.Items.Add(new ComboBoxItem { Content = format.Label(), Tag = format });
         }
+        BuildCopyCountItems();
 
         Loaded += (_, _) =>
         {
             PushSettingsToUi();
             ViewModel.Start();
             if (StartTab.IsSelected) StartView.FocusDefaultCard();
+        };
+        // A printer added or removed while the app was in the background (in Windows Settings, say)
+        // is seen when the window is back in front.
+        Activated += (_, _) =>
+        {
+            if (IsLoaded) ViewModel.PrintersMayHaveChanged();
         };
         Closing += MainWindow_Closing;
         // Flush any debounced settings write and remove this instance's page spill files.
@@ -284,8 +291,9 @@ public partial class MainWindow : Window
         LastPdfSizeText.Text = ViewModel.LastPdfSizeText;
         LastPdfSizeText.Visibility = ViewModel.LastPdfSizeText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         ClearButton.IsEnabled = pageCount > 0 && !ViewModel.IsBusy;
-        // The ID card is saved from its review, not from the page queue.
-        QueueButtons.Visibility = (ViewModel.Settings.Intent == ScanIntent.Document && !ViewModel.IsIdCardFlow) || pageCount > 0
+        // The ID card is saved from its review, and a copy goes to the printer: neither uses the page queue.
+        QueueButtons.Visibility = (ViewModel.Settings.Intent == ScanIntent.Document && !ViewModel.IsIdCardFlow && !ViewModel.IsCopyFlow)
+                                  || pageCount > 0
             ? Visibility.Visible : Visibility.Collapsed;
         PageList.IsEnabled = !ViewModel.IsBusy;
 
@@ -295,6 +303,7 @@ public partial class MainWindow : Window
         ScanButton.IsEnabled = !ViewModel.IsBusy;
         ScanButton.Content = ViewModel.PrimaryActionLabel;
         SyncTaskBanner();
+        SyncCopyOptions();
         StartView.Refresh();
         // As on macOS, the settings (and presets, which replace them) are frozen while an
         // operation runs: it works from a snapshot, and edits made meanwhile would not apply.
@@ -653,6 +662,12 @@ public partial class MainWindow : Window
         _updatingUi = true;
         try
         {
+            // Automatic follows the default printer's paper, read after the window opened.
+            foreach (var item in IdCardPaperBox.Items.Cast<ComboBoxItem>())
+            {
+                string label = ViewModel.IdCardPaperChoiceLabel((IdCardPaper)item.Tag);
+                if (!Equals(item.Content, label)) item.Content = label;
+            }
             IdCardPaperBox.SelectedItem = IdCardPaperBox.Items.Cast<ComboBoxItem>().First(i => (IdCardPaper)i.Tag == s.TaskOptions.IdCardPaper);
             IdCardFormatBox.SelectedItem = IdCardFormatBox.Items.Cast<ComboBoxItem>().First(i => (OutputFormat)i.Tag == s.Format);
             IdCardSidesBox.IsChecked = s.TaskOptions.IdCardSaveSidesAsImages;
@@ -667,6 +682,7 @@ public partial class MainWindow : Window
         bool busy = ViewModel.IsBusy;
         IdCardSaveButton.IsEnabled = !busy && front is not null;
         IdCardDiscardButton.IsEnabled = !busy;
+        SyncIdCardPrint(busy);
         IdCardPaperBox.IsEnabled = IdCardFormatBox.IsEnabled = IdCardSidesBox.IsEnabled = !busy;
         IdCardFrontCard.IsEnabled = IdCardBackCard.IsEnabled = IdCardSwapButton.IsEnabled = !busy;
         IdCardFrontCropButton.IsEnabled = IdCardBackCropButton.IsEnabled = !ViewModel.IsRecropPending;
@@ -1126,7 +1142,7 @@ public partial class MainWindow : Window
             }
         }
         PaperSizeBox.SelectedItem = PaperSizeBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (PaperSize)i.Tag == s.PaperSize);
-        PaperSizeHint.Text = PaperSizes.Hint(s.PaperSize, s.Source);
+        PaperSizeHint.Text = ViewModel.IsCopyFlow ? PrintText.CopyPaperHint(s.PaperSize, s.Source) : PaperSizes.Hint(s.PaperSize, s.Source);
     }
 
     private void Sides_Changed(object sender, SelectionChangedEventArgs e)
@@ -1237,9 +1253,10 @@ public partial class MainWindow : Window
         DocumentOptions.Visibility = s.Intent == ScanIntent.Document ? Visibility.Visible : Visibility.Collapsed;
         PhotoOptions.Visibility = s.Intent == ScanIntent.Photo ? Visibility.Visible : Visibility.Collapsed;
         SyncPdfSizeOptions();
+        ViewModel.SettingsEdited();
+        // After the edit: a change the Copy task does not fit ends it, which turns these switches on.
         SyncBlankPageOptions();
         SyncGeometryOptions();
-        ViewModel.SettingsEdited();
         RefreshFromViewModel();
     }
 
@@ -1266,14 +1283,17 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// The blank-page check runs on pages collected in the queue only, where flagged pages can be
-    /// seen and kept: with each scan saved at once the switch is off and says why.
+    /// seen and kept: with each scan saved at once, and for copies, the switch is off and says why.
     /// </summary>
     private void SyncBlankPageOptions()
     {
         var s = ViewModel.Settings;
-        bool collecting = s.DocumentMultiPage;
+        bool copy = TaskCatalog.FlowOf(s) == TaskFlowKind.Copy;
+        bool collecting = s.DocumentMultiPage && !copy;
         SkipBlankBox.IsEnabled = collecting;
-        string hint = collecting
+        string hint = copy
+            ? "Copies print every page as scanned: blank pages are not left out."
+            : collecting
             ? s.Document.RemoveBlankPages
                 ? "Blank pages are marked in the page strip and left out when you save. Click Keep on a page to save it."
                 : "Blank pages are marked in the page strip. Click Skip on a page to leave it out."
@@ -1301,15 +1321,18 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Crop and straighten run on pages collected in the queue only, where a changed page shows a
-    /// swap button: with each scan saved at once the switches are off and say why.
+    /// swap button: with each scan saved at once, and for copies, the switches are off and say why.
     /// </summary>
     private void SyncGeometryOptions()
     {
         var s = ViewModel.Settings;
-        bool collecting = s.DocumentMultiPage;
+        bool copy = TaskCatalog.FlowOf(s) == TaskFlowKind.Copy;
+        bool collecting = s.DocumentMultiPage && !copy;
         AutoCropBox.IsEnabled = collecting;
         AutoStraightenBox.IsEnabled = collecting;
-        string hint = !collecting
+        string hint = copy
+            ? "Copies print every page as scanned: pages are not cropped or straightened."
+            : !collecting
             ? "Only for pages collected before saving: a scan saved at once is kept as scanned."
             : (s.Document.AutoCrop, s.Document.AutoStraighten) switch
             {
@@ -1668,6 +1691,8 @@ public partial class MainWindow : Window
     {
         // Selection changes bubble up from lists and combo boxes inside the tabs.
         if (!ReferenceEquals(e.OriginalSource, MainTabs)) return;
+        // The Copy card needs a printer: one installed meanwhile makes it available.
+        if (StartTab.IsSelected && IsLoaded) ViewModel.PrintersMayHaveChanged();
         if (SavedTab.IsSelected)
         {
             _savedTabStale = false;
