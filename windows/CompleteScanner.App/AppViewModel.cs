@@ -167,6 +167,31 @@ public sealed class AppViewModel : INotifyPropertyChanged
 
     public ObservableCollection<Preset> Presets { get; } = [];
 
+    /// <summary>No settings were saved before this start: the app opens on the start screen.</summary>
+    public bool IsFirstRun { get; }
+
+    /// <summary>The task the settings are set up for (picked on the start screen); null for settings chosen by hand.</summary>
+    public ScanTask? ActiveTask => Settings.Task;
+
+    public TaskDefinition? ActiveTaskDefinition => ActiveTask is { } task ? TaskCatalog.Definition(task) : null;
+
+    /// <summary>Where the user is in the active task; null without one.</summary>
+    public TaskFlow? Flow { get; private set; }
+    /// <summary>The task <see cref="Flow"/> was made for.</summary>
+    private ScanTask? _flowTask;
+
+    /// <summary>Caption of the Scan button: the current step's action ("Scan page"), or "Scan".</summary>
+    public string PrimaryActionLabel => Flow?.Current?.PrimaryActionLabel ?? "Scan";
+
+    /// <summary>The start screen's task cards, with what the connected scanner can do.</summary>
+    public IReadOnlyList<TaskCardItem> TaskCards =>
+        TaskCatalog.All.Select(definition => new TaskCardItem(
+            definition,
+            TaskCatalog.Availability(definition.Task, Capabilities),
+            ActiveTask == definition.Task,
+            TaskCatalog.Summary(SettingsAdapter.Adapt(TaskCatalog.Apply(definition.Task, new ScanSettings()),
+                                                      Capabilities).Settings))).ToList();
+
     /// <summary>Image shown in the preview canvas (before live adjustments).</summary>
     public RgbaImage? CanvasImage => OverviewImage ?? LastScanImage;
     /// <summary><see cref="CanvasImage"/> rendered through the current adjustments.</summary>
@@ -246,7 +271,11 @@ public sealed class AppViewModel : INotifyPropertyChanged
                         IOcrService? ocrService = null)
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
-        Settings = SettingsStore.Load() ?? new ScanSettings();
+        var saved = SettingsStore.Load();
+        IsFirstRun = saved is null;
+        // A task saved last time is still active: its banner comes back with the settings.
+        Settings = saved ?? new ScanSettings();
+        SyncTaskFlow();
         _backends = backends ?? [new Scanning.WiaScannerBackend(),
                                  new Scanning.EsclScannerBackend(),
                                  new Scanning.Twain.TwainScannerBackend(),
@@ -291,6 +320,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
     /// <summary>Call after mutating Settings from the UI: debounced persist + live preview refresh.</summary>
     public void SettingsEdited()
     {
+        SyncTaskFlow();
         _settingsSaveTimer?.Stop();
         _settingsSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
         var snapshot = Settings.Clone();
@@ -636,12 +666,11 @@ public sealed class AppViewModel : INotifyPropertyChanged
             }
             var caps = await session.GetCapabilitiesAsync();
             Capabilities = caps;
-            Settings.Resolution = caps.NearestResolution(Settings.Resolution);
-            if (!caps.Sources.Contains(Settings.Source))
-            {
-                Settings.Source = caps.Sources.FirstOrDefault(ScanSource.Flatbed);
-            }
-            StatusMessage = $"Ready — {session.Info.Name}";
+            var adapted = SettingsAdapter.Adapt(Settings, caps);
+            Settings = adapted.Settings;
+            // A task the scanner cannot do (the feeder task on a flatbed) ends here.
+            SyncTaskFlow();
+            StatusMessage = WithNotes($"Ready — {session.Info.Name}", adapted.Notes);
         }
         catch (EsclCertificateException e) when (e.CanTrust)
         {
@@ -770,9 +799,9 @@ public sealed class AppViewModel : INotifyPropertyChanged
             token.ThrowIfCancellationRequested();
             RecordHistory(historyItems);
 
-            switch (s.Intent)
+            switch (TaskCatalog.FlowOf(s))
             {
-                case ScanIntent.Document:
+                case TaskFlowKind.DocumentQueue:
                     if (s.DocumentMultiPage)
                     {
                         // Spill full-resolution pages to disk; keep only previews in the queue.
@@ -786,6 +815,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
                             token.ThrowIfCancellationRequested();
                         }
                         foreach (var item in spooled) ScannedPages.Add(item);
+                        RecordCaptures(spooled.Select(item => item.Page.Id));
                         SetLastScan(rawPreview);
                         int n = processed.Count;
                         StatusMessage = $"Added {n} page{(n == 1 ? "" : "s")} — {ScannedPages.Count} in queue. Scan more or Save PDF.";
@@ -794,9 +824,10 @@ public sealed class AppViewModel : INotifyPropertyChanged
                     {
                         SetLastScan(rawPreview);
                         await SaveImmediately(processed, s, token);
+                        RecordCaptures(processed.Select(page => page.Id));
                     }
                     break;
-                case ScanIntent.Photo:
+                case TaskFlowKind.PhotoSplit:
                     SetLastScan(rawPreview);
                     StatusMessage = "Detecting photos…";
                     NotifyAll();
@@ -816,6 +847,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
                     // manual crop corrections can re-extract from the correct page.
                     _photoSourceImages = processed.ToDictionary(p => p.Id, p => p.Image);
                     DetectedPhotos = new ObservableCollection<PhotoItem>(found);
+                    RecordCaptures(found.Select(item => item.Photo.Id));
                     ShowPhotoReview = found.Count > 0;
                     if (!ShowPhotoReview) _photoSourceImages = [];
                     StatusMessage = $"Found {found.Count} photo{(found.Count == 1 ? "" : "s")} on the bed.";
@@ -883,6 +915,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             MarkSaved([path]);
             DeleteSpoolFiles(pages);
             ScannedPages.Clear();
+            Flow?.Reset();
             StatusMessage = $"Saved {pages.Count}-page PDF: {Path.GetFileName(path)}";
         });
     }
@@ -961,6 +994,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             DetectedPhotos = [];
             ShowPhotoReview = false;
             _photoSourceImages = [];
+            Flow?.Reset();
             StatusMessage = $"Saved {saved.Count} photo{(saved.Count == 1 ? "" : "s")} to {s.DestinationPath}";
         });
     }
@@ -994,6 +1028,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
         DetectedPhotos = [];
         ShowPhotoReview = false;
         _photoSourceImages = [];
+        Flow?.Reset();
         StatusMessage = "Photo batch discarded.";
         NotifyAll();
         EndOfWork();
@@ -1165,25 +1200,95 @@ public sealed class AppViewModel : INotifyPropertyChanged
         if (IsBusy) return;
         DeleteSpoolFiles(ScannedPages.Select(p => p.Page));
         ScannedPages.Clear();
+        Flow?.Reset();
         StatusMessage = "Page queue cleared.";
         NotifyAll();
     }
 
     // MARK: Presets
 
+    /// <summary>
+    /// Replaces the settings with the preset's, fitted to the connected scanner. A preset saved
+    /// while a task was active brings that task (and its banner) back.
+    /// </summary>
     public void ApplyPreset(Preset preset)
     {
-        var s = preset.Settings.Clone();
-        if (Capabilities is { } caps)
-        {
-            s.Resolution = caps.NearestResolution(s.Resolution);
-            if (!caps.Sources.Contains(s.Source)) s.Source = caps.Sources.FirstOrDefault(ScanSource.Flatbed);
-        }
-        Settings = s;
+        var adapted = SettingsAdapter.Adapt(preset.Settings, Capabilities);
+        Settings = adapted.Settings;
         SettingsEdited();
-        StatusMessage = $"Applied preset “{preset.Name}”.";
+        StatusMessage = WithNotes($"Applied preset “{preset.Name}”.", adapted.Notes);
         NotifyAll();
     }
+
+    // MARK: Tasks
+
+    /// <summary>
+    /// Sets everything up for a task picked on the start screen: its settings are laid over the
+    /// current ones (the destination folder is kept) and fitted to the connected scanner, and
+    /// its guided steps start. Refused (false) while an operation runs, or when the connected
+    /// scanner cannot do the task (the reason is shown).
+    /// </summary>
+    public bool StartTask(ScanTask task)
+    {
+        if (IsBusy) return false;
+        var availability = TaskCatalog.Availability(task, Capabilities);
+        if (!availability.IsAvailable)
+        {
+            ErrorMessage = availability.Reason;
+            NotifyAll();
+            return false;
+        }
+        var adapted = SettingsAdapter.Adapt(TaskCatalog.Apply(task, Settings), Capabilities);
+        Settings = adapted.Settings;
+        Flow = null;
+        SettingsEdited();
+        StatusMessage = WithNotes($"Ready for “{TaskCatalog.Definition(task).Title}”.", adapted.Notes);
+        NotifyAll();
+        return true;
+    }
+
+    /// <summary>
+    /// Leaves the active task: the settings stay as they are, without the task's banner, so
+    /// the scan screen is back to plain settings.
+    /// </summary>
+    public void ExitTask()
+    {
+        if (Settings.TaskId is null) return;
+        Settings.TaskId = null;
+        SettingsEdited();
+        NotifyAll();
+    }
+
+    /// <summary>
+    /// Keeps the task and its steps in line with the settings: a task the settings no longer
+    /// fit (the mode was changed by hand, or the scanner lacks the task's source) ends, and an
+    /// active task without steps gets them. A task id this version does not know stays stored,
+    /// without steps.
+    /// </summary>
+    private void SyncTaskFlow()
+    {
+        if (Settings.Task is { } task && !TaskCatalog.Fits(task, Settings)) Settings.TaskId = null;
+        if (Settings.Task is not { } active)
+        {
+            Flow = null;
+            _flowTask = null;
+        }
+        else if (Flow is null || _flowTask != active)
+        {
+            Flow = new TaskFlow(TaskCatalog.Definition(active).Steps);
+            _flowTask = active;
+        }
+    }
+
+    /// <summary>Notes the current step of the active task what a scan produced (page or photo ids).</summary>
+    private void RecordCaptures(IEnumerable<Guid> ids)
+    {
+        if (Flow?.Current is not { } step) return;
+        foreach (var id in ids) Flow.Record(step.Id, id);
+    }
+
+    private static string WithNotes(string message, IReadOnlyList<SettingsNote> notes) =>
+        notes.Count == 0 ? message : $"{message} {string.Join(" ", notes.Select(n => n.Message))}";
 
     public void SaveCurrentAsPreset(string name)
     {
@@ -1442,7 +1547,11 @@ public sealed class AppViewModel : INotifyPropertyChanged
         string dir = Environment.ExpandEnvironmentVariables(s.DestinationPath);
         Directory.CreateDirectory(dir);
         string baseName = new NamingTemplate(s.NamingTemplate)
-            .BaseFilename(NextCounter(), DateTime.Now, s.Intent, index);
+            .BaseFilename(new NamingContext(NextCounter(), DateTime.Now, s.Intent)
+            {
+                Index = index,
+                Task = TaskCatalog.Infer(s),
+            });
         return NamingTemplate.UniquePath(dir, baseName, fileExtension);
     }
 

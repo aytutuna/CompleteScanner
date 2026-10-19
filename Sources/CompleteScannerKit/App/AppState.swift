@@ -44,7 +44,13 @@ public final class AppState: ObservableObject {
     @Published public private(set) var selectedDeviceID: String?
     @Published public private(set) var capabilities: ScannerCapabilities?
     @Published public var settings: ScanSettings {
-        didSet { scheduleSettingsSave() }
+        didSet {
+            // A task the settings no longer fit (the mode changed by hand, or a scanner without
+            // the task's source) ends; its steps follow the task (AppState+Tasks.swift).
+            if let task = settings.task, !TaskCatalog.fits(task, settings) { settings.taskId = nil }
+            syncTaskFlow()
+            scheduleSettingsSave()
+        }
     }
 
     /// Low-res preview of the full bed; the selection marquee is only valid over this image.
@@ -83,11 +89,18 @@ public final class AppState: ObservableObject {
 
     @Published public private(set) var isBusy = false
     @Published public private(set) var progress: ScanProgress?
-    @Published public private(set) var statusMessage = "Looking for scanners…"
+    @Published public internal(set) var statusMessage = "Looking for scanners…"
     @Published public var errorMessage: String?
     @Published public private(set) var lastSavedURLs: [URL] = []
 
     @Published public private(set) var presets: [Preset] = []
+
+    /// No settings were saved before this start: the app opens on the start screen.
+    public let isFirstRun: Bool
+    /// Where the user is in the active task; nil without one (see AppState+Tasks.swift).
+    @Published public internal(set) var taskFlow: TaskFlow?
+    /// The task `taskFlow` was made for.
+    var flowTask: ScanTask?
 
     // MARK: Private
 
@@ -118,10 +131,16 @@ public final class AppState: ObservableObject {
     public static let fallbackResolutions = [75, 150, 200, 300, 600, 1200]
 
     public init(backends: [any ScannerBackend]? = nil, presetStore: PresetStore = PresetStore()) {
-        self.settings = SettingsStore.load() ?? ScanSettings()
+        let saved = SettingsStore.load()
+        self.isFirstRun = saved == nil
+        // A task saved last time is still active: its banner comes back with the settings.
+        var initial = saved ?? ScanSettings()
+        if let task = initial.task, !TaskCatalog.fits(task, initial) { initial.taskId = nil }
+        self.settings = initial
         self.backends = backends ?? [ICScannerBackend(), MockScannerBackend()]
         self.presetStore = presetStore
         self.presets = presetStore.load()
+        syncTaskFlow()
         // Clear page spill files left behind by a previous run.
         try? FileManager.default.removeItem(at: pageSpoolDirectory)
         try? FileManager.default.createDirectory(at: pageSpoolDirectory, withIntermediateDirectories: true)
@@ -303,11 +322,10 @@ public final class AppState: ObservableObject {
             sessionDeviceID = id
             let caps = try await s.capabilities()
             capabilities = caps
-            settings.resolution = caps.nearestResolution(to: settings.resolution)
-            if !caps.sources.contains(settings.source) {
-                settings.source = caps.sources.first ?? .flatbed
-            }
-            statusMessage = "Ready — \(s.info.name)"
+            // A task the scanner cannot do (the feeder task on a flatbed) ends here.
+            let adapted = SettingsAdapter.adapt(settings, to: caps)
+            settings = adapted.settings
+            statusMessage = Self.withNotes("Ready — \(s.info.name)", adapted.notes)
         } catch {
             errorMessage = error.localizedDescription
             statusMessage = "Could not connect to \(name)."
@@ -400,8 +418,8 @@ public final class AppState: ObservableObject {
                 self.scanHistory.removeSubrange(50...)
             }
 
-            switch s.intent {
-            case .document:
+            switch TaskCatalog.flow(of: s) {
+            case .documentQueue:
                 if s.documentMultiPage {
                     // Spill full-resolution pages to disk; keep only previews in the queue.
                     let spooled = await Task.detached(priority: .userInitiated) {
@@ -412,14 +430,16 @@ public final class AppState: ObservableObject {
                         return
                     }
                     self.scannedPages.append(contentsOf: spooled)
+                    self.recordCaptures(spooled.map(\.id))
                     self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
                     let n = processed.count
                     self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") — \(self.scannedPages.count) in queue. Scan more or Save PDF."
                 } else {
                     self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
                     try await self.saveImmediately(processed, flag: flag)
+                    self.recordCaptures(processed.map(\.id))
                 }
-            case .photo:
+            case .photoSplit:
                 // Full resolution here: the detection overlay maps source-pixel
                 // coordinates onto this image (raw and processed share dimensions).
                 self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
@@ -438,6 +458,7 @@ public final class AppState: ObservableObject {
                 // manual crop corrections can re-extract from the correct page.
                 self.photoSourceImages = Dictionary(uniqueKeysWithValues: processed.map { ($0.id, $0.image) })
                 self.detectedPhotos = found
+                self.recordCaptures(found.map(\.id))
                 self.showPhotoReview = !found.isEmpty
                 self.statusMessage = "Found \(found.count) photo\(found.count == 1 ? "" : "s") on the bed."
             }
@@ -495,6 +516,7 @@ public final class AppState: ObservableObject {
             self.lastSavedURLs = [url]
             self.deleteSpoolFiles(of: pages)
             self.scannedPages = []
+            self.taskFlow?.reset()
             self.statusMessage = "Saved \(pages.count)-page PDF: \(url.lastPathComponent)"
         }
     }
@@ -551,6 +573,7 @@ public final class AppState: ObservableObject {
             self.detectedPhotos = []
             self.showPhotoReview = false
             self.photoSourceImages = [:]
+            self.taskFlow?.reset()
             self.statusMessage = "Saved \(saved.count) photo\(saved.count == 1 ? "" : "s") to \(s.destinationPath)"
         }
     }
@@ -559,6 +582,7 @@ public final class AppState: ObservableObject {
         detectedPhotos = []
         showPhotoReview = false
         photoSourceImages = [:]
+        taskFlow?.reset()
         statusMessage = "Photo batch discarded."
         endOfWork()
     }
@@ -630,19 +654,18 @@ public final class AppState: ObservableObject {
         guard !isBusy else { return }
         deleteSpoolFiles(of: scannedPages)
         scannedPages = []
+        taskFlow?.reset()
         statusMessage = "Page queue cleared."
     }
 
     // MARK: Presets
 
+    /// Replaces the settings with the preset's, fitted to the connected scanner. A preset saved
+    /// while a task was active brings that task (and its banner) back.
     public func applyPreset(_ preset: Preset) {
-        var s = preset.settings
-        if let caps = capabilities {
-            s.resolution = caps.nearestResolution(to: s.resolution)
-            if !caps.sources.contains(s.source) { s.source = caps.sources.first ?? .flatbed }
-        }
-        settings = s
-        statusMessage = "Applied preset “\(preset.name)”."
+        let adapted = SettingsAdapter.adapt(preset.settings, to: capabilities)
+        settings = adapted.settings
+        statusMessage = Self.withNotes("Applied preset “\(preset.name)”.", adapted.notes)
     }
 
     public func saveCurrentAsPreset(named name: String) {
@@ -755,7 +778,8 @@ public final class AppState: ObservableObject {
     private func outputURL(fileExtension: String, index: Int? = nil) throws -> URL {
         let dir = try destinationDirectory()
         let base = NamingTemplate(settings.namingTemplate)
-            .baseFilename(counter: nextCounter(), date: Date(), intent: settings.intent, index: index)
+            .baseFilename(NamingContext(counter: nextCounter(), date: Date(), intent: settings.intent,
+                                        index: index, task: TaskCatalog.infer(settings)))
         return NamingTemplate.uniqueURL(in: dir, base: base, fileExtension: fileExtension)
     }
 

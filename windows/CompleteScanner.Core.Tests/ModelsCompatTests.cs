@@ -317,6 +317,85 @@ public class ModelsCompatTests
         Assert.Equal(CompatFixtures.CurrentFormatPresetsJson.ReplaceLineEndings("\n"), written.ReplaceLineEndings("\n"));
     }
 
+    // MARK: - Task (CONTRACTS.md, rule 6: the task is stored as text)
+
+    [Fact]
+    public void OldSettingsWithoutTask_LoadWithNoTask()
+    {
+        var presets = Decode<List<Preset>>(CompatFixtures.CurrentFormatPresetsJson);
+        Assert.Null(presets[0].Settings.TaskId);
+        Assert.Null(presets[0].Settings.Task);
+        Assert.Null(Decode<ScanSettings>("{}").Task);
+    }
+
+    [Fact]
+    public void UnknownTask_LoadsAsNoTask_AndIsWrittenBackUnchanged()
+    {
+        var settings = Decode<ScanSettings>("""{"resolution": 200, "taskId": "whiteboard"}""");
+        Assert.Equal("whiteboard", settings.TaskId);
+        Assert.Null(settings.Task);
+        Assert.Equal(200, settings.Resolution);
+        using var written = JsonDocument.Parse(CompatFixtures.Encode(settings));
+        Assert.Equal("whiteboard", written.RootElement.GetProperty("taskId").GetString());
+    }
+
+    [Fact]
+    public void KnownTask_RoundTrips()
+    {
+        var settings = CompatFixtures.NonDefaultSettings();
+        settings.TaskId = "photoRestore";
+        var back = Decode<ScanSettings>(CompatFixtures.Encode(settings));
+        Assert.Equal(ScanTask.PhotoRestore, back.Task);
+        CompatFixtures.AssertSettingsEqual(settings, back);
+    }
+
+    [Fact]
+    public void WrongTypedOrNullTask_IsNoTask_RestIntact()
+    {
+        var number = Decode<ScanSettings>("""{"taskId": 5, "resolution": 150}""");
+        Assert.Null(number.TaskId);
+        Assert.Equal(150, number.Resolution);
+        var obj = Decode<ScanSettings>("""{"taskId": {"id": "photos"}, "pdfSearchable": false}""");
+        Assert.Null(obj.TaskId);
+        Assert.False(obj.PdfSearchable);
+        Assert.Null(Decode<ScanSettings>("""{"taskId": null}""").TaskId);
+    }
+
+    [Fact]
+    public void NoTask_IsLeftOutOfTheFile()
+    {
+        Assert.DoesNotContain("taskId", CompatFixtures.Encode(new ScanSettings()));
+        Assert.DoesNotContain("taskId", CompatFixtures.Encode(
+            new List<Preset> { new("P", CompatFixtures.NonDefaultSettings()) { Id = CompatFixtures.SampleId } }));
+    }
+
+    [Fact]
+    public void Task_IsWrittenAfterTheEarlierKeys()
+    {
+        var settings = CompatFixtures.NonDefaultSettings();
+        settings.TaskId = "document";
+        using var written = JsonDocument.Parse(CompatFixtures.Encode(settings));
+        Assert.Equal(
+            [
+                "intent", "source", "resolution", "colorMode", "format", "jpegQuality",
+                "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
+                "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
+                "pdfSearchable", "ocrLanguages", "adjustments", "taskId",
+            ],
+            written.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal("document", written.RootElement.GetProperty("taskId").GetString());
+    }
+
+    [Fact]
+    public void Clone_CopiesTheTask()
+    {
+        var settings = new ScanSettings { TaskId = "feeder" };
+        var clone = settings.Clone();
+        Assert.Equal(ScanTask.Feeder, clone.Task);
+        clone.TaskId = null;
+        Assert.Equal("feeder", settings.TaskId);
+    }
+
     // MARK: - Property converters (Windows only)
 
     /// <summary>Reads any string upper-cased, writes lower-case; anything but a string fails.</summary>
@@ -443,15 +522,45 @@ public sealed class PresetStoreFileTests : IDisposable
     private static readonly byte[] Garbage = Encoding.UTF8.GetBytes("this is not JSON {");
 
     [Fact]
-    public void MissingPresetsFile_SeedsBuiltInsWithoutKeepingAnything()
+    public void MissingPresetsFile_StartsEmptyWithoutKeepingAnything()
     {
         var presets = new PresetStore(_directory).Load();
 
-        Assert.NotEmpty(presets);
+        // New installs get no starter presets: the start screen's task cards replace them.
+        Assert.Empty(presets);
         Assert.True(File.Exists(PresetsPath));
         Assert.Empty(KeptFiles("presets.unreadable-"));
-        // The seeded file is what the next launch reads.
-        CompatFixtures.AssertPresetsEqual(presets, new PresetStore(_directory).Load());
+        // The written file is what the next launch reads.
+        Assert.Empty(new PresetStore(_directory).Load());
+    }
+
+    [Fact]
+    public void StarterPresetsOfEarlierVersions_StayAndKeepWorking()
+    {
+        // A presets.json as earlier versions seeded it (two of the five starters).
+        File.WriteAllText(PresetsPath, """
+            [
+              {
+                "id": "7b0f4c84-3c55-4f56-9d0f-0b4b5f1d2a01",
+                "name": "Document → PDF (300 dpi)",
+                "settings": { "intent": "document", "resolution": 300, "colorMode": "color", "format": "pdf",
+                              "pdfSearchable": true, "documentMultiPage": true }
+              },
+              {
+                "id": "7b0f4c84-3c55-4f56-9d0f-0b4b5f1d2a02",
+                "name": "Old photo restoration (600 dpi, PNG)",
+                "settings": { "intent": "photo", "resolution": 600, "colorMode": "color", "format": "png",
+                              "adjustments": { "restoreFadedColors": true, "autoEnhance": true } }
+              }
+            ]
+            """);
+
+        var presets = new PresetStore(_directory).Load();
+
+        Assert.Equal(["Document → PDF (300 dpi)", "Old photo restoration (600 dpi, PNG)"], presets.Select(p => p.Name));
+        Assert.Equal([ScanTask.Document, ScanTask.PhotoRestore], presets.Select(p => TaskCatalog.Infer(p.Settings)));
+        Assert.All(presets, p => Assert.Null(p.Settings.TaskId));
+        Assert.Empty(KeptFiles("presets.unreadable-"));
     }
 
     [Fact]
@@ -461,12 +570,12 @@ public sealed class PresetStoreFileTests : IDisposable
 
         var presets = new PresetStore(_directory).Load();
 
-        Assert.NotEmpty(presets);
+        Assert.Empty(presets);
         var kept = KeptFiles("presets.unreadable-");
         string name = Assert.Single(kept);
         Assert.Matches(new Regex(@"^presets\.unreadable-\d{8}-\d{6}\.json$"), name);
         Assert.Equal(Garbage, File.ReadAllBytes(Path.Combine(_directory, name)));
-        // Built-ins were written to a fresh presets.json; the next launch keeps nothing new.
+        // An empty list was written to a fresh presets.json; the next launch keeps nothing new.
         CompatFixtures.AssertPresetsEqual(presets, new PresetStore(_directory).Load());
         Assert.Single(KeptFiles("presets.unreadable-"));
     }
@@ -493,8 +602,7 @@ public sealed class PresetStoreFileTests : IDisposable
 
         var presets = new PresetStore(_directory).Load();
 
-        Assert.NotEmpty(presets);
-        Assert.All(presets, preset => Assert.NotNull(preset));
+        Assert.Empty(presets);
         var kept = KeptFiles("presets.unreadable-");
         Assert.Single(kept);
         Assert.Equal(json, File.ReadAllText(Path.Combine(_directory, kept[0])));
@@ -549,9 +657,7 @@ public sealed class PresetStoreFileTests : IDisposable
 
         WithoutReadAccess(PresetsPath, () =>
         {
-            var presets = new PresetStore(_directory).Load();
-            Assert.NotEmpty(presets);
-            Assert.DoesNotContain(presets, preset => preset.Id == CompatFixtures.SampleId);
+            Assert.Empty(new PresetStore(_directory).Load());
         });
 
         Assert.Empty(KeptFiles("presets.unreadable-"));
@@ -585,7 +691,7 @@ public sealed class PresetStoreFileTests : IDisposable
 
         using (new FileStream(PresetsPath, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
-            Assert.NotEmpty(new PresetStore(_directory).Load());
+            Assert.Empty(new PresetStore(_directory).Load());
         }
 
         Assert.Empty(KeptFiles("presets.unreadable-"));
@@ -662,7 +768,7 @@ public sealed class PresetStoreFileTests : IDisposable
 
         var presets = new PresetStore(_directory).Load();
 
-        Assert.NotEmpty(presets);
+        Assert.Empty(presets);
         var kept = Assert.Single(KeptFiles("presets.unreadable-"));
         Assert.Equal(damaged, File.ReadAllBytes(Path.Combine(_directory, kept)));
     }

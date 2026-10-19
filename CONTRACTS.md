@@ -9,7 +9,8 @@ Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Core/DeviceMerge.swift` — `DeviceGroup` and `DeviceMerge` (one row per physical scanner, see below).
 - `Sources/CompleteScannerKit/Core/Troubleshooting.swift` — `ScannerProblem` and `ScannerProblems.describe` (see below).
 - `Sources/CompleteScannerKit/Core/ScannerBackend.swift` — `ScannerBackend` / `ScannerSession` protocols (both `@MainActor`).
-- `Sources/CompleteScannerKit/App/AppState.swift` — the `@MainActor ObservableObject` all UI binds to.
+- `Sources/CompleteScannerKit/Core/ScanTask.swift`, `TaskCatalog.swift`, `TaskFlow.swift`, `SettingsAdapter.swift` — the start screen's tasks, their guided steps, and fitting settings to a scanner (see below).
+- `Sources/CompleteScannerKit/App/AppState.swift` — the `@MainActor ObservableObject` all UI binds to; its task members are in `App/AppState+Tasks.swift`.
 - `Sources/CompleteScannerKit/App/ContentView.swift`, `CompleteScannerApp.swift`.
 
 ## Global rules
@@ -97,6 +98,94 @@ public enum DeviceMerge {
 ```
 Twin of `windows/CompleteScanner.Core/DeviceMerge.cs` (`HardwareId`, `ConnectionId`): same rules, same keys, same report text; `DeviceMergeTests` on both sides share one table. Only ASCII letters and digits count as model words on both platforms, so the result never depends on locale or Unicode tables. `AppState.devices` lists one entry per group (the connection in use for the selected scanner) and `AppState` writes `diagnosticsReport` to `~/Library/Logs/CompleteScanner/devices.txt` when it changes. The Mac has no connection chooser; Windows keeps the user's choice in `AppPreferences.PreferredConnection` (group key → connection id).
 
+### Core/ScanTask.swift, Core/TaskCatalog.swift, Core/TaskFlow.swift (+ ScanSettings in Core/Models.swift)
+
+```swift
+// ScanSettings gains `taskId: String?` (nil by default; left out of the file when nil) and
+// the computed `task: ScanTask?` (`ScanTask.tryParse(taskId)`). The task is stored as text,
+// not as the enum: a task id of a newer version reads as no task and is written back unchanged.
+
+public enum ScanTask: String, CaseIterable, Identifiable, Sendable {
+    case document, feeder, photos, photoRestore, quickScan   // add new tasks after these
+    public static func tryParse(_ rawValue: String?) -> ScanTask?
+}
+
+public enum TaskFlowKind: String, Sendable { case documentQueue, photoSplit }
+
+public struct TaskDefinition: Equatable, Sendable {
+    public let task: ScanTask
+    public let title: String, subtitle: String
+    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick"
+    public let flow: TaskFlowKind
+    public let intent: ScanIntent
+    public let requiredSource: ScanSource?
+    public let fileLabel: String        // what {task} becomes
+    public let steps: [TaskStep]
+}
+
+public struct TaskAvailability: Equatable, Sendable {
+    public let isAvailable: Bool
+    public let reason: String?          // "This scanner has no document feeder."
+    public static let available: TaskAvailability
+}
+
+public enum TaskCatalog {
+    public static let all: [TaskDefinition]                 // start-screen order
+    public static func definition(_ task: ScanTask) -> TaskDefinition
+    /// The task's settings over `current`; keeps the destination folder, the photo detection
+    /// tuning and the legacy OCR languages; sets `taskId`.
+    public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings
+    /// The stored task, else the task the settings look like (display and file names only).
+    public static func infer(_ settings: ScanSettings) -> ScanTask
+    public static func availability(of task: ScanTask, capabilities: ScannerCapabilities?) -> TaskAvailability
+    /// Same scan mode and, when the task has one, the required source.
+    public static func fits(_ task: ScanTask, _ settings: ScanSettings) -> Bool
+    /// The stored task's flow while it fits, otherwise by intent. The scan handler switches on it.
+    public static func flow(of settings: ScanSettings) -> TaskFlowKind
+    /// "300 dpi · Color · PDF"
+    public static func summary(_ settings: ScanSettings) -> String
+}
+
+public struct TaskStep: Equatable, Sendable {
+    public let id: String, title: String, prompt: String, primaryActionLabel: String
+    public let skippable: Bool, repeats: Bool, requiresCapture: Bool
+    public init(id:title:prompt:primaryActionLabel:skippable: = false, repeats: = false, requiresCapture: = true)
+}
+
+public struct TaskFlow: Equatable, Sendable {      // a pure state machine; unknown step ids are ignored
+    public init(steps: [TaskStep])
+    public let steps: [TaskStep]
+    public private(set) var stepIndex: Int
+    public var stepCount: Int { get }
+    public var current: TaskStep? { get }
+    public var isComplete: Bool { get }
+    public var canFinish: Bool { get }             // every step that requires a capture has one
+    public func captures(for stepID: String) -> [UUID]
+    public func isSkipped(_ stepID: String) -> Bool
+    @discardableResult public mutating func record(stepID: String, captureID: UUID) -> [UUID]  // replaced captures
+    @discardableResult public mutating func advance() -> Bool
+    @discardableResult public mutating func skip() -> Bool
+    @discardableResult public mutating func retake(stepID: String) -> [UUID]                   // dropped captures
+    public mutating func reset()
+}
+```
+Twins of `windows/CompleteScanner.Core/ScanTask.cs`, `TaskCatalog.cs` and `TaskFlow.cs` (C# names in PascalCase; `TaskCatalog.FlowOf` for `flow(of:)`, `ScanTasks.TryParse` / `RawValue`); `ScanTaskTests` and `TaskFlowTests` are the same cases on both sides. Task cards exist only for features that are built; later features add a `ScanTask` case, a catalog entry and their steps. `AppState` (`App/AppState+Tasks.swift`) keeps the task in `settings.taskId`, so it is saved and restored with the settings: `startTask(_:)`, `exitTask()`, `taskCards`, `activeTask`, `taskFlow`, `primaryActionLabel`, `isFirstRun`. Its `settings` didSet ends a task the settings no longer fit.
+
+### Core/SettingsAdapter.swift
+
+```swift
+public enum SettingsChange: String, Sendable { case source, resolution }
+public struct SettingsNote: Equatable, Sendable { public let change: SettingsChange; public let message: String }
+public struct AdaptedSettings: Equatable, Sendable { public let settings: ScanSettings; public let notes: [SettingsNote] }
+
+public enum SettingsAdapter {
+    /// A source the scanner has (its first one when the chosen one is missing, the flatbed when it
+    /// lists none) and the nearest resolution it supports; unchanged when `capabilities` is nil.
+    public static func adapt(_ settings: ScanSettings, to capabilities: ScannerCapabilities?) -> AdaptedSettings
+}
+```
+Twin of `windows/CompleteScanner.Core/SettingsAdapter.cs` (same note texts); `SettingsAdapterTests` on both sides. Every place settings meet a scanner goes through it: applying a preset or task, and connecting to a scanner.
+
 ### Pipeline/PhotoDetector.swift (+ Pipeline/Geometry.swift)
 
 ```swift
@@ -134,7 +223,8 @@ public enum ImagePipeline {
 ```swift
 public final class PresetStore {
     public init()
-    /// Loads saved presets; on first run returns (and persists) built-in starter presets.
+    /// Loads saved presets; on first run returns (and persists) an empty list. (Earlier versions
+    /// seeded five starter presets; files holding them keep them. The task cards replace them.)
     public func load() -> [Preset]
     public func save(_ presets: [Preset])
 }
@@ -194,13 +284,26 @@ public struct NamingTemplate {
     public let template: String
     public init(_ template: String)
     /// Tokens: {date}=yyyy-MM-dd, {time}=HH.mm.ss, {year} {month} {day}, {counter} (also {counter:N}
-    /// zero-padded), {intent} ("Document"/"Photos"), {index} (photo number in a batch, empty when nil).
+    /// zero-padded), {intent} ("Document"/"Photos"), {index} (photo number in a batch, empty when nil),
+    /// {task} (the task's `fileLabel`; the {intent} text without a task).
     /// Unknown tokens pass through; result sanitized for the filesystem (no "/" or ":").
+    public func baseFilename(_ context: NamingContext) -> String
+    /// The same without a task (kept for existing callers).
     public func baseFilename(counter: Int, date: Date, intent: ScanIntent, index: Int?) -> String
     /// base.ext, appending " 2", " 3", … until the name is free.
     public static func uniqueURL(in directory: URL, base: String, fileExtension: String) -> URL
 }
 ```
+
+```swift
+public struct NamingContext: Equatable, Sendable {
+    public var counter: Int, date: Date, intent: ScanIntent
+    public var index: Int?          // default nil
+    public var task: ScanTask?      // default nil
+    public init(counter: Int, date: Date, intent: ScanIntent, index: Int? = nil, task: ScanTask? = nil)
+}
+```
+Twin of C# `NamingContext` (a record with `Index` / `Task` init properties). Later tokens add optional properties here, so `baseFilename(_:)` keeps its signature.
 
 ### Backends/ICScannerBackend.swift
 
@@ -224,3 +327,5 @@ One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: 
 - `UI/PreviewCanvasView.swift` — `struct PreviewCanvasView: View`: shows `state.canvasImage`, marquee selection editing `state.selectionRect` (only when `state.overviewImage != nil`).
 - `UI/PagesStripView.swift` — `struct PagesStripView: View`: page-queue thumbnails + Save PDF / Clear.
 - `UI/PhotoReviewView.swift` — `struct PhotoReviewView: View`: detected-photo grid sheet; Save via `state.saveReviewedPhotos()`, cancel via `state.cancelPhotoReview()`.
+- `UI/TaskStartView.swift` — `struct TaskStartView: View` (`onOpenScanner: () -> Void`): the start screen's task cards (`state.taskCards`) and preset cards; also `enum TaskSymbols` (icon key → SF Symbol).
+- `UI/TaskBannerView.swift` — `struct TaskBannerView: View` (`definition: TaskDefinition`, `onChangeTask: () -> Void`): the active task above the preview, with Change Task and a leave-task button.

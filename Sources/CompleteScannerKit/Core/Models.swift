@@ -144,7 +144,15 @@ public struct ScanSettings: Codable, Equatable, Sendable {
 
     public var adjustments: AdjustmentSettings = AdjustmentSettings()
 
+    /// The task these settings were set up for (`ScanTask.rawValue`), or nil for settings
+    /// chosen by hand. Kept as text: a task this version does not know (written by a newer
+    /// one) reads as no `task` but is written back unchanged. Left out of the file when nil.
+    public var taskId: String?
+
     public init() {}
+
+    /// The task of `taskId`, when this version knows it.
+    public var task: ScanTask? { ScanTask.tryParse(taskId) }
 
     public static var defaultDestinationPath: String {
         (NSHomeDirectory() as NSString).appendingPathComponent("Documents/CompleteScanner")
@@ -156,6 +164,7 @@ public struct ScanSettings: Codable, Equatable, Sendable {
         case photoAutoSplit, photoAutoDeskew, photoMinSideInches, photoCropInsetPixels
         case documentMultiPage, pdfSearchable, ocrLanguages
         case adjustments
+        case taskId
     }
 }
 
@@ -181,6 +190,7 @@ extension ScanSettings {
         pdfSearchable = container.decodeLenient(forKey: .pdfSearchable, default: pdfSearchable)
         ocrLanguages = container.decodeLenient(forKey: .ocrLanguages, default: ocrLanguages)
         adjustments = container.decodeLenient(forKey: .adjustments, default: adjustments)
+        taskId = container.decodeLenient(forKey: .taskId, default: taskId)
     }
 }
 

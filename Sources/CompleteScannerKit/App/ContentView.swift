@@ -4,6 +4,7 @@ struct ContentView: View {
     @EnvironmentObject var state: AppState
 
     private enum DetailTab: Hashable {
+        case start
         case scanner
         case scans
         case saved
@@ -11,6 +12,9 @@ struct ContentView: View {
 
     @State private var detailTab: DetailTab = .scanner
     @State private var showInspector = true
+    /// The first appearance picked the opening view: the start screen on a first run, the
+    /// scanner view (with the task the user had last) afterwards.
+    @State private var choseOpeningView = false
 
     var body: some View {
         NavigationSplitView {
@@ -23,13 +27,14 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 HStack {
                     Picker("View", selection: $detailTab) {
+                        Text("Start").tag(DetailTab.start)
                         Text("Scanner").tag(DetailTab.scanner)
                         Text("Scans").tag(DetailTab.scans)
                         Text("Saved").tag(DetailTab.saved)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    .frame(width: 280)
+                    .frame(width: 360)
                     Spacer()
                     if detailTab == .scanner {
                         Button {
@@ -46,6 +51,8 @@ struct ContentView: View {
                 .background(.bar)
                 Divider()
                 switch detailTab {
+                case .start:
+                    startDetail
                 case .scanner:
                     scannerDetail
                 case .scans:
@@ -70,6 +77,11 @@ struct ContentView: View {
         // Below this the layout cannot stay usable; the inspector adds its own
         // width requirement only while shown.
         .frame(minWidth: 700, minHeight: 560)
+        .onAppear {
+            guard !choseOpeningView else { return }
+            choseOpeningView = true
+            if state.isFirstRun { detailTab = .start }
+        }
         .task { state.start() }
     }
 
@@ -79,6 +91,10 @@ struct ContentView: View {
         // windows), is user-resizable, and can be toggled to give the page preview
         // the whole window.
         VStack(spacing: 0) {
+            if let task = state.activeTaskDefinition {
+                TaskBannerView(definition: task, onChangeTask: { detailTab = .start })
+                Divider()
+            }
             PreviewCanvasView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if state.settings.intent == .document && !state.scannedPages.isEmpty {
@@ -91,6 +107,14 @@ struct ContentView: View {
         .inspector(isPresented: $showInspector) {
             InspectorView()
                 .inspectorColumnWidth(min: 280, ideal: 330, max: 430)
+        }
+    }
+
+    private var startDetail: some View {
+        VStack(spacing: 0) {
+            TaskStartView(onOpenScanner: { detailTab = .scanner })
+            Divider()
+            StatusBarView()
         }
     }
 

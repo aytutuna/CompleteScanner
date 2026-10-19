@@ -32,6 +32,13 @@ public partial class MainWindow : Window
         PageList.ItemsSource = ViewModel.ScannedPages;
         HistoryView.Attach(ViewModel);
         SavedView.Attach(ViewModel, ShowError);
+        StartView.Attach(ViewModel);
+        StartView.TaskChosen += StartTask;
+        StartView.PresetChosen += StartPreset;
+        StartView.GoToScanRequested += () => ShowScanScreen();
+        // A first run opens on the start screen; later runs open where scanning happens, with
+        // the task (and its banner) the user had last.
+        MainTabs.SelectedItem = ViewModel.IsFirstRun ? StartTab : ScanTab;
 
         ColorModeBox.ItemsSource = Enum.GetValues<ColorMode>().Select(m => m.Label());
         FormatBox.ItemsSource = Enum.GetValues<OutputFormat>().Select(f => f.Label());
@@ -40,6 +47,7 @@ public partial class MainWindow : Window
         {
             PushSettingsToUi();
             ViewModel.Start();
+            if (StartTab.IsSelected) StartView.FocusDefaultCard();
         };
         Closing += MainWindow_Closing;
         // Flush any debounced settings write and remove this instance's page spill files.
@@ -246,6 +254,9 @@ public partial class MainWindow : Window
         PreviewButton.IsEnabled = !ViewModel.IsBusy && ViewModel.Capabilities?.SupportsOverview != false
                                   && ViewModel.Settings.Source != ScanSource.DocumentFeeder;
         ScanButton.IsEnabled = !ViewModel.IsBusy;
+        ScanButton.Content = ViewModel.PrimaryActionLabel;
+        SyncTaskBanner();
+        StartView.Refresh();
         // As on macOS, the settings (and presets, which replace them) are frozen while an
         // operation runs: it works from a snapshot, and edits made meanwhile would not apply.
         Inspector.IsEnabled = !ViewModel.IsBusy;
@@ -314,6 +325,118 @@ public partial class MainWindow : Window
     }
 
     private void InfoBarClose_Click(object sender, RoutedEventArgs e) => InfoBar.Visibility = Visibility.Collapsed;
+
+    // MARK: - Tasks
+
+    /// <summary>The banner above the stage: the active task and what to do now; hidden without a task.</summary>
+    private void SyncTaskBanner()
+    {
+        if (ViewModel.ActiveTaskDefinition is not { } task)
+        {
+            TaskBanner.Visibility = Visibility.Collapsed;
+            return;
+        }
+        string name = $"Task: {task.Title}";
+        bool sameTaskShown = TaskBanner.Visibility == Visibility.Visible && AutomationProperties.GetName(TaskBannerGroup) == name;
+        TaskBanner.Visibility = Visibility.Visible;
+        TaskBannerGlyph.Text = TaskIcons.Glyph(task.IconKey);
+        var flow = ViewModel.Flow;
+        var step = flow?.Current;
+        TaskBannerTitle.Text = flow is { StepCount: > 1 } && step is not null
+            ? $"{task.Title} · Step {flow.StepIndex + 1} of {flow.StepCount}: {step.Title}"
+            : task.Title;
+        string prompt = step?.Prompt ?? task.Subtitle;
+        bool promptChanged = TaskBannerPrompt.Text != prompt;
+        TaskBannerPrompt.Text = prompt;
+        AutomationProperties.SetName(TaskBannerGroup, name);
+        // A new step of the same task (the ID card's back after its front) is read out.
+        if (sameTaskShown && promptChanged) AnnounceWhenShown(TaskBannerPrompt);
+    }
+
+    /// <summary>
+    /// Tells screen readers that a live region changed, once layout has run: the element may
+    /// only just have been shown (a tab switch). Nothing is raised if it is not on screen by then.
+    /// </summary>
+    private void AnnounceWhenShown(FrameworkElement element)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (!element.IsVisible) return;
+            var peer = UIElementAutomationPeer.FromElement(element) ?? UIElementAutomationPeer.CreatePeerForElement(element);
+            peer?.RaiseAutomationEvent(AutomationEvents.LiveRegionChanged);
+        }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+    }
+
+    /// <summary>Below this banner width, Change task shows only its glyph (its name stays in the tooltip and for screen readers).</summary>
+    private const double BannerCompactBelowWidth = 520;
+    /// <summary>Below this banner width, the task glyph is left out too, leaving the text the room.</summary>
+    private const double BannerMinimalBelowWidth = 340;
+
+    /// <summary>A narrow stage (small window, wide inspector) keeps the banner's text readable.</summary>
+    private void TaskBanner_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!e.WidthChanged) return;
+        double width = e.NewSize.Width;
+        bool compact = width < BannerCompactBelowWidth;
+        if (compact)
+        {
+            ChangeTaskButton.ContentTemplate = (DataTemplate)FindResource("IconOnlyTemplate");
+            ChangeTaskButton.Padding = new Thickness(8, 5, 8, 6);
+        }
+        else
+        {
+            ChangeTaskButton.ClearValue(ContentControl.ContentTemplateProperty);
+            ChangeTaskButton.ClearValue(PaddingProperty);
+        }
+        bool minimal = width < BannerMinimalBelowWidth;
+        TaskBannerBadge.Visibility = minimal ? Visibility.Collapsed : Visibility.Visible;
+        TaskBannerTexts.Margin = new Thickness(minimal ? 0 : 12, 0, 0, 0);
+    }
+
+    /// <summary>A task card was picked: set it up and go to the scan screen.</summary>
+    private void StartTask(ScanTask task)
+    {
+        if (!ViewModel.StartTask(task)) return;
+        PushSettingsToUi();
+        ShowScanScreen();
+    }
+
+    /// <summary>A preset card was picked: apply it and go to the scan screen.</summary>
+    private void StartPreset(Preset preset)
+    {
+        if (ViewModel.IsBusy) return;
+        ViewModel.ApplyPreset(preset);
+        PushSettingsToUi();
+        _savedTabStale = true;
+        ShowScanScreen();
+    }
+
+    /// <summary>Opens the scan screen with keyboard focus on its main action.</summary>
+    private void ShowScanScreen()
+    {
+        ScanTab.IsSelected = true;
+        RefreshFromViewModel();
+        // After the tab's content is laid out, so the button can take focus.
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (ScanButton.IsEnabled) ScanButton.Focus();
+        }, System.Windows.Threading.DispatcherPriority.Loaded);
+        // Focus lands on the Scan button, outside the banner, so the task is announced ("Task: Photos").
+        if (ViewModel.ActiveTaskDefinition is not null) AnnounceWhenShown(TaskBannerGroup);
+    }
+
+    private void ChangeTask_Click(object sender, RoutedEventArgs e)
+    {
+        StartTab.IsSelected = true;
+        Dispatcher.BeginInvoke(StartView.FocusDefaultCard, System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    private void ExitTask_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ExitTask();
+        RefreshFromViewModel();
+        ScanButton.Focus();
+    }
 
     // MARK: - Appearance
 

@@ -26,10 +26,14 @@ scanners** — including the Epson Perfection V39 II.
 - **Image adjustments**: auto-enhance, brightness / contrast / saturation / sharpness,
   descreen (moiré reduction for printed material), faded-color restoration for old photos,
   black-and-white threshold.
-- **Presets**: built-in starter presets (Document→PDF, compact grayscale text, photo
-  auto-split, old-photo restoration, quick preview) plus your own saved presets.
+- **Start screen**: pick what you are scanning (Document to PDF, Multi-page from feeder,
+  Photos, Old photo restoration, Quick scan) and everything is set up for it, with a short
+  guide on the scan screen. Tasks the connected scanner cannot do are greyed out with the
+  reason. The app remembers the task you used last.
+- **Presets**: save your own settings as presets; they appear on the start screen too.
+  Starter presets from earlier versions stay.
 - **File naming templates**: `{date}`, `{time}`, `{counter}`, `{counter:4}`, `{intent}`,
-  `{index}` tokens; automatic collision-free numbering.
+  `{index}`, `{task}` tokens; automatic collision-free numbering.
 - **Demo Scanner**: a built-in simulated device so you can try every feature (including OCR,
   photo splitting and a three-sheet document feeder) with no hardware connected.
 
@@ -62,7 +66,7 @@ instructions and current status.
 ## Using it
 
 1. Pick your scanner in the sidebar (or **Demo Scanner** to explore).
-2. Choose a mode:
+2. On **Start**, pick a task; or go to **Scanner** and choose a mode yourself:
    - **Document** — each Scan adds a page to the strip at the bottom; press **Save PDF**
      when done. Turn on *Searchable PDF (OCR)* for selectable text.
    - **Photos** — place several photos on the glass with a little space between them, press

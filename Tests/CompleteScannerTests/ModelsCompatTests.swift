@@ -253,6 +253,71 @@ final class ModelsCompatTests: XCTestCase {
         let expected = try JSONSerialization.jsonObject(with: Data(currentFormatPresetsJSON.utf8))
         XCTAssertEqual(written as? NSArray, expected as? NSArray)
     }
+
+    // MARK: Task (CONTRACTS.md, rule 6: the task is stored as text)
+
+    func test_oldSettingsWithoutTask_loadWithNoTask() throws {
+        let presets = try decode([Preset].self, currentFormatPresetsJSON)
+        XCTAssertNil(presets[0].settings.taskId)
+        XCTAssertNil(presets[0].settings.task)
+        XCTAssertNil(try decode(ScanSettings.self, "{}").task)
+    }
+
+    func test_unknownTask_loadsAsNoTask_andIsWrittenBackUnchanged() throws {
+        let settings = try decode(ScanSettings.self, #"{"resolution": 200, "taskId": "whiteboard"}"#)
+        XCTAssertEqual(settings.taskId, "whiteboard")
+        XCTAssertNil(settings.task)
+        XCTAssertEqual(settings.resolution, 200)
+        let written = try jsonObject(encode(settings))
+        XCTAssertEqual(written["taskId"] as? String, "whiteboard")
+    }
+
+    func test_knownTask_roundTrips() throws {
+        var settings = nonDefaultSettings()
+        settings.taskId = "photoRestore"
+        let back = try JSONDecoder().decode(ScanSettings.self, from: encode(settings))
+        XCTAssertEqual(back.task, .photoRestore)
+        XCTAssertEqual(back, settings)
+    }
+
+    func test_wrongTypedOrNullTask_isNoTask_restIntact() throws {
+        let number = try decode(ScanSettings.self, #"{"taskId": 5, "resolution": 150}"#)
+        XCTAssertNil(number.taskId)
+        XCTAssertEqual(number.resolution, 150)
+        let object = try decode(ScanSettings.self, #"{"taskId": {"id": "photos"}, "pdfSearchable": false}"#)
+        XCTAssertNil(object.taskId)
+        XCTAssertFalse(object.pdfSearchable)
+        XCTAssertNil(try decode(ScanSettings.self, #"{"taskId": null}"#).taskId)
+    }
+
+    func test_noTask_isLeftOutOfTheFile() throws {
+        XCTAssertNil(try jsonObject(encode(ScanSettings()))["taskId"])
+        let data = try encode([Preset(id: sampleID, name: "P", settings: nonDefaultSettings())])
+        let text = String(decoding: data, as: UTF8.self)
+        XCTAssertFalse(text.contains("taskId"))
+    }
+
+    func test_task_isWrittenWithTheEarlierKeys() throws {
+        var settings = nonDefaultSettings()
+        settings.taskId = "document"
+        let written = try jsonObject(encode(settings))
+        XCTAssertEqual(Set(written.keys), [
+            "intent", "source", "resolution", "colorMode", "format", "jpegQuality",
+            "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
+            "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
+            "pdfSearchable", "ocrLanguages", "adjustments", "taskId",
+        ])
+        XCTAssertEqual(written["taskId"] as? String, "document")
+    }
+
+    func test_copy_carriesTheTask() {
+        var settings = ScanSettings()
+        settings.taskId = "feeder"
+        var copy = settings
+        XCTAssertEqual(copy.task, .feeder)
+        copy.taskId = nil
+        XCTAssertEqual(settings.taskId, "feeder")
+    }
 }
 
 // MARK: - Store files
@@ -279,14 +344,43 @@ final class PresetStoreFileTests: XCTestCase {
             .sorted()
     }
 
-    func test_missingPresetsFile_seedsBuiltInsWithoutKeepingAnything() throws {
+    func test_missingPresetsFile_startsEmptyWithoutKeepingAnything() throws {
         let presets = PresetStore(directory: directory).load()
 
-        XCTAssertFalse(presets.isEmpty)
+        // New installs get no starter presets: the start screen's task cards replace them.
+        XCTAssertEqual(presets, [])
         XCTAssertTrue(FileManager.default.fileExists(atPath: presetsURL.path))
         XCTAssertEqual(try keptFiles(prefix: "presets.unreadable-"), [])
-        // The seeded file is what the next launch reads.
-        XCTAssertEqual(PresetStore(directory: directory).load(), presets)
+        // The written file is what the next launch reads.
+        XCTAssertEqual(PresetStore(directory: directory).load(), [])
+    }
+
+    func test_starterPresetsOfEarlierVersions_stayAndKeepWorking() throws {
+        // A presets.json as earlier versions seeded it (two of the five starters).
+        let json = """
+        [
+          {
+            "id" : "7B0F4C84-3C55-4F56-9D0F-0B4B5F1D2A01",
+            "name" : "Document \u{2192} PDF (300 dpi)",
+            "settings" : { "intent" : "document", "resolution" : 300, "colorMode" : "color", "format" : "pdf",
+                           "pdfSearchable" : true, "documentMultiPage" : true }
+          },
+          {
+            "id" : "7B0F4C84-3C55-4F56-9D0F-0B4B5F1D2A02",
+            "name" : "Old photo restoration (600 dpi, PNG)",
+            "settings" : { "intent" : "photo", "resolution" : 600, "colorMode" : "color", "format" : "png",
+                           "adjustments" : { "restoreFadedColors" : true, "autoEnhance" : true } }
+          }
+        ]
+        """
+        try Data(json.utf8).write(to: presetsURL)
+
+        let presets = PresetStore(directory: directory).load()
+
+        XCTAssertEqual(presets.map(\.name), ["Document \u{2192} PDF (300 dpi)", "Old photo restoration (600 dpi, PNG)"])
+        XCTAssertEqual(presets.map { TaskCatalog.infer($0.settings) }, [.document, .photoRestore])
+        XCTAssertTrue(presets.allSatisfy { $0.settings.taskId == nil })
+        XCTAssertEqual(try keptFiles(prefix: "presets.unreadable-"), [])
     }
 
     func test_unreadablePresetsFile_isKeptBeforeSeeding() throws {
@@ -295,14 +389,14 @@ final class PresetStoreFileTests: XCTestCase {
 
         let presets = PresetStore(directory: directory).load()
 
-        XCTAssertFalse(presets.isEmpty)
+        XCTAssertEqual(presets, [])
         let kept = try keptFiles(prefix: "presets.unreadable-")
         XCTAssertEqual(kept.count, 1)
         let name = try XCTUnwrap(kept.first)
         XCTAssertNotNil(name.range(of: #"^presets\.unreadable-\d{8}-\d{6}\.json$"#,
                                    options: .regularExpression), name)
         XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent(name)), garbage)
-        // Built-ins were written to a fresh presets.json; the next launch keeps nothing new.
+        // An empty list was written to a fresh presets.json; the next launch keeps nothing new.
         XCTAssertEqual(PresetStore(directory: directory).load(), presets)
         XCTAssertEqual(try keptFiles(prefix: "presets.unreadable-").count, 1)
     }
@@ -324,7 +418,7 @@ final class PresetStoreFileTests: XCTestCase {
 
             let presets = PresetStore(directory: directory).load()
 
-            XCTAssertFalse(presets.isEmpty, json)
+            XCTAssertEqual(presets, [], json)
             let kept = try keptFiles(prefix: "presets.unreadable-")
             XCTAssertEqual(kept.count, 1, json)
             let name = try XCTUnwrap(kept.first)
@@ -382,9 +476,7 @@ final class PresetStoreFileTests: XCTestCase {
         let original = try Data(contentsOf: presetsURL)
 
         try withoutReadPermission(presetsURL) {
-            let presets = PresetStore(directory: directory).load()
-            XCTAssertFalse(presets.isEmpty)
-            XCTAssertNotEqual(presets, saved)
+            XCTAssertEqual(PresetStore(directory: directory).load(), [])
         }
 
         XCTAssertEqual(try keptFiles(prefix: "presets.unreadable-"), [])

@@ -190,6 +190,7 @@ struct InspectorView: View {
                 namingTokenRow("{counter:3}", "Zero-padded number, e.g. 007")
                 namingTokenRow("{intent}", "\u{201C}Document\u{201D} or \u{201C}Photos\u{201D}")
                 namingTokenRow("{index}", "Photo number within a batch")
+                namingTokenRow("{task}", "The task, e.g. \u{201C}Document\u{201D} or \u{201C}Photo\u{201D}")
             }
         }
         .padding(14)
@@ -389,7 +390,7 @@ struct InspectorView: View {
                 Button {
                     state.performScan()
                 } label: {
-                    Label("Scan", systemImage: "scanner")
+                    Label(state.primaryActionLabel, systemImage: "scanner")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)

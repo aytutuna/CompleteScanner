@@ -572,6 +572,78 @@
         </Setter>
     </Style>
 
+    <!-- ===== Tasks (start screen and the scan screen's task banner) ===== -->
+    <!-- Rounded square behind a task's glyph. -->
+    <Style x:Key="TaskIconBadgeStyle" TargetType="Border">
+        <Setter Property="Width" Value="40" />
+        <Setter Property="Height" Value="40" />
+        <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}" />
+        <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+        <Setter Property="VerticalAlignment" Value="Top" />
+    </Style>
+    <Style x:Key="TaskIconGlyphStyle" TargetType="TextBlock" BasedOn="{StaticResource GlyphText}">
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+        <Style.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorDisabledBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+    <!-- Whole-card button of the start screen: a CardButtonStyle card of the grid's slot size. -->
+    <Style x:Key="TaskCardButtonStyle" TargetType="Button" BasedOn="{StaticResource CardButtonStyle}">
+        <Setter Property="Width" Value="200" />
+        <Setter Property="Height" Value="188" />
+        <Setter Property="Margin" Value="6" />
+        <Setter Property="Padding" Value="16,14,16,12" />
+        <!-- Stretched, so each card's footer sits on its bottom edge and the footers line up. -->
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource CardFocusVisualStyle}" />
+        <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+    </Style>
+    <!-- Small accent tag on a card ("Current"). -->
+    <Style x:Key="AccentTagStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+        <Setter Property="Padding" Value="6,1,6,2" />
+        <Setter Property="VerticalAlignment" Value="Top" />
+    </Style>
+    <Style x:Key="AccentTagText" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+        <Setter Property="FontFamily" Value="{StaticResource SmallFontFamily}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+        <Setter Property="TextWrapping" Value="NoWrap" />
+    </Style>
+    <!-- Heading of a group of cards. -->
+    <Style x:Key="SectionHeaderText" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongText}">
+        <Setter Property="TextWrapping" Value="NoWrap" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+    <!-- The task banner above the scan stage: the active task and what to do now. -->
+    <Style x:Key="TaskBannerStyle" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource CardCornerRadius}" />
+        <Setter Property="Padding" Value="12,10,8,10" />
+    </Style>
+    <!-- Groups the banner's content under one name for screen readers (a Border has no
+         automation peer). Draws nothing of its own. -->
+    <Style x:Key="TaskBannerGroupStyle" TargetType="GroupBox">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="GroupBox">
+                    <ContentPresenter />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- Thumbnail item in a horizontal strip: no chrome of its own, an accent ring when selected.
          The 3-DIP margin leaves room for the focus ring inside the strip's scroll viewport, which
          would otherwise clip it. While disabled the page stays fully visible (a dimmed page looks

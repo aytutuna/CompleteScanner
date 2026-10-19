@@ -88,6 +88,52 @@ public class NamingTemplateTests
     public void CombinedTemplate() =>
         Assert.Equal("Scan 2026-08-13 4", Render("Scan {date} {counter}", counter: 4));
 
+    // MARK: - NamingContext and {task}
+
+    private static string Render(string template, NamingContext context) =>
+        new NamingTemplate(template).BaseFilename(context);
+
+    [Fact]
+    public void TaskToken_IsTheTasksFileLabel()
+    {
+        var context = new NamingContext(1, FixedDate(), ScanIntent.Photo) { Task = ScanTask.PhotoRestore };
+        Assert.Equal("Restored photo 2026-08-13", Render("{task} {date}", context));
+        Assert.Equal("Document 3", Render("{task} {counter}",
+            new NamingContext(3, FixedDate(), ScanIntent.Document) { Task = ScanTask.Feeder }));
+        Assert.Equal("Scan", Render("{task}",
+            new NamingContext(1, FixedDate(), ScanIntent.Document) { Task = ScanTask.QuickScan }));
+    }
+
+    [Fact]
+    public void TaskToken_WithoutATask_IsTheIntent()
+    {
+        Assert.Equal("Photos 2026-08-13", Render("{task} {date}", new NamingContext(1, FixedDate(), ScanIntent.Photo)));
+        Assert.Equal("Document", Render("{task}", new NamingContext(1, FixedDate(), ScanIntent.Document)));
+        // The old overload has no task.
+        Assert.Equal("Photos", Render("{task}", intent: ScanIntent.Photo));
+    }
+
+    [Fact]
+    public void Context_GivesTheSameNamesAsTheOldOverload()
+    {
+        foreach (string template in new[] { "Scan {date} {counter}", "{counter:3} {intent} {time}", "Photo", "Photo {index}" })
+        {
+            foreach (int? index in new int?[] { null, 4 })
+            {
+                Assert.Equal(Render(template, counter: 12, intent: ScanIntent.Photo, index: index),
+                             Render(template, new NamingContext(12, FixedDate(), ScanIntent.Photo) { Index = index }));
+            }
+        }
+    }
+
+    [Fact]
+    public void Context_IndexAndTaskTogether()
+    {
+        var context = new NamingContext(7, FixedDate(), ScanIntent.Photo) { Index = 2, Task = ScanTask.Photos };
+        Assert.Equal("Photo 7 2", Render("{task} {counter}", context));
+        Assert.Equal("Photo 2 of batch 7", Render("{task} {index} of batch {counter}", context));
+    }
+
     [Fact]
     public void UniquePathSuffixes()
     {

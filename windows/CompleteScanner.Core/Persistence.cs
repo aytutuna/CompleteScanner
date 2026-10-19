@@ -26,11 +26,11 @@ public sealed class PresetStore
     private string PresetsPath => StoreFiles.PresetsPath(_directory);
 
     /// <summary>
-    /// Loads saved presets; on first run returns (and persists) built-in starter presets.
+    /// Loads saved presets; on first run returns (and persists) an empty list.
     /// A presets file that does not decode is moved aside as
-    /// presets.unreadable-&lt;yyyyMMdd-HHmmss&gt;.json before the built-ins are written.
+    /// presets.unreadable-&lt;yyyyMMdd-HHmmss&gt;.json before the empty list is written.
     /// A presets file that cannot be read at all (permissions, I/O) is left in place:
-    /// the built-ins are returned without saving and writes to it are refused for the
+    /// an empty list is returned without saving and writes to it are refused for the
     /// session, so the user's file is never overwritten.
     /// </summary>
     public List<Preset> Load()
@@ -59,67 +59,14 @@ public sealed class PresetStore
         StoreFiles.Write(presets, PresetsPath);
     }
 
-    // MARK: Built-in starter presets
+    // MARK: First run
 
-    private static List<Preset> BuiltInPresets()
-    {
-        var documentPdf = new ScanSettings
-        {
-            Intent = ScanIntent.Document,
-            Resolution = 300,
-            ColorMode = ColorMode.Color,
-            Format = OutputFormat.Pdf,
-            PdfSearchable = true,
-            DocumentMultiPage = true,
-        };
-
-        var compactText = new ScanSettings
-        {
-            Intent = ScanIntent.Document,
-            Resolution = 200,
-            ColorMode = ColorMode.Grayscale,
-            Format = OutputFormat.Pdf,
-            PdfSearchable = true,
-        };
-
-        var photosJpeg = new ScanSettings
-        {
-            Intent = ScanIntent.Photo,
-            Resolution = 600,
-            ColorMode = ColorMode.Color,
-            Format = OutputFormat.Jpeg,
-            PhotoAutoSplit = true,
-            PhotoAutoDeskew = true,
-        };
-
-        var photoRestoration = new ScanSettings
-        {
-            Intent = ScanIntent.Photo,
-            Resolution = 600,
-            ColorMode = ColorMode.Color,
-            Format = OutputFormat.Png,
-        };
-        photoRestoration.Adjustments.RestoreFadedColors = true;
-        photoRestoration.Adjustments.AutoEnhance = true;
-
-        var quickPreview = new ScanSettings
-        {
-            Intent = ScanIntent.Document,
-            Resolution = 150,
-            ColorMode = ColorMode.Color,
-            Format = OutputFormat.Jpeg,
-            DocumentMultiPage = false,
-        };
-
-        return
-        [
-            new Preset("Document → PDF (300 dpi)", documentPdf),
-            new Preset("Text document, compact (200 dpi, grayscale)", compactText),
-            new Preset("Photos → JPEG (600 dpi, auto-split)", photosJpeg),
-            new Preset("Old photo restoration (600 dpi, PNG)", photoRestoration),
-            new Preset("Quick preview scan (150 dpi)", quickPreview),
-        ];
-    }
+    /// <summary>
+    /// What a first run starts with: no presets. The start screen's task cards replaced the
+    /// five starter presets earlier versions wrote here; files that already hold them keep
+    /// them, like any other saved preset.
+    /// </summary>
+    private static List<Preset> BuiltInPresets() => [];
 }
 
 public static class SettingsStore

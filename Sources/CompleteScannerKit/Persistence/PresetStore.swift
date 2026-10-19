@@ -17,11 +17,11 @@ public final class PresetStore {
 
     private var presetsURL: URL { StoreFiles.presetsURL(in: directory) }
 
-    /// Loads saved presets; on first run returns (and persists) built-in starter presets.
+    /// Loads saved presets; on first run returns (and persists) an empty list.
     /// A presets file that does not decode is moved aside as
-    /// `presets.unreadable-<yyyyMMdd-HHmmss>.json` before the built-ins are written.
+    /// `presets.unreadable-<yyyyMMdd-HHmmss>.json` before the empty list is written.
     /// A presets file that cannot be read at all (permissions, I/O) is left in place:
-    /// the built-ins are returned without saving and writes to it are refused for the
+    /// an empty list is returned without saving and writes to it are refused for the
     /// session, so the user's file is never overwritten.
     public func load() -> [Preset] {
         switch StoreFiles.read([Preset].self, from: presetsURL) {
@@ -44,54 +44,13 @@ public final class PresetStore {
         StoreFiles.write(presets, to: presetsURL)
     }
 
-    // MARK: Built-in starter presets
+    // MARK: First run
 
+    /// What a first run starts with: no presets. The start screen's task cards replaced the
+    /// five starter presets earlier versions wrote here; files that already hold them keep
+    /// them, like any other saved preset.
     private static func builtInPresets() -> [Preset] {
-        var documentPDF = ScanSettings()
-        documentPDF.intent = .document
-        documentPDF.resolution = 300
-        documentPDF.colorMode = .color
-        documentPDF.format = .pdf
-        documentPDF.pdfSearchable = true
-        documentPDF.documentMultiPage = true
-
-        var compactText = ScanSettings()
-        compactText.intent = .document
-        compactText.resolution = 200
-        compactText.colorMode = .grayscale
-        compactText.format = .pdf
-        compactText.pdfSearchable = true
-
-        var photosJPEG = ScanSettings()
-        photosJPEG.intent = .photo
-        photosJPEG.resolution = 600
-        photosJPEG.colorMode = .color
-        photosJPEG.format = .jpeg
-        photosJPEG.photoAutoSplit = true
-        photosJPEG.photoAutoDeskew = true
-
-        var photoRestoration = ScanSettings()
-        photoRestoration.intent = .photo
-        photoRestoration.resolution = 600
-        photoRestoration.colorMode = .color
-        photoRestoration.format = .png
-        photoRestoration.adjustments.restoreFadedColors = true
-        photoRestoration.adjustments.autoEnhance = true
-
-        var quickPreview = ScanSettings()
-        quickPreview.intent = .document
-        quickPreview.resolution = 150
-        quickPreview.colorMode = .color
-        quickPreview.format = .jpeg
-        quickPreview.documentMultiPage = false
-
-        return [
-            Preset(name: "Document → PDF (300 dpi)", settings: documentPDF),
-            Preset(name: "Text document, compact (200 dpi, grayscale)", settings: compactText),
-            Preset(name: "Photos → JPEG (600 dpi, auto-split)", settings: photosJPEG),
-            Preset(name: "Old photo restoration (600 dpi, PNG)", settings: photoRestoration),
-            Preset(name: "Quick preview scan (150 dpi)", settings: quickPreview),
-        ]
+        []
     }
 }
 

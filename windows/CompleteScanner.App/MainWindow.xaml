@@ -210,6 +210,11 @@
 
             <TabControl x:Name="MainTabs" Style="{StaticResource PivotTabControlStyle}"
                         SelectionChanged="MainTabs_SelectionChanged">
+                <!-- Start: what are you scanning? Task cards and the user's presets. -->
+                <TabItem Header="Start" x:Name="StartTab" local:Icon.Glyph="&#xE80F;">
+                    <local:TaskStartView x:Name="StartView" />
+                </TabItem>
+
                 <!-- Scan: preview canvas + page strip, with the inspector on the right -->
                 <TabItem Header="Scan" x:Name="ScanTab" local:Icon.Glyph="&#xE8FE;">
                     <Grid>
@@ -220,12 +225,43 @@
 
                         <Grid Grid.Column="0">
                             <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
+                            <!-- The active task: what to do now. Change task goes back to the start
+                                 screen; the close button leaves the task, keeping its settings. -->
+                            <Border Grid.Row="0" x:Name="TaskBanner" Style="{StaticResource TaskBannerStyle}"
+                                    Margin="12,12,12,0" Visibility="Collapsed" SizeChanged="TaskBanner_SizeChanged">
+                                <GroupBox x:Name="TaskBannerGroup" Style="{StaticResource TaskBannerGroupStyle}"
+                                          AutomationProperties.LiveSetting="Polite">
+                                    <DockPanel>
+                                        <Button DockPanel.Dock="Right" x:Name="ExitTaskButton" Style="{StaticResource SmallIconButtonStyle}"
+                                                Content="&#xE711;" VerticalAlignment="Center" Margin="2,0,0,0"
+                                                ToolTip="Leave the task. Its settings stay, without the guidance."
+                                                AutomationProperties.Name="Leave the task"
+                                                Click="ExitTask_Click" />
+                                        <Button DockPanel.Dock="Right" x:Name="ChangeTaskButton" Style="{StaticResource SubtleButtonStyle}"
+                                                local:Icon.Glyph="&#xE80F;" Content="Change task" VerticalAlignment="Center"
+                                                Margin="8,0,0,0" ToolTip="Pick another task on the start screen"
+                                                Click="ChangeTask_Click" />
+                                        <Border DockPanel.Dock="Left" x:Name="TaskBannerBadge" Style="{StaticResource TaskIconBadgeStyle}"
+                                                Width="32" Height="32" VerticalAlignment="Center" CornerRadius="6">
+                                            <TextBlock x:Name="TaskBannerGlyph" Style="{StaticResource TaskIconGlyphStyle}" FontSize="16" />
+                                        </Border>
+                                        <StackPanel x:Name="TaskBannerTexts" VerticalAlignment="Center" Margin="12,0,0,0">
+                                            <TextBlock x:Name="TaskBannerTitle" Style="{StaticResource BodyStrongText}"
+                                                       TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock x:Name="TaskBannerPrompt" Style="{StaticResource SecondaryBodyText}"
+                                                       TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                </GroupBox>
+                            </Border>
+
                             <!-- Stage: the page sits on a neutral surface with a soft shadow. -->
-                            <Border Grid.Row="0" Style="{StaticResource StageStyle}" Margin="12,12,12,0">
+                            <Border Grid.Row="1" Style="{StaticResource StageStyle}" Margin="12,12,12,0">
                                 <Grid x:Name="CanvasHost"
                                       MouseLeftButtonDown="Canvas_MouseDown"
                                       MouseMove="Canvas_MouseMove"
@@ -259,7 +295,7 @@
                             </Border>
 
                             <!-- Page strip -->
-                            <Border Grid.Row="1" x:Name="PageStrip" Background="Transparent" Visibility="Collapsed"
+                            <Border Grid.Row="2" x:Name="PageStrip" Background="Transparent" Visibility="Collapsed"
                                     Padding="12,8,12,8">
                                 <StackPanel>
                                     <TextBlock x:Name="PageStripLabel" Text="0 pages" Style="{StaticResource CaptionText}"
@@ -504,8 +540,8 @@
                                             <TextBlock Text="File name" Style="{StaticResource FieldLabelText}" />
                                             <TextBox x:Name="TemplateBox" AutomationProperties.Name="File name"
                                                      LostFocus="Setting_Changed" />
-                                            <TextBlock Text="Tokens: {date} {time} {counter} {intent}"
-                                                       Style="{StaticResource CaptionText}" Margin="0,4,0,0" />
+                                            <TextBlock Text="Tokens: {date} {time} {counter} {intent} {task}"
+                                                       Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0" />
                                         </StackPanel>
                                     </Expander>
                                 </StackPanel>

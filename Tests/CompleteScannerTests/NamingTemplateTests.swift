@@ -85,6 +85,43 @@ final class NamingTemplateTests: XCTestCase {
         XCTAssertEqual(render("Scan {date} {counter}", counter: 4), "Scan 2026-08-13 4")
     }
 
+    // MARK: NamingContext and {task}
+
+    private func renderContext(_ template: String, _ context: NamingContext) -> String {
+        NamingTemplate(template).baseFilename(context)
+    }
+
+    func test_taskToken_isTheTasksFileLabel() {
+        XCTAssertEqual(renderContext("{task} {date}", NamingContext(counter: 1, date: fixedDate(), intent: .photo, task: .photoRestore)),
+                       "Restored photo 2026-08-13")
+        XCTAssertEqual(renderContext("{task} {counter}", NamingContext(counter: 3, date: fixedDate(), intent: .document, task: .feeder)),
+                       "Document 3")
+        XCTAssertEqual(renderContext("{task}", NamingContext(counter: 1, date: fixedDate(), intent: .document, task: .quickScan)),
+                       "Scan")
+    }
+
+    func test_taskToken_withoutATask_isTheIntent() {
+        XCTAssertEqual(renderContext("{task} {date}", NamingContext(counter: 1, date: fixedDate(), intent: .photo)), "Photos 2026-08-13")
+        XCTAssertEqual(renderContext("{task}", NamingContext(counter: 1, date: fixedDate(), intent: .document)), "Document")
+        // The old overload has no task.
+        XCTAssertEqual(render("{task}", intent: .photo), "Photos")
+    }
+
+    func test_context_givesTheSameNamesAsTheOldOverload() {
+        for template in ["Scan {date} {counter}", "{counter:3} {intent} {time}", "Photo", "Photo {index}"] {
+            for index in [nil, 4] as [Int?] {
+                XCTAssertEqual(render(template, counter: 12, intent: .photo, index: index),
+                               renderContext(template, NamingContext(counter: 12, date: fixedDate(), intent: .photo, index: index)))
+            }
+        }
+    }
+
+    func test_context_indexAndTaskTogether() {
+        let context = NamingContext(counter: 7, date: fixedDate(), intent: .photo, index: 2, task: .photos)
+        XCTAssertEqual(renderContext("{task} {counter}", context), "Photo 7 2")
+        XCTAssertEqual(renderContext("{task} {index} of batch {counter}", context), "Photo 2 of batch 7")
+    }
+
     func test_uniqueURLSuffixes() throws {
         let fm = FileManager.default
         let dir = fm.temporaryDirectory

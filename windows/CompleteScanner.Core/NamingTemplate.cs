@@ -23,10 +23,22 @@ public sealed partial class NamingTemplate
     /// {counter:N} zero-padded), {intent} ("Document"/"Photos"), {index} (photo number in a
     /// batch, empty when null). Unknown tokens pass through; result sanitized for the
     /// filesystem (the Windows port strips the full invalid set, not just "/" and ":").
+    /// Same as <see cref="BaseFilename(NamingContext)"/> without a task.
     /// </summary>
-    public string BaseFilename(int counter, DateTime date, ScanIntent intent, int? index)
+    public string BaseFilename(int counter, DateTime date, ScanIntent intent, int? index) =>
+        BaseFilename(new NamingContext(counter, date, intent) { Index = index });
+
+    /// <summary>
+    /// The file name (without extension) for <paramref name="context"/>: the tokens of
+    /// <see cref="BaseFilename(int, DateTime, ScanIntent, int?)"/>, plus {task} (the task's
+    /// <see cref="TaskDefinition.FileLabel"/>, or the {intent} text when there is no task).
+    /// </summary>
+    public string BaseFilename(NamingContext context)
     {
         string result = Template;
+        int counter = context.Counter;
+        var date = context.Date;
+        int? index = context.Index;
 
         // {counter:N} — zero-padded to N digits.
         result = PaddedCounterRegex().Replace(result, match =>
@@ -45,8 +57,9 @@ public sealed partial class NamingTemplate
             ("{month}", date.ToString("MM", CultureInfo.InvariantCulture)),
             ("{day}", date.ToString("dd", CultureInfo.InvariantCulture)),
             ("{counter}", counter.ToString(CultureInfo.InvariantCulture)),
-            ("{intent}", intent.Label()),
+            ("{intent}", context.Intent.Label()),
             ("{index}", index?.ToString(CultureInfo.InvariantCulture) ?? ""),
+            ("{task}", context.Task is { } task ? TaskCatalog.Definition(task).FileLabel : context.Intent.Label()),
         };
         foreach (var (token, value) in replacements)
         {
@@ -134,4 +147,21 @@ public sealed partial class NamingTemplate
         }
         return result.Length == 0 ? "Scan" : result;
     }
+}
+
+/// <summary>
+/// Everything a file name can be built from (see <see cref="NamingTemplate.BaseFilename(NamingContext)"/>).
+/// Later naming tokens add their values here as further optional properties, so the
+/// signature of <see cref="NamingTemplate.BaseFilename(NamingContext)"/> stays the same.
+/// </summary>
+/// <param name="Counter">The running number for {counter}.</param>
+/// <param name="Date">The scan date and time for {date}, {time}, {year}, {month} and {day}.</param>
+/// <param name="Intent">The scan mode for {intent}.</param>
+public sealed record NamingContext(int Counter, DateTime Date, ScanIntent Intent)
+{
+    /// <summary>The file's number within a batch for {index}; appended when the template has no {index}.</summary>
+    public int? Index { get; init; }
+
+    /// <summary>The task for {task}; null gives the {intent} text.</summary>
+    public ScanTask? Task { get; init; }
 }

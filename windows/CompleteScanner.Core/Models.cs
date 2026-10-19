@@ -170,6 +170,19 @@ public sealed class ScanSettings
 
     public AdjustmentSettings Adjustments { get; set; } = new();
 
+    /// <summary>
+    /// The task these settings were set up for (<see cref="ScanTasks.RawValue"/>), or null for
+    /// settings chosen by hand. Kept as text: a task this version does not know (written by a
+    /// newer one) reads as no <see cref="Task"/> but is written back unchanged. Left out of the
+    /// file when null.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? TaskId { get; set; }
+
+    /// <summary>The task of <see cref="TaskId"/>, when this version knows it.</summary>
+    [JsonIgnore]
+    public ScanTask? Task => ScanTasks.TryParse(TaskId);
+
     public static string DefaultDestinationPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "CompleteScanner");
 

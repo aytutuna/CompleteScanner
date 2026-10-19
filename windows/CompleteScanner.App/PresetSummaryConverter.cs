@@ -8,9 +8,7 @@ namespace CompleteScanner.App;
 public sealed class PresetSummaryConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value is Preset { Settings: var s }
-            ? $"{s.Resolution} dpi · {s.ColorMode.Label()} · {s.Format.Label()}"
-            : "";
+        value is Preset { Settings: var s } ? TaskCatalog.Summary(s) : "";
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
