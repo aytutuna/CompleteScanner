@@ -252,7 +252,7 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
 .need ul.ticks li::before{content:"";position:absolute;left:2px;top:.95em;width:9px;height:9px;border-left:1px solid var(--mark);border-top:1px solid var(--mark)}
 .stack{display:grid;grid-template-columns:minmax(0,1fr);gap:clamp(40px,5vw,56px)}
 .crop picture{display:block;overflow:hidden;border-radius:9px;box-shadow:var(--shot-shadow);background:var(--well)}
-.crop--scans picture{aspect-ratio:1280/730}
+.crop--scans picture{aspect-ratio:1280/470}
 .crop--saved picture{aspect-ratio:1280/620}
 .frame.crop img{width:125%;max-width:none;margin-left:-19.53125%;margin-top:-2.34375%;border-radius:0;box-shadow:none;background:none}
 .tag-label{position:relative;max-width:360px;margin-top:8px;padding:22px 22px 18px 30px;background:var(--sheet);border:1px solid var(--rule-strong);border-radius:4px 14px 14px 4px;box-shadow:0 10px 24px -16px rgba(0,0,0,.4);transform:rotate(-1.4deg)}
@@ -346,6 +346,16 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
 .limits li::before{content:"";position:absolute;left:0;top:1.05em;width:10px;height:1px;background:var(--mark)}
 @media (max-width:860px){.get{grid-template-columns:minmax(0,1fr)}}
 
+/* image credits */
+.credits{list-style:none;margin:0;padding:0;border-bottom:1px solid var(--rule)}
+.credits li{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,4fr) minmax(0,3fr);gap:4px 28px;padding:14px 0;border-top:1px solid var(--rule);font-size:var(--s-n1);line-height:1.5;color:var(--ink-2)}
+.credits .ct a{font-weight:600}
+.credits .ct span{display:block;color:var(--ink-3)}
+.credits .cr{font:500 .8rem/1.5 var(--f-mono);color:var(--ink-2)}
+.credits .cr span{display:block;color:var(--ink-3)}
+.credits-intro{max-width:62em;margin:0 0 28px;font-size:var(--s-n1);color:var(--ink-2)}
+@media (max-width:860px){.credits li{grid-template-columns:minmax(0,1fr)}}
+
 /* footer */
 .site-foot{border-top:1px solid var(--rule);padding-block:40px 48px;font-size:var(--s-n1);color:var(--ink-3)}
 .foot-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:16px 40px;align-items:center}
@@ -362,8 +372,9 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
 <meta property="og:type" content="website">
 <meta property="og:title" content="CompleteScanner &mdash; one scanning app for documents and photos">
 <meta property="og:description" content="A native scanning app for macOS and Windows. Paperwork into searchable PDFs, a pile of photos into separate, straightened files.">
-<meta property="og:image" content="https://raw.githubusercontent.com/aytutuna/CompleteScanner/main/site/assets/photo-review-light.png">
-<meta property="og:image:alt" content="The CompleteScanner window on Windows, showing three detected photos ready for review.">
+<meta property="og:image" content="https://raw.githubusercontent.com/aytutuna/CompleteScanner/main/site/assets/og-image.jpg">
+<meta property="og:image:alt" content="The CompleteScanner window on Windows, showing a preview of three old prints lying tilted on the scanner glass.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg fill='none' stroke='%23B5155A' stroke-width='2.4'%3E%3Ccircle cx='16' cy='16' r='8.5'/%3E%3Cpath d='M16 1.5v29M1.5 16h29'/%3E%3C/g%3E%3Cpath d='M16 7.5a8.5 8.5 0 0 1 0 17z' fill='%23B5155A'/%3E%3C/svg%3E">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -425,11 +436,11 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
     <figure class="shot">
       <div class="frame sweep">
         <picture data-shot>
-          <source media="(prefers-color-scheme: dark)" srcset="assets/photo-review-dark.png">
-          <img src="assets/photo-review-light.png" width="1600" height="1002" fetchpriority="high" alt="The CompleteScanner window on Windows 11 in Photos mode. A dialog titled Detected 3 photos shows three straightened photos, each with a Keep checkbox, over the scan of three tilted photos. Buttons read Discard and Save 3 Photos.">
+          <source media="(prefers-color-scheme: dark)" srcset="assets/scan-empty-dark.webp 1600w, assets/scan-empty-dark-2x.webp 2142w" sizes="(min-width: 1240px) 1144px, 92vw">
+          <img src="assets/scan-empty-light.webp" srcset="assets/scan-empty-light.webp 1600w, assets/scan-empty-light-2x.webp 2142w" sizes="(min-width: 1240px) 1144px, 92vw" width="1600" height="1002" fetchpriority="high" alt="The CompleteScanner window on Windows 11 in Photos mode after Preview. The canvas shows the whole scanner bed with three old prints lying at different angles: a woman seated in an armchair, a house among trees and a log house. The sidebar lists Flatbed scanner, Sample scans, and the Scan button is at the bottom right.">
         </picture>
       </div>
-      <figcaption><b>Windows 11</b>Photos mode with the built-in Demo Scanner: three tilted prints on the glass, found and straightened for review.</figcaption>
+      <figcaption><b>Windows 11</b>Photos mode: three tilted prints on the glass, previewed and ready to scan. The prints are public-domain scans from a museum collection, loaded into the app in place of a scanner; see the <a href="#credits">image credits</a>.</figcaption>
     </figure>
     <ul class="facts-row" aria-label="At a glance">
       <li>macOS 14 Sonoma or later</li>
@@ -443,17 +454,16 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
   <div class="wrap">
     <header class="sec-head">
       <p class="kicker"><svg aria-hidden="true"><use href="#reg"/></svg>See it work</p>
-      <h2 id="demo-title">Four photos on the glass. Four files out.</h2>
+      <h2 id="demo-title">Three prints on the glass. Three files out.</h2>
       <p class="lede">Lay several prints on the scanner, crooked is fine, and press Scan once. The app finds each print, measures how far it is tilted, straightens and crops it, and lets you check the results before anything is saved.</p>
     </header>
     <div class="demo">
       <div class="demo-stage">
-        <canvas id="bed" role="img" aria-label="A scanner bed with four photos lying at different angles. Not scanned yet.">A scanner bed with four tilted photos.</canvas>
+        <canvas id="bed" role="img" aria-label="A scanner bed with three old prints lying at different angles: a house among trees, a woman seated in an armchair and a log house. Not scanned yet.">A scanner bed with three tilted old prints: a house among trees, a woman seated in an armchair and a log house.</canvas>
       </div>
       <div class="demo-side">
         <div class="demo-controls">
           <button class="btn btn-primary" id="scanBtn" type="button"><svg aria-hidden="true"><use href="#i-scan"/></svg><span>Scan</span></button>
-          <button class="btn btn-ghost" id="shuffleBtn" type="button">New photos</button>
         </div>
         <ol class="steps" aria-label="Steps of a photo scan; select one to see it">
           <li><button type="button" data-stage="scan"><span class="step-n">1</span><span><strong>Scan the bed</strong>One pass of the light bar captures the whole glass.</span></button></li>
@@ -461,16 +471,16 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
           <li><button type="button" data-stage="straighten"><span class="step-n">3</span><span><strong>Straighten and crop</strong>Each print is turned upright and cut out on its own.</span></button></li>
           <li><button type="button" data-stage="review"><span class="step-n">4</span><span><strong>Review, then save</strong>Untick anything that isn't a photo, then save them all as separate files.</span></button></li>
         </ol>
-        <p class="demo-status" id="demoStatus" role="status" aria-live="polite">Four prints are lying on the glass. Press Scan.</p>
+        <p class="demo-status" id="demoStatus" role="status" aria-live="polite">Three prints are lying on the glass. Press Scan.</p>
         <fieldset class="keep" id="keepSet" disabled>
           <legend>Keep</legend>
           <div class="keep-list" id="keepList"></div>
-          <button class="btn btn-primary btn-small" id="saveBtn" type="button">Save 4 Photos</button>
+          <button class="btn btn-primary btn-small" id="saveBtn" type="button">Save 3 Photos</button>
         </fieldset>
         <div class="save-out" id="saveOut" aria-live="polite"></div>
       </div>
     </div>
-    <p class="note">Drawn live in your browser to show the steps. In the app they run on the real scan, and both Auto-split photos and Auto-straighten can be switched off. In the review you can also rotate a photo or fix its crop by hand.</p>
+    <p class="note">The prints are public-domain scans from a museum collection (<a href="#credits">image credits</a>), each cut from its museum backdrop and laid on a simulated scanner bed. The outlines and angles are the ones the Windows app's photo detection found on this image; your browser animates the steps. In the app, Auto-split photos and Auto-straighten can both be switched off, and in the review you can rotate a photo or fix its crop by hand.</p>
   </div>
 </section>
 
@@ -479,11 +489,11 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
     <header class="sec-head">
       <p class="kicker"><svg aria-hidden="true"><use href="#reg"/></svg>Image adjustments</p>
       <h2 id="adjust-title">Fix the scan before you save it.</h2>
-      <p class="lede">Brightness, contrast, saturation and sharpness sit on centered sliders: 0 changes nothing, &minus;100 and +100 are the far ends. Restore faded colors brings washed-out prints back, and Descreen smooths the dot pattern of anything printed in a magazine or book. Each sample starts with the switches that suit it; drag across the picture to compare.</p>
+      <p class="lede">Brightness, contrast, saturation and sharpness sit on centered sliders: 0 changes nothing, &minus;100 and +100 are the far ends. Restore faded colors brings washed-out prints back, and Descreen smooths the dot pattern of anything printed in a magazine or book. Each sample starts with the settings that suit it; drag across the picture to compare.</p>
     </header>
     <div class="adj">
       <div class="adj-stage">
-        <canvas id="adjCanvas" width="720" height="480" role="img" aria-label="Before and after comparison of a sample scan.">A sample scan, original on the left and adjusted on the right.</canvas>
+        <canvas id="adjCanvas" width="720" height="480" role="img" aria-label="Before and after comparison of a sample scan.">A real sample scan, original on the left and adjusted on the right.</canvas>
         <div class="split-row">
           <label for="split">Original</label>
           <input id="split" class="plain" type="range" min="0" max="100" value="50" aria-label="Divider position between original and adjusted">
@@ -495,8 +505,7 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
         <p class="seg-label" id="sample-label">Sample</p>
         <div class="seg" role="radiogroup" aria-labelledby="sample-label">
           <label><input type="radio" name="sample" value="faded" checked><span>Faded photo</span></label>
-          <label><input type="radio" name="sample" value="print"><span>Magazine</span></label>
-          <label><input type="radio" name="sample" value="letter"><span>Letter</span></label>
+          <label><input type="radio" name="sample" value="letter"><span>Old letter</span></label>
         </div>
         <div class="sl"><label for="sBright">Brightness</label><input id="sBright" data-key="bright" type="range" min="-100" max="100" step="1" value="0"><output for="sBright">0</output></div>
         <div class="sl"><label for="sContrast">Contrast</label><input id="sContrast" data-key="contrast" type="range" min="-100" max="100" step="1" value="0"><output for="sContrast">0</output></div>
@@ -504,7 +513,7 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
         <div class="sl"><label for="sSharp">Sharpness</label><input id="sSharp" data-key="sharp" type="range" min="-100" max="100" step="1" value="0"><output for="sSharp">0</output></div>
         <button class="btn btn-ghost btn-small" id="resetAdj" type="button">Reset sliders</button>
         <hr>
-        <label class="sw" for="tAuto">Auto enhance<input id="tAuto" data-key="auto" type="checkbox" role="switch" checked></label>
+        <label class="sw" for="tAuto">Auto enhance<input id="tAuto" data-key="auto" type="checkbox" role="switch"></label>
         <label class="sw" for="tRestore">Restore faded colors<input id="tRestore" data-key="restore" type="checkbox" role="switch" checked></label>
         <label class="sw" for="tDescreen">Descreen (printed material)<input id="tDescreen" data-key="descreen" type="checkbox" role="switch"></label>
         <hr>
@@ -516,7 +525,7 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
         </div>
       </div>
     </div>
-    <p class="note">The demo follows the Windows app's image steps in order: auto enhance, brightness (exposure plus a small lift), contrast around mid-gray on an exponential scale (&minus;100 is a quarter, +100 is four times), saturation, sharpness (below 0 it softens), descreen, restore faded colors, then the color mode. Black &amp; white uses the Windows threshold of 50%; the Mac app has a slider for it. Mac results come from Apple's Core Image and look close, not identical.</p>
+    <p class="note">The demo follows the Windows app's image steps in order: auto enhance, brightness (exposure plus a small lift), contrast around mid-gray on an exponential scale (&minus;100 is a quarter, +100 is four times), saturation, sharpness (below 0 it softens), descreen, restore faded colors, then the color mode. Black &amp; white uses the Windows threshold of 50%; the Mac app has a slider for it. Mac results come from Apple's Core Image and look close, not identical. The samples are real public-domain scans: a faded cabinet card from around 1885 and a typed letter from 1903 (<a href="#credits">image credits</a>). Neither switch corrects a color cast: on a print that has turned pink or orange, Auto enhance and Restore faded colors make the cast stronger, and lowering Saturation tones it down.</p>
   </div>
 </section>
 
@@ -526,6 +535,7 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
       <p class="kicker"><svg aria-hidden="true"><use href="#reg"/></svg>What it does</p>
       <h2 id="needs-title">Start from what you're holding.</h2>
       <p class="lede">A stack of bills, a shoebox of prints, one faded wedding photo, a newspaper clipping. Each has its own way through the app. Everything below works on both systems unless it's marked otherwise.</p>
+      <p class="fine">The screenshots show the Windows app with public-domain scans from museum and archive collections loaded in place of a scanner's output (<a href="#credits">image credits</a>). The &ldquo;Flatbed scanner, Sample scans&rdquo; entry in the sidebar is the stand-in that hands those scans to the app, not a physical scanner, and the photo layouts are separate print scans laid on a simulated scanner bed.</p>
     </header>
     <div class="needs">
       <nav class="needs-index" aria-label="Scanning jobs">
@@ -559,11 +569,11 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
           <figure class="shot">
             <div class="frame">
               <picture data-shot>
-                <source media="(prefers-color-scheme: dark)" srcset="assets/scan-documents-dark.png">
-                <img src="assets/scan-documents-light.png" width="1600" height="1002" loading="lazy" decoding="async" alt="Document mode in CompleteScanner on Windows. A demo document page, drawn as lines of placeholder text, fills the canvas, three page thumbnails sit in the queue below it, and the inspector on the right has a Save PDF (3 pages) button.">
+                <source media="(prefers-color-scheme: dark)" srcset="assets/scan-documents-dark.webp 1600w, assets/scan-documents-dark-2x.webp 2142w" sizes="(min-width: 1240px) 906px, 92vw">
+                <img src="assets/scan-documents-light.webp" srcset="assets/scan-documents-light.webp 1600w, assets/scan-documents-light-2x.webp 2142w" sizes="(min-width: 1240px) 906px, 92vw" width="1600" height="1002" loading="lazy" decoding="async" alt="Document mode in CompleteScanner on Windows. A typed letter from 1903 on American National Red Cross letterhead fills the canvas. Below it, under 2 pages in queue, are thumbnails of a printed restaurant menu from 1900 and of the letter, and the inspector on the right has a Save PDF (2 pages) button.">
               </picture>
             </div>
-            <figcaption><b>Windows</b>Three pages queued, one PDF to save.</figcaption>
+            <figcaption><b>Windows</b>Two pages queued, one PDF to save. Public-domain scans loaded into the app, see the <a href="#credits">credits</a>.</figcaption>
           </figure>
         </article>
 
@@ -583,15 +593,24 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
               </ul>
             </div>
           </div>
-          <div>
+          <div class="stack">
             <figure class="shot">
               <div class="frame">
                 <picture data-shot>
-                  <source media="(prefers-color-scheme: dark)" srcset="assets/crop-editor-dark.png">
-                  <img src="assets/crop-editor-light.png" width="1600" height="1052" loading="lazy" decoding="async" alt="The Adjust crop window. A tilted purple photo has a blue crop frame with corner handles; badges at the top read 1050 by 750 px and 17.0 degrees.">
+                  <source media="(prefers-color-scheme: dark)" srcset="assets/photo-review-dark.webp 1600w, assets/photo-review-dark-2x.webp 2142w" sizes="(min-width: 1240px) 906px, 92vw">
+                  <img src="assets/photo-review-light.webp" srcset="assets/photo-review-light.webp 1600w, assets/photo-review-light-2x.webp 2142w" sizes="(min-width: 1240px) 906px, 92vw" width="1600" height="1002" loading="lazy" decoding="async" alt="CompleteScanner in Photos mode after Scan. A dialog titled Detected 3 photos shows three straightened old prints, a house among trees, a woman seated in an armchair and a log house, each with a Keep checkbox, over the scan of the three tilted prints. Buttons read Discard and Save 3 Photos.">
                 </picture>
               </div>
-              <figcaption><b>Windows</b>The crop editor on a print tilted 17&deg;. The review grid is the picture at the <a href="#top">top of the page</a>.</figcaption>
+              <figcaption><b>Windows</b>The three prints from the <a href="#top">top of the page</a>, found and straightened for review. Public-domain scans loaded into the app, see the <a href="#credits">credits</a>.</figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="frame">
+                <picture data-shot>
+                  <source media="(prefers-color-scheme: dark)" srcset="assets/crop-editor-dark.webp 1600w, assets/crop-editor-dark-2x.webp 1902w" sizes="(min-width: 1240px) 906px, 92vw">
+                  <img src="assets/crop-editor-light.webp" srcset="assets/crop-editor-light.webp 1600w, assets/crop-editor-light-2x.webp 1902w" sizes="(min-width: 1240px) 906px, 92vw" width="1600" height="1052" loading="lazy" decoding="async" alt="The Adjust crop window over a scan of three old prints. The tilted print of a log house has a blue crop frame with corner handles and a grid; badges at the top read 1601 by 1054 px and 11.1 degrees.">
+                </picture>
+              </div>
+              <figcaption><b>Windows</b>The crop editor on a print tilted 11.1&deg;. Public-domain scans loaded into the app.</figcaption>
             </figure>
           </div>
         </article>
@@ -640,11 +659,11 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
           <figure class="shot">
             <div class="frame">
               <picture data-shot>
-                <source media="(prefers-color-scheme: dark)" srcset="assets/scan-empty-dark.png">
-                <img src="assets/scan-empty-light.png" width="1600" height="1002" loading="lazy" decoding="async" alt="The Scan tab before the first scan. The canvas reads Ready to scan: place a document or photos on the glass, then press Preview for a quick look or Scan to capture; after a preview, drag over it to scan just that area.">
+                <source media="(prefers-color-scheme: dark)" srcset="assets/scan-area-dark.webp 1600w, assets/scan-area-dark-2x.webp 2142w" sizes="(min-width: 1240px) 906px, 92vw">
+                <img src="assets/scan-area-light.webp" srcset="assets/scan-area-light.webp 1600w, assets/scan-area-light-2x.webp 2142w" sizes="(min-width: 1240px) 906px, 92vw" width="1600" height="1002" loading="lazy" decoding="async" alt="The Scan tab after Preview. The canvas shows the whole scanner bed with three old prints lying at different angles, and a dashed selection box is drawn around the print of a house among trees at the top right. The status bar reads: Overview ready, drag on the preview to select an area, then Scan.">
               </picture>
             </div>
-            <figcaption><b>Windows</b>Ready to scan, with Preview and Scan at the bottom right.</figcaption>
+            <figcaption><b>Windows</b>A box dragged over one print on the preview; Scan now captures only that area. Public-domain scans loaded into the app, see the <a href="#credits">credits</a>.</figcaption>
           </figure>
         </article>
 
@@ -691,20 +710,20 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
             <figure class="shot">
               <div class="frame crop crop--scans">
                 <picture data-shot>
-                  <source media="(prefers-color-scheme: dark)" srcset="assets/scans-history-dark.png">
-                  <img src="assets/scans-history-light.png" width="1600" height="1002" loading="lazy" decoding="async" alt="The Scans tab headed This session: 7 scans, newest first, shown as cards for six documents and one photo scan, each with 300 dpi and its size in pixels.">
+                  <source media="(prefers-color-scheme: dark)" srcset="assets/scans-history-dark.webp 1600w, assets/scans-history-dark-2x.webp 2142w" sizes="(min-width: 1240px) 1133px, 115vw">
+                  <img src="assets/scans-history-light.webp" srcset="assets/scans-history-light.webp 1600w, assets/scans-history-light-2x.webp 2142w" sizes="(min-width: 1240px) 1133px, 115vw" width="1600" height="1002" loading="lazy" decoding="async" alt="The Scans tab headed This session: 5 scans, newest first, shown as cards for three photo scans and two document scans, each with 300 dpi and its size in pixels.">
                 </picture>
               </div>
-              <figcaption><b>Scans</b>This session, newest first. Cropped to the tab's content.</figcaption>
+              <figcaption><b>Scans</b>This session, newest first. Cropped to the tab's content. Public-domain scans loaded into the app.</figcaption>
             </figure>
             <figure class="shot">
               <div class="frame crop crop--saved">
                 <picture data-shot>
-                  <source media="(prefers-color-scheme: dark)" srcset="assets/saved-files-dark.png">
-                  <img src="assets/saved-files-light.png" width="1600" height="1002" loading="lazy" decoding="async" alt="The Saved tab for the folder C:\Scans, showing two PDFs, four JPG files and one PNG with names like Scan 2026-10-18 7.pdf, plus Show in Explorer and Refresh buttons.">
+                  <source media="(prefers-color-scheme: dark)" srcset="assets/saved-files-dark.webp 1600w, assets/saved-files-dark-2x.webp 2142w" sizes="(min-width: 1240px) 1133px, 115vw">
+                  <img src="assets/saved-files-light.webp" srcset="assets/saved-files-light.webp 1600w, assets/saved-files-light-2x.webp 2142w" sizes="(min-width: 1240px) 1133px, 115vw" width="1600" height="1002" loading="lazy" decoding="async" alt="The Saved tab for the folder C:\Scans, showing seven JPG photos and one PDF with names like Scan 2026-10-19 2 1.jpg and Scan 2026-10-19 1.pdf, plus Show in Explorer and Refresh buttons.">
                 </picture>
               </div>
-              <figcaption><b>Saved</b>The files in your folder, with their names and sizes. Cropped to the tab's content.</figcaption>
+              <figcaption><b>Saved</b>The files in your folder, with their names and sizes. Cropped to the tab's content. Public-domain scans loaded into the app, see the <a href="#credits">credits</a>.</figcaption>
             </figure>
           </div>
         </article>
@@ -901,12 +920,69 @@ open dist/CompleteScanner.app</code></pre>
   </div>
 </section>
 
+<section class="section band" id="credits" aria-labelledby="credits-title">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="kicker"><svg aria-hidden="true"><use href="#reg"/></svg>Image credits</p>
+      <h2 id="credits-title">The scans in the pictures</h2>
+    </header>
+    <p class="credits-intro">Every photo and document in the screenshots and demos is a real scan of an item in the public domain or free of known copyright restrictions. Each title links to the item's catalog page, and the rights are given as the item's catalog record states them; for the menu they come from its copy on Wikimedia Commons, linked in its row. For the photo layouts, each print was cut from its museum backdrop and laid on a simulated scanner bed; the menu page was cut from its archive backdrop and laid on the same bed.</p>
+    <ol class="credits">
+      <li>
+        <div class="ct"><a href="https://nmaahc.si.edu/object/nmaahc_2011.36.61.2">Photograph of a house surrounded by trees</a><span>Unidentified photographer, 1925</span></div>
+        <div>Smithsonian National Museum of African American History and Culture, 2011.36.61.2</div>
+        <div class="cr">No known copyright restrictions (CC0)<span>Screenshots, photo demo</span></div>
+      </li>
+      <li>
+        <div class="ct"><a href="https://nmaahc.si.edu/object/nmaahc_2021.13.9">Photographic postcard portrait of a woman seated in a wooden armchair</a><span>Dittrich&rsquo;s Studio, 1910s</span></div>
+        <div>Smithsonian National Museum of African American History and Culture, 2021.13.9, gift of James M. Baxter</div>
+        <div class="cr">Public domain (CC0)<span>Screenshots, photo demo</span></div>
+      </li>
+      <li>
+        <div class="ct"><a href="https://nmaahc.si.edu/object/nmaahc_2018.43.20">Albumen print of a woman and two children in front of a log house in Georgia</a><span>H. S. Clark, 1880s</span></div>
+        <div>Smithsonian National Museum of African American History and Culture, 2018.43.20, gift of the Liljenquist Family</div>
+        <div class="cr">No known copyright restrictions (CC0)<span>Screenshots, photo demo</span></div>
+      </li>
+      <li>
+        <div class="ct"><a href="https://nmaahc.si.edu/object/nmaahc_2011.36.68.2">Photograph of a house and yard</a><span>Dawson Kraft Shop, 1925</span></div>
+        <div>Smithsonian National Museum of African American History and Culture, 2011.36.68.2</div>
+        <div class="cr">No known copyright restrictions (CC0)<span>Screenshots</span></div>
+      </li>
+      <li>
+        <div class="ct"><a href="https://nmaahc.si.edu/object/nmaahc_2014.37.36.18">Photographic postcard of boy on a horse in front of a bucolic backdrop</a><span>Unidentified photographer, 1915&ndash;1918</span></div>
+        <div>Smithsonian National Museum of African American History and Culture, 2014.37.36.18</div>
+        <div class="cr">Public domain (CC0)<span>Screenshots</span></div>
+      </li>
+      <li>
+        <div class="ct"><a href="https://nmaahc.si.edu/object/nmaahc_2011.36.82">Cabinet card of four Lewis family members</a><span>Taylor &amp; Wrye, 1898</span></div>
+        <div>Smithsonian National Museum of African American History and Culture, 2011.36.82</div>
+        <div class="cr">No known copyright restrictions (CC0)<span>Screenshots</span></div>
+      </li>
+      <li>
+        <div class="ct"><a href="https://nmaahc.si.edu/object/nmaahc_2011.36.94">Cabinet card of three young women</a><span>Unidentified photographer, around 1885</span></div>
+        <div>Smithsonian National Museum of African American History and Culture, 2011.36.94</div>
+        <div class="cr">Public domain (CC0)<span>Screenshots, adjustment demo</span></div>
+      </li>
+      <li>
+        <div class="ct"><a href="https://catalog.archives.gov/id/23929446">Letter from Clara Barton to Charles G. Washburn</a><span>Clara Barton, American National Red Cross, August 31, 1903</span></div>
+        <div>U.S. National Archives, 23929446</div>
+        <div class="cr">Use unrestricted<span>Screenshots, adjustment demo</span></div>
+      </li>
+      <li>
+        <div class="ct"><a href="https://digitalcollections.nypl.org/items/510d47db-4cc2-a3d9-e040-e00a18064a99">Menu, Chicago Oyster House and Restaurant (dinner)</a><span>Chicago Oyster House and Restaurant, May 22, 1900</span></div>
+        <div>New York Public Library, Buttolph Collection of Menus; <a href="https://commons.wikimedia.org/?curid=48090225">copy on Wikimedia Commons</a></div>
+        <div class="cr">Public domain, per Wikimedia Commons<span>Screenshots</span></div>
+      </li>
+    </ol>
+  </div>
+</section>
+
 </main>
 
 <footer class="site-foot">
   <div class="wrap foot-row">
     <a class="brand" href="#top"><svg aria-hidden="true"><use href="#reg"/></svg><span>CompleteScanner</span></a>
-    <p style="margin:0">One scanning app for macOS and Windows. Screenshots show the Windows app with its Demo Scanner.</p>
+    <p style="margin:0">One scanning app for macOS and Windows. Screenshots show the Windows app with public-domain scans, see the <a href="#credits">image credits</a>.</p>
     <a href="https://github.com/aytutuna/CompleteScanner">github.com/aytutuna/CompleteScanner</a>
   </div>
 </footer>
@@ -952,7 +1028,6 @@ function easeInOut(t){return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
 function easeOut(t){return 1-Math.pow(1-t,3);}
 function rr(c,x,y,w,h,r){r=Math.min(r,w/2,h/2);c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
 function lg(c,x0,y0,x1,y1,stops){var g=c.createLinearGradient(x0,y0,x1,y1);stops.forEach(function(s){g.addColorStop(s[0],s[1]);});return g;}
-function rng(seed){var s=(seed>>>0)||1;return function(){s=(Math.imul(s,1664525)+1013904223)>>>0;return s/4294967296;};}
 var MONO='"IBM Plex Mono", ui-monospace, Consolas, monospace';
 var DISP='"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif';
 var BODY='"IBM Plex Sans", "Segoe UI", system-ui, sans-serif';
@@ -962,55 +1037,20 @@ function today(){var d=new Date();return d.getFullYear()+"-"+pad2(d.getMonth()+1
 var live=document.getElementById("liveMsg");
 function announce(t){live.textContent="";setTimeout(function(){live.textContent=t;},40);}
 
-/* ---------- photo scenes ---------- */
-function circle(c,x,y,r){c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill();}
-var SCENES=[
-  function dusk(c,w,h){
-    var m=Math.min(w,h);
-    c.fillStyle=lg(c,0,0,0,h,[[0,"#3b3970"],[.5,"#c96a7b"],[.8,"#f4b166"]]);c.fillRect(0,0,w,h);
-    c.fillStyle="#ffe2a6";circle(c,w*.64,h*.62,m*.13);
-    c.fillStyle="#62436b";c.beginPath();c.moveTo(0,h*.72);c.quadraticCurveTo(w*.25,h*.52,w*.5,h*.7);c.quadraticCurveTo(w*.75,h*.58,w,h*.68);c.lineTo(w,h);c.lineTo(0,h);c.fill();
-    c.fillStyle="#2e2340";c.beginPath();c.moveTo(0,h*.85);c.quadraticCurveTo(w*.4,h*.72,w*.7,h*.86);c.quadraticCurveTo(w*.85,h*.8,w,h*.83);c.lineTo(w,h);c.lineTo(0,h);c.fill();
-  },
-  function sea(c,w,h){
-    var m=Math.min(w,h);
-    c.fillStyle=lg(c,0,0,0,h*.56,[[0,"#78b2dc"],[1,"#dcecf4"]]);c.fillRect(0,0,w,h*.56);
-    c.fillStyle="#fff7da";circle(c,w*.78,h*.2,m*.08);
-    c.fillStyle=lg(c,0,h*.56,0,h*.86,[[0,"#3a80a9"],[1,"#1e4c70"]]);c.fillRect(0,h*.56,w,h*.3);
-    c.fillStyle="rgba(255,255,255,.4)";for(var k=0;k<5;k++)c.fillRect(w*(.56+k*.025),h*(.6+k*.045),w*.13*(1-k*.13),Math.max(1,h*.008));
-    c.fillStyle="#e6d29f";c.fillRect(0,h*.86,w,h*.14);
-    c.fillStyle="#3b2b22";c.beginPath();c.moveTo(w*.26,h*.63);c.lineTo(w*.44,h*.63);c.lineTo(w*.41,h*.675);c.lineTo(w*.29,h*.675);c.fill();
-    c.fillStyle="#fbfaf4";c.beginPath();c.moveTo(w*.35,h*.33);c.lineTo(w*.35,h*.61);c.lineTo(w*.43,h*.61);c.fill();
-    c.fillStyle="#d84a3a";c.beginPath();c.moveTo(w*.34,h*.38);c.lineTo(w*.34,h*.61);c.lineTo(w*.28,h*.61);c.fill();
-  },
-  function tree(c,w,h){
-    var m=Math.min(w,h);
-    c.fillStyle=lg(c,0,0,0,h,[[0,"#e7d6ad"],[1,"#c3a676"]]);c.fillRect(0,0,w,h);
-    c.fillStyle="#9b8458";c.fillRect(0,h*.74,w,h*.26);
-    c.fillStyle="#5e4b32";c.fillRect(w*.47,h*.44,w*.06,h*.32);
-    c.fillStyle="#6f5b3b";circle(c,w*.5,h*.36,m*.21);circle(c,w*.38,h*.45,m*.15);circle(c,w*.62,h*.45,m*.16);
-    var g=c.createRadialGradient(w/2,h/2,m*.3,w/2,h/2,Math.max(w,h)*.75);g.addColorStop(0,"rgba(70,48,25,0)");g.addColorStop(1,"rgba(70,48,25,.45)");c.fillStyle=g;c.fillRect(0,0,w,h);
-  },
-  function house(c,w,h){
-    var m=Math.min(w,h);
-    c.fillStyle=lg(c,0,0,0,h,[[0,"#9ccfca"],[1,"#eaf2e3"]]);c.fillRect(0,0,w,h);
-    c.fillStyle="#6e9e53";c.fillRect(0,h*.72,w,h*.28);
-    var bx=w*.28,bw=w*.42,by=h*.45,bh=h*.29;
-    c.fillStyle="#f0e7d3";c.fillRect(bx,by,bw,bh);
-    c.fillStyle="#b4523c";c.beginPath();c.moveTo(bx-w*.04,by);c.lineTo(bx+bw/2,by-h*.2);c.lineTo(bx+bw+w*.04,by);c.fill();
-    c.fillStyle="#4c3a2c";c.fillRect(bx+bw*.42,by+bh*.42,bw*.16,bh*.58);
-    c.fillStyle="#f2dc8c";c.fillRect(bx+bw*.1,by+bh*.2,bw*.2,bh*.26);c.fillRect(bx+bw*.7,by+bh*.2,bw*.2,bh*.26);
-    c.fillStyle="#5a4632";c.fillRect(w*.83,h*.55,w*.025,h*.18);
-    c.fillStyle="#3f6f3b";circle(c,w*.84,h*.52,m*.12);
-  }
-];
-
 /* ---------- photo batch demo ---------- */
+/* bed.jpg is a 300 dpi bed scan (8.5 x 11.7 in) reduced to 1017x1400 px. The boxes are the ones the
+   Windows app's photo detection returned for it, in bed.jpg pixels; angles are clockwise. */
+var BED={src:"assets/demo/bed.jpg",w:1017,h:1400,inches:8.5,img:null,state:"loading",photos:[
+  {what:"a house among trees",cx:736.8,cy:198.8,w:469.1,h:291.6,ang:3.0},
+  {what:"a woman seated in an armchair",cx:262.5,cy:452.5,w:385.3,h:581.1,ang:-5.74},
+  {what:"a log house",cx:596.6,cy:1054.2,w:638.6,h:420.4,ang:11.1}
+]};
+var N=BED.photos.length;
 var bed=document.getElementById("bed");
 var bctx=bed.getContext("2d");
 var T1=2600,T2=3900,T3=5000,T4=6500;
 var MARK="#FF4F93", LAMP="rgba(205,252,243,";
-var D={W:0,H:0,dpr:1,narrow:false,G:null,seed:3,photos:[],keep:[true,true,true,true],t:-1,raf:0,start:0,playing:false,stage:"idle"};
+var D={W:0,H:0,dpr:1,narrow:false,m:10,G:null,P:null,g:1,keep:BED.photos.map(function(){return true;}),t:-1,raf:0,start:0,playing:false,stage:"idle"};
 var statusEl=document.getElementById("demoStatus");
 var scanBtn=document.getElementById("scanBtn");
 var keepSet=document.getElementById("keepSet");
@@ -1019,183 +1059,207 @@ var saveBtn=document.getElementById("saveBtn");
 var saveOut=document.getElementById("saveOut");
 var stepBtns=[].slice.call(document.querySelectorAll(".steps button"));
 
+/* wide: the glass on the left and the results panel beside it; narrow: the panel below the glass */
 function layoutBed(){
   var w=bed.clientWidth||bed.parentNode.clientWidth||600;
-  var narrow=w<560;
-  var h=Math.round(w*(narrow?1.06:0.64));
-  var dpr=Math.min(window.devicePixelRatio||1,2);
-  bed.width=Math.round(w*dpr);bed.height=Math.round(h*dpr);bed.style.height=h+"px";
-  D.W=w;D.H=h;D.dpr=dpr;D.narrow=narrow;
-  var m=Math.max(10,Math.round(w*.022)),top=narrow?18:20;
-  D.m=m;D.G={x:m,y:m+top,w:w-2*m,h:h-2*m-top};
-  makePhotos();
-}
-function shuffle(a,r){for(var i=a.length-1;i>0;i--){var j=Math.floor(r()*(i+1));var t=a[i];a[i]=a[j];a[j]=t;}return a;}
-function makePhotos(){
-  var r=rng(D.seed*7919+17),G=D.G;
-  var pad=Math.min(G.w,G.h)*.04;
-  var cw=(G.w-pad*2)/2,ch=(G.h-pad*2)/2;
-  var aspects=shuffle([1.5,0.76,1.33,1.42],r);
-  var scenes=shuffle([0,1,2,3],r);
-  D.photos=[];
-  for(var i=0;i<4;i++){
-    var col=i%2,row=i>>1;
-    var ang=(3+r()*15)*(r()<.5?-1:1);ang=Math.round(ang*10)/10;
-    var a=aspects[i],rad=ang*Math.PI/180,co=Math.abs(Math.cos(rad)),si=Math.abs(Math.sin(rad));
-    var hh=Math.min(cw*.8/(a*co+si),ch*.8/(a*si+co)),ww=a*hh;
-    var cx=G.x+pad+cw*(col+.5)+(r()-.5)*cw*.08,cy=G.y+pad+ch*(row+.5)+(r()-.5)*ch*.08;
-    D.photos.push({cx:cx,cy:cy,w:ww,h:hh,ang:ang,scene:scenes[i],img:renderPhoto(scenes[i],ww,hh)});
+  var narrow=w<480,dpr=Math.min(window.devicePixelRatio||1,2),ar=BED.h/BED.w;
+  var m=Math.max(10,Math.round(w*.022)),top=20,G,P,h;
+  if(!narrow){
+    h=Math.round(w*.74);
+    var gh=h-2*m-top;G={x:m,y:m+top,w:gh/ar,h:gh};
+    var px=Math.round(G.x+G.w+m*1.2);P={x:px,y:G.y,w:w-px-m,h:gh};
+  }else{
+    var gw=Math.round(w*.72);G={x:Math.round((w-gw)/2),y:m+top,w:gw,h:gw*ar};
+    var pw=w-2*m;P={x:m,y:Math.round(G.y+G.h+m),w:pw,h:Math.round(pw*.5+58)};
+    h=P.y+P.h+m;
   }
+  bed.width=Math.round(w*dpr);bed.height=Math.round(h*dpr);bed.style.height=h+"px";
+  D.W=w;D.H=h;D.dpr=dpr;D.narrow=narrow;D.m=m;D.G=G;D.P=P;D.g=G.w/BED.w;
 }
-function renderPhoto(scene,w,h){
-  var dpr=D.dpr*1.5,off=document.createElement("canvas");
-  off.width=Math.ceil(w*dpr);off.height=Math.ceil(h*dpr);
-  var c=off.getContext("2d");c.scale(dpr,dpr);
-  var b=Math.min(w,h)*.05;
-  c.fillStyle="#f5f2e9";c.fillRect(0,0,w,h);
-  c.save();c.translate(b,b);c.beginPath();c.rect(0,0,w-2*b,h-2*b);c.clip();SCENES[scene](c,w-2*b,h-2*b);c.restore();
-  return off;
+function headH(){return D.narrow?50:60;}
+function cardRect(i){
+  var P=D.P,pad=D.narrow?8:12,head=headH(),gap=D.narrow?6:8;
+  if(D.narrow){
+    var cw=(P.w-2*pad-gap*(N-1))/N,ch=P.h-head-pad,x=P.x+pad+i*(cw+gap),y=P.y+head,foot=26;
+    return {x:x,y:y,w:cw,h:ch,ix:x+5,iy:y+5,iw:cw-10,ih:ch-10-foot,kx:x+8,ky:y+ch-foot/2-3,ax:null,ay:0};
+  }
+  var ch2=(P.h-head-pad-gap*(N-1))/N,cw2=P.w-2*pad,x2=P.x+pad,y2=P.y+head+i*(ch2+gap);
+  var ih=ch2-10,iw=Math.min(cw2*.6,ih*1.7);
+  return {x:x2,y:y2,w:cw2,h:ch2,ix:x2+5,iy:y2+5,iw:iw,ih:ih,kx:x2+iw+18,ky:y2+ch2/2-10,ax:x2+iw+18,ay:y2+ch2/2+14};
 }
+function onBed(p){return [D.G.x+p.cx*D.g,D.G.y+p.cy*D.g];}
+function inCard(p,cr){return {x:cr.ix+cr.iw/2,y:cr.iy+cr.ih/2,s:Math.min(cr.iw/p.w,cr.ih/p.h)*.94};}
 function corners(p,cx,cy,ang,s){
   var a=ang*Math.PI/180,co=Math.cos(a),si=Math.sin(a),hw=p.w*s/2,hh=p.h*s/2;
   return [[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].map(function(q){return [cx+q[0]*co-q[1]*si,cy+q[0]*si+q[1]*co];});
 }
-function drawPhoto(c,p,cx,cy,ang,s,alpha,shadow){
-  c.save();c.globalAlpha=alpha;c.translate(cx,cy);c.rotate(ang*Math.PI/180);c.scale(s,s);
-  if(shadow){c.shadowColor="rgba(0,0,0,.32)";c.shadowBlur=9;c.shadowOffsetY=3;}
-  c.drawImage(p.img,-p.w/2,-p.h/2,p.w,p.h);c.restore();
+/* draws photo p cut out of the bed scan, upright in its own frame, centred at (x,y), turned by a degrees, s canvas px per bed px */
+function drawCrop(c,p,x,y,a,s,alpha,shadow){
+  if(!BED.img)return;
+  var w=p.w*s,h=p.h*s;
+  c.save();c.globalAlpha=alpha;c.translate(x,y);c.rotate(a*Math.PI/180);
+  if(shadow){c.save();c.shadowColor="rgba(0,0,0,.4)";c.shadowBlur=14;c.shadowOffsetY=4;c.fillStyle="#e8e6e0";c.fillRect(-w/2,-h/2,w,h);c.restore();}
+  c.beginPath();c.rect(-w/2,-h/2,w,h);c.clip();
+  c.scale(s,s);c.rotate(-p.ang*Math.PI/180);c.translate(-p.cx,-p.cy);
+  c.imageSmoothingQuality="high";c.drawImage(BED.img,0,0,BED.w,BED.h);
+  c.restore();
 }
-function outline(c,pts,frac){
+function outline(c,pts,frac,dash){
   var per=0;for(var i=0;i<4;i++){var a=pts[i],b=pts[(i+1)%4];per+=Math.hypot(b[0]-a[0],b[1]-a[1]);}
   c.save();c.strokeStyle=MARK;c.lineWidth=2;c.lineJoin="round";
-  if(frac<1)c.setLineDash([per*frac,per+10]);
+  if(dash){c.globalAlpha=.6;c.lineWidth=1.5;c.setLineDash([5,4]);}
+  else if(frac<1)c.setLineDash([per*frac,per+10]);
   c.beginPath();pts.forEach(function(p,i){if(i)c.lineTo(p[0],p[1]);else c.moveTo(p[0],p[1]);});c.closePath();c.stroke();c.restore();
 }
 function handles(c,pts){pts.forEach(function(p){c.beginPath();c.arc(p[0],p[1],4,0,Math.PI*2);c.fillStyle="#fff";c.fill();c.lineWidth=2;c.strokeStyle=MARK;c.stroke();});}
+/* angle label in the middle of the photo, where neighbouring labels can't collide */
 function tag(c,pts,text,alpha){
-  var top=pts[0];pts.forEach(function(p){if(p[1]<top[1])top=p;});
-  var G=D.G;c.save();c.globalAlpha=alpha;c.font="500 11px "+MONO;
-  var w=c.measureText(text).width+16,h=20,x=clamp(top[0]-w/2,G.x+4,G.x+G.w-w-4),y=top[1]-h-9;
-  if(y<G.y+4)y=top[1]+9;
+  var cx=(pts[0][0]+pts[2][0])/2,cy=(pts[0][1]+pts[2][1])/2;
+  c.save();c.globalAlpha=alpha;c.font="500 11px "+MONO;
+  var w=c.measureText(text).width+16,h=20,x=cx-w/2,y=cy-h/2;
   rr(c,x,y,w,h,10);c.fillStyle=MARK;c.fill();c.fillStyle="#fff";c.textBaseline="middle";c.fillText(text,x+8,y+h/2+.5);c.restore();
 }
 function drawFrame(c){
   var W=D.W,H=D.H,G=D.G;
   rr(c,0,0,W,H,12);c.fillStyle=lg(c,0,0,0,H,[[0,"#323b3e"],[1,"#1c2326"]]);c.fill();
-  /* ruler on the frame above the glass */
-  var inches=D.narrow?8.5:11.7,ppi=G.w/inches,y0=G.y-3;
+  /* inch ruler on the frame above the glass */
+  var ppi=G.w/BED.inches,y0=G.y-3;
   c.strokeStyle="rgba(214,232,228,.55)";c.lineWidth=1;c.beginPath();
   for(var i=0;;i++){var x=G.x+i*ppi/10;if(x>G.x+G.w+.5)break;var len=i%10===0?9:(i%5===0?6:3);var xx=Math.round(x)+.5;c.moveTo(xx,y0);c.lineTo(xx,y0-len);}
   c.stroke();
   c.fillStyle="rgba(214,232,228,.75)";c.font="500 9px "+MONO;c.textBaseline="alphabetic";
-  for(var n=1;n<inches;n++){var nx=G.x+n*ppi;c.fillText(String(n),nx+3,y0-6);}
-  /* glass */
-  c.fillStyle=lg(c,G.x,G.y,G.x+G.w,G.y+G.h,[[0,"#172226"],[1,"#0e1517"]]);c.fillRect(G.x,G.y,G.w,G.h);
-  c.strokeStyle="rgba(255,255,255,.09)";c.strokeRect(G.x+.5,G.y+.5,G.w-1,G.h-1);
+  for(var n=1;n<BED.inches;n++){c.fillText(String(n),G.x+n*ppi+3,y0-6);}
+}
+/* the bed scan on the glass; dim darkens it (unscanned, or set back behind the results) */
+function bedImage(c,dim){
+  var G=D.G;
+  c.fillStyle="#0e1517";c.fillRect(G.x,G.y,G.w,G.h);
+  if(BED.img){c.save();c.imageSmoothingQuality="high";c.drawImage(BED.img,G.x,G.y,G.w,G.h);c.restore();}
+  if(dim>0){c.fillStyle="rgba(12,18,20,"+dim+")";c.fillRect(G.x,G.y,G.w,G.h);}
+  c.strokeStyle="rgba(255,255,255,.09)";c.lineWidth=1;c.strokeRect(G.x+.5,G.y+.5,G.w-1,G.h-1);
 }
 function originMark(c){var G=D.G;c.fillStyle=LAMP+".8)";c.beginPath();c.moveTo(G.x+3,G.y+3);c.lineTo(G.x+15,G.y+3);c.lineTo(G.x+3,G.y+15);c.closePath();c.fill();}
-function sheen(c){var G=D.G;c.save();c.beginPath();c.rect(G.x,G.y,G.w,G.h);c.clip();var g=c.createLinearGradient(G.x,G.y,G.x+G.w*.6,G.y+G.h);g.addColorStop(0,"rgba(255,255,255,0)");g.addColorStop(.42,"rgba(255,255,255,0)");g.addColorStop(.5,"rgba(255,255,255,.07)");g.addColorStop(.6,"rgba(255,255,255,0)");c.fillStyle=g;c.fillRect(G.x,G.y,G.w,G.h);c.restore();}
-function photosOnGlass(c){D.photos.forEach(function(p){drawPhoto(c,p,p.cx,p.cy,p.ang,1,.82,true);});}
-function scannedBed(c){var G=D.G;c.fillStyle="#b9bab5";c.fillRect(G.x,G.y,G.w,G.h);}
 function lamp(c,y){
-  var G=D.G,W=D.W;
+  var G=D.G,right=D.narrow?D.W:D.P.x;
   var g=c.createLinearGradient(0,y-46,0,y+46);
   g.addColorStop(0,LAMP+"0)");g.addColorStop(.42,LAMP+".16)");g.addColorStop(.5,LAMP+".85)");g.addColorStop(.58,LAMP+".16)");g.addColorStop(1,LAMP+"0)");
   c.save();c.beginPath();c.rect(G.x,G.y,G.w,G.h);c.clip();c.fillStyle=g;c.fillRect(G.x,y-46,G.w,92);c.restore();
   c.fillStyle="#ffffff";c.fillRect(G.x,y-1,G.w,2);
-  c.fillStyle=LAMP+".9)";c.fillRect(2,y-3,G.x-4,6);c.fillRect(G.x+G.w+2,y-3,W-G.x-G.w-4,6);
+  c.fillStyle=LAMP+".9)";c.fillRect(2,y-3,G.x-4,6);c.fillRect(G.x+G.w+2,y-3,right-G.x-G.w-4,6);
 }
-function pill(c,text,x,y){c.save();c.font="500 11px "+MONO;var w=c.measureText(text).width+18;rr(c,x,y,w,22,11);c.fillStyle="rgba(5,10,12,.7)";c.fill();c.fillStyle="rgba(214,240,236,.95)";c.textBaseline="middle";c.fillText(text,x+9,y+11.5);c.restore();}
-function panelRect(){var G=D.G,i=D.narrow?8:14;return {x:G.x+i,y:G.y+i,w:G.w-2*i,h:G.h-2*i};}
-function cardRect(i){
-  var P=panelRect(),pad=D.narrow?10:16,head=D.narrow?58:70,gap=D.narrow?8:12,foot=30;
-  var cols=D.narrow?2:4,rows=Math.ceil(4/cols);
-  var aw=P.w-2*pad,ah=P.h-head-pad;
-  var cw=(aw-gap*(cols-1))/cols,ch=Math.min((ah-gap*(rows-1))/rows,cw*1.12+foot);
-  var th=rows*ch+(rows-1)*gap,y0=P.y+head+Math.max(0,(ah-th)/2);
-  var x=P.x+pad+(i%cols)*(cw+gap),y=y0+Math.floor(i/cols)*(ch+gap);
-  return {x:x,y:y,w:cw,h:ch,ix:x+6,iy:y+6,iw:cw-12,ih:ch-12-foot,fy:y+ch-foot/2-2};
+function pill(c,text,x,y){c.save();c.font="500 11px "+MONO;var w=c.measureText(text).width+18;rr(c,x,y,w,22,11);c.fillStyle="rgba(5,10,12,.72)";c.fill();c.fillStyle="rgba(214,240,236,.95)";c.textBaseline="middle";c.fillText(text,x+9,y+11.5);c.restore();}
+function fitFont(c,text,maxW,size,pre,fam){var s=size;c.font=pre+" "+s+"px "+fam;while(s>9&&c.measureText(text).width>maxW){s-=.5;c.font=pre+" "+s+"px "+fam;}}
+function colors(){return {SHEET:cssVar("--sheet")||"#fff",INK:cssVar("--ink")||"#111",INK2:cssVar("--ink-2")||"#444",INK3:cssVar("--ink-3")||"#666",RULE:cssVar("--rule")||"#ccc",ACC:cssVar("--accent")||"#06c",WELL:cssVar("--well")||"#eee",ACCI:cssVar("--accent-ink")||"#fff"};}
+/* the results panel: what the app reports at each step */
+function drawPanel(c,t,K){
+  var P=D.P,pad=D.narrow?8:12,head=headH(),i,cr;
+  rr(c,P.x,P.y,P.w,P.h,10);c.fillStyle=K.SHEET;c.fill();
+  var title,sub;
+  if(t<0){title="Photos mode";sub="Auto-split photos and Auto-straighten are on.";}
+  else if(t<T1){title="Scanning…";sub="One pass of the light bar over the glass.";}
+  else if(t<T2){title=t<T2-300?"Finding photos…":"Found "+N+" photos";sub="Each print is outlined and its tilt measured.";}
+  else if(t<T3){title="Straightening…";sub="Each photo is turned upright and cut out.";}
+  else{title="Detected "+N+" photos";sub="Untick any false positives, or fix a crop.";}
+  c.save();c.textBaseline="alphabetic";c.fillStyle=K.INK;fitFont(c,title,P.w-2*pad,D.narrow?15:17,"650",DISP);c.fillText(title,P.x+pad,P.y+(D.narrow?21:26));
+  c.fillStyle=K.INK2;fitFont(c,sub,P.w-2*pad,D.narrow?11:12,"400",BODY);c.fillText(sub,P.x+pad,P.y+(D.narrow?37:44));c.restore();
+  if(t>=0&&t<T1){var sp=clamp(t/T1);c.fillStyle=K.RULE;c.fillRect(P.x+pad,P.y+head-7,P.w-2*pad,3);c.fillStyle=K.ACC;c.fillRect(P.x+pad,P.y+head-7,(P.w-2*pad)*sp,3);}
+  if(t<T1){
+    var c0=cardRect(0),cl=cardRect(N-1),ax=c0.x,ay=c0.y,aw=cl.x+cl.w-c0.x,ah=cl.y+cl.h-c0.y;
+    c.save();c.setLineDash([5,5]);c.strokeStyle=K.RULE;c.lineWidth=1.5;rr(c,ax+.5,ay+.5,aw-1,ah-1,8);c.stroke();c.restore();
+    c.save();c.fillStyle=K.INK3;c.textAlign="center";c.textBaseline="middle";fitFont(c,"Each photo found appears here",aw-16,12.5,"400",BODY);c.fillText("Each photo found appears here",ax+aw/2,ay+ah/2);c.restore();
+    return;
+  }
+  var dp=t<T2?clamp((t-T1)/(T2-T1)):1,ra=t<T3?0:clamp((t-T3)/((T4-T3)*.5));
+  for(i=0;i<N;i++){
+    var sa=clamp((dp-i*.12)/.42);if(sa<=0)continue;
+    cr=cardRect(i);var on=D.keep[i]||t<T4;
+    c.save();c.globalAlpha=sa;rr(c,cr.x,cr.y,cr.w,cr.h,8);c.fillStyle=K.SHEET;c.fill();
+    c.lineWidth=ra>0&&on?1+ra:1;c.strokeStyle=ra>0&&on?K.ACC:K.RULE;c.stroke();
+    rr(c,cr.ix,cr.iy,cr.iw,cr.ih,4);c.fillStyle=K.WELL;c.fill();
+    if(t<T2||(t<T3&&(clamp((t-T2)/(T3-T2))-i*.1)/.7<1)){c.fillStyle=K.INK2;c.font="500 11px "+MONO;c.textAlign="center";c.textBaseline="middle";c.fillText(fmtA(BED.photos[i].ang),cr.ix+cr.iw/2,cr.iy+cr.ih/2);}
+    c.restore();
+  }
+}
+function cardChrome(c,K,alpha){
+  for(var i=0;i<N;i++){
+    var cr=cardRect(i),on=D.keep[i],bx=cr.kx,by=cr.ky-8;
+    c.save();c.globalAlpha=alpha;
+    rr(c,bx,by,16,16,3);
+    if(on){c.fillStyle=K.ACC;c.fill();c.strokeStyle=K.ACCI;c.lineWidth=2;c.beginPath();c.moveTo(bx+4,by+8.5);c.lineTo(bx+7,by+11.5);c.lineTo(bx+12.5,by+5);c.stroke();}
+    else{c.strokeStyle=K.INK2;c.lineWidth=1.3;c.stroke();}
+    c.fillStyle=K.INK;c.font="500 12.5px "+BODY;c.textBaseline="middle";c.fillText("Keep",bx+23,cr.ky+.5);
+    if(cr.ax!==null){c.fillStyle=K.INK2;c.font="500 10.5px "+MONO;c.fillText("was "+fmtA(BED.photos[i].ang),cr.ax,cr.ay);}
+    c.restore();
+  }
 }
 function render(t){
-  var c=bctx,G=D.G;
+  var c=bctx,G=D.G,K=colors(),i,p,pts,b;
   c.setTransform(D.dpr,0,0,D.dpr,0,0);c.clearRect(0,0,D.W,D.H);
   drawFrame(c);
-  if(t<0){photosOnGlass(c);sheen(c);originMark(c);pill(c,"4 prints on the glass \u00b7 not scanned",G.x+10,G.y+G.h-32);return;}
-  var i,p,pts;
+  if(!BED.img){
+    bedImage(c,0);drawPanel(c,-1,K);
+    pill(c,BED.state==="error"?"The bed scan could not be loaded":"Loading the bed scan…",G.x+10,G.y+G.h-32);return;
+  }
+  if(t<0){bedImage(c,.5);originMark(c);drawPanel(c,t,K);pill(c,N+" prints on the glass · not scanned",G.x+10,G.y+G.h-32);return;}
   if(t<T2){
     var sp=clamp(t/T1),y=G.y+G.h*easeInOut(sp);
-    if(sp<1){c.save();c.beginPath();c.rect(G.x,y,G.w,G.y+G.h-y);c.clip();photosOnGlass(c);sheen(c);c.restore();}
-    c.save();c.beginPath();c.rect(G.x,G.y,G.w,y-G.y);c.clip();scannedBed(c);D.photos.forEach(function(p){drawPhoto(c,p,p.cx,p.cy,p.ang,1,1,true);});c.restore();
+    bedImage(c,0);
+    if(sp<1){c.save();c.beginPath();c.rect(G.x,y,G.w,G.y+G.h-y);c.clip();c.fillStyle="rgba(12,18,20,.5)";c.fillRect(G.x,G.y,G.w,G.h);c.restore();}
+    drawPanel(c,t,K);
     if(sp<1)lamp(c,y);
     if(t>T1){
       var dp=clamp((t-T1)/(T2-T1));
-      for(i=0;i<4;i++){p=D.photos[i];var pi=clamp((dp-i*.12)/.42);if(pi<=0)continue;pts=corners(p,p.cx,p.cy,p.ang,1);outline(c,pts,pi);if(pi>=1)handles(c,pts);var ta=clamp((dp-i*.12-.42)/.12);if(ta>0)tag(c,pts,fmtA(p.ang),ta);}
+      for(i=0;i<N;i++){p=BED.photos[i];var pi=clamp((dp-i*.12)/.42);if(pi<=0)continue;b=onBed(p);pts=corners(p,b[0],b[1],p.ang,D.g);outline(c,pts,pi);if(pi>=1)handles(c,pts);var ta=clamp((dp-i*.12-.42)/.12);if(ta>0)tag(c,pts,fmtA(p.ang),ta);}
     }
     return;
   }
-  if(t<T3){
-    var s2=clamp((t-T2)/(T3-T2));
-    scannedBed(c);c.fillStyle="rgba(18,24,26,"+(.4*easeOut(s2))+")";c.fillRect(G.x,G.y,G.w,G.h);
-    for(i=0;i<4;i++){p=D.photos[i];var q=easeInOut(clamp((s2-i*.08)/.7)),a=p.ang*(1-q);drawPhoto(c,p,p.cx,p.cy,a,1,1,true);pts=corners(p,p.cx,p.cy,a,1);outline(c,pts,1);handles(c,pts);tag(c,pts,q>=1?"0.0\u00b0 \u00b7 was "+fmtA(p.ang):fmtA(a),1);}
-    return;
+  /* straighten: each photo is cut out, turned upright and moved into its card; review: the cards become choices */
+  var s2=clamp((t-T2)/(T3-T2)),rv=t<T3?0:clamp((t-T3)/(T4-T3));
+  bedImage(c,.5*easeOut(clamp(s2*2)));
+  for(i=0;i<N;i++){p=BED.photos[i];b=onBed(p);outline(c,corners(p,b[0],b[1],p.ang,D.g),1,true);}
+  drawPanel(c,t,K);
+  var moving=[];
+  for(i=0;i<N;i++){
+    p=BED.photos[i];b=onBed(p);var cr=cardRect(i),q=inCard(p,cr),k=easeInOut(clamp((s2-i*.1)/.7));
+    var x=lerp(b[0],q.x,k),yy=lerp(b[1],q.y,k),a=p.ang*(1-k),s=lerp(D.g,q.s,k);
+    var dim=(t>=T4&&!D.keep[i])?.3:1;
+    if(k>0&&k<1)moving.push([p,x,yy,a,s]);else drawCrop(c,p,x,yy,a,s,dim,k===0);
   }
-  var rp=clamp((t-T3)/(T4-T3));
-  scannedBed(c);c.fillStyle="rgba(18,24,26,.4)";c.fillRect(G.x,G.y,G.w,G.h);
-  var P=panelRect(),pa=easeOut(clamp(rp*2.2)),padx=D.narrow?10:16;
-  var SHEET=cssVar("--sheet")||"#fff",INK=cssVar("--ink")||"#111",INK2=cssVar("--ink-2")||"#444",RULE=cssVar("--rule")||"#ccc",ACC=cssVar("--accent")||"#06c",WELL=cssVar("--well")||"#eee",ACCI=cssVar("--accent-ink")||"#fff";
-  c.save();c.globalAlpha=pa;c.shadowColor="rgba(0,0,0,.4)";c.shadowBlur=26;c.shadowOffsetY=6;rr(c,P.x,P.y,P.w,P.h,10);c.fillStyle=SHEET;c.fill();c.restore();
-  var kept=D.keep.filter(Boolean).length;
-  c.save();c.globalAlpha=pa;c.fillStyle=INK;c.font="650 "+(D.narrow?17:20)+"px "+DISP;c.textBaseline="alphabetic";
-  c.fillText("Detected 4 photos",P.x+padx,P.y+(D.narrow?27:34));
-  c.font="400 "+(D.narrow?11.5:13)+"px "+BODY;c.fillStyle=INK2;c.fillText("Untick any false positives, or fix a crop.",P.x+padx,P.y+(D.narrow?45:54));c.restore();
-  for(i=0;i<4;i++){
-    p=D.photos[i];var k=easeInOut(clamp((rp-.12-i*.07)/.6)),cr=cardRect(i),on=D.keep[i];
-    c.save();c.globalAlpha=k;rr(c,cr.x,cr.y,cr.w,cr.h,8);c.fillStyle=SHEET;c.fill();c.lineWidth=on?2:1;c.strokeStyle=on?ACC:RULE;c.stroke();rr(c,cr.ix,cr.iy,cr.iw,cr.ih,4);c.fillStyle=WELL;c.fill();c.restore();
-    var fs=Math.min(cr.iw/p.w,cr.ih/p.h)*.9;
-    var cx=lerp(p.cx,cr.ix+cr.iw/2,k),cy=lerp(p.cy,cr.iy+cr.ih/2,k),sc=lerp(1,fs,k);
-    drawPhoto(c,p,cx,cy,0,sc,(rp>=1&&!on)?.3:1,k<1);
-    var fa=clamp((k-.6)/.4);
-    if(fa>0){
-      c.save();c.globalAlpha=fa;var bx=cr.x+9,by=cr.fy-8;
-      rr(c,bx,by,16,16,3);if(on){c.fillStyle=ACC;c.fill();c.strokeStyle=ACCI;c.lineWidth=2;c.beginPath();c.moveTo(bx+4,by+8.5);c.lineTo(bx+7,by+11.5);c.lineTo(bx+12.5,by+5);c.stroke();}else{c.strokeStyle=INK2;c.lineWidth=1.3;c.stroke();}
-      c.fillStyle=INK;c.font="500 12.5px "+BODY;c.textBaseline="middle";c.fillText("Keep",bx+23,cr.fy+.5);
-      c.fillStyle=INK2;c.font="500 10.5px "+MONO;var at=fmtA(p.ang),aw=c.measureText(at).width;if(cr.w>110)c.fillText(at,cr.x+cr.w-aw-10,cr.fy+.5);
-      c.restore();
-    }
-  }
-  if(rp<.3){c.save();c.globalAlpha=1-rp/.3;for(i=0;i<4;i++){p=D.photos[i];outline(c,corners(p,p.cx,p.cy,0,1),1);}c.restore();}
+  moving.forEach(function(m){drawCrop(c,m[0],m[1],m[2],m[3],m[4],1,true);});
+  if(rv>0)cardChrome(c,K,clamp((rv-.2)/.5));
+  if(s2<1){for(i=0;i<N;i++){p=BED.photos[i];var k2=easeInOut(clamp((s2-i*.1)/.7));if(k2<=0){b=onBed(p);pts=corners(p,b[0],b[1],p.ang,D.g);outline(c,pts,1);tag(c,pts,fmtA(p.ang),1);}}}
 }
 function stageOf(t){if(t<0)return "idle";if(t<T1)return "scan";if(t<T2)return "detect";if(t<T3)return "straighten";if(t<T4)return "review";return "done";}
 var STAGE_END={scan:T1,detect:T2-1,straighten:T3-1,review:T4};
-function angleList(){return D.photos.map(function(p){return fmtA(p.ang);}).join(", ");}
+function angleList(){return BED.photos.map(function(p){return fmtA(p.ang);}).join(", ");}
+function whatList(){return BED.photos.map(function(p){return p.what;}).join(", ").replace(/, ([^,]*)$/," and $1");}
 function describe(st){
-  if(st==="idle")return ["Four prints are lying on the glass. Press Scan.","A scanner bed with four photos lying at different angles. Not scanned yet."];
-  if(st==="scan")return ["Scanning the whole bed\u2026","The light bar is moving down the scanner bed."];
-  if(st==="detect")return ["Found 4 photos, tilted "+angleList()+".","The scanned bed with each of four photos outlined and labelled with its tilt: "+angleList()+"."];
-  if(st==="straighten")return ["Each photo is turned upright and cropped on its own.","Four photos turned upright on the scanned bed, each outlined."];
+  if(st==="idle")return ["Three prints are lying on the glass. Press Scan.","A scanner bed with three old prints lying at different angles: "+whatList()+". Not scanned yet."];
+  if(st==="scan")return ["Scanning the whole bed…","The light bar is moving down the scanner bed."];
+  if(st==="detect")return ["Found 3 photos, tilted "+angleList()+".","The scanned bed with each of three photos outlined and labelled with the tilt the app measured: "+angleList()+"."];
+  if(st==="straighten")return ["Each photo is turned upright and cropped on its own.","The three photos lifted off the scanned bed, turned upright and cropped."];
   var n=D.keep.filter(Boolean).length;
-  return ["Detected 4 photos. Untick any you don't want, then save "+n+".","Review grid with four straightened photos; "+n+" marked Keep."];
+  return ["Detected 3 photos. Untick any you don't want, then save "+n+".","Review list with three straightened photos, "+whatList()+"; "+n+" marked Keep."];
 }
 function setStage(st){
   var key=st==="done"?"review":st;
   stepBtns.forEach(function(b){if(b.getAttribute("data-stage")===key)b.setAttribute("aria-current","step");else b.removeAttribute("aria-current");});
-  var inReview=key==="review"&&D.t>=T4;
-  keepSet.disabled=!inReview;
+  keepSet.disabled=!(key==="review"&&D.t>=T4);
   if(st!==D.stage){var d=describe(st);statusEl.textContent=d[0];bed.setAttribute("aria-label",d[1]);D.stage=st;}
 }
 function show(t){D.t=t;render(t);setStage(stageOf(t));}
 function stop(){if(D.raf)cancelAnimationFrame(D.raf);D.raf=0;D.playing=false;}
 function play(){
   stop();saveOut.textContent="";
-  if(reduced()){show(T4);scanBtn.querySelector("span").textContent="Scan again";return;}
+  scanBtn.querySelector("span").textContent="Scan again";
+  if(reduced()){show(T4);return;}
   D.playing=true;D.start=performance.now();
   var step=function(now){var t=now-D.start;if(t>=T4){D.playing=false;D.raf=0;show(T4);return;}show(t);D.raf=requestAnimationFrame(step);};
   D.raf=requestAnimationFrame(step);
-  scanBtn.querySelector("span").textContent="Scan again";
 }
 function buildKeep(){
   keepList.innerHTML="";
-  D.photos.forEach(function(p,i){
+  BED.photos.forEach(function(p,i){
     var l=document.createElement("label"),c=document.createElement("input");
     c.type="checkbox";c.checked=D.keep[i];
     c.addEventListener("change",function(){D.keep[i]=c.checked;afterKeep();});
@@ -1218,25 +1282,27 @@ saveBtn.addEventListener("click",function(){
   var ul=document.createElement("ul");names.forEach(function(n){var li=document.createElement("li");li.textContent=n;ul.appendChild(li);});saveOut.appendChild(ul);
 });
 scanBtn.addEventListener("click",play);
-document.getElementById("shuffleBtn").addEventListener("click",function(){
-  stop();D.seed=(D.seed*31+11)%100003;D.keep=[true,true,true,true];makePhotos();buildKeep();saveOut.textContent="";
-  scanBtn.querySelector("span").textContent="Scan";D.stage="";show(-1);
-});
 stepBtns.forEach(function(b){b.addEventListener("click",function(){stop();show(STAGE_END[b.getAttribute("data-stage")]);});});
+function cardAt(e){
+  var r=bed.getBoundingClientRect(),x=(e.clientX-r.left)*(D.W/r.width),y=(e.clientY-r.top)*(D.H/r.height);
+  for(var i=0;i<N;i++){var cr=cardRect(i);if(x>=cr.x&&x<=cr.x+cr.w&&y>=cr.y&&y<=cr.y+cr.h)return i;}
+  return -1;
+}
 bed.addEventListener("click",function(e){
   if(D.t<T4)return;
-  var r=bed.getBoundingClientRect(),x=(e.clientX-r.left)*(D.W/r.width),y=(e.clientY-r.top)*(D.H/r.height);
-  for(var i=0;i<4;i++){var cr=cardRect(i);if(x>=cr.x&&x<=cr.x+cr.w&&y>=cr.y&&y<=cr.y+cr.h){D.keep[i]=!D.keep[i];keepList.querySelectorAll("input")[i].checked=D.keep[i];afterKeep();break;}}
+  var i=cardAt(e);if(i<0)return;
+  D.keep[i]=!D.keep[i];keepList.querySelectorAll("input")[i].checked=D.keep[i];afterKeep();
 });
-bed.addEventListener("mousemove",function(e){
-  if(D.t<T4){bed.style.cursor="default";return;}
-  var r=bed.getBoundingClientRect(),x=(e.clientX-r.left)*(D.W/r.width),y=(e.clientY-r.top)*(D.H/r.height),hit=false;
-  for(var i=0;i<4;i++){var cr=cardRect(i);if(x>=cr.x&&x<=cr.x+cr.w&&y>=cr.y&&y<=cr.y+cr.h)hit=true;}
-  bed.style.cursor=hit?"pointer":"default";
-});
+bed.addEventListener("mousemove",function(e){bed.style.cursor=D.t>=T4&&cardAt(e)>=0?"pointer":"default";});
 var lastW=0;
-function relayout(force){var w=bed.clientWidth;if(!force&&w===lastW)return;lastW=w;layoutBed();buildKeep();render(D.t);}
+function relayout(force){var w=bed.clientWidth;if(!force&&w===lastW)return;lastW=w;layoutBed();render(D.t);}
 themeHooks.push(function(){render(D.t);});
+(function(){
+  var im=new Image();im.decoding="async";
+  im.onload=function(){BED.img=im;BED.state="ready";render(D.t);};
+  im.onerror=function(){BED.state="error";render(D.t);};
+  im.src=BED.src;
+})();
 
 /* ---------- adjustment demo ---------- */
 var adj=document.getElementById("adjCanvas");
@@ -1254,86 +1320,32 @@ function sizeAdj(){
   return changed;
 }
 var A={sample:"faded",base:null,orig:null,out:null,half:null,draft:false,full:false,split:.5,pending:false};
-var S={bright:0,contrast:0,sat:0,sharp:0,auto:true,restore:true,descreen:false,mode:"color"};
+var S={bright:0,contrast:0,sat:0,sharp:0,auto:false,restore:true,descreen:false,mode:"color"};
 function luma(r,g,b){return .299*r+.587*g+.114*b;}
-function lakeScene(c,w,h){
-  c.fillStyle="#86ad5a";c.fillRect(0,0,w,h);
-  c.fillStyle=lg(c,0,0,0,h*.56,[[0,"#7fb3df"],[1,"#eadfc6"]]);c.fillRect(0,0,w,h*.56);
-  c.fillStyle="#fffaf0";circle(c,w*.2,h*.17,h*.065);
-  c.fillStyle="#ffffff";[[.42,.12,.07],[.48,.1,.05],[.53,.13,.06],[.74,.18,.05],[.79,.16,.06],[.84,.19,.045]].forEach(function(q){c.beginPath();c.ellipse(w*q[0],h*q[1],w*q[2],h*q[2]*.9,0,0,Math.PI*2);c.fill();});
-  c.fillStyle="#8fa6c2";c.beginPath();c.moveTo(0,h*.5);
-  var pk=[[.08,.3],[.18,.42],[.3,.22],[.42,.4],[.55,.27],[.68,.42],[.8,.25],[.92,.38],[1,.33]];
-  pk.forEach(function(q){c.lineTo(w*q[0],h*q[1]);});c.lineTo(w,h*.56);c.lineTo(0,h*.56);c.fill();
-  c.fillStyle="#eef2f6";c.beginPath();c.moveTo(w*.26,h*.26);c.lineTo(w*.3,h*.22);c.lineTo(w*.34,h*.27);c.lineTo(w*.31,h*.255);c.fill();
-  c.beginPath();c.moveTo(w*.77,h*.29);c.lineTo(w*.8,h*.25);c.lineTo(w*.835,h*.3);c.fill();
-  c.fillStyle="#6a8f5f";c.beginPath();c.moveTo(0,h*.5);c.quadraticCurveTo(w*.3,h*.43,w*.6,h*.52);c.quadraticCurveTo(w*.8,h*.47,w,h*.5);c.lineTo(w,h*.57);c.lineTo(0,h*.57);c.fill();
-  c.fillStyle=lg(c,0,h*.56,0,h*.86,[[0,"#78acd0"],[1,"#4a80a8"]]);c.fillRect(0,h*.56,w,h*.36);
-  c.fillStyle="#1f2e1c";c.beginPath();c.moveTo(0,h*.548);for(var tq=0;tq<=40;tq++){c.lineTo(w*tq/40,h*(.538-((tq*7)%5)*.006));}c.lineTo(w,h*.575);c.lineTo(0,h*.575);c.fill();
-  c.save();c.globalAlpha=.22;c.translate(0,h*1.12);c.scale(1,-1);c.fillStyle="#2f4b3a";c.beginPath();c.moveTo(0,h*.5);c.quadraticCurveTo(w*.3,h*.43,w*.6,h*.52);c.quadraticCurveTo(w*.8,h*.47,w,h*.5);c.lineTo(w,h*.56);c.lineTo(0,h*.56);c.fill();c.restore();
-  c.fillStyle="rgba(255,255,255,.5)";for(var k=0;k<6;k++)c.fillRect(w*(.48+k*.03),h*(.72+k*.012),w*(.06-k*.006),1.5);
-  c.fillStyle="#c8372d";c.beginPath();c.moveTo(w*.52,h*.69);c.lineTo(w*.66,h*.69);c.lineTo(w*.63,h*.715);c.lineTo(w*.545,h*.715);c.fill();
-  c.fillStyle="#f5efe2";c.fillRect(w*.575,h*.655,w*.018,h*.036);
-  c.fillStyle="#86ad5a";c.beginPath();c.moveTo(0,h*.86);c.quadraticCurveTo(w*.5,h*.8,w,h*.9);c.lineTo(w,h);c.lineTo(0,h);c.fill();
-  c.strokeStyle="#5f8a3f";c.lineWidth=2;c.beginPath();for(var j=0;j<38;j++){var x=w*(.02+j*.026),y=h*(.9+((j*37)%7)*.005);c.moveTo(x,h);c.lineTo(x+((j%3)-1)*4,y-h*.06);}c.stroke();
-}
-function fade(c){
-  var d=c.getImageData(0,0,c.canvas.width,c.canvas.height),a=d.data,r=rng(42);
-  for(var i=0;i<a.length;i+=4){
-    var R=a[i]/255,G=a[i+1]/255,B=a[i+2]/255,y=luma(R,G,B);
-    R=y+(R-y)*.5;G=y+(G-y)*.5;B=y+(B-y)*.5;
-    R=.24+R*.6+.025;G=.24+G*.6+.008;B=.24+B*.6-.02;
-    var n=(r()-.5)*.022;
-    a[i]=(R+n)*255;a[i+1]=(G+n)*255;a[i+2]=(B+n)*255;
-  }
-  c.putImageData(d,0,0);
-}
-var SAMPLES={
-  faded:function(c,w,h){lakeScene(c,w,h);fade(c);},
-  print:function(c,w,h,k){
-    c.fillStyle="#f3efe6";c.fillRect(0,0,w,h);
-    var ix=Math.round(26*k),iy=Math.round(26*k),iw=Math.round(w*.56*k),ih=Math.round((h-52)*k);
-    var tmp=document.createElement("canvas");tmp.width=iw;tmp.height=ih;var tc=tmp.getContext("2d");SCENES[1](tc,iw,ih);
-    var src=tc.getImageData(0,0,iw,ih).data,n=iw*ih;
-    var C=new Float32Array(n),M=new Float32Array(n),Y=new Float32Array(n),K=new Float32Array(n);
-    for(var i=0;i<n;i++){var cc=1-src[i*4]/255,mm=1-src[i*4+1]/255,yy=1-src[i*4+2]/255,kk=Math.min(cc,mm,yy)*.7;C[i]=cc-kk;M[i]=mm-kk;Y[i]=yy-kk;K[i]=kk;}
-    var cell=2.6*k,chans=[C,M,Y,K],angs=[15,75,0,45].map(function(a){a=a*Math.PI/180;return [Math.cos(a),Math.sin(a)];});
-    var page=c.getImageData(ix,iy,iw,ih),pd=page.data,ink=[0,0,0,0];
-    for(var yv=0;yv<ih;yv++)for(var xv=0;xv<iw;xv++){
-      for(var s=0;s<4;s++){
-        var co=angs[s][0],si=angs[s][1],u=xv*co+yv*si,v=-xv*si+yv*co,cu=(Math.floor(u/cell)+.5)*cell,cv=(Math.floor(v/cell)+.5)*cell;
-        var X=Math.round(cu*co-cv*si),Yy=Math.round(cu*si+cv*co);X=X<0?0:(X>=iw?iw-1:X);Yy=Yy<0?0:(Yy>=ih?ih-1:Yy);
-        var val=chans[s][Yy*iw+X],rad=cell*.74*Math.sqrt(Math.max(0,val)),dd=Math.hypot(u-cu,v-cv);
-        ink[s]=clamp(rad-dd+.5);
-      }
-      var o=(yv*iw+xv)*4,kf=1-.9*ink[3];
-      pd[o]=243*(1-.92*ink[0])*kf;pd[o+1]=239*(1-.88*ink[1])*kf;pd[o+2]=230*(1-.85*ink[2])*kf;pd[o+3]=255;
-    }
-    c.putImageData(page,ix,iy);
-    ix=26;iy=26;iw=Math.round(w*.56);
-    var tx=ix+iw+24,tw=w-tx-26;
-    c.fillStyle="#1d1b19";c.font="700 30px "+DISP;c.textBaseline="alphabetic";c.fillText("Summer",tx,iy+30);c.fillText("by the sea",tx,iy+64);
-    c.fillStyle="#b23a2e";c.fillRect(tx,iy+80,40,3);
-    c.fillStyle="#6b6660";var yy2=iy+104;
-    for(var l=0;l<17;l++){var lw=tw*(l%6===5?.55:(.86+((l*13)%7)*.02));c.fillRect(tx,yy2,lw,4);yy2+=15;if(l===8)yy2+=10;}
-  },
-  letter:function(c,w,h,k){
-    c.fillStyle=lg(c,0,0,w,h,[[0,"#efe8d9"],[1,"#e2d8c3"]]);c.fillRect(0,0,w,h);
-    c.fillStyle="rgba(90,70,40,.06)";c.fillRect(0,h*.5,w,1.5);
-    var t=document.createElement("canvas");t.width=c.canvas.width;t.height=c.canvas.height;var tc=t.getContext("2d");tc.scale(k,k);
-    tc.fillStyle="#5a554c";tc.font="400 19px "+MONO;tc.textBaseline="alphabetic";
-    var lines=["Lisbon, 12 May","","Dear Ana,","","The photos from the lake came back today.","I have put the best ones in the blue album","and kept the rest in the shoebox for you.","","The one of the red boat is my favourite.","","With love,","Mum"];
-    lines.forEach(function(s,i){tc.fillText(s,64,74+i*31);});
-    c.save();c.setTransform(1,0,0,1,0,0);
-    if("filter" in c){c.filter="blur("+(.9*k).toFixed(2)+"px)";c.drawImage(t,0,0);c.filter="none";}else{c.globalAlpha=.5;c.drawImage(t,-.6*k,0);c.drawImage(t,.6*k,0);}
-    c.restore();
-  }
+/* real scans; the source rectangle is the 3:2 part shown */
+var ASRC={
+  faded:{src:"assets/demo/faded-photo.jpg",sx:0,sy:0,sw:1350,sh:900,img:null,state:"loading"},
+  letter:{src:"assets/demo/document.jpg",sx:60,sy:40,sw:1080,sh:720,img:null,state:"loading"}
 };
+function loadSample(key){
+  var s=ASRC[key],im=new Image();im.decoding="async";
+  im.onload=function(){s.img=im;s.state="ready";if(A.sample===key){A.base=null;scheduleAdj();}};
+  im.onerror=function(){s.state="error";if(A.sample===key){A.base=null;scheduleAdj();}};
+  im.src=s.src;
+}
 function buildBase(){
   var off=document.createElement("canvas");off.width=AW;off.height=AH;var c=off.getContext("2d",{willReadFrequently:true});
-  c.setTransform(AK,0,0,AK,0,0);SAMPLES[A.sample](c,720,480,AK);c.setTransform(1,0,0,1,0,0);
-  var d=c.getImageData(0,0,AW,AH),n=AW*AH,r=new Float32Array(n),g=new Float32Array(n),b=new Float32Array(n);
+  var src=ASRC[A.sample];
+  c.fillStyle="#d4d8d2";c.fillRect(0,0,AW,AH);
+  if(src.img){c.imageSmoothingQuality="high";c.drawImage(src.img,src.sx,src.sy,src.sw,src.sh,0,0,AW,AH);}
+  var d;
+  /* pixel access is refused when the page is opened straight from disk in some browsers */
+  try{d=c.getImageData(0,0,AW,AH);}catch(e){A.base={blocked:true,canvas:off};A.orig=null;A.half=null;return;}
+  A.orig=d;A.half=null;A.draft=false;
+  if(!src.img){A.base={waiting:true};return;}
+  var n=AW*AH,r=new Float32Array(n),g=new Float32Array(n),b=new Float32Array(n);
   for(var i=0;i<n;i++){r[i]=d.data[i*4]/255;g[i]=d.data[i*4+1]/255;b[i]=d.data[i*4+2]/255;}
-  A.base={r:r,g:g,b:b};A.orig=d;A.out=actx.createImageData(AW,AH);A.half=null;A.draft=false;
+  A.base={r:r,g:g,b:b};A.out=actx.createImageData(AW,AH);
   /* a half-size copy keeps slider drags responsive on large backing stores */
   if(AW>1000){
     var w2=AW>>1,h2=AH>>1,m=w2*h2,r2=new Float32Array(m),g2=new Float32Array(m),b2=new Float32Array(m);
@@ -1402,8 +1414,16 @@ function pipeline(P){
   var o=P.out.data;
   for(i=0;i<n;i++){o[i*4]=Math.round(r[i]*255);o[i*4+1]=Math.round(g[i]*255);o[i*4+2]=Math.round(b[i]*255);o[i*4+3]=255;}
 }
+function adjNotice(t){
+  actx.save();actx.scale(APX,APX);actx.font="500 12px "+MONO;
+  var W=AW/APX,H=AH/APX,w=Math.min(actx.measureText(t).width+24,W-16);
+  rr(actx,(W-w)/2,H/2-15,w,30,15);actx.fillStyle="rgba(19,23,26,.8)";actx.fill();
+  actx.fillStyle="#fff";actx.textAlign="center";actx.textBaseline="middle";actx.fillText(t,W/2,H/2+.5,W-28);actx.restore();
+}
 function drawAdj(){
-  if(!A.orig)return;
+  if(!A.base)return;
+  if(A.base.blocked){actx.drawImage(A.base.canvas,0,0);adjNotice("Open the page from a web server to try the adjustments");return;}
+  if(A.base.waiting){actx.putImageData(A.orig,0,0);adjNotice(ASRC[A.sample].state==="error"?"The sample scan could not be loaded":"Loading the sample scan…");return;}
   var sx=Math.round(AW*A.split);
   actx.putImageData(A.orig,0,0);
   if(sx<AW){
@@ -1425,6 +1445,7 @@ function drawAdj(){
 }
 function processAdj(draft){
   if(!A.base)buildBase();
+  if(A.base.blocked||A.base.waiting){drawAdj();return;}
   if(draft&&A.half){pipeline(A.half);A.half.ctx.putImageData(A.half.out,0,0);A.draft=true;}
   else{pipeline({base:A.base,w:AW,h:AH,k:AK,out:A.out});A.draft=false;}
   drawAdj();
@@ -1448,10 +1469,11 @@ sliders.forEach(function(inp){
 document.getElementById("resetAdj").addEventListener("click",function(){sliders.forEach(function(inp){inp.value=0;S[inp.getAttribute("data-key")]=0;inp.nextElementSibling.textContent="0";fillRange(inp);});scheduleAdj();announce("Sliders reset to 0.");});
 [].slice.call(document.querySelectorAll(".sw input")).forEach(function(inp){inp.addEventListener("change",function(){S[inp.getAttribute("data-key")]=inp.checked;scheduleAdj();});});
 [].slice.call(document.querySelectorAll('input[name="mode"]')).forEach(function(inp){inp.addEventListener("change",function(){if(inp.checked){S.mode=inp.value;scheduleAdj();}});});
-var SUGGEST={faded:{auto:true,restore:true,descreen:false},print:{auto:false,restore:false,descreen:true},letter:{auto:true,restore:false,descreen:false}};
-var SAMPLE_LABEL={faded:"a faded color photo of a lake with a red boat",print:"a magazine page whose photo is printed as a dot pattern",letter:"a slightly blurry typed letter on yellowed paper"};
+/* the starting state that suits each sample: the faded print gets its color back, the letter is cleaned up as a grayscale document */
+var SUGGEST={faded:{auto:false,restore:true,descreen:false,mode:"color"},letter:{auto:true,restore:false,descreen:false,mode:"gray"}};
+var SAMPLE_LABEL={faded:"a faded, low-contrast cabinet card from around 1885 of three young women sitting on the grass in front of a studio backdrop",letter:"the top of a typed letter from 1903 on yellowed American National Red Cross letterhead"};
 function adjLabel(){adj.setAttribute("aria-label","Before and after comparison of "+SAMPLE_LABEL[A.sample]+". Original on the left, adjusted on the right; divider at "+Math.round(A.split*100)+"%.");}
-[].slice.call(document.querySelectorAll('input[name="sample"]')).forEach(function(inp){inp.addEventListener("change",function(){if(inp.checked){A.sample=inp.value;A.base=null;var sug=SUGGEST[A.sample];["auto","restore","descreen"].forEach(function(k){S[k]=sug[k];document.querySelector('.sw input[data-key="'+k+'"]').checked=sug[k];});adjLabel();scheduleAdj();}});});
+[].slice.call(document.querySelectorAll('input[name="sample"]')).forEach(function(inp){inp.addEventListener("change",function(){if(inp.checked){A.sample=inp.value;A.base=null;var sug=SUGGEST[A.sample];["auto","restore","descreen"].forEach(function(k){S[k]=sug[k];document.querySelector('.sw input[data-key="'+k+'"]').checked=sug[k];});S.mode=sug.mode;document.querySelector('input[name="mode"][value="'+sug.mode+'"]').checked=true;adjLabel();scheduleAdj();}});});
 var splitIn=document.getElementById("split");
 splitIn.addEventListener("input",function(){A.split=splitIn.value/100;drawAdj();});
 splitIn.addEventListener("change",adjLabel);
@@ -1513,7 +1535,7 @@ function legacyCopy(text){
 
 /* ---------- start ---------- */
 function start(){
-  relayout(true);show(-1);sizeAdj();processAdj();adjLabel();renderNames();syncTheme();
+  relayout(true);buildKeep();show(-1);sizeAdj();loadSample("faded");loadSample("letter");processAdj();adjLabel();renderNames();syncTheme();
 }
 start();
 if(window.ResizeObserver){var ro=new ResizeObserver(function(){requestAnimationFrame(function(){relayout(false);});});ro.observe(bed.parentNode);}
@@ -1522,7 +1544,7 @@ var adjTimer=0;
 function adjResize(){clearTimeout(adjTimer);adjTimer=setTimeout(function(){if(sizeAdj())processAdj();else drawAdj();},120);}
 if(window.ResizeObserver)new ResizeObserver(adjResize).observe(adj);
 window.addEventListener("resize",adjResize);
-if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){render(D.t);A.base=null;processAdj();});
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){render(D.t);drawAdj();});
 })();
 </script>
 </body>
