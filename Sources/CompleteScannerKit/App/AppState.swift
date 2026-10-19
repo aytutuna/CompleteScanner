@@ -33,7 +33,7 @@ final class CancelFlag: @unchecked Sendable {
 /// The recognized text of a PDF's pages, collected while the PDF is written for the text file
 /// beside it (`OutputOptions.alsoSaveText`), so OCR reads each page once. Filled by the one task
 /// that writes the PDF and read once that task has finished. Twin of the Windows `PdfText`.
-fileprivate final class PDFTextCollector: @unchecked Sendable {
+final class PDFTextCollector: @unchecked Sendable {
     var pages: [OCRPage] = []
     /// The OCR error of the first page whose text could not be read; no text file is written then.
     var problem: String?
@@ -94,12 +94,14 @@ public final class AppState: ObservableObject {
     @Published public internal(set) var scannedPages: [ScannedPage] = []
     @Published public var detectedPhotos: [DetectedPhoto] = []
     @Published public var showPhotoReview = false
+    /// The review holds receipts rather than photos: it is titled and saved as receipts (AppState+Receipts.swift).
+    @Published public internal(set) var isReceiptReview = false
     /// This session's scans, newest first (small previews only) — the "Scans" tab.
     @Published public private(set) var scanHistory: [ScanHistoryEntry] = []
     /// Full-resolution sources of the current photo batch, keyed by scanned-page id and
     /// retained only while the photo review is open, so manual crop corrections can
     /// re-extract each photo from the correct sheet at full quality.
-    private var photoSourceImages: [UUID: CGImage] = [:]
+    var photoSourceImages: [UUID: CGImage] = [:]
 
     /// The full-resolution page a detected photo, or a side of the ID card, was extracted from
     /// (nil once the review is closed).
@@ -215,7 +217,7 @@ public final class AppState: ObservableObject {
     /// Device switches are serialized through this chain; concurrent clicks
     /// must never interleave open/close on hardware sessions.
     private var switchTask: Task<Void, Never>?
-    private var switchGeneration = 0
+    var switchGeneration = 0
     private var settingsSaveTask: Task<Void, Never>?
     /// The current exclusive operation's cancel flag (nil when idle).
     private var currentCancelFlag: CancelFlag?
@@ -515,6 +517,7 @@ public final class AppState: ObservableObject {
         selectionRect = nil
         detectedPhotos = []
         showPhotoReview = false
+        isReceiptReview = false
         photoSourceImages = [:]
 
         guard let id else {
@@ -739,6 +742,7 @@ public final class AppState: ObservableObject {
                 // manual crop corrections can re-extract from the correct page.
                 self.photoSourceImages = Dictionary(uniqueKeysWithValues: processed.map { ($0.id, $0.image) })
                 self.detectedPhotos = found
+                self.isReceiptReview = false
                 self.recordCaptures(found.map(\.id))
                 self.showPhotoReview = !found.isEmpty
                 self.statusMessage = "Found \(found.count) photo\(found.count == 1 ? "" : "s") on the bed."
@@ -777,6 +781,9 @@ public final class AppState: ObservableObject {
                 try await self.printCopyPages(processed, settings: s, setup: copySetup, areaSelected: areaSelected,
                                               flag: flag)
                 self.recordCaptures(processed.map(\.id))
+            case .receiptSplit:
+                self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
+                try await self.showReceipts(processed, settings: s, flag: flag, generation: generation)
             }
             if let stop {
                 self.errorMessage = stop.message(pagesKept: raw.count)
@@ -972,6 +979,8 @@ public final class AppState: ObservableObject {
     public func saveReviewedPhotos() {
         let photos = detectedPhotos.filter(\.included)
         guard !photos.isEmpty else { return cancelPhotoReview() }
+        // Receipts are named by their date and saved as PDFs or images (AppState+Receipts.swift).
+        if isReceiptReview { return saveReceipts() }
         let s = settings
         let format = s.format.imageFormatOrJPEG
         runExclusive { flag in
@@ -999,11 +1008,13 @@ public final class AppState: ObservableObject {
     }
 
     public func cancelPhotoReview() {
+        let receipts = isReceiptReview
         detectedPhotos = []
         showPhotoReview = false
+        isReceiptReview = false
         photoSourceImages = [:]
         resetFlow()
-        statusMessage = "Photo batch discarded."
+        statusMessage = receipts ? "Receipts discarded." : "Photo batch discarded."
         endOfWork()
     }
 
@@ -1019,9 +1030,14 @@ public final class AppState: ObservableObject {
         guard let photo = detectedPhotos.first(where: { $0.id == id }),
               let source = photoSource(for: photo) else { return }
         let deskew = settings.photoAutoDeskew
+        let receipt = isReceiptReview
+        let dpi = photo.dpi
         Task { @MainActor [weak self] in
             let image = await Task.detached(priority: .userInitiated) {
-                PhotoDetector.extractPhoto(from: source, region: region, deskew: deskew)
+                // A receipt is cut out upright and cleaned up again, as it was found.
+                receipt
+                    ? Self.recutReceipt(source, region: region, dpi: dpi)
+                    : PhotoDetector.extractPhoto(from: source, region: region, deskew: deskew)
             }.value
             guard let self, let image, !self.isBusy,
                   let idx = self.detectedPhotos.firstIndex(where: { $0.id == id }) else { return }
@@ -1580,7 +1596,7 @@ public final class AppState: ObservableObject {
 
     /// The text file beside a PDF just written, with the PDF's name (the next free one when that is
     /// taken): its URL, or why it was not written (the PDF is saved either way).
-    nonisolated fileprivate static func writeTextBeside(pdf url: URL, text: PDFTextCollector) -> (url: URL?, problem: String?) {
+    nonisolated static func writeTextBeside(pdf url: URL, text: PDFTextCollector) -> (url: URL?, problem: String?) {
         if let problem = text.problem { return (nil, problem) }
         let target = NamingTemplate.uniqueURL(in: url.deletingLastPathComponent(),
                                               base: url.deletingPathExtension().lastPathComponent,
@@ -1679,11 +1695,11 @@ public final class AppState: ObservableObject {
         return value
     }
 
-    func outputURL(fileExtension: String, index: Int? = nil) throws -> URL {
+    func outputURL(fileExtension: String, index: Int? = nil, documentDate: DocumentDate? = nil) throws -> URL {
         let dir = try destinationDirectory()
         let base = NamingTemplate(settings.namingTemplate)
             .baseFilename(NamingContext(counter: nextCounter(), date: Date(), intent: settings.intent,
-                                        index: index, task: TaskCatalog.infer(settings)))
+                                        index: index, task: TaskCatalog.infer(settings), documentDate: documentDate))
         return NamingTemplate.uniqueURL(in: dir, base: base, fileExtension: fileExtension)
     }
 

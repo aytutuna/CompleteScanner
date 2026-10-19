@@ -17,6 +17,7 @@ public static class TaskIcons
         "idCard" => "",
         "copy" => "",
         "word" => "",
+        "receipt" => "",
         _ => "",
     };
 

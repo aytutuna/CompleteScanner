@@ -10,7 +10,7 @@ public class ScanTaskTests
     [Fact]
     public void RawValues_AreTheStoredNames()
     {
-        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word"],
+        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word", "receipt"],
                      ScanTasks.All.Select(t => t.RawValue()));
     }
 
@@ -30,9 +30,9 @@ public class ScanTaskTests
     {
         Assert.Equal(ScanTasks.All, TaskCatalog.All.Select(d => d.Task));
         Assert.Equal(["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
-                      "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word"],
+                      "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word", "Receipts"],
                      TaskCatalog.All.Select(d => d.Title));
-        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word"],
+        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt"],
                      TaskCatalog.All.Select(d => d.IconKey));
         foreach (var definition in TaskCatalog.All)
         {
@@ -67,6 +67,7 @@ public class ScanTaskTests
                 (TaskFlowKind.IdCard, ScanIntent.Document, ScanSource.Flatbed),
                 (TaskFlowKind.Copy, ScanIntent.Document, null),
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, null),
+                (TaskFlowKind.ReceiptSplit, ScanIntent.Document, null),
             ],
             TaskCatalog.All.Select(d => (d.Flow, d.Intent, d.RequiredSource)));
     }
@@ -103,6 +104,8 @@ public class ScanTaskTests
         s.TaskOptions.CopyFitToPage = true;
         s.TaskOptions.CopyPrinterName = "Office";
         s.TaskOptions.CopyAlsoSavePdf = true;
+        s.TaskOptions.ReceiptNameByDate = false;
+        s.TaskOptions.ReceiptCombine = true;
         return s;
     }
 
@@ -121,7 +124,8 @@ public class ScanTaskTests
             Assert.Equal(task.RawValue(), s.TaskId);
             Assert.Equal(task, s.Task);
             Assert.Equal(0.9, s.JpegQuality);
-            Assert.Equal(ColorMode.Color, s.ColorMode);
+            // Thermal print has no color: receipts are scanned in grayscale.
+            Assert.Equal(task == ScanTask.Receipt ? ColorMode.Grayscale : ColorMode.Color, s.ColorMode);
             Assert.True(s.PhotoAutoSplit && s.PhotoAutoDeskew);
             // The ID card's numbers are better not indexed, and a copy is for paper: no text layer.
             Assert.Equal(task is not (ScanTask.IdCard or ScanTask.Copy), s.PdfSearchable);
@@ -129,6 +133,7 @@ public class ScanTaskTests
             Assert.Equal((IdCardPaper.Letter, true), (s.TaskOptions.IdCardPaper, s.TaskOptions.IdCardSaveSidesAsImages));
             Assert.Equal((4, true, "Office", true), (s.TaskOptions.CopyCount, s.TaskOptions.CopyFitToPage,
                                                      s.TaskOptions.CopyPrinterName, s.TaskOptions.CopyAlsoSavePdf));
+            Assert.Equal((false, true), (s.TaskOptions.ReceiptNameByDate, s.TaskOptions.ReceiptCombine));
             Assert.NotSame(current.TaskOptions, s.TaskOptions);
             Assert.Equal(TaskCatalog.Definition(task).Intent, s.Intent);
             Assert.True(TaskCatalog.Fits(task, s));
@@ -159,6 +164,7 @@ public class ScanTaskTests
                 (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "ID card {date}", false, false, PdfSizePreset.Standard),
                 (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Copy {date} {counter}", false, false, PdfSizePreset.Standard),
                 (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Word, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
+                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Receipt {docdate} {counter}", false, false, PdfSizePreset.Compact),
             ],
             rows);
     }
@@ -408,7 +414,7 @@ public class ScanTaskTests
         // A task of a newer version is inferred from the settings.
         Assert.Equal(ScanTask.Photos, Infer(s =>
         {
-            s.TaskId = "receipt";
+            s.TaskId = "whiteboard";
             s.Intent = ScanIntent.Photo;
         }));
     }
@@ -570,7 +576,7 @@ public class ScanTaskTests
     [Fact]
     public void FileLabels()
     {
-        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy", "Document"],
+        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy", "Document", "Receipt"],
                      TaskCatalog.All.Select(d => d.FileLabel));
     }
 
@@ -593,6 +599,30 @@ public class ScanTaskTests
         Assert.False(TaskCatalog.Fits(ScanTask.Word, s));
         Assert.Equal(TaskAvailability.Available,
                      TaskCatalog.Availability(ScanTask.Word, new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder] }));
+    }
+
+    [Fact]
+    public void Receipt_IsAGrayCompactSearchablePdf_NamedByTheReceiptsDate()
+    {
+        var definition = TaskCatalog.Definition(ScanTask.Receipt);
+        Assert.Equal(("Scan receipts", "receipt", "Receipt"), (definition.Steps[0].PrimaryActionLabel, definition.IconKey, definition.FileLabel));
+        var s = TaskCatalog.Apply(ScanTask.Receipt, new ScanSettings());
+        Assert.Equal((ScanIntent.Document, ScanSource.Flatbed, OutputFormat.Pdf, 300, ColorMode.Grayscale, PdfSizePreset.Compact),
+                     (s.Intent, s.Source, s.Format, s.Resolution, s.ColorMode, s.Output.PdfSize));
+        Assert.True(s.PdfSearchable);
+        Assert.False(s.Document.AutoCrop || s.Document.AutoStraighten || s.Document.RemoveBlankPages);
+        Assert.Equal(TaskFlowKind.ReceiptSplit, TaskCatalog.FlowOf(s));
+        Assert.Equal("300 dpi · Grayscale · Compact PDF", TaskCatalog.Summary(s));
+        Assert.Equal((true, false), (s.TaskOptions.ReceiptNameByDate, s.TaskOptions.ReceiptCombine));
+        // The feeder takes one receipt a sheet; another format or size keeps the task; photo mode ends it.
+        s.Source = ScanSource.DocumentFeeder;
+        s.Format = OutputFormat.Jpeg;
+        s.Output.PdfSize = PdfSizePreset.Smallest;
+        Assert.True(TaskCatalog.Fits(ScanTask.Receipt, s));
+        Assert.Equal(TaskFlowKind.ReceiptSplit, TaskCatalog.FlowOf(s));
+        s.Intent = ScanIntent.Photo;
+        Assert.False(TaskCatalog.Fits(ScanTask.Receipt, s));
+        Assert.True(TaskCatalog.Availability(ScanTask.Receipt, new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder] }).IsAvailable);
     }
 
     [Fact]

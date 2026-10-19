@@ -17,7 +17,7 @@ struct PhotoReviewView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Detected photos (\(state.detectedPhotos.count))")
+                Text(state.reviewTitle)
                     .font(.title2.bold())
                 Text("Uncheck any false detections, rotate if needed, then save.")
                     .font(.callout)
@@ -45,7 +45,9 @@ struct PhotoReviewView: View {
             Divider()
 
             HStack(spacing: 12) {
-                Text("Want more? Lay the next photos on the bed and scan another batch.")
+                Text(state.isReceiptReview
+                     ? "Want more? Lay the next receipts on the glass and scan again."
+                     : "Want more? Lay the next photos on the bed and scan another batch.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -64,7 +66,7 @@ struct PhotoReviewView: View {
                 }
                 .keyboardShortcut(.cancelAction)
 
-                Button("Save \(includedCount) Photo\(includedCount == 1 ? "" : "s")") {
+                Button(state.reviewSaveTitle) {
                     state.saveReviewedPhotos()
                 }
                 .buttonStyle(.borderedProminent)

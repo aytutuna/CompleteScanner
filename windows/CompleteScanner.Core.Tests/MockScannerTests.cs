@@ -356,4 +356,34 @@ public class MockScannerTests
             Assert.InRange(pick.Region.Center.Y / 150, 1.70, 1.80);
         }
     }
+
+    // MARK: - Receipts
+
+    [Fact]
+    public async Task TheDemoReceiptsAreFoundApart_AlongTheirPaper()
+    {
+        var (_, session) = await Open();
+        var settings = TaskCatalog.Apply(ScanTask.Receipt, new ScanSettings());
+        settings.Resolution = 150;
+        var preview = await session.PerformOverviewScanAsync(settings);
+        Assert.Equal((int)(11.7 * 100), preview.Height);
+        var scan = Assert.Single(await session.PerformScanAsync(settings, selection: null));
+        var found = ReceiptDetector.Find(scan.Image, 150);
+        var places = MockBedRenderer.ReceiptPlaces;
+        Assert.Equal(places.Count, found.Count);
+        for (int i = 0; i < found.Count; i++)
+        {
+            var region = found[i].Region;
+            var place = places[i];
+            Assert.Equal(ReceiptBasis.Paper, found[i].Basis);
+            Assert.InRange(region.Center.X / 150, place.CenterInches.X - 0.05, place.CenterInches.X + 0.05);
+            Assert.InRange(region.Center.Y / 150, place.CenterInches.Y - 0.05, place.CenterInches.Y + 0.05);
+            Assert.InRange(region.Size.Width / 150, place.SizeInches.Width - 0.08, place.SizeInches.Width + 0.08);
+            Assert.InRange(region.Size.Height / 150, place.SizeInches.Height - 0.08, place.SizeInches.Height + 0.08);
+            Assert.InRange(region.AngleDegrees, place.AngleDegrees - 0.5, place.AngleDegrees + 0.5);
+        }
+        // Other tasks keep the usual bed.
+        var document = Assert.Single(await session.PerformScanAsync(new ScanSettings { Resolution = 150 }, selection: null));
+        Assert.NotEqual(scan.Image.Pixels, document.Image.Pixels);
+    }
 }

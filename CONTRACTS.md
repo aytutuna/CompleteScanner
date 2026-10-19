@@ -19,6 +19,7 @@ Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Pipeline/IdCard.swift`, `App/AppState+IdCard.swift`, `UI/IdCardReviewView.swift` — the ID card task: both sides of a card found on the glass and laid out on one page at real size (see below).
 - `Sources/CompleteScannerKit/Output/PrintLayout.swift`, `App/PrintController.swift`, `App/AppState+Copy.swift` — copy and print: the Copy task, printing the ID card's page and the ruler test page, at real size (see below).
 - `Sources/CompleteScannerKit/Output/OCRText.swift`, `TextExport.swift`, `DocxWriter.swift`, `ZipStore.swift` — text output: OCR lines in reading order and paragraphs, the text file, the Word document and its zip package, Copy Text (see below).
+- `Sources/CompleteScannerKit/Pipeline/ReceiptProcessing.swift`, `App/AppState+Receipts.swift` — the Receipts task: several receipts found on the glass, cleaned up for faded thermal print, and named by the date read from their text (see below).
 - `Sources/CompleteScannerKit/App/AppState.swift` — the `@MainActor ObservableObject` all UI binds to; its task members are in `App/AppState+Tasks.swift`.
 - `Sources/CompleteScannerKit/App/ContentView.swift`, `CompleteScannerApp.swift`.
 
@@ -181,16 +182,16 @@ Twin of `windows/CompleteScanner.Core/DeviceMerge.cs` (`HardwareId`, `Connection
 // wants a task done, kept when a task is picked (see Pipeline/IdCard.swift).
 
 public enum ScanTask: String, CaseIterable, Identifiable, Sendable {
-    case document, feeder, photos, photoRestore, quickScan, email, twoSided, idCard, copy, word   // add new tasks after these
+    case document, feeder, photos, photoRestore, quickScan, email, twoSided, idCard, copy, word, receipt   // add new tasks after these
     public static func tryParse(_ rawValue: String?) -> ScanTask?
 }
 
-public enum TaskFlowKind: String, Sendable { case documentQueue, photoSplit, idCard, copy }
+public enum TaskFlowKind: String, Sendable { case documentQueue, photoSplit, idCard, copy, receiptSplit }
 
 public struct TaskDefinition: Equatable, Sendable {
     public let task: ScanTask
     public let title: String, subtitle: String
-    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word"
+    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt"
     public let flow: TaskFlowKind
     public let intent: ScanIntent
     public let requiredSource: ScanSource?
@@ -212,7 +213,8 @@ public enum TaskCatalog {
     /// `taskId`. Only `.twoSided` sets `duplex` (`.both`); the others set `.off`. Only `.idCard`
     /// (the numbers on an ID are better not indexed) and `.copy` (a copy is for paper) turn
     /// `pdfSearchable` off. Every task turns `output.alsoSaveText` off; `.word` (Scan to Word)
-    /// saves a Word document (`format = .word`, 300 dpi, collected pages).
+    /// saves a Word document (`format = .word`, 300 dpi, collected pages); `.receipt` scans in
+    /// grayscale (the only task that does) into Compact PDFs named "Receipt {docdate} {counter}".
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings
     /// The stored task, else the task the settings look like (display and file names only): a
     /// Word document is `.word` (from the feeder, `.feeder`); a scan saved at once as an image is
@@ -533,6 +535,14 @@ public struct GeometryPlan {                       // in analysis pixels
 }
 public struct GeometryCorrection { public let image: RgbaImage; public let geometry: PageGeometry; public let plan: GeometryPlan; public let region: DetectedPhotoRegion }
 public enum PageRejection: Sendable { case none, nothingFound, tooSmall, fillsScan, notRectangular, textAround, otherObjects }
+/// The limits a sheet is held to (`findPage(_:options:)`); `.default` is the constants below. Only the
+/// Receipts task asks for others (`ReceiptDetector.pageSearch`: contrast 0.02, fill 0.85, aspect 15).
+public struct PageSearchOptions: Equatable, Sendable {
+    public var pageContrast: Double, minPageAreaFraction: Double, maxPageAreaFraction: Double
+    public var minPageFill: Double, maxPageAspect: Double      // each defaults to its DocumentGeometry constant
+    public init()
+    public static let `default`: PageSearchOptions
+}
 public struct PageSearch {
     public let page: DetectedPhotoRegion?; public let rejection: PageRejection; public let candidate: DetectedPhotoRegion?
     public let areaFraction: Double; public let fill: Double; public let outsideMarks: Int
@@ -552,13 +562,15 @@ public enum DocumentGeometry {
     public static func plan(_ gray: GrayImage, crop: Bool, straighten: Bool) -> GeometryPlan?
     public static func rectAtAngle(_ points: [CGPoint], angleDegrees: Double) -> DetectedPhotoRegion
     public static func detectPage(_ gray: GrayImage) -> DetectedPhotoRegion?   // findPage(gray).page
-    public static func findPage(_ gray: GrayImage) -> PageSearch
+    public static func findPage(_ gray: GrayImage) -> PageSearch                       // findPage(gray, options: .default)
+    public static func findPage(_ gray: GrayImage, options: PageSearchOptions) -> PageSearch
     public static func ringWidth(_ w: Int, _ h: Int, dpi: Double) -> Int
     public static func backgroundLuminance(_ gray: GrayImage) -> Int
     public static func borderColor(_ image: RgbaImage, dpi: Int) -> (r: UInt8, g: UInt8, b: UInt8)
     public static func safeCanvas(_ gray: GrayImage, angleDegrees: Double) -> CGSize
     public static func estimateTextLayout(_ gray: GrayImage) -> TextLayout
-    // internal: median3x3, edgeInsets(_:dpi:) -> (left, top, right, bottom)
+    // internal: median3x3, edgeInsets(_:dpi:) -> (left, top, right, bottom),
+    //           refined(_:image:background:tolerance:) (the full-resolution snap, also used by ReceiptDetector)
 }
 ```
 Twin of `windows/CompleteScanner.Core/DocumentGeometry.cs` (`TextAxis`, `TextLayout`, `GeometryBasis`, `GeometryAction`, `PageGeometry`, `GeometryPlan`, `GeometryCorrection`, `PageRejection`, `PageSearch`, `DocumentGeometry` with the same members in PascalCase); `DocumentGeometryTests` are the same cases on both sides, on the same synthetic pages (`TestPages.textPage`, `turned`, `sheetOnBackdrop`, drawn with fixed-point sines and cosines, checked by checksum). Everything works on the page's gray copy at the analysis resolution and changes the full-resolution pixels once (`RgbaImage.extractRotated` or `cropped`), so both platforms compute the same plan; the full-resolution snap of the sheet's edges goes through `PhotoDetector.refineRegion`, which draws with CoreGraphics on the Mac and with `RgbaImage` on Windows, and is only taken when no edge moves by more than `refineTolerance` analysis pixels. The rules: the backdrop is the median of a thin outer ring, with a threshold widened on textured backdrops; the sheet is the largest region of what differs from it (closed, holes filled, strands cut), taken only when it covers 15–99 % of the scan, fills ≥ 90 % of its rectangle, is at most 5 times as long as wide, has no more than 8 text-like marks around it and nothing beside it as large as 2 % of it; a sheet with more than 10 % of its outline on the scan's edge takes its angle from the text and its crop is the smallest rectangle at that angle around it; a sheet's edges win over the text; turns under 0.2° are left alone, sheets beyond 15° are cropped along their box, text skew is searched over ±7° (a best angle at the end of the sweep is not trusted); turning a scan in place never cuts off content from its corners (the canvas grows instead, its outermost 0.02 in excepted); and the dark lines along the edges of an upright crop (shadow, backdrop) are trimmed, at most 0.04 in.
@@ -574,6 +586,8 @@ public struct TaskOptions: Codable, Equatable, Sendable {
     public var copyFitToPage: Bool = false                    // "copyFitToPage"
     public var copyPrinterName: String?                       // "copyPrinterName"; nil: the default printer (left out of the file)
     public var copyAlsoSavePdf: Bool = false                  // "copyAlsoSavePdf"
+    public var receiptNameByDate: Bool = true                 // "receiptNameByDate"; true also for files without it
+    public var receiptCombine: Bool = false                   // "receiptCombine"
 }
 public enum IdCardPaper: String, Codable, CaseIterable, Identifiable, Sendable {
     case auto, a4, letter                                     // first case = default and fallback
@@ -736,6 +750,10 @@ public enum PhotoDetector {
     public static func extractPhoto(from image: CGImage, region: DetectedPhotoRegion, deskew: Bool) -> CGImage?
     /// Internal (also used by DocumentGeometry): one region snapped to the edges at full resolution; nil when degenerate.
     static func refineRegion(_ region: DetectedPhotoRegion, in image: CGImage, backgroundLuminance bg: Double) -> DetectedPhotoRegion?
+    /// Internal (also used by ReceiptDetector): the detector's merging of overlapping regions and its
+    /// row-major order (C# `PhotoDetector.MergeOverlapping` / `SortRowMajor`, internal there).
+    static func mergingOverlaps(_ regions: [DetectedPhotoRegion]) -> [DetectedPhotoRegion]
+    static func sortedRowMajor(_ regions: [DetectedPhotoRegion]) -> [DetectedPhotoRegion]
 }
 ```
 
@@ -968,6 +986,57 @@ extension FileAction { var systemImage: String; func hint(fileCount: Int) -> Str
 ```
 Twin of `windows/CompleteScanner.Core/SaveActions.cs` (`AfterSaveAction`, `FileAction`, `ModelLabels.Label` / `Hint`, `SaveFollowUp` with `Paths` and `FileAction`, `ClipboardContent`, `SendRoute`, `SendProbe`, `SaveActions.Plan` / `Offered` / `IsImageFile` / `ClipboardContentFor` / `EmailRoute` / `ShareRoute` / `ShareTitle`, paths as strings); `SaveActionsTests` are the same cases on both sides, and the after-save cases of `ModelsCompatTests` match. `AppState` takes an optional `fileActions:` (default `SystemFileActions()`), offers `savedFileActions` (for `lastSavedURLs`) and `runFileAction(_:urls:)`, which reports a missing file or a refusal in `errorMessage`, and runs the plan of `settings.output.afterSave` after `savePDF`, `saveImmediately` and `saveReviewedPhotos` finish. Windows (`App/Services/FileActions.cs`, `ShareService.cs`) has no compose route, so Email opens the share window there; nothing is ever sent without the user sending it. `TaskCatalog.apply` sets the after-save action: `.share` for the Email task, `.none` for the others.
 
+### Pipeline/ReceiptProcessing.swift, App/AppState+Receipts.swift (+ TaskOptions in Core/Models.swift)
+
+```swift
+public enum ReceiptBasis: Sendable { case paper, text }      // cut along its paper, or around its print
+public struct ReceiptRegion: Equatable { public let region: DetectedPhotoRegion; public let basis: ReceiptBasis }
+public struct ReceiptDetectorOptions: Equatable, Sendable {
+    public var maxReceipts: Int = ReceiptDetector.maxReceipts   // 12
+    public var singleReceipt: Bool = false                      // a feeder sheet: everything printed is one receipt
+    public init(maxReceipts: Int = ReceiptDetector.maxReceipts, singleReceipt: Bool = false)
+}
+public enum ReceiptDetector {
+    // markContrast 0.09, closeInches 0.12, minBlockSquareInches 0.01, columnOverlap 0.5, columnGapInches 0.6,
+    // sideGapInches 1.5, minShortSideInches 0.5, minLongSideInches 1.0, minAreaSquareInches 0.75, maxReceipts 12,
+    // paddingInches 0.08, searchMarginsInches [0.4, 1.2], paperToleranceInches 0.05, minPaperSquareInches 0.5
+    public static let pageSearch: PageSearchOptions              // contrast 0.02, fill 0.85, aspect 15
+    public static func detectRegions(in image: RgbaImage, dpi: Int, options: ReceiptDetectorOptions = .init()) -> [DetectedPhotoRegion]
+    public static func find(_ image: RgbaImage, dpi: Int, options: ReceiptDetectorOptions = .init()) -> [ReceiptRegion]   // full resolution
+    public static func find(_ gray: GrayImage, options: ReceiptDetectorOptions = .init()) -> [ReceiptRegion]             // analysis pixels
+    public static func extract(_ image: RgbaImage, region: DetectedPhotoRegion) -> RgbaImage?          // upright, white outside
+    public static func extractEnhanced(_ image: RgbaImage, region: DetectedPhotoRegion, dpi: Int) -> RgbaImage?
+}
+public enum ReceiptEnhancer {
+    // tileInches 0.25, backgroundPercentile 0.9, whitePoint 0.90, blackPercentile 0.01, maxBlackPoint 0.6,
+    // gamma 1.6, minBackground 0.2, levels 1024
+    public static func enhance(_ image: RgbaImage, dpi: Int) -> RgbaImage   // gray (R = G = B), same size
+}
+public enum ReceiptDateExtractor {
+    public static let maxAgeYears: Int                            // 10
+    public static let monthNames: [String: Int]                   // folded names and abbreviations, 8 languages
+    public static let dateWords: [String], otherDateWords: [String]
+    public static func findDate(_ lines: [String], today: DocumentDate, preferDayFirst: Bool) -> DocumentDate?
+    public static func fold(_ line: String) -> String              // A–Z lowered, accents and Turkish letters plain, spaces plain
+    public static func prefersDayFirst(_ shortDatePattern: String) -> Bool
+    public static func prefersDayFirst(locale: Locale = .current) -> Bool   // DateFormatter "ddMMyyyy" pattern (Mac only)
+    // internal: datesIn(_ folded: String, preferDayFirst: Bool) -> [DocumentDate]
+    // internal: monthAlternation: String   // the month names, longest first, joined by "|": the only words the name patterns take
+}
+public enum Receipts {
+    public static func reviewTitle(_ found: Int) -> String        // "Found 4 receipts"
+    public static func saveTitle(included: Int, combine: Bool, format: OutputFormat) -> String   // "Save 3 Receipts", "Save as One PDF"
+    public static func combines(_ combine: Bool, format: OutputFormat, count: Int) -> Bool       // asked, PDF, more than one
+    public static func namesByDate(_ settings: ScanSettings) -> Bool   // receiptNameByDate and the template has "{docdate}"
+    public static func readsText(_ settings: ScanSettings) -> Bool   // namesByDate, or a searchable PDF / its text file
+    public static func textLines(_ lines: [OCRLine], pixelWidth: Int, pixelHeight: Int) -> [String]   // OCRText.readingOrder
+    public static func combinedDate(_ dates: [DocumentDate?]) -> DocumentDate?                  // the earliest
+    public static func savedMessage(count: Int, fileNames: [String], combined: Bool, undated: Int) -> String
+    // ". No date was found on …; … named by today's date." after the names; one PDF only when undated == count
+}
+```
+Twin of `windows/CompleteScanner.Core/ReceiptProcessing.cs` (`ReceiptBasis`, `ReceiptRegion`, `ReceiptDetectorOptions`, `ReceiptDetector.PageSearch` / `DetectRegions` / `Find` / `Extract` / `ExtractEnhanced`, `ReceiptEnhancer.Enhance`, `ReceiptDateExtractor.FindDate` / `Fold` / `PrefersDayFirst` / `MonthNames` / `DateWords` / `OtherDateWords`, `Receipts` with `NamesByDate`) and `TaskOptions.ReceiptNameByDate` / `ReceiptCombine`; `ReceiptTests` are the same cases on both sides, on the same synthetic beds (`TestPages.receiptBed`, checked by checksum) and the same 99-case date table (`ReceiptDateCases`, 3 known OCR-noise misses), and the receipt cases of `ScanTaskTests`, `ModelsCompatTests`, `NamingTemplateTests` and `MockScannerTests` match. Everything works on the scan's gray copy at the analysis resolution and the receipts' own pixels (`RgbaImage`), so both platforms find the same regions and write the same cleaned-up pixels; the date patterns are the same regular expressions (.NET `Regex`, `NSRegularExpression`) on the same folded text, the month-name ones built with `monthAlternation` so a word that is not a month never uses up the date after it. The rules: blocks of print (marks over 9 % off the lid's ring median, closed 0.12 in, opened 1 px) one above the other less than 0.6 in apart are one receipt; a block too small to be a receipt joins the receipt next to it (< 0.6 in) or beside it (< 1.5 in, half its height alongside); where the paper shows (a 3 × 3 median off the lid by `pageSearch`'s contrast or 3.7 times the ring's spread, opened, pieces ≥ 0.5 in²) blocks on different sheets never join and a small block joins the receipt on its sheet; each receipt's paper is looked for 0.4 in, then 1.2 in around its print with `findPage(_:options: pageSearch)` and taken when it holds all the print (snapped at full resolution through `DocumentGeometry.refined`), else the print is boxed at the angle of its text lines (`estimateTextLayout`, else its smallest rectangle) with 0.08 in margin; regions merge and sort as photos do. A date must exist and lie between `today.addingYears(-10)` and tomorrow; a part above 12 is the day, dots put the day first, else `preferDayFirst`; two-digit years are 20yy; a line with a date word wins, lines with another-date word are left out, else the first in reading order. The task (`ScanTask.receipt`, flow `.receiptSplit`, any source, 300 dpi grayscale, Compact PDF, searchable, "Receipt {docdate} {counter}") runs in `AppState.performScan`'s `.receiptSplit` case: `showReceipts` finds the receipts on each page (`splitReceipts`: several on the glass, one per feeder sheet, the whole page when none is found), cuts them out cleaned up and opens the photo review with `isReceiptReview` (its title `reviewTitle`, its button `reviewSaveTitle`, "Receipts discarded." on Cancel); Fix crop cuts out and cleans up again (`recutReceipt`); `saveReviewedPhotos` goes to `saveReceipts`: each kept receipt turned as shown, read once with `OCRService` when `Receipts.readsText` (the date only when `Receipts.namesByDate`) (a failure keeps the receipt without a text layer), its date found with `ReceiptDateExtractor.findDate(Receipts.textLines(…), preferDayFirst: prefersDayFirst())`, then a file each (`outputURL(fileExtension:documentDate:)`; PDF pages `.grayscale` at the PDF size, the text layer from the lines read, `writeTextBeside` with `alsoSaveText`, the text file it returns recorded for the rollback; images through `ImageExporter`) or one PDF named by the earliest date, all or nothing; the status is `Receipts.savedMessage`. `AppState` members relaxed for this file: `photoSourceImages`, `switchGeneration`, `PDFTextCollector`, `writeTextBeside`. `setReceiptNameByDate(_:)`, `setReceiptCombine(_:)`, `isReceiptFlow`. Windows has the same members in `AppViewModel.Receipts.cs` (`IsReceiptFlow`, `IsReceiptReview`, `ReviewTitle`, `ReviewSaveTitle`, `SetReceiptNameByDate`, `SetReceiptCombine`; `WritePdfAtomically`'s `knownLines`) and the inspector's Receipts section in `MainWindow.xaml` / `MainWindow.Receipts.cs`; it reads `CultureInfo.CurrentCulture.DateTimeFormat.ShortDatePattern` for the day-or-month preference.
+
 ### Output/OCRService.swift
 
 ```swift
@@ -1001,7 +1070,8 @@ public struct NamingTemplate {
     public init(_ template: String)
     /// Tokens: {date}=yyyy-MM-dd, {time}=HH.mm.ss, {year} {month} {day}, {counter} (also {counter:N}
     /// zero-padded), {intent} ("Document"/"Photos"), {index} (photo number in a batch, empty when nil),
-    /// {task} (the task's `fileLabel`; the {intent} text without a task).
+    /// {task} (the task's `fileLabel`; the {intent} text without a task), {docdate} (the context's
+    /// `documentDate`, yyyy-MM-dd; the date of `date` without one).
     /// Unknown tokens pass through; result sanitized for the filesystem (no "/" or ":").
     public func baseFilename(_ context: NamingContext) -> String
     /// The same without a task (kept for existing callers).
@@ -1016,10 +1086,25 @@ public struct NamingContext: Equatable, Sendable {
     public var counter: Int, date: Date, intent: ScanIntent
     public var index: Int?          // default nil
     public var task: ScanTask?      // default nil
-    public init(counter: Int, date: Date, intent: ScanIntent, index: Int? = nil, task: ScanTask? = nil)
+    public var documentDate: DocumentDate?   // default nil: {docdate} is the scan date
+    public init(counter: Int, date: Date, intent: ScanIntent, index: Int? = nil, task: ScanTask? = nil,
+                documentDate: DocumentDate? = nil)
+}
+
+/// A calendar day with no time and no time zone: the date printed on a document.
+public struct DocumentDate: Equatable, Hashable, Comparable, Sendable, CustomStringConvertible {
+    public let year: Int, month: Int, day: Int
+    public init(year: Int, month: Int, day: Int)
+    public init(date: Date, timeZone: TimeZone = .current)            // the Gregorian day of `date`
+    public static func make(year: Int, month: Int, day: Int) -> DocumentDate?   // nil unless the day exists
+    public static func isValid(year: Int, month: Int, day: Int) -> Bool
+    public static func daysInMonth(year: Int, month: Int) -> Int
+    public var dayNumber: Int { get }                                  // days since 1970-01-01
+    public func addingYears(_ years: Int) -> DocumentDate              // 29 Feb → 28 Feb in a common year
+    public var text: String { get }                                    // "2026-03-12" (also `description`)
 }
 ```
-Twin of C# `NamingContext` (a record with `Index` / `Task` init properties). Later tokens add optional properties here, so `baseFilename(_:)` keeps its signature.
+Twin of C# `NamingContext` (a record with `Index` / `Task` / `DocumentDate` init properties) and `DocumentDate` (a record struct: `Of(DateTime)`, `TryCreate`, `IsValid`, `DaysInMonth`, `DayNumber`, `AddingYears`, `ToString()` "2026-03-12"); `NamingTemplateTests` and the `DocumentDate` cases of `ReceiptTests` are the same on both sides. Later tokens add optional properties here, so `baseFilename(_:)` keeps its signature.
 
 ### Backends/ICScannerBackend.swift
 
@@ -1033,17 +1118,17 @@ ImageCaptureCore implementation: `ICDeviceBrowser` (scanner mask, local + bonjou
 ```swift
 public final class MockScannerBackend: ScannerBackend { ... }
 ```
-One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true)`; synthesizes deterministic flatbed images (see task brief). For the ID card task (`settings.task == .idCard`) its glass holds a made-up sample card (ID-1 size, rounded corners, "SAMPLE", a grey photo placeholder, field bars; a barcode and code blocks on the back; no real document and no flags), front down at (2.35, 1.75) in tilted 4°: a scan delivers the side facing the glass and then turns the card over where it lies (`idCardTurnedOver`, tilt mirrored), so scans alternate front, back; a preview shows the side without turning it (C# `IdCardTurnedOver`, drawn pixel by pixel there and with CoreGraphics here). It also has a document feeder (`sources: [.flatbed, .documentFeeder]`, `feederSizeInches` 8.5 × 14, `supportsDuplex` = `feederDuplex`, default true): a feeder scan returns `feederSheetCount` two-sided sheets (default `MockScannerBackend.defaultFeederSheetCount` = 3, read when the scan starts; letter size, or the paper size asked for; the front of sheet *n* carries *n* square marks near its bottom left corner, its back *n* marks near the bottom right, both upright), front and back of each sheet for `.both` on a two-sided feeder, otherwise the side facing up: a one-sided scan with `.manual` turns the stack over (`feederStackTurnedOver`), so the next one delivers the backs, last sheet first; any other feeder scan puts it back the right way up; a scan cut short by a jam leaves the stack as it is; `lastScanDuplex` says whether a scan asked for `.both` scanned both sides; and 0 sheets fails with `ScanError.scannerProblem(.feederEmpty)`. `feederJamsAfter` (default nil) makes the sheet after that many jam: the earlier sheets are returned and `lastScanStop` carries `.paperJam`; a jam on the first sheet fails with `ScanError.scannerProblem(.paperJam)`. `feederBlankBackSheets` (a `Set<Int>` of sheets counted from 0, default empty, read when the scan starts) makes those sheets' backs blank: off-white paper with noise, a few specks of dust and the front showing through mirrored at a tenth of its darkness (`BlankPageDetector` finds them blank; no sheet marks); the app's demo scanner (`AppState`'s default backends) has a blank back on its second sheet. Same behaviour as the C# `MockScannerBackend` (`FeederSheetCount`, `FeederJamsAfter`, `FeederDuplex`, `FeederStackTurnedOver`, `FeederBlankBackSheets`).
+One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true)`; synthesizes deterministic flatbed images (see task brief). For the ID card task (`settings.task == .idCard`) its glass holds a made-up sample card (ID-1 size, rounded corners, "SAMPLE", a grey photo placeholder, field bars; a barcode and code blocks on the back; no real document and no flags), front down at (2.35, 1.75) in tilted 4°: a scan delivers the side facing the glass and then turns the card over where it lies (`idCardTurnedOver`, tilt mirrored), so scans alternate front, back; a preview shows the side without turning it (C# `IdCardTurnedOver`, drawn pixel by pixel there and with CoreGraphics here). It also has a document feeder (`sources: [.flatbed, .documentFeeder]`, `feederSizeInches` 8.5 × 14, `supportsDuplex` = `feederDuplex`, default true): a feeder scan returns `feederSheetCount` two-sided sheets (default `MockScannerBackend.defaultFeederSheetCount` = 3, read when the scan starts; letter size, or the paper size asked for; the front of sheet *n* carries *n* square marks near its bottom left corner, its back *n* marks near the bottom right, both upright), front and back of each sheet for `.both` on a two-sided feeder, otherwise the side facing up: a one-sided scan with `.manual` turns the stack over (`feederStackTurnedOver`), so the next one delivers the backs, last sheet first; any other feeder scan puts it back the right way up; a scan cut short by a jam leaves the stack as it is; `lastScanDuplex` says whether a scan asked for `.both` scanned both sides; and 0 sheets fails with `ScanError.scannerProblem(.feederEmpty)`. `feederJamsAfter` (default nil) makes the sheet after that many jam: the earlier sheets are returned and `lastScanStop` carries `.paperJam`; a jam on the first sheet fails with `ScanError.scannerProblem(.paperJam)`. `feederBlankBackSheets` (a `Set<Int>` of sheets counted from 0, default empty, read when the scan starts) makes those sheets' backs blank: off-white paper with noise, a few specks of dust and the front showing through mirrored at a tenth of its darkness (`BlankPageDetector` finds them blank; no sheet marks); the app's demo scanner (`AppState`'s default backends) has a blank back on its second sheet. For the Receipts task (`settings.task == .receipt`) the glass holds two made-up receipts ("DEMO CAFE" 3.15 × 3.2 in at (2.4, 3.2) in tilted 3°, "SAMPLE MART" 2.28 × 2.3 in at (6.3, 3.0) in tilted −3°; paper 237, print 153 in a plain stroke type of polylines on a 4 × 6 grid, dated 12.03.2026 and 2026-02-27), drawn pixel by pixel as the C# demo draws them (`MockScannerBackend.demoReceiptPlaces`, C# `MockBedRenderer.ReceiptPlaces`). Same behaviour as the C# `MockScannerBackend` (`FeederSheetCount`, `FeederJamsAfter`, `FeederDuplex`, `FeederStackTurnedOver`, `FeederBlankBackSheets`).
 
 ### UI files (all `internal`, SwiftUI, bind to `@EnvironmentObject var state: AppState`)
 
 - `UI/SidebarView.swift` — `struct SidebarView: View`: device list + refresh (`refreshScanners()`), the "Why isn't my scanner listed?" button in the Scanners header and link in the empty list, and the troubleshooter sheet (`state.showTroubleshooter`).
 - `UI/TroubleshooterView.swift` — `struct TroubleshooterView: View`: the troubleshooter's checks as cards with their buttons, Refresh, Copy Diagnostics and Done.
-- `UI/InspectorView.swift` — `struct InspectorView: View`: all settings + Overview/Scan/Cancel buttons + presets; the Output section's formats (`OutputFormat.offered(for:)`); the Document section's "Collect pages, then Save …" (the format's `saveTitle`), "Also save text (.txt)" (off, with the reason, when the save writes no PDF and in the ID card and Copy tasks), "Skip blank pages" and "What counts as blank", "Crop to page" and "Straighten pages" (off, with the reason, when each scan is saved at once); for the Copy task a Copies section (Printer, its paper, Copies 1–99, Fit to page with its hint, the margin warning, Also save a PDF, Print Ruler Test Page…; without a printer, the reason and Look Again).
+- `UI/InspectorView.swift` — `struct InspectorView: View`: all settings + Overview/Scan/Cancel buttons + presets; the Output section's formats (`OutputFormat.offered(for:)`); the Document section's "Collect pages, then Save …" (the format's `saveTitle`), "Also save text (.txt)" (off, with the reason, when the save writes no PDF and in the ID card and Copy tasks), "Skip blank pages" and "What counts as blank", "Crop to page" and "Straighten pages" (off, with the reason, when each scan is saved at once); for the Copy task a Copies section (Printer, its paper, Copies 1–99, Fit to page with its hint, the margin warning, Also save a PDF, Print Ruler Test Page…; without a printer, the reason and Look Again); for the Receipts task the Output section offers PDF, JPEG, PNG and TIFF only (Word or text shows as PDF), a Receipts section (Name by the receipt's date, One PDF for all receipts, off for image formats, each with its hint; the date's hint says when the template has no {docdate}), "Collect pages" off and the blank-page, crop and straighten switches off with the reason, "Also save text" on for PDF receipts.
 - `UI/StatusBarView.swift` — `struct StatusBarView: View`: status text, progress, and the actions for the files saved last (open, show, share, copy; More adds open with and email).
 - `UI/PreviewCanvasView.swift` — `struct PreviewCanvasView: View`: shows `state.canvasImage`, marquee selection editing `state.selectionRect` (only when `state.overviewImage != nil`).
 - `UI/PagesStripView.swift` — `struct PagesStripView: View`: page-queue thumbnails + Save PDF (or Save Word / Save Text: `format.saveTitle(pageCount:)`) / Clear; Copy Text in each page's context menu (`state.copyPageText(id:)`); the queue summary, each flagged page's badge and its Keep or Skip button (always shown), left-out pages dimmed, Save PDF counting the pages it writes; under a cropped or straightened page, its swap button (always shown: `PageCorrections.toggleLabel`, help = caption and label) calling `state.togglePageGeometry(id:)`.
-- `UI/PhotoReviewView.swift` — `struct PhotoReviewView: View`: detected-photo grid sheet with the "After saving" choice; Save via `state.saveReviewedPhotos()`, cancel via `state.cancelPhotoReview()`.
+- `UI/PhotoReviewView.swift` — `struct PhotoReviewView: View`: detected-photo grid sheet with the "After saving" choice; Save via `state.saveReviewedPhotos()`, cancel via `state.cancelPhotoReview()`; titled `state.reviewTitle` and saved with `state.reviewSaveTitle` ("Found 2 receipts", "Save as One PDF" for receipts).
 - `UI/IdCardReviewView.swift` — `struct IdCardReviewView: View`: the ID card's sheet (`state.showIdCardReview`, presented from the detail in `ContentView`): each side with turn, Fix crop (the crop editor) and Scan again, a missing back with Scan the Back, Swap Front and Back, the page picture with its caption and the not-at-real-size warning, and Paper, Save as (PDF or an image format: `format.pageFormat`; a text format chosen in the inspector shows and saves as PDF), "Also save each side as an image", Print…, Discard and Save.
-- `UI/TaskStartView.swift` — `struct TaskStartView: View` (`onOpenScanner: () -> Void`): the start screen's task cards (`state.taskCards`) and preset cards; also `enum TaskSymbols` (icon key → SF Symbol).
+- `UI/TaskStartView.swift` — `struct TaskStartView: View` (`onOpenScanner: () -> Void`): the start screen's task cards (`state.taskCards`) and preset cards; also `enum TaskSymbols` (icon key → SF Symbol; "receipt" → `receipt`).
 - `UI/TaskBannerView.swift` — `struct TaskBannerView: View` (`definition: TaskDefinition?`, `onChangeTask: () -> Void`): the active task, or turning a stack over by hand without one (`definition` nil), above the preview, with Change Task and a leave-task button (without a task: scan one side only); fronts scanned without moving on (the feeder stopped early), Done with Fronts; while the backs are due, Keep Fronts Only, before any back is scanned Scan More Fronts, and on a count mismatch also Combine Anyway and Scan Back Sides Again; the back of an ID card (`state.canSkipStep`) offers "Skip back side" (`state.skipStep()`); the leave-task button goes through `state.leaveIdCard(then:)`.

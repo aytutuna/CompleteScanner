@@ -590,6 +590,29 @@
                                         </StackPanel>
                                     </Expander>
 
+                                    <!-- The Receipts task only: how the receipts found on the glass are named and saved. -->
+                                    <Expander x:Name="ReceiptOptions" Style="{StaticResource SectionExpanderStyle}"
+                                              AutomationProperties.Name="Receipts" Visibility="Collapsed">
+                                        <Expander.Header>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Style="{StaticResource GlyphText}" Text="&#xE7BF;" Margin="0,0,12,0" />
+                                                <TextBlock Text="Receipts" Style="{StaticResource BodyStrongText}" TextWrapping="NoWrap" />
+                                            </StackPanel>
+                                        </Expander.Header>
+                                        <StackPanel>
+                                            <CheckBox x:Name="ReceiptDateBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                      Content="Name by the receipt's date"
+                                                      Checked="ReceiptDate_Changed" Unchecked="ReceiptDate_Changed" />
+                                            <TextBlock x:Name="ReceiptDateHint" Style="{StaticResource CaptionText}"
+                                                       TextWrapping="Wrap" Margin="0,0,0,4" />
+                                            <CheckBox x:Name="ReceiptCombineBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,8,0,0"
+                                                      Content="One PDF for all receipts" ToolTipService.ShowOnDisabled="True"
+                                                      Checked="ReceiptCombine_Changed" Unchecked="ReceiptCombine_Changed" />
+                                            <TextBlock x:Name="ReceiptCombineHint" Style="{StaticResource CaptionText}"
+                                                       TextWrapping="Wrap" Margin="0,0,0,4" />
+                                        </StackPanel>
+                                    </Expander>
+
                                     <Expander Style="{StaticResource SectionExpanderStyle}" AutomationProperties.Name="Scanner">
                                         <Expander.Header>
                                             <StackPanel Orientation="Horizontal">

@@ -23,7 +23,7 @@ public sealed partial class NamingTemplate
     /// {counter:N} zero-padded), {intent} ("Document"/"Photos"), {index} (photo number in a
     /// batch, empty when null). Unknown tokens pass through; result sanitized for the
     /// filesystem (the Windows port strips the full invalid set, not just "/" and ":").
-    /// Same as <see cref="BaseFilename(NamingContext)"/> without a task.
+    /// Same as <see cref="BaseFilename(NamingContext)"/> without a task or document date.
     /// </summary>
     public string BaseFilename(int counter, DateTime date, ScanIntent intent, int? index) =>
         BaseFilename(new NamingContext(counter, date, intent) { Index = index });
@@ -31,7 +31,9 @@ public sealed partial class NamingTemplate
     /// <summary>
     /// The file name (without extension) for <paramref name="context"/>: the tokens of
     /// <see cref="BaseFilename(int, DateTime, ScanIntent, int?)"/>, plus {task} (the task's
-    /// <see cref="TaskDefinition.FileLabel"/>, or the {intent} text when there is no task).
+    /// <see cref="TaskDefinition.FileLabel"/>, or the {intent} text when there is no task) and
+    /// {docdate} (the date printed on the document, yyyy-MM-dd, read from its text; the scan date
+    /// when there is none).
     /// </summary>
     public string BaseFilename(NamingContext context)
     {
@@ -60,6 +62,7 @@ public sealed partial class NamingTemplate
             ("{intent}", context.Intent.Label()),
             ("{index}", index?.ToString(CultureInfo.InvariantCulture) ?? ""),
             ("{task}", context.Task is { } task ? TaskCatalog.Definition(task).FileLabel : context.Intent.Label()),
+            ("{docdate}", (context.DocumentDate ?? Core.DocumentDate.Of(date)).ToString()),
         };
         foreach (var (token, value) in replacements)
         {
@@ -164,4 +167,76 @@ public sealed record NamingContext(int Counter, DateTime Date, ScanIntent Intent
 
     /// <summary>The task for {task}; null gives the {intent} text.</summary>
     public ScanTask? Task { get; init; }
+
+    /// <summary>
+    /// The date printed on the document for {docdate} (a receipt's date, read from its text by
+    /// <see cref="ReceiptDateExtractor"/>); null gives the date of <see cref="Date"/>.
+    /// </summary>
+    public DocumentDate? DocumentDate { get; init; }
+}
+
+/// <summary>
+/// A calendar day with no time and no time zone: the date printed on a document. Twin of the
+/// Swift <c>DocumentDate</c> in NamingTemplate.swift.
+/// </summary>
+/// <param name="Year">The year, 1 to 9999.</param>
+/// <param name="Month">The month, 1 to 12.</param>
+/// <param name="Day">The day of the month, 1 to its last day.</param>
+public readonly record struct DocumentDate(int Year, int Month, int Day) : IComparable<DocumentDate>
+{
+    /// <summary>The day of <paramref name="date"/> as its calendar shows it (the Gregorian calendar, its own time zone).</summary>
+    public static DocumentDate Of(DateTime date) => new(date.Year, date.Month, date.Day);
+
+    /// <summary>The day when it exists in the Gregorian calendar (years 1 to 9999), else null.</summary>
+    public static DocumentDate? TryCreate(int year, int month, int day) =>
+        IsValid(year, month, day) ? new DocumentDate(year, month, day) : null;
+
+    /// <summary>Whether the day exists: a month of 1 to 12 and a day up to its last, leap years included.</summary>
+    public static bool IsValid(int year, int month, int day) =>
+        year is >= 1 and <= 9999 && month is >= 1 and <= 12 && day >= 1 && day <= DaysInMonth(year, month);
+
+    /// <summary>The days of <paramref name="month"/> in <paramref name="year"/> (Gregorian leap years).</summary>
+    public static int DaysInMonth(int year, int month) => month switch
+    {
+        2 => year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) ? 29 : 28,
+        4 or 6 or 9 or 11 => 30,
+        _ => 31,
+    };
+
+    /// <summary>Days since 1970-01-01 (negative before it), for counting days between dates.</summary>
+    public int DayNumber
+    {
+        get
+        {
+            // Days from civil (H. Hinnant's algorithm), integer arithmetic only.
+            int y = Month <= 2 ? Year - 1 : Year;
+            int era = (y >= 0 ? y : y - 399) / 400;
+            int yoe = y - era * 400;
+            int mp = (Month + 9) % 12;
+            int doy = (153 * mp + 2) / 5 + Day - 1;
+            int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+            return era * 146097 + doe - 719468;
+        }
+    }
+
+    /// <summary>The same day <paramref name="years"/> years later (earlier when negative); 29 February becomes the 28th in a common year.</summary>
+    public DocumentDate AddingYears(int years)
+    {
+        int year = Year + years;
+        return new DocumentDate(year, Month, Math.Min(Day, DaysInMonth(year, Month)));
+    }
+
+    public int CompareTo(DocumentDate other) =>
+        Year != other.Year ? Year.CompareTo(other.Year)
+        : Month != other.Month ? Month.CompareTo(other.Month)
+        : Day.CompareTo(other.Day);
+
+    public static bool operator <(DocumentDate a, DocumentDate b) => a.CompareTo(b) < 0;
+    public static bool operator >(DocumentDate a, DocumentDate b) => a.CompareTo(b) > 0;
+    public static bool operator <=(DocumentDate a, DocumentDate b) => a.CompareTo(b) <= 0;
+    public static bool operator >=(DocumentDate a, DocumentDate b) => a.CompareTo(b) >= 0;
+
+    /// <summary>"2026-03-12": the form file names use.</summary>
+    public override string ToString() =>
+        string.Create(CultureInfo.InvariantCulture, $"{Year:D4}-{Month:D2}-{Day:D2}");
 }

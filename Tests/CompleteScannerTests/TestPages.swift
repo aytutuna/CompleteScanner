@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 @testable import CompleteScannerKit
 
@@ -275,6 +276,119 @@ enum TestPages {
             }
             cx += 7
         }
+    }
+
+    // MARK: - Receipts
+
+    static let minus3 = Turn(sin: -3430, cos: 65446)
+
+    /// The glass of the receipt beds: 8.5 × 11.7 in at 100 dpi.
+    static let bedWidth = 850
+    static let bedHeight = 1170
+
+    /// A receipt's own pixels, before it is laid on a bed.
+    struct ReceiptSheet {
+        let pixels: [UInt8]
+        let width: Int
+        let height: Int
+    }
+
+    /// A receipt `width` × `height` px: `paper` with noise and `lines` lines of print (`ink`) every 18 px
+    /// from 0.3 in down, 0.2 in from the sides: items from the left (2–4 words) and, on every other line,
+    /// a price of 4 glyphs against the right margin, `priceGap` px or more after the items.
+    static func receipt(_ width: Int, _ height: Int, paper: Int, ink: UInt8, lines: Int, seed: UInt32,
+                        priceGap: Int = 0) -> ReceiptSheet {
+        var p = [UInt8](repeating: 0, count: width * height)
+        let rng = Rng(seed)
+        for i in 0..<p.count { p[i] = clamp(paper + rng.noise()) }
+        let text = Rng(seed ^ 0x3EC3_E1F7)
+        let priceX = width - 20 - 4 * 7
+        let itemsEnd = priceGap > 0 ? priceX - priceGap : width - 20
+        for line in 0..<lines {
+            let y = 30 + line * 18
+            if y + 9 > height { break }
+            var x = 20
+            let words = 2 + text.below(3)
+            for _ in 0..<words {
+                let glyphs = 2 + text.below(5)
+                if x + glyphs * 7 > itemsEnd { break }
+                x = receiptGlyphs(&p, width, x, y, glyphs, ink, text) + 7
+            }
+            if line % 2 == 1 { _ = receiptGlyphs(&p, width, priceX, y, 4, ink, text) }
+        }
+        return ReceiptSheet(pixels: p, width: width, height: height)
+    }
+
+    /// `glyphs` glyphs (as `textLine` draws them) from (x, y) on a sheet `pitch` px wide; returns the x
+    /// after the last.
+    private static func receiptGlyphs(_ p: inout [UInt8], _ pitch: Int, _ x: Int, _ y: Int, _ glyphs: Int,
+                                      _ ink: UInt8, _ rng: Rng) -> Int {
+        let picks = [0b00111, 0b01011, 0b01101, 0b01110, 0b10011, 0b10101, 0b10110, 0b11001, 0b11010, 0b11100]
+        func bar(_ bx: Int, _ by: Int, _ bw: Int, _ bh: Int) {
+            for py in by..<(by + bh) {
+                for px in bx..<(bx + bw) { p[py * pitch + px] = ink }
+            }
+        }
+        var cx = x
+        for _ in 0..<glyphs {
+            let bits = picks[rng.below(10)]
+            if bits & 1 != 0 { bar(cx, y, 1, 9) }
+            if bits & 2 != 0 { bar(cx + 4, y, 1, 9) }
+            if bits & 4 != 0 { bar(cx, y, 5, 1) }
+            if bits & 8 != 0 { bar(cx, y + 4, 5, 1) }
+            if bits & 16 != 0 { bar(cx, y + 8, 5, 1) }
+            cx += 7
+        }
+        return cx
+    }
+
+    /// A receipt laid on the bed: its center (in pixels) and its turn, clockwise on screen.
+    struct Placed {
+        let sheet: ReceiptSheet
+        let centerX: Int
+        let centerY: Int
+        let turn: Turn
+    }
+
+    /// The 850 × 1170 glass (`backdrop` with noise) with the receipts laid on it, each turned about
+    /// its center (nearest pixel).
+    static func receiptBed(backdrop: Int, seed: UInt32, _ receipts: [Placed]) -> GrayImage {
+        var p = [UInt8](repeating: 0, count: bedWidth * bedHeight)
+        let noise = Rng(seed)
+        for y in 0..<bedHeight {
+            for x in 0..<bedWidth {
+                var value = backdrop + noise.noise()
+                for r in receipts {
+                    if let v = sheetPixel(r, x, y) { value = v }
+                }
+                p[y * bedWidth + x] = clamp(value)
+            }
+        }
+        return GrayImage(width: bedWidth, height: bedHeight, pixels: p)
+    }
+
+    /// The receipt's pixel at bed pixel (x, y), or nil when the receipt does not cover it.
+    private static func sheetPixel(_ r: Placed, _ x: Int, _ y: Int) -> Int? {
+        let sw = r.sheet.width, sh = r.sheet.height
+        let unit = 65536
+        let dx = 2 * (x - r.centerX) + 1, dy = 2 * (y - r.centerY) + 1
+        let u = dx * r.turn.cos + dy * r.turn.sin
+        let v = -dx * r.turn.sin + dy * r.turn.cos
+        let halfW = sw * unit, halfH = sh * unit
+        if abs(u) >= halfW || abs(v) >= halfH { return nil }
+        let sx = floorDiv(u + halfW, 2 * unit), sy = floorDiv(v + halfH, 2 * unit)
+        return Int(r.sheet.pixels[sy * sw + sx])
+    }
+
+    /// The bed pixels where the receipt's print (pixels at or below `ink`) lands.
+    static func printOnBed(_ r: Placed, ink: UInt8) -> [CGPoint] {
+        var points: [CGPoint] = []
+        for y in 0..<bedHeight {
+            for x in 0..<bedWidth {
+                if let v = sheetPixel(r, x, y), v <= Int(ink) { points.append(CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)) }
+            }
+        }
+        return points
     }
 
     /// Division rounding down (toward minus infinity), for negative offsets too.

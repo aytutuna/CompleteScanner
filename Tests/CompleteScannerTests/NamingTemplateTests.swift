@@ -122,6 +122,27 @@ final class NamingTemplateTests: XCTestCase {
         XCTAssertEqual(renderContext("{task} {index} of batch {counter}", context), "Photo 2 of batch 7")
     }
 
+    func test_docDateToken_isTheDocumentsDate() {
+        let context = NamingContext(counter: 41, date: fixedDate(), intent: .document, task: .receipt,
+                                    documentDate: DocumentDate(year: 2026, month: 3, day: 5))
+        XCTAssertEqual(renderContext("{task} {docdate} {counter}", context), "Receipt 2026-03-05 41")
+        // {date} stays the scan date.
+        XCTAssertEqual(renderContext("{docdate} scanned {date}", context), "2026-03-05 scanned 2026-08-13")
+    }
+
+    func test_docDateToken_withoutADocumentDate_isTheScanDate() {
+        XCTAssertEqual(renderContext("Receipt {docdate} {counter}",
+                                     NamingContext(counter: 2, date: fixedDate(), intent: .document, task: .receipt)),
+                       "Receipt 2026-08-13 2")
+        // The old overload has no document date.
+        XCTAssertEqual(render("{docdate}"), "2026-08-13")
+        // In a batch the index is still added.
+        XCTAssertEqual(renderContext("Receipt {docdate}",
+                                     NamingContext(counter: 9, date: fixedDate(), intent: .document, index: 3,
+                                                   documentDate: DocumentDate(year: 2026, month: 3, day: 5))),
+                       "Receipt 2026-03-05 3")
+    }
+
     func test_uniqueURLSuffixes() throws {
         let fm = FileManager.default
         let dir = fm.temporaryDirectory

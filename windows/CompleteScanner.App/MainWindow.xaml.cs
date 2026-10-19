@@ -295,8 +295,9 @@ public partial class MainWindow : Window
         LastPdfSizeText.Text = ViewModel.LastPdfSizeText;
         LastPdfSizeText.Visibility = ViewModel.LastPdfSizeText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         ClearButton.IsEnabled = pageCount > 0 && !ViewModel.IsBusy;
-        // The ID card is saved from its review, and a copy goes to the printer: neither uses the page queue.
-        QueueButtons.Visibility = (ViewModel.Settings.Intent == ScanIntent.Document && !ViewModel.IsIdCardFlow && !ViewModel.IsCopyFlow)
+        // The ID card and receipts are saved from their reviews, and a copy goes to the printer: none uses the page queue.
+        QueueButtons.Visibility = (ViewModel.Settings.Intent == ScanIntent.Document && !ViewModel.IsIdCardFlow && !ViewModel.IsCopyFlow
+                                   && !ViewModel.IsReceiptFlow)
                                   || pageCount > 0
             ? Visibility.Visible : Visibility.Collapsed;
         PageList.IsEnabled = !ViewModel.IsBusy;
@@ -308,6 +309,7 @@ public partial class MainWindow : Window
         ScanButton.Content = ViewModel.PrimaryActionLabel;
         SyncTaskBanner();
         SyncCopyOptions();
+        SyncReceiptOptions();
         StartView.Refresh();
         // As on macOS, the settings (and presets, which replace them) are frozen while an
         // operation runs: it works from a snapshot, and edits made meanwhile would not apply.
@@ -343,8 +345,8 @@ public partial class MainWindow : Window
         {
             int found = ViewModel.DetectedPhotos.Count;
             int included = ViewModel.DetectedPhotos.Count(p => p.Photo.Included);
-            ReviewTitle.Text = $"Detected {found} photo{(found == 1 ? "" : "s")}";
-            ReviewSaveButton.Content = $"Save {included} Photo{(included == 1 ? "" : "s")}";
+            ReviewTitle.Text = ViewModel.ReviewTitle;
+            ReviewSaveButton.Content = ViewModel.ReviewSaveTitle;
             PhotoGrid.IsEnabled = !ViewModel.IsBusy;
             // Saving nothing would discard the batch: discarding is the Discard button's job.
             ReviewSaveButton.IsEnabled = !ViewModel.IsBusy && included > 0;
@@ -1256,9 +1258,10 @@ public partial class MainWindow : Window
 
         DocumentOptions.Visibility = s.Intent == ScanIntent.Document ? Visibility.Visible : Visibility.Collapsed;
         PhotoOptions.Visibility = s.Intent == ScanIntent.Photo ? Visibility.Visible : Visibility.Collapsed;
-        SyncFormatChoices();
         ViewModel.SettingsEdited();
-        // After the edit: a change the Copy task does not fit ends it, which turns these switches on.
+        // After the edit: a change the Copy task does not fit ends it, which turns these switches on;
+        // a change that ends the Receipts task offers Word and text again.
+        SyncFormatChoices();
         SyncPdfSizeOptions();
         SyncBlankPageOptions();
         SyncGeometryOptions();
@@ -1293,11 +1296,15 @@ public partial class MainWindow : Window
     private void SyncBlankPageOptions()
     {
         var s = ViewModel.Settings;
-        bool copy = TaskCatalog.FlowOf(s) == TaskFlowKind.Copy;
-        bool collecting = s.DocumentMultiPage && !copy;
+        var flow = TaskCatalog.FlowOf(s);
+        bool copy = flow == TaskFlowKind.Copy;
+        bool receipts = flow == TaskFlowKind.ReceiptSplit;
+        bool collecting = s.DocumentMultiPage && !copy && !receipts;
         SkipBlankBox.IsEnabled = collecting;
         string hint = copy
             ? "Copies print every page as scanned: blank pages are not left out."
+            : receipts
+            ? "Receipts are found on the glass and checked before saving: there are no blank pages to leave out."
             : collecting
             ? s.Document.RemoveBlankPages
                 ? "Blank pages are marked in the page strip and left out when you save. Click Keep on a page to save it."
@@ -1331,12 +1338,16 @@ public partial class MainWindow : Window
     private void SyncGeometryOptions()
     {
         var s = ViewModel.Settings;
-        bool copy = TaskCatalog.FlowOf(s) == TaskFlowKind.Copy;
-        bool collecting = s.DocumentMultiPage && !copy;
+        var flow = TaskCatalog.FlowOf(s);
+        bool copy = flow == TaskFlowKind.Copy;
+        bool receipts = flow == TaskFlowKind.ReceiptSplit;
+        bool collecting = s.DocumentMultiPage && !copy && !receipts;
         AutoCropBox.IsEnabled = collecting;
         AutoStraightenBox.IsEnabled = collecting;
         string hint = copy
             ? "Copies print every page as scanned: pages are not cropped or straightened."
+            : receipts
+            ? "Each receipt is cut out along its paper, or around its print, and turned straight on its own."
             : !collecting
             ? "Only for pages collected before saving: a scan saved at once is kept as scanned."
             : (s.Document.AutoCrop, s.Document.AutoStraighten) switch
@@ -1432,17 +1443,25 @@ public partial class MainWindow : Window
     private void SyncPdfSizeOptions()
     {
         var s = ViewModel.Settings;
-        PdfSizeOptions.Visibility = s.Intent == ScanIntent.Document && s.Format == OutputFormat.Pdf
+        var flow = TaskCatalog.FlowOf(s);
+        bool receipts = flow == TaskFlowKind.ReceiptSplit;
+        // Receipts are saved as a PDF or an image: a Word or text format left from before saves PDFs.
+        var shownFormat = receipts ? OutputFormats.PageFormat(s.Format) : s.Format;
+        PdfSizeOptions.Visibility = s.Intent == ScanIntent.Document && shownFormat == OutputFormat.Pdf
             ? Visibility.Visible : Visibility.Collapsed;
         PdfSizeHint.Text = s.Output.PdfSize.Hint();
-        MultiPageBox.Content = $"Collect pages, then {OutputFormats.SaveTitle(s.Format)}";
-        var flow = TaskCatalog.FlowOf(s);
-        bool savesPdf = OutputFormats.SavesPdf(s.Format, s.DocumentMultiPage);
-        AlsoSaveTextBox.IsEnabled = savesPdf && flow == TaskFlowKind.DocumentQueue;
+        MultiPageBox.Content = $"Collect pages, then {OutputFormats.SaveTitle(shownFormat)}";
+        bool savesPdf = receipts ? OutputFormats.PageFormat(s.Format) == OutputFormat.Pdf : OutputFormats.SavesPdf(s.Format, s.DocumentMultiPage);
+        AlsoSaveTextBox.IsEnabled = savesPdf && (flow == TaskFlowKind.DocumentQueue || receipts);
+        // Receipts are saved from their review, never collected in the queue.
+        MultiPageBox.IsEnabled = !receipts;
+        MultiPageBox.ToolTip = receipts ? "Receipts are checked in a review, then saved: a file each, or one PDF." : null;
+        ToolTipService.SetShowOnDisabled(MultiPageBox, true);
         string hint = flow switch
         {
             TaskFlowKind.IdCard => "Not for ID cards: the card is saved as a picture, without its text.",
             TaskFlowKind.Copy => "Not for copies: the PDF of a copy is saved without its text.",
+            TaskFlowKind.ReceiptSplit when savesPdf => "Writes the text of each receipt beside its PDF, in a .txt file with the same name.",
             _ when savesPdf => "Writes the text of the pages beside each PDF, in a .txt file with the same name.",
             _ => "Only for PDFs: Word and text files are the text already, and images have none.",
         };
@@ -1454,12 +1473,14 @@ public partial class MainWindow : Window
     /// <summary>
     /// The formats the mode offers (<see cref="OutputFormats.Offered"/>), with the format a save
     /// uses chosen: photos are saved as an image, so a PDF or text format shows as JPEG there
-    /// (the setting itself is kept for documents).
+    /// (the setting itself is kept for documents). Receipts are saved as a PDF or an image
+    /// (<see cref="OutputFormats.PageFormat"/>): Word and text are not offered, and show as PDF.
     /// </summary>
     private void SyncFormatChoices()
     {
         var s = ViewModel.Settings;
-        var offered = OutputFormats.Offered(s.Intent);
+        bool receipts = TaskCatalog.FlowOf(s) == TaskFlowKind.ReceiptSplit;
+        var offered = OutputFormats.Offered(s.Intent).Where(f => !receipts || OutputFormats.PageFormat(f) == f).ToList();
         var labels = offered.Select(f => f.Label()).ToList();
         bool wasUpdating = _updatingUi;
         _updatingUi = true;
@@ -1469,7 +1490,9 @@ public partial class MainWindow : Window
             {
                 FormatBox.ItemsSource = labels;
             }
-            var shown = offered.Contains(s.Format) ? s.Format : OutputFormats.ImageFormatOrJpeg(s.Format);
+            var shown = offered.Contains(s.Format) ? s.Format
+                : receipts ? OutputFormats.PageFormat(s.Format)
+                : OutputFormats.ImageFormatOrJpeg(s.Format);
             FormatBox.SelectedItem = shown.Label();
         }
         finally
@@ -1819,7 +1842,8 @@ public partial class MainWindow : Window
             ShowError("The original scan for this photo is no longer available.");
             return;
         }
-        var editor = new PhotoCropEditorWindow(source, item.Photo.Region, ViewModel.Settings.PhotoAutoDeskew)
+        // Receipts are always cut out upright.
+        var editor = new PhotoCropEditorWindow(source, item.Photo.Region, ViewModel.IsReceiptReview || ViewModel.Settings.PhotoAutoDeskew)
         {
             Owner = this,
         };

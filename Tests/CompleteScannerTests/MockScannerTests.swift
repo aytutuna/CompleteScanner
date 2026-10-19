@@ -375,4 +375,36 @@ final class MockScannerTests: XCTestCase {
             XCTAssertEqual(Double(pick.region.center.y) / 150, 1.75, accuracy: 0.05)
         }
     }
+
+    // MARK: - Receipts
+
+    @MainActor
+    func test_theDemoReceiptsAreFoundApart_alongTheirPaper() async throws {
+        let (_, session) = try await open()
+        var settings = TaskCatalog.apply(.receipt, to: ScanSettings())
+        settings.resolution = 150
+        let preview = try await session.performOverviewScan(settings: settings)
+        XCTAssertEqual(preview.height, Int(11.7 * 100.0))
+        let pages = try await session.performScan(settings: settings, selection: nil)
+        let scan = try XCTUnwrap(pages.first)
+        let image = try XCTUnwrap(RgbaImage(cgImage: scan.image))
+        let found = ReceiptDetector.find(image, dpi: 150)
+        let places = MockScannerBackend.demoReceiptPlaces
+        XCTAssertEqual(found.count, places.count)
+        for (receipt, place) in zip(found, places) {
+            let region = receipt.region
+            XCTAssertEqual(receipt.basis, .paper)
+            XCTAssertEqual(Double(region.center.x) / 150, Double(place.centerInches.x), accuracy: 0.05)
+            XCTAssertEqual(Double(region.center.y) / 150, Double(place.centerInches.y), accuracy: 0.05)
+            XCTAssertEqual(Double(region.size.width) / 150, Double(place.sizeInches.width), accuracy: 0.08)
+            XCTAssertEqual(Double(region.size.height) / 150, Double(place.sizeInches.height), accuracy: 0.08)
+            XCTAssertEqual(region.angleDegrees, place.angleDegrees, accuracy: 0.5)
+        }
+        // Other tasks keep the usual bed.
+        var plain = ScanSettings()
+        plain.resolution = 150
+        let documentPages = try await session.performScan(settings: plain, selection: nil)
+        let document = try XCTUnwrap(documentPages.first)
+        XCTAssertNotEqual(rgbaPixels(scan.image), rgbaPixels(document.image))
+    }
 }

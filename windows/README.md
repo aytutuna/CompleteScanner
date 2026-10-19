@@ -27,9 +27,11 @@ UI per platform** architecture:
   straighten (`DocumentGeometry.cs`), the ID card task (`IdCard.cs`: finding the card on the
   glass, laying both sides out at real size and drawing the page), copy and print
   (`PrintLayout.cs`: where a page goes on a printer's paper at real size or fitted, copies, the
-  ruler test page), and text output (`OcrText.cs`: OCR lines in reading order and paragraphs;
+  ruler test page), text output (`OcrText.cs`: OCR lines in reading order and paragraphs;
   `TextExport.cs`, `DocxWriter.cs` and `ZipStore.cs`: the text file, the Word document and its
-  zip package, written by hand so both platforms write the same bytes).
+  zip package, written by hand so both platforms write the same bytes), and receipts
+  (`ReceiptProcessing.cs`: finding several receipts on the glass, cleaning up faded thermal
+  print, and reading the receipt's date from its text for the `{docdate}` file name).
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
   xUnit with the same fixtures, geometry, and tolerances. **This is the contract that keeps
   the Swift and C# cores behaviorally identical** — change an algorithm on one side, port
@@ -467,6 +469,63 @@ A two-column page whose columns sit closer than two line heights, or a page in t
 paragraph breaks that line up across both, is read across the columns; the engine's order is
 used only to break ties.
 
+### Receipts
+
+The **Receipts** task (start screen) scans several receipts at once into small files named by
+their date: 300 dpi, grayscale, Compact PDFs, searchable, named `Receipt {docdate} {counter}`.
+
+- **Finding them** (`ReceiptDetector`): on the scan's 100 dpi gray copy, the marks that differ from
+  the lid by more than 9 % (print, and paper edges with some contrast) are run together into
+  blocks (0.12 in closing); blocks one above the other less than 0.6 in apart are one receipt, and
+  a block too small to be a receipt (a column of prices) joins the receipt next to it, or beside
+  it up to 1.5 in away. Where the paper itself shows (a dark lid, or paper a few levels off a white
+  one), blocks on different sheets are never joined and a column of prices joins the receipt on
+  its own sheet. Around each receipt the paper is looked for as a sheet with the page search of
+  crop and straighten, held to receipt limits only for this task: 2 % contrast instead of 4.5 %
+  (thermal paper on a white lid), 85 % fill instead of 90 % (curled edges), and up to 15 times as
+  long as wide instead of 5. When the paper holds all the print the receipt is cut along it;
+  otherwise (paper as light as the lid) it is cut around its print at the angle of its lines of
+  text, with 0.08 in of margin. A receipt is at least 0.5 × 1 in; at most 12 are taken. From the
+  feeder each sheet is one receipt.
+- **Cleaning up** (`ReceiptEnhancer`): gray; the paper's brightness measured in 0.25 in tiles (90th
+  percentile, the brightest of each tile and its neighbours, never far below the middle tile so a
+  dark logo stays dark); each pixel divided by the paper there, the darkest print (1st percentile,
+  at most 0.6) stretched to black and 0.9 of the paper to white, then darkened with a power of 1.6.
+  Faded print at 0.62 on paper fading from 0.95 to 0.80 comes out at 0.6 or darker on white.
+- **Review**: the photo review, titled "Found 3 receipts", with Keep, turn and Fix crop (a
+  receipt is cut out upright and cleaned up again). **Save 3 Receipts**, or **Save as One PDF**
+  with **One PDF for all receipts** (inspector, Receipts).
+- **Saving**: each receipt is read with Windows OCR once, as shown (turned), when its date, a
+  searchable PDF or the text beside it needs it; the same lines are the PDF's text layer and the
+  .txt with **Also save text**. A file each is named by its receipt's date; one PDF for all by the
+  earliest; today's date when no date is found ("No date was found on 1 of them; it is named by
+  today's date."; for one PDF only when no receipt had a date). The date is read only when the
+  naming template has `{docdate}`. A receipt whose text cannot be read is still saved, without a
+  text layer. JPEG, PNG and TIFF save each receipt as an image (one PDF is then not offered); Word
+  and text are not offered for receipts (a Word or text format left from before saves PDFs, and the
+  format box shows PDF). All or nothing:
+  a failed or cancelled save removes what it wrote and the review stays open.
+- **The date** (`ReceiptDateExtractor`): numeric dates (2026-03-12, 2026/3/5, 12/03/2026,
+  03/12/2026, 12.03.2026, 12-03-26), month names and their abbreviations in English, Turkish,
+  German, French, Spanish, Italian, Portuguese and Dutch (12 Mar 2026, Mar 12, 2026, 12-MAR-26,
+  12 Mart 2026, 12. März 2026, 12 de marzo de 2026), and 2026年3月12日 / 2026년 3월 12일. A date
+  must exist and lie between ten years ago and tomorrow, which rules out times, phone numbers,
+  amounts and card expiry dates (two-digit years are this century). Day or month: a part above 12
+  is the day; dots (12.03.2026) put the day first; otherwise the user's region decides (the short
+  date pattern of the current culture). The first date on a line that says Date, Datum, Tarih,
+  Tarihi, Fecha, Data, Dated or Issued wins; otherwise the first date in reading order, leaving out
+  lines about validity (Exp, Expiry, Valid, Until, Gültig, Son kullanma, SKT, Best before, Use by,
+  Return by). A month name is read only where it stands: "Table 4 Sat 18 Apr 2026" is 18 April.
+  On the test set of 99 receipts and lines (`ReceiptDateCases`, mirrored in Swift) it
+  reads every case of the formats above as a person reads it, rejects every non-date, and misses 3
+  of 5 OCR-noise cases: letters read for digits (2O26) and spaces inside a date (12 / 03 / 2026)
+  are not repaired.
+
+The demo scanner holds two made-up receipts for the task ("DEMO CAFE" and "SAMPLE MART", thermal
+paper at 0.93 with print at 0.6, tilted 3° either way), printed in a plain stroke type that Windows
+OCR reads, with a date each (12.03.2026 and 2026-02-27): the files come out as "Receipt
+2026-02-27 …" and "Receipt 2026-03-12 …".
+
 ### Why isn't my scanner listed?
 
 The **?** button next to **Scanners**, the link under the scanner list while only the Demo
@@ -527,6 +586,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | Text output (`OcrText`, `TextExport`, `DocxWriter`, `ZipStore`, Copy Text) | Covered by `OcrTextTests`, `TextExportTests` (with `OutputFormatsTests`), `DocxWriterTests` (with `ZipStoreTests`: CRC-32 known values, exact zip bytes, the package opened with `ZipArchive`, its parts, content types and relationship checked) and the text cases of `ModelsCompatTests`, `ScanTaskTests` and `SaveActionsTests` (same cases as macOS; both platforms pin the same CRC-32 of the sample text file and Word document). Checked by driving the view model with the demo scanner, the public-domain letter scan and Windows OCR (a PDF and its text file with one OCR pass per page, no OCR when neither is asked for, a taken name kept, Scan to Word with the letter, Text and Word saved at once, Copy Text into a stand-in clipboard, a blank page, a PC without an OCR language), and by building the window without showing it: the format lists for documents and photos, Also save text, the Save Word button, the Scan to Word card, the page menu's Copy text, rendered off screen in light and dark. **Not tried:** opening the documents in Word or LibreOffice (neither is installed here), and the real clipboard |
 | Share, email, open with, copy (`SaveActions`, `FileActions`, `ShareService`) | The choices are covered by `SaveActionsTests` and the after-save cases of `ModelsCompatTests` (same cases as macOS). Checked by driving the view model's real save paths with a stand-in for Windows (each after-save action after a PDF, a file saved at once and a photo batch; the Email task sharing; no share window; a refused action; a moved file; a cancelled save running nothing), by building the real clipboard data and share package without placing them anywhere, and by building the window without showing it: the bar, its buttons and menu, the narrow layout, the "After saving" choices, the Saved tab's buttons and menus, rendered off screen in light and dark. **Not tried on screen:** the share window, the Open with dialog and the clipboard themselves (checks must not send, open or overwrite anything), and Mail or Outlook as share targets |
 | Troubleshooter (`Troubleshooter`, `SystemDiagnostics`, `TroubleshooterWindow`) | The checks are covered by `TroubleshooterTests` (same cases as macOS) and the Windows service and network values by `WindowsSystemStatusTests`. Checked by driving the view model with stand-in connections and a stand-in for Windows (the snapshot, the order of the checks, devices.txt, Refresh, Copy diagnostics and Settings refused, a busy scanner at connect and at scan, a connection that works clearing it, a cancelled scan not counting), by reading the real WIA service and network on Windows 11 (Running and Public, as `sc query` and `Get-NetConnectionProfile` report, from UI and thread-pool threads), by copying to the real clipboard with the user's clipboard saved and restored, by an address added by hand on loopback where nothing listens, by a discovered scanner (a stand-in service for a loopback scanner) that stays listed, selected and connected across a Refresh when Windows aborts either network watcher, and dropped only once the restarted watcher's first pass did not find it again, and by building the sidebar, error bar and troubleshooter window without showing them: the header button, the empty state's links, the error bar's Troubleshoot (and none on a file or photo error shown later), one card per check with its buttons and screen-reader names (each card a named group in the UI Automation tree), a Refresh while one runs ignored, rendered off screen in light and dark. **Not tried on screen:** opening Windows Settings and the real Add scanner dialog from it. **Unverified:** a stopped or disabled WIA service, a TWAIN install with 32-bit-only drivers, and a scanner that is really busy in another app |
+| Receipts (`ReceiptDetector`, `ReceiptEnhancer`, `ReceiptDateExtractor`, the review) | Covered by `ReceiptTests` (two receipts on a white lid found apart along their paper, cut around their print when the paper is as light as the lid, a 2 × 11 in receipt that is too long for a page but not for a receipt, prices far from the items, two receipts 0.15 in apart, one receipt per feeder sheet, nothing on the glass, a 300 dpi scan, the enhancer on fading paper, little print and a dark logo, the date rules and the 99-case date set, the texts) and the receipt cases of `ScanTaskTests`, `ModelsCompatTests`, `NamingTemplateTests` and `MockScannerTests` (same cases as macOS, on the same synthetic beds checked by checksum). Checked on harder synthetic beds (four receipts on a white lid, an open lid and with invisible paper, 12° tilts, receipts in a column 0.2 in apart, a receipt lying sideways, an 11 in receipt at the glass's edge: all found and held whole; two receipts 0.15 in apart with paper as light as the lid are not told apart), by driving the view model with the demo scanner and Windows OCR (both receipts found and cut along their paper, a gray Compact PDF each with a text layer named by its own date, one PDF for all named by the earliest, JPEG files, the text beside each PDF, today's date without OCR, OCR that fails, a save cancelled while reading, Fix crop, Discard) and by building the window without showing it: the Receipts card, the inspector's Receipts section and its switches, one PDF off for JPEG, the review's title and save button, rendered off screen in light and dark. **Unverified:** real thermal receipts on a real lid (see [Receipts](#receipts)) |
 | eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — see [Network scanners](#network-scanners-escl) below for discovery, adding by address and HTTPS. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the paper size's region, clamped to the feeder (the feeder's own sheet size for Automatic, at most 17 in tall); two-sided feeder jobs send `<scan:Duplex>true</scan:Duplex>` and use the two-sided feeder's capabilities (`AdfDuplexInputCaps`) when the device lists them, and a device that lists no two-sided feeding scans one side and says so; black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. The protocol client (`EsclClient`, `EsclScannerSession`) is covered by `EsclClientTests` through a stub HTTP handler. Checked against local fake eSCL servers (plain and HTTPS), not a real device |
 
 Known divergences from the macOS app (all documented in the source):
@@ -535,7 +595,9 @@ Known divergences from the macOS app (all documented in the source):
   not bit-identical; auto-enhance is a histogram auto-level rather than Apple's suggestion
   list.
 - The demo scanner's document page draws text-shaped bars, not real glyphs (Core has no
-  font rasterizer), so OCR demos need a real scan.
+  font rasterizer), so OCR demos need a real scan. Its receipts are the exception: they are
+  printed in a plain stroke type drawn pixel by pixel (the same on the Mac), which Windows OCR
+  reads.
 - WIA, eSCL and TWAIN exist only here, so their logic in Core (`WiaErrors.cs`, `Escl/`,
   `Twain/`) and its tests (`WiaErrorsTests`, `EsclTests`, `EsclRetryTests`,
   `EsclClientTests`, `EsclDiscoveryTests`, `EsclTrustTests`, `TwainScanLoopTests`,
@@ -604,6 +666,11 @@ Known divergences from the macOS app (all documented in the source):
   Text puts "\r\n" line breaks on the Windows clipboard and "\n" on the Mac pasteboard. The Mac's
   PDF writer asks for each page's text layer while it draws the page (`PDFTextLayer`); Windows
   reads the pages first and hands the writer their lines.
+- Receipts: finding, cleaning up and dating are the same code on both platforms, on the same gray
+  copy, so the same scan gives the same regions and pixels; the dates come from different
+  recognizers (Windows OCR here, Vision on the Mac), so a receipt can be dated differently. The
+  day-or-month preference is the culture's short date pattern here and the Mac formatter's pattern
+  for day, month and year there.
 - PDF sizes: Windows writes the planned JPEG into its own PDF writer. The Mac, whose PDFs come
   from CoreGraphics, encodes the same plan with ImageIO and draws a JPEG-backed image, which
   CoreGraphics is expected to store unchanged; this, and the resulting file sizes, still need

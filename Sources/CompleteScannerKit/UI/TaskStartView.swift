@@ -16,6 +16,7 @@ enum TaskSymbols {
         case "idCard": return "person.text.rectangle"
         case "copy": return "printer"
         case "word": return "doc.richtext"
+        case "receipt": return "receipt"
         default: return "scanner"
         }
     }

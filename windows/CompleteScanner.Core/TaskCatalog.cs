@@ -13,12 +13,17 @@ public enum TaskFlowKind
     IdCard,
     /// <summary>The scan goes straight to the printer at real size (<see cref="PrintLayout"/>), like a photocopier.</summary>
     Copy,
+    /// <summary>
+    /// Receipts are found on the bed (<see cref="ReceiptDetector"/>), cut out, straightened and
+    /// cleaned up (<see cref="ReceiptEnhancer"/>), then reviewed and saved, named by their date.
+    /// </summary>
+    ReceiptSplit,
 }
 
 /// <summary>A task card: what it is called, how it looks and how its scans are handled.</summary>
 /// <param name="IconKey">
 /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-/// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word".
+/// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt".
 /// </param>
 /// <param name="Intent">The scan mode the task uses.</param>
 /// <param name="RequiredSource">The source the task cannot work without; null when any source does.</param>
@@ -100,6 +105,12 @@ public static class TaskCatalog
             [new TaskStep("scan", "Scan each page",
                           "Place a page face down on the glass and scan it. Repeat for every page, then save: the text is read from the pages into a Word document.",
                           "Scan page", Repeats: true)]),
+        new(ScanTask.Receipt, "Receipts",
+            "Scan several receipts at once into small, searchable files named by their date.",
+            "receipt", TaskFlowKind.ReceiptSplit, ScanIntent.Document, null, "Receipt",
+            [new TaskStep("scan", "Scan the receipts",
+                          "Lay up to six receipts on the glass with a little space between them, close the lid and scan. Each one is found, straightened and made easy to read; check them before saving.",
+                          "Scan receipts", Repeats: true)]),
     ];
 
     /// <summary>Every task, in start-screen order.</summary>
@@ -122,7 +133,9 @@ public static class TaskCatalog
     /// slant; no task crops yet; <see cref="SettingsAdapter"/> turns
     /// <see cref="DuplexMode.Both"/> into turning over by hand on a feeder that scans one side.
     /// The ID card task makes no searchable PDF: the numbers on an ID are better not indexed; neither
-    /// does the Copy task, whose PDF (when one is saved too) is a record of the paper copy.
+    /// does the Copy task, whose PDF (when one is saved too) is a record of the paper copy. The
+    /// Receipts task scans in grayscale (thermal print has no color) into Compact PDFs, named by
+    /// the receipt's date.
     /// </summary>
     public static ScanSettings Apply(ScanTask task, ScanSettings current)
     {
@@ -211,6 +224,14 @@ public static class TaskCatalog
                 s.Resolution = 300;
                 s.Format = OutputFormat.Word;
                 s.NamingTemplate = "Scan {date} {counter}";
+                break;
+            case ScanTask.Receipt:
+                s.Intent = ScanIntent.Document;
+                s.Resolution = 300;
+                s.ColorMode = ColorMode.Grayscale;
+                s.Format = OutputFormat.Pdf;
+                s.Output.PdfSize = PdfSizePreset.Compact;
+                s.NamingTemplate = "Receipt {docdate} {counter}";
                 break;
         }
         s.TaskId = task.RawValue();

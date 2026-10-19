@@ -92,6 +92,19 @@ scanners** — including the Epson Perfection V39 II.
   file too. **Print ruler test page** prints a 1-inch grid with centimetre ticks to check the size
   with a ruler. On the Mac the standard print panel opens, already set to the printer, the paper,
   the copies and 100 %; on Windows the copy goes straight to the printer with no dialog.
+- **Receipts**: lay several receipts on the glass (with a little space between them) and scan
+  once. Each receipt is found, cut out along its paper (or, for thermal paper that hardly shows on
+  a white lid, around its print), straightened, and cleaned up for faded thermal print: gray, the
+  paper evened out to white, the print darkened. Check them in the review (untick, turn, fix a
+  crop), then save: a small searchable PDF each (Compact size, gray), or one PDF for all of them,
+  or JPEG, PNG or TIFF. Files are named by the date printed on the receipt (`{docdate}`): it is
+  read from the receipt's text in ISO, US, European and Turkish numeric forms (2026-03-12,
+  03/12/2026, 12.03.2026, 12-03-26), with month names in English, Turkish, German, French,
+  Spanish, Italian, Portuguese and Dutch (12 Mar 2026, 12 Mart 2026, 12. März 2026), and in
+  Chinese, Japanese and Korean, preferring a line that says "Date", "Tarih", "Datum"… and leaving
+  out expiry and "valid until" dates; today's date is used when none is found. The text is read
+  once per receipt, for the date, the PDF's text layer and, if you like, a .txt beside each PDF.
+  From the feeder, each sheet is one receipt.
 - **"Why isn't my scanner listed?"**: a troubleshooter, from the **?** button next to
   **Scanners**, the empty scanner list and an error about a scanner. It checks, in plain
   language, whether macOS is looking for scanners and what the last failure was (a scanner that
@@ -107,17 +120,19 @@ scanners** — including the Epson Perfection V39 II.
   black-and-white threshold.
 - **Start screen**: pick what you are scanning (Document to PDF, Multi-page from feeder,
   Photos, Old photo restoration, Quick scan, Email a document, Two-sided document, ID card, Copy,
-  Scan to Word) and everything is set up for it, with a short
+  Scan to Word, Receipts) and everything is set up for it, with a short
   guide on the scan screen. Tasks the connected scanner cannot do are greyed out with the
   reason (Copy also needs a printer). The app remembers the task you used last.
 - **Presets**: save your own settings as presets; they appear on the start screen too.
   Starter presets from earlier versions stay.
 - **File naming templates**: `{date}`, `{time}`, `{counter}`, `{counter:4}`, `{intent}`,
-  `{index}`, `{task}` tokens; automatic collision-free numbering.
+  `{index}`, `{task}`, `{docdate}` (the date printed on the document, for receipts; the scan date
+  otherwise) tokens; automatic collision-free numbering.
 - **Demo Scanner**: a built-in simulated device so you can try every feature (including OCR,
   photo splitting and a document feeder with three two-sided sheets, which it scans one side or
   both; the second sheet's back is blank; for the ID card task a made-up sample card, which it
-  turns over after each scan) with no hardware connected.
+  turns over after each scan; for the Receipts task two made-up receipts with faded print and a
+  date each) with no hardware connected.
 
 ## Build & run
 

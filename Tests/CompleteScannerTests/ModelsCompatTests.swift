@@ -64,6 +64,8 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.taskOptions.copyFitToPage = true
     settings.taskOptions.copyPrinterName = "Office printer"
     settings.taskOptions.copyAlsoSavePdf = true
+    settings.taskOptions.receiptNameByDate = false
+    settings.taskOptions.receiptCombine = true
     return settings
 }
 
@@ -132,7 +134,8 @@ private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
                           with: "\"source\" : \"documentFeeder\",\n      \"taskOptions\" : {\n"
                               + "        \"copyAlsoSavePdf\" : true,\n        \"copyCount\" : 3,\n        \"copyFitToPage\" : true,\n"
                               + "        \"copyPrinterName\" : \"Office printer\",\n        \"idCardPaper\" : \"letter\",\n"
-                              + "        \"idCardSaveSidesAsImages\" : true\n      }")
+                              + "        \"idCardSaveSidesAsImages\" : true,\n        \"receiptCombine\" : true,\n"
+                              + "        \"receiptNameByDate\" : false\n      }")
 
 // MARK: - Decoding compatibility
 
@@ -666,7 +669,7 @@ final class ModelsCompatTests: XCTestCase {
                 let written = try XCTUnwrap(try jsonObject(data)["taskOptions"] as? [String: Any])
                 // No printer chosen: the key is left out (C# leaves out a null too).
                 XCTAssertEqual(Set(written.keys), ["idCardPaper", "idCardSaveSidesAsImages", "copyCount", "copyFitToPage",
-                                                   "copyAlsoSavePdf"])
+                                                   "copyAlsoSavePdf", "receiptNameByDate", "receiptCombine"])
                 XCTAssertEqual(written["idCardPaper"] as? String, paper.rawValue)
                 XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: data).taskOptions, settings.taskOptions)
             }
@@ -710,6 +713,42 @@ final class ModelsCompatTests: XCTestCase {
         XCTAssertFalse(idCardOnly.copyFitToPage)
         XCTAssertNil(idCardOnly.copyPrinterName)
         XCTAssertFalse(idCardOnly.copyAlsoSavePdf)
+    }
+
+    func test_receiptOptions_namedByDateInSeparateFiles_byDefaultAndInFilesWithoutThem() throws {
+        let options = ScanSettings().taskOptions
+        XCTAssertTrue(options.receiptNameByDate)
+        XCTAssertFalse(options.receiptCombine)
+        // Files of the copy version have task options without the receipt keys.
+        let copyOnly = try decode(ScanSettings.self, #"{"taskOptions": {"copyCount": 2, "copyAlsoSavePdf": true}}"#).taskOptions
+        XCTAssertEqual(copyOnly.copyCount, 2)
+        XCTAssertTrue(copyOnly.copyAlsoSavePdf)
+        XCTAssertTrue(copyOnly.receiptNameByDate)
+        XCTAssertFalse(copyOnly.receiptCombine)
+        var settings = ScanSettings()
+        settings.taskOptions.receiptNameByDate = false
+        settings.taskOptions.receiptCombine = true
+        XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: try encode(settings)).taskOptions, settings.taskOptions)
+        var copy = settings
+        copy.taskOptions.receiptCombine = false
+        XCTAssertFalse(copy.taskOptions.receiptCombine)
+        XCTAssertTrue(settings.taskOptions.receiptCombine)
+    }
+
+    func test_corruptReceiptOptions_fallBackOneByOne_restIntact() throws {
+        let options = try decode(ScanSettings.self, """
+            {"resolution": 150, "taskOptions": {"copyCount": 2, "receiptNameByDate": "no", "receiptCombine": true},
+             "pdfSearchable": false}
+            """)
+        XCTAssertEqual(options.resolution, 150)
+        XCTAssertFalse(options.pdfSearchable)
+        XCTAssertEqual(options.taskOptions.copyCount, 2)
+        XCTAssertTrue(options.taskOptions.receiptNameByDate)
+        XCTAssertTrue(options.taskOptions.receiptCombine)
+        let nulls = try decode(ScanSettings.self,
+                               #"{"taskOptions": {"receiptNameByDate": false, "receiptCombine": null}}"#).taskOptions
+        XCTAssertFalse(nulls.receiptNameByDate)
+        XCTAssertFalse(nulls.receiptCombine)
     }
 
     func test_corruptCopyOptions_fallBackOneByOne_restIntact() throws {

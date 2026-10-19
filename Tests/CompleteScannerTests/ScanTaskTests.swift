@@ -33,6 +33,8 @@ private func customized() -> ScanSettings {
     s.taskOptions.copyFitToPage = true
     s.taskOptions.copyPrinterName = "Office"
     s.taskOptions.copyAlsoSavePdf = true
+    s.taskOptions.receiptNameByDate = false
+    s.taskOptions.receiptCombine = true
     return s
 }
 
@@ -40,7 +42,8 @@ final class ScanTaskTests: XCTestCase {
 
     func test_rawValues_areTheStoredNames() {
         XCTAssertEqual(ScanTask.allCases.map(\.rawValue),
-                       ["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word"])
+                       ["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word",
+                        "receipt"])
     }
 
     func test_tryParse_isExact() {
@@ -58,9 +61,10 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertEqual(TaskCatalog.all.map(\.task), ScanTask.allCases)
         XCTAssertEqual(TaskCatalog.all.map(\.title),
                        ["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
-                        "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word"])
+                        "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word", "Receipts"])
         XCTAssertEqual(TaskCatalog.all.map(\.iconKey),
-                       ["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word"])
+                       ["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word",
+                        "receipt"])
         for definition in TaskCatalog.all {
             XCTAssertEqual(TaskCatalog.definition(definition.task), definition)
             XCTAssertFalse(definition.subtitle.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -81,12 +85,12 @@ final class ScanTaskTests: XCTestCase {
     func test_definitions_flowIntentAndRequiredSource() {
         XCTAssertEqual(TaskCatalog.all.map(\.flow),
                        [.documentQueue, .documentQueue, .photoSplit, .photoSplit, .documentQueue, .documentQueue,
-                        .documentQueue, .idCard, .copy, .documentQueue])
+                        .documentQueue, .idCard, .copy, .documentQueue, .receiptSplit])
         XCTAssertEqual(TaskCatalog.all.map(\.intent),
                        [.document, .document, .photo, .photo, .document, .document, .document, .document, .document,
-                        .document])
+                        .document, .document])
         XCTAssertEqual(TaskCatalog.all.map(\.requiredSource),
-                       [nil, .documentFeeder, nil, nil, .flatbed, nil, .documentFeeder, .flatbed, nil, nil])
+                       [nil, .documentFeeder, nil, nil, .flatbed, nil, .documentFeeder, .flatbed, nil, nil, nil])
     }
 
     func test_apply_keepsDestinationAndDetectionTuning_andLeavesTheInputAlone() {
@@ -99,7 +103,8 @@ final class ScanTaskTests: XCTestCase {
             XCTAssertEqual(s.taskId, task.rawValue)
             XCTAssertEqual(s.task, task)
             XCTAssertEqual(s.jpegQuality, 0.9)
-            XCTAssertEqual(s.colorMode, .color)
+            // Thermal print has no color: receipts are scanned in grayscale.
+            XCTAssertEqual(s.colorMode, task == .receipt ? .grayscale : .color, task.rawValue)
             XCTAssertTrue(s.photoAutoSplit && s.photoAutoDeskew)
             // The ID card's numbers are better not indexed, and a copy is for paper: no text layer.
             XCTAssertEqual(s.pdfSearchable, task != .idCard && task != .copy, task.rawValue)
@@ -110,6 +115,8 @@ final class ScanTaskTests: XCTestCase {
             XCTAssertTrue(s.taskOptions.copyFitToPage, task.rawValue)
             XCTAssertEqual(s.taskOptions.copyPrinterName, "Office", task.rawValue)
             XCTAssertTrue(s.taskOptions.copyAlsoSavePdf, task.rawValue)
+            XCTAssertFalse(s.taskOptions.receiptNameByDate, task.rawValue)
+            XCTAssertTrue(s.taskOptions.receiptCombine, task.rawValue)
             XCTAssertEqual(s.intent, TaskCatalog.definition(task).intent)
             XCTAssertTrue(TaskCatalog.fits(task, s))
             XCTAssertEqual(TaskCatalog.infer(s), task)
@@ -136,6 +143,7 @@ final class ScanTaskTests: XCTestCase {
             "document flatbed 300 pdf true ID card {date} false false standard",
             "document flatbed 300 pdf true Copy {date} {counter} false false standard",
             "document flatbed 300 word true Scan {date} {counter} false false standard",
+            "document flatbed 300 pdf true Receipt {docdate} {counter} false false compact",
         ])
     }
 
@@ -369,7 +377,7 @@ final class ScanTaskTests: XCTestCase {
         }, .feeder)
         // A task of a newer version is inferred from the settings.
         XCTAssertEqual(infer {
-            $0.taskId = "receipt"
+            $0.taskId = "whiteboard"
             $0.intent = .photo
         }, .photos)
     }
@@ -544,7 +552,7 @@ final class ScanTaskTests: XCTestCase {
     func test_fileLabels() {
         XCTAssertEqual(TaskCatalog.all.map(\.fileLabel),
                        ["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy",
-                        "Document"])
+                        "Document", "Receipt"])
     }
 
     func test_word_savesTheTextAsAWordDocument_andEndsWithAnotherFormat() {
@@ -564,6 +572,35 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertFalse(TaskCatalog.fits(.word, s))
         let feederOnly = ScannerCapabilities(sources: [.documentFeeder], supportsOverview: false)
         XCTAssertEqual(TaskCatalog.availability(of: .word, capabilities: feederOnly), .available)
+    }
+
+    func test_receipt_isAGrayCompactSearchablePdf_namedByTheReceiptsDate() {
+        let definition = TaskCatalog.definition(.receipt)
+        XCTAssertEqual(definition.steps[0].primaryActionLabel, "Scan receipts")
+        XCTAssertEqual(definition.iconKey, "receipt")
+        XCTAssertEqual(definition.fileLabel, "Receipt")
+        var s = TaskCatalog.apply(.receipt, to: ScanSettings())
+        XCTAssertEqual(s.intent, .document)
+        XCTAssertEqual(s.source, .flatbed)
+        XCTAssertEqual(s.format, .pdf)
+        XCTAssertEqual(s.resolution, 300)
+        XCTAssertEqual(s.colorMode, .grayscale)
+        XCTAssertEqual(s.output.pdfSize, .compact)
+        XCTAssertTrue(s.pdfSearchable)
+        XCTAssertFalse(s.document.autoCrop || s.document.autoStraighten || s.document.removeBlankPages)
+        XCTAssertEqual(TaskCatalog.flow(of: s), .receiptSplit)
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi \u{00B7} Grayscale \u{00B7} Compact PDF")
+        XCTAssertTrue(s.taskOptions.receiptNameByDate)
+        XCTAssertFalse(s.taskOptions.receiptCombine)
+        // The feeder takes one receipt a sheet; another format or size keeps the task; photo mode ends it.
+        s.source = .documentFeeder
+        s.format = .jpeg
+        s.output.pdfSize = .smallest
+        XCTAssertTrue(TaskCatalog.fits(.receipt, s))
+        XCTAssertEqual(TaskCatalog.flow(of: s), .receiptSplit)
+        s.intent = .photo
+        XCTAssertFalse(TaskCatalog.fits(.receipt, s))
+        XCTAssertTrue(TaskCatalog.availability(of: .receipt, capabilities: ScannerCapabilities(sources: [.documentFeeder])).isAvailable)
     }
 
     func test_apply_turnsTheTextBesideAPDFOff() {

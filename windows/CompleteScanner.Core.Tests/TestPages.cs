@@ -290,6 +290,128 @@ internal static class TestPages
         }
     }
 
+    // MARK: - Receipts
+
+    public static readonly Turn Minus3 = new(-3430, 65446);
+
+    /// <summary>The glass of the receipt beds: 8.5 × 11.7 in at 100 dpi.</summary>
+    public const int BedWidth = 850;
+    public const int BedHeight = 1170;
+
+    /// <summary>A receipt's own pixels, before it is laid on a bed.</summary>
+    public sealed record ReceiptSheet(byte[] Pixels, int Width, int Height);
+
+    /// <summary>
+    /// A receipt <paramref name="width"/> × <paramref name="height"/> px: <paramref name="paper"/> with
+    /// noise and <paramref name="lines"/> lines of print (<paramref name="ink"/>) every 18 px from 0.3 in
+    /// down, 0.2 in from the sides: items from the left (2–4 words) and, on every other line, a price
+    /// of 4 glyphs against the right margin, <paramref name="priceGap"/> px or more after the items.
+    /// </summary>
+    public static ReceiptSheet Receipt(int width, int height, int paper, byte ink, int lines, uint seed, int priceGap = 0)
+    {
+        var p = new byte[width * height];
+        var rng = new Rng(seed);
+        for (int i = 0; i < p.Length; i++) p[i] = Clamp(paper + rng.Noise());
+        var text = new Rng(seed ^ 0x3EC3E1F7);
+        int priceX = width - 20 - 4 * 7;
+        int itemsEnd = priceGap > 0 ? priceX - priceGap : width - 20;
+        for (int line = 0; line < lines; line++)
+        {
+            int y = 30 + line * 18;
+            if (y + 9 > height) break;
+            int x = 20;
+            int words = 2 + text.Below(3);
+            for (int word = 0; word < words; word++)
+            {
+                int glyphs = 2 + text.Below(5);
+                if (x + glyphs * 7 > itemsEnd) break;
+                x = Glyphs(p, width, x, y, glyphs, ink, text) + 7;
+            }
+            if (line % 2 == 1) Glyphs(p, width, priceX, y, 4, ink, text);
+        }
+        return new ReceiptSheet(p, width, height);
+    }
+
+    /// <summary>
+    /// <paramref name="glyphs"/> glyphs (as <see cref="TextLine"/> draws them) from (x, y) on a sheet
+    /// <paramref name="pitch"/> px wide; returns the x after the last.
+    /// </summary>
+    private static int Glyphs(byte[] p, int pitch, int x, int y, int glyphs, byte ink, Rng rng)
+    {
+        int[] picks = [0b00111, 0b01011, 0b01101, 0b01110, 0b10011, 0b10101, 0b10110, 0b11001, 0b11010, 0b11100];
+        void Bar(int bx, int by, int bw, int bh)
+        {
+            for (int py = by; py < by + bh; py++)
+            {
+                for (int px = bx; px < bx + bw; px++) p[py * pitch + px] = ink;
+            }
+        }
+        for (int g = 0; g < glyphs; g++)
+        {
+            int bits = picks[rng.Below(10)];
+            if ((bits & 1) != 0) Bar(x, y, 1, 9);
+            if ((bits & 2) != 0) Bar(x + 4, y, 1, 9);
+            if ((bits & 4) != 0) Bar(x, y, 5, 1);
+            if ((bits & 8) != 0) Bar(x, y + 4, 5, 1);
+            if ((bits & 16) != 0) Bar(x, y + 8, 5, 1);
+            x += 7;
+        }
+        return x;
+    }
+
+    /// <summary>A receipt laid on the bed: its center (in pixels) and its turn, clockwise on screen.</summary>
+    public sealed record Placed(ReceiptSheet Sheet, int CenterX, int CenterY, Turn Turn);
+
+    /// <summary>
+    /// The 850 × 1170 glass (<paramref name="backdrop"/> with noise) with the receipts laid on it,
+    /// each turned about its center (nearest pixel).
+    /// </summary>
+    public static GrayImage ReceiptBed(int backdrop, uint seed, params Placed[] receipts)
+    {
+        var p = new byte[BedWidth * BedHeight];
+        var noise = new Rng(seed);
+        for (int y = 0; y < BedHeight; y++)
+        {
+            for (int x = 0; x < BedWidth; x++)
+            {
+                int value = backdrop + noise.Noise();
+                foreach (var r in receipts)
+                {
+                    if (SheetPixel(r, x, y) is { } v) value = v;
+                }
+                p[y * BedWidth + x] = Clamp(value);
+            }
+        }
+        return new GrayImage(BedWidth, BedHeight, p);
+    }
+
+    /// <summary>The receipt's pixel at bed pixel (x, y), or null when the receipt does not cover it.</summary>
+    private static int? SheetPixel(Placed r, int x, int y)
+    {
+        int sw = r.Sheet.Width, sh = r.Sheet.Height;
+        long dx = 2L * (x - r.CenterX) + 1, dy = 2L * (y - r.CenterY) + 1;
+        long u = dx * r.Turn.Cos + dy * r.Turn.Sin;
+        long v = -dx * r.Turn.Sin + dy * r.Turn.Cos;
+        long halfW = (long)sw * 65536, halfH = (long)sh * 65536;
+        if (Math.Abs(u) >= halfW || Math.Abs(v) >= halfH) return null;
+        long sx = FloorDiv(u + halfW, 2L * 65536), sy = FloorDiv(v + halfH, 2L * 65536);
+        return r.Sheet.Pixels[sy * sw + sx];
+    }
+
+    /// <summary>The bed pixels where the receipt's print (pixels at or below <paramref name="ink"/>) lands.</summary>
+    public static List<PointD> PrintOnBed(Placed r, byte ink)
+    {
+        var points = new List<PointD>();
+        for (int y = 0; y < BedHeight; y++)
+        {
+            for (int x = 0; x < BedWidth; x++)
+            {
+                if (SheetPixel(r, x, y) is { } v && v <= ink) points.Add(new PointD(x + 0.5, y + 0.5));
+            }
+        }
+        return points;
+    }
+
     /// <summary>Division rounding down (toward minus infinity), for negative offsets too.</summary>
     public static long FloorDiv(long a, long b) => a >= 0 ? a / b : -((-a + b - 1) / b);
 

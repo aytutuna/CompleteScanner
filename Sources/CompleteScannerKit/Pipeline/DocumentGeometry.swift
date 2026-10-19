@@ -140,6 +140,29 @@ public enum PageRejection: Sendable {
     case otherObjects
 }
 
+/// The limits a sheet is held to when it is looked for (`DocumentGeometry.findPage(_:options:)`):
+/// `.default` is `DocumentGeometry`'s own constants, for pages of any kind. A task that knows its
+/// paper can ask for other limits: receipts (`ReceiptDetector.pageSearch`) are thermal paper barely
+/// darker than the lid, often curled, and up to many times as long as wide. Twin of C#
+/// `PageSearchOptions`.
+public struct PageSearchOptions: Equatable, Sendable {
+    /// A pixel belongs to something on the glass when it differs from the background by more than this (0...1).
+    public var pageContrast: Double = DocumentGeometry.pageContrast
+    /// The sheet covers at least this share of the scan.
+    public var minPageAreaFraction: Double = DocumentGeometry.minPageAreaFraction
+    /// The sheet covers at most this share of the scan.
+    public var maxPageAreaFraction: Double = DocumentGeometry.maxPageAreaFraction
+    /// The sheet fills at least this share of the rectangle around it.
+    public var minPageFill: Double = DocumentGeometry.minPageFill
+    /// The sheet's long side is at most this many times its short side.
+    public var maxPageAspect: Double = DocumentGeometry.maxPageAspect
+
+    public init() {}
+
+    /// The limits for pages of any kind: `DocumentGeometry`'s constants.
+    public static let `default` = PageSearchOptions()
+}
+
 /// What the search for the sheet found. Twin of C# `PageSearch`.
 public struct PageSearch {
     /// The sheet, or nil.
@@ -395,6 +418,12 @@ public enum DocumentGeometry {
 
     /// The search for the sheet (`detectPage`), with what was found and why it was turned down.
     public static func findPage(_ gray: GrayImage) -> PageSearch {
+        findPage(gray, options: .default)
+    }
+
+    /// The search for the sheet held to `options` instead of the constants (`PageSearchOptions.default`
+    /// gives the same result as `findPage(_:)`).
+    public static func findPage(_ gray: GrayImage, options: PageSearchOptions) -> PageSearch {
         let w = gray.width, h = gray.height
         guard w >= 16, h >= 16 else { return .nothing }
         let k = (gray.dpi > 0 ? gray.dpi : Double(GrayImage.analysisDPI)) / Double(GrayImage.analysisDPI)
@@ -402,7 +431,7 @@ public enum DocumentGeometry {
         // 1. The background: the median of the outer ring. 2. What differs from it, after a 3 × 3
         //    median (sensor noise and dust go).
         let smooth = median3x3(gray)
-        let backdrop = backdropOf(smooth, w, h, dpi: gray.dpi)
+        let backdrop = backdropOf(smooth, w, h, dpi: gray.dpi, contrast: options.pageContrast)
         let content = contentMask(smooth, background: backdrop.median, limit: backdrop.limit)
 
         // 3. Close the outline (outside the scan counts as set, so a sheet against the glass's
@@ -454,16 +483,16 @@ public enum DocumentGeometry {
             PageSearch(page: nil, rejection: why, candidate: region, areaFraction: areaFraction, fill: fill,
                        outsideMarks: marks, touchesBorder: touches, hull: hull)
         }
-        if areaFraction < minPageAreaFraction { return rejected(.tooSmall) }
-        if areaFraction > maxPageAreaFraction { return rejected(.fillsScan) }
-        if fill < minPageFill { return rejected(.notRectangular) }
+        if areaFraction < options.minPageAreaFraction { return rejected(.tooSmall) }
+        if areaFraction > options.maxPageAreaFraction { return rejected(.fillsScan) }
+        if fill < options.minPageFill { return rejected(.notRectangular) }
         let aspect = max(rectWidth, rectHeight) / max(1e-9, min(rectWidth, rectHeight))
-        if aspect > maxPageAspect { return rejected(.notRectangular) }
+        if aspect > options.maxPageAspect { return rejected(.notRectangular) }
 
         // 6. Around it, the background: a few objects (a ruler, a thread, a color chart) at most,
         //    not the many small marks of text, which mean the "sheet" is a picture on a page. Seen
         //    on the pixels as scanned: the median above wipes out thin print.
-        let rawBackdrop = backdropOf(gray.pixels, w, h, dpi: gray.dpi)
+        let rawBackdrop = backdropOf(gray.pixels, w, h, dpi: gray.dpi, contrast: options.pageContrast)
         let marks = contentMask(gray.pixels, background: rawBackdrop.median, limit: rawBackdrop.limit)
         let minMark = max(1, Int((Double(minOutsideMarkPixels) * k * k + 0.5).rounded(.down)))
         let outside = marksOutside(marks, w, h, region: region, margin: 2 * closeBy, minArea: minMark)
@@ -500,9 +529,11 @@ public enum DocumentGeometry {
     }
 
     /// The backdrop's luminance (the median of the outer ring of `pixels`) and how far a pixel must
-    /// differ from it to stand out: `pageContrast`, or more on a textured backdrop (black felt, a
-    /// dark archive frame), `backdropSpread` times the ring's median absolute deviation.
-    private static func backdropOf(_ pixels: [UInt8], _ w: Int, _ h: Int, dpi: Double) -> (median: Int, limit: Double) {
+    /// differ from it to stand out: `contrast` (`pageContrast` unless a search asks for another), or
+    /// more on a textured backdrop (black felt, a dark archive frame), `backdropSpread` times the
+    /// ring's median absolute deviation.
+    private static func backdropOf(_ pixels: [UInt8], _ w: Int, _ h: Int, dpi: Double,
+                                   contrast: Double = pageContrast) -> (median: Int, limit: Double) {
         let ring = ringWidth(w, h, dpi: dpi > 0 ? dpi : Double(GrayImage.analysisDPI))
         var histogram = [Int](repeating: 0, count: 256)
         var count = 0
@@ -519,7 +550,7 @@ public enum DocumentGeometry {
         var deviations = [Int](repeating: 0, count: 256)
         for v in 0..<256 { deviations[abs(v - median)] += histogram[v] }
         let mad = Int(BackgroundMap.percentile(deviations, count: count, fraction: 0.5))
-        return (median, max(pageContrast * 255, backdropSpread * Double(mad)))
+        return (median, max(contrast * 255, backdropSpread * Double(mad)))
     }
 
     /// Each pixel replaced by the median of itself and its 8 neighbors (edges repeated).
@@ -622,8 +653,8 @@ public enum DocumentGeometry {
     /// no edge moves by more than `tolerance` pixels; otherwise `coarse`. The refinement only
     /// sharpens an edge the analysis found: a sheet as light as the background, or a textured
     /// backdrop, would let it wander into the sheet or out over the background.
-    private static func refined(_ coarse: DetectedPhotoRegion, image: RgbaImage, background: Double,
-                                tolerance: Double) -> DetectedPhotoRegion {
+    static func refined(_ coarse: DetectedPhotoRegion, image: RgbaImage, background: Double,
+                        tolerance: Double) -> DetectedPhotoRegion {
         guard let cgImage = image.makeCGImage(),
               let refined = PhotoDetector.refineRegion(coarse, in: cgImage, backgroundLuminance: background) else {
             return coarse

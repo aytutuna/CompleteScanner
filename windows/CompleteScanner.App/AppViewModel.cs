@@ -980,6 +980,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         SelectionRect = null;
         DetectedPhotos = [];
         ShowPhotoReview = false;
+        IsReceiptReview = false;
         _photoSourceImages = [];
         CanvasImageChanged();
 
@@ -1263,6 +1264,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                     // manual crop corrections can re-extract from the correct page.
                     _photoSourceImages = processed.ToDictionary(p => p.Id, p => p.Image);
                     DetectedPhotos = new ObservableCollection<PhotoItem>(found);
+                    IsReceiptReview = false;
                     RecordCaptures(found.Select(item => item.Photo.Id));
                     ShowPhotoReview = found.Count > 0;
                     if (!ShowPhotoReview) _photoSourceImages = [];
@@ -1281,6 +1283,10 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                     SetLastScan(rawPreview);
                     await PrintCopyPages(processed, s, copySetup!, areaSelected, token);
                     RecordCaptures(processed.Select(page => page.Id));
+                    break;
+                case TaskFlowKind.ReceiptSplit:
+                    SetLastScan(rawPreview);
+                    await ShowReceipts(processed, s, generation, token);
                     break;
             }
             if (stop is not null) ErrorMessage = stop.Message(raw.Count);
@@ -1490,6 +1496,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     public Task SaveReviewedPhotos()
     {
         if (!DetectedPhotos.Any(p => p.Photo.Included)) { CancelPhotoReview(); return Task.CompletedTask; }
+        // Receipts are named by their date and saved as PDFs or images (AppViewModel.Receipts.cs).
+        if (IsReceiptReview) return SaveReceipts();
         var s = Settings.Clone();
         var format = OutputFormats.ImageFormatOrJpeg(s.Format);
         return RunExclusive(async token =>
@@ -1534,7 +1542,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// duplicates. Once every file is written the export counts as done, even if Cancel
     /// arrives at that moment.
     /// </summary>
-    private static async Task WriteImagesRollingBack(List<string> written, Func<Task> export)
+    private static async Task WriteImagesRollingBack(List<string> written, Func<Task> export, List<string>? alsoWritten = null)
     {
         try
         {
@@ -1542,22 +1550,25 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         }
         catch
         {
-            foreach (string path in written)
+            foreach (string path in alsoWritten is null ? written : written.Concat(alsoWritten))
             {
                 try { File.Delete(path); } catch { /* best effort */ }
             }
             written.Clear();
+            alsoWritten?.Clear();
             throw;
         }
     }
 
     public void CancelPhotoReview()
     {
+        bool receipts = IsReceiptReview;
         DetectedPhotos = [];
         ShowPhotoReview = false;
+        IsReceiptReview = false;
         _photoSourceImages = [];
         ResetFlow();
-        StatusMessage = "Photo batch discarded.";
+        StatusMessage = receipts ? "Receipts discarded." : "Photo batch discarded.";
         NotifyAll();
         EndOfWork();
     }
@@ -1589,6 +1600,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         }
         var batch = DetectedPhotos;
         bool deskew = Settings.PhotoAutoDeskew;
+        bool receipt = IsReceiptReview;
+        int dpi = item.Photo.Dpi;
         var edited = new DetectedPhotoRegion(region.Center, region.Size, region.AngleDegrees, region.Id);
         // Re-crops apply strictly in the order they were requested.
         var previous = _recropChain;
@@ -1607,7 +1620,10 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             {
                 result = await Task.Run(() =>
                 {
-                    var image = PhotoDetector.ExtractPhoto(source, edited, deskew);
+                    // A receipt is cut out upright and cleaned up again, as it was found.
+                    var image = receipt
+                        ? ReceiptDetector.ExtractEnhanced(source, edited, dpi)
+                        : PhotoDetector.ExtractPhoto(source, edited, deskew);
                     return image is null
                         ? ((RgbaImage, BitmapSource)?)null
                         : (image, WpfImageCodec.ToThumbnail(image, PhotoItem.ThumbnailMaxSide));
@@ -2803,7 +2819,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// OCR (when searchable, or when <paramref name="text"/> collects the text) + JPEG-encode each
+    /// OCR (when searchable, or when <paramref name="text"/> collects the text; never when the lines
+    /// were read beforehand, <paramref name="knownLines"/>, one per page) + JPEG-encode each
     /// page as the PDF size plans it, then write the PDF through
     /// PdfBuilder.WriteNewFile, which builds it under a hidden temp name and moves it into
     /// place — a failed, interrupted or cancelled build never leaves a truncated PDF at the
@@ -2811,7 +2828,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// every page and passed to the writer. Returns the path written.
     /// </summary>
     private async Task<string> WritePdfAtomically(List<ScannedPage> pages, ScanSettings s, string path,
-                                                  CancellationToken token, PdfText? text = null)
+                                                  CancellationToken token, PdfText? text = null,
+                                                  IReadOnlyList<IReadOnlyList<OcrLine>?>? knownLines = null)
     {
         var inputs = new List<PdfPageInput>();
         for (int i = 0; i < pages.Count; i++)
@@ -2823,7 +2841,12 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             var prepared = await Task.Run(() => PdfBuilder.PreparePage(page, SpoolImage(page)), token);
             var image = prepared.Image;
             IReadOnlyList<OcrLine>? lines = null;
-            if (s.PdfSearchable || text is { Problem: null })
+            if (knownLines is not null)
+            {
+                // Read beforehand (the receipts' one OCR pass per save): no OCR here.
+                lines = i < knownLines.Count ? knownLines[i] : null;
+            }
+            else if (s.PdfSearchable || text is { Problem: null })
             {
                 StatusMessage = $"OCR page {i + 1} of {pages.Count}…";
                 NotifyAll();
@@ -3036,7 +3059,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// writers move into place without replacing and pick the next free name if another
     /// file took this one meanwhile.
     /// </summary>
-    private string OutputPath(ScanSettings s, string fileExtension, int? index = null)
+    private string OutputPath(ScanSettings s, string fileExtension, int? index = null, DocumentDate? documentDate = null)
     {
         string dir = Environment.ExpandEnvironmentVariables(s.DestinationPath);
         Directory.CreateDirectory(dir);
@@ -3045,6 +3068,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             {
                 Index = index,
                 Task = TaskCatalog.Infer(s),
+                DocumentDate = documentDate,
             });
         return NamingTemplate.UniquePath(dir, baseName, fileExtension);
     }

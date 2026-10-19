@@ -9,8 +9,14 @@ import Foundation
 /// side or both (`feederDuplex`), so two-sided scanning, turning the stack over by hand and paper
 /// sizes can be tried without hardware. For the ID card task its glass holds a sample card (an
 /// obviously made-up design, no real document), which it turns over after every scan
-/// (`idCardTurnedOver`). Twin of C# `MockScannerBackend`.
+/// (`idCardTurnedOver`); for the Receipts task it holds two made-up receipts
+/// (`demoReceiptPlaces`). Twin of C# `MockScannerBackend`.
 public final class MockScannerBackend: ScannerBackend {
+
+    /// Where the demo receipts lie on the glass (centre and size in inches, tilt in degrees), for checks.
+    static var demoReceiptPlaces: [(centerInches: CGPoint, sizeInches: CGSize, angleDegrees: Double)] {
+        MockBedRenderer.receiptPlaces
+    }
 
     /// Sheets the demo feeder holds unless `feederSheetCount` is changed.
     public static let defaultFeederSheetCount = 3
@@ -106,9 +112,15 @@ private final class MockScannerSession: ScannerSession {
     func performOverviewScan(settings: ScanSettings) async throws -> CGImage {
         cancelRequested = false
         progressHandler?(ScanProgress(fraction: 0.5, message: "Scanning overview…"))
-        let rendered = settings.task == .idCard
-            ? MockBedRenderer.renderIdCardBed(dpi: 100, side: (backend?.idCardTurnedOver ?? false) ? .back : .front)
-            : MockBedRenderer.renderBed(dpi: 100, intent: settings.intent)
+        let rendered: CGImage?
+        switch settings.task {
+        case .idCard?:
+            rendered = MockBedRenderer.renderIdCardBed(dpi: 100, side: (backend?.idCardTurnedOver ?? false) ? .back : .front)
+        case .receipt?:
+            rendered = MockBedRenderer.renderReceiptBed(dpi: 100)
+        default:
+            rendered = MockBedRenderer.renderBed(dpi: 100, intent: settings.intent)
+        }
         guard let image = rendered else {
             throw ScanError.scanFailed("Could not render the demo overview.")
         }
@@ -133,6 +145,8 @@ private final class MockScannerSession: ScannerSession {
         let cardSide: PageSide = (backend?.idCardTurnedOver ?? false) ? .back : .front
         let rendered = idCard
             ? MockBedRenderer.renderIdCardBed(dpi: dpi, side: cardSide)
+            : settings.task == .receipt
+            ? MockBedRenderer.renderReceiptBed(dpi: dpi)
             : MockBedRenderer.renderBed(dpi: dpi, intent: settings.intent)
         guard var image = rendered else {
             throw ScanError.scanFailed("Could not render the demo scan.")
@@ -362,6 +376,176 @@ private enum MockBedRenderer {
         }
         return RgbaImage(width: width, height: height, pixels: pixels).makeCGImage()
     }
+
+    // MARK: Receipts
+
+    /// A made-up receipt lying on the glass: where (its centre, inches), its tilt, its size and its lines.
+    private struct MockReceipt {
+        let centerInches: CGPoint
+        let sizeInches: CGSize
+        let angleDegrees: Double
+        let lines: [String]
+    }
+
+    /// The demo receipts: thermal paper (0.93) with faded print (0.6), tilted 3° either way. The shops
+    /// are made up; each receipt carries a date for the date reader to find. The same as the C# demo.
+    private static let receipts: [MockReceipt] = [
+        MockReceipt(centerInches: CGPoint(x: 2.4, y: 3.2), sizeInches: CGSize(width: 3.15, height: 3.2), angleDegrees: 3,
+                    lines: ["           DEMO CAFE", "      123 EXAMPLE STREET", "         TEL 555-0100", "",
+                            "LATTE                       3.50", "CROISSANT                   2.40", "WATER                       1.20",
+                            "MUFFIN                      2.80", "", "SUBTOTAL                    9.90", "TAX                         0.79",
+                            "TOTAL                      10.69", "", "CARD ****4242", "", "DATE 12.03.2026         08:41", "",
+                            "           THANK YOU"]),
+        MockReceipt(centerInches: CGPoint(x: 6.3, y: 3.0), sizeInches: CGSize(width: 2.28, height: 2.3), angleDegrees: -3,
+                    lines: ["     SAMPLE MART", "    RECEIPT 0042", "", "BREAD             2.10", "MILK              1.05",
+                            "APPLES            2.40", "", "TOTAL             5.55", "", "2026-02-27       18:03", "",
+                            "      NO RETURNS"]),
+    ]
+
+    /// Thermal paper and faded print, 0...255.
+    static let receiptPaper: UInt8 = 237
+    static let receiptInk: UInt8 = 153
+    /// One unit of the receipts' stroke type, in inches: a character is 4 × 6 units, 5 units apart, a line 9 units tall.
+    static let receiptUnitInches = 0.016
+    /// The print starts this far from the receipt's top-left corner, in inches.
+    static let receiptMarginInches = 0.2
+    /// Half the width of a stroke of the receipts' type, in units.
+    private static let receiptStrokeHalfWidth = 0.32
+
+    /// Where the demo receipts lie (centre and size in inches, tilt in degrees), for checks.
+    static var receiptPlaces: [(centerInches: CGPoint, sizeInches: CGSize, angleDegrees: Double)] {
+        receipts.map { ($0.centerInches, $0.sizeInches, $0.angleDegrees) }
+    }
+
+    /// The glass with the two demo receipts on it, each tilted 3°: thermal paper barely darker than the
+    /// lid, with faded print in a plain stroke type. Drawn pixel by pixel, as the C# demo draws them.
+    static func renderReceiptBed(dpi: Int) -> CGImage? {
+        let scale = Double(dpi)
+        let width = Int(8.5 * scale), height = Int(11.7 * scale)
+        guard width > 0, height > 0 else { return nil }
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        // Near-white bed with a very subtle vertical gradient (0.97 → 0.945 gray), as the C# demo.
+        for y in 0..<height {
+            let t = Double(y) / Double(max(1, height - 1))
+            let v = UInt8(((0.97 + (0.945 - 0.97) * t) * 255).rounded())
+            for x in 0..<width {
+                let i = (y * width + x) * 4
+                pixels[i] = v
+                pixels[i + 1] = v
+                pixels[i + 2] = v
+            }
+        }
+        for receipt in receipts {
+            let w = Double(receipt.sizeInches.width) * scale, h = Double(receipt.sizeInches.height) * scale
+            let cx = Double(receipt.centerInches.x) * scale, cy = Double(receipt.centerInches.y) * scale
+            let angle = receipt.angleDegrees * .pi / 180
+            let c = cos(angle), s = sin(angle)
+            let halfDiag = (w * w + h * h).squareRoot() / 2
+            let minX = max(0, Int(cx - halfDiag)), maxX = min(width - 1, Int((cx + halfDiag).rounded(.up)))
+            let minY = max(0, Int(cy - halfDiag)), maxY = min(height - 1, Int((cy + halfDiag).rounded(.up)))
+            guard minX <= maxX, minY <= maxY else { continue }
+            for py in minY...maxY {
+                for px in minX...maxX {
+                    let dx = Double(px) + 0.5 - cx, dy = Double(py) + 0.5 - cy
+                    // Image → the receipt's own frame, in inches from its top-left corner.
+                    let lx = (dx * c + dy * s) / scale + Double(receipt.sizeInches.width) / 2
+                    let ly = (-dx * s + dy * c) / scale + Double(receipt.sizeInches.height) / 2
+                    guard lx >= 0, ly >= 0, lx < Double(receipt.sizeInches.width), ly < Double(receipt.sizeInches.height) else { continue }
+                    let value = receiptPrint(receipt.lines, x: lx - receiptMarginInches, y: ly - receiptMarginInches)
+                        ? receiptInk : receiptPaper
+                    let i = (py * width + px) * 4
+                    pixels[i] = value
+                    pixels[i + 1] = value
+                    pixels[i + 2] = value
+                }
+            }
+        }
+        return RgbaImage(width: width, height: height, pixels: pixels).makeCGImage()
+    }
+
+    /// Whether (`x`, `y`) inches from the print's top-left corner is on a stroke of the lines.
+    private static func receiptPrint(_ lines: [String], x: Double, y: Double) -> Bool {
+        guard x >= 0, y >= 0 else { return false }
+        let u = x / receiptUnitInches, v = y / receiptUnitInches
+        let line = Int(v / 9), character = Int(u / 5)
+        guard line < lines.count else { return false }
+        let text = Array(lines[line])
+        guard character < text.count, let strokes = receiptStrokes[text[character]] else { return false }
+        let gu = u - Double(character * 5), gv = v - Double(line * 9)
+        for (x0, y0, x1, y1) in strokes {
+            // Distance to the segment: round ends, as a thermal head's dots run together.
+            let dx = x1 - x0, dy = y1 - y0
+            let t = dx == 0 && dy == 0 ? 0 : min(1, max(0, ((gu - x0) * dx + (gv - y0) * dy) / (dx * dx + dy * dy)))
+            let ex = gu - (x0 + t * dx), ey = gv - (y0 + t * dy)
+            if ex * ex + ey * ey <= receiptStrokeHalfWidth * receiptStrokeHalfWidth { return true }
+        }
+        return false
+    }
+
+    /// The receipts' type: capitals, digits and the signs the demo receipts use, as polylines on a 4 × 6
+    /// grid (x right, y down), "|" between polylines. The same as the C# demo.
+    private static let receiptGlyphs: [Character: String] = [
+        "A": "0,6 2,0 4,6|1,4 3,4",
+        "B": "0,3 3,3 4,4 4,5 3,6 0,6 0,0 3,0 4,1 4,2 3,3",
+        "C": "4,1 3,0 1,0 0,1 0,5 1,6 3,6 4,5",
+        "D": "0,0 0,6 2,6 4,4 4,2 2,0 0,0",
+        "E": "4,0 0,0 0,6 4,6|0,3 3,3",
+        "F": "4,0 0,0 0,6|0,3 3,3",
+        "G": "4,1 3,0 1,0 0,1 0,5 1,6 3,6 4,5 4,3 2,3",
+        "H": "0,0 0,6|4,0 4,6|0,3 4,3",
+        "I": "1,0 3,0|2,0 2,6|1,6 3,6",
+        "J": "4,0 4,5 3,6 1,6 0,5",
+        "K": "0,0 0,6|4,0 0,4|1,3 4,6",
+        "L": "0,0 0,6 4,6",
+        "M": "0,6 0,0 2,3 4,0 4,6",
+        "N": "0,6 0,0 4,6 4,0",
+        "O": "1,0 3,0 4,1 4,5 3,6 1,6 0,5 0,1 1,0",
+        "P": "0,6 0,0 3,0 4,1 4,2 3,3 0,3",
+        "Q": "1,0 3,0 4,1 4,5 3,6 1,6 0,5 0,1 1,0|2,4 4,6",
+        "R": "0,6 0,0 3,0 4,1 4,2 3,3 0,3|2,3 4,6",
+        "S": "4,1 3,0 1,0 0,1 0,2 1,3 3,3 4,4 4,5 3,6 1,6 0,5",
+        "T": "0,0 4,0|2,0 2,6",
+        "U": "0,0 0,5 1,6 3,6 4,5 4,0",
+        "V": "0,0 2,6 4,0",
+        "W": "0,0 1,6 2,2 3,6 4,0",
+        "X": "0,0 4,6|4,0 0,6",
+        "Y": "0,0 2,3 4,0|2,3 2,6",
+        "Z": "0,0 4,0 0,6 4,6",
+        "0": "1.2,0 2.8,0 3.6,1 3.6,5 2.8,6 1.2,6 0.4,5 0.4,1 1.2,0",
+        "1": "1,1 2,0 2,6|1,6 3,6",
+        "2": "0,1 1,0 3,0 4,1 4,2 0,6 4,6",
+        "3": "0,1 1,0 3,0 4,1 4,2 3,3 2,3|3,3 4,4 4,5 3,6 1,6 0,5",
+        "4": "3,6 3,0 0,4 4,4",
+        "5": "4,0 0.4,0 0,3 3,2.6 4,3.6 4,5 3,6 1,6 0,5",
+        "6": "4,0.8 3,0 1,0 0,1 0,5 1,6 3,6 4,5 4,4 3,3 1,3 0,4",
+        "7": "0,0 4,0 1,6",
+        "8": "1,3 0,2 0,1 1,0 3,0 4,1 4,2 3,3 1,3 0,4 0,5 1,6 3,6 4,5 4,4 3,3",
+        "9": "4,3 1,3 0,2 0,1 1,0 3,0 4,1 4,5 3,6 1,6",
+        ".": "1.6,5.4 2.4,5.4 2.4,6 1.6,6 1.6,5.4|1.6,5.7 2.4,5.7",
+        ":": "1.6,1.4 2.4,1.4 2.4,2 1.6,2 1.6,1.4|1.6,1.7 2.4,1.7|1.6,5.4 2.4,5.4 2.4,6 1.6,6 1.6,5.4|1.6,5.7 2.4,5.7",
+        "-": "0.5,3 3.5,3",
+        "*": "2,1 2,5|0.5,2 3.5,4|3.5,2 0.5,4",
+        "/": "4,0 0,6",
+    ]
+
+    /// The segments (x0, y0, x1, y1) of each character of `receiptGlyphs`.
+    private static let receiptStrokes: [Character: [(Double, Double, Double, Double)]] = {
+        var strokes: [Character: [(Double, Double, Double, Double)]] = [:]
+        for (character, glyph) in receiptGlyphs {
+            var segments: [(Double, Double, Double, Double)] = []
+            for polyline in glyph.split(separator: "|") {
+                let points: [(Double, Double)] = polyline.split(separator: " ").map { pair in
+                    let parts = pair.split(separator: ",")
+                    return (Double(parts[0]) ?? 0, Double(parts[1]) ?? 0)
+                }
+                for k in 1..<max(1, points.count) {
+                    segments.append((points[k - 1].0, points[k - 1].1, points[k].0, points[k].1))
+                }
+            }
+            strokes[character] = segments
+        }
+        return strokes
+    }()
 
     // MARK: ID card
 

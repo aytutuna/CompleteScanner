@@ -257,7 +257,7 @@ public static class PhotoDetector
     /// Merge any two regions whose rotated-rect intersection area exceeds 0.6 of the
     /// smaller rect's area, replacing them with the min-area rect of their joint hull.
     /// </summary>
-    private static List<DetectedPhotoRegion> MergeOverlapping(List<DetectedPhotoRegion> input)
+    internal static List<DetectedPhotoRegion> MergeOverlapping(List<DetectedPhotoRegion> input)
     {
         var regions = new List<DetectedPhotoRegion>(input);
         bool merged = true;
@@ -292,7 +292,7 @@ public static class PhotoDetector
     /// Sort top-to-bottom then left-to-right, grouping into rows with a tolerance of
     /// half the mean region height.
     /// </summary>
-    private static List<DetectedPhotoRegion> SortRowMajor(List<DetectedPhotoRegion> regions)
+    internal static List<DetectedPhotoRegion> SortRowMajor(List<DetectedPhotoRegion> regions)
     {
         if (regions.Count <= 1) return regions;
         double meanHeight = regions.Sum(r => r.Size.Height) / regions.Count;

@@ -139,6 +139,29 @@ public sealed record PageSearch(DetectedPhotoRegion? Page, PageRejection Rejecti
 }
 
 /// <summary>
+/// The limits a sheet is held to when it is looked for (<see cref="DocumentGeometry.FindPage(GrayImage, PageSearchOptions)"/>):
+/// <see cref="Default"/> is <see cref="DocumentGeometry"/>'s own constants, for pages of any kind. A
+/// task that knows its paper can ask for other limits: receipts (<see cref="ReceiptDetector.PageSearch"/>)
+/// are thermal paper barely darker than the lid, often curled, and up to many times as long as wide.
+/// </summary>
+public sealed record PageSearchOptions
+{
+    /// <summary>A pixel belongs to something on the glass when it differs from the background by more than this (0...1).</summary>
+    public double PageContrast { get; init; } = DocumentGeometry.PageContrast;
+    /// <summary>The sheet covers at least this share of the scan.</summary>
+    public double MinPageAreaFraction { get; init; } = DocumentGeometry.MinPageAreaFraction;
+    /// <summary>The sheet covers at most this share of the scan.</summary>
+    public double MaxPageAreaFraction { get; init; } = DocumentGeometry.MaxPageAreaFraction;
+    /// <summary>The sheet fills at least this share of the rectangle around it.</summary>
+    public double MinPageFill { get; init; } = DocumentGeometry.MinPageFill;
+    /// <summary>The sheet's long side is at most this many times its short side.</summary>
+    public double MaxPageAspect { get; init; } = DocumentGeometry.MaxPageAspect;
+
+    /// <summary>The limits for pages of any kind: <see cref="DocumentGeometry"/>'s constants.</summary>
+    public static PageSearchOptions Default { get; } = new();
+}
+
+/// <summary>
 /// Crop to the page and straighten it. Works on the page's gray copy at the analysis resolution
 /// (<see cref="GrayImage.AnalysisDpi"/>), so the pixel constants below are 100 dpi sizes, and
 /// changes the full-resolution pixels once, at the end. Cautious by design: whenever the page edges
@@ -387,7 +410,13 @@ public static class DocumentGeometry
     public static DetectedPhotoRegion? DetectPage(GrayImage gray) => FindPage(gray).Page;
 
     /// <summary>The search for the sheet (<see cref="DetectPage"/>), with what was found and why it was turned down.</summary>
-    public static PageSearch FindPage(GrayImage gray)
+    public static PageSearch FindPage(GrayImage gray) => FindPage(gray, PageSearchOptions.Default);
+
+    /// <summary>
+    /// The search for the sheet held to <paramref name="options"/> instead of the constants
+    /// (<see cref="PageSearchOptions.Default"/> gives the same result as <see cref="FindPage(GrayImage)"/>).
+    /// </summary>
+    public static PageSearch FindPage(GrayImage gray, PageSearchOptions options)
     {
         int w = gray.Width, h = gray.Height;
         if (w < 16 || h < 16) return PageSearch.Nothing;
@@ -396,7 +425,7 @@ public static class DocumentGeometry
         // 1. The background: the median of the outer ring. 2. What differs from it, after a 3 × 3
         //    median (sensor noise and dust go).
         var smooth = Median3x3(gray);
-        var (background, limit) = Backdrop(smooth, w, h, gray.Dpi);
+        var (background, limit) = Backdrop(smooth, w, h, gray.Dpi, options.PageContrast);
         var content = ContentMask(smooth, background, limit);
 
         // 3. Close the outline (outside the scan counts as set, so a sheet against the glass's
@@ -446,16 +475,16 @@ public static class DocumentGeometry
         double areaFraction = rectArea / ((double)w * h);
         double fill = largest.Area / rectArea;
         PageSearch Rejected(PageRejection why, int marks = 0) => new(null, why, region, areaFraction, fill, marks, touches, hull);
-        if (areaFraction < MinPageAreaFraction) return Rejected(PageRejection.TooSmall);
-        if (areaFraction > MaxPageAreaFraction) return Rejected(PageRejection.FillsScan);
-        if (fill < MinPageFill) return Rejected(PageRejection.NotRectangular);
+        if (areaFraction < options.MinPageAreaFraction) return Rejected(PageRejection.TooSmall);
+        if (areaFraction > options.MaxPageAreaFraction) return Rejected(PageRejection.FillsScan);
+        if (fill < options.MinPageFill) return Rejected(PageRejection.NotRectangular);
         double aspect = Math.Max(rect.Size.Width, rect.Size.Height) / Math.Max(1e-9, Math.Min(rect.Size.Width, rect.Size.Height));
-        if (aspect > MaxPageAspect) return Rejected(PageRejection.NotRectangular);
+        if (aspect > options.MaxPageAspect) return Rejected(PageRejection.NotRectangular);
 
         // 6. Around it, the background: a few objects (a ruler, a thread, a color chart) at most,
         //    not the many small marks of text, which mean the "sheet" is a picture on a page. Seen
         //    on the pixels as scanned: the median above wipes out thin print.
-        var (rawBackground, rawLimit) = Backdrop(gray.Pixels, w, h, gray.Dpi);
+        var (rawBackground, rawLimit) = Backdrop(gray.Pixels, w, h, gray.Dpi, options.PageContrast);
         var marks = ContentMask(gray.Pixels, rawBackground, rawLimit);
         int minMark = Math.Max(1, (int)Math.Floor(MinOutsideMarkPixels * k * k + 0.5));
         var (outside, largestOutside) = MarksOutside(marks, w, h, region, 2 * close, minMark);
@@ -492,11 +521,12 @@ public static class DocumentGeometry
 
     /// <summary>
     /// The backdrop's luminance (the median of the outer ring of <paramref name="pixels"/>) and how
-    /// far a pixel must differ from it to stand out: <see cref="PageContrast"/>, or more on a
-    /// textured backdrop (black felt, a dark archive frame), <see cref="BackdropSpread"/> times the
-    /// ring's median absolute deviation.
+    /// far a pixel must differ from it to stand out: <paramref name="contrast"/>
+    /// (<see cref="PageContrast"/> unless a search asks for another), or more on a textured
+    /// backdrop (black felt, a dark archive frame), <see cref="BackdropSpread"/> times the ring's
+    /// median absolute deviation.
     /// </summary>
-    private static (int Median, double Limit) Backdrop(byte[] pixels, int w, int h, double dpi)
+    private static (int Median, double Limit) Backdrop(byte[] pixels, int w, int h, double dpi, double contrast = PageContrast)
     {
         int ring = RingWidth(w, h, dpi > 0 ? dpi : GrayImage.AnalysisDpi);
         var histogram = new int[256];
@@ -516,7 +546,7 @@ public static class DocumentGeometry
         var deviations = new int[256];
         for (int v = 0; v < 256; v++) deviations[Math.Abs(v - median)] += histogram[v];
         int mad = BackgroundMap.Percentile(deviations, count, 0.5);
-        return (median, Math.Max(PageContrast * 255, BackdropSpread * mad));
+        return (median, Math.Max(contrast * 255, BackdropSpread * mad));
     }
 
     /// <summary>Each pixel replaced by the median of itself and its 8 neighbors (edges repeated).</summary>
@@ -627,7 +657,7 @@ public static class DocumentGeometry
     /// sharpens an edge the analysis found: a sheet as light as the background, or a textured
     /// backdrop, would let it wander into the sheet or out over the background.
     /// </summary>
-    private static DetectedPhotoRegion Refined(DetectedPhotoRegion coarse, RgbaImage image, double background, double tolerance)
+    internal static DetectedPhotoRegion Refined(DetectedPhotoRegion coarse, RgbaImage image, double background, double tolerance)
     {
         var refined = PhotoDetector.RefineRegion(coarse, image, background);
         if (refined is null) return coarse;

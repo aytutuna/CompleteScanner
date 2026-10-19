@@ -43,6 +43,9 @@ struct InspectorView: View {
             if state.isCopyFlow {
                 copySection
             }
+            if state.isReceiptFlow {
+                receiptsSection
+            }
             scanSection
             outputSection
             if state.settings.intent == .photo {
@@ -139,6 +142,43 @@ struct InspectorView: View {
                     state.refreshPrinters()
                 }
             }
+        }
+    }
+
+    // MARK: Receipts
+
+    /// The Receipts task: how the receipts found on the glass are named and saved (AppState+Receipts.swift).
+    private var receiptsSection: some View {
+        let options = state.settings.taskOptions
+        let pdf = state.settings.format.pageFormat == .pdf
+        let dateHint: String
+        if !options.receiptNameByDate {
+            dateHint = "Each file is named by today's date."
+        } else if Receipts.namesByDate(state.settings) {
+            dateHint = "Each file is named by the date printed on the receipt ({docdate}), read from its text; today's date when none is found."
+        } else {
+            dateHint = "The file name has no {docdate}, so the date printed on the receipt is not used."
+        }
+        return Section("Receipts") {
+            Toggle("Name by the receipt's date", isOn: Binding(
+                get: { state.settings.taskOptions.receiptNameByDate },
+                set: { state.setReceiptNameByDate($0) }))
+            Text(dateHint)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Toggle("One PDF for all receipts", isOn: Binding(
+                get: { state.settings.taskOptions.receiptCombine },
+                set: { state.setReceiptCombine($0) }))
+                .disabled(!pdf)
+            Text(!pdf
+                 ? "Only for PDFs: each receipt is saved as an image of its own."
+                 : options.receiptCombine
+                 ? "All the receipts of a scan go into one PDF, a page each, named by the earliest date."
+                 : "Each receipt is saved as a PDF of its own.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -368,16 +408,20 @@ struct InspectorView: View {
         .help(state.settings.output.afterSave.hint)
     }
 
-    /// Every format for documents, the image formats for photos (`OutputFormat.offered(for:)`).
+    /// Every format for documents, the image formats for photos (`OutputFormat.offered(for:)`);
+    /// receipts are saved as a PDF or an image (`pageFormat`), so Word and text are not offered there.
     private var availableFormats: [OutputFormat] {
-        OutputFormat.offered(for: state.settings.intent)
+        let offered = OutputFormat.offered(for: state.settings.intent)
+        return state.isReceiptFlow ? offered.filter { $0.pageFormat == $0 } : offered
     }
 
     /// The format a save uses, as the picker shows it: photos are saved as an image, so a PDF or
-    /// text format shows as JPEG there (the setting itself is kept for documents until another
-    /// format is picked). Twin of the Windows inspector's format box.
+    /// text format shows as JPEG there, and receipts as a PDF or an image, so Word or text shows as
+    /// PDF there (the setting itself is kept for documents until another format is picked). Twin of
+    /// the Windows inspector's format box.
     private var shownFormat: OutputFormat {
-        state.settings.intent == .photo ? state.settings.format.imageFormatOrJPEG : state.settings.format
+        if state.settings.intent == .photo { return state.settings.format.imageFormatOrJPEG }
+        return state.isReceiptFlow ? state.settings.format.pageFormat : state.settings.format
     }
 
     private var shownFormatBinding: Binding<OutputFormat> {
@@ -452,7 +496,9 @@ struct InspectorView: View {
 
     private var documentSection: some View {
         Section("Document") {
-            Toggle("Collect pages, then \(state.settings.format.saveTitle)", isOn: $state.settings.documentMultiPage)
+            Toggle("Collect pages, then \(shownFormat.saveTitle)", isOn: $state.settings.documentMultiPage)
+                .disabled(state.isReceiptFlow)
+                .help(state.isReceiptFlow ? "Receipts are checked in a review, then saved: a file each, or one PDF." as String : "")
             Toggle("Searchable PDF (OCR)", isOn: $state.settings.pdfSearchable)
                 .help("Text is recognized in any language automatically — nothing to configure.")
             alsoSaveTextRow
@@ -466,20 +512,24 @@ struct InspectorView: View {
     /// are saved without it. Twin of the Windows inspector's "Also save text".
     private var alsoSaveTextRow: some View {
         let flow = TaskCatalog.flow(of: state.settings)
-        let savesPDF = state.settings.format.savesPDF(collectsPages: state.settings.documentMultiPage)
+        let savesPDF = flow == .receiptSplit
+            ? state.settings.format.pageFormat == .pdf
+            : state.settings.format.savesPDF(collectsPages: state.settings.documentMultiPage)
         let hint: String
         switch flow {
         case .idCard:
             hint = "Not for ID cards: the card is saved as a picture, without its text."
         case .copy:
             hint = "Not for copies: the PDF of a copy is saved without its text."
+        case .receiptSplit where savesPDF:
+            hint = "Writes the text of each receipt beside its PDF, in a .txt file with the same name."
         default:
             hint = savesPDF
                 ? "Writes the text of the pages beside each PDF, in a .txt file with the same name."
                 : "Only for PDFs: Word and text files are the text already, and images have none."
         }
         return Toggle("Also save text (.txt)", isOn: $state.settings.output.alsoSaveText)
-            .disabled(!savesPDF || flow != .documentQueue)
+            .disabled(!savesPDF || (flow != .documentQueue && flow != .receiptSplit))
             .help(hint)
     }
 
@@ -488,12 +538,15 @@ struct InspectorView: View {
     /// Twin of the Windows inspector's "Crop to page" and "Straighten pages".
     private var geometryRow: some View {
         let isCopy = state.isCopyFlow
-        let collecting = state.settings.documentMultiPage && !isCopy
+        let isReceipts = state.isReceiptFlow
+        let collecting = state.settings.documentMultiPage && !isCopy && !isReceipts
         let document = state.settings.document
         let hint: String
         switch (collecting, document.autoCrop, document.autoStraighten) {
         case (false, _, _) where isCopy:
             hint = "Copies print every page as scanned: pages are not cropped or straightened."
+        case (false, _, _) where isReceipts:
+            hint = "Each receipt is cut out along its paper, or around its print, and turned straight on its own."
         case (false, _, _):
             hint = "Only for pages collected before saving: a scan saved at once is kept as scanned."
         case (true, true, true):
@@ -525,10 +578,13 @@ struct InspectorView: View {
     /// blank pages".
     private var blankPagesRow: some View {
         let isCopy = state.isCopyFlow
-        let collecting = state.settings.documentMultiPage && !isCopy
+        let isReceipts = state.isReceiptFlow
+        let collecting = state.settings.documentMultiPage && !isCopy && !isReceipts
         let hint: String
         if isCopy {
             hint = "Copies print every page as scanned: blank pages are not left out."
+        } else if isReceipts {
+            hint = "Receipts are found on the glass and checked before saving: there are no blank pages to leave out."
         } else if collecting {
             hint = state.settings.document.removeBlankPages
                 ? "Blank pages are marked in the page strip and left out when you save. Click Keep on a page to save it."

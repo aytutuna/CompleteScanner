@@ -296,6 +296,18 @@ private func rasterizeRGBA(_ image: CGImage, width: Int, height: Int) -> [UInt8]
 
 // MARK: - Merging and ordering
 
+extension PhotoDetector {
+    /// Internal (also used by `ReceiptDetector`): `mergeOverlapping` (C# `PhotoDetector.MergeOverlapping`).
+    static func mergingOverlaps(_ regions: [DetectedPhotoRegion]) -> [DetectedPhotoRegion] {
+        mergeOverlapping(regions)
+    }
+
+    /// Internal (also used by `ReceiptDetector`): `sortRowMajor` (C# `PhotoDetector.SortRowMajor`).
+    static func sortedRowMajor(_ regions: [DetectedPhotoRegion]) -> [DetectedPhotoRegion] {
+        sortRowMajor(regions)
+    }
+}
+
 /// Merge any two regions whose rotated-rect intersection area exceeds 0.6 of the
 /// smaller rect's area, replacing them with the min-area rect of their joint hull.
 private func mergeOverlapping(_ input: [DetectedPhotoRegion]) -> [DetectedPhotoRegion] {

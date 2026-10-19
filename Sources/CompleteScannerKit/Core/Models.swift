@@ -388,6 +388,12 @@ public struct TaskOptions: Codable, Equatable, Sendable {
     public var copyPrinterName: String?
     /// Each copy is also saved as a PDF in the save folder. Off unless chosen.
     public var copyAlsoSavePdf: Bool = false
+    /// The Receipts task names each file by the date printed on the receipt (the {docdate} token),
+    /// read from its text; the scan date when none is found. On unless turned off, also for settings
+    /// written before it existed.
+    public var receiptNameByDate: Bool = true
+    /// The Receipts task saves all the receipts of a scan as one PDF, a page each. Off: a file per receipt.
+    public var receiptCombine: Bool = false
 
     public init() {}
 
@@ -399,6 +405,8 @@ public struct TaskOptions: Codable, Equatable, Sendable {
         case copyFitToPage
         case copyPrinterName
         case copyAlsoSavePdf
+        case receiptNameByDate
+        case receiptCombine
     }
 }
 
@@ -413,6 +421,8 @@ extension TaskOptions {
         copyFitToPage = container.decodeLenient(forKey: .copyFitToPage, default: copyFitToPage)
         copyPrinterName = container.decodeLenient(forKey: .copyPrinterName, default: copyPrinterName)
         copyAlsoSavePdf = container.decodeLenient(forKey: .copyAlsoSavePdf, default: copyAlsoSavePdf)
+        receiptNameByDate = container.decodeLenient(forKey: .receiptNameByDate, default: receiptNameByDate)
+        receiptCombine = container.decodeLenient(forKey: .receiptCombine, default: receiptCombine)
     }
 }
 

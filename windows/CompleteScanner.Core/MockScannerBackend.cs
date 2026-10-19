@@ -8,7 +8,8 @@ namespace CompleteScanner.Core;
 /// both (<see cref="FeederDuplex"/>), so two-sided scanning, turning the stack over by hand and
 /// paper sizes can be tried without hardware. For the ID card task its glass holds a sample card
 /// (an obviously made-up design, no real document), which it turns over after every scan
-/// (<see cref="IdCardTurnedOver"/>). Port of
+/// (<see cref="IdCardTurnedOver"/>); for the Receipts task it holds two made-up receipts
+/// (<see cref="MockBedRenderer.RenderReceiptBed"/>). Port of
 /// Sources/CompleteScannerKit/Backends/MockScannerBackend.swift.
 ///
 /// Divergence from the macOS mock: the demo document page renders text-shaped bars rather
@@ -120,9 +121,12 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
     {
         _cancelRequested = false;
         ProgressHandler?.Invoke(new ScanProgress(0.5, "Scanning overview…"));
-        return Task.FromResult(settings.Task == ScanTask.IdCard
-            ? MockBedRenderer.RenderIdCardBed(100, backend.IdCardTurnedOver ? PageSide.Back : PageSide.Front)
-            : MockBedRenderer.RenderBed(100, settings.Intent));
+        return Task.FromResult(settings.Task switch
+        {
+            ScanTask.IdCard => MockBedRenderer.RenderIdCardBed(100, backend.IdCardTurnedOver ? PageSide.Back : PageSide.Front),
+            ScanTask.Receipt => MockBedRenderer.RenderReceiptBed(100),
+            _ => MockBedRenderer.RenderBed(100, settings.Intent),
+        });
     }
 
     public async Task<IReadOnlyList<ScannedPage>> PerformScanAsync(ScanSettings settings, RectD? selection)
@@ -140,8 +144,9 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
         // The ID card task scans the sample card, then turns it over as the user would.
         bool idCard = settings.Task == ScanTask.IdCard;
         var cardSide = backend.IdCardTurnedOver ? PageSide.Back : PageSide.Front;
-        var image = await Task.Run(() => idCard
-            ? MockBedRenderer.RenderIdCardBed(dpi, cardSide)
+        bool receipts = settings.Task == ScanTask.Receipt;
+        var image = await Task.Run(() => idCard ? MockBedRenderer.RenderIdCardBed(dpi, cardSide)
+            : receipts ? MockBedRenderer.RenderReceiptBed(dpi)
             : MockBedRenderer.RenderBed(dpi, settings.Intent));
         if (idCard) backend.IdCardTurnedOver = cardSide == PageSide.Front;
         await SleepCheckingCancellation(0.25);
@@ -492,6 +497,166 @@ internal static class MockBedRenderer
         if (letter >= SampleGlyphs.Length || within >= 5) return false;
         return SampleGlyphs[letter][row * 5 + within] == '1';
     }
+
+    // MARK: Receipts
+
+    /// <summary>A made-up receipt lying on the glass: where (its centre, inches), its tilt, its size and its lines.</summary>
+    private sealed record MockReceipt(PointD CenterInches, SizeD SizeInches, double AngleDegrees, string[] Lines);
+
+    /// <summary>
+    /// The demo receipts: thermal paper (0.93) with faded print (0.6), tilted 3° either way. The shops
+    /// are made up; each receipt carries a date for the date reader to find.
+    /// </summary>
+    private static readonly MockReceipt[] Receipts =
+    [
+        new(new PointD(2.4, 3.2), new SizeD(3.15, 3.2), 3,
+            ["           DEMO CAFE", "      123 EXAMPLE STREET", "         TEL 555-0100", "",
+             "LATTE                       3.50", "CROISSANT                   2.40", "WATER                       1.20",
+             "MUFFIN                      2.80", "", "SUBTOTAL                    9.90", "TAX                         0.79",
+             "TOTAL                      10.69", "", "CARD ****4242", "", "DATE 12.03.2026         08:41", "",
+             "           THANK YOU"]),
+        new(new PointD(6.3, 3.0), new SizeD(2.28, 2.3), -3,
+            ["     SAMPLE MART", "    RECEIPT 0042", "", "BREAD             2.10", "MILK              1.05",
+             "APPLES            2.40", "", "TOTAL             5.55", "", "2026-02-27       18:03", "",
+             "      NO RETURNS"]),
+    ];
+
+    /// <summary>Thermal paper and faded print, 0...255.</summary>
+    public const byte ReceiptPaper = 237;
+    public const byte ReceiptInk = 153;
+    /// <summary>One unit of the receipts' stroke type, in inches: a character is 4 × 6 units, 5 units apart, a line 9 units tall.</summary>
+    public const double ReceiptUnitInches = 0.016;
+    /// <summary>The print starts this far from the receipt's top-left corner, in inches.</summary>
+    public const double ReceiptMarginInches = 0.2;
+
+    /// <summary>Where the demo receipts lie (centre and size in inches, tilt in degrees), for checks.</summary>
+    public static IReadOnlyList<(PointD CenterInches, SizeD SizeInches, double AngleDegrees)> ReceiptPlaces =>
+        Receipts.Select(r => (r.CenterInches, r.SizeInches, r.AngleDegrees)).ToList();
+
+    /// <summary>
+    /// The glass with the two demo receipts on it (<see cref="Receipts"/>), each tilted 3°: thermal
+    /// paper barely darker than the lid, with faded print in a plain stroke type.
+    /// </summary>
+    public static RgbaImage RenderReceiptBed(int dpi)
+    {
+        double scale = dpi;
+        int width = (int)(BedInches.Width * scale);
+        int height = (int)(BedInches.Height * scale);
+        var image = RgbaImage.Filled(width, height, 245, 245, 245);
+        DrawBedBackground(image);
+        foreach (var receipt in Receipts)
+        {
+            double w = receipt.SizeInches.Width * scale, h = receipt.SizeInches.Height * scale;
+            var center = new PointD(receipt.CenterInches.X * scale, receipt.CenterInches.Y * scale);
+            double angle = receipt.AngleDegrees * Math.PI / 180;
+            double cos = Math.Cos(angle), sin = Math.Sin(angle);
+            double halfDiag = Math.Sqrt(w * w + h * h) / 2;
+            int minX = Math.Max(0, (int)(center.X - halfDiag)), maxX = Math.Min(width - 1, (int)Math.Ceiling(center.X + halfDiag));
+            int minY = Math.Max(0, (int)(center.Y - halfDiag)), maxY = Math.Min(height - 1, (int)Math.Ceiling(center.Y + halfDiag));
+            for (int py = minY; py <= maxY; py++)
+            {
+                for (int px = minX; px <= maxX; px++)
+                {
+                    double dx = px + 0.5 - center.X, dy = py + 0.5 - center.Y;
+                    // Image → the receipt's own frame, in inches from its top-left corner.
+                    double lx = (dx * cos + dy * sin) / scale + receipt.SizeInches.Width / 2;
+                    double ly = (-dx * sin + dy * cos) / scale + receipt.SizeInches.Height / 2;
+                    if (lx < 0 || ly < 0 || lx >= receipt.SizeInches.Width || ly >= receipt.SizeInches.Height) continue;
+                    byte value = ReceiptPrint(receipt.Lines, lx - ReceiptMarginInches, ly - ReceiptMarginInches)
+                        ? ReceiptInk : ReceiptPaper;
+                    int pi = (py * width + px) * 4;
+                    image.Pixels[pi] = value;
+                    image.Pixels[pi + 1] = value;
+                    image.Pixels[pi + 2] = value;
+                    image.Pixels[pi + 3] = 255;
+                }
+            }
+        }
+        return image;
+    }
+
+    /// <summary>Half the width of a stroke of the receipts' type, in units.</summary>
+    private const double ReceiptStrokeHalfWidth = 0.32;
+
+    /// <summary>Whether (<paramref name="x"/>, <paramref name="y"/>) inches from the print's top-left corner is on a stroke of the lines.</summary>
+    private static bool ReceiptPrint(string[] lines, double x, double y)
+    {
+        if (x < 0 || y < 0) return false;
+        double u = x / ReceiptUnitInches, v = y / ReceiptUnitInches;
+        int line = (int)(v / 9), character = (int)(u / 5);
+        if (line >= lines.Length || character >= lines[line].Length) return false;
+        if (!ReceiptStrokes.TryGetValue(lines[line][character], out var strokes)) return false;
+        double gu = u - character * 5, gv = v - line * 9;
+        foreach (var (x0, y0, x1, y1) in strokes)
+        {
+            // Distance to the segment: round ends, as a thermal head's dots run together.
+            double dx = x1 - x0, dy = y1 - y0;
+            double t = dx == 0 && dy == 0 ? 0 : Math.Clamp(((gu - x0) * dx + (gv - y0) * dy) / (dx * dx + dy * dy), 0, 1);
+            double ex = gu - (x0 + t * dx), ey = gv - (y0 + t * dy);
+            if (ex * ex + ey * ey <= ReceiptStrokeHalfWidth * ReceiptStrokeHalfWidth) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// The receipts' type: capitals, digits and the signs the demo receipts use, as polylines on a
+    /// 4 × 6 grid (x right, y down), "|" between polylines.
+    /// </summary>
+    private static readonly Dictionary<char, string> ReceiptGlyphs = new()
+    {
+        ['A'] = "0,6 2,0 4,6|1,4 3,4",
+        ['B'] = "0,3 3,3 4,4 4,5 3,6 0,6 0,0 3,0 4,1 4,2 3,3",
+        ['C'] = "4,1 3,0 1,0 0,1 0,5 1,6 3,6 4,5",
+        ['D'] = "0,0 0,6 2,6 4,4 4,2 2,0 0,0",
+        ['E'] = "4,0 0,0 0,6 4,6|0,3 3,3",
+        ['F'] = "4,0 0,0 0,6|0,3 3,3",
+        ['G'] = "4,1 3,0 1,0 0,1 0,5 1,6 3,6 4,5 4,3 2,3",
+        ['H'] = "0,0 0,6|4,0 4,6|0,3 4,3",
+        ['I'] = "1,0 3,0|2,0 2,6|1,6 3,6",
+        ['J'] = "4,0 4,5 3,6 1,6 0,5",
+        ['K'] = "0,0 0,6|4,0 0,4|1,3 4,6",
+        ['L'] = "0,0 0,6 4,6",
+        ['M'] = "0,6 0,0 2,3 4,0 4,6",
+        ['N'] = "0,6 0,0 4,6 4,0",
+        ['O'] = "1,0 3,0 4,1 4,5 3,6 1,6 0,5 0,1 1,0",
+        ['P'] = "0,6 0,0 3,0 4,1 4,2 3,3 0,3",
+        ['Q'] = "1,0 3,0 4,1 4,5 3,6 1,6 0,5 0,1 1,0|2,4 4,6",
+        ['R'] = "0,6 0,0 3,0 4,1 4,2 3,3 0,3|2,3 4,6",
+        ['S'] = "4,1 3,0 1,0 0,1 0,2 1,3 3,3 4,4 4,5 3,6 1,6 0,5",
+        ['T'] = "0,0 4,0|2,0 2,6",
+        ['U'] = "0,0 0,5 1,6 3,6 4,5 4,0",
+        ['V'] = "0,0 2,6 4,0",
+        ['W'] = "0,0 1,6 2,2 3,6 4,0",
+        ['X'] = "0,0 4,6|4,0 0,6",
+        ['Y'] = "0,0 2,3 4,0|2,3 2,6",
+        ['Z'] = "0,0 4,0 0,6 4,6",
+        ['0'] = "1.2,0 2.8,0 3.6,1 3.6,5 2.8,6 1.2,6 0.4,5 0.4,1 1.2,0",
+        ['1'] = "1,1 2,0 2,6|1,6 3,6",
+        ['2'] = "0,1 1,0 3,0 4,1 4,2 0,6 4,6",
+        ['3'] = "0,1 1,0 3,0 4,1 4,2 3,3 2,3|3,3 4,4 4,5 3,6 1,6 0,5",
+        ['4'] = "3,6 3,0 0,4 4,4",
+        ['5'] = "4,0 0.4,0 0,3 3,2.6 4,3.6 4,5 3,6 1,6 0,5",
+        ['6'] = "4,0.8 3,0 1,0 0,1 0,5 1,6 3,6 4,5 4,4 3,3 1,3 0,4",
+        ['7'] = "0,0 4,0 1,6",
+        ['8'] = "1,3 0,2 0,1 1,0 3,0 4,1 4,2 3,3 1,3 0,4 0,5 1,6 3,6 4,5 4,4 3,3",
+        ['9'] = "4,3 1,3 0,2 0,1 1,0 3,0 4,1 4,5 3,6 1,6",
+        ['.'] = "1.6,5.4 2.4,5.4 2.4,6 1.6,6 1.6,5.4|1.6,5.7 2.4,5.7",
+        [':'] = "1.6,1.4 2.4,1.4 2.4,2 1.6,2 1.6,1.4|1.6,1.7 2.4,1.7|1.6,5.4 2.4,5.4 2.4,6 1.6,6 1.6,5.4|1.6,5.7 2.4,5.7",
+        ['-'] = "0.5,3 3.5,3",
+        ['*'] = "2,1 2,5|0.5,2 3.5,4|3.5,2 0.5,4",
+        ['/'] = "4,0 0,6",
+    };
+
+    /// <summary>The segments (x0, y0, x1, y1) of each character of <see cref="ReceiptGlyphs"/>.</summary>
+    private static readonly Dictionary<char, (double X0, double Y0, double X1, double Y1)[]> ReceiptStrokes =
+        ReceiptGlyphs.ToDictionary(g => g.Key, g => g.Value.Split('|').SelectMany(polyline =>
+        {
+            var points = polyline.Split(' ').Select(p => p.Split(','))
+                .Select(p => (X: double.Parse(p[0], System.Globalization.CultureInfo.InvariantCulture),
+                              Y: double.Parse(p[1], System.Globalization.CultureInfo.InvariantCulture)))
+                .ToArray();
+            return points.Zip(points.Skip(1), (a, b) => (a.X, a.Y, b.X, b.Y));
+        }).ToArray());
 
     // MARK: Background
 

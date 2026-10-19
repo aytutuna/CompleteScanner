@@ -72,6 +72,8 @@ internal static class CompatFixtures
         settings.TaskOptions.CopyFitToPage = true;
         settings.TaskOptions.CopyPrinterName = "Office printer";
         settings.TaskOptions.CopyAlsoSavePdf = true;
+        settings.TaskOptions.ReceiptNameByDate = false;
+        settings.TaskOptions.ReceiptCombine = true;
         return settings;
     }
 
@@ -134,7 +136,7 @@ internal static class CompatFixtures
         + "        \"autoCrop\": true,\n        \"autoStraighten\": true\n      },\n"
         + "      \"taskOptions\": {\n        \"idCardPaper\": \"letter\",\n        \"idCardSaveSidesAsImages\": true,\n"
         + "        \"copyCount\": 3,\n        \"copyFitToPage\": true,\n        \"copyPrinterName\": \"Office printer\",\n"
-        + "        \"copyAlsoSavePdf\": true\n      }\n");
+        + "        \"copyAlsoSavePdf\": true,\n        \"receiptNameByDate\": false,\n        \"receiptCombine\": true\n      }\n");
 
     /// <summary>Field-by-field equality, including the legacy OCR languages.</summary>
     public static void AssertSettingsEqual(ScanSettings expected, ScanSettings actual)
@@ -786,7 +788,8 @@ public class ModelsCompatTests
                 string json = CompatFixtures.Encode(settings);
                 using var written = JsonDocument.Parse(json);
                 // No printer chosen: the key is left out, as Swift leaves out a nil.
-                Assert.Equal(["idCardPaper", "idCardSaveSidesAsImages", "copyCount", "copyFitToPage", "copyAlsoSavePdf"],
+                Assert.Equal(["idCardPaper", "idCardSaveSidesAsImages", "copyCount", "copyFitToPage", "copyAlsoSavePdf",
+                              "receiptNameByDate", "receiptCombine"],
                              written.RootElement.GetProperty("taskOptions").EnumerateObject().Select(p => p.Name));
                 Assert.Equal(settings.TaskOptions, Decode<ScanSettings>(json).TaskOptions);
             }
@@ -827,6 +830,38 @@ public class ModelsCompatTests
         Assert.Equal((IdCardPaper.A4, true), (idCardOnly.IdCardPaper, idCardOnly.IdCardSaveSidesAsImages));
         Assert.Equal((1, false, (string?)null, false),
                      (idCardOnly.CopyCount, idCardOnly.CopyFitToPage, idCardOnly.CopyPrinterName, idCardOnly.CopyAlsoSavePdf));
+    }
+
+    [Fact]
+    public void ReceiptOptions_NamedByDateInSeparateFiles_ByDefaultAndInFilesWithoutThem()
+    {
+        var options = new ScanSettings().TaskOptions;
+        Assert.Equal((true, false), (options.ReceiptNameByDate, options.ReceiptCombine));
+        // Files of the copy version have task options without the receipt keys.
+        var copyOnly = Decode<ScanSettings>("""{"taskOptions": {"copyCount": 2, "copyAlsoSavePdf": true}}""").TaskOptions;
+        Assert.Equal((2, true), (copyOnly.CopyCount, copyOnly.CopyAlsoSavePdf));
+        Assert.Equal((true, false), (copyOnly.ReceiptNameByDate, copyOnly.ReceiptCombine));
+        var settings = new ScanSettings();
+        settings.TaskOptions.ReceiptNameByDate = false;
+        settings.TaskOptions.ReceiptCombine = true;
+        Assert.Equal(settings.TaskOptions, Decode<ScanSettings>(CompatFixtures.Encode(settings)).TaskOptions);
+        var clone = settings.Clone();
+        clone.TaskOptions.ReceiptCombine = false;
+        Assert.True(settings.TaskOptions.ReceiptCombine);
+    }
+
+    [Fact]
+    public void CorruptReceiptOptions_FallBackOneByOne_RestIntact()
+    {
+        var options = Decode<ScanSettings>("""
+            {"resolution": 150, "taskOptions": {"copyCount": 2, "receiptNameByDate": "no", "receiptCombine": true},
+             "pdfSearchable": false}
+            """);
+        Assert.Equal((150, false), (options.Resolution, options.PdfSearchable));
+        Assert.Equal((2, true, true), (options.TaskOptions.CopyCount, options.TaskOptions.ReceiptNameByDate,
+                                       options.TaskOptions.ReceiptCombine));
+        var nulls = Decode<ScanSettings>("""{"taskOptions": {"receiptNameByDate": false, "receiptCombine": null}}""").TaskOptions;
+        Assert.Equal((false, false), (nulls.ReceiptNameByDate, nulls.ReceiptCombine));
     }
 
     [Fact]

@@ -456,15 +456,27 @@ public sealed class TaskOptions : IEquatable<TaskOptions>
     /// <summary>Each copy is also saved as a PDF in the save folder. Off unless chosen.</summary>
     public bool CopyAlsoSavePdf { get; set; } = false;
 
+    /// <summary>
+    /// The Receipts task names each file by the date printed on the receipt (the {docdate} token),
+    /// read from its text; the scan date when none is found. On unless turned off, also for
+    /// settings written before it existed.
+    /// </summary>
+    public bool ReceiptNameByDate { get; set; } = true;
+
+    /// <summary>The Receipts task saves all the receipts of a scan as one PDF, a page each. Off: a file per receipt.</summary>
+    public bool ReceiptCombine { get; set; } = false;
+
     public TaskOptions Clone() => (TaskOptions)MemberwiseClone();
 
     public bool Equals(TaskOptions? other) =>
         other is not null && IdCardPaper == other.IdCardPaper && IdCardSaveSidesAsImages == other.IdCardSaveSidesAsImages
         && CopyCount == other.CopyCount && CopyFitToPage == other.CopyFitToPage
-        && CopyPrinterName == other.CopyPrinterName && CopyAlsoSavePdf == other.CopyAlsoSavePdf;
+        && CopyPrinterName == other.CopyPrinterName && CopyAlsoSavePdf == other.CopyAlsoSavePdf
+        && ReceiptNameByDate == other.ReceiptNameByDate && ReceiptCombine == other.ReceiptCombine;
     public override bool Equals(object? obj) => Equals(obj as TaskOptions);
     public override int GetHashCode() =>
-        HashCode.Combine(IdCardPaper, IdCardSaveSidesAsImages, CopyCount, CopyFitToPage, CopyPrinterName, CopyAlsoSavePdf);
+        HashCode.Combine(IdCardPaper, IdCardSaveSidesAsImages, CopyCount, CopyFitToPage, CopyPrinterName, CopyAlsoSavePdf,
+                         ReceiptNameByDate, ReceiptCombine);
 }
 
 public static class BlankSensitivities
@@ -547,7 +559,7 @@ public sealed class ScanSettings
     /// <summary>Clean-up of document pages (blank pages). Written after the earlier keys.</summary>
     public DocumentOptions Document { get; set; } = new();
 
-    /// <summary>Choices of particular tasks (the ID card's page). Written after the earlier keys.</summary>
+    /// <summary>Choices of particular tasks (the ID card's page, copies, receipts). Written after the earlier keys.</summary>
     public TaskOptions TaskOptions { get; set; } = new();
 
     public static string DefaultDestinationPath =>

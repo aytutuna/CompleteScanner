@@ -135,6 +135,35 @@ public class NamingTemplateTests
     }
 
     [Fact]
+    public void DocDateToken_IsTheDocumentsDate()
+    {
+        var context = new NamingContext(41, FixedDate(), ScanIntent.Document)
+        {
+            Task = ScanTask.Receipt,
+            DocumentDate = new DocumentDate(2026, 3, 5),
+        };
+        Assert.Equal("Receipt 2026-03-05 41", Render("{task} {docdate} {counter}", context));
+        // {date} stays the scan date.
+        Assert.Equal("2026-03-05 scanned 2026-08-13", Render("{docdate} scanned {date}", context));
+    }
+
+    [Fact]
+    public void DocDateToken_WithoutADocumentDate_IsTheScanDate()
+    {
+        Assert.Equal("Receipt 2026-08-13 2", Render("Receipt {docdate} {counter}",
+            new NamingContext(2, FixedDate(), ScanIntent.Document) { Task = ScanTask.Receipt }));
+        // The old overload has no document date.
+        Assert.Equal("2026-08-13", Render("{docdate}"));
+        // In a batch the index is still added.
+        Assert.Equal("Receipt 2026-03-05 3",
+                     Render("Receipt {docdate}", new NamingContext(9, FixedDate(), ScanIntent.Document)
+                     {
+                         Index = 3,
+                         DocumentDate = new DocumentDate(2026, 3, 5),
+                     }));
+    }
+
+    [Fact]
     public void UniquePathSuffixes()
     {
         string dir = Path.Combine(Path.GetTempPath(), $"NamingTemplateTests-{Guid.NewGuid()}");

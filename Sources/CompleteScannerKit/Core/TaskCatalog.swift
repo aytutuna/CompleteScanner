@@ -11,6 +11,9 @@ public enum TaskFlowKind: String, Sendable {
     case idCard
     /// The scan goes straight to the printer at real size (`PrintLayout`), like a photocopier.
     case copy
+    /// Receipts are found on the bed (`ReceiptDetector`), cut out, straightened and cleaned up
+    /// (`ReceiptEnhancer`), then reviewed and saved, named by their date.
+    case receiptSplit
 }
 
 /// A task card: what it is called, how it looks and how its scans are handled.
@@ -19,7 +22,7 @@ public struct TaskDefinition: Equatable, Sendable {
     public let title: String
     public let subtitle: String
     /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-    /// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word".
+    /// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt".
     public let iconKey: String
     public let flow: TaskFlowKind
     /// The scan mode the task uses.
@@ -128,6 +131,14 @@ public enum TaskCatalog {
             steps: [TaskStep(id: "scan", title: "Scan each page",
                              prompt: "Place a page face down on the glass and scan it. Repeat for every page, then save: the text is read from the pages into a Word document.",
                              primaryActionLabel: "Scan page", repeats: true)]),
+        TaskDefinition(
+            task: .receipt, title: "Receipts",
+            subtitle: "Scan several receipts at once into small, searchable files named by their date.",
+            iconKey: "receipt", flow: .receiptSplit, intent: .document, requiredSource: nil,
+            fileLabel: "Receipt",
+            steps: [TaskStep(id: "scan", title: "Scan the receipts",
+                             prompt: "Lay up to six receipts on the glass with a little space between them, close the lid and scan. Each one is found, straightened and made easy to read; check them before saving.",
+                             primaryActionLabel: "Scan receipts", repeats: true)]),
     ]
 
     public static func definition(_ task: ScanTask) -> TaskDefinition {
@@ -147,7 +158,8 @@ public enum TaskCatalog {
     /// no task crops yet; `SettingsAdapter` turns `.both` into turning over by hand on a feeder that
     /// scans one side. The ID card task makes no searchable PDF: the numbers on an ID are better not
     /// indexed; neither does the Copy task, whose PDF (when one is saved too) is a record of the paper
-    /// copy.
+    /// copy. The Receipts task scans in grayscale (thermal print has no color) into Compact PDFs, named
+    /// by the receipt's date.
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings {
         var s = current
         s.source = .flatbed
@@ -224,6 +236,13 @@ public enum TaskCatalog {
             s.resolution = 300
             s.format = .word
             s.namingTemplate = "Scan {date} {counter}"
+        case .receipt:
+            s.intent = .document
+            s.resolution = 300
+            s.colorMode = .grayscale
+            s.format = .pdf
+            s.output.pdfSize = .compact
+            s.namingTemplate = "Receipt {docdate} {counter}"
         }
         s.taskId = task.rawValue
         return s
