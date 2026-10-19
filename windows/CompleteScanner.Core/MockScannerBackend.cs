@@ -3,7 +3,8 @@ namespace CompleteScanner.Core;
 /// <summary>
 /// A demo scanner that needs no hardware: it renders deterministic synthetic flatbed
 /// images in pure C#, so the whole app (overview, selection, photo splitting, PDF export)
-/// can be exercised end to end. Port of
+/// can be exercised end to end. It also has a document feeder holding
+/// <see cref="FeederSheetCount"/> letter-size sheets. Port of
 /// Sources/CompleteScannerKit/Backends/MockScannerBackend.swift.
 ///
 /// Divergence from the macOS mock: the demo document page renders text-shaped bars rather
@@ -12,10 +13,28 @@ namespace CompleteScanner.Core;
 /// </summary>
 public sealed class MockScannerBackend : IScannerBackend
 {
+    /// <summary>Sheets the demo feeder holds unless <see cref="FeederSheetCount"/> is changed.</summary>
+    public const int DefaultFeederSheetCount = 3;
+
     public event Action? DevicesChanged;
 
     private readonly List<ScannerInfo> _devices = [];
     public IReadOnlyList<ScannerInfo> Devices => _devices;
+
+    /// <summary>
+    /// Sheets a feeder scan delivers, read when the scan starts; 0 simulates an empty feeder
+    /// (the scan fails with <see cref="ScannerProblem.FeederEmpty"/>).
+    /// </summary>
+    public int FeederSheetCount { get; set; } = DefaultFeederSheetCount;
+
+    /// <summary>
+    /// Simulates a paper jam: after this many sheets the next one jams, read when the scan
+    /// starts. The sheets before it are kept and the session's
+    /// <see cref="IScannerSession.LastScanStop"/> says why the batch stopped; a jam on the first
+    /// sheet fails the scan with <see cref="ScannerProblem.PaperJam"/>. null (the default)
+    /// never jams.
+    /// </summary>
+    public int? FeederJamsAfter { get; set; }
 
     public void StartBrowsing()
     {
@@ -35,14 +54,16 @@ public sealed class MockScannerBackend : IScannerBackend
     {
         var info = _devices.FirstOrDefault(d => d.Id == deviceId)
             ?? throw ScanException.DeviceUnavailable("The demo scanner is not available.");
-        return Task.FromResult<IScannerSession>(new MockScannerSession(info));
+        return Task.FromResult<IScannerSession>(new MockScannerSession(info, this));
     }
 }
 
-internal sealed class MockScannerSession(ScannerInfo info) : IScannerSession
+/// <param name="backend">Source of the feeder's settings, read at the start of each feeder scan.</param>
+internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend backend) : IScannerSession
 {
     public ScannerInfo Info { get; } = info;
     public Action<ScanProgress>? ProgressHandler { get; set; }
+    public ScanStop? LastScanStop { get; private set; }
 
     private volatile bool _cancelRequested;
 
@@ -52,9 +73,11 @@ internal sealed class MockScannerSession(ScannerInfo info) : IScannerSession
         Task.FromResult(new ScannerCapabilities
         {
             SupportedResolutions = [75, 150, 200, 300, 600, 1200],
-            Sources = [ScanSource.Flatbed],
+            Sources = [ScanSource.Flatbed, ScanSource.DocumentFeeder],
             FlatbedSizeInches = BedSizeInches,
             SupportsOverview = true,
+            FeederSizeInches = MockBedRenderer.SheetInches,
+            SupportsDuplex = false,
         });
 
     public Task<RgbaImage> PerformOverviewScanAsync(ScanSettings settings)
@@ -67,7 +90,9 @@ internal sealed class MockScannerSession(ScannerInfo info) : IScannerSession
     public async Task<IReadOnlyList<ScannedPage>> PerformScanAsync(ScanSettings settings, RectD? selection)
     {
         _cancelRequested = false;
+        LastScanStop = null;
         int dpi = Math.Min(settings.Resolution, 600); // cap memory use
+        if (settings.Source == ScanSource.DocumentFeeder) return await ScanFeeder(settings, dpi);
 
         ProgressHandler?.Invoke(new ScanProgress(0.2, "Warming up…"));
         await SleepCheckingCancellation(0.25);
@@ -97,6 +122,38 @@ internal sealed class MockScannerSession(ScannerInfo info) : IScannerSession
         return [new ScannedPage(image, dpi, settings.ColorMode)];
     }
 
+    /// <summary>
+    /// The demo feeder: one letter-size sheet per page (the selection does not apply), each
+    /// marked with its sheet number; an empty feeder or a jam fails like a real one.
+    /// </summary>
+    private async Task<IReadOnlyList<ScannedPage>> ScanFeeder(ScanSettings settings, int dpi)
+    {
+        int sheets = backend.FeederSheetCount;
+        int? jamsAfter = backend.FeederJamsAfter;
+        ProgressHandler?.Invoke(new ScanProgress(0.1, "Warming up…"));
+        await SleepCheckingCancellation(0.25);
+        if (sheets <= 0) throw ScanException.ForProblem(ScannerProblem.FeederEmpty);
+
+        var pages = new List<ScannedPage>();
+        for (int index = 0; index < sheets; index++)
+        {
+            if (jamsAfter is int jam && index >= jam)
+            {
+                var error = ScanException.ForProblem(ScannerProblem.PaperJam);
+                if (pages.Count == 0) throw error;
+                LastScanStop = ScanStop.From(error);
+                break;
+            }
+            ProgressHandler?.Invoke(new ScanProgress(0.1 + 0.9 * index / sheets,
+                                                     $"Scanning sheet {index + 1} of {sheets}…"));
+            int sheet = index;
+            var image = await Task.Run(() => MockBedRenderer.RenderSheet(dpi, settings.Intent, sheet));
+            await SleepCheckingCancellation(0.15);
+            pages.Add(new ScannedPage(image, dpi, settings.ColorMode));
+        }
+        return pages;
+    }
+
     public void CancelScan() => _cancelRequested = true;
 
     public Task CloseAsync() => Task.CompletedTask;
@@ -116,6 +173,8 @@ internal sealed class MockScannerSession(ScannerInfo info) : IScannerSession
 internal static class MockBedRenderer
 {
     private static readonly SizeD BedInches = new(8.5, 11.7);
+    /// <summary>Sheet size of the demo feeder (US Letter).</summary>
+    public static readonly SizeD SheetInches = new(8.5, 11);
 
     public static RgbaImage RenderBed(int dpi, ScanIntent intent)
     {
@@ -129,10 +188,41 @@ internal static class MockBedRenderer
         switch (intent)
         {
             case ScanIntent.Photo:
-                DrawPhotos(image, scale);
+                DrawPhotos(image, scale, Photos);
                 break;
             case ScanIntent.Document:
-                DrawDocument(image, scale);
+                // A white page lying on the bed, slightly inset from the glass edges.
+                DrawDocument(image, scale, new RectD(0.25, 0.25, BedInches.Width - 0.5, BedInches.Height - 0.5),
+                             sheetIndex: null);
+                break;
+        }
+        return image;
+    }
+
+    /// <summary>
+    /// One sheet from the demo feeder (<see cref="SheetInches"/>). Document sheets are the demo
+    /// page edge to edge with <paramref name="sheetIndex"/> + 1 marks near the bottom; photo
+    /// sheets hold one of the demo photos, centered, cycling through them.
+    /// </summary>
+    public static RgbaImage RenderSheet(int dpi, ScanIntent intent, int sheetIndex)
+    {
+        double scale = dpi;
+        int width = (int)(SheetInches.Width * scale);
+        int height = (int)(SheetInches.Height * scale);
+        var image = RgbaImage.Filled(width, height, 255, 255, 255);
+        switch (intent)
+        {
+            case ScanIntent.Photo:
+                DrawBedBackground(image);
+                int design = sheetIndex % Photos.Length;
+                var centered = Photos[design] with
+                {
+                    CenterInches = new PointD(SheetInches.Width / 2, SheetInches.Height / 2),
+                };
+                DrawPhotos(image, scale, [centered], firstDesign: design);
+                break;
+            case ScanIntent.Document:
+                DrawDocument(image, scale, new RectD(0, 0, SheetInches.Width, SheetInches.Height), sheetIndex);
                 break;
         }
         return image;
@@ -171,12 +261,13 @@ internal static class MockBedRenderer
         new(new PointD(2.9, 9.5), new SizeD(3.5, 2.5), 17),
     ];
 
-    private static void DrawPhotos(RgbaImage image, double scale)
+    /// <param name="firstDesign">Content design (see <see cref="PhotoContent"/>) of the first photo in <paramref name="photos"/>.</param>
+    private static void DrawPhotos(RgbaImage image, double scale, MockPhoto[] photos, int firstDesign = 0)
     {
         double border = 0.08 * scale;
-        for (int index = 0; index < Photos.Length; index++)
+        for (int index = 0; index < photos.Length; index++)
         {
-            var photo = Photos[index];
+            var photo = photos[index];
             double w = photo.SizeInches.Width * scale;
             double h = photo.SizeInches.Height * scale;
             var center = new PointD(photo.CenterInches.X * scale, photo.CenterInches.Y * scale);
@@ -210,7 +301,7 @@ internal static class MockBedRenderer
                     }
                     else
                     {
-                        color = PhotoContent(index, lx, ly, w - 2 * border, h - 2 * border, scale);
+                        color = PhotoContent(firstDesign + index, lx, ly, w - 2 * border, h - 2 * border, scale);
                     }
 
                     int pi = (py * image.Width + px) * 4;
@@ -285,12 +376,13 @@ internal static class MockBedRenderer
     /// A white page with text-shaped bars (title + paragraph lines). Bar widths derive from
     /// the macOS demo's actual line lengths so the layout matches visually.
     /// </summary>
-    private static void DrawDocument(RgbaImage image, double scale)
+    /// <param name="pageInches">The white page, in inches.</param>
+    /// <param name="sheetIndex">When set, sheetIndex + 1 square marks are drawn near the bottom edge so feeder sheets can be told apart.</param>
+    private static void DrawDocument(RgbaImage image, double scale, RectD pageInches, int? sheetIndex)
     {
-        // A white page lying on the bed, slightly inset from the glass edges.
-        double pageX = 0.25 * scale, pageY = 0.25 * scale;
-        double pageW = (BedInches.Width - 0.5) * scale;
-        double pageH = (BedInches.Height - 0.5) * scale;
+        double pageX = pageInches.X * scale, pageY = pageInches.Y * scale;
+        double pageW = pageInches.Width * scale;
+        double pageH = pageInches.Height * scale;
         FillRect(image, pageX, pageY, pageW, pageH, 255, 255, 255);
 
         // Line lengths of the macOS demo text, in characters (title, then body).
@@ -313,6 +405,17 @@ internal static class MockBedRenderer
                 FillRect(image, left, y, chars * 0.5 * bodySize, bodySize * 0.6, 56, 56, 61);
             }
             y += lineHeight;
+        }
+
+        if (sheetIndex is int sheet)
+        {
+            // Sheet marks: 0.2 in squares, 0.35 in apart, their top 0.9 in above the page's bottom edge.
+            double side = 0.2 * scale, pitch = 0.35 * scale;
+            double markY = pageY + pageH - 0.9 * scale;
+            for (int mark = 0; mark <= sheet; mark++)
+            {
+                FillRect(image, left + mark * pitch, markY, side, side, 56, 56, 61);
+            }
         }
     }
 

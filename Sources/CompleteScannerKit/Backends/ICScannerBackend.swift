@@ -161,6 +161,7 @@ private final class ICHardwareScannerSession: NSObject, ScannerSession, ICScanne
 
     let info: ScannerInfo
     var progressHandler: ((ScanProgress) -> Void)?
+    private(set) var lastScanStop: ScanStop?
 
     private let device: ICScannerDevice
 
@@ -284,6 +285,7 @@ private final class ICHardwareScannerSession: NSObject, ScannerSession, ICScanne
         try ensureIdle()
         cancelRequested = false
         scannedURLs = []
+        lastScanStop = nil
 
         let unitType: ICScannerFunctionalUnitType = settings.source == .documentFeeder ? .documentFeeder : .flatbed
         try await selectFunctionalUnit(unitType)
@@ -607,11 +609,11 @@ private final class ICHardwareScannerSession: NSObject, ScannerSession, ICScanne
                 let mapped = self.mapScanError(error)
                 // A failure mid-batch (e.g. an ADF jam on sheet 20 of 20) must
                 // not throw away the sheets that already transferred; keep them
-                // and surface the interruption as status. Deliberate
-                // cancellation still discards.
+                // and record why the batch stopped (lastScanStop), which the app
+                // reports once the pages are handled. Deliberate cancellation
+                // still discards.
                 if case .scanFailed = mapped, !self.scannedURLs.isEmpty {
-                    self.progressHandler?(ScanProgress(
-                        message: "Scan stopped early (\(error.localizedDescription)) — keeping \(self.scannedURLs.count) captured page(s)."))
+                    self.lastScanStop = ScanStop.from(mapped)
                     self.resumeScan(.success(self.scannedURLs))
                 } else {
                     self.resumeScan(.failure(mapped))

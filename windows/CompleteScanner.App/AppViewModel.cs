@@ -421,6 +421,13 @@ public sealed class AppViewModel : INotifyPropertyChanged
     public Task PerformOverview()
     {
         if (_session is not { } session) { NoDevice(); return Task.CompletedTask; }
+        // The preview shows the flatbed; a feeder scan would ignore a selection drawn on it.
+        if (Settings.Source == ScanSource.DocumentFeeder)
+        {
+            StatusMessage = "Preview needs the flatbed. Choose Flatbed as the source to preview.";
+            NotifyAll();
+            return Task.CompletedTask;
+        }
         int generation = _switchGeneration;
         // The backend reads the settings on its own thread: hand it a snapshot, never the
         // live object the inspector edits.
@@ -456,6 +463,9 @@ public sealed class AppViewModel : INotifyPropertyChanged
             // Discard results that arrive after the user switched devices.
             if (_switchGeneration != generation) return;
             if (raw.Count == 0) throw ScanException.ScanFailed("The scanner returned no pages.");
+            // A feeder batch cut short (a jam, a dropped connection) still returns its pages;
+            // once they are handled the user is told the stack was not finished.
+            var stop = session.LastScanStop;
             token.ThrowIfCancellationRequested();
             StatusMessage = "Processing…";
             NotifyAll();
@@ -550,6 +560,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
                     StatusMessage = $"Found {found.Count} photo{(found.Count == 1 ? "" : "s")} on the bed.";
                     break;
             }
+            if (stop is not null) ErrorMessage = stop.Message(raw.Count);
             NotifyAll();
         });
     }

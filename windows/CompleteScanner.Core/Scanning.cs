@@ -41,6 +41,13 @@ public interface IScannerSession
     /// <returns>One ScannedPage per sheet (the ADF may produce several).</returns>
     Task<IReadOnlyList<ScannedPage>> PerformScanAsync(ScanSettings settings, RectD? selection);
 
+    /// <summary>
+    /// Why the last <see cref="PerformScanAsync"/> ended early while still returning the pages
+    /// that transferred; null when it ran to the end (or failed outright). Reset by every scan.
+    /// Sessions that never stop a batch early can leave the default.
+    /// </summary>
+    ScanStop? LastScanStop => null;
+
     void CancelScan();
     Task CloseAsync();
 }

@@ -240,7 +240,9 @@ public partial class MainWindow : Window
             ? Visibility.Visible : Visibility.Collapsed;
         PageList.IsEnabled = !ViewModel.IsBusy;
 
-        PreviewButton.IsEnabled = !ViewModel.IsBusy && ViewModel.Capabilities?.SupportsOverview != false;
+        // As on macOS, the preview is of the flatbed: not offered while the feeder is the source.
+        PreviewButton.IsEnabled = !ViewModel.IsBusy && ViewModel.Capabilities?.SupportsOverview != false
+                                  && ViewModel.Settings.Source != ScanSource.DocumentFeeder;
         ScanButton.IsEnabled = !ViewModel.IsBusy;
         // As on macOS, the settings (and presets, which replace them) are frozen while an
         // operation runs: it works from a snapshot, and edits made meanwhile would not apply.

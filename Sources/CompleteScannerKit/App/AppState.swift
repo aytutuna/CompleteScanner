@@ -232,6 +232,11 @@ public final class AppState: ObservableObject {
 
     public func performOverview() {
         guard let session else { return noDevice() }
+        // The preview shows the flatbed; a feeder scan would ignore a selection drawn on it.
+        guard settings.source != .documentFeeder else {
+            statusMessage = "Preview needs the flatbed. Choose Flatbed as the source to preview."
+            return
+        }
         let generation = switchGeneration
         runExclusive { flag in
             self.statusMessage = "Scanning overview…"
@@ -255,6 +260,9 @@ public final class AppState: ObservableObject {
             guard self.switchGeneration == generation else { return }
             guard !raw.isEmpty else { throw ScanError.scanFailed("The scanner returned no pages.") }
             if flag.isCancelled { throw ScanError.cancelled }
+            // A feeder batch cut short (a jam, a dropped connection) still returns its pages;
+            // once they are handled the user is told the stack was not finished.
+            let stop = session.lastScanStop
             let s = self.settings
             self.statusMessage = "Processing…"
             // Pixel-heavy work runs off the main actor so the UI stays live; the cancel
@@ -346,6 +354,9 @@ public final class AppState: ObservableObject {
                 self.detectedPhotos = found
                 self.showPhotoReview = !found.isEmpty
                 self.statusMessage = "Found \(found.count) photo\(found.count == 1 ? "" : "s") on the bed."
+            }
+            if let stop {
+                self.errorMessage = stop.message(pagesKept: raw.count)
             }
         }
     }

@@ -4,11 +4,25 @@ import Foundation
 
 /// A demo scanner that needs no hardware: it renders deterministic synthetic
 /// flatbed images with CoreGraphics, so the whole app (overview, selection,
-/// photo splitting, OCR, PDF export) can be exercised end to end.
+/// photo splitting, OCR, PDF export) can be exercised end to end. It also has a
+/// document feeder holding `feederSheetCount` letter-size sheets.
 public final class MockScannerBackend: ScannerBackend {
+
+    /// Sheets the demo feeder holds unless `feederSheetCount` is changed.
+    public static let defaultFeederSheetCount = 3
 
     public var onDevicesChanged: (() -> Void)?
     public private(set) var devices: [ScannerInfo] = []
+
+    /// Sheets a feeder scan delivers, read when the scan starts; 0 simulates an empty
+    /// feeder (the scan fails with `ScanError.scannerProblem(.feederEmpty)`).
+    public var feederSheetCount: Int = 3
+
+    /// Simulates a paper jam: after this many sheets the next one jams, read when the scan
+    /// starts. The sheets before it are kept and the session's `lastScanStop` says why the
+    /// batch stopped; a jam on the first sheet fails the scan with
+    /// `ScanError.scannerProblem(.paperJam)`. nil (the default) never jams.
+    public var feederJamsAfter: Int?
 
     public init() {}
 
@@ -28,7 +42,7 @@ public final class MockScannerBackend: ScannerBackend {
         guard let info = devices.first(where: { $0.id == deviceID }) else {
             throw ScanError.deviceUnavailable("The demo scanner is not available.")
         }
-        return MockScannerSession(info: info)
+        return MockScannerSession(info: info, backend: self)
     }
 }
 
@@ -39,20 +53,26 @@ private final class MockScannerSession: ScannerSession {
 
     let info: ScannerInfo
     var progressHandler: ((ScanProgress) -> Void)?
+    private(set) var lastScanStop: ScanStop?
 
     private var cancelRequested = false
+    /// Source of the feeder's settings, read at the start of each feeder scan.
+    private weak var backend: MockScannerBackend?
 
     private static let bedSizeInches = CGSize(width: 8.5, height: 11.7)
 
-    init(info: ScannerInfo) {
+    init(info: ScannerInfo, backend: MockScannerBackend) {
         self.info = info
+        self.backend = backend
     }
 
     func capabilities() async throws -> ScannerCapabilities {
         ScannerCapabilities(supportedResolutions: [75, 150, 200, 300, 600, 1200],
-                            sources: [.flatbed],
+                            sources: [.flatbed, .documentFeeder],
                             flatbedSizeInches: Self.bedSizeInches,
-                            supportsOverview: true)
+                            supportsOverview: true,
+                            feederSizeInches: MockBedRenderer.sheetInches,
+                            supportsDuplex: false)
     }
 
     func performOverviewScan(settings: ScanSettings) async throws -> CGImage {
@@ -66,7 +86,11 @@ private final class MockScannerSession: ScannerSession {
 
     func performScan(settings: ScanSettings, selection: CGRect?) async throws -> [ScannedPage] {
         cancelRequested = false
+        lastScanStop = nil
         let dpi = min(settings.resolution, 600) // cap memory use
+        if settings.source == .documentFeeder {
+            return try await scanFeeder(settings: settings, dpi: dpi)
+        }
 
         progressHandler?(ScanProgress(fraction: 0.2, message: "Warming up…"))
         try await sleepCheckingCancellation(seconds: 0.25)
@@ -97,6 +121,34 @@ private final class MockScannerSession: ScannerSession {
         return [ScannedPage(image: image, dpi: dpi, colorMode: settings.colorMode)]
     }
 
+    /// The demo feeder: one letter-size sheet per page (the selection does not apply), each
+    /// marked with its sheet number; an empty feeder or a jam fails like a real one.
+    private func scanFeeder(settings: ScanSettings, dpi: Int) async throws -> [ScannedPage] {
+        let sheets = backend?.feederSheetCount ?? MockScannerBackend.defaultFeederSheetCount
+        let jamsAfter = backend?.feederJamsAfter
+        progressHandler?(ScanProgress(fraction: 0.1, message: "Warming up…"))
+        try await sleepCheckingCancellation(seconds: 0.25)
+        guard sheets > 0 else { throw ScanError.scannerProblem(.feederEmpty) }
+
+        var pages: [ScannedPage] = []
+        for index in 0..<sheets {
+            if let jam = jamsAfter, index >= jam {
+                let error = ScanError.scannerProblem(.paperJam)
+                if pages.isEmpty { throw error }
+                lastScanStop = ScanStop.from(error)
+                break
+            }
+            progressHandler?(ScanProgress(fraction: 0.1 + 0.9 * Double(index) / Double(sheets),
+                                          message: "Scanning sheet \(index + 1) of \(sheets)…"))
+            guard let image = MockBedRenderer.renderSheet(dpi: dpi, intent: settings.intent, sheetIndex: index) else {
+                throw ScanError.scanFailed("Could not render the demo scan.")
+            }
+            try await sleepCheckingCancellation(seconds: 0.15)
+            pages.append(ScannedPage(image: image, dpi: dpi, colorMode: settings.colorMode))
+        }
+        return pages
+    }
+
     func cancelScan() {
         cancelRequested = true
     }
@@ -117,6 +169,8 @@ private final class MockScannerSession: ScannerSession {
 private enum MockBedRenderer {
 
     static let bedInches = CGSize(width: 8.5, height: 11.7)
+    /// Sheet size of the demo feeder (US Letter).
+    static let sheetInches = CGSize(width: 8.5, height: 11)
 
     static func renderBed(dpi: Int, intent: ScanIntent) -> CGImage? {
         let scale = CGFloat(dpi)
@@ -138,9 +192,47 @@ private enum MockBedRenderer {
 
         switch intent {
         case .photo:
-            drawPhotos(in: ctx, scale: scale)
+            drawPhotos(in: ctx, scale: scale, items: photos, firstDesign: 0)
         case .document:
-            drawDocument(in: ctx, scale: scale)
+            // A white page lying on the bed, slightly inset from the glass edges.
+            drawDocument(in: ctx, scale: scale,
+                         pageInches: CGRect(x: 0.25, y: 0.25,
+                                            width: bedInches.width - 0.5, height: bedInches.height - 0.5),
+                         sheetIndex: nil)
+        }
+        return ctx.makeImage()
+    }
+
+    /// One sheet from the demo feeder (`sheetInches`). Document sheets are the demo page
+    /// edge to edge with `sheetIndex + 1` marks near the bottom; photo sheets hold one of the
+    /// demo photos, centered, cycling through them.
+    static func renderSheet(dpi: Int, intent: ScanIntent, sheetIndex: Int) -> CGImage? {
+        let scale = CGFloat(dpi)
+        let width = Int(sheetInches.width * scale)
+        let height = Int(sheetInches.height * scale)
+        guard width > 0, height > 0,
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: width, height: height,
+                                  bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            return nil
+        }
+
+        // Flip so (0, 0) is the top-left corner and y grows downward.
+        ctx.translateBy(x: 0, y: CGFloat(height))
+        ctx.scaleBy(x: 1, y: -1)
+
+        switch intent {
+        case .photo:
+            drawBedBackground(in: ctx, width: CGFloat(width), height: CGFloat(height))
+            let design = sheetIndex % photos.count
+            var centered = photos[design]
+            centered.centerInches = CGPoint(x: sheetInches.width / 2, y: sheetInches.height / 2)
+            drawPhotos(in: ctx, scale: scale, items: [centered], firstDesign: design)
+        case .document:
+            drawDocument(in: ctx, scale: scale,
+                         pageInches: CGRect(x: 0, y: 0, width: sheetInches.width, height: sheetInches.height),
+                         sheetIndex: sheetIndex)
         }
         return ctx.makeImage()
     }
@@ -177,9 +269,11 @@ private enum MockBedRenderer {
         MockPhoto(centerInches: CGPoint(x: 2.9, y: 9.5), sizeInches: CGSize(width: 3.5, height: 2.5), angleDegrees: 17),
     ]
 
-    private static func drawPhotos(in ctx: CGContext, scale: CGFloat) {
+    /// `firstDesign` is the content design (0, 1, 2+) of the first photo in `items`.
+    private static func drawPhotos(in ctx: CGContext, scale: CGFloat, items: [MockPhoto], firstDesign: Int) {
         let border = 0.08 * scale
-        for (index, photo) in photos.enumerated() {
+        for (offset, photo) in items.enumerated() {
+            let index = firstDesign + offset
             let w = photo.sizeInches.width * scale
             let h = photo.sizeInches.height * scale
             ctx.saveGState()
@@ -261,11 +355,12 @@ private enum MockBedRenderer {
         "The quick brown fox jumps over the lazy dog.",
     ]
 
-    private static func drawDocument(in ctx: CGContext, scale: CGFloat) {
-        // A white page lying on the bed, slightly inset from the glass edges.
-        let page = CGRect(x: 0.25 * scale, y: 0.25 * scale,
-                          width: (bedInches.width - 0.5) * scale,
-                          height: (bedInches.height - 0.5) * scale)
+    /// `pageInches` is the white page, in inches. When `sheetIndex` is set, `sheetIndex + 1`
+    /// square marks are drawn near the bottom edge so feeder sheets can be told apart.
+    private static func drawDocument(in ctx: CGContext, scale: CGFloat, pageInches: CGRect, sheetIndex: Int?) {
+        let page = CGRect(x: pageInches.minX * scale, y: pageInches.minY * scale,
+                          width: pageInches.width * scale,
+                          height: pageInches.height * scale)
         ctx.setFillColor(gray(1.0))
         ctx.fill(page)
 
@@ -286,6 +381,17 @@ private enum MockBedRenderer {
                              fontSize: bodySize, bold: false, color: textColor)
             }
             y += lineHeight
+        }
+
+        if let sheetIndex {
+            // Sheet marks: 0.2 in squares, 0.35 in apart, their top 0.9 in above the page's bottom edge.
+            let side = 0.2 * scale
+            let pitch = 0.35 * scale
+            let markY = page.maxY - 0.9 * scale
+            ctx.setFillColor(textColor)
+            for mark in 0...sheetIndex {
+                ctx.fill(CGRect(x: left + CGFloat(mark) * pitch, y: markY, width: side, height: side))
+            }
         }
     }
 

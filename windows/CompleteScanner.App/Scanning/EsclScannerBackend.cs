@@ -1,9 +1,8 @@
-using System.Globalization;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Xml.Linq;
 using CompleteScanner.App.Services;
 using CompleteScanner.Core;
 
@@ -11,7 +10,9 @@ namespace CompleteScanner.App.Scanning;
 
 /// <summary>
 /// Driverless network scanners over eSCL (AirScan) — plain HTTP + XML, the same protocol
-/// the macOS app reaches through ImageCaptureCore's Bonjour support.
+/// the macOS app reaches through ImageCaptureCore's Bonjour support. The protocol logic
+/// (capabilities, job settings, retries, status) lives in Core (Escl/*.cs) and is tested
+/// there; this class does the I/O.
 ///
 /// ⚠ EXPERIMENTAL, UNTESTED AGAINST HARDWARE. Scaffold limitations:
 ///   - no mDNS/Bonjour discovery yet — scanners are configured by hostname/IP in
@@ -26,11 +27,27 @@ public sealed class EsclScannerBackend : IScannerBackend
     private readonly List<ScannerInfo> _devices = [];
     public IReadOnlyList<ScannerInfo> Devices => _devices;
 
+    /// <summary>Discovery and capability requests: a host that does not answer soon is skipped.</summary>
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
+    /// <summary>
+    /// Scan jobs: some devices hold a NextDocument request open until the page has been
+    /// scanned, which at high resolution takes far longer than a discovery request.
+    /// </summary>
+    private static readonly HttpClient JobHttp = new() { Timeout = TimeSpan.FromMinutes(2) };
 
-    private static string HostsPath => Path.Combine(
+    private readonly string _hostsPath;
+
+    public EsclScannerBackend() : this(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "CompleteScanner", "escl-hosts.json");
+        "CompleteScanner", "escl-hosts.json"))
+    {
+    }
+
+    /// <param name="hostsPath">The JSON list of hosts to probe (tests point it elsewhere).</param>
+    internal EsclScannerBackend(string hostsPath)
+    {
+        _hostsPath = hostsPath;
+    }
 
     public void StartBrowsing()
     {
@@ -49,8 +66,8 @@ public sealed class EsclScannerBackend : IScannerBackend
         List<string> hosts;
         try
         {
-            hosts = File.Exists(HostsPath)
-                ? JsonSerializer.Deserialize<List<string>>(await File.ReadAllTextAsync(HostsPath)) ?? []
+            hosts = File.Exists(_hostsPath)
+                ? JsonSerializer.Deserialize<List<string>>(await File.ReadAllTextAsync(_hostsPath)) ?? []
                 : [];
         }
         catch
@@ -92,94 +109,34 @@ public sealed class EsclScannerBackend : IScannerBackend
         {
             throw ScanException.SessionFailed(e.Message);
         }
-        return new EsclScannerSession(info, host, caps, Http);
+        return new EsclScannerSession(info, host, caps, JobHttp);
     }
 
-    // MARK: - Capabilities
+    internal static Uri BaseUri(string host) => new($"http://{host}/eSCL/");
 
-    internal sealed class EsclCapabilities
-    {
-        public string? MakeAndModel;
-        public List<int> Resolutions = [];
-        public SizeD BedInches = new(8.5, 11.7);
-        public bool HasAdf;
-    }
-
-    internal static async Task<EsclCapabilities> FetchCapabilities(string host)
-    {
-        var xml = XDocument.Parse(
-            await Http.GetStringAsync($"http://{host}/eSCL/ScannerCapabilities"));
-        var caps = new EsclCapabilities
-        {
-            MakeAndModel = FirstLocal(xml, "MakeAndModel")?.Value,
-            HasAdf = FirstLocal(xml, "Adf") is not null,
-        };
-        // Resolutions arrive as discrete values and/or min/max/step ranges; ResolutionList
-        // applies the same accuracy rules as the macOS backend (eSCL reports no optical
-        // resolution, so nothing is dropped as interpolated).
-        var supported = new HashSet<int>();
-        foreach (var res in xml.Descendants().Where(e => e.Name.LocalName == "DiscreteResolution"))
-        {
-            if (int.TryParse(FirstLocal(res, "XResolution")?.Value, out int dpi)) supported.Add(dpi);
-        }
-        foreach (var range in xml.Descendants().Where(e => e.Name.LocalName == "XResolutionRange"))
-        {
-            if (int.TryParse(FirstLocal(range, "Min")?.Value, out int min)
-                && int.TryParse(FirstLocal(range, "Max")?.Value, out int max)
-                && min > 0 && max >= min)
-            {
-                int step = int.TryParse(FirstLocal(range, "Step")?.Value, out int s) ? s : 1;
-                supported.UnionWith(ResolutionList.ExpandRange(min, max, step));
-            }
-        }
-        caps.Resolutions = ResolutionList.Build(preferred: null, supported, nativeResolution: 0);
-        // Platen dimensions arrive in 1/300ths of an inch.
-        if (FirstLocal(xml, "Platen") is { } platen)
-        {
-            double? w = ParseThreeHundredths(FirstLocal(platen, "MaxWidth")?.Value);
-            double? h = ParseThreeHundredths(FirstLocal(platen, "MaxHeight")?.Value);
-            if (w is { } bw && h is { } bh && bw > 0 && bh > 0) caps.BedInches = new SizeD(bw, bh);
-        }
-        return caps;
-    }
-
-    private static XElement? FirstLocal(XContainer root, string localName) =>
-        root.Descendants().FirstOrDefault(e => e.Name.LocalName == localName);
-
-    private static double? ParseThreeHundredths(string? value) =>
-        double.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out double v)
-            ? v / 300.0
-            : null;
+    internal static async Task<EsclCapabilities> FetchCapabilities(string host) =>
+        EsclCapabilitiesParser.Parse(await Http.GetStringAsync(new Uri(BaseUri(host), "ScannerCapabilities")));
 }
 
-internal sealed class EsclScannerSession(ScannerInfo info, string host,
-                                         EsclScannerBackend.EsclCapabilities caps,
+internal sealed class EsclScannerSession(ScannerInfo info, string host, EsclCapabilities caps,
                                          HttpClient http) : IScannerSession
 {
     public ScannerInfo Info { get; } = info;
     public Action<ScanProgress>? ProgressHandler { get; set; }
+    public ScanStop? LastScanStop { get; private set; }
 
-    private string? _activeJobUri;
+    private readonly Uri _baseUri = EsclScannerBackend.BaseUri(host);
+    private CancellationTokenSource? _jobCancellation;
     private volatile bool _cancelRequested;
 
-    public Task<ScannerCapabilities> GetCapabilitiesAsync() =>
-        Task.FromResult(new ScannerCapabilities
-        {
-            SupportedResolutions = caps.Resolutions.Count > 0
-                ? caps.Resolutions
-                : [75, 150, 200, 300, 600],
-            Sources = caps.HasAdf
-                ? [ScanSource.Flatbed, ScanSource.DocumentFeeder]
-                : [ScanSource.Flatbed],
-            FlatbedSizeInches = caps.BedInches,
-            SupportsOverview = true,
-        });
+    public Task<ScannerCapabilities> GetCapabilitiesAsync() => Task.FromResult(caps.ToScannerCapabilities());
 
     public async Task<RgbaImage> PerformOverviewScanAsync(ScanSettings settings)
     {
         _cancelRequested = false;
+        if (!caps.HasPlaten) throw ScanException.Unsupported("This scanner has no flatbed to preview.");
         ProgressHandler?.Invoke(new ScanProgress("Scanning overview…"));
-        int dpi = caps.Resolutions.FirstOrDefault(r => r >= 150, 150);
+        int dpi = caps.Platen!.Resolutions.FirstOrDefault(r => r >= 150, 150);
         var pages = await RunJob(dpi, ColorMode.Color, ScanSource.Flatbed, selection: null);
         if (pages.Count == 0) throw ScanException.ScanFailed("The scanner returned no overview image.");
         return pages[0].Image;
@@ -188,6 +145,7 @@ internal sealed class EsclScannerSession(ScannerInfo info, string host,
     public async Task<IReadOnlyList<ScannedPage>> PerformScanAsync(ScanSettings settings, RectD? selection)
     {
         _cancelRequested = false;
+        LastScanStop = null;
         ProgressHandler?.Invoke(new ScanProgress("Scanning…"));
         var pages = await RunJob(settings.Resolution, settings.ColorMode, settings.Source,
                                  settings.Source == ScanSource.Flatbed ? selection : null);
@@ -195,12 +153,20 @@ internal sealed class EsclScannerSession(ScannerInfo info, string host,
         return pages;
     }
 
+    /// <summary>
+    /// Stops the job: its requests are abandoned, and the job loop deletes the job on the
+    /// device on its way out.
+    /// </summary>
     public void CancelScan()
     {
         _cancelRequested = true;
-        if (_activeJobUri is { } job)
+        try
         {
-            _ = http.DeleteAsync(job); // best-effort eSCL job cancellation
+            _jobCancellation?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The job just finished.
         }
     }
 
@@ -211,105 +177,208 @@ internal sealed class EsclScannerSession(ScannerInfo info, string host,
     private async Task<List<ScannedPage>> RunJob(int dpi, ColorMode colorMode, ScanSource source,
                                                  RectD? selection)
     {
-        string colorModeXml = colorMode switch
+        // Black & white arrives as grayscale; the app's pipeline thresholds every page that
+        // is not a color scan, so the pages keep the requested color mode.
+        var request = EsclScanRequest.Create(caps, source, colorMode, dpi, selection);
+        using var cancellation = new CancellationTokenSource();
+        _jobCancellation = cancellation;
+        if (_cancelRequested) cancellation.Cancel();
+        try
         {
-            ColorMode.Color => "RGB24",
-            ColorMode.Grayscale => "Grayscale8",
-            _ => "BlackAndWhite1",
-        };
-        string inputSource = source == ScanSource.DocumentFeeder ? "Feeder" : "Platen";
-
-        // Region in 1/300ths of an inch, from the normalized top-left selection.
-        var region = new RectD(0, 0, caps.BedInches.Width, caps.BedInches.Height);
-        if (selection is { } sel)
-        {
-            var clamped = sel.Standardized.Intersection(new RectD(0, 0, 1, 1));
-            if (clamped.Width > 0.001 && clamped.Height > 0.001)
-            {
-                region = new RectD(clamped.MinX * caps.BedInches.Width,
-                                   clamped.MinY * caps.BedInches.Height,
-                                   clamped.Width * caps.BedInches.Width,
-                                   clamped.Height * caps.BedInches.Height);
-            }
+            return await RunJob(request, colorMode, source, cancellation.Token);
         }
-        string Inches300(double inches) =>
-            ((int)Math.Round(inches * 300)).ToString(CultureInfo.InvariantCulture);
+        catch (OperationCanceledException) when (_cancelRequested)
+        {
+            throw ScanException.Cancelled();
+        }
+        catch (OperationCanceledException e)
+        {
+            // HttpClient reports its own timeout as a cancellation.
+            throw ScanException.ForProblem(ScannerProblem.CommunicationError, e.Message);
+        }
+        finally
+        {
+            _jobCancellation = null;
+        }
+    }
 
-        string request = $"""
-            <?xml version="1.0" encoding="UTF-8"?>
-            <scan:ScanSettings xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03"
-                               xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">
-              <pwg:Version>2.0</pwg:Version>
-              <pwg:ScanRegions>
-                <pwg:ScanRegion>
-                  <pwg:ContentRegionUnits>escl:ThreeHundredthsOfInches</pwg:ContentRegionUnits>
-                  <pwg:XOffset>{Inches300(region.MinX)}</pwg:XOffset>
-                  <pwg:YOffset>{Inches300(region.MinY)}</pwg:YOffset>
-                  <pwg:Width>{Inches300(region.Width)}</pwg:Width>
-                  <pwg:Height>{Inches300(region.Height)}</pwg:Height>
-                </pwg:ScanRegion>
-              </pwg:ScanRegions>
-              <pwg:InputSource>{inputSource}</pwg:InputSource>
-              <scan:ColorMode>{colorModeXml}</scan:ColorMode>
-              <scan:XResolution>{dpi.ToString(CultureInfo.InvariantCulture)}</scan:XResolution>
-              <scan:YResolution>{dpi.ToString(CultureInfo.InvariantCulture)}</scan:YResolution>
-              <pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>
-            </scan:ScanSettings>
-            """;
-
+    private async Task<List<ScannedPage>> RunJob(EsclScanRequest request, ColorMode colorMode, ScanSource source,
+                                                 CancellationToken token)
+    {
+        var scanJobs = new Uri(_baseUri, "ScanJobs");
+        string body = request.ToXml();
         HttpResponseMessage jobResponse;
         try
         {
-            jobResponse = await http.PostAsync($"http://{host}/eSCL/ScanJobs",
-                new StringContent(request, Encoding.UTF8, "text/xml"));
+            jobResponse = await EsclRetry.SendAsync(ct => PostJob(scanJobs, body, ct), token);
         }
-        catch (Exception e)
+        catch (HttpRequestException e)
         {
             throw ScanException.ScanFailed($"Could not reach {host}: {e.Message}");
         }
-        if (jobResponse.StatusCode != System.Net.HttpStatusCode.Created)
+
+        Uri jobUri;
+        using (jobResponse)
         {
-            throw ScanException.ScanFailed($"{Info.Name} rejected the scan job (HTTP {(int)jobResponse.StatusCode}).");
+            if (jobResponse.StatusCode != HttpStatusCode.Created)
+            {
+                throw await JobFailure(source, jobResponse.StatusCode,
+                    $"{Info.Name} rejected the scan job (HTTP {(int)jobResponse.StatusCode}).", token);
+            }
+            jobUri = EsclJob.ResolveLocation(scanJobs, jobResponse.Headers.Location?.OriginalString)
+                ?? throw ScanException.ScanFailed($"{Info.Name} accepted the scan job but did not say where to fetch it.");
         }
-        string jobUri = jobResponse.Headers.Location?.IsAbsoluteUri == true
-            ? jobResponse.Headers.Location.ToString()
-            : $"http://{host}{jobResponse.Headers.Location}";
-        _activeJobUri = jobUri;
 
         var pages = new List<ScannedPage>();
+        // Only a job the device reported as finished (404 on NextDocument) is left alone. Any
+        // other way out (cancel, error, a batch cut short) deletes it, so the device stops
+        // feeding and the next scan does not find it busy.
+        bool finished = false;
         try
         {
-            // Pull page documents until the job reports no more (404).
+            var next = EsclJob.NextDocument(jobUri);
+            // Pull page documents until the job reports no more (404). A failure after the
+            // first page keeps the pages that already transferred and records why in
+            // LastScanStop; before it, the failure is the scan's error.
             while (true)
             {
                 if (_cancelRequested) throw ScanException.Cancelled();
-                HttpResponseMessage doc;
+                byte[] data;
                 try
                 {
-                    doc = await http.GetAsync($"{jobUri}/NextDocument");
+                    using var doc = await EsclRetry.SendAsync(ct => http.GetAsync(next, ct), token);
+                    if (doc.StatusCode == HttpStatusCode.NotFound)
+                    {
+                        // Job complete. A feeder job that ends before its first page usually
+                        // means an empty feeder: ask the device.
+                        finished = true;
+                        if (pages.Count == 0 && await ProbeProblem(source, token) is { } problem)
+                        {
+                            throw ScanException.ForProblem(problem);
+                        }
+                        break;
+                    }
+                    if (!doc.IsSuccessStatusCode)
+                    {
+                        var failure = await JobFailure(source, doc.StatusCode,
+                            $"{Info.Name} returned HTTP {(int)doc.StatusCode}.", token);
+                        if (pages.Count == 0) throw failure;
+                        LastScanStop = ScanStop.From(failure);
+                        break;
+                    }
+                    data = await doc.Content.ReadAsByteArrayAsync(token);
+                }
+                catch (HttpRequestException e)
+                {
+                    if (pages.Count == 0) throw ScanException.ScanFailed(e.Message);
+                    LastScanStop = ScanStop.From(ScanException.ForProblem(ScannerProblem.CommunicationError));
+                    break;
+                }
+                catch (OperationCanceledException) when (!token.IsCancellationRequested && pages.Count > 0)
+                {
+                    // HttpClient's own timeout: the device stalled on this page.
+                    LastScanStop = ScanStop.From(ScanException.ForProblem(ScannerProblem.CommunicationError));
+                    break;
+                }
+                if (data.Length == 0) break;
+                ProgressHandler?.Invoke(new ScanProgress($"Transferring page {pages.Count + 1}…"));
+                RgbaImage image;
+                try
+                {
+                    image = WpfImageCodec.Decode(data);
                 }
                 catch (Exception e)
                 {
-                    if (pages.Count > 0) break; // keep what already transferred
-                    throw ScanException.ScanFailed(e.Message);
+                    var unreadable = ScanException.ScanFailed(
+                        $"{Info.Name} sent page {pages.Count + 1} in a form that could not be read ({e.Message}).");
+                    if (pages.Count == 0) throw unreadable;
+                    LastScanStop = ScanStop.From(unreadable);
+                    break;
                 }
-                if (doc.StatusCode == System.Net.HttpStatusCode.NotFound) break; // job complete
-                if (!doc.IsSuccessStatusCode)
-                {
-                    if (pages.Count > 0) break;
-                    throw ScanException.ScanFailed($"{Info.Name} returned HTTP {(int)doc.StatusCode}.");
-                }
-                byte[] jpeg = await doc.Content.ReadAsByteArrayAsync();
-                if (jpeg.Length == 0) break;
-                ProgressHandler?.Invoke(new ScanProgress($"Transferring page {pages.Count + 1}…"));
-                var image = WpfImageCodec.Decode(jpeg);
-                pages.Add(new ScannedPage(image, dpi, colorMode));
+                pages.Add(new ScannedPage(image, request.Resolution, colorMode));
             }
         }
         finally
         {
-            _activeJobUri = null;
+            if (!finished) _ = DeleteQuietly(jobUri.AbsoluteUri);
         }
         return pages;
+    }
+
+    /// <summary>
+    /// POST a job request. The request itself is not cancelled with <paramref name="token"/>:
+    /// a device that has already created the job would keep it (and keep feeding paper) with
+    /// nobody left to delete it. A cancel stops the wait instead, and the job is deleted as
+    /// soon as the device answers with its address.
+    /// </summary>
+    private async Task<HttpResponseMessage> PostJob(Uri scanJobs, string body, CancellationToken token)
+    {
+        var post = http.PostAsync(scanJobs, new StringContent(body, Encoding.UTF8, "text/xml"), CancellationToken.None);
+        try
+        {
+            return await post.WaitAsync(token);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            _ = DeleteOnceCreated(post, scanJobs);
+            throw;
+        }
+    }
+
+    private async Task DeleteOnceCreated(Task<HttpResponseMessage> post, Uri scanJobs)
+    {
+        try
+        {
+            using var response = await post;
+            if (response.StatusCode == HttpStatusCode.Created
+                && EsclJob.ResolveLocation(scanJobs, response.Headers.Location?.OriginalString) is { } job)
+            {
+                await DeleteQuietly(job.AbsoluteUri);
+            }
+        }
+        catch
+        {
+            // The request failed, so there is no job to delete.
+        }
+    }
+
+    /// <summary>
+    /// The error for a failed job request: the scanner's own problem when its status names
+    /// one (or "busy" for a 503 that outlasted the retries), else <paramref name="fallback"/>.
+    /// </summary>
+    private async Task<ScanException> JobFailure(ScanSource source, HttpStatusCode status, string fallback,
+                                                 CancellationToken token)
+    {
+        var problem = await ProbeProblem(source, token);
+        if (problem is null && EsclRetry.IsRetryable(status)) problem = ScannerProblem.Busy;
+        return problem is { } p
+            ? ScanException.ForProblem(p, $"HTTP {(int)status}")
+            : ScanException.ScanFailed(fallback);
+    }
+
+    /// <summary>What the device's ScannerStatus says is wrong; null when it says nothing or cannot be read.</summary>
+    private async Task<ScannerProblem?> ProbeProblem(ScanSource source, CancellationToken token)
+    {
+        try
+        {
+            string xml = await http.GetStringAsync(new Uri(_baseUri, "ScannerStatus"), token);
+            return EsclScannerStatus.Parse(xml)?.Problem(source);
+        }
+        catch (Exception) when (!token.IsCancellationRequested)
+        {
+            return null; // no status to go on: the caller reports the original failure
+        }
+    }
+
+    private async Task DeleteQuietly(string job)
+    {
+        try
+        {
+            using var response = await http.DeleteAsync(job);
+        }
+        catch
+        {
+            // best effort
+        }
     }
 }

@@ -7,9 +7,14 @@ UI per platform** architecture:
   dependencies**: photo detection (thresholding → morphology → connected components →
   convex hull → rotating calipers), the image adjustment pipeline, naming templates,
   presets/settings persistence, a dependency-free searchable-PDF writer, the scanner
-  backend contract, and the hardware-free demo scanner. It is a type-for-type port of the
+  backend contract, scanner problems with their user-facing text (`Troubleshooting.cs`),
+  and the hardware-free demo scanner. It is a type-for-type port of the
   Swift `CompleteScannerKit` core (see `../CONTRACTS.md` for the shared conventions,
-  especially the four coordinate systems).
+  especially the four coordinate systems). It also holds the testable protocol logic of the
+  Windows-only backends, which has no Swift twin because macOS reaches the same scanners
+  through ImageCaptureCore: the WIA error and document-handling tables (`WiaErrors.cs`) and
+  the eSCL capabilities parser, job request builder, 503 retry policy and status parser
+  (`Escl/`).
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
   xUnit with the same fixtures, geometry, and tolerances. **This is the contract that keeps
   the Swift and C# cores behaviorally identical** — change an algorithm on one side, port
@@ -45,7 +50,9 @@ The main window has three tabs, like the macOS app:
   rotate-in-place for JPEG/PNG/TIFF.
 
 Pick **Demo Scanner** in the sidebar to exercise everything without hardware: scan in
-Photos mode to see detection/deskew/review, or Document mode to build a PDF.
+Photos mode to see detection/deskew/review, or Document mode to build a PDF. Its
+**Document Feeder (ADF)** source delivers three numbered letter-size sheets per scan
+(Preview is for the flatbed, so it is off while the feeder is selected).
 
 ## Status — what's verified vs. what needs scanner hardware
 
@@ -55,8 +62,8 @@ Photos mode to see detection/deskew/review, or Document mode to build a PDF.
 | Core algorithms (detector, geometry, pipeline, naming, PDF) | Ported line-by-line from the tested Swift originals; **`dotnet test` passes** (the conformance suite mirroring the macOS tests) |
 | Demo scanner + WPF shell | **Verified on Windows 11:** the app launches and connects to the Demo Scanner; driving the view-model, Photos-mode scans detect, re-crop and save the demo photos, Document-mode scans queue, rotate and save a multi-page PDF (with the OCR pass), cancelled scans/OCR/PDF saves leave no files, and scan history fills. All three tabs, the photo review and the crop editor were checked on screen (including the 700×560 minimum window); a hands-on interactive walkthrough is still to do |
 | Windows OCR (`WindowsOcrService`) | **Verified on Windows 11** against rendered text (line boxes come back in the bottom-left-origin Core convention); needs a language pack installed |
-| WIA backend (`WiaScannerBackend`) | **Experimental, untested against hardware** — documented WIA Automation flow; enumeration runs off the UI thread and re-polls (every 10 s backing off to 60 s while no scanner is present, every 60 s while one is), so scanners plugged in or unplugged later show up without a restart; expect to iterate with a real scanner attached |
-| eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — no mDNS discovery yet; add scanners by IP/hostname in `%APPDATA%\CompleteScanner\escl-hosts.json`, e.g. `["192.168.1.50"]` |
+| WIA backend (`WiaScannerBackend`) | **Experimental, untested against hardware** — documented WIA Automation flow; enumeration runs off the UI thread and re-polls (every 10 s backing off to 60 s while no scanner is present, every 60 s while one is), so scanners plugged in or unplugged later show up without a restart. The sources come from the device's document-handling capabilities, so a feeder-only scanner offers no flatbed and no preview; the feeder's sheet size and two-sided support are reported; a feeder batch uses one connection; WIA error codes become plain messages (an empty feeder says "Load paper in the feeder, then scan again."); a batch that fails partway keeps the sheets already scanned and tells the user how many were kept and why it stopped. Expect to iterate with a real scanner attached |
+| eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — no mDNS discovery yet; add scanners by IP/hostname in `%APPDATA%\CompleteScanner\escl-hosts.json`, e.g. `["192.168.1.50"]`. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the feeder's own sheet size (at most 17 in tall); black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. Checked against a local fake eSCL server, not a real device |
 
 Known divergences from the macOS app (all documented in the source):
 
@@ -65,6 +72,9 @@ Known divergences from the macOS app (all documented in the source):
   list.
 - The demo scanner's document page draws text-shaped bars, not real glyphs (Core has no
   font rasterizer), so OCR demos need a real scan.
+- WIA and eSCL exist only here, so their logic in Core (`WiaErrors.cs`, `Escl/`) and its
+  tests (`WiaErrorsTests`, `EsclTests`, `EsclRetryTests`) have no Swift counterparts. The
+  scanner problems they report (`ScannerProblem`) are shared with macOS.
 - The PDF text layer emits WinAnsi text; characters outside Latin-1 degrade to `?` in the
   invisible layer only.
 - Filename sanitization strips the full Windows-reserved character set, not just `/` and `:`.

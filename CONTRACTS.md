@@ -6,6 +6,7 @@ All app code lives in the library target `CompleteScannerKit` (`Sources/Complete
 
 Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Core/Models.swift` — all shared types (ScanIntent, ColorMode, ScanSource, OutputFormat, AdjustmentSettings, ScanSettings, ScannedPage, DetectedPhotoRegion, DetectedPhoto, ScannerInfo, ScannerCapabilities, ScanProgress, Preset, ScanError).
+- `Sources/CompleteScannerKit/Core/Troubleshooting.swift` — `ScannerProblem` and `ScannerProblems.describe` (see below).
 - `Sources/CompleteScannerKit/Core/ScannerBackend.swift` — `ScannerBackend` / `ScannerSession` protocols (both `@MainActor`).
 - `Sources/CompleteScannerKit/App/AppState.swift` — the `@MainActor ObservableObject` all UI binds to.
 - `Sources/CompleteScannerKit/App/ContentView.swift`, `CompleteScannerApp.swift`.
@@ -29,6 +30,41 @@ Already written (READ THESE FIRST, code against them exactly):
    - Windows (`windows/CompleteScanner.Core/Persistence.cs`) follows the same rules without per-type code: `StoreFiles.JsonOptions` reads every property of every type in a settings file on its own and falls back to the value a freshly constructed instance has. A new persisted property only needs an initializer default, a persisted type needs a public parameterless constructor, and enums are read only as their exact camelCase name (the Swift raw value).
 
 ## APIs each module must expose (exact signatures)
+
+### Core/Troubleshooting.swift (+ ScanError, ScannerCapabilities in Core/Models.swift)
+
+```swift
+/// A condition at the scanner that stops a scan and that the user can usually fix.
+/// The first case is the safe default; add new cases after the existing ones.
+public enum ScannerProblem: String, CaseIterable, Sendable {
+    case unknown, feederEmpty, paperJam, paperProblem, multiFeed, coverOpen
+    case offline, busy, warmingUp, needsAttention, communicationError
+}
+
+public enum ScannerProblems {
+    /// User-facing text: what happened and what to do, e.g. "Load paper in the feeder, then scan again."
+    public static func describe(_ problem: ScannerProblem) -> String
+}
+
+// ScanError gains `case scannerProblem(ScannerProblem)` (its errorDescription is
+// `ScannerProblems.describe`) and `var problem: ScannerProblem?`.
+// ScannerCapabilities gains `feederSizeInches: CGSize?` (largest feeder sheet, nil when
+// unknown) and `supportsDuplex: Bool` (reported only); both have init defaults.
+
+/// Why a feeder batch ended before the feeder ran out; the scan still returns its pages.
+public struct ScanStop: Equatable, Sendable {
+    public var reason: String
+    public var problem: ScannerProblem?
+    public init(reason: String, problem: ScannerProblem? = nil)
+    public static func from(_ error: Error) -> ScanStop
+    /// "Scanning stopped after 3 pages; they were kept. <reason>"
+    public func message(pagesKept: Int) -> String
+}
+// ScannerSession gains `var lastScanStop: ScanStop? { get }` (default nil): set by a scan
+// that keeps its pages after a mid-batch failure, reset by every scan. AppState shows
+// `message(pagesKept:)` as an error once the pages are handled.
+```
+Twin of `windows/CompleteScanner.Core/Troubleshooting.cs` (`ScanException.ForProblem` / `ScanException.Problem`): same cases, same text. Backends report fixable scanner conditions this way rather than as `scanFailed` text.
 
 ### Pipeline/PhotoDetector.swift (+ Pipeline/Geometry.swift)
 
@@ -147,7 +183,7 @@ ImageCaptureCore implementation: `ICDeviceBrowser` (scanner mask, local + bonjou
 ```swift
 public final class MockScannerBackend: ScannerBackend { ... }
 ```
-One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true)`; synthesizes deterministic flatbed images (see task brief).
+One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true)`; synthesizes deterministic flatbed images (see task brief). It also has a document feeder (`sources: [.flatbed, .documentFeeder]`, `feederSizeInches` 8.5 × 11): a feeder scan returns `feederSheetCount` letter-size sheets (default `MockScannerBackend.defaultFeederSheetCount` = 3, read when the scan starts; sheet *n* carries *n* square marks near its bottom edge), and 0 sheets fails with `ScanError.scannerProblem(.feederEmpty)`. `feederJamsAfter` (default nil) makes the sheet after that many jam: the earlier sheets are returned and `lastScanStop` carries `.paperJam`; a jam on the first sheet fails with `ScanError.scannerProblem(.paperJam)`. Same behaviour as the C# `MockScannerBackend` (`FeederSheetCount`, `FeederJamsAfter`).
 
 ### UI files (all `internal`, SwiftUI, bind to `@EnvironmentObject var state: AppState`)
 

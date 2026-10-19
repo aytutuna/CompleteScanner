@@ -415,6 +415,13 @@ public sealed class ScannerCapabilities
     /// <summary>Physical flatbed size in inches.</summary>
     public SizeD FlatbedSizeInches { get; set; } = new(8.5, 11.7);
     public bool SupportsOverview { get; set; } = true;
+    /// <summary>
+    /// Largest sheet the document feeder takes, in inches; null when the device has no feeder
+    /// or does not report it.
+    /// </summary>
+    public SizeD? FeederSizeInches { get; set; }
+    /// <summary>The document feeder can scan both sides in one pass (reported only; not used yet).</summary>
+    public bool SupportsDuplex { get; set; }
 
     public int NearestResolution(int dpi) =>
         SupportedResolutions.Count == 0
@@ -464,10 +471,25 @@ public enum ScanErrorKind
 public sealed class ScanException : Exception
 {
     public ScanErrorKind Kind { get; }
+    /// <summary>The scanner condition behind this error, when the backend could tell.</summary>
+    public ScannerProblem? Problem { get; }
 
-    private ScanException(ScanErrorKind kind, string message) : base(message)
+    private ScanException(ScanErrorKind kind, string message, ScannerProblem? problem = null) : base(message)
     {
         Kind = kind;
+        Problem = problem;
+    }
+
+    /// <summary>
+    /// An error caused by a condition at the scanner. The message is the problem's
+    /// user-facing text (<see cref="ScannerProblems.Describe"/>); <paramref name="detail"/>,
+    /// such as a driver error code, is appended in parentheses.
+    /// </summary>
+    public static ScanException ForProblem(ScannerProblem problem, string? detail = null)
+    {
+        string message = ScannerProblems.Describe(problem);
+        if (!string.IsNullOrWhiteSpace(detail)) message += $" ({detail})";
+        return new(ScannerProblems.Kind(problem), message, problem);
     }
 
     public static ScanException DeviceUnavailable(string detail) =>

@@ -30,8 +30,8 @@ scanners** — including the Epson Perfection V39 II.
   auto-split, old-photo restoration, quick preview) plus your own saved presets.
 - **File naming templates**: `{date}`, `{time}`, `{counter}`, `{counter:4}`, `{intent}`,
   `{index}` tokens; automatic collision-free numbering.
-- **Demo Scanner**: a built-in simulated device so you can try every feature (including OCR
-  and photo splitting) with no hardware connected.
+- **Demo Scanner**: a built-in simulated device so you can try every feature (including OCR,
+  photo splitting and a three-sheet document feeder) with no hardware connected.
 
 ## Build & run
 

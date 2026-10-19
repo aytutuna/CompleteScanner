@@ -325,15 +325,24 @@ public struct ScannerCapabilities: Equatable, Sendable {
     /// Physical flatbed size in inches.
     public var flatbedSizeInches: CGSize
     public var supportsOverview: Bool
+    /// Largest sheet the document feeder takes, in inches; nil when the device has no feeder
+    /// or does not report it.
+    public var feederSizeInches: CGSize?
+    /// The document feeder can scan both sides in one pass (reported only; not used yet).
+    public var supportsDuplex: Bool
 
     public init(supportedResolutions: [Int] = [75, 150, 200, 300, 600, 1200],
                 sources: [ScanSource] = [.flatbed],
                 flatbedSizeInches: CGSize = CGSize(width: 8.5, height: 11.7),
-                supportsOverview: Bool = true) {
+                supportsOverview: Bool = true,
+                feederSizeInches: CGSize? = nil,
+                supportsDuplex: Bool = false) {
         self.supportedResolutions = supportedResolutions
         self.sources = sources
         self.flatbedSizeInches = flatbedSizeInches
         self.supportsOverview = supportsOverview
+        self.feederSizeInches = feederSizeInches
+        self.supportsDuplex = supportsDuplex
     }
 
     public func nearestResolution(to dpi: Int) -> Int {
@@ -413,6 +422,9 @@ public enum ScanError: LocalizedError {
     case cancelled
     case exportFailed(String)
     case unsupported(String)
+    /// A condition at the scanner the user can fix (see `ScannerProblems.describe`); the
+    /// twin of C# `ScanException.ForProblem`.
+    case scannerProblem(ScannerProblem)
 
     public var errorDescription: String? {
         switch self {
@@ -422,6 +434,13 @@ public enum ScanError: LocalizedError {
         case .cancelled: return "The scan was cancelled."
         case .exportFailed(let s): return "Saving failed: \(s)"
         case .unsupported(let s): return "Unsupported: \(s)"
+        case .scannerProblem(let p): return ScannerProblems.describe(p)
         }
+    }
+
+    /// The scanner condition behind this error, when the backend could tell.
+    public var problem: ScannerProblem? {
+        if case .scannerProblem(let p) = self { return p }
+        return nil
     }
 }

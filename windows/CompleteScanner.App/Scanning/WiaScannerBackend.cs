@@ -31,6 +31,9 @@ public sealed class WiaScannerBackend : IScannerBackend
     // Device-level property IDs (WIA_DPS_*).
     internal const string HorizontalBedSize = "3074";   // thousandths of an inch
     internal const string VerticalBedSize = "3075";
+    internal const string HorizontalSheetFeedSize = "3076"; // thousandths of an inch
+    internal const string VerticalSheetFeedSize = "3077";
+    internal const string DocumentHandlingCapabilities = "3086"; // see WiaDocumentHandling (Core)
     internal const string DocumentHandlingSelect = "3088"; // 1 = FEEDER, 2 = FLATBED
     internal const string OpticalXResolution = "3090";
     internal const int HandlingFeeder = 1;
@@ -44,8 +47,6 @@ public sealed class WiaScannerBackend : IScannerBackend
     internal const string YPos = "6150";
     internal const string XExtent = "6151";
     internal const string YExtent = "6152";
-
-    internal const uint PaperEmptyHResult = 0x80210003;  // WIA_ERROR_PAPER_EMPTY
 
     /// <summary>First delay of the hot-plug watchdog; doubled after each fruitless poll.</summary>
     internal static readonly TimeSpan InitialRebrowseDelay = TimeSpan.FromSeconds(10);
@@ -258,8 +259,14 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
     public ScannerInfo Info { get; } = info;
     public Action<ScanProgress>? ProgressHandler { get; set; }
 
+    /// <summary>Written on the WIA thread before the scan task completes, read after it.</summary>
+    private volatile ScanStop? _lastScanStop;
+    public ScanStop? LastScanStop => _lastScanStop;
+
     private volatile bool _cancelRequested;
     private SizeD _bedInches = new(8.5, 11.7);
+    /// <summary>The sources the device reported (null until the capabilities are read).</summary>
+    private List<ScanSource>? _sources;
 
     public Task<ScannerCapabilities> GetCapabilitiesAsync() => RunSta(() =>
     {
@@ -267,7 +274,17 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
         dynamic device = Connect();
         try
         {
-            // Physical bed size arrives in thousandths of an inch.
+            // The real sources: a feeder-only scanner has no flatbed (and so no overview),
+            // whatever other properties its driver exposes.
+            int? handling = ToInt(WiaScannerBackend.TryGetProperty(device.Properties,
+                WiaScannerBackend.DocumentHandlingCapabilities));
+            var sources = WiaDocumentHandling.Sources(handling);
+            _sources = sources;
+            caps.Sources = sources;
+            caps.SupportsOverview = sources.Contains(ScanSource.Flatbed);
+            caps.SupportsDuplex = WiaDocumentHandling.SupportsDuplex(handling);
+
+            // Physical bed and feeder sizes arrive in thousandths of an inch.
             object? bedWidth = WiaScannerBackend.TryGetProperty(device.Properties, WiaScannerBackend.HorizontalBedSize);
             object? bedHeight = WiaScannerBackend.TryGetProperty(device.Properties, WiaScannerBackend.VerticalBedSize);
             if (ToInt(bedWidth) is int bw && ToInt(bedHeight) is int bh && bw > 0 && bh > 0)
@@ -275,18 +292,17 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
                 _bedInches = new SizeD(bw / 1000.0, bh / 1000.0);
                 caps.FlatbedSizeInches = _bedInches;
             }
+            if (sources.Contains(ScanSource.DocumentFeeder))
+            {
+                caps.FeederSizeInches = WiaDocumentHandling.FeederSizeInches(
+                    ToInt(WiaScannerBackend.TryGetProperty(device.Properties, WiaScannerBackend.HorizontalSheetFeedSize)),
+                    ToInt(WiaScannerBackend.TryGetProperty(device.Properties, WiaScannerBackend.VerticalSheetFeedSize)));
+            }
             // The item's resolution property advertises its valid values as a list or a
             // range; when the driver reports neither, offer the common ladder (the session
             // snaps to whatever the driver accepts on scan).
-            List<int>? resolutions = ReadResolutions(device);
+            List<int>? resolutions = ReadResolutions(device, sources[0]);
             caps.SupportedResolutions = resolutions ?? [75, 150, 200, 300, 600, 1200];
-            var sources = new List<ScanSource> { ScanSource.Flatbed };
-            if (WiaScannerBackend.TryGetProperty(device.Properties, WiaScannerBackend.DocumentHandlingSelect) is not null)
-            {
-                sources.Add(ScanSource.DocumentFeeder);
-            }
-            caps.Sources = sources;
-            caps.SupportsOverview = true;
             return caps;
         }
         finally
@@ -298,127 +314,191 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
     public Task<RgbaImage> PerformOverviewScanAsync(ScanSettings settings)
     {
         _cancelRequested = false;
+        if (_sources is { } sources && !sources.Contains(ScanSource.Flatbed))
+        {
+            return Task.FromException<RgbaImage>(ScanException.Unsupported("This scanner has no flatbed to preview."));
+        }
         ProgressHandler?.Invoke(new ScanProgress("Scanning overview…"));
-        return RunSta(() => ScanOnce(dpi: 150, ScanSource.Flatbed, ColorMode.Color, selection: null));
+        return RunSta(() =>
+        {
+            dynamic device = Connect();
+            try
+            {
+                object item = PrepareItem(device, 150, ScanSource.Flatbed, ColorMode.Color, null);
+                try
+                {
+                    return Transfer(item);
+                }
+                finally
+                {
+                    Release(item);
+                }
+            }
+            finally
+            {
+                Release(device);
+            }
+        });
     }
 
-    public Task<IReadOnlyList<ScannedPage>> PerformScanAsync(ScanSettings settings, RectD? selection) =>
-        RunSta<IReadOnlyList<ScannedPage>>(() =>
+    public Task<IReadOnlyList<ScannedPage>> PerformScanAsync(ScanSettings settings, RectD? selection)
+    {
+        _lastScanStop = null;
+        return RunSta<IReadOnlyList<ScannedPage>>(() =>
         {
             _cancelRequested = false;
             ProgressHandler?.Invoke(new ScanProgress("Scanning…"));
             var pages = new List<ScannedPage>();
-            if (settings.Source == ScanSource.DocumentFeeder)
+            // One connection for the whole batch: every sheet of a feeder scan comes from the
+            // same prepared item.
+            dynamic device = Connect();
+            try
             {
-                // Keep pulling sheets until the feeder reports empty; a failure mid-batch
-                // keeps the sheets that already transferred (mirroring the macOS backend).
-                while (true)
+                bool feeder = settings.Source == ScanSource.DocumentFeeder;
+                object item = PrepareItem(device, settings.Resolution, settings.Source, settings.ColorMode,
+                                           feeder ? null : selection);
+                try
                 {
-                    RgbaImage image;
-                    try
+                    if (feeder)
                     {
-                        image = ScanOnce(settings.Resolution, ScanSource.DocumentFeeder,
-                                         settings.ColorMode, selection: null);
+                        ScanFeeder(item, settings, pages);
                     }
-                    catch (ScanException) when (pages.Count > 0)
+                    else
                     {
-                        break;
+                        RgbaImage image = Transfer(item);
+                        if (_cancelRequested) throw ScanException.Cancelled();
+                        pages.Add(new ScannedPage(image, settings.Resolution, settings.ColorMode));
                     }
-                    catch (COMException e) when ((uint)e.HResult == WiaScannerBackend.PaperEmptyHResult)
-                    {
-                        break;
-                    }
-                    if (_cancelRequested) throw ScanException.Cancelled();
-                    pages.Add(new ScannedPage(image, settings.Resolution, settings.ColorMode));
-                    ProgressHandler?.Invoke(new ScanProgress($"Transferred sheet {pages.Count}…"));
+                }
+                finally
+                {
+                    Release(item);
                 }
             }
-            else
+            finally
             {
-                var image = ScanOnce(settings.Resolution, ScanSource.Flatbed, settings.ColorMode, selection);
-                if (_cancelRequested) throw ScanException.Cancelled();
-                pages.Add(new ScannedPage(image, settings.Resolution, settings.ColorMode));
+                Release(device);
             }
             if (pages.Count == 0) throw ScanException.ScanFailed("The scanner did not return any image data.");
             return pages;
         });
+    }
+
+    /// <summary>
+    /// Keep pulling sheets until the feeder runs out. An empty feeder on the first sheet is
+    /// the user's to fix ("Load paper in the feeder"); later it just ends the batch. Any other
+    /// failure mid-batch keeps the sheets that already transferred (mirroring the macOS
+    /// backend) and records why the scan stopped in <see cref="LastScanStop"/>.
+    /// </summary>
+    private void ScanFeeder(object item, ScanSettings settings, List<ScannedPage> pages)
+    {
+        while (true)
+        {
+            RgbaImage image;
+            try
+            {
+                image = Transfer(item);
+            }
+            catch (ScanException e) when (e.Problem == ScannerProblem.FeederEmpty && pages.Count > 0)
+            {
+                return;
+            }
+            catch (ScanException e) when (pages.Count > 0 && e.Kind != ScanErrorKind.Cancelled)
+            {
+                _lastScanStop = ScanStop.From(e);
+                return;
+            }
+            if (_cancelRequested) throw ScanException.Cancelled();
+            pages.Add(new ScannedPage(image, settings.Resolution, settings.ColorMode));
+            ProgressHandler?.Invoke(new ScanProgress($"Transferred sheet {pages.Count}…"));
+        }
+    }
 
     public void CancelScan() => _cancelRequested = true;
 
-    public Task CloseAsync() => Task.CompletedTask; // connections are per-transfer in WIA automation
+    public Task CloseAsync() => Task.CompletedTask; // connections are per operation in WIA automation
 
-    // MARK: - One transfer
+    // MARK: - Transfers
 
-    private RgbaImage ScanOnce(int dpi, ScanSource source, ColorMode colorMode, RectD? selection)
+    /// <summary>
+    /// Select the source and set resolution, color and area on the item to scan. WIA errors
+    /// (a busy or offline device, ...) become <see cref="ScanException"/>s via <see cref="WiaErrors"/>.
+    /// </summary>
+    private dynamic PrepareItem(dynamic device, int dpi, ScanSource source, ColorMode colorMode, RectD? selection)
     {
-        dynamic device = Connect();
         try
         {
-            if (source == ScanSource.DocumentFeeder)
-            {
-                WiaScannerBackend.TrySetProperty(device.Properties,
-                    WiaScannerBackend.DocumentHandlingSelect, WiaScannerBackend.HandlingFeeder);
-            }
-            else
-            {
-                WiaScannerBackend.TrySetProperty(device.Properties,
-                    WiaScannerBackend.DocumentHandlingSelect, WiaScannerBackend.HandlingFlatbed);
-            }
-
-            dynamic item = device.Items[1];
-            var props = item.Properties;
-            WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.CurrentIntent, colorMode switch
-            {
-                ColorMode.Color => 1,
-                ColorMode.Grayscale => 2,
-                _ => 4, // text/threshold
-            });
-            WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.HorizontalResolution, dpi);
-            WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.VerticalResolution, dpi);
-
-            // Scan area in pixels at the chosen resolution; the selection is a normalized
-            // top-left-origin rect of the bed.
-            if (source == ScanSource.Flatbed && selection is { } sel)
-            {
-                var clamped = sel.Standardized.Intersection(new RectD(0, 0, 1, 1));
-                if (clamped.Width > 0.001 && clamped.Height > 0.001)
-                {
-                    WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.XPos,
-                        (int)Math.Round(clamped.MinX * _bedInches.Width * dpi));
-                    WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.YPos,
-                        (int)Math.Round(clamped.MinY * _bedInches.Height * dpi));
-                    WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.XExtent,
-                        (int)Math.Round(clamped.Width * _bedInches.Width * dpi));
-                    WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.YExtent,
-                        (int)Math.Round(clamped.Height * _bedInches.Height * dpi));
-                }
-            }
-
-            ProgressHandler?.Invoke(new ScanProgress("Transferring…"));
-            dynamic imageFile = item.Transfer(WiaScannerBackend.FormatBmp);
-            string tempPath = Path.Combine(Path.GetTempPath(), $"CompleteScanner-{Guid.NewGuid()}.bmp");
-            try
-            {
-                imageFile.SaveFile(tempPath);
-                return WpfImageCodec.Load(tempPath);
-            }
-            finally
-            {
-                try { File.Delete(tempPath); } catch { /* best effort */ }
-                Release(imageFile);
-            }
-        }
-        catch (COMException e) when ((uint)e.HResult == WiaScannerBackend.PaperEmptyHResult)
-        {
-            throw; // handled by the ADF loop
+            return PrepareItemCore(device, dpi, source, colorMode, selection);
         }
         catch (COMException e)
         {
-            throw ScanException.ScanFailed($"WIA error 0x{e.HResult:X8}: {e.Message}");
+            throw WiaErrors.ToScanException(e.HResult, e.Message);
+        }
+    }
+
+    private dynamic PrepareItemCore(dynamic device, int dpi, ScanSource source, ColorMode colorMode, RectD? selection)
+    {
+        WiaScannerBackend.TrySetProperty(device.Properties, WiaScannerBackend.DocumentHandlingSelect,
+            source == ScanSource.DocumentFeeder ? WiaScannerBackend.HandlingFeeder : WiaScannerBackend.HandlingFlatbed);
+
+        dynamic item = device.Items[1];
+        var props = item.Properties;
+        WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.CurrentIntent, colorMode switch
+        {
+            ColorMode.Color => 1,
+            ColorMode.Grayscale => 2,
+            _ => 4, // text/threshold
+        });
+        WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.HorizontalResolution, dpi);
+        WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.VerticalResolution, dpi);
+
+        // Scan area in pixels at the chosen resolution; the selection is a normalized
+        // top-left-origin rect of the bed.
+        if (source == ScanSource.Flatbed && selection is { } sel)
+        {
+            var clamped = sel.Standardized.Intersection(new RectD(0, 0, 1, 1));
+            if (clamped.Width > 0.001 && clamped.Height > 0.001)
+            {
+                WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.XPos,
+                    (int)Math.Round(clamped.MinX * _bedInches.Width * dpi));
+                WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.YPos,
+                    (int)Math.Round(clamped.MinY * _bedInches.Height * dpi));
+                WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.XExtent,
+                    (int)Math.Round(clamped.Width * _bedInches.Width * dpi));
+                WiaScannerBackend.TrySetProperty(props, WiaScannerBackend.YExtent,
+                    (int)Math.Round(clamped.Height * _bedInches.Height * dpi));
+            }
+        }
+        return item;
+    }
+
+    /// <summary>One transfer (one sheet from the feeder). WIA errors become <see cref="ScanException"/>s via <see cref="WiaErrors"/>.</summary>
+    private RgbaImage Transfer(object item)
+    {
+        ProgressHandler?.Invoke(new ScanProgress("Transferring…"));
+        dynamic imageFile;
+        try
+        {
+            imageFile = ((dynamic)item).Transfer(WiaScannerBackend.FormatBmp);
+        }
+        catch (COMException e)
+        {
+            throw WiaErrors.ToScanException(e.HResult, e.Message);
+        }
+        string tempPath = Path.Combine(Path.GetTempPath(), $"CompleteScanner-{Guid.NewGuid()}.bmp");
+        try
+        {
+            imageFile.SaveFile(tempPath);
+            return WpfImageCodec.Load(tempPath);
+        }
+        catch (COMException e)
+        {
+            throw WiaErrors.ToScanException(e.HResult, e.Message);
         }
         finally
         {
-            Release(device);
+            try { File.Delete(tempPath); } catch { /* best effort */ }
+            Release(imageFile);
         }
     }
 
@@ -455,14 +535,15 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
     /// values of the item's horizontal-resolution property (WiaSubType List = 2 or Range = 1),
     /// capped at the optical resolution. null when the driver does not expose them.
     /// </summary>
-    private static List<int>? ReadResolutions(dynamic device)
+    private static List<int>? ReadResolutions(dynamic device, ScanSource unit)
     {
         try
         {
-            // Resolutions are per functional unit: read the flatbed's, like the macOS
-            // backend, rather than whatever unit the driver last had selected.
-            WiaScannerBackend.TrySetProperty(device.Properties,
-                WiaScannerBackend.DocumentHandlingSelect, WiaScannerBackend.HandlingFlatbed);
+            // Resolutions are per functional unit: read the flatbed's (the feeder's on a
+            // feeder-only scanner), like the macOS backend, rather than whatever unit the
+            // driver last had selected.
+            WiaScannerBackend.TrySetProperty(device.Properties, WiaScannerBackend.DocumentHandlingSelect,
+                unit == ScanSource.DocumentFeeder ? WiaScannerBackend.HandlingFeeder : WiaScannerBackend.HandlingFlatbed);
             dynamic item = device.Items[1];
             dynamic property = item.Properties[WiaScannerBackend.HorizontalResolution];
             int subType = Convert.ToInt32((object)property.SubType);
@@ -500,7 +581,19 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
         }
     }
 
-    private static int? ToInt(object? value) => value is null ? null : Convert.ToInt32(value);
+    /// <summary>A numeric property value; null when missing or not a number.</summary>
+    private static int? ToInt(object? value)
+    {
+        if (value is null) return null;
+        try
+        {
+            return Convert.ToInt32(value);
+        }
+        catch (Exception e) when (e is FormatException or InvalidCastException or OverflowException)
+        {
+            return null;
+        }
+    }
 
     private static void Release(object com)
     {
