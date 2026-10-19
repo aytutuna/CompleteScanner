@@ -252,6 +252,7 @@ public partial class MainWindow : Window
 
         UpdateMarquee();
         SyncDeviceSelection();
+        SyncDriverWindowOption();
 
         // Photo review overlay.
         PhotoReviewOverlay.Visibility = ViewModel.ShowPhotoReview ? Visibility.Visible : Visibility.Collapsed;
@@ -359,6 +360,40 @@ public partial class MainWindow : Window
         {
             _updatingUi = wasUpdating;
         }
+    }
+
+    /// <summary>
+    /// The TWAIN "own settings window" switch: shown only for connections that have one,
+    /// fixed on when the driver cannot scan without it.
+    /// </summary>
+    private void SyncDriverWindowOption()
+    {
+        bool available = ViewModel.HasDriverWindowOption;
+        DriverWindowOptions.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
+        if (!available) return;
+        bool wasUpdating = _updatingUi;
+        _updatingUi = true;
+        try
+        {
+            DriverWindowBox.IsChecked = ViewModel.UseDriverWindow;
+            DriverWindowBox.IsEnabled = !ViewModel.DriverWindowRequired;
+            DriverWindowHint.Text = ViewModel.DriverWindowRequired
+                ? "This scanner's driver always shows its own window; resolution, color and area are chosen there."
+                : ViewModel.UseDriverWindow
+                    ? "Scan opens the driver's window; resolution, color and area are chosen there."
+                    : "Scan with the settings above, without the driver's window.";
+        }
+        finally
+        {
+            _updatingUi = wasUpdating;
+        }
+    }
+
+    private void DriverWindow_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_updatingUi || !IsLoaded) return;
+        ViewModel.SetUseDriverWindow(DriverWindowBox.IsChecked == true);
+        RefreshFromViewModel();
     }
 
     private void SyncCapabilityPickers()

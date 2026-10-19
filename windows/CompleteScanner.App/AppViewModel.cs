@@ -76,7 +76,11 @@ public sealed class DeviceRow(ScannerInfo info, DeviceGroup group, string? chose
     public string ConnectionLabel => DeviceMerge.ConnectionLabel(Info);
     /// <summary>The row's second line: how the scanner is reached.</summary>
     public string Caption =>
-        IsDemo ? "Demo (no hardware)" : HasConnectionChoice ? $"via {ConnectionLabel}" : ConnectionLabel;
+        IsDemo ? "Demo (no hardware)"
+        : HasConnectionChoice ? $"via {ConnectionLabel}"
+        // TWAIN lists installed drivers, so a scanner reached only that way is named for its driver.
+        : Info.Backend == "twain" ? "TWAIN driver"
+        : ConnectionLabel;
     public string ConnectionChooserName => $"Connection for {Name}: {ConnectionLabel}";
 
     /// <summary>Equal for rows that look and behave the same, so an unchanged list is not rebuilt.</summary>
@@ -187,6 +191,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
     private bool _userPickedDevice;
     /// <summary>The user's connection choice per scanner (<see cref="AppPreferences.PreferredConnection"/>).</summary>
     private readonly Dictionary<string, string> _preferredConnection;
+    /// <summary>Devices that scan through their driver's own window (<see cref="AppPreferences.TwainDriverWindow"/>).</summary>
+    private readonly HashSet<string> _driverWindowDevices;
     /// <summary>The backend entry of the selected device, kept so its scanner is found again when that entry goes away.</summary>
     private ScannerInfo? _selectedEntry;
     /// <summary>The device diagnostics last written (see <see cref="WriteDeviceDiagnostics"/>).</summary>
@@ -237,12 +243,15 @@ public sealed class AppViewModel : INotifyPropertyChanged
         Settings = SettingsStore.Load() ?? new ScanSettings();
         _backends = backends ?? [new Scanning.WiaScannerBackend(),
                                  new Scanning.EsclScannerBackend(),
+                                 new Scanning.Twain.TwainScannerBackend(),
                                  new MockScannerBackend()];
         _presetStore = new PresetStore();
+        var preferences = AppPreferencesStore.Load();
         // A null value can only come from a hand-edited file; it means no choice.
-        _preferredConnection = AppPreferencesStore.Load().PreferredConnection
+        _preferredConnection = preferences.PreferredConnection
             .Where(pair => pair.Value is not null)
             .ToDictionary(pair => pair.Key, pair => pair.Value);
+        _driverWindowDevices = [.. preferences.TwainDriverWindow.Where(id => id is not null)];
         _ocrService = ocrService ?? new WindowsOcrService();
         foreach (var preset in _presetStore.Load()) Presets.Add(preset);
         _renderTimer = new DispatcherTimer(DispatcherPriority.Normal, _dispatcher) { Interval = CanvasRenderDebounce };
@@ -325,7 +334,12 @@ public sealed class AppViewModel : INotifyPropertyChanged
         if (SelectedDeviceId is { } sel)
         {
             if (entries.FirstOrDefault(d => d.Id == sel) is { } current) _selectedEntry = current;
-            if (GroupOfSelection(sel) is not { } group)
+            var group = GroupOfSelection(sel);
+            // When the connection in use went away and only TWAIN still lists the scanner, it
+            // was most likely unplugged or turned off (TWAIN lists installed drivers): treat
+            // it as gone rather than opening its driver.
+            if (group is not null && TwainOnly(group) && group.Members.All(m => m.Id != sel)) group = null;
+            if (group is null)
             {
                 // The device went away (unplugged, powered off). Switching would discard a
                 // running operation or an open photo review, whose pixels no longer need the
@@ -374,9 +388,17 @@ public sealed class AppViewModel : INotifyPropertyChanged
         MergeDevices();
     }
 
-    /// <summary>The first real scanner (else the demo device), through its preferred connection.</summary>
+    /// <summary>
+    /// The first real scanner (else the demo device), through its preferred connection. A
+    /// scanner only TWAIN reaches is never chosen on its own: TWAIN lists installed drivers,
+    /// not connected scanners, and opening the driver of one that is off or gone can show the
+    /// driver's own error messages and fails anyway. It is opened only when the user picks it.
+    /// </summary>
     private string? PreferredDefaultDevice() =>
-        (DeviceGroups.FirstOrDefault(g => !g.Primary.IsDemo) ?? DeviceGroups.FirstOrDefault())?.Primary.Id;
+        (DeviceGroups.FirstOrDefault(g => !g.Primary.IsDemo && !TwainOnly(g))
+         ?? DeviceGroups.FirstOrDefault(g => g.Primary.IsDemo))?.Primary.Id;
+
+    private static bool TwainOnly(DeviceGroup group) => group.Members.All(m => m.Backend == "twain");
 
     /// <summary>
     /// The scanner the selected device belongs to: the group listing it, or, when that entry
@@ -436,6 +458,37 @@ public sealed class AppViewModel : INotifyPropertyChanged
         UserSelectDevice(group.Primary.Id);
     }
 
+    /// <summary>The connected scanner can scan through its driver's own settings window (TWAIN).</summary>
+    public bool HasDriverWindowOption => _session is Scanning.IDriverWindowOption;
+
+    /// <summary>The connected scanner cannot scan without its driver's window, so it is always used.</summary>
+    public bool DriverWindowRequired => _session is Scanning.IDriverWindowOption { DriverWindowOptional: false };
+
+    /// <summary>Scans go through the driver's own settings window.</summary>
+    public bool UseDriverWindow =>
+        _session is Scanning.IDriverWindowOption option && (option.UseDriverWindow || !option.DriverWindowOptional);
+
+    /// <summary>
+    /// The user's choice for the connected scanner: scan through its driver's own window, or
+    /// with the app's settings. Remembered per connection (<see cref="AppPreferences.TwainDriverWindow"/>).
+    /// </summary>
+    public void SetUseDriverWindow(bool use)
+    {
+        if (_session is not Scanning.IDriverWindowOption option) return;
+        option.UseDriverWindow = use;
+        string id = _session.Info.Id;
+        bool changed = use ? _driverWindowDevices.Add(id) : _driverWindowDevices.Remove(id);
+        if (changed)
+        {
+            AppPreferencesStore.Update(preferences =>
+            {
+                preferences.TwainDriverWindow.RemoveAll(entry => entry == id);
+                if (use) preferences.TwainDriverWindow.Add(id);
+            });
+        }
+        NotifyAll();
+    }
+
     /// <summary>
     /// Writes the raw device names and how they were grouped to
     /// %LOCALAPPDATA%\CompleteScanner\Logs\devices.txt whenever they change, so the names real
@@ -443,7 +496,10 @@ public sealed class AppViewModel : INotifyPropertyChanged
     /// </summary>
     private void WriteDeviceDiagnostics()
     {
-        string report = DeviceMerge.DiagnosticsReport(DeviceGroups);
+        string report = DeviceMerge.DiagnosticsReport(DeviceGroups)
+            + string.Concat(_backends.OfType<Scanning.IBackendDiagnostics>()
+                                     .Select(b => b.DiagnosticsReport)
+                                     .Where(text => !string.IsNullOrEmpty(text)));
         if (report == _lastDeviceReport) return;
         _lastDeviceReport = report;
         try
@@ -540,6 +596,12 @@ public sealed class AppViewModel : INotifyPropertyChanged
                 NotifyAll();
             });
             _session = session;
+            // Before reading the capabilities: when that fails (the scanner is off), the session
+            // stays and a later scan reads them itself, still with the user's choice.
+            if (session is Scanning.IDriverWindowOption option)
+            {
+                option.UseDriverWindow = _driverWindowDevices.Contains(session.Info.Id);
+            }
             var caps = await session.GetCapabilitiesAsync();
             Capabilities = caps;
             Settings.Resolution = caps.NearestResolution(Settings.Resolution);

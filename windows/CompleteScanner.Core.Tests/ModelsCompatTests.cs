@@ -395,6 +395,20 @@ public class ModelsCompatTests
         Assert.Contains("\"model:epson perfection v600\": \"twain:USB\"", json);
         Assert.Equal("twain:USB", Decode<AppPreferences>(json).PreferredConnection["model:epson perfection v600"]);
     }
+
+    [Fact]
+    public void TwainDriverWindow_MissingOrCorrupt_IsEmptyAndRoundTrips()
+    {
+        Assert.Empty(Decode<AppPreferences>("""{ "appearance": "dark" }""").TwainDriverWindow);
+        var corrupt = Decode<AppPreferences>("""{ "appearance": "dark", "twainDriverWindow": { "a": 1 } }""");
+        Assert.Empty(corrupt.TwainDriverWindow);
+        Assert.Equal(AppAppearance.Dark, corrupt.Appearance);
+
+        var preferences = new AppPreferences { TwainDriverWindow = ["twain:EPSON Perfection V600"] };
+        string json = CompatFixtures.Encode(preferences);
+        Assert.Contains("\"twainDriverWindow\"", json);
+        Assert.Equal(["twain:EPSON Perfection V600"], Decode<AppPreferences>(json).TwainDriverWindow);
+    }
 }
 
 // MARK: - Store files

@@ -363,6 +363,14 @@
                                             <ComboBox x:Name="ResolutionBox" HorizontalAlignment="Stretch"
                                                       AutomationProperties.Name="Resolution" ItemStringFormat="{}{0} dpi"
                                                       SelectionChanged="Setting_Changed" />
+                                            <!-- TWAIN connections only: scan through the driver's own window. -->
+                                            <StackPanel x:Name="DriverWindowOptions" Visibility="Collapsed" Margin="0,8,0,0">
+                                                <CheckBox x:Name="DriverWindowBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                          Content="Use the scanner's own settings window"
+                                                          Checked="DriverWindow_Changed" Unchecked="DriverWindow_Changed" />
+                                                <TextBlock x:Name="DriverWindowHint" Style="{StaticResource CaptionText}"
+                                                           TextWrapping="Wrap" Margin="0,4,0,0" />
+                                            </StackPanel>
                                         </StackPanel>
                                     </Expander>
 

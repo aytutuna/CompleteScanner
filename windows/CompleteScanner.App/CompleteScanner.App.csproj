@@ -21,4 +21,11 @@
     <ProjectReference Include="..\CompleteScanner.Core\CompleteScanner.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- TWAIN (Scanning/Twain). MIT licensed, no dependencies; pinned to an exact version.
+         The TWAIN Data Source Manager it loads (TWAINDSM.dll, LGPL) is never shipped with
+         the app: scanner drivers install it. -->
+    <PackageReference Include="NTwain" Version="[3.7.6]" />
+  </ItemGroup>
+
 </Project>
