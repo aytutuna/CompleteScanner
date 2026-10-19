@@ -147,6 +147,47 @@ public enum DuplexBinding: String, Codable, CaseIterable, Identifiable, Sendable
     }
 }
 
+/// How much may be on a page for it to count as blank (`DocumentOptions.blankSensitivity`,
+/// `BlankPageDetector`): `.low` only (next to) empty pages, `.high` also pages with a few marks.
+/// `.medium` comes first: it is the default and the fallback for a level a newer version adds.
+/// Shown in `displayOrder`. Twin of C# `BlankSensitivity` (`ModelLabels.Label` / `Hint`,
+/// `BlankSensitivities.DisplayOrder`).
+public enum BlankSensitivity: String, Codable, CaseIterable, Identifiable, Sendable {
+    case medium
+    case low
+    case high
+
+    public var id: String { rawValue }
+    public var label: String {
+        switch self {
+        case .low: return "Low"
+        case .medium: return "Medium"
+        case .high: return "High"
+        }
+    }
+
+    /// One line saying what counts as blank at that level, shown under the picker.
+    public var hint: String {
+        switch self {
+        case .low: return "Only pages with nothing on them count as blank."
+        case .medium: return "Empty pages count as blank, also with dust, show-through or a lone page number."
+        case .high: return "Pages with a few small marks count as blank too. Check the flagged pages before saving."
+        }
+    }
+
+    /// The levels as the inspector lists them: least first.
+    public static let displayOrder: [BlankSensitivity] = [.low, .medium, .high]
+}
+
+/// The user's say over whether a queued page is saved (`ScannedPage.inclusion`): `.automatic`
+/// follows the blank-page setting (`PageFilter.isExcluded`); `.keep` and `.skip` are one click on
+/// the page, whatever the setting. Not stored in settings files. Twin of C# `PageInclusion`.
+public enum PageInclusion: String, Sendable {
+    case automatic
+    case keep
+    case skip
+}
+
 // MARK: - Settings
 
 public struct AdjustmentSettings: Codable, Equatable, Sendable {
@@ -225,6 +266,35 @@ extension OutputOptions {
     }
 }
 
+/// Settings for the clean-up of document pages, kept together as `ScanSettings.document` (the
+/// "document" object in settings files). Later page features (crop, straighten, split) add their
+/// fields here; every one is off by default. Twin of C# `DocumentOptions`.
+public struct DocumentOptions: Codable, Equatable, Sendable {
+    /// Pages that look blank are left out when the queue is saved. They are only flagged in the
+    /// page strip, where one click keeps one; nothing is deleted while they are queued.
+    public var removeBlankPages: Bool = false
+    /// How much may be on a page for it to count as blank.
+    public var blankSensitivity: BlankSensitivity = .medium
+
+    public init() {}
+
+    /// `encode(to:)` stays synthesized.
+    private enum CodingKeys: String, CodingKey {
+        case removeBlankPages
+        case blankSensitivity
+    }
+}
+
+extension DocumentOptions {
+    /// Tolerant decoding: a missing or undecodable key keeps the property's default.
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        removeBlankPages = container.decodeLenient(forKey: .removeBlankPages, default: removeBlankPages)
+        blankSensitivity = container.decodeLenient(forKey: .blankSensitivity, default: blankSensitivity)
+    }
+}
+
 public struct ScanSettings: Codable, Equatable, Sendable {
     public var intent: ScanIntent = .document
     public var source: ScanSource = .flatbed
@@ -275,6 +345,9 @@ public struct ScanSettings: Codable, Equatable, Sendable {
     /// feeder's own sheet size.
     public var paperSize: PaperSize = .auto
 
+    /// Clean-up of document pages (blank pages).
+    public var document: DocumentOptions = DocumentOptions()
+
     public init() {}
 
     /// The task of `taskId`, when this version knows it.
@@ -293,6 +366,7 @@ public struct ScanSettings: Codable, Equatable, Sendable {
         case taskId
         case output
         case duplex, backBinding, paperSize
+        case document
     }
 }
 
@@ -323,6 +397,7 @@ extension ScanSettings {
         duplex = container.decodeLenient(forKey: .duplex, default: duplex)
         backBinding = container.decodeLenient(forKey: .backBinding, default: backBinding)
         paperSize = container.decodeLenient(forKey: .paperSize, default: paperSize)
+        document = container.decodeLenient(forKey: .document, default: document)
     }
 }
 
@@ -351,6 +426,11 @@ public struct ScannedPage: Identifiable {
     public var side: PageSide?
     /// The sheet of the stack this page belongs to (0 = first), for two-sided scans; nil otherwise.
     public var sheetIndex: Int?
+    /// What the blank-page check found on the page as scanned (`BlankPageDetector`), or nil when it
+    /// was not checked (photos, pages scanned one file at a time).
+    public var blank: BlankPageResult?
+    /// Whether the user keeps or skips this page whatever the blank-page setting.
+    public var inclusion: PageInclusion = .automatic
 
     public init(image: CGImage, dpi: Int, colorMode: ColorMode, id: UUID = UUID(),
                 createdAt: Date = Date(), fileURL: URL? = nil, fullPixelSize: CGSize? = nil) {
@@ -377,12 +457,29 @@ public struct ScannedPage: Identifiable {
         return page.copyMeta(from: self)
     }
 
-    /// This page carrying what the scan recorded about `source`: its side and sheet. Pixels, id,
-    /// file and rotation stay this page's. Twin of C# `ScannedPage.CopyMeta`.
+    /// This page carrying what the scan recorded about `source`: its side and sheet, the
+    /// blank-page check and the user's keep or skip. Pixels, id, file and rotation stay this
+    /// page's. Twin of C# `ScannedPage.CopyMeta`.
     public func copyMeta(from source: ScannedPage) -> ScannedPage {
         var page = self
         page.side = source.side
         page.sheetIndex = source.sheetIndex
+        page.blank = source.blank
+        page.inclusion = source.inclusion
+        return page
+    }
+
+    /// This page with what the blank-page check found (nil: not checked).
+    public func withBlank(_ blank: BlankPageResult?) -> ScannedPage {
+        var page = self
+        page.blank = blank
+        return page
+    }
+
+    /// This page kept, skipped, or following the blank-page setting again.
+    public func withInclusion(_ inclusion: PageInclusion) -> ScannedPage {
+        var page = self
+        page.inclusion = inclusion
         return page
     }
 

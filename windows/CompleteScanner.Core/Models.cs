@@ -80,6 +80,32 @@ public enum DuplexBinding
 }
 
 /// <summary>
+/// How much may be on a page for it to count as blank (<see cref="DocumentOptions.BlankSensitivity"/>,
+/// <see cref="BlankPageDetector"/>): <see cref="Low"/> only (next to) empty pages, <see cref="High"/>
+/// also pages with a few marks. <see cref="Medium"/> comes first: it is the default and the
+/// fallback for a level a newer version adds. Shown in <see cref="BlankSensitivities.DisplayOrder"/>.
+/// </summary>
+public enum BlankSensitivity
+{
+    Medium,
+    Low,
+    High,
+}
+
+/// <summary>
+/// The user's say over whether a queued page is saved (<see cref="ScannedPage.Inclusion"/>):
+/// <see cref="Automatic"/> follows the blank-page setting (<see cref="PageFilter.IsExcluded"/>);
+/// <see cref="Keep"/> and <see cref="Skip"/> are one click on the page, whatever the setting.
+/// Not stored in settings files.
+/// </summary>
+public enum PageInclusion
+{
+    Automatic,
+    Keep,
+    Skip,
+}
+
+/// <summary>
 /// The app's color scheme: follow Windows, or force light or dark. An app preference, kept
 /// apart from <see cref="ScanSettings"/> so that applying a preset never changes it.
 /// </summary>
@@ -185,6 +211,23 @@ public static class ModelLabels
         _ => binding.ToString(),
     };
 
+    public static string Label(this BlankSensitivity sensitivity) => sensitivity switch
+    {
+        BlankSensitivity.Low => "Low",
+        BlankSensitivity.Medium => "Medium",
+        BlankSensitivity.High => "High",
+        _ => sensitivity.ToString(),
+    };
+
+    /// <summary>One line saying what counts as blank at that level, shown under the picker.</summary>
+    public static string Hint(this BlankSensitivity sensitivity) => sensitivity switch
+    {
+        BlankSensitivity.Low => "Only pages with nothing on them count as blank.",
+        BlankSensitivity.Medium => "Empty pages count as blank, also with dust, show-through or a lone page number.",
+        BlankSensitivity.High => "Pages with a few small marks count as blank too. Check the flagged pages before saving.",
+        _ => "",
+    };
+
     public static string Label(this FileAction action) => action switch
     {
         FileAction.Open => "Open",
@@ -271,6 +314,37 @@ public sealed class OutputOptions : IEquatable<OutputOptions>
     public override int GetHashCode() => HashCode.Combine(PdfSize, AfterSave);
 }
 
+/// <summary>
+/// Settings for the clean-up of document pages, kept together as <see cref="ScanSettings.Document"/>
+/// (the "document" object in settings files). Later page features (crop, straighten, split) add
+/// their fields here; every one is off by default.
+/// </summary>
+public sealed class DocumentOptions : IEquatable<DocumentOptions>
+{
+    /// <summary>
+    /// Pages that look blank are left out when the queue is saved. They are only flagged in the
+    /// page strip, where one click keeps one; nothing is deleted while they are queued.
+    /// </summary>
+    public bool RemoveBlankPages { get; set; } = false;
+
+    /// <summary>How much may be on a page for it to count as blank.</summary>
+    public BlankSensitivity BlankSensitivity { get; set; } = BlankSensitivity.Medium;
+
+    public DocumentOptions Clone() => (DocumentOptions)MemberwiseClone();
+
+    public bool Equals(DocumentOptions? other) =>
+        other is not null && RemoveBlankPages == other.RemoveBlankPages && BlankSensitivity == other.BlankSensitivity;
+    public override bool Equals(object? obj) => Equals(obj as DocumentOptions);
+    public override int GetHashCode() => HashCode.Combine(RemoveBlankPages, BlankSensitivity);
+}
+
+public static class BlankSensitivities
+{
+    /// <summary>The levels as the inspector lists them: least first.</summary>
+    public static IReadOnlyList<BlankSensitivity> DisplayOrder { get; } =
+        [BlankSensitivity.Low, BlankSensitivity.Medium, BlankSensitivity.High];
+}
+
 public sealed class ScanSettings
 {
     public ScanIntent Intent { get; set; } = ScanIntent.Document;
@@ -341,6 +415,9 @@ public sealed class ScanSettings
     /// </summary>
     public PaperSize PaperSize { get; set; } = PaperSize.Auto;
 
+    /// <summary>Clean-up of document pages (blank pages). Written after the earlier keys.</summary>
+    public DocumentOptions Document { get; set; } = new();
+
     public static string DefaultDestinationPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "CompleteScanner");
 
@@ -352,6 +429,7 @@ public sealed class ScanSettings
 #pragma warning restore CS0618
         copy.Adjustments = Adjustments.Clone();
         copy.Output = Output.Clone();
+        copy.Document = Document.Clone();
         return copy;
     }
 }
@@ -392,6 +470,15 @@ public sealed class ScannedPage
     /// <summary>The sheet of the stack this page belongs to (0 = first), for two-sided scans; null otherwise.</summary>
     public int? SheetIndex { get; init; }
 
+    /// <summary>
+    /// What the blank-page check found on the page as scanned (<see cref="BlankPageDetector"/>),
+    /// or null when it was not checked (photos, pages scanned one file at a time).
+    /// </summary>
+    public BlankPageResult? Blank { get; init; }
+
+    /// <summary>Whether the user keeps or skips this page whatever the blank-page setting.</summary>
+    public PageInclusion Inclusion { get; init; } = PageInclusion.Automatic;
+
     public ScannedPage(RgbaImage image, int dpi, ColorMode colorMode, Guid? id = null,
                        DateTime? createdAt = null, string? filePath = null, SizeD? fullPixelSize = null)
     {
@@ -421,7 +508,8 @@ public sealed class ScannedPage
 
     /// <summary>
     /// This page carrying what the scan recorded about <paramref name="source"/>: its side and
-    /// sheet. Pixels, id, file and rotation stay this page's.
+    /// sheet, the blank-page check and the user's keep or skip. Pixels, id, file and rotation
+    /// stay this page's.
     /// </summary>
     public ScannedPage CopyMeta(ScannedPage source) =>
         new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
@@ -429,6 +517,8 @@ public sealed class ScannedPage
             RotationQuarterTurns = RotationQuarterTurns,
             Side = source.Side,
             SheetIndex = source.SheetIndex,
+            Blank = source.Blank,
+            Inclusion = source.Inclusion,
         };
 
     /// <summary>This page as <paramref name="side"/> of sheet <paramref name="sheetIndex"/> (both null: not two-sided).</summary>
@@ -438,6 +528,30 @@ public sealed class ScannedPage
             RotationQuarterTurns = RotationQuarterTurns,
             Side = side,
             SheetIndex = sheetIndex,
+            Blank = Blank,
+            Inclusion = Inclusion,
+        };
+
+    /// <summary>This page with what the blank-page check found (null: not checked).</summary>
+    public ScannedPage WithBlank(BlankPageResult? blank) =>
+        new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = Side,
+            SheetIndex = SheetIndex,
+            Blank = blank,
+            Inclusion = Inclusion,
+        };
+
+    /// <summary>This page kept, skipped, or following the blank-page setting again.</summary>
+    public ScannedPage WithInclusion(PageInclusion inclusion) =>
+        new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = Side,
+            SheetIndex = SheetIndex,
+            Blank = Blank,
+            Inclusion = inclusion,
         };
 
     /// <summary>

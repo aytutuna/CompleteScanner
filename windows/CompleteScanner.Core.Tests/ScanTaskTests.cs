@@ -154,6 +154,22 @@ public class ScanTaskTests
     }
 
     [Fact]
+    public void Apply_OnlyTheTwoSidedTaskSkipsBlankPages_HowMuchCountsAsBlankIsKept()
+    {
+        var current = Customized();
+        current.Document.RemoveBlankPages = true;
+        current.Document.BlankSensitivity = BlankSensitivity.High;
+        foreach (var task in ScanTasks.All)
+        {
+            var s = TaskCatalog.Apply(task, current);
+            Assert.Equal(task == ScanTask.TwoSided, s.Document.RemoveBlankPages);
+            Assert.Equal(BlankSensitivity.High, s.Document.BlankSensitivity);
+        }
+        Assert.True(current.Document.RemoveBlankPages);
+        Assert.True(TaskCatalog.Apply(ScanTask.TwoSided, new ScanSettings()).Document.RemoveBlankPages);
+    }
+
+    [Fact]
     public void TwoSided_IsATwoSidedFeederPdf()
     {
         var definition = TaskCatalog.Definition(ScanTask.TwoSided);

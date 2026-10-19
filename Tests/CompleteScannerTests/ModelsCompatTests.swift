@@ -53,6 +53,8 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.duplex = .manual
     settings.backBinding = .shortEdge
     settings.paperSize = .a4
+    settings.document.removeBlankPages = true
+    settings.document.blankSensitivity = .high
     return settings
 }
 
@@ -100,8 +102,12 @@ private let presetsJSONBeforePDFSize = """
 """
 
 /// `nonDefaultSettings()` as this version writes it: `presetsJSONBeforePDFSize` with the
-/// "output" object, the sides and the paper size in their sorted places.
+/// "output" object, the sides, the paper size and the "document" object in their sorted places.
 private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
+    .replacingOccurrences(
+        of: "\"documentMultiPage\" : false",
+        with: "\"document\" : {\n        \"blankSensitivity\" : \"high\",\n        \"removeBlankPages\" : true\n      },\n"
+            + "      \"documentMultiPage\" : false")
     .replacingOccurrences(
         of: "\"pdfSearchable\" : false",
         with: "\"output\" : {\n        \"afterSave\" : \"share\",\n        \"pdfSize\" : \"compact\"\n      },\n"
@@ -252,6 +258,7 @@ final class ModelsCompatTests: XCTestCase {
             "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
             "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
             "pdfSearchable", "ocrLanguages", "adjustments", "output", "duplex", "backBinding", "paperSize",
+            "document",
         ])
         let adjustments = try XCTUnwrap(settings["adjustments"] as? [String: Any])
         XCTAssertEqual(Set(adjustments.keys), [
@@ -325,6 +332,7 @@ final class ModelsCompatTests: XCTestCase {
             "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
             "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
             "pdfSearchable", "ocrLanguages", "adjustments", "taskId", "output", "duplex", "backBinding", "paperSize",
+            "document",
         ])
         XCTAssertEqual(written["taskId"] as? String, "document")
     }
@@ -345,6 +353,7 @@ final class ModelsCompatTests: XCTestCase {
         expected.duplex = .off
         expected.backBinding = .longEdge
         expected.paperSize = .auto
+        expected.document = DocumentOptions()
         XCTAssertEqual(presets[0].settings, expected)
         XCTAssertEqual(try decode(ScanSettings.self, "{}").output.pdfSize, .standard)
         XCTAssertEqual(try decode(ScanSettings.self, #"{"output": {}}"#).output.pdfSize, .standard)
@@ -441,6 +450,69 @@ final class ModelsCompatTests: XCTestCase {
         XCTAssertEqual(copy.duplex, .manual)
         XCTAssertEqual(copy.backBinding, .shortEdge)
         XCTAssertEqual(copy.paperSize, .a4)
+    }
+
+    // MARK: Blank pages (CONTRACTS.md, rule 6)
+
+    func test_blankSensitivity_mediumIsTheFirstCaseAndTheDefault() {
+        XCTAssertEqual(BlankSensitivity.allCases.map(\.rawValue), ["medium", "low", "high"])
+        let document = ScanSettings().document
+        XCTAssertFalse(document.removeBlankPages)
+        XCTAssertEqual(document.blankSensitivity, .medium)
+        XCTAssertEqual(BlankSensitivity.displayOrder, [.low, .medium, .high])
+    }
+
+    func test_settingsWithoutDocument_keepEveryPage_restIntact() throws {
+        let presets = try decode([Preset].self, presetsJSONBeforePDFSize)
+        XCTAssertFalse(presets[0].settings.document.removeBlankPages)
+        XCTAssertEqual(presets[0].settings.document.blankSensitivity, .medium)
+        XCTAssertFalse(try decode(ScanSettings.self, #"{"document": {}}"#).document.removeBlankPages)
+        XCTAssertEqual(presets[0].settings.resolution, 600)
+        XCTAssertEqual(presets[0].settings.output.pdfSize, .standard)
+    }
+
+    func test_unknownOrCorruptDocument_fallsBackToTheDefaults_restIntact() throws {
+        for document in [#""document": {"removeBlankPages": true, "blankSensitivity": "extreme"}"#,
+                         #""document": {"removeBlankPages": true, "blankSensitivity": "High"}"#,
+                         #""document": {"removeBlankPages": true, "blankSensitivity": 2}"#,
+                         #""document": {"removeBlankPages": true, "blankSensitivity": null}"#] {
+            let settings = try decode(ScanSettings.self, #"{"resolution": 150, "# + document + #", "pdfSearchable": false}"#)
+            XCTAssertTrue(settings.document.removeBlankPages, document)
+            XCTAssertEqual(settings.document.blankSensitivity, .medium, document)
+            XCTAssertEqual(settings.resolution, 150, document)
+            XCTAssertFalse(settings.pdfSearchable, document)
+        }
+        for document in [#""document": "skip blanks""#,
+                         #""document": null"#,
+                         #""document": {"removeBlankPages": "yes", "blankSensitivity": "low"}"#] {
+            let settings = try decode(ScanSettings.self, #"{"resolution": 150, "# + document + #", "pdfSearchable": false}"#)
+            XCTAssertFalse(settings.document.removeBlankPages, document)
+            XCTAssertEqual(settings.resolution, 150, document)
+            XCTAssertFalse(settings.pdfSearchable, document)
+        }
+        let low = try decode(ScanSettings.self, #"{"document": {"removeBlankPages": "yes", "blankSensitivity": "low"}}"#)
+        XCTAssertEqual(low.document.blankSensitivity, .low)
+    }
+
+    func test_document_roundTrips_andCopyIsIndependent() throws {
+        for sensitivity in BlankSensitivity.allCases {
+            for remove in [false, true] {
+                var settings = ScanSettings()
+                settings.document.removeBlankPages = remove
+                settings.document.blankSensitivity = sensitivity
+                let back = try JSONDecoder().decode(ScanSettings.self, from: encode(settings))
+                XCTAssertEqual(back.document.removeBlankPages, remove)
+                XCTAssertEqual(back.document.blankSensitivity, sensitivity)
+                XCTAssertEqual(back.document, settings.document)
+            }
+        }
+        let original = nonDefaultSettings()
+        var copy = original
+        XCTAssertEqual(copy.document, original.document)
+        copy.document.removeBlankPages = false
+        copy.document.blankSensitivity = .low
+        XCTAssertTrue(original.document.removeBlankPages)
+        XCTAssertEqual(original.document.blankSensitivity, .high)
     }
 
     func test_copy_carriesTheTask() {

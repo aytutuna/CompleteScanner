@@ -49,6 +49,15 @@ scanners** — including the Epson Perfection V39 II.
   Executive, A4, A5, A6, B5, ID card, or Automatic) sets the sheet the feeder is asked for, and
   on the glass the area scanned from its corner when nothing is selected. Each page in the strip
   says which side of which sheet it is.
+- **Blank pages**: every page collected for a PDF is checked for being blank as it is scanned,
+  robust to scanner noise, dust, tinted or uneven paper, edge shadows, punched holes and the
+  other side showing through. A blank-looking page is only flagged in the page strip; with
+  **Skip blank pages** on it is dimmed, marked "Blank, skipped" and left out when the PDF is
+  saved, and one click on **Keep** saves it after all (**Skip** leaves out any flagged page by
+  hand). **What counts as blank** (Low, Medium, High) sets how much may be on a blank page: a
+  lone page number counts as blank at Medium, one line of text or a signature never does. Pages
+  saved as soon as they are scanned are never left out. The Two-sided document task skips blank
+  pages, since one-sided sheets have empty backs.
 - **"Why isn't my scanner listed?"**: a troubleshooter, from the **?** button next to
   **Scanners**, the empty scanner list and an error about a scanner. It checks, in plain
   language, whether macOS is looking for scanners and what the last failure was (a scanner that
@@ -72,7 +81,7 @@ scanners** — including the Epson Perfection V39 II.
   `{index}`, `{task}` tokens; automatic collision-free numbering.
 - **Demo Scanner**: a built-in simulated device so you can try every feature (including OCR,
   photo splitting and a document feeder with three two-sided sheets, which it scans one side or
-  both) with no hardware connected.
+  both; the second sheet's back is blank) with no hardware connected.
 
 ## Build & run
 
@@ -132,7 +141,9 @@ instructions and current status.
 
 - `Sources/CompleteScannerKit/Core` — shared models + backend protocols
 - `Sources/CompleteScannerKit/Backends` — ImageCaptureCore backend, demo backend
-- `Sources/CompleteScannerKit/Pipeline` — photo detection/split/deskew, image adjustments
+- `Sources/CompleteScannerKit/Pipeline` — photo detection/split/deskew, image adjustments, the
+  page clean-up stage (`PageProcessor`: blank-page check, then adjustments) and its image
+  toolkit (`RgbaImage`, `GrayImage`, `BackgroundMap`, `MaskOps`, `BlankPageDetector`)
 - `Sources/CompleteScannerKit/Output` — PDF builder, OCR, image export, naming templates
 - `Sources/CompleteScannerKit/UI` — SwiftUI views
 - `Tests/CompleteScannerTests` — unit tests (synthetic-image based)

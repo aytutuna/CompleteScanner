@@ -10,32 +10,85 @@ using CompleteScanner.Core;
 
 namespace CompleteScanner.App;
 
-/// <summary>A page in the queue strip, wrapped with its display thumbnail.</summary>
-public sealed class PageItem
+/// <summary>
+/// A page in the queue strip, wrapped with its display thumbnail and what the strip says about
+/// it under the current blank-page settings (<see cref="Options"/>).
+/// </summary>
+public sealed class PageItem : INotifyPropertyChanged
 {
     /// <summary>Long side of a strip thumbnail, in pixels.</summary>
     public const int ThumbnailMaxSide = 240;
 
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private DocumentOptions _options;
+    private ScannedPage _page;
+
     /// <summary>Builds the thumbnail from the (already rotated) in-memory image; construct off the UI thread.</summary>
     public PageItem(ScannedPage page) : this(page, WpfImageCodec.ToThumbnail(page.Image, ThumbnailMaxSide)) { }
 
-    /// <summary>The page with a thumbnail already made: the same pixels with other page facts (its side and sheet).</summary>
-    public PageItem(ScannedPage page, BitmapSource thumbnail)
+    /// <summary>
+    /// The page with a thumbnail already made: the same pixels with other page facts (its side
+    /// and sheet, kept or skipped).
+    /// </summary>
+    public PageItem(ScannedPage page, BitmapSource thumbnail, DocumentOptions? options = null)
     {
-        Page = page;
+        _page = page;
         Thumbnail = thumbnail;
+        _options = options?.Clone() ?? new DocumentOptions();
     }
 
-    public ScannedPage Page { get; }
+    /// <summary>
+    /// The page. Its facts (kept or skipped) change in place, so the strip keeps the item's
+    /// container, and with it the keyboard focus on the item's Keep or Skip button.
+    /// </summary>
+    public ScannedPage Page
+    {
+        get => _page;
+        set
+        {
+            if (ReferenceEquals(_page, value)) return;
+            _page = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        }
+    }
+
     public BitmapSource Thumbnail { get; }
+
+    /// <summary>The blank-page settings the strip shows the page with; the view model keeps it current.</summary>
+    public DocumentOptions Options
+    {
+        get => _options;
+        set
+        {
+            if (_options.Equals(value)) return;
+            _options = value.Clone();
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        }
+    }
 
     /// <summary>"Sheet 2 · back" for a page of a two-sided stack; null for other pages.</summary>
     public string? SideLabel => DocumentSides.SideLabel(Page.Side, Page.SheetIndex);
 
-    /// <summary>The page's name for screen readers: "Page 3, Sheet 2 · back", or "Page 3".</summary>
+    /// <summary>"Blank, skipped", "Skipped", "Looks blank", or null (<see cref="PageFilter.Badge"/>).</summary>
+    public string? BlankBadge => PageFilter.Badge(Page, _options);
+
+    /// <summary>Saving the queue leaves this page out.</summary>
+    public bool IsExcluded => PageFilter.IsExcluded(Page, _options);
+
+    /// <summary>What the page's one-click button does ("Keep this page", "Skip this page"); null when it has none.</summary>
+    public string? ToggleLabel => PageFilter.ToggleLabel(Page, _options);
+
+    /// <summary>The button's short text: "Keep" for a left-out page, "Skip" otherwise.</summary>
+    public string? ToggleText => ToggleLabel is null ? null : IsExcluded ? "Keep" : "Skip";
+
+    /// <summary>The page's name for screen readers: "Page 3, Sheet 2 · back, Blank, skipped", or "Page 3".</summary>
     /// <param name="number">The page's position in the queue, from 1.</param>
-    public string AccessibleName(int number) =>
-        SideLabel is { } label ? $"Page {number}, {label}" : $"Page {number}";
+    public string AccessibleName(int number)
+    {
+        string name = SideLabel is { } label ? $"Page {number}, {label}" : $"Page {number}";
+        return BlankBadge is { } badge ? $"{name}, {badge}" : name;
+    }
 }
 
 /// <summary>A detected photo in the review grid, wrapped with its display thumbnail.</summary>
@@ -353,7 +406,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
         _backends = backends ?? [new Scanning.WiaScannerBackend(),
                                  new Scanning.EsclScannerBackend(),
                                  new Scanning.Twain.TwainScannerBackend(),
-                                 new MockScannerBackend()];
+                                 // The demo's second sheet has a blank back, to show blank pages being flagged.
+                                 new MockScannerBackend { FeederBlankBackSheets = [1] }];
         _presetStore = new PresetStore();
         var preferences = AppPreferencesStore.Load();
         // A null value can only come from a hand-edited file; it means no choice.
@@ -390,7 +444,14 @@ public sealed class AppViewModel : INotifyPropertyChanged
 
     private void NotifyAll()
     {
+        SyncPageOptions();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+    }
+
+    /// <summary>The page strip shows every page under the current blank-page settings.</summary>
+    private void SyncPageOptions()
+    {
+        foreach (var item in ScannedPages) item.Options = Settings.Document;
     }
 
     /// <summary>Call after mutating Settings from the UI: debounced persist + live preview refresh.</summary>
@@ -399,6 +460,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
         // A feeder that scans one side turns two-sided scanning into turning over by hand.
         if (Settings.Duplex == DuplexMode.Both && EffectiveDuplex == DuplexMode.Manual) Settings.Duplex = DuplexMode.Manual;
         SyncTaskFlow();
+        // The page strip's badges follow the blank-page settings.
+        SyncPageOptions();
         _settingsSaveTimer?.Stop();
         _settingsSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
         var snapshot = Settings.Clone();
@@ -980,36 +1043,24 @@ public sealed class AppViewModel : INotifyPropertyChanged
             // its capabilities were never read) delivered one side of each sheet.
             bool twoSided = sides == DuplexMode.Both && session.LastScanDuplex != false;
             token.ThrowIfCancellationRequested();
-            // Two-sided pages in reading order with their sides marked, the backs turned upright.
-            IReadOnlyList<ScannedPage> raw = twoSided
-                ? await Task.Run(() => DocumentSides.ArrangeTwoSided(scanned, s.BackBinding), token)
-                : manualSide is { } side
-                    ? await Task.Run(() => DocumentSides.MarkManual(scanned, side, s.BackBinding), token)
-                    : scanned;
-            if (_switchGeneration != generation) return;
-            token.ThrowIfCancellationRequested();
             StatusMessage = "Processing…";
             NotifyAll();
-            // Pixel-heavy work runs off the UI thread so the window stays live; the token is
-            // checked between pages.
-            var processed = await Task.Run(() =>
-            {
-                var result = new List<ScannedPage>();
-                foreach (var page in raw)
-                {
-                    token.ThrowIfCancellationRequested();
-                    if (s.Adjustments.IsIdentity && s.ColorMode == ColorMode.Color)
-                    {
-                        result.Add(page);
-                        continue;
-                    }
-                    var adjusted = ImagePipeline.Apply(s.Adjustments, page.Image, s.ColorMode);
-                    result.Add(page.WithImage(adjusted, s.ColorMode));
-                }
-                return result;
-            }, token);
+            // The clean-up stage: two-sided pages in reading order with their sides marked and the
+            // backs turned upright, then the blank-page check and the adjustments. Pixel-heavy
+            // work runs off the UI thread so the window stays live; the token is checked between
+            // pages and steps.
+            var arrangement = twoSided ? ScanArrangement.TwoSided
+                : manualSide == PageSide.Back ? ScanArrangement.TurnedOverBacks
+                : manualSide == PageSide.Front ? ScanArrangement.TurnedOverFronts
+                : ScanArrangement.AsScanned;
+            var processor = PageProcessor.ForScan(s, arrangement);
+            var cleaned = await Task.Run(() => processor.Process(scanned, token), token);
             if (_switchGeneration != generation) return;
             token.ThrowIfCancellationRequested();
+            var raw = cleaned.Arranged;
+            var processed = cleaned.Pages.ToList();
+            // " 2 look blank and will be skipped." after the pages added to the queue.
+            string blankNote = PageFilter.ScanNote(processed, s.Document);
 
             // The canvas shows the RAW scan through the live adjustments (only a downsampled
             // copy is retained), and every scanned page is recorded in the session history.
@@ -1066,6 +1117,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
                         {
                             StatusMessage = $"Added {n} page{(n == 1 ? "" : "s")} — {ScannedPages.Count} in queue. Scan more or Save PDF.";
                         }
+                        StatusMessage += blankNote;
                     }
                     else
                     {
@@ -1179,16 +1231,26 @@ public sealed class AppViewModel : INotifyPropertyChanged
         {
             // Let page rotations that were clicked before the save land first.
             await Settled(_pageRotateChain);
-            var pages = ScannedPages.Select(p => p.Page).ToList();
-            if (pages.Count == 0) return;
+            var queued = ScannedPages.Select(p => p.Page).ToList();
+            if (queued.Count == 0) return;
+            // Pages flagged in the strip (blank, or skipped by hand) are left out now, and only now.
+            var pages = PageFilter.PagesToSave(queued, s.Document);
+            if (pages.Count == 0)
+            {
+                ErrorMessage = PageFilter.NothingToSaveMessage;
+                StatusMessage = PageFilter.QueueSummary(queued, s.Document) + ".";
+                return;
+            }
             StatusMessage = s.PdfSearchable ? "Running OCR and building PDF…" : "Building PDF…";
             NotifyAll();
             string path = await WritePdfAtomically(pages, s, OutputPath(s, "pdf"), token);
             MarkSaved([path]);
-            DeleteSpoolFiles(pages);
+            DeleteSpoolFiles(queued);
             ScannedPages.Clear();
             ResetFlow();
-            StatusMessage = $"Saved {pages.Count}-page PDF: {Path.GetFileName(path)}{PdfSizeSuffix()}";
+            int skipped = queued.Count - pages.Count;
+            string left = skipped == 0 ? "" : $" — {skipped} skipped page{(skipped == 1 ? " was" : "s were")} left out";
+            StatusMessage = $"Saved {pages.Count}-page PDF: {Path.GetFileName(path)}{PdfSizeSuffix()}{left}";
             RunAfterSave(s.Output.AfterSave, [path]);
         });
     }
@@ -1463,12 +1525,46 @@ public sealed class AppViewModel : INotifyPropertyChanged
                 NotifyAll();
                 return;
             }
-            // The page may have been removed (or the queue saved) meanwhile.
-            int index = ScannedPages.IndexOf(item);
+            // The page may have been removed (or the queue saved) meanwhile. It may also have been
+            // kept or skipped, or put in order with its stack: the turned pixels take the page's
+            // facts as they are now.
+            int index = IndexOfPage(id);
             if (index < 0) return;
-            ScannedPages[index] = rotated;
+            var current = ScannedPages[index].Page;
+            ScannedPages[index] = new PageItem(rotated.Page.CopyMeta(current), rotated.Thumbnail, Settings.Document);
             NotifyAll();
         }
+    }
+
+    private int IndexOfPage(Guid id)
+    {
+        for (int i = 0; i < ScannedPages.Count; i++)
+        {
+            if (ScannedPages[i].Page.Id == id) return i;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// One click on a queued page's Keep or Skip button: the page is saved or left out, whatever
+    /// the blank-page setting says; a second click goes back to what the setting says.
+    /// </summary>
+    public void TogglePageInclusion(Guid id)
+    {
+        if (IsBusy) return;
+        int index = IndexOfPage(id);
+        if (index < 0) return;
+        var item = ScannedPages[index];
+        var page = item.Page.WithInclusion(PageFilter.Toggled(item.Page, Settings.Document));
+        // Updated in place, not replaced: a replaced item gets a new container in the strip,
+        // and the Keep or Skip button the user pressed (and its keyboard focus) goes with the old one.
+        item.Options = Settings.Document;
+        item.Page = page;
+        string summary = PageFilter.QueueSummary([.. ScannedPages.Select(p => p.Page)], Settings.Document);
+        StatusMessage = PageFilter.IsExcluded(page, Settings.Document)
+            ? $"Page {index + 1} will be left out when you save. {summary}."
+            : $"Page {index + 1} will be saved. {summary}.";
+        NotifyAll();
     }
 
     public void ClearPages()

@@ -52,6 +52,7 @@ public partial class MainWindow : Window
         ColorModeBox.ItemsSource = Enum.GetValues<ColorMode>().Select(m => m.Label());
         FormatBox.ItemsSource = Enum.GetValues<OutputFormat>().Select(f => f.Label());
         BuildPdfSizeSegments();
+        BuildBlankSensitivitySegments();
         AfterSaveBox.ItemsSource = AfterSaveItems();
         ReviewAfterSaveBox.ItemsSource = AfterSaveItems();
         foreach (var binding in Enum.GetValues<DuplexBinding>())
@@ -257,12 +258,16 @@ public partial class MainWindow : Window
         CanvasHint.Visibility = ViewModel.CanvasBitmap is null ? Visibility.Visible : Visibility.Collapsed;
 
         int pageCount = ViewModel.ScannedPages.Count;
+        var queued = ViewModel.ScannedPages.Select(item => item.Page).ToList();
+        // Pages flagged blank (with Skip blank pages on) or skipped by hand are left out when saving.
+        int saveCount = PageFilter.PagesToSave(queued, ViewModel.Settings.Document).Count;
         PageStrip.Visibility = pageCount > 0 ? Visibility.Visible : Visibility.Collapsed;
-        PageStripLabel.Text = $"{pageCount} page{(pageCount == 1 ? "" : "s")} in queue";
-        SavePdfButton.Content = pageCount > 0 ? $"Save PDF ({pageCount} page{(pageCount == 1 ? "" : "s")})" : "Save PDF";
+        PageStripLabel.Text = PageFilter.QueueSummary(queued, ViewModel.Settings.Document);
+        SavePdfButton.Content = saveCount > 0 ? $"Save PDF ({saveCount} page{(saveCount == 1 ? "" : "s")})" : "Save PDF";
         // A narrow inspector trims the label; the tooltip keeps the full text.
-        SavePdfButton.ToolTip = SavePdfButton.Content;
-        SavePdfButton.IsEnabled = pageCount > 0 && !ViewModel.IsBusy;
+        SavePdfButton.ToolTip = pageCount > 0 && saveCount == 0 ? PageFilter.NothingToSaveMessage : SavePdfButton.Content;
+        ToolTipService.SetShowOnDisabled(SavePdfButton, true);
+        SavePdfButton.IsEnabled = saveCount > 0 && !ViewModel.IsBusy;
         LastPdfSizeText.Text = ViewModel.LastPdfSizeText;
         LastPdfSizeText.Visibility = ViewModel.LastPdfSizeText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         ClearButton.IsEnabled = pageCount > 0 && !ViewModel.IsBusy;
@@ -286,6 +291,8 @@ public partial class MainWindow : Window
         UpdateMarquee();
         SyncDeviceSelection();
         SyncDriverWindowOption();
+        // A page's badge is part of its name, and the badges follow the blank-page settings.
+        NamePageItems();
 
         // Photo review overlay.
         PhotoReviewOverlay.Visibility = ViewModel.ShowPhotoReview ? Visibility.Visible : Visibility.Collapsed;
@@ -944,7 +951,13 @@ public partial class MainWindow : Window
             }
             SelectAfterSave(AfterSaveBox, s.Output.AfterSave);
             SelectAfterSave(ReviewAfterSaveBox, s.Output.AfterSave);
+            SkipBlankBox.IsChecked = s.Document.RemoveBlankPages;
+            foreach (var segment in BlankSensitivitySegments.Children.OfType<RadioButton>())
+            {
+                segment.IsChecked = (BlankSensitivity)segment.Tag == s.Document.BlankSensitivity;
+            }
             SyncPdfSizeOptions();
+            SyncBlankPageOptions();
             SyncCapabilityPickers();
         }
         finally
@@ -997,8 +1010,80 @@ public partial class MainWindow : Window
         DocumentOptions.Visibility = s.Intent == ScanIntent.Document ? Visibility.Visible : Visibility.Collapsed;
         PhotoOptions.Visibility = s.Intent == ScanIntent.Photo ? Visibility.Visible : Visibility.Collapsed;
         SyncPdfSizeOptions();
+        SyncBlankPageOptions();
         ViewModel.SettingsEdited();
         RefreshFromViewModel();
+    }
+
+    // MARK: - Blank pages
+
+    /// <summary>One text segment per sensitivity, least first; each names what counts as blank on hover and for screen readers.</summary>
+    private void BuildBlankSensitivitySegments()
+    {
+        foreach (var level in BlankSensitivities.DisplayOrder)
+        {
+            var segment = new RadioButton
+            {
+                Content = level.Label(),
+                Tag = level,
+                ToolTip = level.Hint(),
+                Style = (Style)FindResource("SegmentedTextItemStyle"),
+            };
+            AutomationProperties.SetHelpText(segment, level.Hint());
+            segment.Checked += BlankPages_Changed;
+            BlankSensitivitySegments.Children.Add(segment);
+        }
+        BlankSensitivitySegments.Columns = BlankSensitivities.DisplayOrder.Count;
+    }
+
+    /// <summary>
+    /// The blank-page check runs on pages collected in the queue only, where flagged pages can be
+    /// seen and kept: with each scan saved at once the switch is off and says why.
+    /// </summary>
+    private void SyncBlankPageOptions()
+    {
+        var s = ViewModel.Settings;
+        bool collecting = s.DocumentMultiPage;
+        SkipBlankBox.IsEnabled = collecting;
+        string hint = collecting
+            ? s.Document.RemoveBlankPages
+                ? "Blank pages are marked in the page strip and left out when you save. Click Keep on a page to save it."
+                : "Blank pages are marked in the page strip. Click Skip on a page to leave it out."
+            : "Only for pages collected before saving: a scan saved at once keeps every page.";
+        SkipBlankHint.Text = hint;
+        SkipBlankBox.ToolTip = hint;
+        AutomationProperties.SetHelpText(SkipBlankBox, hint);
+        BlankSensitivityOptions.Visibility = collecting ? Visibility.Visible : Visibility.Collapsed;
+        BlankSensitivityHint.Text = s.Document.BlankSensitivity.Hint();
+    }
+
+    private void BlankPages_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_updatingUi || !IsLoaded) return;
+        var document = ViewModel.Settings.Document;
+        document.RemoveBlankPages = SkipBlankBox.IsChecked == true;
+        if (BlankSensitivitySegments.Children.OfType<RadioButton>().FirstOrDefault(b => b.IsChecked == true) is { Tag: BlankSensitivity level })
+        {
+            document.BlankSensitivity = level;
+        }
+        SyncBlankPageOptions();
+        ViewModel.SettingsEdited();
+        RefreshFromViewModel();
+    }
+
+    private void PageToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (PageIdOf(sender) is not { } id) return;
+        ViewModel.TogglePageInclusion(id);
+        RefreshFromViewModel();
+        // The page keeps its container, so the button keeps the focus. A page skipped by hand that
+        // goes back to what the setting says may have no button left: its page takes the focus,
+        // so it stays in the strip.
+        if (sender is Button { Visibility: not Visibility.Visible } button
+            && ItemsControl.ContainerFromElement(PageList, button) is ListBoxItem container)
+        {
+            container.Focus();
+        }
     }
 
     // MARK: - PDF size

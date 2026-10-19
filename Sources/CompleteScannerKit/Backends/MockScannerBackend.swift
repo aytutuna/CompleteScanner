@@ -37,6 +37,12 @@ public final class MockScannerBackend: ScannerBackend {
     /// scans the rest of the same side. Settable to start from either side.
     public var feederStackTurnedOver: Bool = false
 
+    /// The sheets (counted from 0) whose backs are blank, read when the scan starts: unprinted
+    /// paper with the scanner's noise, a few specks of dust and the front showing through faintly,
+    /// like the back of a one-sided page in a two-sided stack. Empty by default; the app's demo
+    /// scanner has a blank back on its second sheet.
+    public var feederBlankBackSheets: Set<Int> = []
+
     public init() {}
 
     public func startBrowsing() {
@@ -148,6 +154,7 @@ private final class MockScannerSession: ScannerSession {
         let jamsAfter = backend?.feederJamsAfter
         let twoSided = settings.duplex == .both && (backend?.feederDuplex ?? true)
         let turnedOver = backend?.feederStackTurnedOver ?? false
+        let blankBacks = backend?.feederBlankBackSheets ?? []
         let region = PaperSizes.feederRegionInches(settings.paperSize, max: MockBedRenderer.feederMaxInches)
         let sheetInches = settings.paperSize == .auto ? MockBedRenderer.sheetInches : region.size
         progressHandler?(ScanProgress(fraction: 0.1, message: "Warming up…"))
@@ -169,8 +176,13 @@ private final class MockScannerSession: ScannerSession {
             let sheet = turnedOver && !twoSided ? sheets - 1 - index : index
             let sides: [PageSide] = twoSided ? [.front, .back] : [turnedOver ? .back : .front]
             for side in sides {
-                guard let image = MockBedRenderer.renderSheet(dpi: dpi, intent: settings.intent, sheetIndex: sheet,
-                                                              side: side, sheetInches: sheetInches) else {
+                let blank = side == .back && blankBacks.contains(sheet)
+                let rendered = blank
+                    ? MockBedRenderer.renderBlankBack(dpi: dpi, intent: settings.intent, sheetIndex: sheet,
+                                                      sheetInches: sheetInches)
+                    : MockBedRenderer.renderSheet(dpi: dpi, intent: settings.intent, sheetIndex: sheet,
+                                                  side: side, sheetInches: sheetInches)
+                guard let image = rendered else {
                     throw ScanError.scanFailed("Could not render the demo scan.")
                 }
                 pages.append(ScannedPage(image: image, dpi: dpi, colorMode: settings.colorMode))
@@ -285,6 +297,53 @@ private enum MockBedRenderer {
             drawDocument(in: ctx, scale: scale, pageInches: page, sheetIndex: sheetIndex)
         }
         return ctx.makeImage()
+    }
+
+    /// The back of sheet `sheetIndex` when nothing is printed on it, as a scanner sees it: off-white
+    /// paper with noise (σ ≈ 4 levels), a few specks of dust, and the front showing through mirrored
+    /// at a tenth of its darkness. Deterministic for a sheet and size; the same noise and dust as
+    /// the C# demo (the front itself is drawn by CoreGraphics here).
+    static func renderBlankBack(dpi: Int, intent: ScanIntent, sheetIndex: Int, sheetInches size: CGSize? = nil) -> CGImage? {
+        guard let frontImage = renderSheet(dpi: dpi, intent: intent, sheetIndex: sheetIndex, side: .front, sheetInches: size),
+              let front = RgbaImage(cgImage: frontImage) else { return nil }
+        let width = front.width, height = front.height
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        var state: UInt32 = 0x9E37_79B9 ^ (UInt32(truncatingIfNeeded: sheetIndex + 1) &* 2_654_435_761)
+        func next() -> UInt32 {
+            state ^= state << 13
+            state ^= state >> 17
+            state ^= state << 5
+            return state
+        }
+        for y in 0..<height {
+            for x in 0..<width {
+                // The front seen from behind: mirrored left to right.
+                let fi = (y * width + (width - 1 - x)) * 4
+                let frontLuma = (299 * Int(front.pixels[fi]) + 587 * Int(front.pixels[fi + 1])
+                                 + 114 * Int(front.pixels[fi + 2]) + 500) / 1000
+                let noise = Int(next() % 7 + next() % 7 + next() % 7 + next() % 7) - 12
+                let value = min(255, max(0, 246 - (255 - frontLuma) / 10 + noise))
+                let i = (y * width + x) * 4
+                pixels[i] = UInt8(value)
+                pixels[i + 1] = UInt8(value)
+                pixels[i + 2] = UInt8(max(0, value - 3))   // a slightly warm paper
+            }
+        }
+        // Dust: specks of one or two pixels at 300 dpi (never less than a pixel).
+        for _ in 0..<40 {
+            let x = Int(next() % UInt32(width))
+            let y = Int(next() % UInt32(height))
+            let speck = max(1, (dpi * (1 + Int(next() % 2)) + 150) / 300)
+            for py in y..<min(height, y + speck) {
+                for px in x..<min(width, x + speck) {
+                    let i = (py * width + px) * 4
+                    pixels[i] = 70
+                    pixels[i + 1] = 70
+                    pixels[i + 2] = 70
+                }
+            }
+        }
+        return RgbaImage(width: width, height: height, pixels: pixels).makeCGImage()
     }
 
     // MARK: Background

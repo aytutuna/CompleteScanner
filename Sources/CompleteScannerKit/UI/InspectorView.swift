@@ -367,6 +367,43 @@ struct InspectorView: View {
             Toggle("Collect pages, save one PDF", isOn: $state.settings.documentMultiPage)
             Toggle("Searchable PDF (OCR)", isOn: $state.settings.pdfSearchable)
                 .help("Text is recognized in any language automatically — nothing to configure.")
+            blankPagesRow
+        }
+    }
+
+    /// Blank pages: flagged in the page strip, left out when saving. The check runs on pages
+    /// collected in the queue only, where flagged pages can be seen and kept; with each scan saved
+    /// at once the switch is off and says why. Twin of the Windows inspector's "Skip blank pages".
+    private var blankPagesRow: some View {
+        let collecting = state.settings.documentMultiPage
+        let hint = collecting
+            ? (state.settings.document.removeBlankPages
+                ? "Blank pages are marked in the page strip and left out when you save. Click Keep on a page to save it."
+                : "Blank pages are marked in the page strip. Click Skip on a page to leave it out.")
+            : "Only for pages collected before saving: a scan saved at once keeps every page."
+        return VStack(alignment: .leading, spacing: 6) {
+            Toggle("Skip blank pages", isOn: $state.settings.document.removeBlankPages)
+                .disabled(!collecting)
+                .help(hint)
+            Text(hint)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if collecting {
+                Text("What counts as blank")
+                Picker("What counts as blank", selection: $state.settings.document.blankSensitivity) {
+                    ForEach(BlankSensitivity.displayOrder) { level in
+                        Text(level.label).tag(level)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .help(state.settings.document.blankSensitivity.hint)
+                Text(state.settings.document.blankSensitivity.hint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

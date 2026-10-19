@@ -185,7 +185,7 @@ public final class AppState: ObservableObject {
         var initial = saved ?? ScanSettings()
         if let task = initial.task, !TaskCatalog.fits(task, initial) { initial.taskId = nil }
         self.settings = initial
-        self.backends = backends ?? [ICScannerBackend(), MockScannerBackend()]
+        self.backends = backends ?? [ICScannerBackend(), AppState.makeDemoBackend()]
         self.presetStore = presetStore
         self.fileActions = fileActions ?? SystemFileActions()
         self.troubleshooterService = troubleshooterService ?? SystemTroubleshooterService()
@@ -204,6 +204,13 @@ public final class AppState: ObservableObject {
                 SettingsStore.save(self.settings)
             }
         }
+    }
+
+    /// The demo scanner. Its second sheet has a blank back, to show blank pages being flagged.
+    private static func makeDemoBackend() -> MockScannerBackend {
+        let demo = MockScannerBackend()
+        demo.feederBlankBackSheets = [1]
+        return demo
     }
 
     // MARK: Devices
@@ -525,32 +532,25 @@ public final class AppState: ObservableObject {
             // A scanner that fell back to one side (its feeder could not scan both, or was never
             // asked) delivered one side of each sheet.
             let twoSided = sides == .both && session.lastScanDuplex != false
-            // Two-sided pages in reading order with their sides marked, the backs turned upright.
-            let raw: [ScannedPage] = try await Task.detached(priority: .userInitiated) {
-                if flag.isCancelled { throw ScanError.cancelled }
-                if twoSided { return DocumentSides.arrangeTwoSided(scanned, binding: s.backBinding) }
-                if let manualSide { return DocumentSides.markManual(scanned, side: manualSide, binding: s.backBinding) }
-                return scanned
-            }.value
-            guard self.switchGeneration == generation else { return }
             self.statusMessage = "Processing…"
-            // Pixel-heavy work runs off the main actor so the UI stays live; the cancel
-            // flag is polled between pages.
-            let processed: [ScannedPage] = try await Task.detached(priority: .userInitiated) {
-                var result: [ScannedPage] = []
-                for page in raw {
-                    if flag.isCancelled { throw ScanError.cancelled }
-                    if s.adjustments.isIdentity && s.colorMode == .color {
-                        result.append(page)
-                        continue
-                    }
-                    let adjusted = ImagePipeline.apply(s.adjustments, to: page.image, colorMode: s.colorMode)
-                    result.append(page.withImage(adjusted, colorMode: s.colorMode))
-                }
-                return result
+            // The clean-up stage: two-sided pages in reading order with their sides marked and the
+            // backs turned upright, then the blank-page check and the adjustments. Pixel-heavy work
+            // runs off the main actor so the UI stays live; the cancel flag is polled between
+            // pages and steps.
+            let arrangement: ScanArrangement = twoSided ? .twoSided
+                : manualSide == .back ? .turnedOverBacks
+                : manualSide == .front ? .turnedOverFronts
+                : .asScanned
+            let cleaned: ProcessedScan = try await Task.detached(priority: .userInitiated) {
+                try PageProcessor.forScan(s, arrangement: arrangement)
+                    .process(scanned, shouldContinue: { !flag.isCancelled })
             }.value
             guard self.switchGeneration == generation else { return }
             if flag.isCancelled { throw ScanError.cancelled }
+            let raw = cleaned.arranged
+            let processed = cleaned.pages
+            // " 2 look blank and will be skipped." after the pages added to the queue.
+            let blankNote = PageFilter.scanNote(processed, options: s.document)
 
             // The canvas shows the RAW scan: PreviewCanvasView applies the current
             // adjustment settings to it live, so slider changes are visible
@@ -607,6 +607,7 @@ public final class AppState: ObservableObject {
                     } else {
                         self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") — \(self.scannedPages.count) in queue. Scan more or Save PDF."
                     }
+                    self.statusMessage += blankNote
                 } else {
                     self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
                     try await self.saveImmediately(processed, settings: s, flag: flag)
@@ -689,8 +690,15 @@ public final class AppState: ObservableObject {
 
     public func savePDF() {
         guard !scannedPages.isEmpty else { return }
-        let pages = scannedPages
+        let queued = scannedPages
         let s = settings
+        // Pages flagged in the strip (blank, or skipped by hand) are left out now, and only now.
+        let pages = PageFilter.pagesToSave(queued, options: s.document)
+        guard !pages.isEmpty else {
+            errorMessage = PageFilter.nothingToSaveMessage
+            statusMessage = PageFilter.queueSummary(queued, options: s.document) + "."
+            return
+        }
         runExclusive { flag in
             self.statusMessage = s.pdfSearchable ? "Running OCR and building PDF…" : "Building PDF…"
             let url = try self.outputURL(fileExtension: "pdf")
@@ -703,10 +711,12 @@ public final class AppState: ObservableObject {
             }.value
             self.lastSavedURLs = [url]
             self.notePDFSize(of: url)
-            self.deleteSpoolFiles(of: pages)
+            self.deleteSpoolFiles(of: queued)
             self.scannedPages = []
             self.resetFlow()
-            self.statusMessage = "Saved \(pages.count)-page PDF: \(url.lastPathComponent)\(self.pdfSizeSuffix)"
+            let skipped = queued.count - pages.count
+            let left = skipped == 0 ? "" : " — \(skipped) skipped page\(skipped == 1 ? " was" : "s were") left out"
+            self.statusMessage = "Saved \(pages.count)-page PDF: \(url.lastPathComponent)\(self.pdfSizeSuffix)\(left)"
             self.runAfterSave(s.output.afterSave, saved: [url])
         }
     }
@@ -841,6 +851,20 @@ public final class AppState: ObservableObject {
                                      fileURL: page.fileURL, fullPixelSize: page.fullPixelSize)
         updated.rotationQuarterTurns = (page.rotationQuarterTurns + 1) % 4
         scannedPages[idx] = updated
+    }
+
+    /// One click on a queued page's Keep or Skip button: the page is saved or left out, whatever
+    /// the blank-page setting says; a second click goes back to what the setting says. Twin of the
+    /// Windows `AppViewModel.TogglePageInclusion`.
+    public func togglePageInclusion(id: UUID) {
+        guard !isBusy, let idx = scannedPages.firstIndex(where: { $0.id == id }) else { return }
+        let page = scannedPages[idx]
+        let updated = page.withInclusion(PageFilter.toggled(page, options: settings.document))
+        scannedPages[idx] = updated
+        let summary = PageFilter.queueSummary(scannedPages, options: settings.document)
+        statusMessage = PageFilter.isExcluded(updated, options: settings.document)
+            ? "Page \(idx + 1) will be left out when you save. \(summary)."
+            : "Page \(idx + 1) will be saved. \(summary)."
     }
 
     public func clearPages() {

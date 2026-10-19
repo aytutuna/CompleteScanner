@@ -14,6 +14,7 @@ Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Output/PDFImageEncoding.swift`, `Pipeline/ColorAnalysis.swift` — the PDF sizes: how each page image is stored in a PDF (see below).
 - `Sources/CompleteScannerKit/Core/SaveActions.swift`, `App/FileActions.swift` — what can be done with saved files (open, open with, show in Finder, share, email, copy) and the after-save action (see below).
 - `Sources/CompleteScannerKit/Core/DocumentSides.swift`, `Core/PaperSize.swift` — two-sided scanning (which page is which side of which sheet, turning a stack over by hand) and paper sizes (see below).
+- `Sources/CompleteScannerKit/Pipeline/PageProcessor.swift`, `BlankPageDetector.swift`, `RgbaImage.swift`, `GrayImage.swift`, `BackgroundMap.swift`, `MaskOps.swift` — the page clean-up stage every scanned page goes through, blank-page detection, and the image toolkit the page analyses share (see below).
 - `Sources/CompleteScannerKit/App/AppState.swift` — the `@MainActor ObservableObject` all UI binds to; its task members are in `App/AppState+Tasks.swift`.
 - `Sources/CompleteScannerKit/App/ContentView.swift`, `CompleteScannerApp.swift`.
 
@@ -343,6 +344,135 @@ public enum PaperSizes {
 ```
 Twins of `windows/CompleteScanner.Core/DocumentSides.cs` and `PaperSize.cs` (`PaperSizes.Label` / `Detail` / `RawValue` as extensions, `DocumentSides.FrontsStepId` / `ArrangeTwoSided` / `MarkManual` / `CollateQueue`, `ScannedPage.WithImage` / `CopyMeta` / `WithSide`; C# also has `ScannedPage.RotatedClockwise`, which keeps the sides); `DocumentSidesTests`, `PaperSizeTests` and the sides cases of `ModelsCompatTests`, `ScanTaskTests`, `SettingsAdapterTests` and `MockScannerTests` are the same on both sides. Every backend returns the pages of a two-sided scan in reading order, front, back, front, back… (ImageCaptureCore reorders a feeder with `reverseFeederPageOrder`); the app (`AppState.performScan`) asks the backend for `.both` only when `effective` says so, then marks the sides and turns the backs upright (`arrangeTwoSided`, `markManual`) before adjusting, recording history and spooling. Turning a stack over by hand is guided through `TaskFlow` with `manualSteps`, with or without a task (`AppState.isTurningOverByHand`, `awaitingBacks`, `canFinishFronts`, `canScanMoreFronts`, `sidesMismatch`, `finishFronts()`, `scanMoreFronts()`, `combineSidesAnyway()`, `scanBacksAgain()`, `keepFrontsOnly()`, `scanOneSideOnly()`): the fronts advance the steps unless the feeder stopped early (then the rest of the fronts is scanned and `finishFronts()` moves on), `scanMoreFronts()` goes back to the fronts before any back is scanned, the backs are put in order in the queue when the counts pair up, otherwise the mismatch is shown. A scan asked for `.both` whose session says it scanned one side (`lastScanDuplex == false`) is queued one-sided. When the capabilities could not be read on connect, a scan that works reads them again. The flatbed scans `flatbedSelection` of the paper size when nothing is selected; backends ask the feeder for `feederRegionInches`. The demo feeder (`MockScannerBackend.feederDuplex`, `feederStackTurnedOver`) scans its three sheets one side or both.
 
+### Pipeline/RgbaImage.swift, GrayImage.swift, BackgroundMap.swift, MaskOps.swift (the image toolkit)
+
+```swift
+/// RGBA8, row-major, top-left origin; a port of C# RgbaImage (same box filter, bilinear sampling
+/// and rounding: halves to even when sampling, away from zero when sizing). A value type: no clone().
+public struct RgbaImage: Equatable, Sendable {
+    public let width: Int, height: Int
+    public var pixels: [UInt8]                     // width * height * 4
+    public init(width: Int, height: Int, pixels: [UInt8])          // preconditions on the sizes
+    public static func filled(width: Int, height: Int, r: UInt8, g: UInt8, b: UInt8) -> RgbaImage
+    public func resized(width: Int, height: Int) -> RgbaImage      // box filter down, bilinear up
+    public func cropped(_ rect: CGRect) -> RgbaImage?              // integral, clamped; nil when empty
+    public func extractRotated(center: CGPoint, size: CGSize, angleDegrees: Double,
+                               fillR: UInt8 = 255, fillG: UInt8 = 255, fillB: UInt8 = 255) -> RgbaImage?
+    public func rotatedQuarterTurns(_ quarterTurns: Int) -> RgbaImage   // clockwise
+    public init?(cgImage: CGImage)                                 // ColorAnalysis.rgbaPixels
+    public func makeCGImage() -> CGImage?
+}
+
+/// 8-bit luminance at a resolution (`dpi`); the page analyses work at `analysisDPI` (100).
+public struct GrayImage: Equatable, Sendable {
+    public static let analysisDPI: Int             // 100
+    public let width: Int, height: Int
+    public var pixels: [UInt8]
+    public let dpi: Double
+    public let scale: Double                       // these pixels per source pixel
+    public init(width: Int, height: Int, pixels: [UInt8], dpi: Double = 100, scale: Double = 1)
+    public static func filled(width: Int, height: Int, value: UInt8, dpi: Double = 100) -> GrayImage
+    public subscript(x: Int, y: Int) -> UInt8 { get }
+    public static func luma(_ image: RgbaImage, dpi: Double = 100) -> GrayImage      // rounded Rec. 601
+    public static func from(_ image: RgbaImage, sourceDPI: Int, analysisDPI: Int = 100) -> GrayImage
+    public init?(cgImage: CGImage, sourceDPI: Int, analysisDPI: Int = 100)   // reads in bands of rows
+    public func atResolution(_ dpi: Int) -> GrayImage                        // itself when no finer
+    public func downsampled(width: Int, height: Int) -> GrayImage            // box filter, rounding down
+    public func toRgba() -> RgbaImage
+}
+
+/// The paper's brightness across an area: tiles, a percentile per tile, bilinear between tile centers.
+public struct BackgroundMap: Sendable {
+    public let x: Int, y: Int, width: Int, height: Int, columns: Int, rows: Int
+    public let tiles: [UInt8]
+    public static func estimate(_ gray: GrayImage, x: Int, y: Int, width: Int, height: Int,
+                                tileSize: Int, percentile: Double = 0.9) -> BackgroundMap?   // nil when empty
+    public static func percentile(_ histogram: [Int], count: Int, fraction: Double) -> UInt8
+    public func medianTile() -> UInt8
+    public func maxSmoothed() -> BackgroundMap        // brightest of each tile and its 8 neighbors
+    public func clampedBelow(_ floor: UInt8) -> BackgroundMap
+    public func valueAt(x: Int, y: Int) -> Double
+    public func inkMask(_ gray: GrayImage, contrast: Double) -> [UInt8]   // 1 where darker than (1 − contrast) × paper
+}
+
+// Internal (shared by the detectors; moved out of PhotoDetector unchanged):
+struct MaskComponent { var area: Int; var rows: [Int: (minX: Int, maxX: Int)] }
+enum MaskOps {
+    static func dilate(_ mask: [UInt8], _ w: Int, _ h: Int, radius: Int) -> [UInt8]
+    static func erode(_ mask: [UInt8], _ w: Int, _ h: Int, radius: Int) -> [UInt8]
+    static func connectedComponents(mask: [UInt8], width: Int, height: Int) -> [MaskComponent]   // 4-connected
+    static func componentAreas(mask: [UInt8], width: Int, height: Int, eightConnected: Bool = false) -> [Int]
+}
+```
+Twins of `windows/CompleteScanner.Core/RgbaImage.cs`, `GrayImage.cs` (`GrayImage.Luma` / `From` / `AtResolution` / `Downsampled`, `AnalysisDpi`), `BackgroundMap.cs` and `MaskOps.cs` (internal there too); `RgbaImageTests`, `GrayImageTests` and `MaskOpsTests` are the same cases on both sides and expect the same bytes. `MaskOpsTests` keeps PhotoDetector's former private code as the reference and checks MaskOps against it; the C# suite also pins PhotoDetector's regions on the demo bed to the last bit. New page analyses (page edges, separator sheets, receipts) build on these types rather than on CoreGraphics, so both platforms compute the same numbers; Swift meets CoreGraphics only in `RgbaImage(cgImage:)`, `makeCGImage()` and `GrayImage(cgImage:…)`.
+
+### Pipeline/BlankPageDetector.swift, Pipeline/PageProcessor.swift (+ DocumentOptions, ScannedPage in Core/Models.swift)
+
+```swift
+// ScanSettings gains `document: DocumentOptions` (the "document" object; later page features add
+// their fields there). ScannedPage gains `blank: BlankPageResult?` (nil: not checked) and
+// `inclusion: PageInclusion` (.automatic); copyMeta(from:) copies both, and `withBlank(_:)` /
+// `withInclusion(_:)` return the page with one changed.
+public enum BlankSensitivity: String, Codable, CaseIterable, Identifiable, Sendable {
+    case medium, low, high                         // first case = default and fallback
+    public var label: String                       // "Low", "Medium", "High"
+    public var hint: String                        // what counts as blank at that level
+    public static let displayOrder: [BlankSensitivity]   // [.low, .medium, .high]
+}
+public enum PageInclusion: String, Sendable { case automatic, keep, skip }   // not persisted
+public struct DocumentOptions: Codable, Equatable, Sendable {
+    public var removeBlankPages: Bool = false      // "removeBlankPages"
+    public var blankSensitivity: BlankSensitivity = .medium   // "blankSensitivity"
+}
+
+public struct BlankPageOptions: Equatable, Sendable {
+    public var sensitivity: BlankSensitivity       // .medium
+    public var marginInches: Double                // BlankPageDetector.marginInches
+    public init(sensitivity: BlankSensitivity = .medium, marginInches: Double = BlankPageDetector.marginInches)
+}
+public struct BlankPageResult: Equatable, Sendable {
+    public let inkCoverage: Double, inkComponents: Int, hasLargeDarkArea: Bool, isBlank: Bool
+    public func isBlankAt(_ sensitivity: BlankSensitivity) -> Bool
+}
+public enum BlankPageDetector {
+    // marginInches 0.7, smallPageInches 2.5, smallPageMarginFraction 0.15, tileInches 0.25,
+    // backgroundPercentile 0.9, darkAreaDrop 64, darkTileFraction 0.01, inkContrast 0.30, minMarkPixels 6
+    public static func threshold(_ sensitivity: BlankSensitivity) -> Double   // 0.0001, 0.0003, 0.001
+    public static func analyze(_ gray: GrayImage, options: BlankPageOptions = BlankPageOptions()) -> BlankPageResult
+    public static func analyze(_ page: RgbaImage, dpi: Int, options: BlankPageOptions = BlankPageOptions()) -> BlankPageResult
+    public static func analyze(_ image: CGImage, dpi: Int, options: BlankPageOptions = BlankPageOptions()) -> BlankPageResult
+}
+
+public protocol PageStep { var name: String { get }; func apply(_ page: ScannedPage) -> ScannedPage }
+public struct BlankDetectionStep: PageStep { public let options: BlankPageOptions }   // "blank"
+public struct AdjustmentStep: PageStep { public let adjustments: AdjustmentSettings; public let colorMode: ColorMode }   // "adjust"
+public enum ScanArrangement: Sendable { case asScanned, twoSided, turnedOverFronts, turnedOverBacks }
+public struct ProcessedScan { public let arranged: [ScannedPage]; public let pages: [ScannedPage]; public var blankCount: Int }
+public struct PageProcessor {
+    public let steps: [any PageStep]; public let arrangement: ScanArrangement; public let binding: DuplexBinding
+    public init(steps: [any PageStep], arrangement: ScanArrangement = .asScanned, binding: DuplexBinding = .longEdge)
+    /// Blank check (when `checksBlankPages`), then adjustments (unless they change nothing).
+    public static func forScan(_ settings: ScanSettings, arrangement: ScanArrangement = .asScanned) -> PageProcessor
+    /// Document queue flow and documentMultiPage: pages saved at once are never checked.
+    public static func checksBlankPages(_ settings: ScanSettings) -> Bool
+    /// Arranges (DocumentSides.arrangeTwoSided / markManual), then every step on every page in
+    /// order; throws ScanError.cancelled when `shouldContinue` says no (asked before each page and step).
+    public func process(_ scanned: [ScannedPage], shouldContinue: () -> Bool = { true }) throws -> ProcessedScan
+}
+public enum PageFilter {
+    public static let nothingToSaveMessage: String
+    public static func looksBlank(_ page: ScannedPage, sensitivity: BlankSensitivity) -> Bool
+    public static func isExcluded(_ page: ScannedPage, options: DocumentOptions) -> Bool   // keep / skip, else the setting
+    public static func toggled(_ page: ScannedPage, options: DocumentOptions) -> PageInclusion   // two clicks undo one
+    public static func pagesToSave(_ pages: [ScannedPage], options: DocumentOptions) -> [ScannedPage]
+    public static func badge(_ page: ScannedPage, options: DocumentOptions) -> String?          // "Blank, skipped", "Skipped", "Looks blank"
+    public static func toggleLabel(_ page: ScannedPage, options: DocumentOptions) -> String?    // "Keep this page", "Skip this page"
+    public static func queueSummary(_ pages: [ScannedPage], options: DocumentOptions) -> String  // "24 pages in queue, 5 blank skipped"
+    public static func scanNote(_ added: [ScannedPage], options: DocumentOptions) -> String     // " 2 look blank and will be skipped."
+}
+```
+Twins of `windows/CompleteScanner.Core/BlankPageDetector.cs`, `PageProcessor.cs` (`IPageStep`, `BlankDetectionStep`, `AdjustmentStep`, `ScanArrangement`, `ProcessedScan`, `PageProcessor`, `PageFilter`; `ScanSettings.Document`, `DocumentOptions`, `BlankSensitivities.DisplayOrder`, `ModelLabels.Label` / `Hint`, `ScannedPage.Blank` / `Inclusion` / `WithBlank` / `WithInclusion`); `BlankPageDetectorTests` and `PageProcessorTests` are the same cases on both sides, on the same synthetic pages (`TestPages`, byte-identical, checked by checksum), and the blank-page cases of `ModelsCompatTests`, `ScanTaskTests` and `MockScannerTests` match. Every scan's pages go through `PageProcessor` in `AppState.performScan` (Windows `AppViewModel.PerformScan`): arranged by sides, checked for being blank on the page as scanned, adjusted. Later page features add their steps between the blank check and the adjustments. Blank pages are never removed from the queue: the page strip flags them (and dims those left out), one click keeps or skips a page (`AppState.togglePageInclusion(id:)`), and `savePDF` writes `pagesToSave`, reporting how many were left out; when nothing is left it sets `errorMessage` to `nothingToSaveMessage` and keeps the queue. `TaskCatalog.apply` turns `removeBlankPages` on for `.twoSided` only and keeps `blankSensitivity`.
+
 ### Pipeline/PhotoDetector.swift (+ Pipeline/Geometry.swift)
 
 ```swift
@@ -576,16 +706,16 @@ ImageCaptureCore implementation: `ICDeviceBrowser` (scanner mask, local + bonjou
 ```swift
 public final class MockScannerBackend: ScannerBackend { ... }
 ```
-One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true)`; synthesizes deterministic flatbed images (see task brief). It also has a document feeder (`sources: [.flatbed, .documentFeeder]`, `feederSizeInches` 8.5 × 14, `supportsDuplex` = `feederDuplex`, default true): a feeder scan returns `feederSheetCount` two-sided sheets (default `MockScannerBackend.defaultFeederSheetCount` = 3, read when the scan starts; letter size, or the paper size asked for; the front of sheet *n* carries *n* square marks near its bottom left corner, its back *n* marks near the bottom right, both upright), front and back of each sheet for `.both` on a two-sided feeder, otherwise the side facing up: a one-sided scan with `.manual` turns the stack over (`feederStackTurnedOver`), so the next one delivers the backs, last sheet first; any other feeder scan puts it back the right way up; a scan cut short by a jam leaves the stack as it is; `lastScanDuplex` says whether a scan asked for `.both` scanned both sides; and 0 sheets fails with `ScanError.scannerProblem(.feederEmpty)`. `feederJamsAfter` (default nil) makes the sheet after that many jam: the earlier sheets are returned and `lastScanStop` carries `.paperJam`; a jam on the first sheet fails with `ScanError.scannerProblem(.paperJam)`. Same behaviour as the C# `MockScannerBackend` (`FeederSheetCount`, `FeederJamsAfter`, `FeederDuplex`, `FeederStackTurnedOver`).
+One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true)`; synthesizes deterministic flatbed images (see task brief). It also has a document feeder (`sources: [.flatbed, .documentFeeder]`, `feederSizeInches` 8.5 × 14, `supportsDuplex` = `feederDuplex`, default true): a feeder scan returns `feederSheetCount` two-sided sheets (default `MockScannerBackend.defaultFeederSheetCount` = 3, read when the scan starts; letter size, or the paper size asked for; the front of sheet *n* carries *n* square marks near its bottom left corner, its back *n* marks near the bottom right, both upright), front and back of each sheet for `.both` on a two-sided feeder, otherwise the side facing up: a one-sided scan with `.manual` turns the stack over (`feederStackTurnedOver`), so the next one delivers the backs, last sheet first; any other feeder scan puts it back the right way up; a scan cut short by a jam leaves the stack as it is; `lastScanDuplex` says whether a scan asked for `.both` scanned both sides; and 0 sheets fails with `ScanError.scannerProblem(.feederEmpty)`. `feederJamsAfter` (default nil) makes the sheet after that many jam: the earlier sheets are returned and `lastScanStop` carries `.paperJam`; a jam on the first sheet fails with `ScanError.scannerProblem(.paperJam)`. `feederBlankBackSheets` (a `Set<Int>` of sheets counted from 0, default empty, read when the scan starts) makes those sheets' backs blank: off-white paper with noise, a few specks of dust and the front showing through mirrored at a tenth of its darkness (`BlankPageDetector` finds them blank; no sheet marks); the app's demo scanner (`AppState`'s default backends) has a blank back on its second sheet. Same behaviour as the C# `MockScannerBackend` (`FeederSheetCount`, `FeederJamsAfter`, `FeederDuplex`, `FeederStackTurnedOver`, `FeederBlankBackSheets`).
 
 ### UI files (all `internal`, SwiftUI, bind to `@EnvironmentObject var state: AppState`)
 
 - `UI/SidebarView.swift` — `struct SidebarView: View`: device list + refresh (`refreshScanners()`), the "Why isn't my scanner listed?" button in the Scanners header and link in the empty list, and the troubleshooter sheet (`state.showTroubleshooter`).
 - `UI/TroubleshooterView.swift` — `struct TroubleshooterView: View`: the troubleshooter's checks as cards with their buttons, Refresh, Copy Diagnostics and Done.
-- `UI/InspectorView.swift` — `struct InspectorView: View`: all settings + Overview/Scan/Cancel buttons + presets.
+- `UI/InspectorView.swift` — `struct InspectorView: View`: all settings + Overview/Scan/Cancel buttons + presets; the Document section's "Skip blank pages" and "What counts as blank" (off, with the reason, when each scan is saved at once).
 - `UI/StatusBarView.swift` — `struct StatusBarView: View`: status text, progress, and the actions for the files saved last (open, show, share, copy; More adds open with and email).
 - `UI/PreviewCanvasView.swift` — `struct PreviewCanvasView: View`: shows `state.canvasImage`, marquee selection editing `state.selectionRect` (only when `state.overviewImage != nil`).
-- `UI/PagesStripView.swift` — `struct PagesStripView: View`: page-queue thumbnails + Save PDF / Clear.
+- `UI/PagesStripView.swift` — `struct PagesStripView: View`: page-queue thumbnails + Save PDF / Clear; the queue summary, each flagged page's badge and its Keep or Skip button (always shown), left-out pages dimmed, Save PDF counting the pages it writes.
 - `UI/PhotoReviewView.swift` — `struct PhotoReviewView: View`: detected-photo grid sheet with the "After saving" choice; Save via `state.saveReviewedPhotos()`, cancel via `state.cancelPhotoReview()`.
 - `UI/TaskStartView.swift` — `struct TaskStartView: View` (`onOpenScanner: () -> Void`): the start screen's task cards (`state.taskCards`) and preset cards; also `enum TaskSymbols` (icon key → SF Symbol).
 - `UI/TaskBannerView.swift` — `struct TaskBannerView: View` (`definition: TaskDefinition?`, `onChangeTask: () -> Void`): the active task, or turning a stack over by hand without one (`definition` nil), above the preview, with Change Task and a leave-task button (without a task: scan one side only); fronts scanned without moving on (the feeder stopped early), Done with Fronts; while the backs are due, Keep Fronts Only, before any back is scanned Scan More Fronts, and on a count mismatch also Combine Anyway and Scan Back Sides Again.

@@ -20,7 +20,10 @@ UI per platform** architecture:
   `ITwainTransport` interface, memory-strip and bitmap conversion, the paper-size table and
   the condition-code mapping), and the Windows service and network-category values the
   troubleshooter reads (`WindowsSystemStatus.cs`). Device merging (`DeviceMerge.cs`: one row per physical
-  scanner, whichever backends list it) is shared with macOS.
+  scanner, whichever backends list it) is shared with macOS. So is the page clean-up stage
+  (`PageProcessor.cs`: the steps every scanned page goes through before it is queued) and the
+  image toolkit it works with (`GrayImage.cs`, `BackgroundMap.cs`, `MaskOps.cs` next to
+  `RgbaImage.cs`), starting with blank-page detection (`BlankPageDetector.cs`).
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
   xUnit with the same fixtures, geometry, and tolerances. **This is the contract that keeps
   the Swift and C# cores behaviorally identical** — change an algorithm on one side, port
@@ -129,6 +132,38 @@ orientation WIA, eSCL, TWAIN and ImageCaptureCore drivers deliver for two-sided 
 first, backs not already turned), whether WIA drivers take FRONT_FIRST and the paper size
 properties, eSCL feeder regions on center-fed feeders, and TWAIN drivers that discard blank backs
 (odd page counts).
+
+### Blank pages
+
+Every document page collected in the queue is checked for being blank as it is scanned
+(`BlankPageDetector`, run by `PageProcessor` on the page as scanned, before the adjustments). A
+page that looks blank is never removed from the queue: the page strip badges it **Looks blank**
+and offers **Skip**. With **Skip blank pages** on (the inspector's **Output** section, under
+"Collect pages, then Save PDF") it is dimmed and badged **Blank, skipped** instead, and offers
+**Keep**; the button is always shown, not only on hover. Pages are left out only when the queue
+is saved, and the status says how many were ("Saved 5-page PDF: … — 1 skipped page was left
+out"). A second click on a page undoes the first. The strip's label counts them ("24 pages in
+queue, 5 blank skipped"), **Save PDF** counts the pages it will write, and when every page is
+skipped it is greyed out and says why. **What counts as blank** sets how much may be on a blank
+page: **Low** (nothing at all), **Medium** (the default: dust, show-through or a lone page
+number) or **High** (also a few small marks). Pages saved as soon as they are scanned are never
+checked or left out, so the switch is greyed out then. The **Two-sided document** task turns
+**Skip blank pages** on: the empty backs of one-sided sheets are its main use. The demo scanner's
+second sheet has a blank back.
+
+How a page is judged, at 100 dpi whatever the scan resolution: a 0.7 in band along every edge
+is left out (edge shadows, staples, punched holes); the paper's brightness is mapped in 0.25 in
+tiles (the 90th percentile of each tile, the brightest of its neighbors), so tinted, recycled or
+unevenly lit paper is still paper; a pixel is ink when it is darker than 70 % of the paper
+around it, which leaves out show-through from the other side and paper texture; marks smaller
+than 6 pixels are dust; and the page is blank when the remaining ink covers less than 0.01 %
+(Low), 0.03 % (Medium) or 0.1 % (High) of it. A page with a photo, a dark block or a dark band
+(more than 1 % of its tiles far darker than the paper) is never blank. Checked here with
+synthetic pages (`TestPages`, the same bytes in both test suites) and with public-domain scans
+of letters and menus and blank backs made from them (their own paper, their text showing
+through at 8–25 %): no letter, menu or photo was taken for blank and every blank back was found.
+**To check on real hardware:** blank backs from real duplex feeders, very thin paper with heavy
+show-through, and pencil notes on otherwise empty backs.
 
 ### PDF size
 
@@ -259,6 +294,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | One row per scanner (`DeviceMerge`, connection chooser) | Matching rules, ranking and the saved choice are covered by `DeviceMergeTests` (same table as macOS) and were checked by driving the view model with fake WIA and TWAIN backends: one row, WIA preferred, a later-appearing better connection taken over once the running scan ends, the user's choice saved and used at the next start, a choice made during a scan applied after it. A saved choice is keyed by the eSCL UUID or the model name, whichever the current set of connections yields, so it lapses when that set changes (see above). **Unverified with real drivers:** the names real WIA, eSCL and TWAIN drivers report; `devices.txt` collects them |
 | TWAIN backend (`Scanning/Twain`) | **Experimental, untested against hardware** — see [TWAIN](#twain) below. The scan logic in Core (negotiation choices, the acquisition state machine, strip and bitmap conversion, paper sizes, error mapping, 32-bit driver detection) is covered by `TwainScanLoopTests`, `TwainRasterTests` and `TwainScanRequestsTests` through a fake transport. Driving the view model with the real session class over a scripted transport checked flatbed, feeder, preview, empty feeder, a jam after two sheets (pages kept, reason shown), cancel while the driver is silent (returns at once, the source is reset and disabled in the background), switching away (the source is closed without waiting), the driver-window switch and its saved choice (kept when connecting finds the scanner off), a driver stuck while enabling (reported after the start limit, the next scan refused at once, the late scan stopped when the driver answers), and that a scanner only TWAIN lists is never opened unless the user picks it. On a PC without a TWAIN Data Source Manager the backend lists nothing and `devices.txt` says why; the app starts normally. **Unverified:** real drivers, NTwain's message loop with them, the TWAIN Working Group sample source (not installed here) |
 | Two-sided scanning and paper size (`DocumentSides`, `PaperSize`) | Covered by `DocumentSidesTests`, `PaperSizeTests` and the sides cases of `ModelsCompatTests`, `ScanTaskTests`, `SettingsAdapterTests` and `MockScannerTests` (same cases as macOS), plus the backend requests in `EsclTests`, `TwainScanRequestsTests` and `WiaErrorsTests`. Checked by driving the view model with the demo scanner (both sides in one pass on the long and the short edge, a jam keeping one sheet's two sides, turning over by hand with matching counts, a mismatch, scanning the backs again, combining anyway, keeping the fronts, a jam during the fronts (the steps stay at the fronts, the rest of them scanned as fronts, Done with fronts), a stack scanned in parts (Scan more fronts), a scanner whose capabilities could not be read on connect asked for both sides by a one-sided feeder (pages kept one-sided, capabilities read after the scan), earlier pages keeping their place, the two-sided task on two-sided and one-sided feeders, paper sizes on the feeder and the glass, the saved PDFs' page counts) and by building the window without showing it: the Sides, Flip on and Paper size choices with their greyed-out items and reasons, the banner's two steps, Scan more fronts, Done with fronts and the mismatch choices, the side badges and the screen reader names in the page strip and the Two-sided document card, rendered off screen in light and dark. **Unverified:** real drivers (see [Two-sided scanning and paper size](#two-sided-scanning-and-paper-size)) |
+| Blank pages (`BlankPageDetector`, `PageProcessor`, `PageFilter`, image toolkit) | Covered by `BlankPageDetectorTests`, `PageProcessorTests`, `GrayImageTests`, `RgbaImageTests`, `MaskOpsTests` and the blank-page cases of `ModelsCompatTests`, `ScanTaskTests` and `MockScannerTests` (same cases as macOS; `MaskOpsTests` also pins PhotoDetector's regions on the demo bed to the last bit, unchanged by moving the mask code out of it). Checked on public-domain scans of letters, menus and photos (none taken for blank, at any level, with or without their dark surroundings) and on blank backs made from them (all found blank), and by driving the view model with the demo scanner (flagging, Skip blank pages turned on and off with pages queued, Keep and Skip per page, rotating a flagged page, saving 5 of 6 pages, nothing to save, pages saved at once keeping every page, the two-sided task, turning over by hand) and by building the window without showing it: the switch, the levels, the badges, Keep and Skip, the strip label, Save PDF's count, rendered off screen in light and dark. **Unverified:** blank backs from real scanners (see [Blank pages](#blank-pages)) |
 | Share, email, open with, copy (`SaveActions`, `FileActions`, `ShareService`) | The choices are covered by `SaveActionsTests` and the after-save cases of `ModelsCompatTests` (same cases as macOS). Checked by driving the view model's real save paths with a stand-in for Windows (each after-save action after a PDF, a file saved at once and a photo batch; the Email task sharing; no share window; a refused action; a moved file; a cancelled save running nothing), by building the real clipboard data and share package without placing them anywhere, and by building the window without showing it: the bar, its buttons and menu, the narrow layout, the "After saving" choices, the Saved tab's buttons and menus, rendered off screen in light and dark. **Not tried on screen:** the share window, the Open with dialog and the clipboard themselves (checks must not send, open or overwrite anything), and Mail or Outlook as share targets |
 | Troubleshooter (`Troubleshooter`, `SystemDiagnostics`, `TroubleshooterWindow`) | The checks are covered by `TroubleshooterTests` (same cases as macOS) and the Windows service and network values by `WindowsSystemStatusTests`. Checked by driving the view model with stand-in connections and a stand-in for Windows (the snapshot, the order of the checks, devices.txt, Refresh, Copy diagnostics and Settings refused, a busy scanner at connect and at scan, a connection that works clearing it, a cancelled scan not counting), by reading the real WIA service and network on Windows 11 (Running and Public, as `sc query` and `Get-NetConnectionProfile` report, from UI and thread-pool threads), by copying to the real clipboard with the user's clipboard saved and restored, by an address added by hand on loopback where nothing listens, by a discovered scanner (a stand-in service for a loopback scanner) that stays listed, selected and connected across a Refresh when Windows aborts either network watcher, and dropped only once the restarted watcher's first pass did not find it again, and by building the sidebar, error bar and troubleshooter window without showing them: the header button, the empty state's links, the error bar's Troubleshoot (and none on a file or photo error shown later), one card per check with its buttons and screen-reader names (each card a named group in the UI Automation tree), a Refresh while one runs ignored, rendered off screen in light and dark. **Not tried on screen:** opening Windows Settings and the real Add scanner dialog from it. **Unverified:** a stopped or disabled WIA service, a TWAIN install with 32-bit-only drivers, and a scanner that is really busy in another app |
 | eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — see [Network scanners](#network-scanners-escl) below for discovery, adding by address and HTTPS. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the paper size's region, clamped to the feeder (the feeder's own sheet size for Automatic, at most 17 in tall); two-sided feeder jobs send `<scan:Duplex>true</scan:Duplex>` and use the two-sided feeder's capabilities (`AdfDuplexInputCaps`) when the device lists them, and a device that lists no two-sided feeding scans one side and says so; black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. The protocol client (`EsclClient`, `EsclScannerSession`) is covered by `EsclClientTests` through a stub HTTP handler. Checked against local fake eSCL servers (plain and HTTPS), not a real device |
@@ -312,6 +348,11 @@ Known divergences from the macOS app (all documented in the source):
   turns out to scan one says so). Scans and previews wait for a check under way. The Mac also reorders a feeder that reads the last sheet first
   (`reverseFeederPageOrder`). The Mac inspector leaves out choices it cannot use and says why;
   Windows greys them out with the reason.
+- Blank pages: the check is the same code on both platforms, but the Mac reads a page's pixels
+  through CoreGraphics in bands of rows (`GrayImage(cgImage:sourceDPI:analysisDPI:)`), so a page
+  that CoreGraphics decodes slightly differently from WIC can give a slightly different ink
+  coverage. The demo scanner's blank backs show its own front through, which the Mac draws with
+  real glyphs.
 - PDF sizes: Windows writes the planned JPEG into its own PDF writer. The Mac, whose PDFs come
   from CoreGraphics, encodes the same plan with ImageIO and draws a JPEG-backed image, which
   CoreGraphics is expected to store unchanged; this, and the resulting file sizes, still need
@@ -440,7 +481,9 @@ PDF size and the after-save action (`"output": {"pdfSize": "standard", "afterSav
 file without them, or with a value this version does not know, reads as Standard and Do nothing.
 Two-sided scanning and the paper size are top-level keys (`"duplex": "off"`, `"backBinding":
 "longEdge"`, `"paperSize": "auto"`); a file without them, or with a value this version does not
-know, scans one side on the whole area. A first run starts without presets: the task
+know, scans one side on the whole area. Blank pages are in a `"document"` object
+(`"document": {"removeBlankPages": false, "blankSensitivity": "medium"}`); a file without it keeps
+every page, and a sensitivity this version does not know reads as Medium. A first run starts without presets: the task
 cards replaced the five starter presets earlier versions wrote, and presets files that already
 hold them keep them. They load across versions the same way as on macOS (`../CONTRACTS.md`, rule 6): a value this version does not understand resets only
 that setting; a file that cannot be decoded is kept next to it as

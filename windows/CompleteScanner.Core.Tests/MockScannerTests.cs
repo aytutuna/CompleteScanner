@@ -101,6 +101,40 @@ public class MockScannerTests
     }
 
     [Fact]
+    public async Task BlankBacks_LookBlank_TheOtherSidesDoNot()
+    {
+        var (backend, session) = await Open();
+        Assert.Empty(backend.FeederBlankBackSheets);
+        backend.FeederBlankBackSheets = [1];
+        var pages = await session.PerformScanAsync(FeederSettings(duplex: DuplexMode.Both), selection: null);
+        Assert.Equal(6, pages.Count);
+        var blank = pages.Select(p => BlankPageDetector.Analyze(p.Image, p.Dpi).IsBlank).ToList();
+        Assert.Equal([false, false, false, true, false, false], blank);
+        // The blank back is paper, not white: noise and the front showing through.
+        var back = pages[3].Image;
+        Assert.Equal(0, SheetMarks(back));
+        Assert.InRange(back.Pixels.Where((_, i) => i % 4 == 0).Average(b => b), 225, 250);
+        Assert.Contains(back.Pixels.Where((_, i) => i % 4 == 0), b => b < 236);
+        // Deterministic: the same sheet looks the same every time.
+        var again = await session.PerformScanAsync(FeederSettings(duplex: DuplexMode.Both), selection: null);
+        Assert.Equal(back.Pixels, again[3].Image.Pixels);
+        Assert.Equal(pages[2].Image.Pixels, again[2].Image.Pixels);
+    }
+
+    [Fact]
+    public async Task BlankBacks_TurnedOverByHand_ComeInTheBacksScan()
+    {
+        var (backend, session) = await Open();
+        backend.FeederBlankBackSheets = [0, 2];
+        var fronts = await session.PerformScanAsync(FeederSettings(duplex: DuplexMode.Manual), selection: null);
+        Assert.All(fronts, p => Assert.False(BlankPageDetector.Analyze(p.Image, p.Dpi).IsBlank));
+        var backs = await session.PerformScanAsync(FeederSettings(duplex: DuplexMode.Manual), selection: null);
+        // Last sheet first: sheets 2, 1, 0.
+        Assert.Equal([true, false, true], backs.Select(p => BlankPageDetector.Analyze(p.Image, p.Dpi).IsBlank));
+        Assert.Equal(2, SheetMarks(backs[1].Image));
+    }
+
+    [Fact]
     public async Task TwoSidedJamKeepsTheSheetsBeforeIt()
     {
         var (backend, session) = await Open();

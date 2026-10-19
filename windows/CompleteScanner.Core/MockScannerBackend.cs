@@ -54,6 +54,14 @@ public sealed class MockScannerBackend : IScannerBackend
     /// </summary>
     public bool FeederStackTurnedOver { get; set; }
 
+    /// <summary>
+    /// The sheets (counted from 0) whose backs are blank, read when the scan starts: unprinted
+    /// paper with the scanner's noise, a few specks of dust and the front showing through faintly,
+    /// like the back of a one-sided page in a two-sided stack. Empty by default; the app's demo
+    /// scanner has a blank back on its second sheet.
+    /// </summary>
+    public IReadOnlyCollection<int> FeederBlankBackSheets { get; set; } = [];
+
     public void StartBrowsing()
     {
         if (_devices.Count > 0) return;
@@ -157,6 +165,7 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
         int? jamsAfter = backend.FeederJamsAfter;
         bool twoSided = settings.Duplex == DuplexMode.Both && backend.FeederDuplex;
         bool turnedOver = backend.FeederStackTurnedOver;
+        var blankBacks = backend.FeederBlankBackSheets.ToHashSet();
         var region = PaperSizes.FeederRegionInches(settings.PaperSize, MockBedRenderer.FeederMaxInches);
         var sheetInches = settings.PaperSize == PaperSize.Auto
             ? MockBedRenderer.SheetInches
@@ -184,7 +193,10 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
                 : [turnedOver ? PageSide.Back : PageSide.Front];
             foreach (var side in sides)
             {
-                var image = await Task.Run(() => MockBedRenderer.RenderSheet(dpi, settings.Intent, sheet, side, sheetInches));
+                bool blank = side == PageSide.Back && blankBacks.Contains(sheet);
+                var image = await Task.Run(() => blank
+                    ? MockBedRenderer.RenderBlankBack(dpi, settings.Intent, sheet, sheetInches)
+                    : MockBedRenderer.RenderSheet(dpi, settings.Intent, sheet, side, sheetInches));
                 pages.Add(new ScannedPage(image, dpi, settings.ColorMode));
             }
             await SleepCheckingCancellation(0.15);
@@ -284,6 +296,51 @@ internal static class MockBedRenderer
             case ScanIntent.Document:
                 DrawDocument(image, scale, page, sheetIndex);
                 break;
+        }
+        return image;
+    }
+
+    /// <summary>
+    /// The back of sheet <paramref name="sheetIndex"/> when nothing is printed on it, as a scanner
+    /// sees it: off-white paper with noise (σ ≈ 4 levels), a few specks of dust, and the front
+    /// showing through mirrored at a tenth of its darkness. Deterministic for a sheet and size.
+    /// </summary>
+    public static RgbaImage RenderBlankBack(int dpi, ScanIntent intent, int sheetIndex, SizeD? sheetInches = null)
+    {
+        var front = RenderSheet(dpi, intent, sheetIndex, PageSide.Front, sheetInches);
+        int width = front.Width, height = front.Height;
+        var pixels = new byte[width * height * 4];
+        uint state = 0x9E3779B9u ^ (uint)(sheetIndex + 1) * 2654435761u;
+        uint Next()
+        {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            return state;
+        }
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                // The front seen from behind: mirrored left to right.
+                int fi = (y * width + (width - 1 - x)) * 4;
+                int frontLuma = (299 * front.Pixels[fi] + 587 * front.Pixels[fi + 1] + 114 * front.Pixels[fi + 2] + 500) / 1000;
+                int noise = (int)(Next() % 7 + Next() % 7 + Next() % 7 + Next() % 7) - 12;
+                int value = Math.Clamp(246 - (255 - frontLuma) / 10 + noise, 0, 255);
+                int i = (y * width + x) * 4;
+                pixels[i] = (byte)value;
+                pixels[i + 1] = (byte)value;
+                pixels[i + 2] = (byte)Math.Max(0, value - 3); // a slightly warm paper
+                pixels[i + 3] = 255;
+            }
+        }
+        // Dust: specks of one or two pixels at 300 dpi (never less than a pixel).
+        var image = new RgbaImage(width, height, pixels);
+        for (int n = 0; n < 40; n++)
+        {
+            int x = (int)(Next() % (uint)width), y = (int)(Next() % (uint)height);
+            int size = Math.Max(1, (dpi * (1 + (int)(Next() % 2)) + 150) / 300);
+            FillRect(image, x, y, size, size, 70, 70, 70);
         }
         return image;
     }

@@ -397,10 +397,31 @@
                                                 <Grid Width="116" Height="128">
                                                     <Border x:Name="Card" Style="{StaticResource CardStyle}" Padding="6"
                                                             ToolTip="{Binding SideLabel}">
-                                                        <Image Source="{Binding Thumbnail}" MaxHeight="112" MaxWidth="104"
+                                                        <Image x:Name="Thumb" Source="{Binding Thumbnail}" MaxHeight="112" MaxWidth="104"
                                                                Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                RenderOptions.BitmapScalingMode="HighQuality" />
                                                     </Border>
+                                                    <!-- A page that looks blank, or was skipped: what saving does with
+                                                         it, and one click (always shown) to keep or skip it. -->
+                                                    <StackPanel x:Name="BlankInfo" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                Margin="0,0,0,10">
+                                                        <Border x:Name="BlankBadge" HorizontalAlignment="Center" Padding="6,1,6,2"
+                                                                CornerRadius="4" IsHitTestVisible="False"
+                                                                Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                                                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Style="{StaticResource GlyphText}" Text="&#xE7C3;" FontSize="11"
+                                                                           Margin="0,1,4,0" VerticalAlignment="Center" />
+                                                                <TextBlock Text="{Binding BlankBadge}" Style="{StaticResource CaptionText}"
+                                                                           TextWrapping="NoWrap" VerticalAlignment="Center" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                        <Button x:Name="BlankToggle" Style="{StaticResource PageToggleButtonStyle}"
+                                                                Content="{Binding ToggleText}"
+                                                                ToolTip="{Binding ToggleLabel}" AutomationProperties.Name="{Binding ToggleLabel}"
+                                                                HorizontalAlignment="Center" Margin="0,4,0,0"
+                                                                Click="PageToggle_Click" Tag="{Binding Page.Id}" />
+                                                    </StackPanel>
                                                     <!-- Which side of which sheet, for two-sided stacks. -->
                                                     <Border x:Name="SideBadge" HorizontalAlignment="Left" VerticalAlignment="Top"
                                                             Margin="4,4,0,0" Padding="5,0,5,1" CornerRadius="4" IsHitTestVisible="False"
@@ -443,6 +464,16 @@
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding SideLabel}" Value="{x:Null}">
                                                         <Setter TargetName="SideBadge" Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding BlankBadge}" Value="{x:Null}">
+                                                        <Setter TargetName="BlankBadge" Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding ToggleLabel}" Value="{x:Null}">
+                                                        <Setter TargetName="BlankToggle" Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                    <!-- Left out when saving: the page is dimmed. -->
+                                                    <DataTrigger Binding="{Binding IsExcluded}" Value="True">
+                                                        <Setter TargetName="Thumb" Property="Opacity" Value="0.35" />
                                                     </DataTrigger>
                                                     <!-- Last, so it wins: a frozen page shows no actions. -->
                                                     <DataTrigger Binding="{Binding IsEnabled, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="False">
@@ -653,6 +684,22 @@
                                                           Content="Searchable PDF (OCR)"
                                                           ToolTip="Text is recognized automatically — nothing to configure."
                                                           Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                                                <!-- Blank pages: flagged in the page strip, left out when saving. The
+                                                     sensitivity segments (least first) are added in code. -->
+                                                <CheckBox x:Name="SkipBlankBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                          Content="Skip blank pages" ToolTipService.ShowOnDisabled="True"
+                                                          Checked="BlankPages_Changed" Unchecked="BlankPages_Changed" />
+                                                <TextBlock x:Name="SkipBlankHint" Style="{StaticResource CaptionText}"
+                                                           TextWrapping="Wrap" Margin="0,0,0,4" />
+                                                <StackPanel x:Name="BlankSensitivityOptions" Margin="0,4,0,0">
+                                                    <TextBlock Text="What counts as blank" Style="{StaticResource FieldLabelText}" />
+                                                    <Border Style="{StaticResource SegmentedTrackStyle}"
+                                                            AutomationProperties.Name="What counts as blank">
+                                                        <UniformGrid x:Name="BlankSensitivitySegments" Rows="1" />
+                                                    </Border>
+                                                    <TextBlock x:Name="BlankSensitivityHint" Style="{StaticResource CaptionText}"
+                                                               TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                </StackPanel>
                                             </StackPanel>
                                             <TextBlock Text="After saving" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />
                                             <ComboBox x:Name="AfterSaveBox" HorizontalAlignment="Stretch"

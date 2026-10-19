@@ -127,6 +127,19 @@ final class ScanTaskTests: XCTestCase {
         }
     }
 
+    func test_apply_onlyTheTwoSidedTaskSkipsBlankPages_howMuchCountsAsBlankIsKept() {
+        var current = customized()
+        current.document.removeBlankPages = true
+        current.document.blankSensitivity = .high
+        for task in ScanTask.allCases {
+            let s = TaskCatalog.apply(task, to: current)
+            XCTAssertEqual(s.document.removeBlankPages, task == .twoSided, task.rawValue)
+            XCTAssertEqual(s.document.blankSensitivity, .high, task.rawValue)
+        }
+        XCTAssertTrue(current.document.removeBlankPages)
+        XCTAssertTrue(TaskCatalog.apply(.twoSided, to: ScanSettings()).document.removeBlankPages)
+    }
+
     func test_twoSided_isATwoSidedFeederPDF() {
         XCTAssertEqual(TaskCatalog.definition(.twoSided).steps[0].primaryActionLabel, "Scan stack")
         var s = TaskCatalog.apply(.twoSided, to: ScanSettings())

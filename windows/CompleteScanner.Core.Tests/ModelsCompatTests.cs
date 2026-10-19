@@ -61,6 +61,8 @@ internal static class CompatFixtures
         settings.Duplex = DuplexMode.Manual;
         settings.BackBinding = DuplexBinding.ShortEdge;
         settings.PaperSize = PaperSize.A4;
+        settings.Document.RemoveBlankPages = true;
+        settings.Document.BlankSensitivity = BlankSensitivity.High;
         return settings;
     }
 
@@ -111,12 +113,14 @@ internal static class CompatFixtures
 
     /// <summary>
     /// <see cref="NonDefaultSettings"/> as this version writes it: <see cref="PresetsJsonBeforePdfSize"/>
-    /// with the "output" object, then the sides and the paper size, after the earlier keys.
+    /// with the "output" object, then the sides, the paper size and the "document" object, after
+    /// the earlier keys.
     /// </summary>
     public static readonly string CurrentFormatPresetsJson = PresetsJsonBeforePdfSize.ReplaceLineEndings("\n").Replace(
         "        \"blackWhiteThreshold\": 0.375\n      }\n",
         "        \"blackWhiteThreshold\": 0.375\n      },\n      \"output\": {\n        \"pdfSize\": \"compact\",\n        \"afterSave\": \"share\"\n      },\n"
-        + "      \"duplex\": \"manual\",\n      \"backBinding\": \"shortEdge\",\n      \"paperSize\": \"a4\"\n");
+        + "      \"duplex\": \"manual\",\n      \"backBinding\": \"shortEdge\",\n      \"paperSize\": \"a4\",\n"
+        + "      \"document\": {\n        \"removeBlankPages\": true,\n        \"blankSensitivity\": \"high\"\n      }\n");
 
     /// <summary>Field-by-field equality, including the legacy OCR languages.</summary>
     public static void AssertSettingsEqual(ScanSettings expected, ScanSettings actual)
@@ -305,6 +309,7 @@ public class ModelsCompatTests
                 "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
                 "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
                 "pdfSearchable", "ocrLanguages", "adjustments", "output", "duplex", "backBinding", "paperSize",
+                "document",
             ],
             settings.RootElement.EnumerateObject().Select(p => p.Name));
         var adjustments = settings.RootElement.GetProperty("adjustments");
@@ -397,6 +402,7 @@ public class ModelsCompatTests
                 "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
                 "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
                 "pdfSearchable", "ocrLanguages", "adjustments", "taskId", "output", "duplex", "backBinding", "paperSize",
+                "document",
             ],
             written.RootElement.EnumerateObject().Select(p => p.Name));
         Assert.Equal("document", written.RootElement.GetProperty("taskId").GetString());
@@ -423,6 +429,7 @@ public class ModelsCompatTests
         expected.Duplex = DuplexMode.Off;
         expected.BackBinding = DuplexBinding.LongEdge;
         expected.PaperSize = PaperSize.Auto;
+        expected.Document = new DocumentOptions();
         CompatFixtures.AssertSettingsEqual(expected, presets[0].Settings);
         Assert.Equal(PdfSizePreset.Standard, Decode<ScanSettings>("{}").Output.PdfSize);
         Assert.Equal(PdfSizePreset.Standard, Decode<ScanSettings>("""{"output": {}}""").Output.PdfSize);
@@ -528,6 +535,87 @@ public class ModelsCompatTests
         }
         var clone = CompatFixtures.NonDefaultSettings().Clone();
         Assert.Equal((DuplexMode.Manual, DuplexBinding.ShortEdge, PaperSize.A4), (clone.Duplex, clone.BackBinding, clone.PaperSize));
+    }
+
+    // MARK: - Blank pages (CONTRACTS.md, rule 6)
+
+    [Fact]
+    public void BlankSensitivity_MediumIsTheFirstMemberAndTheDefault()
+    {
+        static string Name<T>(T value) => JsonSerializer.Serialize(value, StoreFiles.JsonOptions).Trim('"');
+        Assert.Equal(["medium", "low", "high"], Enum.GetValues<BlankSensitivity>().Select(Name));
+        var document = new ScanSettings().Document;
+        Assert.Equal((false, BlankSensitivity.Medium), (document.RemoveBlankPages, document.BlankSensitivity));
+        Assert.Equal([BlankSensitivity.Low, BlankSensitivity.Medium, BlankSensitivity.High], BlankSensitivities.DisplayOrder);
+    }
+
+    [Fact]
+    public void SettingsWithoutDocument_KeepEveryPage_RestIntact()
+    {
+        var presets = Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize);
+        Assert.False(presets[0].Settings.Document.RemoveBlankPages);
+        Assert.Equal(BlankSensitivity.Medium, presets[0].Settings.Document.BlankSensitivity);
+        Assert.False(Decode<ScanSettings>("""{"document": {}}""").Document.RemoveBlankPages);
+        Assert.Equal(600, presets[0].Settings.Resolution);
+        Assert.Equal(PdfSizePreset.Standard, presets[0].Settings.Output.PdfSize);
+    }
+
+    [Fact]
+    public void UnknownOrCorruptDocument_FallsBackToTheDefaults_RestIntact()
+    {
+        foreach (string document in new[]
+                 {
+                     """ "document": {"removeBlankPages": true, "blankSensitivity": "extreme"} """,
+                     """ "document": {"removeBlankPages": true, "blankSensitivity": "High"} """,
+                     """ "document": {"removeBlankPages": true, "blankSensitivity": 2} """,
+                     """ "document": {"removeBlankPages": true, "blankSensitivity": null} """,
+                 })
+        {
+            var settings = Decode<ScanSettings>($$"""{"resolution": 150, {{document}}, "pdfSearchable": false}""");
+            Assert.True(settings.Document.RemoveBlankPages);
+            Assert.Equal(BlankSensitivity.Medium, settings.Document.BlankSensitivity);
+            Assert.Equal(150, settings.Resolution);
+            Assert.False(settings.PdfSearchable);
+        }
+        foreach (string document in new[]
+                 {
+                     """ "document": "skip blanks" """,
+                     """ "document": null """,
+                     """ "document": {"removeBlankPages": "yes", "blankSensitivity": "low"} """,
+                 })
+        {
+            var settings = Decode<ScanSettings>($$"""{"resolution": 150, {{document}}, "pdfSearchable": false}""");
+            Assert.False(settings.Document.RemoveBlankPages);
+            Assert.Equal(150, settings.Resolution);
+            Assert.False(settings.PdfSearchable);
+        }
+        Assert.Equal(BlankSensitivity.Low,
+                     Decode<ScanSettings>("""{"document": {"removeBlankPages": "yes", "blankSensitivity": "low"}}""").Document.BlankSensitivity);
+    }
+
+    [Fact]
+    public void Document_RoundTrips_AndCloneIsIndependent()
+    {
+        foreach (var sensitivity in Enum.GetValues<BlankSensitivity>())
+        {
+            foreach (bool remove in new[] { false, true })
+            {
+                var settings = new ScanSettings();
+                settings.Document.RemoveBlankPages = remove;
+                settings.Document.BlankSensitivity = sensitivity;
+                var back = Decode<ScanSettings>(CompatFixtures.Encode(settings));
+                Assert.Equal((remove, sensitivity), (back.Document.RemoveBlankPages, back.Document.BlankSensitivity));
+                Assert.Equal(settings.Document, back.Document);
+            }
+        }
+        var original = CompatFixtures.NonDefaultSettings();
+        var clone = original.Clone();
+        Assert.NotSame(original.Document, clone.Document);
+        Assert.Equal(original.Document, clone.Document);
+        clone.Document.RemoveBlankPages = false;
+        clone.Document.BlankSensitivity = BlankSensitivity.Low;
+        Assert.True(original.Document.RemoveBlankPages);
+        Assert.Equal(BlankSensitivity.High, original.Document.BlankSensitivity);
     }
 
     [Fact]

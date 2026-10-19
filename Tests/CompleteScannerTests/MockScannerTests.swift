@@ -112,6 +112,40 @@ final class MockScannerTests: XCTestCase {
     }
 
     @MainActor
+    func test_blankBacks_lookBlank_theOtherSidesDoNot() async throws {
+        let (backend, session) = try await open()
+        XCTAssertTrue(backend.feederBlankBackSheets.isEmpty)
+        backend.feederBlankBackSheets = [1]
+        let pages = try await session.performScan(settings: feederSettings(duplex: .both), selection: nil)
+        XCTAssertEqual(pages.count, 6)
+        XCTAssertEqual(pages.map { BlankPageDetector.analyze($0.image, dpi: $0.dpi).isBlank },
+                       [false, false, false, true, false, false])
+        // The blank back is paper, not white: noise and the front showing through.
+        let back = rgbaPixels(pages[3].image)
+        XCTAssertEqual(sheetMarks(pages[3].image), 0)
+        let reds = stride(from: 0, to: back.count, by: 4).map { Int(back[$0]) }
+        let mean = Double(reds.reduce(0, +)) / Double(reds.count)
+        XCTAssertGreaterThanOrEqual(mean, 225)
+        XCTAssertLessThanOrEqual(mean, 250)
+        XCTAssertTrue(reds.contains { $0 < 236 })
+        // Deterministic: the same sheet looks the same every time.
+        let again = try await session.performScan(settings: feederSettings(duplex: .both), selection: nil)
+        XCTAssertEqual(rgbaPixels(again[3].image), back)
+    }
+
+    @MainActor
+    func test_blankBacks_turnedOverByHand_comeInTheBacksScan() async throws {
+        let (backend, session) = try await open()
+        backend.feederBlankBackSheets = [0, 2]
+        let fronts = try await session.performScan(settings: feederSettings(duplex: .manual), selection: nil)
+        XCTAssertTrue(fronts.allSatisfy { !BlankPageDetector.analyze($0.image, dpi: $0.dpi).isBlank })
+        let backs = try await session.performScan(settings: feederSettings(duplex: .manual), selection: nil)
+        // Last sheet first: sheets 2, 1, 0.
+        XCTAssertEqual(backs.map { BlankPageDetector.analyze($0.image, dpi: $0.dpi).isBlank }, [true, false, true])
+        XCTAssertEqual(sheetMarks(backs[1].image), 2)
+    }
+
+    @MainActor
     func test_twoSidedJamKeepsTheSheetsBeforeIt() async throws {
         let (backend, session) = try await open()
         backend.feederJamsAfter = 1

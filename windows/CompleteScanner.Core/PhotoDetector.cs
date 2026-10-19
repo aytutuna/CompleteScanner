@@ -72,11 +72,11 @@ public static class PhotoDetector
         }
 
         // 5. Close (seal photo interiors that match the background), then a light open (drop speckle).
-        mask = Erode(Dilate(mask, dw, dh, 2), dw, dh, 2);
-        mask = Dilate(Erode(mask, dw, dh, 1), dw, dh, 1);
+        mask = MaskOps.Erode(MaskOps.Dilate(mask, dw, dh, 2), dw, dh, 2);
+        mask = MaskOps.Dilate(MaskOps.Erode(mask, dw, dh, 1), dw, dh, 1);
 
         // 6. Connected components.
-        var components = ConnectedComponents(mask, dw, dh);
+        var components = MaskOps.ConnectedComponents(mask, dw, dh);
 
         // 7 + 8. Filter components, then fit min-area rectangles.
         double minSidePx = options.MinPhotoSideInches * Math.Max(dpi, 1) * scale;
@@ -249,121 +249,6 @@ public static class PhotoDetector
         byte gray = (byte)Math.Clamp(Math.Round(fillGray * 255), 0, 255);
         return image.ExtractRotated(center, new SizeD(width, height), angleDegrees,
                                     gray, gray, gray)?.Pixels;
-    }
-
-    // MARK: - Morphology (square kernel, separable passes)
-
-    private static byte[] Dilate(byte[] mask, int w, int h, int r)
-    {
-        var tmp = new byte[w * h];
-        for (int y = 0; y < h; y++)
-        {
-            int row = y * w;
-            for (int x = 0; x < w; x++)
-            {
-                byte v = 0;
-                int lo = Math.Max(0, x - r), hi = Math.Min(w - 1, x + r);
-                for (int xx = lo; xx <= hi; xx++)
-                {
-                    if (mask[row + xx] == 1) { v = 1; break; }
-                }
-                tmp[row + x] = v;
-            }
-        }
-        var output = new byte[w * h];
-        for (int y = 0; y < h; y++)
-        {
-            for (int x = 0; x < w; x++)
-            {
-                byte v = 0;
-                int lo = Math.Max(0, y - r), hi = Math.Min(h - 1, y + r);
-                for (int yy = lo; yy <= hi; yy++)
-                {
-                    if (tmp[yy * w + x] == 1) { v = 1; break; }
-                }
-                output[y * w + x] = v;
-            }
-        }
-        return output;
-    }
-
-    private static byte[] Erode(byte[] mask, int w, int h, int r)
-    {
-        // Pixels outside the image count as background, so the mask shrinks at the borders.
-        var tmp = new byte[w * h];
-        for (int y = 0; y < h; y++)
-        {
-            int row = y * w;
-            for (int x = 0; x < w; x++)
-            {
-                byte v = (byte)((x - r >= 0 && x + r < w) ? 1 : 0);
-                if (v == 1)
-                {
-                    for (int xx = x - r; xx <= x + r; xx++)
-                    {
-                        if (mask[row + xx] == 0) { v = 0; break; }
-                    }
-                }
-                tmp[row + x] = v;
-            }
-        }
-        var output = new byte[w * h];
-        for (int y = 0; y < h; y++)
-        {
-            for (int x = 0; x < w; x++)
-            {
-                byte v = (byte)((y - r >= 0 && y + r < h) ? 1 : 0);
-                if (v == 1)
-                {
-                    for (int yy = y - r; yy <= y + r; yy++)
-                    {
-                        if (tmp[yy * w + x] == 0) { v = 0; break; }
-                    }
-                }
-                output[y * w + x] = v;
-            }
-        }
-        return output;
-    }
-
-    // MARK: - Connected components
-
-    private sealed class ComponentInfo
-    {
-        public int Area;
-        /// <summary>Per-row horizontal extent: y -> (minX, maxX).</summary>
-        public readonly Dictionary<int, (int MinX, int MaxX)> Rows = [];
-    }
-
-    private static List<ComponentInfo> ConnectedComponents(byte[] mask, int width, int height)
-    {
-        var visited = new bool[mask.Length];
-        var components = new List<ComponentInfo>();
-        var stack = new Stack<int>();
-        for (int start = 0; start < mask.Length; start++)
-        {
-            if (mask[start] != 1 || visited[start]) continue;
-            var comp = new ComponentInfo();
-            visited[start] = true;
-            stack.Clear();
-            stack.Push(start);
-            while (stack.Count > 0)
-            {
-                int idx = stack.Pop();
-                int x = idx % width, y = idx / width;
-                comp.Area += 1;
-                if (comp.Rows.TryGetValue(y, out var span))
-                    comp.Rows[y] = (Math.Min(span.MinX, x), Math.Max(span.MaxX, x));
-                else
-                    comp.Rows[y] = (x, x);
-                if (x > 0 && mask[idx - 1] == 1 && !visited[idx - 1]) { visited[idx - 1] = true; stack.Push(idx - 1); }
-                if (x < width - 1 && mask[idx + 1] == 1 && !visited[idx + 1]) { visited[idx + 1] = true; stack.Push(idx + 1); }
-                if (y > 0 && mask[idx - width] == 1 && !visited[idx - width]) { visited[idx - width] = true; stack.Push(idx - width); }
-                if (y < height - 1 && mask[idx + width] == 1 && !visited[idx + width]) { visited[idx + width] = true; stack.Push(idx + width); }
-            }
-            components.Add(comp);
-        }
-        return components;
     }
 
     // MARK: - Merging and ordering
