@@ -65,6 +65,11 @@
                             ToolTip="Show scanner and preset names"
                             AutomationProperties.Name="Show scanner and preset names"
                             Click="PaneToggle_Click" />
+                    <Button DockPanel.Dock="Right" x:Name="AddScannerButton" Style="{StaticResource SmallIconButtonStyle}"
+                            Content="&#xE710;" Margin="0,4,8,0" VerticalAlignment="Center"
+                            ToolTip="Add a network scanner by its address"
+                            AutomationProperties.Name="Add scanner by address"
+                            Click="AddScanner_Click" />
                     <TextBlock x:Name="ScannersHeader" Text="Scanners" Style="{StaticResource BodyStrongText}"
                                TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="16,8,16,6"
                                VerticalAlignment="Center" />
@@ -116,8 +121,8 @@
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-                <TextBlock Grid.Row="2" Margin="16,4" TextWrapping="Wrap"
-                           Text="No scanners found. Check that the scanner is on and connected.">
+                <!-- The empty state; the add button in the header offers the same. -->
+                <TextBlock Grid.Row="2" Margin="16,4" TextWrapping="Wrap">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock" BasedOn="{StaticResource CaptionText}">
                             <Setter Property="Visibility" Value="Collapsed" />
@@ -131,7 +136,9 @@
                                 </MultiDataTrigger>
                             </Style.Triggers>
                         </Style>
-                    </TextBlock.Style>
+                    </TextBlock.Style><Run
+                        Text="No scanners found. Check that the scanner is on and connected." /><LineBreak /><Hyperlink
+                        Click="AddScanner_Click">Add a network scanner by address…</Hyperlink>
                 </TextBlock>
 
                 <DockPanel Grid.Row="3" x:Name="PresetsHeader" Margin="16,16,8,4">

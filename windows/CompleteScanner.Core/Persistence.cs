@@ -430,21 +430,24 @@ internal static class StoreFiles
 
     /// <summary>
     /// Best-effort atomic write; creates the directory on demand. Refuses to replace a file
-    /// that could not be read, or that did not decode and could not be moved aside.
+    /// that could not be read, or that did not decode and could not be moved aside. Returns
+    /// whether the file was written.
     /// </summary>
-    internal static void Write<T>(T value, string path)
+    internal static bool Write<T>(T value, string path)
     {
-        if (ProtectedFiles.IsProtected(path)) return;
+        if (ProtectedFiles.IsProtected(path)) return false;
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
             string tmp = path + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(value, JsonOptions));
             File.Move(tmp, path, overwrite: true);
+            return true;
         }
         catch
         {
             // Best effort, mirroring the Swift store's try?.
+            return false;
         }
     }
 }

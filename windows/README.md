@@ -13,8 +13,9 @@ UI per platform** architecture:
   especially the four coordinate systems). It also holds the testable protocol logic of the
   Windows-only backends, which has no Swift twin because macOS reaches the same scanners
   through ImageCaptureCore: the WIA error and document-handling tables (`WiaErrors.cs`),
-  the eSCL capabilities parser, job request builder, 503 retry policy and status parser
-  (`Escl/`), and the TWAIN scan logic (`Twain/`: the acquisition state machine behind an
+  the eSCL protocol (`Escl/`: capabilities parser, job request builder, 503 retry policy,
+  status parser, the HTTP client and session, DNS-SD TXT records and address parsing, and
+  certificate pinning for HTTPS), and the TWAIN scan logic (`Twain/`: the acquisition state machine behind an
   `ITwainTransport` interface, memory-strip and bitmap conversion, the paper-size table and
   the condition-code mapping). Device merging (`DeviceMerge.cs`: one row per physical
   scanner, whichever backends list it) is shared with macOS.
@@ -84,7 +85,7 @@ Photos mode to see detection/deskew/review, or Document mode to build a PDF. Its
 | WIA backend (`WiaScannerBackend`) | **Experimental, untested against hardware** — documented WIA Automation flow; enumeration runs off the UI thread and re-polls (every 10 s backing off to 60 s while no scanner is present, every 60 s while one is), so scanners plugged in or unplugged later show up without a restart. The sources come from the device's document-handling capabilities, so a feeder-only scanner offers no flatbed and no preview; the feeder's sheet size and two-sided support are reported; a feeder batch uses one connection; WIA error codes become plain messages (an empty feeder says "Load paper in the feeder, then scan again."); a batch that fails partway keeps the sheets already scanned and tells the user how many were kept and why it stopped. Expect to iterate with a real scanner attached |
 | One row per scanner (`DeviceMerge`, connection chooser) | Matching rules, ranking and the saved choice are covered by `DeviceMergeTests` (same table as macOS) and were checked by driving the view model with fake WIA and TWAIN backends: one row, WIA preferred, a later-appearing better connection taken over once the running scan ends, the user's choice saved and used at the next start, a choice made during a scan applied after it. A saved choice is keyed by the eSCL UUID or the model name, whichever the current set of connections yields, so it lapses when that set changes (see above). **Unverified with real drivers:** the names real WIA, eSCL and TWAIN drivers report; `devices.txt` collects them |
 | TWAIN backend (`Scanning/Twain`) | **Experimental, untested against hardware** — see [TWAIN](#twain) below. The scan logic in Core (negotiation choices, the acquisition state machine, strip and bitmap conversion, paper sizes, error mapping, 32-bit driver detection) is covered by `TwainScanLoopTests`, `TwainRasterTests` and `TwainScanRequestsTests` through a fake transport. Driving the view model with the real session class over a scripted transport checked flatbed, feeder, preview, empty feeder, a jam after two sheets (pages kept, reason shown), cancel while the driver is silent (returns at once, the source is reset and disabled in the background), switching away (the source is closed without waiting), the driver-window switch and its saved choice (kept when connecting finds the scanner off), a driver stuck while enabling (reported after the start limit, the next scan refused at once, the late scan stopped when the driver answers), and that a scanner only TWAIN lists is never opened unless the user picks it. On a PC without a TWAIN Data Source Manager the backend lists nothing and `devices.txt` says why; the app starts normally. **Unverified:** real drivers, NTwain's message loop with them, the TWAIN Working Group sample source (not installed here) |
-| eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — no mDNS discovery yet; add scanners by IP/hostname in `%APPDATA%\CompleteScanner\escl-hosts.json`, e.g. `["192.168.1.50"]`. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the feeder's own sheet size (at most 17 in tall); black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. Checked against a local fake eSCL server, not a real device |
+| eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — see [Network scanners](#network-scanners-escl) below for discovery, adding by address and HTTPS. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the feeder's own sheet size (at most 17 in tall); black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. The protocol client (`EsclClient`, `EsclScannerSession`) is covered by `EsclClientTests` through a stub HTTP handler. Checked against local fake eSCL servers (plain and HTTPS), not a real device |
 
 Known divergences from the macOS app (all documented in the source):
 
@@ -95,9 +96,10 @@ Known divergences from the macOS app (all documented in the source):
   font rasterizer), so OCR demos need a real scan.
 - WIA, eSCL and TWAIN exist only here, so their logic in Core (`WiaErrors.cs`, `Escl/`,
   `Twain/`) and its tests (`WiaErrorsTests`, `EsclTests`, `EsclRetryTests`,
-  `TwainScanLoopTests`, `TwainRasterTests`, `TwainScanRequestsTests`) have no Swift
-  counterparts: the Mac reaches the same scanners through ImageCaptureCore. The scanner
-  problems they report (`ScannerProblem`) are shared with macOS.
+  `EsclClientTests`, `EsclDiscoveryTests`, `EsclTrustTests`, `TwainScanLoopTests`,
+  `TwainRasterTests`, `TwainScanRequestsTests`) have no Swift counterparts: the Mac reaches
+  the same scanners through ImageCaptureCore, whose Bonjour browsing also finds network
+  scanners. The scanner problems they report (`ScannerProblem`) are shared with macOS.
 - Only Windows offers a connection chooser: the Mac merges its USB, Bonjour and shared
   entries for one scanner by ranking alone (USB first) and has no preferences file to keep a
   choice in.
@@ -173,12 +175,59 @@ same scanners through ImageCaptureCore.
   front without an owner), native transfers of large scans, and the TWAIN Working Group's sample
   data source (installing it needs administrator rights).
 
+## Network scanners (eSCL)
+
+Driverless network scanners (eSCL, also called AirScan or Mopria Scan) are reached over
+HTTP or HTTPS. Windows 11 often installs the same scanner as a WIA device too; both
+connections are then one row (matched by the scanner's eSCL UUID or model name), and the
+row's **via** menu chooses between them.
+
+- **Found automatically.** The app browses DNS-SD for `_uscan._tcp` and `_uscans._tcp`
+  services through Windows' own mDNS stack (a `DeviceWatcher` over association-endpoint
+  services), so nothing listens on port 5353 itself and no firewall prompt appears. A
+  scanner advertising both services is one entry; its name is the model from the TXT record
+  (`ty`), its hardware id the TXT `UUID`. Addresses are tried HTTPS first, then HTTP; within
+  each, IPv4, then the `.local` host name, then IPv6 (link-local only with an interface zone).
+  A connection that fails, including a failed TLS handshake, moves on to the next address.
+- **Add scanner by address.** The **+** button next to **Scanners** (and the link in the
+  empty list) opens a dialog that takes an IP address, a host name, `host:port` or an
+  `http(s)://` URL. It checks that an eSCL scanner answers there before adding it, and
+  explains what is wrong when nothing does. Addresses are kept in
+  `%APPDATA%\CompleteScanner\escl-hosts.json` (a JSON list of strings, the file earlier
+  versions asked to edit by hand; hand-written entries keep working). They are checked at
+  start, and ones that do not answer are tried again every minute. A row reached through an
+  added address has **Remove address …** in its context menu; a scanner that is also found
+  automatically stays listed.
+- **HTTPS and certificates.** Scanners make their own certificates, which Windows cannot
+  check. The first time the app connects to a scanner over HTTPS, its certificate is trusted
+  and pinned (trust on first use): the SHA-256 of its public key is kept, with the scanner's
+  UUID and the addresses it was seen at, in `%APPDATA%\CompleteScanner\escl-trust.json`. Only
+  the **Add scanner by address** dialog shows a new certificate's fingerprint and asks first.
+  A new certificate is pinned only once the scanner has reported its UUID: one that comes
+  with the UUID of a scanner trusted with another certificate counts as a changed
+  certificate, wherever it was reached. If the file cannot be saved, the certificates trusted
+  meanwhile stay trusted until the app closes.
+  If a scanner later presents a different certificate, the app does not connect and warns
+  that it changed (a firmware update or reset can do that, but so can another device posing
+  as the scanner). It asks whether to trust the new certificate only when the user chooses
+  that scanner (the default answer is Cancel; trusting replaces the pin). When the app picked
+  the scanner on its own, it shows the warning without asking, does not pick that scanner on
+  its own again until the app restarts, and moves on to another one. A refused certificate
+  never falls back to plain HTTP. A certificate Windows itself accepts (valid chain and name)
+  is used without asking.
+- **To check on real hardware:** discovery of real scanners (the names, TXT records and
+  addresses they advertise appear in `devices.txt`), HTTPS with real scanner certificates
+  and TLS versions, link-local IPv6 connections, and how long Windows keeps listing a
+  scanner that was switched off (a service unregistered on this PC was still reported 30 s
+  later; connecting to such a scanner fails with the usual message).
+
 ## Settings files
 
 Presets, scan settings and app preferences are JSON files in `%APPDATA%\CompleteScanner\`
 (`presets.json`, `settings.json`, `preferences.json`; the preferences hold the appearance,
 the connection chosen per scanner and the TWAIN connections that use their driver's
-window). They load across versions the same way as on macOS (`../CONTRACTS.md`, rule 6): a value this version does not understand resets only
+window), next to the network scanners added by address (`escl-hosts.json`) and their
+trusted certificates (`escl-trust.json`). They load across versions the same way as on macOS (`../CONTRACTS.md`, rule 6): a value this version does not understand resets only
 that setting; a file that cannot be decoded is kept next to it as
 `<name>.unreadable-<yyyyMMdd-HHmmss>.json` before defaults are written; and a file that cannot
 be read at all (for example, locked by another program) is left alone and not overwritten

@@ -25,6 +25,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         ViewModel = new AppViewModel();
         ViewModel.PropertyChanged += (_, _) => Dispatcher.BeginInvoke(RefreshFromViewModel);
+        if (ViewModel.NetworkScanners is { } network) network.ConfirmCertificate = ConfirmCertificate;
 
         DeviceList.ItemsSource = ViewModel.Devices;
         PresetList.ItemsSource = ViewModel.Presets;
@@ -97,6 +98,7 @@ public partial class MainWindow : Window
         PaneToggleButton.ToolTip = toggleText;
         AutomationProperties.SetName(PaneToggleButton, toggleText);
         ScannersHeader.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        AddScannerButton.Visibility = compact || ViewModel.NetworkScanners is null ? Visibility.Collapsed : Visibility.Visible;
         ScannersHeader.Margin = narrow ? new Thickness(0, 0, 16, 0) : new Thickness(16, 8, 16, 6);
         PresetsHeader.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         PresetsDivider.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
@@ -583,20 +585,68 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// The keyboard (Shift+F10, Menu key) and right-click route to the same menu: the row's
-    /// placeholder context menu is replaced with the connection menu as it opens. Rows with a
-    /// single connection get no menu.
+    /// placeholder context menu is replaced as it opens with the connection menu, followed by
+    /// the network addresses added by hand that reach the scanner (to remove them). Rows with
+    /// neither get no menu.
     /// </summary>
     private void DeviceList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
         if (e.OriginalSource is DependencyObject source
-            && ItemsControl.ContainerFromElement(DeviceList, source) is ListBoxItem { DataContext: DeviceRow { HasConnectionChoice: true } row } item)
+            && ItemsControl.ContainerFromElement(DeviceList, source) is ListBoxItem { DataContext: DeviceRow row } item
+            && BuildDeviceMenu(row) is { } menu)
         {
-            item.ContextMenu = BuildConnectionMenu(row);
+            item.ContextMenu = menu;
         }
         else
         {
             e.Handled = true;
         }
+    }
+
+    /// <summary>A row's context menu (see <see cref="DeviceList_ContextMenuOpening"/>); null when it has nothing to offer.</summary>
+    internal ContextMenu? BuildDeviceMenu(DeviceRow row)
+    {
+        var addresses = ViewModel.NetworkScanners is { } network
+            ? row.Group.Members.SelectMany(m => network.ManualAddresses(m.Id)).Distinct().ToList()
+            : [];
+        if (!row.HasConnectionChoice && addresses.Count == 0) return null;
+        var menu = row.HasConnectionChoice ? BuildConnectionMenu(row) : new ContextMenu();
+        if (addresses.Count > 0 && menu.Items.Count > 0) menu.Items.Add(new Separator());
+        foreach (var address in addresses)
+        {
+            var item = new MenuItem
+            {
+                Header = $"Remove address {address}",
+                ToolTip = "Stop looking for a scanner at this address. A scanner that is also found automatically stays listed.",
+            };
+            item.Click += (_, _) => ViewModel.NetworkScanners?.RemoveAddress(address);
+            menu.Items.Add(item);
+        }
+        return menu;
+    }
+
+    // MARK: - Network scanners
+
+    /// <summary>"Add scanner by address": the dialog checks and adds it; it is then selected.</summary>
+    private void AddScanner_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.NetworkScanners is not { } network) return;
+        var dialog = new AddScannerWindow(network) { Owner = this };
+        if (dialog.ShowDialog() == true && dialog.DeviceId is { } id)
+        {
+            ViewModel.SelectAddedDevice(id);
+        }
+    }
+
+    /// <summary>
+    /// Asked by the network connection when a scanner presents a certificate that is new or
+    /// has changed since it was trusted.
+    /// </summary>
+    private Task<bool> ConfirmCertificate(EsclCertificateException certificate)
+    {
+        var dialog = new CertificateTrustWindow(certificate, CertificateTrustWindow.ConnectAction);
+        if (IsVisible) dialog.Owner = this;
+        return Task.FromResult(dialog.ShowDialog() == true);
     }
 
     /// <summary>

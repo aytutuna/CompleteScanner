@@ -195,6 +195,12 @@ public sealed class AppViewModel : INotifyPropertyChanged
     private readonly HashSet<string> _driverWindowDevices;
     /// <summary>The backend entry of the selected device, kept so its scanner is found again when that entry goes away.</summary>
     private ScannerInfo? _selectedEntry;
+    /// <summary>
+    /// Devices whose certificate changed and was not trusted this session (refused when the app
+    /// opened them on its own, or declined by the user): never selected automatically again,
+    /// so only the user choosing one asks about its certificate.
+    /// </summary>
+    private readonly HashSet<string> _certificateRefused = [];
     /// <summary>The device diagnostics last written (see <see cref="WriteDeviceDiagnostics"/>).</summary>
     private string _lastDeviceReport = "";
     /// <summary>
@@ -393,9 +399,10 @@ public sealed class AppViewModel : INotifyPropertyChanged
     /// scanner only TWAIN reaches is never chosen on its own: TWAIN lists installed drivers,
     /// not connected scanners, and opening the driver of one that is off or gone can show the
     /// driver's own error messages and fails anyway. It is opened only when the user picks it.
+    /// Nor is a scanner whose changed certificate was not trusted (<see cref="_certificateRefused"/>).
     /// </summary>
     private string? PreferredDefaultDevice() =>
-        (DeviceGroups.FirstOrDefault(g => !g.Primary.IsDemo && !TwainOnly(g))
+        (DeviceGroups.FirstOrDefault(g => !g.Primary.IsDemo && !TwainOnly(g) && !_certificateRefused.Contains(g.Primary.Id))
          ?? DeviceGroups.FirstOrDefault(g => g.Primary.IsDemo))?.Primary.Id;
 
     private static bool TwainOnly(DeviceGroup group) => group.Members.All(m => m.Backend == "twain");
@@ -455,6 +462,24 @@ public sealed class AppViewModel : INotifyPropertyChanged
             _userPickedDevice = true;
             return;
         }
+        UserSelectDevice(group.Primary.Id);
+    }
+
+    /// <summary>
+    /// The network (eSCL) connection: adds scanners by address and asks before trusting a
+    /// scanner's certificate. null when the app runs without it.
+    /// </summary>
+    public Scanning.EsclScannerBackend? NetworkScanners => _backends.OfType<Scanning.EsclScannerBackend>().FirstOrDefault();
+
+    /// <summary>
+    /// A scanner was just added by address (<paramref name="deviceId"/>): list it, and select
+    /// it unless an operation or the photo review is in progress, which a switch would end.
+    /// </summary>
+    public void SelectAddedDevice(string deviceId)
+    {
+        MergeDevices();
+        if (DeviceGroups.FirstOrDefault(g => g.Members.Any(m => m.Id == deviceId)) is not { } group) return;
+        if (IsBusy || ShowPhotoReview) return;
         UserSelectDevice(group.Primary.Id);
     }
 
@@ -519,10 +544,14 @@ public sealed class AppViewModel : INotifyPropertyChanged
     public void UserSelectDevice(string? id)
     {
         _userPickedDevice = true;
-        SelectDevice(id);
+        SelectDevice(id, interactive: true);
     }
 
-    private void SelectDevice(string? id)
+    /// <param name="interactive">
+    /// The user chose the device just now, so opening it may ask them something (a network
+    /// scanner's changed certificate). Automatic selections never ask.
+    /// </param>
+    private void SelectDevice(string? id, bool interactive = false)
     {
         // Ignore re-clicks on a device that is already connected or connecting.
         if (id == SelectedDeviceId && (_session != null || !_switchTask.IsCompleted)) return;
@@ -541,11 +570,11 @@ public sealed class AppViewModel : INotifyPropertyChanged
         {
             await previous;
             if (_switchGeneration != generation) return;
-            await SwitchSession(id);
+            await SwitchSession(id, interactive);
         }
     }
 
-    private async Task SwitchSession(string? id)
+    private async Task SwitchSession(string? id, bool interactive)
     {
         if (_session is { } old)
         {
@@ -583,7 +612,10 @@ public sealed class AppViewModel : INotifyPropertyChanged
         NotifyAll();
         try
         {
-            var session = await backend.OpenSessionAsync(id);
+            var session = backend is Scanning.EsclScannerBackend network
+                ? await network.OpenSessionAsync(id, interactive)
+                : await backend.OpenSessionAsync(id);
+            _certificateRefused.Remove(id);
             if (SelectedDeviceId != id) { await session.CloseAsync(); return; }
             session.ProgressHandler = p => _dispatcher.BeginInvoke(() =>
             {
@@ -610,6 +642,32 @@ public sealed class AppViewModel : INotifyPropertyChanged
                 Settings.Source = caps.Sources.FirstOrDefault(ScanSource.Flatbed);
             }
             StatusMessage = $"Ready — {session.Info.Name}";
+        }
+        catch (EsclCertificateException e) when (e.CanTrust)
+        {
+            // The certificate changed and was not trusted. Not chosen on its own again this
+            // session; when the app had chosen it, it moves on to another scanner, and choosing
+            // this one in the list shows the certificate.
+            _certificateRefused.Add(id);
+            StatusMessage = $"Could not connect to {name}.";
+            if (interactive)
+            {
+                ErrorMessage = e.Message;
+            }
+            else
+            {
+                ErrorMessage = e.Message + " To review the new certificate, choose the scanner in the list.";
+                if (!_userPickedDevice)
+                {
+                    _ = _dispatcher.BeginInvoke(() =>
+                    {
+                        if (!_userPickedDevice && SelectedDeviceId == id && !IsBusy && !ShowPhotoReview)
+                        {
+                            SelectDevice(PreferredDefaultDevice());
+                        }
+                    });
+                }
+            }
         }
         catch (Exception e)
         {
