@@ -10,6 +10,7 @@ Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Core/Troubleshooting.swift` — `ScannerProblem` and `ScannerProblems.describe` (see below).
 - `Sources/CompleteScannerKit/Core/ScannerBackend.swift` — `ScannerBackend` / `ScannerSession` protocols (both `@MainActor`).
 - `Sources/CompleteScannerKit/Core/ScanTask.swift`, `TaskCatalog.swift`, `TaskFlow.swift`, `SettingsAdapter.swift` — the start screen's tasks, their guided steps, and fitting settings to a scanner (see below).
+- `Sources/CompleteScannerKit/Output/PDFImageEncoding.swift`, `Pipeline/ColorAnalysis.swift` — the PDF sizes: how each page image is stored in a PDF (see below).
 - `Sources/CompleteScannerKit/App/AppState.swift` — the `@MainActor ObservableObject` all UI binds to; its task members are in `App/AppState+Tasks.swift`.
 - `Sources/CompleteScannerKit/App/ContentView.swift`, `CompleteScannerApp.swift`.
 
@@ -106,7 +107,7 @@ Twin of `windows/CompleteScanner.Core/DeviceMerge.cs` (`HardwareId`, `Connection
 // not as the enum: a task id of a newer version reads as no task and is written back unchanged.
 
 public enum ScanTask: String, CaseIterable, Identifiable, Sendable {
-    case document, feeder, photos, photoRestore, quickScan   // add new tasks after these
+    case document, feeder, photos, photoRestore, quickScan, email   // add new tasks after these
     public static func tryParse(_ rawValue: String?) -> ScanTask?
 }
 
@@ -115,7 +116,7 @@ public enum TaskFlowKind: String, Sendable { case documentQueue, photoSplit }
 public struct TaskDefinition: Equatable, Sendable {
     public let task: ScanTask
     public let title: String, subtitle: String
-    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick"
+    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick", "email"
     public let flow: TaskFlowKind
     public let intent: ScanIntent
     public let requiredSource: ScanSource?
@@ -142,7 +143,7 @@ public enum TaskCatalog {
     public static func fits(_ task: ScanTask, _ settings: ScanSettings) -> Bool
     /// The stored task's flow while it fits, otherwise by intent. The scan handler switches on it.
     public static func flow(of settings: ScanSettings) -> TaskFlowKind
-    /// "300 dpi · Color · PDF"
+    /// "300 dpi · Color · PDF"; a PDF size other than `.standard` is named: "300 dpi · Color · Compact PDF"
     public static func summary(_ settings: ScanSettings) -> String
 }
 
@@ -241,14 +242,67 @@ Storage: JSON under `~/Library/Application Support/CompleteScanner/` (`presets.j
 ```swift
 public enum PDFBuilder {
     /// Multi-page PDF; each page sized pixels/dpi*72 points. When `searchable`, run OCR per page
-    /// and draw an invisible text layer aligned with the words.
+    /// (on the full pixels) and draw an invisible text layer aligned with the words. Each page
+    /// image is stored as `pdfSize` plans it (`PDFImageEncoding.encodedPage`).
     public static func makePDF(pages: [ScannedPage], searchable: Bool, ocrLanguages: [String],
-                               progress: ((String) -> Void)?) throws -> Data
+                               pdfSize: PDFSizePreset = .best,
+                               progress: ((String) -> Void)?, shouldContinue: (() -> Bool)? = nil) throws -> Data
     /// Same, but streamed straight to `url` (never holds the whole document in memory).
     public static func writePDF(pages: [ScannedPage], searchable: Bool, ocrLanguages: [String],
-                                to url: URL, progress: ((String) -> Void)?) throws
+                                pdfSize: PDFSizePreset = .best,
+                                to url: URL, progress: ((String) -> Void)?,
+                                shouldContinue: (() -> Bool)? = nil) throws
 }
 ```
+
+### Output/PDFImageEncoding.swift, Pipeline/ColorAnalysis.swift (+ ScanSettings in Core/Models.swift)
+
+```swift
+// ScanSettings gains `output: OutputOptions` (the "output" object; `OutputOptions.pdfSize`
+// defaults to .standard, also for files written before it existed).
+public enum PDFSizePreset: String, Codable, CaseIterable, Identifiable, Sendable {
+    case standard, best, compact, smallest     // first case = default and fallback
+    public var label: String                   // "Standard", "Best", ...
+    public var hint: String                    // one line, shown under the size picker
+    public static let displayOrder: [PDFSizePreset]   // [.best, .standard, .compact, .smallest]
+}
+
+public enum ColorAnalysis {
+    public static let sampleStep: Int          // 4: every 4th pixel of every 4th row
+    public static let chromaThreshold: Int     // 32: max(R,G,B) − min(R,G,B) above this is color
+    public static let maxColoredFraction: Double   // 0.001: gray when fewer samples are colored
+    public static func isEffectivelyGray(_ image: CGImage) -> Bool
+    public static func isEffectivelyGray(rgba: [UInt8], width: Int, height: Int) -> Bool
+    public static func grayPixels(rgba: [UInt8], width: Int, height: Int) -> [UInt8]  // Rec. 601 luma
+    public static func rgbaPixels(of image: CGImage) -> [UInt8]?   // sRGB RGBA8, row 0 = top
+}
+
+public enum PDFImageKind: Equatable, Sendable { case jpegColor, jpegGray }
+public struct PDFSizeProfile: Equatable, Sendable { maxDPI: Int?, colorQuality, grayQuality: Double, autoGray: Bool }
+public struct PDFImagePlan: Equatable, Sendable { targetDPI: Int, kind: PDFImageKind, quality: Double; var isGray: Bool }
+public struct JPEGHeader: Equatable, Sendable { width, height, components: Int }
+
+public enum PDFImageEncoding {
+    public static let downsampleSlack = 1.1
+    /// best: scan dpi, 0.90/0.90, no auto-gray; standard: 300 dpi, 0.80/0.80;
+    /// compact: 200 dpi, 0.65/0.70; smallest: 150 dpi, 0.50/0.55 (color/gray quality; auto-gray on).
+    /// The size alone sets the quality; the JPEG quality setting is for JPEG files only.
+    public static func profile(_ size: PDFSizePreset) -> PDFSizeProfile
+    /// Downsample only above maxDPI × 1.1; gray JPEG for gray and black & white pages and (except
+    /// at best) for color pages without color; quality = the size's color or gray quality.
+    public static func plan(mode: ColorMode, imageDPI: Int, size: PDFSizePreset, looksGray: Bool) -> PDFImagePlan
+    public static func plan(mode: ColorMode, imageDPI: Int, size: PDFSizePreset, image: CGImage) -> PDFImagePlan
+    public static func effectiveDPI(imageWidth: Int, pagePixelWidth: Int, pageDPI: Int) -> Int
+    public static func targetSize(width: Int, height: Int, imageDPI: Int, targetDPI: Int) -> (width: Int, height: Int)
+    public static func downsample(rgba: [UInt8], width: Int, height: Int, newWidth: Int, newHeight: Int) -> [UInt8]  // box filter
+    // Mac only: ImageIO JPEG, read back as a JPEG-backed CGImage for the PDF context.
+    public static func encodedPage(_ image: CGImage, imageDPI: Int, mode: ColorMode,
+                                   size: PDFSizePreset) -> PDFPageImage?   // plan, jpegData, image
+    public static func encodeJPEG(_ image: CGImage, quality: Double) -> Data?
+    public static func readJPEGHeader(_ data: Data) -> JPEGHeader?
+}
+```
+Twins of `windows/CompleteScanner.Core/PdfImageEncoding.cs` (`PdfSizePreset`, `PdfSizePresets.DisplayOrder`, `ModelLabels.Label` / `Hint`, `PdfSizeProfile`, `PdfImagePlan`, `PdfImageEncoding.Plan` / `EffectiveDpi` / `TargetSize` / `Downsample`) and `ColorAnalysis.cs` (`IsEffectivelyGray`, `GrayPixels`); `PdfImageEncodingTests` and `ColorAnalysisTests` are the same cases on both sides. `readJPEGHeader` is the twin of `PdfBuilder.TryReadJpegHeader`, which declares a one-component JPEG `/DeviceGray`. Windows encodes the planned JPEG with WIC (`WpfImageCodec.EncodeJpeg(image, dpi, quality, gray)`); black & white pages are gray JPEGs on both platforms until CCITT G4 exists.
 Note: `ScannedPage.fileURL` (optional) points at a full-resolution spill TIFF; when set,
 `page.image` is only a preview and PDFBuilder reloads the full pixels from the file per page.
 

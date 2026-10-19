@@ -516,6 +516,20 @@
                                             <TextBlock Text="Format" Style="{StaticResource FieldLabelText}" />
                                             <ComboBox x:Name="FormatBox" HorizontalAlignment="Stretch"
                                                       AutomationProperties.Name="Format" SelectionChanged="Setting_Changed" />
+                                            <!-- PDF output only: how small the file is made. The segments
+                                                 (largest first) are added in code from PdfSizePresets. -->
+                                            <StackPanel x:Name="PdfSizeOptions" Margin="0,12,0,0">
+                                                <TextBlock Text="PDF size" Style="{StaticResource FieldLabelText}" />
+                                                <Border Style="{StaticResource SegmentedTrackStyle}"
+                                                        AutomationProperties.Name="PDF size">
+                                                    <UniformGrid x:Name="PdfSizeSegments" Rows="1" />
+                                                </Border>
+                                                <TextBlock x:Name="PdfSizeHint" Style="{StaticResource CaptionText}"
+                                                           TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                <TextBlock x:Name="LastPdfSizeText" Style="{StaticResource CaptionText}"
+                                                           TextWrapping="NoWrap" Margin="0,2,0,0"
+                                                           Typography.NumeralAlignment="Tabular" Visibility="Collapsed" />
+                                            </StackPanel>
                                             <StackPanel x:Name="DocumentOptions" Margin="0,8,0,0">
                                                 <CheckBox x:Name="MultiPageBox" Style="{StaticResource ToggleSwitchStyle}"
                                                           Content="Collect pages, then Save PDF"

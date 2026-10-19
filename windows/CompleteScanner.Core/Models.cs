@@ -39,6 +39,21 @@ public enum OutputFormat
 }
 
 /// <summary>
+/// How small saved PDFs are made (see <see cref="PdfImageEncoding"/>). <see cref="Standard"/>
+/// comes first because it is the default for everyone, including settings files written before
+/// the setting existed, and the fallback for a size a newer version adds: it neither bloats a
+/// file nor drops quality much. The start screen and the inspector show the sizes in
+/// <see cref="PdfSizePresets.DisplayOrder"/> (largest first) instead.
+/// </summary>
+public enum PdfSizePreset
+{
+    Standard,
+    Best,
+    Compact,
+    Smallest,
+}
+
+/// <summary>
 /// The app's color scheme: follow Windows, or force light or dark. An app preference, kept
 /// apart from <see cref="ScanSettings"/> so that applying a preset never changes it.
 /// </summary>
@@ -80,6 +95,25 @@ public static class ModelLabels
         OutputFormat.Png => "PNG",
         OutputFormat.Tiff => "TIFF",
         _ => format.ToString(),
+    };
+
+    public static string Label(this PdfSizePreset preset) => preset switch
+    {
+        PdfSizePreset.Standard => "Standard",
+        PdfSizePreset.Best => "Best",
+        PdfSizePreset.Compact => "Compact",
+        PdfSizePreset.Smallest => "Smallest",
+        _ => preset.ToString(),
+    };
+
+    /// <summary>One line saying what the size does, shown under the size picker.</summary>
+    public static string Hint(this PdfSizePreset preset) => preset switch
+    {
+        PdfSizePreset.Standard => "Up to 300 dpi, gray pages saved in gray. For most documents.",
+        PdfSizePreset.Best => "Full resolution, high quality. Largest files.",
+        PdfSizePreset.Compact => "Up to 200 dpi, more compression. For email and uploads.",
+        PdfSizePreset.Smallest => "Up to 150 dpi, most compression. For strict size limits.",
+        _ => "",
     };
 
     public static string FileExtension(this OutputFormat format) => format switch
@@ -133,6 +167,22 @@ public sealed class AdjustmentSettings : IEquatable<AdjustmentSettings>
                          Sharpness, Descreen, RestoreFadedColors, BlackWhiteThreshold);
 }
 
+/// <summary>
+/// Settings for the saved files themselves, kept together as <see cref="ScanSettings.Output"/>
+/// (the "output" object in settings files). Later output features add their fields here.
+/// </summary>
+public sealed class OutputOptions : IEquatable<OutputOptions>
+{
+    /// <summary>How small saved PDFs are made. Settings without it get Standard.</summary>
+    public PdfSizePreset PdfSize { get; set; } = PdfSizePreset.Standard;
+
+    public OutputOptions Clone() => (OutputOptions)MemberwiseClone();
+
+    public bool Equals(OutputOptions? other) => other is not null && PdfSize == other.PdfSize;
+    public override bool Equals(object? obj) => Equals(obj as OutputOptions);
+    public override int GetHashCode() => PdfSize.GetHashCode();
+}
+
 public sealed class ScanSettings
 {
     public ScanIntent Intent { get; set; } = ScanIntent.Document;
@@ -183,6 +233,9 @@ public sealed class ScanSettings
     [JsonIgnore]
     public ScanTask? Task => ScanTasks.TryParse(TaskId);
 
+    /// <summary>Settings for the saved files (the PDF size). Written after the earlier keys.</summary>
+    public OutputOptions Output { get; set; } = new();
+
     public static string DefaultDestinationPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "CompleteScanner");
 
@@ -193,6 +246,7 @@ public sealed class ScanSettings
         copy.OcrLanguages = [.. OcrLanguages];
 #pragma warning restore CS0618
         copy.Adjustments = Adjustments.Clone();
+        copy.Output = Output.Clone();
         return copy;
     }
 }

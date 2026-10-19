@@ -15,7 +15,7 @@ public struct TaskDefinition: Equatable, Sendable {
     public let title: String
     public let subtitle: String
     /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-    /// "photos", "restore", "quick".
+    /// "photos", "restore", "quick", "email".
     public let iconKey: String
     public let flow: TaskFlowKind
     /// The scan mode the task uses.
@@ -86,6 +86,14 @@ public enum TaskCatalog {
             steps: [TaskStep(id: "scan", title: "Scan an area",
                              prompt: "Preview the glass, drag over the part you need, then scan. Each scan is saved right away.",
                              primaryActionLabel: "Scan", repeats: true)]),
+        TaskDefinition(
+            task: .email, title: "Email a document",
+            subtitle: "Scan pages into a small PDF that is easy to attach to an email.",
+            iconKey: "email", flow: .documentQueue, intent: .document, requiredSource: nil,
+            fileLabel: "Document",
+            steps: [TaskStep(id: "scan", title: "Scan each page",
+                             prompt: "Place a page face down on the glass and scan it. Repeat for every page, then save the PDF and attach it to your email.",
+                             primaryActionLabel: "Scan page", repeats: true)]),
     ]
 
     public static func definition(_ task: ScanTask) -> TaskDefinition {
@@ -94,8 +102,8 @@ public enum TaskCatalog {
     }
 
     /// `current` with the task's settings laid over it: mode, source, resolution, color,
-    /// format, JPEG quality, the photo and document switches, searchable PDF, adjustments,
-    /// file name and the task itself. The destination folder, the photo detection tuning and
+    /// format, JPEG quality, PDF size, the photo and document switches, searchable PDF,
+    /// adjustments, file name and the task itself. The destination folder, the photo detection tuning and
     /// the legacy OCR languages are kept.
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings {
         var s = current
@@ -107,6 +115,7 @@ public enum TaskCatalog {
         s.documentMultiPage = true
         s.pdfSearchable = true
         s.adjustments = AdjustmentSettings()
+        s.output.pdfSize = .standard
         switch task {
         case .document:
             s.intent = .document
@@ -136,6 +145,12 @@ public enum TaskCatalog {
             s.resolution = 150
             s.format = .jpeg
             s.documentMultiPage = false
+            s.namingTemplate = "Scan {date} {counter}"
+        case .email:
+            s.intent = .document
+            s.resolution = 300
+            s.format = .pdf
+            s.output.pdfSize = .compact
             s.namingTemplate = "Scan {date} {counter}"
         }
         s.taskId = task.rawValue
@@ -184,8 +199,13 @@ public enum TaskCatalog {
         return settings.intent == .photo ? .photoSplit : .documentQueue
     }
 
-    /// One line describing the settings, e.g. "300 dpi · Color · PDF".
+    /// One line describing the settings, e.g. "300 dpi · Color · PDF". A PDF size other than the
+    /// default `.standard` is named ("300 dpi · Color · Compact PDF"), so the line stays short
+    /// enough for cards and the preset list.
     public static func summary(_ settings: ScanSettings) -> String {
-        "\(settings.resolution) dpi \u{00B7} \(settings.colorMode.label) \u{00B7} \(settings.format.label)"
+        let format = settings.format == .pdf && settings.output.pdfSize != .standard
+            ? "\(settings.output.pdfSize.label) \(settings.format.label)"
+            : settings.format.label
+        return "\(settings.resolution) dpi \u{00B7} \(settings.colorMode.label) \u{00B7} \(format)"
     }
 }

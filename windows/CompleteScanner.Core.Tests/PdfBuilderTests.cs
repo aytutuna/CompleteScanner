@@ -320,6 +320,42 @@ public class PdfBuilderTests
     }
 
     [Fact]
+    public void JpegHeaderReadsTheComponentCount()
+    {
+        Assert.True(PdfBuilder.TryReadJpegHeader(TinyJpeg, out _, out _, out int gray));
+        Assert.Equal(1, gray);
+        Assert.True(PdfBuilder.TryReadJpegHeader(SyntheticJpeg(640, 480, 0xC2, withExif: true),
+                                                 out int width, out int height, out int color));
+        Assert.Equal((640, 480, 3), (width, height, color));
+    }
+
+    [Fact]
+    public void GrayJpegIsEmbeddedAsDeviceGray()
+    {
+        // TinyJpeg has one component: a gray page image.
+        string image = ImageDictionaryOf(Encoding.Latin1.GetString(PdfBuilder.Make([Page()])));
+        Assert.Contains("/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /DCTDecode", image);
+        Assert.DoesNotContain("DeviceRGB", image);
+    }
+
+    [Fact]
+    public void ColorJpegIsEmbeddedAsDeviceRgb_AndBothKindsMix()
+    {
+        var color = new PdfPageInput(SyntheticJpeg(100, 150), 100, 150, 300, null);
+        string text = Encoding.Latin1.GetString(PdfBuilder.Make([color, Page(), color]));
+        Assert.Contains("/ColorSpace /DeviceRGB", ImageDictionaryOf(text));
+        Assert.Equal(2, text.Split("/ColorSpace /DeviceRGB").Length - 1);
+        Assert.Equal(1, text.Split("/ColorSpace /DeviceGray").Length - 1);
+    }
+
+    [Fact]
+    public void UnreadableJpegIsDeclaredRgb()
+    {
+        var page = new PdfPageInput([0xFF, 0xD8, 0xFF, 0xD9], 100, 150, 300, null);
+        Assert.Contains("/ColorSpace /DeviceRGB", ImageDictionaryOf(Encoding.Latin1.GetString(PdfBuilder.Make([page]))));
+    }
+
+    [Fact]
     public void MalformedJpegHeadersAreRejected()
     {
         var good = SyntheticJpeg(640, 480, withExif: true);

@@ -48,12 +48,14 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.adjustments.descreen = true
     settings.adjustments.restoreFadedColors = true
     settings.adjustments.blackWhiteThreshold = 0.375
+    settings.output.pdfSize = .compact
     return settings
 }
 
 /// `nonDefaultSettings()` as a presets file written by the synthesized Codable
-/// implementation (pretty-printed, sorted keys, every property present).
-private let currentFormatPresetsJSON = """
+/// implementation (pretty-printed, sorted keys, every property present), before the PDF size
+/// existed: it has no "output" object.
+private let presetsJSONBeforePDFSize = """
 [
   {
     "id" : "3F2504E0-4F89-41D3-9A0C-0305E82C3301",
@@ -91,6 +93,12 @@ private let currentFormatPresetsJSON = """
   }
 ]
 """
+
+/// `nonDefaultSettings()` as this version writes it: `presetsJSONBeforePDFSize` with the
+/// "output" object in its sorted place.
+private let currentFormatPresetsJSON = presetsJSONBeforePDFSize.replacingOccurrences(
+    of: "\"pdfSearchable\" : false",
+    with: "\"output\" : {\n        \"pdfSize\" : \"compact\"\n      },\n      \"pdfSearchable\" : false")
 
 // MARK: - Decoding compatibility
 
@@ -205,7 +213,7 @@ final class ModelsCompatTests: XCTestCase {
 
     func test_keysFromNewerVersions_areIgnored() throws {
         let settings = try decode(ScanSettings.self, """
-            {"resolution": 200, "duplex": "both", "output": {"pdfSize": "compact"}}
+            {"resolution": 200, "duplex": "both", "hologram": {"depth": 3}}
             """)
         var expected = ScanSettings()
         expected.resolution = 200
@@ -232,7 +240,7 @@ final class ModelsCompatTests: XCTestCase {
             "intent", "source", "resolution", "colorMode", "format", "jpegQuality",
             "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
             "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
-            "pdfSearchable", "ocrLanguages", "adjustments",
+            "pdfSearchable", "ocrLanguages", "adjustments", "output",
         ])
         let adjustments = try XCTUnwrap(settings["adjustments"] as? [String: Any])
         XCTAssertEqual(Set(adjustments.keys), [
@@ -305,9 +313,60 @@ final class ModelsCompatTests: XCTestCase {
             "intent", "source", "resolution", "colorMode", "format", "jpegQuality",
             "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
             "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
-            "pdfSearchable", "ocrLanguages", "adjustments", "taskId",
+            "pdfSearchable", "ocrLanguages", "adjustments", "taskId", "output",
         ])
         XCTAssertEqual(written["taskId"] as? String, "document")
+    }
+
+    // MARK: PDF size (CONTRACTS.md, rule 6; standard is the default for everyone)
+
+    func test_pdfSize_standardIsTheFirstCaseAndTheDefault() {
+        XCTAssertEqual(PDFSizePreset.allCases.map(\.rawValue), ["standard", "best", "compact", "smallest"])
+        XCTAssertEqual(ScanSettings().output.pdfSize, .standard)
+        XCTAssertEqual(OutputOptions().pdfSize, .standard)
+    }
+
+    func test_settingsWithoutPDFSize_getStandard_restIntact() throws {
+        let presets = try decode([Preset].self, presetsJSONBeforePDFSize)
+        var expected = nonDefaultSettings()
+        expected.output.pdfSize = .standard
+        XCTAssertEqual(presets[0].settings, expected)
+        XCTAssertEqual(try decode(ScanSettings.self, "{}").output.pdfSize, .standard)
+        XCTAssertEqual(try decode(ScanSettings.self, #"{"output": {}}"#).output.pdfSize, .standard)
+    }
+
+    func test_unknownOrCorruptPDFSize_fallsBackToStandard_restIntact() throws {
+        for output in [#"{"pdfSize": "tiny"}"#, #"{"pdfSize": "Compact"}"#, #"{"pdfSize": 2}"#,
+                       #"{"pdfSize": null}"#, #""compact""#, "null", "[]"] {
+            let settings = try decode(ScanSettings.self,
+                                      #"{"resolution": 150, "output": "# + output + #", "pdfSearchable": false}"#)
+            XCTAssertEqual(settings.output.pdfSize, .standard, output)
+            XCTAssertEqual(settings.resolution, 150, output)
+            XCTAssertFalse(settings.pdfSearchable, output)
+        }
+        let nested = try decode(ScanSettings.self, #"{"output": {"pdfSize": "smallest", "afterSave": "share"}}"#)
+        XCTAssertEqual(nested.output.pdfSize, .smallest)
+    }
+
+    func test_pdfSize_isWrittenUnderOutput_andRoundTrips() throws {
+        for size in PDFSizePreset.allCases {
+            var settings = ScanSettings()
+            settings.output.pdfSize = size
+            let data = try encode(settings)
+            let output = try XCTUnwrap(try jsonObject(data)["output"] as? [String: Any])
+            XCTAssertEqual(Set(output.keys), ["pdfSize"])
+            XCTAssertEqual(output["pdfSize"] as? String, size.rawValue)
+            XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: data).output.pdfSize, size)
+        }
+    }
+
+    func test_copy_carriesTheOutputOptions() {
+        var settings = ScanSettings()
+        settings.output.pdfSize = .smallest
+        var copy = settings
+        XCTAssertEqual(copy.output.pdfSize, .smallest)
+        copy.output.pdfSize = .best
+        XCTAssertEqual(settings.output.pdfSize, .smallest)
     }
 
     func test_copy_carriesTheTask() {

@@ -12,6 +12,7 @@ public static class TaskIcons
         "photos" => "",
         "restore" => "",
         "quick" => "",
+        "email" => "",
         _ => "",
     };
 

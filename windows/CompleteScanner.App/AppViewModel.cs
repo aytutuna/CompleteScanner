@@ -162,6 +162,10 @@ public sealed class AppViewModel : INotifyPropertyChanged
     public string StatusMessage { get; private set; } = "Looking for scanners…";
     public string? ErrorMessage { get; set; }
     public List<string> LastSavedPaths { get; private set; } = [];
+    /// <summary>Size of the PDF saved last in this session, in bytes; null before the first one.</summary>
+    public long? LastPdfBytes { get; private set; }
+    /// <summary>"Last PDF: 412 KB", shown under the PDF size choice; empty before the first PDF.</summary>
+    public string LastPdfSizeText => LastPdfBytes is { } bytes ? $"Last PDF: {SavedFiles.SizeText(bytes)}" : "";
     /// <summary>Bumped whenever files are written to the destination folder (drives the Saved tab).</summary>
     public int SavedRevision { get; private set; }
 
@@ -916,7 +920,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             DeleteSpoolFiles(pages);
             ScannedPages.Clear();
             Flow?.Reset();
-            StatusMessage = $"Saved {pages.Count}-page PDF: {Path.GetFileName(path)}";
+            StatusMessage = $"Saved {pages.Count}-page PDF: {Path.GetFileName(path)}{PdfSizeSuffix()}";
         });
     }
 
@@ -957,7 +961,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
             }
         }
         MarkSaved(saved);
-        StatusMessage = $"Saved {string.Join(", ", saved.Select(Path.GetFileName))}";
+        StatusMessage = $"Saved {string.Join(", ", saved.Select(Path.GetFileName))}" +
+                        (s.Format == OutputFormat.Pdf ? PdfSizeSuffix() : "");
     }
 
     public Task SaveReviewedPhotos()
@@ -1448,7 +1453,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// OCR (when searchable) + JPEG-encode each page, then write the PDF through
+    /// OCR (when searchable) + JPEG-encode each page as the PDF size plans it, then write the PDF through
     /// PdfBuilder.WriteNewFile, which builds it under a hidden temp name and moves it into
     /// place — a failed, interrupted or cancelled build never leaves a truncated PDF at the
     /// destination, and an existing file is never replaced. The token is checked before
@@ -1478,14 +1483,29 @@ public sealed class AppViewModel : INotifyPropertyChanged
                 catch (OperationCanceledException) { throw; }
                 catch { lines = null; }
             }
-            byte[] jpeg = await Task.Run(() => WpfImageCodec.EncodeJpeg(image, page.Dpi), token);
+            // The PDF size decides how the page is stored (PdfImageEncoding): OCR above has
+            // read the full pixels; the stored image may be downsampled and gray. The page
+            // keeps its physical size either way.
+            byte[] jpeg = await Task.Run(() =>
+            {
+                int imageDpi = PdfImageEncoding.EffectiveDpi(image.Width, prepared.PixelWidth, page.Dpi);
+                var plan = PdfImageEncoding.Plan(page.ColorMode, imageDpi, s.Output.PdfSize, image);
+                var stored = PdfImageEncoding.Downsample(image, imageDpi, plan);
+                return WpfImageCodec.EncodeJpeg(stored, plan.TargetDpi, plan.Quality, plan.IsGray);
+            }, token);
             inputs.Add(new PdfPageInput(jpeg, prepared.PixelWidth, prepared.PixelHeight, page.Dpi, lines));
         }
 
         StatusMessage = "Writing PDF…";
         NotifyAll();
-        return await Task.Run(() => PdfBuilder.WriteNewFile(inputs, path, progress: null, token), token);
+        string written = await Task.Run(() => PdfBuilder.WriteNewFile(inputs, path, progress: null, token), token);
+        try { LastPdfBytes = new FileInfo(written).Length; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { LastPdfBytes = null; }
+        return written;
     }
+
+    /// <summary>" (412 KB)" after the name of the PDF just saved, or nothing when its size is unknown.</summary>
+    private string PdfSizeSuffix() => LastPdfBytes is { } bytes ? $" ({SavedFiles.SizeText(bytes)})" : "";
 
     /// <summary>
     /// The full-resolution UNROTATED pixels from the page's spill file, or null when the page

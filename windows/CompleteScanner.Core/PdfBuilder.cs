@@ -6,8 +6,9 @@ namespace CompleteScanner.Core;
 /// <summary>One page to be written into a PDF.</summary>
 /// <param name="JpegData">
 /// JPEG bytes for the page image (embedded via DCTDecode). The image XObject's dimensions
-/// are read from the JPEG itself, so it may be smaller than the page (e.g. a preview used
-/// when the full-resolution spool file is missing) and is stretched across the page.
+/// and color space are read from the JPEG itself, so it may be smaller than the page (a
+/// downsampled image, or a preview used when the full-resolution spool file is missing) and
+/// is stretched across the page; a one-component JPEG is embedded as /DeviceGray.
 /// </param>
 /// <param name="PixelWidth">Full-resolution page width in pixels (sizes the media box).</param>
 /// <param name="PixelHeight">Full-resolution page height in pixels (sizes the media box).</param>
@@ -23,7 +24,8 @@ public sealed record PdfPageInput(byte[] JpegData, int PixelWidth, int PixelHeig
 /// Minimal, dependency-free PDF 1.4 writer for scanned pages, ported from
 /// Sources/CompleteScannerKit/Output/PDFBuilder.swift (which uses CGContext's PDF engine).
 ///
-/// Each page carries one full-page JPEG XObject; when OCR lines are provided they are drawn
+/// Each page carries one full-page JPEG XObject (/DeviceRGB, or /DeviceGray for a
+/// one-component JPEG); when OCR lines are provided they are drawn
 /// with text rendering mode 3 (invisible) in Helvetica, horizontally scaled (Tz) so each
 /// line's selectable text spans the same width as the printed words — the same trick the
 /// macOS version performs with CoreText. Text is emitted in WinAnsi encoding; characters
@@ -225,14 +227,18 @@ public static class PdfBuilder
             // The XObject must declare the JPEG's own dimensions, which differ from the page's
             // pixel size when only a preview was available; the content stream's cm scales
             // the unit-square image onto the full media box either way.
-            if (!TryReadJpegSize(page.JpegData, out int imageWidth, out int imageHeight))
+            // A gray JPEG (one component) must be declared /DeviceGray; anything unreadable
+            // keeps the earlier assumption of an RGB image the size of the page.
+            if (!TryReadJpegHeader(page.JpegData, out int imageWidth, out int imageHeight, out int components))
             {
                 imageWidth = page.PixelWidth;
                 imageHeight = page.PixelHeight;
+                components = 3;
             }
+            string colorSpace = components == 1 ? "/DeviceGray" : "/DeviceRGB";
             BeginObj(ObjImage(i));
             w.WriteAscii($"<</Type /XObject /Subtype /Image /Width {imageWidth} " +
-                         $"/Height {imageHeight} /ColorSpace /DeviceRGB /BitsPerComponent 8 " +
+                         $"/Height {imageHeight} /ColorSpace {colorSpace} /BitsPerComponent 8 " +
                          $"/Filter /DCTDecode /Length {page.JpegData.Length}>>\nstream\n");
             w.WriteBytes(page.JpegData);
             w.WriteAscii("\nendstream\nendobj\n");
@@ -258,16 +264,24 @@ public static class PdfBuilder
 
     // MARK: - JPEG header
 
+    /// <summary>The frame size of a JPEG (see <see cref="TryReadJpegHeader"/>).</summary>
+    internal static bool TryReadJpegSize(ReadOnlySpan<byte> jpeg, out int width, out int height) =>
+        TryReadJpegHeader(jpeg, out width, out height, out _);
+
     /// <summary>
-    /// Read the frame size from a JPEG's start-of-frame segment (SOF0 baseline, SOF1, SOF2
-    /// progressive, or any other SOFn). Walks the marker segments from SOI by their length
-    /// fields — so APPn payloads (EXIF, ICC, thumbnails) that happen to contain marker-like
-    /// bytes are skipped — and gives up at SOS/EOI or on any malformed or truncated segment.
+    /// Read the frame size and component count (1 = gray, 3 = color) from a JPEG's
+    /// start-of-frame segment (SOF0 baseline, SOF1, SOF2 progressive, or any other SOFn).
+    /// Walks the marker segments from SOI by their length fields — so APPn payloads (EXIF,
+    /// ICC, thumbnails) that happen to contain marker-like bytes are skipped — and gives up at
+    /// SOS/EOI or on any malformed or truncated segment. Twin of
+    /// <c>PDFImageEncoding.readJPEGHeader</c> on macOS.
     /// </summary>
-    internal static bool TryReadJpegSize(ReadOnlySpan<byte> jpeg, out int width, out int height)
+    internal static bool TryReadJpegHeader(ReadOnlySpan<byte> jpeg, out int width, out int height,
+                                           out int components)
     {
         width = 0;
         height = 0;
+        components = 0;
         if (jpeg.Length < 4 || jpeg[0] != 0xFF || jpeg[1] != 0xD8) return false;
         int pos = 2;
         while (pos < jpeg.Length)
@@ -296,8 +310,9 @@ public static class PdfBuilder
                 if (length < 8) return false;
                 height = (jpeg[pos + 3] << 8) | jpeg[pos + 4];
                 width = (jpeg[pos + 5] << 8) | jpeg[pos + 6];
+                components = jpeg[pos + 7];
                 // Height 0 means "defined later by DNL"; treat it as unknown.
-                return width > 0 && height > 0;
+                return width > 0 && height > 0 && components > 0;
             }
             pos += length;
         }

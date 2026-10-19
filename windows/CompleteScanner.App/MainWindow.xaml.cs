@@ -42,6 +42,7 @@ public partial class MainWindow : Window
 
         ColorModeBox.ItemsSource = Enum.GetValues<ColorMode>().Select(m => m.Label());
         FormatBox.ItemsSource = Enum.GetValues<OutputFormat>().Select(f => f.Label());
+        BuildPdfSizeSegments();
 
         Loaded += (_, _) =>
         {
@@ -245,6 +246,8 @@ public partial class MainWindow : Window
         // A narrow inspector trims the label; the tooltip keeps the full text.
         SavePdfButton.ToolTip = SavePdfButton.Content;
         SavePdfButton.IsEnabled = pageCount > 0 && !ViewModel.IsBusy;
+        LastPdfSizeText.Text = ViewModel.LastPdfSizeText;
+        LastPdfSizeText.Visibility = ViewModel.LastPdfSizeText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         ClearButton.IsEnabled = pageCount > 0 && !ViewModel.IsBusy;
         QueueButtons.Visibility = ViewModel.Settings.Intent == ScanIntent.Document || pageCount > 0
             ? Visibility.Visible : Visibility.Collapsed;
@@ -570,6 +573,11 @@ public partial class MainWindow : Window
             TemplateBox.Text = s.NamingTemplate;
             DocumentOptions.Visibility = s.Intent == ScanIntent.Document ? Visibility.Visible : Visibility.Collapsed;
             PhotoOptions.Visibility = s.Intent == ScanIntent.Photo ? Visibility.Visible : Visibility.Collapsed;
+            foreach (var segment in PdfSizeSegments.Children.OfType<RadioButton>())
+            {
+                segment.IsChecked = (PdfSizePreset)segment.Tag == s.Output.PdfSize;
+            }
+            SyncPdfSizeOptions();
             SyncCapabilityPickers();
         }
         finally
@@ -600,6 +608,10 @@ public partial class MainWindow : Window
         }
         s.DocumentMultiPage = MultiPageBox.IsChecked == true;
         s.PdfSearchable = SearchableBox.IsChecked == true;
+        if (PdfSizeSegments.Children.OfType<RadioButton>().FirstOrDefault(b => b.IsChecked == true) is { Tag: PdfSizePreset size })
+        {
+            s.Output.PdfSize = size;
+        }
         s.PhotoAutoSplit = AutoSplitBox.IsChecked == true;
         s.PhotoAutoDeskew = DeskewBox.IsChecked == true;
         s.Adjustments.AutoEnhance = AutoEnhanceBox.IsChecked == true;
@@ -617,8 +629,39 @@ public partial class MainWindow : Window
 
         DocumentOptions.Visibility = s.Intent == ScanIntent.Document ? Visibility.Visible : Visibility.Collapsed;
         PhotoOptions.Visibility = s.Intent == ScanIntent.Photo ? Visibility.Visible : Visibility.Collapsed;
+        SyncPdfSizeOptions();
         ViewModel.SettingsEdited();
         RefreshFromViewModel();
+    }
+
+    // MARK: - PDF size
+
+    /// <summary>One text segment per PDF size, largest first; each names what it does for screen readers and on hover.</summary>
+    private void BuildPdfSizeSegments()
+    {
+        foreach (var size in PdfSizePresets.DisplayOrder)
+        {
+            var segment = new RadioButton
+            {
+                Content = size.Label(),
+                Tag = size,
+                ToolTip = size.Hint(),
+                Style = (Style)FindResource("SegmentedTextItemStyle"),
+            };
+            AutomationProperties.SetHelpText(segment, size.Hint());
+            segment.Checked += Setting_Changed;
+            PdfSizeSegments.Children.Add(segment);
+        }
+        PdfSizeSegments.Columns = PdfSizePresets.DisplayOrder.Count;
+    }
+
+    /// <summary>The size choice is shown for PDF output only, with the chosen size's hint under it.</summary>
+    private void SyncPdfSizeOptions()
+    {
+        var s = ViewModel.Settings;
+        PdfSizeOptions.Visibility = s.Intent == ScanIntent.Document && s.Format == OutputFormat.Pdf
+            ? Visibility.Visible : Visibility.Collapsed;
+        PdfSizeHint.Text = s.Output.PdfSize.Hint();
     }
 
     // MARK: - Adjustment sliders (centered -100...100 scale, see AdjustmentScale)

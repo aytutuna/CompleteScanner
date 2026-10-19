@@ -92,6 +92,9 @@ public final class AppState: ObservableObject {
     @Published public internal(set) var statusMessage = "Looking for scanners…"
     @Published public var errorMessage: String?
     @Published public private(set) var lastSavedURLs: [URL] = []
+    /// Size of the PDF saved last in this session, in bytes; nil before the first one. Shown
+    /// under the PDF size choice.
+    @Published public private(set) var lastPDFByteCount: Int64?
 
     @Published public private(set) var presets: [Preset] = []
 
@@ -508,16 +511,17 @@ public final class AppState: ObservableObject {
             let url = try self.outputURL(fileExtension: "pdf")
             try await Task.detached(priority: .userInitiated) {
                 try Self.writePDFAtomically(pages: pages, searchable: s.pdfSearchable,
-                                            languages: s.ocrLanguages, to: url,
+                                            languages: s.ocrLanguages, pdfSize: s.output.pdfSize, to: url,
                                             shouldContinue: { !flag.isCancelled }) { [weak self] msg in
                     Task { @MainActor in self?.statusMessage = msg }
                 }
             }.value
             self.lastSavedURLs = [url]
+            self.notePDFSize(of: url)
             self.deleteSpoolFiles(of: pages)
             self.scannedPages = []
             self.taskFlow?.reset()
-            self.statusMessage = "Saved \(pages.count)-page PDF: \(url.lastPathComponent)"
+            self.statusMessage = "Saved \(pages.count)-page PDF: \(url.lastPathComponent)\(self.pdfSizeSuffix)"
         }
     }
 
@@ -529,12 +533,13 @@ public final class AppState: ObservableObject {
             let url = try outputURL(fileExtension: "pdf")
             try await Task.detached(priority: .userInitiated) {
                 try Self.writePDFAtomically(pages: pages, searchable: s.pdfSearchable,
-                                            languages: s.ocrLanguages, to: url,
+                                            languages: s.ocrLanguages, pdfSize: s.output.pdfSize, to: url,
                                             shouldContinue: { !flag.isCancelled }) { [weak self] msg in
                     Task { @MainActor in self?.statusMessage = msg }
                 }
             }.value
             saved = [url]
+            notePDFSize(of: url)
         } else {
             for page in pages {
                 if flag.isCancelled { throw ScanError.cancelled }
@@ -548,6 +553,7 @@ public final class AppState: ObservableObject {
         }
         lastSavedURLs = saved
         statusMessage = "Saved \(saved.map(\.lastPathComponent).joined(separator: ", "))"
+            + (s.format == .pdf ? pdfSizeSuffix : "")
     }
 
     public func saveReviewedPhotos() {
@@ -735,17 +741,30 @@ public final class AppState: ObservableObject {
         return ctx.makeImage()
     }
 
+    /// Remember the size of the PDF just written at `url` (nil when it cannot be read).
+    private func notePDFSize(of url: URL) {
+        let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber
+        lastPDFByteCount = size?.int64Value
+    }
+
+    /// " (412 KB)" after the name of the PDF just saved, or nothing when its size is unknown.
+    private var pdfSizeSuffix: String {
+        guard let bytes = lastPDFByteCount else { return "" }
+        return " (\(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)))"
+    }
+
     /// Write the PDF to a hidden temp name and move it into place, so a failed
     /// or interrupted build never leaves a truncated PDF at the destination.
     private nonisolated static func writePDFAtomically(pages: [ScannedPage], searchable: Bool,
-                                                       languages: [String], to url: URL,
+                                                       languages: [String], pdfSize: PDFSizePreset,
+                                                       to url: URL,
                                                        shouldContinue: (() -> Bool)? = nil,
                                                        progress: ((String) -> Void)?) throws {
         let tmp = url.deletingLastPathComponent()
             .appendingPathComponent(".\(UUID().uuidString).pdf.tmp")
         do {
             try PDFBuilder.writePDF(pages: pages, searchable: searchable, ocrLanguages: languages,
-                                    to: tmp, progress: progress, shouldContinue: shouldContinue)
+                                    pdfSize: pdfSize, to: tmp, progress: progress, shouldContinue: shouldContinue)
             try? FileManager.default.removeItem(at: url)
             try FileManager.default.moveItem(at: tmp, to: url)
         } catch {

@@ -66,6 +66,41 @@ public enum OutputFormat: String, Codable, CaseIterable, Identifiable, Sendable 
     }
 }
 
+/// How small saved PDFs are made (see `PDFImageEncoding`). `standard` comes first because it is
+/// the default for everyone, including settings files written before the setting existed, and
+/// the fallback for a size a newer version adds: it neither bloats a file nor drops quality
+/// much. The inspector and the start screen list the sizes in `displayOrder` (largest first).
+/// Twin of C# `PdfSizePreset` (`ModelLabels.Label` / `Hint`, `PdfSizePresets.DisplayOrder`).
+public enum PDFSizePreset: String, Codable, CaseIterable, Identifiable, Sendable {
+    case standard
+    case best
+    case compact
+    case smallest
+
+    public var id: String { rawValue }
+    public var label: String {
+        switch self {
+        case .standard: return "Standard"
+        case .best: return "Best"
+        case .compact: return "Compact"
+        case .smallest: return "Smallest"
+        }
+    }
+
+    /// One line saying what the size does, shown under the size picker.
+    public var hint: String {
+        switch self {
+        case .standard: return "Up to 300 dpi, gray pages saved in gray. For most documents."
+        case .best: return "Full resolution, high quality. Largest files."
+        case .compact: return "Up to 200 dpi, more compression. For email and uploads."
+        case .smallest: return "Up to 150 dpi, most compression. For strict size limits."
+        }
+    }
+
+    /// The sizes as the inspector lists them: largest file first.
+    public static let displayOrder: [PDFSizePreset] = [.best, .standard, .compact, .smallest]
+}
+
 // MARK: - Settings
 
 public struct AdjustmentSettings: Codable, Equatable, Sendable {
@@ -115,6 +150,30 @@ extension AdjustmentSettings {
     }
 }
 
+/// Settings for the saved files themselves, kept together as `ScanSettings.output` (the "output"
+/// object in settings files). Later output features add their fields here. Twin of C#
+/// `OutputOptions`.
+public struct OutputOptions: Codable, Equatable, Sendable {
+    /// How small saved PDFs are made. Settings without it get `.standard`.
+    public var pdfSize: PDFSizePreset = .standard
+
+    public init() {}
+
+    /// `encode(to:)` stays synthesized.
+    private enum CodingKeys: String, CodingKey {
+        case pdfSize
+    }
+}
+
+extension OutputOptions {
+    /// Tolerant decoding: a missing or undecodable key keeps the property's default.
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        pdfSize = container.decodeLenient(forKey: .pdfSize, default: pdfSize)
+    }
+}
+
 public struct ScanSettings: Codable, Equatable, Sendable {
     public var intent: ScanIntent = .document
     public var source: ScanSource = .flatbed
@@ -149,6 +208,9 @@ public struct ScanSettings: Codable, Equatable, Sendable {
     /// one) reads as no `task` but is written back unchanged. Left out of the file when nil.
     public var taskId: String?
 
+    /// Settings for the saved files (the PDF size).
+    public var output: OutputOptions = OutputOptions()
+
     public init() {}
 
     /// The task of `taskId`, when this version knows it.
@@ -165,6 +227,7 @@ public struct ScanSettings: Codable, Equatable, Sendable {
         case documentMultiPage, pdfSearchable, ocrLanguages
         case adjustments
         case taskId
+        case output
     }
 }
 
@@ -191,6 +254,7 @@ extension ScanSettings {
         ocrLanguages = container.decodeLenient(forKey: .ocrLanguages, default: ocrLanguages)
         adjustments = container.decodeLenient(forKey: .adjustments, default: adjustments)
         taskId = container.decodeLenient(forKey: .taskId, default: taskId)
+        output = container.decodeLenient(forKey: .output, default: output)
     }
 }
 

@@ -10,7 +10,7 @@ public class ScanTaskTests
     [Fact]
     public void RawValues_AreTheStoredNames()
     {
-        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan"],
+        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email"],
                      ScanTasks.All.Select(t => t.RawValue()));
     }
 
@@ -29,9 +29,10 @@ public class ScanTaskTests
     public void Catalog_ListsEveryTaskOnce_InStartScreenOrder()
     {
         Assert.Equal(ScanTasks.All, TaskCatalog.All.Select(d => d.Task));
-        Assert.Equal(["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan"],
+        Assert.Equal(["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
+                      "Email a document"],
                      TaskCatalog.All.Select(d => d.Title));
-        Assert.Equal(["document", "feeder", "photos", "restore", "quick"], TaskCatalog.All.Select(d => d.IconKey));
+        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email"], TaskCatalog.All.Select(d => d.IconKey));
         foreach (var definition in TaskCatalog.All)
         {
             Assert.Same(definition, TaskCatalog.Definition(definition.Task));
@@ -56,6 +57,7 @@ public class ScanTaskTests
                 (TaskFlowKind.PhotoSplit, ScanIntent.Photo, null),
                 (TaskFlowKind.PhotoSplit, ScanIntent.Photo, null),
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.Flatbed),
+                (TaskFlowKind.DocumentQueue, ScanIntent.Document, null),
             ],
             TaskCatalog.All.Select(d => (d.Flow, d.Intent, d.RequiredSource)));
     }
@@ -82,6 +84,7 @@ public class ScanTaskTests
         s.Adjustments.Brightness = 0.5;
         s.Adjustments.Descreen = true;
         s.Adjustments.BlackWhiteThreshold = 0.25;
+        s.Output.PdfSize = PdfSizePreset.Smallest;
         return s;
     }
 
@@ -117,15 +120,16 @@ public class ScanTaskTests
         {
             var s = TaskCatalog.Apply(task, current);
             return (s.Intent, s.Source, s.Resolution, s.Format, s.DocumentMultiPage, s.NamingTemplate,
-                    s.Adjustments.RestoreFadedColors, s.Adjustments.AutoEnhance);
+                    s.Adjustments.RestoreFadedColors, s.Adjustments.AutoEnhance, s.Output.PdfSize);
         });
         Assert.Equal(
             [
-                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false),
-                (ScanIntent.Document, ScanSource.DocumentFeeder, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false),
-                (ScanIntent.Photo, ScanSource.Flatbed, 600, OutputFormat.Jpeg, true, "Photo {date} {counter}", false, false),
-                (ScanIntent.Photo, ScanSource.Flatbed, 600, OutputFormat.Png, true, "Photo {date} {counter}", true, true),
-                (ScanIntent.Document, ScanSource.Flatbed, 150, OutputFormat.Jpeg, false, "Scan {date} {counter}", false, false),
+                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
+                (ScanIntent.Document, ScanSource.DocumentFeeder, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
+                (ScanIntent.Photo, ScanSource.Flatbed, 600, OutputFormat.Jpeg, true, "Photo {date} {counter}", false, false, PdfSizePreset.Standard),
+                (ScanIntent.Photo, ScanSource.Flatbed, 600, OutputFormat.Png, true, "Photo {date} {counter}", true, true, PdfSizePreset.Standard),
+                (ScanIntent.Document, ScanSource.Flatbed, 150, OutputFormat.Jpeg, false, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
+                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Compact),
             ],
             rows);
     }
@@ -279,9 +283,46 @@ public class ScanTaskTests
     }
 
     [Fact]
+    public void Summary_NamesANonDefaultPdfSize_ForPdfsOnly()
+    {
+        Assert.Equal("300 dpi · Color · Compact PDF", TaskCatalog.Summary(TaskCatalog.Apply(ScanTask.Email, new ScanSettings())));
+        var smallest = new ScanSettings { Resolution = 150, ColorMode = ColorMode.Grayscale };
+        smallest.Output.PdfSize = PdfSizePreset.Smallest;
+        Assert.Equal("150 dpi · Grayscale · Smallest PDF", TaskCatalog.Summary(smallest));
+        smallest.Format = OutputFormat.Jpeg;
+        Assert.Equal("150 dpi · Grayscale · JPEG", TaskCatalog.Summary(smallest));
+        var best = new ScanSettings();
+        best.Output.PdfSize = PdfSizePreset.Best;
+        Assert.Equal("300 dpi · Color · Best PDF", TaskCatalog.Summary(best));
+        Assert.Equal("300 dpi · Color · PDF", TaskCatalog.Summary(TaskCatalog.Apply(ScanTask.Document, best)));
+    }
+
+    [Fact]
+    public void Email_IsACompactDocumentPdf_OnAnyScanner()
+    {
+        var email = TaskCatalog.Apply(ScanTask.Email, Customized());
+        Assert.Equal((ScanIntent.Document, OutputFormat.Pdf, PdfSizePreset.Compact, 300, ColorMode.Color),
+                     (email.Intent, email.Format, email.Output.PdfSize, email.Resolution, email.ColorMode));
+        Assert.Equal(TaskFlowKind.DocumentQueue, TaskCatalog.FlowOf(email));
+        Assert.Equal("Scan page", TaskCatalog.Definition(ScanTask.Email).Steps[0].PrimaryActionLabel);
+        Assert.True(TaskCatalog.Availability(ScanTask.Email, new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder] }).IsAvailable);
+        Assert.True(TaskCatalog.Availability(ScanTask.Email, new ScannerCapabilities { Sources = [ScanSource.Flatbed] }).IsAvailable);
+        // Changing the size by hand keeps the task; leaving document mode ends it.
+        email.Output.PdfSize = PdfSizePreset.Best;
+        email.Source = ScanSource.DocumentFeeder;
+        Assert.True(TaskCatalog.Fits(ScanTask.Email, email));
+        email.Intent = ScanIntent.Photo;
+        Assert.False(TaskCatalog.Fits(ScanTask.Email, email));
+        // Without a stored task a compact PDF is still a plain document.
+        var untagged = TaskCatalog.Apply(ScanTask.Email, new ScanSettings());
+        untagged.TaskId = null;
+        Assert.Equal(ScanTask.Document, TaskCatalog.Infer(untagged));
+    }
+
+    [Fact]
     public void FileLabels()
     {
-        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan"],
+        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document"],
                      TaskCatalog.All.Select(d => d.FileLabel));
     }
 }

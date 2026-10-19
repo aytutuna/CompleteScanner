@@ -56,14 +56,16 @@ internal static class CompatFixtures
         settings.Adjustments.Descreen = true;
         settings.Adjustments.RestoreFadedColors = true;
         settings.Adjustments.BlackWhiteThreshold = 0.375;
+        settings.Output.PdfSize = PdfSizePreset.Compact;
         return settings;
     }
 
     /// <summary>
     /// <see cref="NonDefaultSettings"/> as a presets file written by the serializer before
-    /// tolerant decoding existed (indented, camelCase, every property present).
+    /// tolerant decoding existed (indented, camelCase, every property present), and before the
+    /// PDF size existed: it has no "output" object.
     /// </summary>
-    public const string CurrentFormatPresetsJson = """
+    public const string PresetsJsonBeforePdfSize = """
         [
           {
             "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
@@ -101,6 +103,14 @@ internal static class CompatFixtures
           }
         ]
         """;
+
+    /// <summary>
+    /// <see cref="NonDefaultSettings"/> as this version writes it: <see cref="PresetsJsonBeforePdfSize"/>
+    /// with the "output" object after the earlier keys.
+    /// </summary>
+    public static readonly string CurrentFormatPresetsJson = PresetsJsonBeforePdfSize.ReplaceLineEndings("\n").Replace(
+        "        \"blackWhiteThreshold\": 0.375\n      }\n",
+        "        \"blackWhiteThreshold\": 0.375\n      },\n      \"output\": {\n        \"pdfSize\": \"compact\"\n      }\n");
 
     /// <summary>Field-by-field equality, including the legacy OCR languages.</summary>
     public static void AssertSettingsEqual(ScanSettings expected, ScanSettings actual)
@@ -249,7 +259,7 @@ public class ModelsCompatTests
     public void KeysFromNewerVersions_AreIgnored()
     {
         var settings = Decode<ScanSettings>("""
-            {"resolution": 200, "duplex": "both", "output": {"pdfSize": "compact"}}
+            {"resolution": 200, "duplex": "both", "hologram": {"depth": 3}}
             """);
         var expected = new ScanSettings { Resolution = 200 };
         CompatFixtures.AssertSettingsEqual(expected, settings);
@@ -288,7 +298,7 @@ public class ModelsCompatTests
                 "intent", "source", "resolution", "colorMode", "format", "jpegQuality",
                 "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
                 "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
-                "pdfSearchable", "ocrLanguages", "adjustments",
+                "pdfSearchable", "ocrLanguages", "adjustments", "output",
             ],
             settings.RootElement.EnumerateObject().Select(p => p.Name));
         var adjustments = settings.RootElement.GetProperty("adjustments");
@@ -380,10 +390,73 @@ public class ModelsCompatTests
                 "intent", "source", "resolution", "colorMode", "format", "jpegQuality",
                 "destinationPath", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
                 "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
-                "pdfSearchable", "ocrLanguages", "adjustments", "taskId",
+                "pdfSearchable", "ocrLanguages", "adjustments", "taskId", "output",
             ],
             written.RootElement.EnumerateObject().Select(p => p.Name));
         Assert.Equal("document", written.RootElement.GetProperty("taskId").GetString());
+    }
+
+    // MARK: - PDF size (CONTRACTS.md, rule 6; Standard is the default for everyone)
+
+    [Fact]
+    public void PdfSize_StandardIsTheFirstMemberAndTheDefault()
+    {
+        Assert.Equal(["standard", "best", "compact", "smallest"],
+                     Enum.GetValues<PdfSizePreset>().Select(p => JsonSerializer.Serialize(p, StoreFiles.JsonOptions).Trim('"')));
+        Assert.Equal(PdfSizePreset.Standard, new ScanSettings().Output.PdfSize);
+        Assert.Equal(PdfSizePreset.Standard, new OutputOptions().PdfSize);
+    }
+
+    [Fact]
+    public void SettingsWithoutPdfSize_GetStandard_RestIntact()
+    {
+        var presets = Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize);
+        var expected = CompatFixtures.NonDefaultSettings();
+        expected.Output.PdfSize = PdfSizePreset.Standard;
+        CompatFixtures.AssertSettingsEqual(expected, presets[0].Settings);
+        Assert.Equal(PdfSizePreset.Standard, Decode<ScanSettings>("{}").Output.PdfSize);
+        Assert.Equal(PdfSizePreset.Standard, Decode<ScanSettings>("""{"output": {}}""").Output.PdfSize);
+    }
+
+    [Fact]
+    public void UnknownOrCorruptPdfSize_FallsBackToStandard_RestIntact()
+    {
+        foreach (string output in new[] { """{"pdfSize": "tiny"}""", """{"pdfSize": "Compact"}""", """{"pdfSize": 2}""",
+                                          """{"pdfSize": null}""", "\"compact\"", "null", "[]" })
+        {
+            var settings = Decode<ScanSettings>($$"""{"resolution": 150, "output": {{output}}, "pdfSearchable": false}""");
+            Assert.Equal(PdfSizePreset.Standard, settings.Output.PdfSize);
+            Assert.Equal(150, settings.Resolution);
+            Assert.False(settings.PdfSearchable);
+        }
+        var nested = Decode<ScanSettings>("""{"output": {"pdfSize": "smallest", "afterSave": "share"}}""");
+        Assert.Equal(PdfSizePreset.Smallest, nested.Output.PdfSize);
+    }
+
+    [Fact]
+    public void PdfSize_IsWrittenUnderOutput_AndRoundTrips()
+    {
+        foreach (var size in Enum.GetValues<PdfSizePreset>())
+        {
+            var settings = new ScanSettings();
+            settings.Output.PdfSize = size;
+            string json = CompatFixtures.Encode(settings);
+            using var written = JsonDocument.Parse(json);
+            Assert.Equal(["pdfSize"], written.RootElement.GetProperty("output").EnumerateObject().Select(p => p.Name));
+            Assert.Equal(size, Decode<ScanSettings>(json).Output.PdfSize);
+        }
+    }
+
+    [Fact]
+    public void Clone_CopiesTheOutputOptions()
+    {
+        var settings = new ScanSettings();
+        settings.Output.PdfSize = PdfSizePreset.Smallest;
+        var clone = settings.Clone();
+        Assert.Equal(PdfSizePreset.Smallest, clone.Output.PdfSize);
+        Assert.NotSame(settings.Output, clone.Output);
+        clone.Output.PdfSize = PdfSizePreset.Best;
+        Assert.Equal(PdfSizePreset.Smallest, settings.Output.PdfSize);
     }
 
     [Fact]

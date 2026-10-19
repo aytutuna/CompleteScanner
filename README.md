@@ -23,11 +23,23 @@ scanners** — including the Epson Perfection V39 II.
   inch dimensions shown) to scan only part of the glass.
 - **Full scan control**: resolution (from the scanner's real supported list), color /
   grayscale / black-and-white, JPEG quality, DPI-correct output.
+- **PDF size**: Best, Standard, Compact or Smallest. Smaller sizes store the page images at
+  a lower resolution (300, 200 or 150 dpi at most) and with more JPEG compression; gray pages,
+  and pages scanned in color that have no color, are stored as gray. The page size stays the
+  same and text recognition always reads the full scan. The size alone sets the JPEG quality
+  of PDF pages (Best 0.9, Standard 0.8, Compact 0.65 / 0.7 gray, Smallest 0.5 / 0.55 gray);
+  the JPEG quality setting is for JPEG files.
+  **Behavior change:** Standard is the new default for everyone, including existing settings
+  and presets; earlier versions always wrote full-resolution color JPEGs (choose Best for
+  that). On the Mac each page is encoded as a JPEG with ImageIO and handed to the CoreGraphics
+  PDF writer as a JPEG-backed image, which stores it unchanged; that the files come out as
+  small as on Windows still has to be confirmed on a Mac. Black & white pages are gray JPEGs
+  for now (no CCITT G4 yet).
 - **Image adjustments**: auto-enhance, brightness / contrast / saturation / sharpness,
   descreen (moiré reduction for printed material), faded-color restoration for old photos,
   black-and-white threshold.
 - **Start screen**: pick what you are scanning (Document to PDF, Multi-page from feeder,
-  Photos, Old photo restoration, Quick scan) and everything is set up for it, with a short
+  Photos, Old photo restoration, Quick scan, Email a document) and everything is set up for it, with a short
   guide on the scan screen. Tasks the connected scanner cannot do are greyed out with the
   reason. The app remembers the task you used last.
 - **Presets**: save your own settings as presets; they appear on the start screen too.

@@ -5,33 +5,35 @@ import ImageIO
 
 public enum PDFBuilder {
     /// Multi-page PDF; each page sized pixels/dpi*72 points. When `searchable`, run OCR per page
-    /// and draw an invisible text layer aligned with the words. `shouldContinue` is polled
+    /// and draw an invisible text layer aligned with the words. Each page image is stored as
+    /// `pdfSize` plans it (`PDFImageEncoding`): a JPEG at the size's quality, downsampled and
+    /// gray where the size says so; OCR reads the full pixels first. `shouldContinue` is polled
     /// before each page; returning false aborts with ScanError.cancelled.
     public static func makePDF(pages: [ScannedPage], searchable: Bool, ocrLanguages: [String],
-                               progress: ((String) -> Void)?,
+                               pdfSize: PDFSizePreset = .best, progress: ((String) -> Void)?,
                                shouldContinue: (() -> Bool)? = nil) throws -> Data {
         let output = NSMutableData()
         guard let consumer = CGDataConsumer(data: output as CFMutableData) else {
             throw ScanError.exportFailed("Could not create a PDF data consumer.")
         }
         try write(pages: pages, searchable: searchable, ocrLanguages: ocrLanguages,
-                  progress: progress, shouldContinue: shouldContinue, consumer: consumer)
+                  pdfSize: pdfSize, progress: progress, shouldContinue: shouldContinue, consumer: consumer)
         return output as Data
     }
 
     /// Stream the PDF straight to `url` — never holds the whole document in memory.
     public static func writePDF(pages: [ScannedPage], searchable: Bool, ocrLanguages: [String],
-                                to url: URL, progress: ((String) -> Void)?,
+                                pdfSize: PDFSizePreset = .best, to url: URL, progress: ((String) -> Void)?,
                                 shouldContinue: (() -> Bool)? = nil) throws {
         guard let consumer = CGDataConsumer(url: url as CFURL) else {
             throw ScanError.exportFailed("Could not write to \(url.path).")
         }
         try write(pages: pages, searchable: searchable, ocrLanguages: ocrLanguages,
-                  progress: progress, shouldContinue: shouldContinue, consumer: consumer)
+                  pdfSize: pdfSize, progress: progress, shouldContinue: shouldContinue, consumer: consumer)
     }
 
     private static func write(pages: [ScannedPage], searchable: Bool, ocrLanguages: [String],
-                              progress: ((String) -> Void)?, shouldContinue: (() -> Bool)?,
+                              pdfSize: PDFSizePreset, progress: ((String) -> Void)?, shouldContinue: (() -> Bool)?,
                               consumer: CGDataConsumer) throws {
         var defaultBox = CGRect(x: 0, y: 0, width: 612, height: 792)
         guard let context = CGContext(consumer: consumer, mediaBox: &defaultBox, nil) else {
@@ -74,7 +76,12 @@ public enum PDFBuilder {
             let boxData = Data(bytes: &box, count: MemoryLayout<CGRect>.size)
             let pageInfo = [kCGPDFContextMediaBox as String: boxData] as CFDictionary
             context.beginPDFPage(pageInfo)
-            context.draw(image, in: box)
+            // The stored image follows the PDF size; the page keeps its physical size. When the
+            // page cannot be encoded, its pixels are drawn as they are (CoreGraphics compresses them).
+            let imageDPI = PDFImageEncoding.effectiveDPI(imageWidth: image.width, pagePixelWidth: pixelWidth,
+                                                         pageDPI: page.dpi)
+            let stored = PDFImageEncoding.encodedPage(image, imageDPI: imageDPI, mode: page.colorMode, size: pdfSize)
+            context.draw(stored?.image ?? image, in: box)
 
             if searchable {
                 progress?("OCR page \(index + 1) of \(pages.count)…")

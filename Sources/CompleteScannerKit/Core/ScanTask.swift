@@ -11,6 +11,7 @@ public enum ScanTask: String, CaseIterable, Identifiable, Sendable {
     case photos
     case photoRestore
     case quickScan
+    case email
 
     public var id: String { rawValue }
 

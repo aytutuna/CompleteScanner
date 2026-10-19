@@ -221,17 +221,31 @@ public static class WpfImageCodec
     public static BitmapSource ToThumbnail(RgbaImage image, int maxSide) =>
         ToBitmapSource(ScanHistory.MakePreview(image, maxSide));
 
-    /// <summary>JPEG-encode for embedding into a PDF page (see Core.PdfBuilder).</summary>
-    public static byte[] EncodeJpeg(RgbaImage image, int dpi, double quality = 0.9)
+    /// <summary>
+    /// JPEG-encode for embedding into a PDF page (see Core.PdfBuilder and
+    /// Core.PdfImageEncoding). With <paramref name="gray"/> the page is converted with
+    /// <see cref="ColorAnalysis.GrayPixels(RgbaImage)"/> and written as a one-component JPEG,
+    /// which PdfBuilder embeds as /DeviceGray.
+    /// </summary>
+    public static byte[] EncodeJpeg(RgbaImage image, int dpi, double quality = 0.9, bool gray = false)
     {
         var encoder = new JpegBitmapEncoder
         {
-            QualityLevel = Math.Clamp((int)Math.Round(quality * 100), 1, 100),
+            QualityLevel = Math.Clamp((int)Math.Round(quality * 100, MidpointRounding.AwayFromZero), 1, 100),
         };
-        encoder.Frames.Add(BitmapFrame.Create(WithDpi(image, dpi)));
+        encoder.Frames.Add(BitmapFrame.Create(gray ? GrayWithDpi(image, dpi) : WithDpi(image, dpi)));
         using var stream = new MemoryStream();
         encoder.Save(stream);
         return stream.ToArray();
+    }
+
+    /// <summary>An RgbaImage as an 8-bit gray BitmapSource carrying real DPI metadata.</summary>
+    private static BitmapSource GrayWithDpi(RgbaImage image, int dpi)
+    {
+        var bitmap = BitmapSource.Create(image.Width, image.Height, dpi, dpi, PixelFormats.Gray8, null,
+                                         ColorAnalysis.GrayPixels(image), image.Width);
+        bitmap.Freeze();
+        return bitmap;
     }
 
     /// <summary>An RgbaImage as a BitmapSource carrying real DPI metadata (for encoders).</summary>

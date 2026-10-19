@@ -11,6 +11,7 @@ enum TaskSymbols {
         case "photos": return "photo.on.rectangle.angled"
         case "restore": return "wand.and.stars"
         case "quick": return "bolt"
+        case "email": return "envelope"
         default: return "scanner"
         }
     }

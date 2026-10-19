@@ -46,7 +46,7 @@ dotnet run --project CompleteScanner.App     # launch the app
 The main window has four tabs, like the macOS app:
 
 - **Start** — "What are you scanning?": one card per task (Document to PDF, Multi-page from
-  feeder, Photos, Old photo restoration, Quick scan) and the user's own presets, each badged
+  feeder, Photos, Old photo restoration, Quick scan, Email a document) and the user's own presets, each badged
   with its task. Picking a card sets everything up for that task, keeps the save folder, fits
   the settings to the connected scanner and opens **Scan**; a card the scanner cannot do (the
   feeder task on a flatbed-only scanner) is greyed out with the reason. On **Scan** a banner
@@ -83,6 +83,52 @@ Photos mode to see detection/deskew/review, or Document mode to build a PDF. Its
 **Document Feeder (ADF)** source delivers three numbered letter-size sheets per scan
 (Preview is for the flatbed, so it is off while the feeder is selected).
 
+### PDF size
+
+The inspector's **Output** section has a **PDF size** choice for PDF output: Best, Standard,
+Compact or Smallest, with a line under it saying what the chosen size does and how big the
+last saved PDF was (the status bar names the size too). `PdfImageEncoding` plans each page:
+
+| Size | Page images at most | JPEG quality (color / gray) | Color pages without color |
+|---|---|---|---|
+| Best | scan resolution | 0.90 / 0.90 | stay color |
+| Standard | 300 dpi | 0.80 / 0.80 | stored gray |
+| Compact | 200 dpi | 0.65 / 0.70 | stored gray |
+| Smallest | 150 dpi | 0.50 / 0.55 | stored gray |
+
+Pages are downsampled (box filter) only when they are more than 10 % finer than the limit;
+the page size in the PDF never changes, and text recognition reads the full-resolution page
+first. Grayscale and black & white pages are stored as one-component JPEGs (`/DeviceGray`). A
+color page counts as having no color when fewer than 0.1 % of its sampled pixels (every 4th
+pixel of every 4th row) differ by more than 32 between their strongest and weakest channel,
+so a stamp or a highlighter mark keeps the page in color. The size alone sets the JPEG
+quality of PDF pages; the JPEG quality setting (stored in the settings file, no control on
+Windows) applies to JPEG files only, as before. The **Email a document** task scans at 300 dpi
+and saves Compact.
+
+**Behavior change:** Standard is the default for everyone, including existing settings and
+presets, which have no size stored; earlier versions always wrote full-resolution RGB JPEGs
+at quality 0.9 (Best gives that again, except that gray pages are now stored gray). A size
+written by a newer version reads as Standard.
+
+Measured on two public-domain document scans (a 1903 letter on aged paper with purple
+typewriting and a red logo, 2673 × 3500 px; a 1900 menu on white paper with a blue stamp and
+pencil notes, 2550 × 3510 px), both saved as 300 dpi one-page PDFs through the app's save path:
+
+| Page | Color mode | Before | Best | Standard | Compact | Smallest |
+|---|---|---|---|---|---|---|
+| letter | Color | 1.17 MB | 1.17 MB | 856 KB | 259 KB | 119 KB |
+| letter | Grayscale | 1.11 MB | 1.07 MB | 778 KB | 263 KB | 111 KB |
+| letter | Black & White | 694 KB | 655 KB | 527 KB | 216 KB | 122 KB |
+| menu | Color | 1.48 MB | 1.48 MB | 905 KB | 309 KB | 160 KB |
+| menu | Grayscale | 1.40 MB | 1.36 MB | 833 KB | 314 KB | 157 KB |
+| menu | Black & White | 997 KB | 956 KB | 760 KB | 309 KB | 183 KB |
+| menu with its color removed, scanned in color | Color | 1.40 MB | 1.40 MB | 833 KB | 314 KB | 157 KB |
+
+Both real pages have color, so they stay color; the last row shows a color scan of a page
+without color being stored gray. Black & white pages are still JPEGs; CCITT G4 (a later
+step) would make them far smaller.
+
 ## Status — what's verified vs. what needs scanner hardware
 
 | Component | Status |
@@ -93,6 +139,7 @@ Photos mode to see detection/deskew/review, or Document mode to build a PDF. Its
 | Windows OCR (`WindowsOcrService`) | **Verified on Windows 11** against rendered text (line boxes come back in the bottom-left-origin Core convention); needs a language pack installed |
 | WIA backend (`WiaScannerBackend`) | **Experimental, untested against hardware** — documented WIA Automation flow; enumeration runs off the UI thread and re-polls (every 10 s backing off to 60 s while no scanner is present, every 60 s while one is), so scanners plugged in or unplugged later show up without a restart. The sources come from the device's document-handling capabilities, so a feeder-only scanner offers no flatbed and no preview; the feeder's sheet size and two-sided support are reported; a feeder batch uses one connection; WIA error codes become plain messages (an empty feeder says "Load paper in the feeder, then scan again."); a batch that fails partway keeps the sheets already scanned and tells the user how many were kept and why it stopped. Expect to iterate with a real scanner attached |
 | Task start screen (`TaskCatalog`, `TaskFlow`, `SettingsAdapter`) | Covered by `ScanTaskTests`, `TaskFlowTests`, `SettingsAdapterTests` and the task cases in `ModelsCompatTests` (same cases as macOS). Checked by driving the view model with the demo scanner and fake flatbed-only and feeder-only scanners (each task's settings, scans and file names, the task ending when the mode is changed by hand or the scanner lacks its source, the reasons on unavailable cards, presets and scanner switches going through `SettingsAdapter`, the task coming back after a restart), and by building the window without showing it: tabs, cards, banner, keyboard navigation, screen-reader names and the banner's announcements of the task and of each new step, rendered off screen in light and dark |
+| PDF sizes (`PdfImageEncoding`, `ColorAnalysis`) | Covered by `PdfImageEncodingTests`, `ColorAnalysisTests`, the gray-JPEG cases in `PdfBuilderTests` and the size cases in `ModelsCompatTests` and `ScanTaskTests` (same cases as macOS). Checked by driving the view model's real save path with two public-domain document scans in every color mode and size (image size and color space as planned, page size unchanged, every PDF renders through Windows.Data.Pdf close to the scan, sizes shrink in order; see [PDF size](#pdf-size)) and by building the window without showing it: the size control, its hint and last-size line, hiding it for other formats and Photos, the Email card, rendered off screen in light and dark |
 | One row per scanner (`DeviceMerge`, connection chooser) | Matching rules, ranking and the saved choice are covered by `DeviceMergeTests` (same table as macOS) and were checked by driving the view model with fake WIA and TWAIN backends: one row, WIA preferred, a later-appearing better connection taken over once the running scan ends, the user's choice saved and used at the next start, a choice made during a scan applied after it. A saved choice is keyed by the eSCL UUID or the model name, whichever the current set of connections yields, so it lapses when that set changes (see above). **Unverified with real drivers:** the names real WIA, eSCL and TWAIN drivers report; `devices.txt` collects them |
 | TWAIN backend (`Scanning/Twain`) | **Experimental, untested against hardware** — see [TWAIN](#twain) below. The scan logic in Core (negotiation choices, the acquisition state machine, strip and bitmap conversion, paper sizes, error mapping, 32-bit driver detection) is covered by `TwainScanLoopTests`, `TwainRasterTests` and `TwainScanRequestsTests` through a fake transport. Driving the view model with the real session class over a scripted transport checked flatbed, feeder, preview, empty feeder, a jam after two sheets (pages kept, reason shown), cancel while the driver is silent (returns at once, the source is reset and disabled in the background), switching away (the source is closed without waiting), the driver-window switch and its saved choice (kept when connecting finds the scanner off), a driver stuck while enabling (reported after the start limit, the next scan refused at once, the late scan stopped when the driver answers), and that a scanner only TWAIN lists is never opened unless the user picks it. On a PC without a TWAIN Data Source Manager the backend lists nothing and `devices.txt` says why; the app starts normally. **Unverified:** real drivers, NTwain's message loop with them, the TWAIN Working Group sample source (not installed here) |
 | eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — see [Network scanners](#network-scanners-escl) below for discovery, adding by address and HTTPS. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the feeder's own sheet size (at most 17 in tall); black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. The protocol client (`EsclClient`, `EsclScannerSession`) is covered by `EsclClientTests` through a stub HTTP handler. Checked against local fake eSCL servers (plain and HTTPS), not a real device |
@@ -128,6 +175,10 @@ Known divergences from the macOS app (all documented in the source):
   running operation is then cancelled and allowed to finish its cleanup before the window closes.
 - Rotating a saved JPEG re-encodes it at its own estimated quality (read from the file's
   quantization table) instead of a fixed 95%.
+- PDF sizes: Windows writes the planned JPEG into its own PDF writer. The Mac, whose PDFs come
+  from CoreGraphics, encodes the same plan with ImageIO and draws a JPEG-backed image, which
+  CoreGraphics is expected to store unchanged; this, and the resulting file sizes, still need
+  checking on a Mac (the Swift tests check the plan, the JPEGs and the size order).
 
 ## TWAIN
 
@@ -239,7 +290,9 @@ the connection chosen per scanner and the TWAIN connections that use their drive
 window), next to the network scanners added by address (`escl-hosts.json`) and their
 trusted certificates (`escl-trust.json`). The scan settings and presets remember the task
 they were set up for as text (`"taskId": "document"`), left out when there is none, so a task
-added by a newer version is kept by an older one. A first run starts without presets: the task
+added by a newer version is kept by an older one. They also hold an `"output"` object with the
+PDF size (`"output": {"pdfSize": "standard"}`); a file without it, or with a size this version
+does not know, reads as Standard. A first run starts without presets: the task
 cards replaced the five starter presets earlier versions wrote, and presets files that already
 hold them keep them. They load across versions the same way as on macOS (`../CONTRACTS.md`, rule 6): a value this version does not understand resets only
 that setting; a file that cannot be decoded is kept next to it as

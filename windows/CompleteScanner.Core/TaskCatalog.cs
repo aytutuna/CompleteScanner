@@ -14,7 +14,7 @@ public enum TaskFlowKind
 /// <summary>A task card: what it is called, how it looks and how its scans are handled.</summary>
 /// <param name="IconKey">
 /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-/// "photos", "restore", "quick".
+/// "photos", "restore", "quick", "email".
 /// </param>
 /// <param name="Intent">The scan mode the task uses.</param>
 /// <param name="RequiredSource">The source the task cannot work without; null when any source does.</param>
@@ -68,6 +68,12 @@ public static class TaskCatalog
             [new TaskStep("scan", "Scan an area",
                           "Preview the glass, drag over the part you need, then scan. Each scan is saved right away.",
                           "Scan", Repeats: true)]),
+        new(ScanTask.Email, "Email a document",
+            "Scan pages into a small PDF that is easy to attach to an email.",
+            "email", TaskFlowKind.DocumentQueue, ScanIntent.Document, null, "Document",
+            [new TaskStep("scan", "Scan each page",
+                          "Place a page face down on the glass and scan it. Repeat for every page, then save the PDF and attach it to your email.",
+                          "Scan page", Repeats: true)]),
     ];
 
     /// <summary>Every task, in start-screen order.</summary>
@@ -77,8 +83,8 @@ public static class TaskCatalog
 
     /// <summary>
     /// <paramref name="current"/> with the task's settings laid over it: mode, source,
-    /// resolution, color, format, JPEG quality, the photo and document switches, searchable
-    /// PDF, adjustments, file name and the task itself. The destination folder, the photo
+    /// resolution, color, format, JPEG quality, PDF size, the photo and document switches,
+    /// searchable PDF, adjustments, file name and the task itself. The destination folder, the photo
     /// detection tuning and the legacy OCR languages are kept. <paramref name="current"/> is
     /// not changed.
     /// </summary>
@@ -93,6 +99,7 @@ public static class TaskCatalog
         s.DocumentMultiPage = true;
         s.PdfSearchable = true;
         s.Adjustments = new AdjustmentSettings();
+        s.Output.PdfSize = PdfSizePreset.Standard;
         switch (task)
         {
             case ScanTask.Document:
@@ -127,6 +134,13 @@ public static class TaskCatalog
                 s.Resolution = 150;
                 s.Format = OutputFormat.Jpeg;
                 s.DocumentMultiPage = false;
+                s.NamingTemplate = "Scan {date} {counter}";
+                break;
+            case ScanTask.Email:
+                s.Intent = ScanIntent.Document;
+                s.Resolution = 300;
+                s.Format = OutputFormat.Pdf;
+                s.Output.PdfSize = PdfSizePreset.Compact;
                 s.NamingTemplate = "Scan {date} {counter}";
                 break;
         }
@@ -185,7 +199,16 @@ public static class TaskCatalog
             ? Definition(task).Flow
             : settings.Intent == ScanIntent.Photo ? TaskFlowKind.PhotoSplit : TaskFlowKind.DocumentQueue;
 
-    /// <summary>One line describing the settings, e.g. "300 dpi · Color · PDF".</summary>
-    public static string Summary(ScanSettings settings) =>
-        $"{settings.Resolution} dpi · {settings.ColorMode.Label()} · {settings.Format.Label()}";
+    /// <summary>
+    /// One line describing the settings, e.g. "300 dpi · Color · PDF". A PDF size other than
+    /// the default Standard is named ("300 dpi · Color · Compact PDF"), so the line stays short
+    /// enough for cards and the preset list.
+    /// </summary>
+    public static string Summary(ScanSettings settings)
+    {
+        string format = settings.Format == OutputFormat.Pdf && settings.Output.PdfSize != PdfSizePreset.Standard
+            ? $"{settings.Output.PdfSize.Label()} {settings.Format.Label()}"
+            : settings.Format.Label();
+        return $"{settings.Resolution} dpi · {settings.ColorMode.Label()} · {format}";
+    }
 }

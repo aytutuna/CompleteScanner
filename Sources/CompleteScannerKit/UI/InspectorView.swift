@@ -119,6 +119,9 @@ struct InspectorView: View {
                     }
                 }
             }
+            if state.settings.format == .pdf {
+                pdfSizeRow
+            }
             LabeledContent("Destination") {
                 HStack(spacing: 6) {
                     Text(destinationURL.lastPathComponent)
@@ -152,6 +155,32 @@ struct InspectorView: View {
                         namingHelpPopover
                     }
                 }
+            }
+        }
+    }
+
+    /// How small saved PDFs are made: one segment per size (largest first), the chosen size's
+    /// hint, and the size of the PDF saved last. Twin of the Windows inspector's "PDF size".
+    private var pdfSizeRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("PDF size")
+            Picker("PDF size", selection: $state.settings.output.pdfSize) {
+                ForEach(PDFSizePreset.displayOrder) { size in
+                    Text(size.label).tag(size)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .help(state.settings.output.pdfSize.hint)
+            Text(state.settings.output.pdfSize.hint)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let bytes = state.lastPDFByteCount {
+                Text("Last PDF: \(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))")
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
         }
     }

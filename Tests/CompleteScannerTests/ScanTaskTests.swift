@@ -23,13 +23,15 @@ private func customized() -> ScanSettings {
     s.adjustments.brightness = 0.5
     s.adjustments.descreen = true
     s.adjustments.blackWhiteThreshold = 0.25
+    s.output.pdfSize = .smallest
     return s
 }
 
 final class ScanTaskTests: XCTestCase {
 
     func test_rawValues_areTheStoredNames() {
-        XCTAssertEqual(ScanTask.allCases.map(\.rawValue), ["document", "feeder", "photos", "photoRestore", "quickScan"])
+        XCTAssertEqual(ScanTask.allCases.map(\.rawValue),
+                       ["document", "feeder", "photos", "photoRestore", "quickScan", "email"])
     }
 
     func test_tryParse_isExact() {
@@ -46,8 +48,9 @@ final class ScanTaskTests: XCTestCase {
     func test_catalog_listsEveryTaskOnce_inStartScreenOrder() {
         XCTAssertEqual(TaskCatalog.all.map(\.task), ScanTask.allCases)
         XCTAssertEqual(TaskCatalog.all.map(\.title),
-                       ["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan"])
-        XCTAssertEqual(TaskCatalog.all.map(\.iconKey), ["document", "feeder", "photos", "restore", "quick"])
+                       ["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
+                        "Email a document"])
+        XCTAssertEqual(TaskCatalog.all.map(\.iconKey), ["document", "feeder", "photos", "restore", "quick", "email"])
         for definition in TaskCatalog.all {
             XCTAssertEqual(TaskCatalog.definition(definition.task), definition)
             XCTAssertFalse(definition.subtitle.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -63,9 +66,10 @@ final class ScanTaskTests: XCTestCase {
     }
 
     func test_definitions_flowIntentAndRequiredSource() {
-        XCTAssertEqual(TaskCatalog.all.map(\.flow), [.documentQueue, .documentQueue, .photoSplit, .photoSplit, .documentQueue])
-        XCTAssertEqual(TaskCatalog.all.map(\.intent), [.document, .document, .photo, .photo, .document])
-        XCTAssertEqual(TaskCatalog.all.map(\.requiredSource), [nil, .documentFeeder, nil, nil, .flatbed])
+        XCTAssertEqual(TaskCatalog.all.map(\.flow),
+                       [.documentQueue, .documentQueue, .photoSplit, .photoSplit, .documentQueue, .documentQueue])
+        XCTAssertEqual(TaskCatalog.all.map(\.intent), [.document, .document, .photo, .photo, .document, .document])
+        XCTAssertEqual(TaskCatalog.all.map(\.requiredSource), [nil, .documentFeeder, nil, nil, .flatbed, nil])
     }
 
     func test_apply_keepsDestinationAndDetectionTuning_andLeavesTheInputAlone() {
@@ -92,14 +96,16 @@ final class ScanTaskTests: XCTestCase {
         let rows = ScanTask.allCases.map { task -> String in
             let s = TaskCatalog.apply(task, to: current)
             return "\(s.intent.rawValue) \(s.source.rawValue) \(s.resolution) \(s.format.rawValue) "
-                + "\(s.documentMultiPage) \(s.namingTemplate) \(s.adjustments.restoreFadedColors) \(s.adjustments.autoEnhance)"
+                + "\(s.documentMultiPage) \(s.namingTemplate) \(s.adjustments.restoreFadedColors) \(s.adjustments.autoEnhance) "
+                + s.output.pdfSize.rawValue
         }
         XCTAssertEqual(rows, [
-            "document flatbed 300 pdf true Scan {date} {counter} false false",
-            "document documentFeeder 300 pdf true Scan {date} {counter} false false",
-            "photo flatbed 600 jpeg true Photo {date} {counter} false false",
-            "photo flatbed 600 png true Photo {date} {counter} true true",
-            "document flatbed 150 jpeg false Scan {date} {counter} false false",
+            "document flatbed 300 pdf true Scan {date} {counter} false false standard",
+            "document documentFeeder 300 pdf true Scan {date} {counter} false false standard",
+            "photo flatbed 600 jpeg true Photo {date} {counter} false false standard",
+            "photo flatbed 600 png true Photo {date} {counter} true true standard",
+            "document flatbed 150 jpeg false Scan {date} {counter} false false standard",
+            "document flatbed 300 pdf true Scan {date} {counter} false false compact",
         ])
     }
 
@@ -255,7 +261,49 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertEqual(TaskCatalog.summary(s), "200 dpi \u{00B7} Black & White \u{00B7} TIFF")
     }
 
+    func test_summary_namesANonDefaultPDFSize_forPDFsOnly() {
+        XCTAssertEqual(TaskCatalog.summary(TaskCatalog.apply(.email, to: ScanSettings())),
+                       "300 dpi \u{00B7} Color \u{00B7} Compact PDF")
+        var smallest = ScanSettings()
+        smallest.resolution = 150
+        smallest.colorMode = .grayscale
+        smallest.output.pdfSize = .smallest
+        XCTAssertEqual(TaskCatalog.summary(smallest), "150 dpi \u{00B7} Grayscale \u{00B7} Smallest PDF")
+        smallest.format = .jpeg
+        XCTAssertEqual(TaskCatalog.summary(smallest), "150 dpi \u{00B7} Grayscale \u{00B7} JPEG")
+        var best = ScanSettings()
+        best.output.pdfSize = .best
+        XCTAssertEqual(TaskCatalog.summary(best), "300 dpi \u{00B7} Color \u{00B7} Best PDF")
+        XCTAssertEqual(TaskCatalog.summary(TaskCatalog.apply(.document, to: best)), "300 dpi \u{00B7} Color \u{00B7} PDF")
+    }
+
+    func test_email_isACompactDocumentPDF_onAnyScanner() {
+        var email = TaskCatalog.apply(.email, to: customized())
+        XCTAssertEqual(email.intent, .document)
+        XCTAssertEqual(email.format, .pdf)
+        XCTAssertEqual(email.output.pdfSize, .compact)
+        XCTAssertEqual(email.resolution, 300)
+        XCTAssertEqual(email.colorMode, .color)
+        XCTAssertEqual(TaskCatalog.flow(of: email), .documentQueue)
+        XCTAssertEqual(TaskCatalog.definition(.email).steps[0].primaryActionLabel, "Scan page")
+        XCTAssertTrue(TaskCatalog.availability(of: .email,
+                                               capabilities: ScannerCapabilities(sources: [.documentFeeder])).isAvailable)
+        XCTAssertTrue(TaskCatalog.availability(of: .email,
+                                               capabilities: ScannerCapabilities(sources: [.flatbed])).isAvailable)
+        // Changing the size by hand keeps the task; leaving document mode ends it.
+        email.output.pdfSize = .best
+        email.source = .documentFeeder
+        XCTAssertTrue(TaskCatalog.fits(.email, email))
+        email.intent = .photo
+        XCTAssertFalse(TaskCatalog.fits(.email, email))
+        // Without a stored task a compact PDF is still a plain document.
+        var untagged = TaskCatalog.apply(.email, to: ScanSettings())
+        untagged.taskId = nil
+        XCTAssertEqual(TaskCatalog.infer(untagged), .document)
+    }
+
     func test_fileLabels() {
-        XCTAssertEqual(TaskCatalog.all.map(\.fileLabel), ["Document", "Document", "Photo", "Restored photo", "Scan"])
+        XCTAssertEqual(TaskCatalog.all.map(\.fileLabel),
+                       ["Document", "Document", "Photo", "Restored photo", "Scan", "Document"])
     }
 }
