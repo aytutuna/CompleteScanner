@@ -235,9 +235,11 @@ extension AppState {
             guard let composed else { throw ScanError.exportFailed("The page could not be drawn.") }
             if flag.isCancelled { throw ScanError.cancelled }
             var saved: [URL] = []
+            // The card is a picture: a PDF or an image, never a text format.
+            let pageFormat = s.format.pageFormat
             do {
                 let url: URL
-                if s.format == .pdf {
+                if pageFormat == .pdf {
                     url = try self.outputURL(fileExtension: "pdf")
                     let page = ScannedPage(image: composed.page, dpi: pageDPI, colorMode: s.colorMode)
                     try await Task.detached(priority: .userInitiated) {
@@ -250,16 +252,16 @@ extension AppState {
                     saved.append(url)
                     self.notePDFSize(of: url)
                 } else {
-                    url = try self.outputURL(fileExtension: s.format.fileExtension)
+                    url = try self.outputURL(fileExtension: pageFormat.fileExtension)
                     let image = composed.page
                     try await Task.detached(priority: .userInitiated) {
-                        try ImageExporter.write(image, to: url, format: s.format, dpi: pageDPI,
+                        try ImageExporter.write(image, to: url, format: pageFormat, dpi: pageDPI,
                                                 jpegQuality: s.jpegQuality)
                     }.value
                     saved.append(url)
                 }
                 if s.taskOptions.idCardSaveSidesAsImages {
-                    let sideFormat: OutputFormat = s.format == .pdf ? .jpeg : s.format
+                    let sideFormat = s.format.imageFormatOrJPEG
                     let folder = url.deletingLastPathComponent()
                     let base = url.deletingPathExtension().lastPathComponent
                     var sides: [(PageSide, IdCardSide)] = [(.front, composed.front)]
@@ -289,7 +291,7 @@ extension AppState {
             self.clearIdCard(clearCanvas: true)
             self.resetFlow()
             let name = saved.first?.lastPathComponent ?? ""
-            let sizeNote = s.format == .pdf ? self.pdfSizeSuffix : ""
+            let sizeNote = pageFormat == .pdf ? self.pdfSizeSuffix : ""
             self.statusMessage = saved.count == 1
                 ? "Saved the ID card on one \(paper.label) page: \(name)\(sizeNote)"
                 : "Saved the ID card on one \(paper.label) page: \(name)\(sizeNote), and each side as an image"

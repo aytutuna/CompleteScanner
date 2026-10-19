@@ -22,6 +22,8 @@ public protocol FileActionService: AnyObject {
     func composeEmail(_ urls: [URL]) throws
     /// Puts the files (and the picture of a single image) on the pasteboard.
     func copy(_ content: ClipboardContent) throws
+    /// Puts `text` on the pasteboard (Copy Text on a scanned page).
+    func copyText(_ text: String) throws
 }
 
 /// The macOS implementation: NSWorkspace, NSSharingServicePicker, the Mail sharing service and
@@ -116,6 +118,14 @@ public final class SystemFileActions: FileActionService {
             guard pasteboard.writeObjects(content.files.map { $0 as NSURL }) else {
                 throw ScanError.exportFailed("The pasteboard did not take the files.")
             }
+        }
+    }
+
+    public func copyText(_ text: String) throws {
+        let pasteboard = NSPasteboard.general
+        _ = pasteboard.clearContents()
+        guard pasteboard.setString(text, forType: .string) else {
+            throw ScanError.exportFailed("The pasteboard did not take the text.")
         }
     }
 

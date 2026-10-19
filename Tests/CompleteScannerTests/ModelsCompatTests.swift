@@ -50,6 +50,7 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.adjustments.blackWhiteThreshold = 0.375
     settings.output.pdfSize = .compact
     settings.output.afterSave = .share
+    settings.output.alsoSaveText = true
     settings.duplex = .manual
     settings.backBinding = .shortEdge
     settings.paperSize = .a4
@@ -120,7 +121,8 @@ private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
             + "      \"documentMultiPage\" : false")
     .replacingOccurrences(
         of: "\"pdfSearchable\" : false",
-        with: "\"output\" : {\n        \"afterSave\" : \"share\",\n        \"pdfSize\" : \"compact\"\n      },\n"
+        with: "\"output\" : {\n        \"afterSave\" : \"share\",\n        \"alsoSaveText\" : true,\n"
+            + "        \"pdfSize\" : \"compact\"\n      },\n"
             + "      \"paperSize\" : \"a4\",\n      \"pdfSearchable\" : false")
     .replacingOccurrences(of: "\"colorMode\" : \"grayscale\"",
                           with: "\"backBinding\" : \"shortEdge\",\n      \"colorMode\" : \"grayscale\"")
@@ -365,6 +367,7 @@ final class ModelsCompatTests: XCTestCase {
         var expected = nonDefaultSettings()
         expected.output.pdfSize = .standard
         expected.output.afterSave = AfterSaveAction.none
+        expected.output.alsoSaveText = false
         expected.duplex = .off
         expected.backBinding = .longEdge
         expected.paperSize = .auto
@@ -395,7 +398,7 @@ final class ModelsCompatTests: XCTestCase {
             settings.output.pdfSize = size
             let data = try encode(settings)
             let output = try XCTUnwrap(try jsonObject(data)["output"] as? [String: Any])
-            XCTAssertEqual(Set(output.keys), ["pdfSize", "afterSave"])
+            XCTAssertEqual(Set(output.keys), ["pdfSize", "afterSave", "alsoSaveText"])
             XCTAssertEqual(output["pdfSize"] as? String, size.rawValue)
             XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: data).output.pdfSize, size)
         }
@@ -408,6 +411,41 @@ final class ModelsCompatTests: XCTestCase {
         XCTAssertEqual(copy.output.pdfSize, .smallest)
         copy.output.pdfSize = .best
         XCTAssertEqual(settings.output.pdfSize, .smallest)
+    }
+
+    // MARK: Text output (CONTRACTS.md, rule 6)
+
+    func test_formats_newCasesComeLast_withTheirStoredNames() throws {
+        XCTAssertEqual(OutputFormat.allCases.map(\.rawValue), ["pdf", "jpeg", "png", "tiff", "text", "word"])
+        XCTAssertEqual(try decode(ScanSettings.self, #"{"format": "word"}"#).format, .word)
+        XCTAssertEqual(try decode(ScanSettings.self, #"{"format": "text"}"#).format, .text)
+        // A format of a newer version is read as PDF.
+        XCTAssertEqual(try decode(ScanSettings.self, #"{"format": "markdown", "resolution": 150}"#).format, .pdf)
+    }
+
+    func test_alsoSaveText_offByDefault_andInFilesWithoutIt() throws {
+        XCTAssertFalse(ScanSettings().output.alsoSaveText)
+        XCTAssertFalse(try decode([Preset].self, presetsJSONBeforePDFSize)[0].settings.output.alsoSaveText)
+        XCTAssertFalse(try decode(ScanSettings.self, #"{"output": {"pdfSize": "compact", "afterSave": "share"}}"#)
+            .output.alsoSaveText)
+        for value in [#""yes""#, "1", "null", "{}"] {
+            let settings = try decode(ScanSettings.self,
+                                      #"{"output": {"pdfSize": "best", "alsoSaveText": "# + value + #"}, "resolution": 150}"#)
+            XCTAssertFalse(settings.output.alsoSaveText, value)
+            XCTAssertEqual(settings.output.pdfSize, .best, value)
+            XCTAssertEqual(settings.resolution, 150, value)
+        }
+        XCTAssertTrue(try decode(ScanSettings.self, #"{"output": {"alsoSaveText": true}}"#).output.alsoSaveText)
+    }
+
+    func test_copy_carriesAlsoSaveText() {
+        var settings = ScanSettings()
+        settings.output.alsoSaveText = true
+        var copy = settings
+        XCTAssertTrue(copy.output.alsoSaveText)
+        copy.output.alsoSaveText = false
+        XCTAssertTrue(settings.output.alsoSaveText)
+        XCTAssertNotEqual(settings.output, copy.output)
     }
 
     // MARK: Two-sided scanning and paper size (CONTRACTS.md, rule 6)

@@ -10,7 +10,7 @@ public class ScanTaskTests
     [Fact]
     public void RawValues_AreTheStoredNames()
     {
-        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy"],
+        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word"],
                      ScanTasks.All.Select(t => t.RawValue()));
     }
 
@@ -30,9 +30,9 @@ public class ScanTaskTests
     {
         Assert.Equal(ScanTasks.All, TaskCatalog.All.Select(d => d.Task));
         Assert.Equal(["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
-                      "Email a document", "Two-sided document", "ID card", "Copy"],
+                      "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word"],
                      TaskCatalog.All.Select(d => d.Title));
-        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy"],
+        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word"],
                      TaskCatalog.All.Select(d => d.IconKey));
         foreach (var definition in TaskCatalog.All)
         {
@@ -66,6 +66,7 @@ public class ScanTaskTests
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.DocumentFeeder),
                 (TaskFlowKind.IdCard, ScanIntent.Document, ScanSource.Flatbed),
                 (TaskFlowKind.Copy, ScanIntent.Document, null),
+                (TaskFlowKind.DocumentQueue, ScanIntent.Document, null),
             ],
             TaskCatalog.All.Select(d => (d.Flow, d.Intent, d.RequiredSource)));
     }
@@ -157,6 +158,7 @@ public class ScanTaskTests
                 (ScanIntent.Document, ScanSource.DocumentFeeder, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
                 (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "ID card {date}", false, false, PdfSizePreset.Standard),
                 (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Copy {date} {counter}", false, false, PdfSizePreset.Standard),
+                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Word, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard),
             ],
             rows);
     }
@@ -384,8 +386,25 @@ public class ScanTaskTests
             s.DocumentMultiPage = false;
             s.Format = OutputFormat.Jpeg;
         }));
-        // One PDF per scan is still a document.
+        // One PDF per scan is still a document, and so is the text of each scan.
         Assert.Equal(ScanTask.Document, Infer(s => s.DocumentMultiPage = false));
+        Assert.Equal(ScanTask.Document, Infer(s =>
+        {
+            s.DocumentMultiPage = false;
+            s.Format = OutputFormat.Text;
+        }));
+        // A Word document is Scan to Word, collected or not; from the feeder it is a feeder scan.
+        Assert.Equal(ScanTask.Word, Infer(s => s.Format = OutputFormat.Word));
+        Assert.Equal(ScanTask.Word, Infer(s =>
+        {
+            s.DocumentMultiPage = false;
+            s.Format = OutputFormat.Word;
+        }));
+        Assert.Equal(ScanTask.Feeder, Infer(s =>
+        {
+            s.Source = ScanSource.DocumentFeeder;
+            s.Format = OutputFormat.Word;
+        }));
         // A task of a newer version is inferred from the settings.
         Assert.Equal(ScanTask.Photos, Infer(s =>
         {
@@ -551,7 +570,40 @@ public class ScanTaskTests
     [Fact]
     public void FileLabels()
     {
-        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy"],
+        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy", "Document"],
                      TaskCatalog.All.Select(d => d.FileLabel));
+    }
+
+    [Fact]
+    public void Word_SavesTheTextAsAWordDocument_AndEndsWithAnotherFormat()
+    {
+        var definition = TaskCatalog.Definition(ScanTask.Word);
+        Assert.Equal("Scan page", definition.Steps[0].PrimaryActionLabel);
+        var s = TaskCatalog.Apply(ScanTask.Word, new ScanSettings());
+        Assert.Equal(OutputFormat.Word, s.Format);
+        Assert.True(s.DocumentMultiPage);
+        Assert.Equal(TaskFlowKind.DocumentQueue, TaskCatalog.FlowOf(s));
+        Assert.Equal("300 dpi · Color · Word (.docx)", TaskCatalog.Summary(s));
+        Assert.True(TaskCatalog.Fits(ScanTask.Word, s));
+        // Any source will do.
+        s.Source = ScanSource.DocumentFeeder;
+        Assert.True(TaskCatalog.Fits(ScanTask.Word, s));
+        // Another format ends the task.
+        s.Format = OutputFormat.Pdf;
+        Assert.False(TaskCatalog.Fits(ScanTask.Word, s));
+        Assert.Equal(TaskAvailability.Available,
+                     TaskCatalog.Availability(ScanTask.Word, new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder] }));
+    }
+
+    [Fact]
+    public void Apply_TurnsTheTextBesideAPdfOff()
+    {
+        var current = Customized();
+        current.Output.AlsoSaveText = true;
+        foreach (var task in ScanTasks.All)
+        {
+            Assert.False(TaskCatalog.Apply(task, current).Output.AlsoSaveText);
+        }
+        Assert.True(current.Output.AlsoSaveText);
     }
 }

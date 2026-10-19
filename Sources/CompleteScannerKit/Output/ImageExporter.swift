@@ -4,7 +4,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 public enum ImageExporter {
-    /// Write jpeg/png/tiff with DPI metadata. Throws ScanError.unsupported for .pdf.
+    /// Write jpeg/png/tiff with DPI metadata. Throws ScanError.unsupported for .pdf, .text and .word.
     public static func write(_ image: CGImage, to url: URL, format: OutputFormat, dpi: Int, jpegQuality: Double) throws {
         let utType: UTType
         switch format {
@@ -12,6 +12,7 @@ public enum ImageExporter {
         case .png: utType = .png
         case .tiff: utType = .tiff
         case .pdf: throw ScanError.unsupported("Use PDFBuilder to write PDF files.")
+        case .text, .word: throw ScanError.unsupported("Use TextExport or DocxWriter to write text.")
         }
 
         guard let destination = CGImageDestinationCreateWithURL(url as CFURL,
@@ -30,7 +31,7 @@ public enum ImageExporter {
         case .tiff:
             // 5 = LZW compression.
             properties[kCGImagePropertyTIFFDictionary] = [kCGImagePropertyTIFFCompression: 5]
-        case .png, .pdf:
+        case .png, .pdf, .text, .word:
             break
         }
 

@@ -126,7 +126,7 @@ final class SaveActionsTests: XCTestCase {
             let data = try encodeSettings(settings)
             let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
             let output = try XCTUnwrap(object["output"] as? [String: Any])
-            XCTAssertEqual(Set(output.keys), ["pdfSize", "afterSave"])
+            XCTAssertEqual(Set(output.keys), ["pdfSize", "afterSave", "alsoSaveText"])
             XCTAssertEqual(output["afterSave"] as? String, action.rawValue)
             XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: data).output.afterSave, action)
         }

@@ -18,7 +18,7 @@ public enum TaskFlowKind
 /// <summary>A task card: what it is called, how it looks and how its scans are handled.</summary>
 /// <param name="IconKey">
 /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-/// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy".
+/// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word".
 /// </param>
 /// <param name="Intent">The scan mode the task uses.</param>
 /// <param name="RequiredSource">The source the task cannot work without; null when any source does.</param>
@@ -94,6 +94,12 @@ public static class TaskCatalog
             [new TaskStep("scan", "Make a copy",
                           "Place the original face down on the glass, or load the feeder, and copy. It prints at real size; choose the printer and the number of copies first.",
                           "Copy", Repeats: true)]),
+        new(ScanTask.Word, "Scan to Word",
+            "Turn printed pages into a Word document you can edit.",
+            "word", TaskFlowKind.DocumentQueue, ScanIntent.Document, null, "Document",
+            [new TaskStep("scan", "Scan each page",
+                          "Place a page face down on the glass and scan it. Repeat for every page, then save: the text is read from the pages into a Word document.",
+                          "Scan page", Repeats: true)]),
     ];
 
     /// <summary>Every task, in start-screen order.</summary>
@@ -103,7 +109,8 @@ public static class TaskCatalog
 
     /// <summary>
     /// <paramref name="current"/> with the task's settings laid over it: mode, source,
-    /// resolution, color, format, JPEG quality, PDF size, the after-save action, the photo and
+    /// resolution, color, format, JPEG quality, PDF size, the after-save action, the text beside a
+    /// PDF (off: only the Scan to Word task saves text), the photo and
     /// document switches, searchable PDF, adjustments, two-sided scanning, skipping blank pages,
     /// crop and straighten,
     /// file name and the task itself. The destination folder, the photo detection tuning, the
@@ -130,6 +137,7 @@ public static class TaskCatalog
         s.Adjustments = new AdjustmentSettings();
         s.Output.PdfSize = PdfSizePreset.Standard;
         s.Output.AfterSave = AfterSaveAction.None;
+        s.Output.AlsoSaveText = false;
         s.Duplex = DuplexMode.Off;
         s.Document.RemoveBlankPages = task == ScanTask.TwoSided;
         s.Document.AutoCrop = false;
@@ -198,6 +206,12 @@ public static class TaskCatalog
                 s.Format = OutputFormat.Pdf;
                 s.NamingTemplate = "Copy {date} {counter}";
                 break;
+            case ScanTask.Word:
+                s.Intent = ScanIntent.Document;
+                s.Resolution = 300;
+                s.Format = OutputFormat.Word;
+                s.NamingTemplate = "Scan {date} {counter}";
+                break;
         }
         s.TaskId = task.RawValue();
         return s;
@@ -218,7 +232,8 @@ public static class TaskCatalog
         {
             return settings.Duplex == DuplexMode.Off ? ScanTask.Feeder : ScanTask.TwoSided;
         }
-        if (!settings.DocumentMultiPage && settings.Format != OutputFormat.Pdf) return ScanTask.QuickScan;
+        if (settings.Format == OutputFormat.Word) return ScanTask.Word;
+        if (!settings.DocumentMultiPage && settings.Format.IsImageFormat()) return ScanTask.QuickScan;
         return ScanTask.Document;
     }
 
@@ -250,15 +265,17 @@ public static class TaskCatalog
 
     /// <summary>
     /// The settings still do what the task is for: the same scan mode, and the task's
-    /// required source; for the two-sided task, both sides. Changing the mode by hand (or
-    /// choosing one side), or a scanner without that source, ends the task.
+    /// required source; for the two-sided task, both sides; for Scan to Word, a Word document.
+    /// Changing the mode by hand (or choosing one side, or another format), or a scanner without
+    /// that source, ends the task.
     /// </summary>
     public static bool Fits(ScanTask task, ScanSettings settings)
     {
         var definition = Definition(task);
         return settings.Intent == definition.Intent
                && (definition.RequiredSource is not { } source || settings.Source == source)
-               && (task != ScanTask.TwoSided || settings.Duplex != DuplexMode.Off);
+               && (task != ScanTask.TwoSided || settings.Duplex != DuplexMode.Off)
+               && (task != ScanTask.Word || settings.Format == OutputFormat.Word);
     }
 
     /// <summary>

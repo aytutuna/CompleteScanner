@@ -274,12 +274,12 @@ struct InspectorView: View {
 
     private var outputSection: some View {
         Section("Output") {
-            Picker("Format", selection: $state.settings.format) {
+            Picker("Format", selection: shownFormatBinding) {
                 ForEach(availableFormats) { format in
                     Text(format.label).tag(format)
                 }
             }
-            if state.settings.format == .jpeg {
+            if shownFormat == .jpeg {
                 LabeledContent("JPEG quality") {
                     HStack(spacing: 8) {
                         Slider(value: $state.settings.jpegQuality, in: 0.5...1)
@@ -290,7 +290,7 @@ struct InspectorView: View {
                     }
                 }
             }
-            if state.settings.format == .pdf {
+            if shownFormat == .pdf {
                 pdfSizeRow
             }
             afterSavePicker
@@ -368,8 +368,21 @@ struct InspectorView: View {
         .help(state.settings.output.afterSave.hint)
     }
 
+    /// Every format for documents, the image formats for photos (`OutputFormat.offered(for:)`).
     private var availableFormats: [OutputFormat] {
-        state.settings.intent == .document ? [.pdf, .jpeg, .png, .tiff] : [.jpeg, .png, .tiff]
+        OutputFormat.offered(for: state.settings.intent)
+    }
+
+    /// The format a save uses, as the picker shows it: photos are saved as an image, so a PDF or
+    /// text format shows as JPEG there (the setting itself is kept for documents until another
+    /// format is picked). Twin of the Windows inspector's format box.
+    private var shownFormat: OutputFormat {
+        state.settings.intent == .photo ? state.settings.format.imageFormatOrJPEG : state.settings.format
+    }
+
+    private var shownFormatBinding: Binding<OutputFormat> {
+        Binding(get: { shownFormat },
+                set: { state.settings.format = $0 })
     }
 
     private var destinationURL: URL {
@@ -439,12 +452,35 @@ struct InspectorView: View {
 
     private var documentSection: some View {
         Section("Document") {
-            Toggle("Collect pages, save one PDF", isOn: $state.settings.documentMultiPage)
+            Toggle("Collect pages, then \(state.settings.format.saveTitle)", isOn: $state.settings.documentMultiPage)
             Toggle("Searchable PDF (OCR)", isOn: $state.settings.pdfSearchable)
                 .help("Text is recognized in any language automatically — nothing to configure.")
+            alsoSaveTextRow
             blankPagesRow
             geometryRow
         }
+    }
+
+    /// The text of the pages in a .txt file beside each PDF; OCR reads each page once for both. Off,
+    /// with the reason, when the save writes no PDF, and in the ID card and Copy tasks, whose PDFs
+    /// are saved without it. Twin of the Windows inspector's "Also save text".
+    private var alsoSaveTextRow: some View {
+        let flow = TaskCatalog.flow(of: state.settings)
+        let savesPDF = state.settings.format.savesPDF(collectsPages: state.settings.documentMultiPage)
+        let hint: String
+        switch flow {
+        case .idCard:
+            hint = "Not for ID cards: the card is saved as a picture, without its text."
+        case .copy:
+            hint = "Not for copies: the PDF of a copy is saved without its text."
+        default:
+            hint = savesPDF
+                ? "Writes the text of the pages beside each PDF, in a .txt file with the same name."
+                : "Only for PDFs: Word and text files are the text already, and images have none."
+        }
+        return Toggle("Also save text (.txt)", isOn: $state.settings.output.alsoSaveText)
+            .disabled(!savesPDF || flow != .documentQueue)
+            .help(hint)
     }
 
     /// Crop and straighten: run on pages collected in the queue only, where a changed page shows a

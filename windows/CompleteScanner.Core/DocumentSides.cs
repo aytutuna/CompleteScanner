@@ -179,7 +179,7 @@ public static class DocumentSides
         if (flow != TaskFlowKind.DocumentQueue)
             return "Turning the stack over by hand works for documents, not photos.";
         if (!settings.DocumentMultiPage)
-            return "Turning the stack over by hand needs “Collect pages, then Save PDF”.";
+            return $"Turning the stack over by hand needs “Collect pages, then {OutputFormats.SaveTitle(settings.Format)}”.";
         return null;
     }
 

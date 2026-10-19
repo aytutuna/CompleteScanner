@@ -51,7 +51,7 @@ public partial class MainWindow : Window
         MainTabs.SelectedItem = ViewModel.IsFirstRun ? StartTab : ScanTab;
 
         ColorModeBox.ItemsSource = Enum.GetValues<ColorMode>().Select(m => m.Label());
-        FormatBox.ItemsSource = Enum.GetValues<OutputFormat>().Select(f => f.Label());
+        FormatBox.ItemsSource = OutputFormats.Offered(ViewModel.Settings.Intent).Select(f => f.Label()).ToList();
         BuildPdfSizeSegments();
         BuildBlankSensitivitySegments();
         AfterSaveBox.ItemsSource = AfterSaveItems();
@@ -64,7 +64,8 @@ public partial class MainWindow : Window
         {
             IdCardPaperBox.Items.Add(new ComboBoxItem { Content = ViewModel.IdCardPaperChoiceLabel(paper), Tag = paper });
         }
-        foreach (var format in Enum.GetValues<OutputFormat>())
+        // The card is a picture: a PDF or an image.
+        foreach (var format in Enum.GetValues<OutputFormat>().Where(f => OutputFormats.PageFormat(f) == f))
         {
             IdCardFormatBox.Items.Add(new ComboBoxItem { Content = format.Label(), Tag = format });
         }
@@ -283,7 +284,10 @@ public partial class MainWindow : Window
         int saveCount = PageFilter.PagesToSave(queued, ViewModel.Settings.Document).Count;
         PageStrip.Visibility = pageCount > 0 ? Visibility.Visible : Visibility.Collapsed;
         PageStripLabel.Text = PageFilter.QueueSummary(queued, ViewModel.Settings.Document);
-        SavePdfButton.Content = saveCount > 0 ? $"Save PDF ({saveCount} page{(saveCount == 1 ? "" : "s")})" : "Save PDF";
+        SavePdfButton.Content = OutputFormats.SaveTitle(ViewModel.Settings.Format, saveCount);
+        // The PDF glyph for a PDF, a plain document for a Word document or text file.
+        global::CompleteScanner.App.Icon.SetGlyph(SavePdfButton,
+            OutputFormats.QueueFormat(ViewModel.Settings.Format) == OutputFormat.Pdf ? "" : "");
         // A narrow inspector trims the label; the tooltip keeps the full text.
         SavePdfButton.ToolTip = pageCount > 0 && saveCount == 0 ? PageFilter.NothingToSaveMessage : SavePdfButton.Content;
         ToolTipService.SetShowOnDisabled(SavePdfButton, true);
@@ -669,14 +673,16 @@ public partial class MainWindow : Window
                 if (!Equals(item.Content, label)) item.Content = label;
             }
             IdCardPaperBox.SelectedItem = IdCardPaperBox.Items.Cast<ComboBoxItem>().First(i => (IdCardPaper)i.Tag == s.TaskOptions.IdCardPaper);
-            IdCardFormatBox.SelectedItem = IdCardFormatBox.Items.Cast<ComboBoxItem>().First(i => (OutputFormat)i.Tag == s.Format);
+            var cardFormat = OutputFormats.PageFormat(s.Format);
+            IdCardFormatBox.SelectedItem = IdCardFormatBox.Items.Cast<ComboBoxItem>().First(i => (OutputFormat)i.Tag == cardFormat);
             IdCardSidesBox.IsChecked = s.TaskOptions.IdCardSaveSidesAsImages;
         }
         finally
         {
             _updatingUi = wasUpdating;
         }
-        IdCardSaveButton.Content = s.Format == OutputFormat.Pdf ? "Save PDF" : $"Save {s.Format.Label()}";
+        var savedAs = OutputFormats.PageFormat(s.Format);
+        IdCardSaveButton.Content = savedAs == OutputFormat.Pdf ? "Save PDF" : $"Save {savedAs.Label()}";
         IdCardSaveButton.ToolTip = $"Save {(back is null ? "the front" : "both sides")} on one {ViewModel.IdCardPaperSize.Label()} page";
 
         bool busy = ViewModel.IsBusy;
@@ -1172,9 +1178,10 @@ public partial class MainWindow : Window
             ModeDocument.IsChecked = s.Intent == ScanIntent.Document;
             ModePhotos.IsChecked = s.Intent == ScanIntent.Photo;
             ColorModeBox.SelectedItem = s.ColorMode.Label();
-            FormatBox.SelectedItem = s.Format.Label();
+            SyncFormatChoices();
             MultiPageBox.IsChecked = s.DocumentMultiPage;
             SearchableBox.IsChecked = s.PdfSearchable;
+            AlsoSaveTextBox.IsChecked = s.Output.AlsoSaveText;
             AutoSplitBox.IsChecked = s.PhotoAutoSplit;
             DeskewBox.IsChecked = s.PhotoAutoDeskew;
             AutoEnhanceBox.IsChecked = s.Adjustments.AutoEnhance;
@@ -1225,12 +1232,9 @@ public partial class MainWindow : Window
         {
             s.ColorMode = Enum.GetValues<ColorMode>().FirstOrDefault(v => v.Label() == colorLabel);
         }
-        if (FormatBox.SelectedItem is string formatLabel)
-        {
-            s.Format = Enum.GetValues<OutputFormat>().FirstOrDefault(v => v.Label() == formatLabel);
-        }
         s.DocumentMultiPage = MultiPageBox.IsChecked == true;
         s.PdfSearchable = SearchableBox.IsChecked == true;
+        s.Output.AlsoSaveText = AlsoSaveTextBox.IsChecked == true;
         if (PdfSizeSegments.Children.OfType<RadioButton>().FirstOrDefault(b => b.IsChecked == true) is { Tag: PdfSizePreset size })
         {
             s.Output.PdfSize = size;
@@ -1252,9 +1256,10 @@ public partial class MainWindow : Window
 
         DocumentOptions.Visibility = s.Intent == ScanIntent.Document ? Visibility.Visible : Visibility.Collapsed;
         PhotoOptions.Visibility = s.Intent == ScanIntent.Photo ? Visibility.Visible : Visibility.Collapsed;
-        SyncPdfSizeOptions();
+        SyncFormatChoices();
         ViewModel.SettingsEdited();
         // After the edit: a change the Copy task does not fit ends it, which turns these switches on.
+        SyncPdfSizeOptions();
         SyncBlankPageOptions();
         SyncGeometryOptions();
         RefreshFromViewModel();
@@ -1419,13 +1424,68 @@ public partial class MainWindow : Window
         PdfSizeSegments.Columns = PdfSizePresets.DisplayOrder.Count;
     }
 
-    /// <summary>The size choice is shown for PDF output only, with the chosen size's hint under it.</summary>
+    /// <summary>
+    /// The size choice is shown for PDF output only, with the chosen size's hint under it. The text
+    /// beside a PDF can be asked for whenever a save of document pages writes a PDF: the ID card's
+    /// and a copy's PDFs are saved without it, so there the switch is off and says why.
+    /// </summary>
     private void SyncPdfSizeOptions()
     {
         var s = ViewModel.Settings;
         PdfSizeOptions.Visibility = s.Intent == ScanIntent.Document && s.Format == OutputFormat.Pdf
             ? Visibility.Visible : Visibility.Collapsed;
         PdfSizeHint.Text = s.Output.PdfSize.Hint();
+        MultiPageBox.Content = $"Collect pages, then {OutputFormats.SaveTitle(s.Format)}";
+        var flow = TaskCatalog.FlowOf(s);
+        bool savesPdf = OutputFormats.SavesPdf(s.Format, s.DocumentMultiPage);
+        AlsoSaveTextBox.IsEnabled = savesPdf && flow == TaskFlowKind.DocumentQueue;
+        string hint = flow switch
+        {
+            TaskFlowKind.IdCard => "Not for ID cards: the card is saved as a picture, without its text.",
+            TaskFlowKind.Copy => "Not for copies: the PDF of a copy is saved without its text.",
+            _ when savesPdf => "Writes the text of the pages beside each PDF, in a .txt file with the same name.",
+            _ => "Only for PDFs: Word and text files are the text already, and images have none.",
+        };
+        AlsoSaveTextBox.ToolTip = hint;
+        AutomationProperties.SetHelpText(AlsoSaveTextBox, hint);
+        ToolTipService.SetShowOnDisabled(AlsoSaveTextBox, true);
+    }
+
+    /// <summary>
+    /// The formats the mode offers (<see cref="OutputFormats.Offered"/>), with the format a save
+    /// uses chosen: photos are saved as an image, so a PDF or text format shows as JPEG there
+    /// (the setting itself is kept for documents).
+    /// </summary>
+    private void SyncFormatChoices()
+    {
+        var s = ViewModel.Settings;
+        var offered = OutputFormats.Offered(s.Intent);
+        var labels = offered.Select(f => f.Label()).ToList();
+        bool wasUpdating = _updatingUi;
+        _updatingUi = true;
+        try
+        {
+            if (FormatBox.ItemsSource is not IEnumerable<string> current || !current.SequenceEqual(labels))
+            {
+                FormatBox.ItemsSource = labels;
+            }
+            var shown = offered.Contains(s.Format) ? s.Format : OutputFormats.ImageFormatOrJpeg(s.Format);
+            FormatBox.SelectedItem = shown.Label();
+        }
+        finally
+        {
+            _updatingUi = wasUpdating;
+        }
+    }
+
+    /// <summary>A format picked in the inspector: the only place the setting is read from the box.</summary>
+    private void Format_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingUi || !IsLoaded || FormatBox.SelectedItem is not string label) return;
+        var format = Enum.GetValues<OutputFormat>().FirstOrDefault(v => v.Label() == label);
+        if (ViewModel.Settings.Format == format) return;
+        ViewModel.Settings.Format = format;
+        Setting_Changed(sender, e);
     }
 
     // MARK: - Adjustment sliders (centered -100...100 scale, see AdjustmentScale)
@@ -1704,6 +1764,14 @@ public partial class MainWindow : Window
 
     private static Guid? PageIdOf(object sender) =>
         sender is FrameworkElement { Tag: Guid id } ? id : null;
+
+    /// <summary>Copy Text in a page's menu: its text, read with OCR, on the clipboard.</summary>
+    private async void PageCopyText_Click(object sender, RoutedEventArgs e)
+    {
+        if (PageIdOf(sender) is not { } id) return;
+        await ViewModel.CopyPageText(id);
+        RefreshFromViewModel();
+    }
 
     private void PageLeft_Click(object sender, RoutedEventArgs e)
     {

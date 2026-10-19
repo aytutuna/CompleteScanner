@@ -41,7 +41,7 @@ public sealed class SavedFileItem(SavedFile file) : INotifyPropertyChanged
         var other => other.TrimStart('.').ToUpperInvariant(),
     };
     /// <summary>Icon font glyph shown until (or instead of) the thumbnail.</summary>
-    public string PlaceholderGlyph => File.IsPdf ? "" : "";
+    public string PlaceholderGlyph => File.IsPdf || File.IsTextDocument ? "" : "";
     public Visibility RotateVisibility => File.ImageFormat is null ? Visibility.Collapsed : Visibility.Visible;
 
     private BitmapSource? _thumbnail;

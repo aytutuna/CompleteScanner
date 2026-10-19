@@ -40,7 +40,7 @@ final class ScanTaskTests: XCTestCase {
 
     func test_rawValues_areTheStoredNames() {
         XCTAssertEqual(ScanTask.allCases.map(\.rawValue),
-                       ["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy"])
+                       ["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word"])
     }
 
     func test_tryParse_isExact() {
@@ -58,9 +58,9 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertEqual(TaskCatalog.all.map(\.task), ScanTask.allCases)
         XCTAssertEqual(TaskCatalog.all.map(\.title),
                        ["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
-                        "Email a document", "Two-sided document", "ID card", "Copy"])
+                        "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word"])
         XCTAssertEqual(TaskCatalog.all.map(\.iconKey),
-                       ["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy"])
+                       ["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word"])
         for definition in TaskCatalog.all {
             XCTAssertEqual(TaskCatalog.definition(definition.task), definition)
             XCTAssertFalse(definition.subtitle.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -81,11 +81,12 @@ final class ScanTaskTests: XCTestCase {
     func test_definitions_flowIntentAndRequiredSource() {
         XCTAssertEqual(TaskCatalog.all.map(\.flow),
                        [.documentQueue, .documentQueue, .photoSplit, .photoSplit, .documentQueue, .documentQueue,
-                        .documentQueue, .idCard, .copy])
+                        .documentQueue, .idCard, .copy, .documentQueue])
         XCTAssertEqual(TaskCatalog.all.map(\.intent),
-                       [.document, .document, .photo, .photo, .document, .document, .document, .document, .document])
+                       [.document, .document, .photo, .photo, .document, .document, .document, .document, .document,
+                        .document])
         XCTAssertEqual(TaskCatalog.all.map(\.requiredSource),
-                       [nil, .documentFeeder, nil, nil, .flatbed, nil, .documentFeeder, .flatbed, nil])
+                       [nil, .documentFeeder, nil, nil, .flatbed, nil, .documentFeeder, .flatbed, nil, nil])
     }
 
     func test_apply_keepsDestinationAndDetectionTuning_andLeavesTheInputAlone() {
@@ -134,6 +135,7 @@ final class ScanTaskTests: XCTestCase {
             "document documentFeeder 300 pdf true Scan {date} {counter} false false standard",
             "document flatbed 300 pdf true ID card {date} false false standard",
             "document flatbed 300 pdf true Copy {date} {counter} false false standard",
+            "document flatbed 300 word true Scan {date} {counter} false false standard",
         ])
     }
 
@@ -349,8 +351,22 @@ final class ScanTaskTests: XCTestCase {
             $0.documentMultiPage = false
             $0.format = .jpeg
         }, .quickScan)
-        // One PDF per scan is still a document.
+        // One PDF per scan is still a document, and so is the text of each scan.
         XCTAssertEqual(infer { $0.documentMultiPage = false }, .document)
+        XCTAssertEqual(infer {
+            $0.documentMultiPage = false
+            $0.format = .text
+        }, .document)
+        // A Word document is Scan to Word, collected or not; from the feeder it is a feeder scan.
+        XCTAssertEqual(infer { $0.format = .word }, .word)
+        XCTAssertEqual(infer {
+            $0.documentMultiPage = false
+            $0.format = .word
+        }, .word)
+        XCTAssertEqual(infer {
+            $0.source = .documentFeeder
+            $0.format = .word
+        }, .feeder)
         // A task of a newer version is inferred from the settings.
         XCTAssertEqual(infer {
             $0.taskId = "receipt"
@@ -527,6 +543,35 @@ final class ScanTaskTests: XCTestCase {
 
     func test_fileLabels() {
         XCTAssertEqual(TaskCatalog.all.map(\.fileLabel),
-                       ["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy"])
+                       ["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy",
+                        "Document"])
+    }
+
+    func test_word_savesTheTextAsAWordDocument_andEndsWithAnotherFormat() {
+        let definition = TaskCatalog.definition(.word)
+        XCTAssertEqual(definition.steps[0].primaryActionLabel, "Scan page")
+        var s = TaskCatalog.apply(.word, to: ScanSettings())
+        XCTAssertEqual(s.format, .word)
+        XCTAssertTrue(s.documentMultiPage)
+        XCTAssertEqual(TaskCatalog.flow(of: s), .documentQueue)
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi \u{00B7} Color \u{00B7} Word (.docx)")
+        XCTAssertTrue(TaskCatalog.fits(.word, s))
+        // Any source will do.
+        s.source = .documentFeeder
+        XCTAssertTrue(TaskCatalog.fits(.word, s))
+        // Another format ends the task.
+        s.format = .pdf
+        XCTAssertFalse(TaskCatalog.fits(.word, s))
+        let feederOnly = ScannerCapabilities(sources: [.documentFeeder], supportsOverview: false)
+        XCTAssertEqual(TaskCatalog.availability(of: .word, capabilities: feederOnly), .available)
+    }
+
+    func test_apply_turnsTheTextBesideAPDFOff() {
+        var current = customized()
+        current.output.alsoSaveText = true
+        for task in ScanTask.allCases {
+            XCTAssertFalse(TaskCatalog.apply(task, to: current).output.alsoSaveText, task.rawValue)
+        }
+        XCTAssertTrue(current.output.alsoSaveText)
     }
 }

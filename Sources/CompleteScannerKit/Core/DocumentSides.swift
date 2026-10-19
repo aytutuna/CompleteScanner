@@ -184,7 +184,7 @@ public enum DocumentSides {
             return "Turning the stack over by hand works for documents, not photos."
         }
         if !settings.documentMultiPage {
-            return "Turning the stack over by hand needs \u{201C}Collect pages, then Save PDF\u{201D}."
+            return "Turning the stack over by hand needs \u{201C}Collect pages, then \(settings.format.saveTitle)\u{201D}."
         }
         return nil
     }

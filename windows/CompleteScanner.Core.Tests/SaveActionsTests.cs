@@ -147,7 +147,7 @@ public class SaveActionsTests
             string json = CompatFixtures.Encode(settings);
             using var written = JsonDocument.Parse(json);
             var output = written.RootElement.GetProperty("output");
-            Assert.Equal(["pdfSize", "afterSave"], output.EnumerateObject().Select(p => p.Name));
+            Assert.Equal(["pdfSize", "afterSave", "alsoSaveText"], output.EnumerateObject().Select(p => p.Name));
             Assert.Equal(JsonNamingPolicy.CamelCase.ConvertName(action.ToString()), output.GetProperty("afterSave").GetString());
             Assert.Equal(action, CompatFixtures.Decode<ScanSettings>(json).Output.AfterSave);
         }

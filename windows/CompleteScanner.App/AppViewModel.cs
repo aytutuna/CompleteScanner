@@ -1224,15 +1224,15 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                         else if (twoSided)
                         {
                             int sheets = processed.Select(p => p.SheetIndex).Distinct().Count();
-                            StatusMessage = $"Added {n} page{(n == 1 ? "" : "s")} from {sheets} sheet{(sheets == 1 ? "" : "s")}, both sides — {ScannedPages.Count} in queue. Scan more or Save PDF.";
+                            StatusMessage = $"Added {n} page{(n == 1 ? "" : "s")} from {sheets} sheet{(sheets == 1 ? "" : "s")}, both sides — {ScannedPages.Count} in queue. Scan more or {OutputFormats.SaveTitle(Settings.Format)}.";
                         }
                         else if (sides == DuplexMode.Both)
                         {
-                            StatusMessage = $"Added {n} page{(n == 1 ? "" : "s")}, one side of each sheet: the scanner did not scan both sides — {ScannedPages.Count} in queue. Scan more or Save PDF.";
+                            StatusMessage = $"Added {n} page{(n == 1 ? "" : "s")}, one side of each sheet: the scanner did not scan both sides — {ScannedPages.Count} in queue. Scan more or {OutputFormats.SaveTitle(Settings.Format)}.";
                         }
                         else
                         {
-                            StatusMessage = $"Added {n} page{(n == 1 ? "" : "s")} — {ScannedPages.Count} in queue. Scan more or Save PDF.";
+                            StatusMessage = $"Added {n} page{(n == 1 ? "" : "s")} — {ScannedPages.Count} in queue. Scan more or {OutputFormats.SaveTitle(Settings.Format)}.";
                         }
                         StatusMessage += blankNote;
                     }
@@ -1354,6 +1354,11 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
 
     // MARK: Saving
 
+    /// <summary>
+    /// Saves the collected pages as one file: a PDF (with its text beside it when
+    /// <see cref="OutputOptions.AlsoSaveText"/> is on), or a Word document or text file when that
+    /// is the format chosen (<see cref="OutputFormats.QueueFormat"/>). OCR reads each page once.
+    /// </summary>
     public Task SavePdf()
     {
         if (ScannedPages.Count == 0) return Task.CompletedTask;
@@ -1372,16 +1377,33 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                 StatusMessage = PageFilter.QueueSummary(queued, s.Document) + ".";
                 return;
             }
-            StatusMessage = s.PdfSearchable ? "Running OCR and building PDF…" : "Building PDF…";
+            int skipped = queued.Count - pages.Count;
+            string left = skipped == 0 ? "" : $" — {skipped} skipped page{(skipped == 1 ? " was" : "s were")} left out";
+            var format = OutputFormats.QueueFormat(s.Format);
+            if (format.IsTextFormat())
+            {
+                StatusMessage = "Reading the text of the pages…";
+                NotifyAll();
+                var (written, hasText) = await WriteTextDocument(pages, format, OutputPath(s, format.FileExtension()), token);
+                MarkSaved([written]);
+                DeleteSpoolFiles(queued);
+                ScannedPages.Clear();
+                ResetFlow();
+                StatusMessage = TextExport.SavedMessage(format, pages.Count, Path.GetFileName(written), hasText) + left;
+                RunAfterSave(s.Output.AfterSave, [written]);
+                return;
+            }
+            var text = s.Output.AlsoSaveText ? new PdfText() : null;
+            StatusMessage = s.PdfSearchable || text is not null ? "Running OCR and building PDF…" : "Building PDF…";
             NotifyAll();
-            string path = await WritePdfAtomically(pages, s, OutputPath(s, "pdf"), token);
+            string path = await WritePdfAtomically(pages, s, OutputPath(s, "pdf"), token, text);
+            string? textPath = text is null ? null : await WriteTextBeside(path, text);
             MarkSaved([path]);
             DeleteSpoolFiles(queued);
             ScannedPages.Clear();
             ResetFlow();
-            int skipped = queued.Count - pages.Count;
-            string left = skipped == 0 ? "" : $" — {skipped} skipped page{(skipped == 1 ? " was" : "s were")} left out";
-            StatusMessage = $"Saved {pages.Count}-page PDF: {Path.GetFileName(path)}{PdfSizeSuffix()}{left}";
+            string textNote = textPath is null ? "" : TextExport.SidecarSuffix(Path.GetFileName(textPath));
+            StatusMessage = $"Saved {pages.Count}-page PDF: {Path.GetFileName(path)}{PdfSizeSuffix()}{textNote}{left}";
             RunAfterSave(s.Output.AfterSave, [path]);
         });
     }
@@ -1389,14 +1411,44 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// <summary>
     /// Used when DocumentMultiPage is off: write each scan to disk as soon as it lands. The
     /// pages are held nowhere else, so the files are the only full-resolution copy: a failure
-    /// or Cancel part-way keeps every file already written and reports the partial result.
+    /// or Cancel part-way keeps every file already written and reports the partial result. A Word
+    /// document or text file is one file: when its text cannot be read or it cannot be written (or
+    /// the save is cancelled) the pages are put in the queue instead.
     /// </summary>
     private async Task SaveImmediately(List<ScannedPage> pages, ScanSettings s, CancellationToken token)
     {
         var saved = new List<string>();
+        string note = "";
+        if (s.Format.IsTextFormat())
+        {
+            string written;
+            bool hasText;
+            try
+            {
+                (written, hasText) = await WriteTextDocument(pages, s.Format, OutputPath(s, s.Format.FileExtension()), token);
+            }
+            catch (Exception e)
+            {
+                // Nothing was written: the pages go to the queue rather than being lost, to be
+                // saved once the text can be read or the file written, or in another format.
+                await KeepInQueue(pages);
+                bool cancelled = IsCancellation(e);
+                if (!cancelled) ErrorMessage = e.Message;
+                StatusMessage = TextExport.KeptInQueue(s.Format, pages.Count, cancelled,
+                                                       textUnreadable: e is TextUnreadableException);
+                return;
+            }
+            MarkSaved([written]);
+            StatusMessage = TextExport.SavedMessage(s.Format, pages.Count, Path.GetFileName(written), hasText);
+            RunAfterSave(s.Output.AfterSave, [written]);
+            return;
+        }
         if (s.Format == OutputFormat.Pdf)
         {
-            saved = [await WritePdfAtomically(pages, s, OutputPath(s, "pdf"), token)];
+            var text = s.Output.AlsoSaveText ? new PdfText() : null;
+            saved = [await WritePdfAtomically(pages, s, OutputPath(s, "pdf"), token, text)];
+            string? textPath = text is null ? null : await WriteTextBeside(saved[0], text);
+            note = PdfSizeSuffix() + (textPath is null ? "" : TextExport.SidecarSuffix(Path.GetFileName(textPath)));
         }
         else
         {
@@ -1423,16 +1475,23 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             }
         }
         MarkSaved(saved);
-        StatusMessage = $"Saved {string.Join(", ", saved.Select(Path.GetFileName))}" +
-                        (s.Format == OutputFormat.Pdf ? PdfSizeSuffix() : "");
+        StatusMessage = $"Saved {string.Join(", ", saved.Select(Path.GetFileName))}{note}";
         RunAfterSave(s.Output.AfterSave, saved);
+    }
+
+    /// <summary>Spool <paramref name="pages"/> and add them to the queue, as a collected scan is.</summary>
+    private async Task KeepInQueue(List<ScannedPage> pages)
+    {
+        string spoolDirectory = _spool.Directory;
+        var spooled = await Task.Run(() => SpoolPages(pages, spoolDirectory).Select(p => new PageItem(p)).ToList());
+        foreach (var item in spooled) ScannedPages.Add(item);
     }
 
     public Task SaveReviewedPhotos()
     {
         if (!DetectedPhotos.Any(p => p.Photo.Included)) { CancelPhotoReview(); return Task.CompletedTask; }
         var s = Settings.Clone();
-        var format = s.Format == OutputFormat.Pdf ? OutputFormat.Jpeg : s.Format;
+        var format = OutputFormats.ImageFormatOrJpeg(s.Format);
         return RunExclusive(async token =>
         {
             // A crop correction applied just before saving must be in the files.
@@ -1985,7 +2044,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         ResetFlow();
         int sheets = Math.Max(counts.Fronts, counts.Backs);
         int pages = counts.Fronts + counts.Backs;
-        StatusMessage = $"Put {sheets} sheet{(sheets == 1 ? "" : "s")} in order ({pages} page{(pages == 1 ? "" : "s")}) — {ScannedPages.Count} in queue. Scan another stack or Save PDF.";
+        StatusMessage = $"Put {sheets} sheet{(sheets == 1 ? "" : "s")} in order ({pages} page{(pages == 1 ? "" : "s")}) — {ScannedPages.Count} in queue. Scan another stack or {OutputFormats.SaveTitle(Settings.Format)}.";
     }
 
     /// <summary>The backs did not pair up with the fronts, but the pages are combined as they are (the extra pages at the end).</summary>
@@ -2016,7 +2075,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         RemoveQueuedPages(Flow.Captures(DocumentSides.BacksStepId));
         int fronts = Flow.Captures(DocumentSides.FrontsStepId).Count(id => ScannedPages.Any(item => item.Page.Id == id));
         ResetFlow();
-        StatusMessage = $"Kept {fronts} front side{(fronts == 1 ? "" : "s")} — {ScannedPages.Count} in queue. Scan another stack or Save PDF.";
+        StatusMessage = $"Kept {fronts} front side{(fronts == 1 ? "" : "s")} — {ScannedPages.Count} in queue. Scan another stack or {OutputFormats.SaveTitle(Settings.Format)}.";
         NotifyAll();
     }
 
@@ -2340,6 +2399,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     {
         if (IdCardFront is null) return Task.CompletedTask;
         var s = Settings.Clone();
+        // The card is a picture: a PDF or an image, never a text format.
+        var pageFormat = OutputFormats.PageFormat(s.Format);
         var paper = IdCardPaperSize;
         var paperInches = PaperSizes.Inches(paper)!.Value;
         return RunExclusive(async token =>
@@ -2363,17 +2424,17 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             var saved = new List<string>();
             await WriteImagesRollingBack(saved, async () =>
             {
-                if (s.Format == OutputFormat.Pdf)
+                if (pageFormat == OutputFormat.Pdf)
                 {
                     saved.Add(await WritePdfAtomically([new ScannedPage(page, dpi, s.ColorMode)], s, OutputPath(s, "pdf"), token));
                 }
                 else
                 {
-                    string path = OutputPath(s, s.Format.FileExtension());
-                    saved.Add(await Task.Run(() => WpfImageCodec.SaveAsNew(page, path, s.Format, dpi, s.JpegQuality), token));
+                    string path = OutputPath(s, pageFormat.FileExtension());
+                    saved.Add(await Task.Run(() => WpfImageCodec.SaveAsNew(page, path, pageFormat, dpi, s.JpegQuality), token));
                 }
                 if (!s.TaskOptions.IdCardSaveSidesAsImages) return;
-                var sideFormat = s.Format == OutputFormat.Pdf ? OutputFormat.Jpeg : s.Format;
+                var sideFormat = OutputFormats.ImageFormatOrJpeg(s.Format);
                 string folder = Path.GetDirectoryName(saved[0])!;
                 string baseName = Path.GetFileNameWithoutExtension(saved[0]);
                 foreach (var (side, image) in back is null
@@ -2389,7 +2450,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             MarkSaved(saved);
             ClearIdCard(clearCanvas: true);
             ResetFlow();
-            string sizeNote = s.Format == OutputFormat.Pdf ? PdfSizeSuffix() : "";
+            string sizeNote = pageFormat == OutputFormat.Pdf ? PdfSizeSuffix() : "";
             StatusMessage = saved.Count == 1
                 ? $"Saved the ID card on one {paper.Label()} page: {Path.GetFileName(saved[0])}{sizeNote}"
                 : $"Saved the ID card on one {paper.Label()} page: {Path.GetFileName(saved[0])}{sizeNote}, and each side as an image";
@@ -2731,14 +2792,26 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// OCR (when searchable) + JPEG-encode each page as the PDF size plans it, then write the PDF through
+    /// The recognized text of a PDF's pages, collected while the PDF is written for the text file
+    /// beside it (<see cref="OutputOptions.AlsoSaveText"/>), so OCR reads each page once.
+    /// </summary>
+    private sealed class PdfText
+    {
+        public List<OcrPage> Pages { get; } = [];
+        /// <summary>The OCR error of the first page whose text could not be read; no text file is written then.</summary>
+        public string? Problem { get; set; }
+    }
+
+    /// <summary>
+    /// OCR (when searchable, or when <paramref name="text"/> collects the text) + JPEG-encode each
+    /// page as the PDF size plans it, then write the PDF through
     /// PdfBuilder.WriteNewFile, which builds it under a hidden temp name and moves it into
     /// place — a failed, interrupted or cancelled build never leaves a truncated PDF at the
     /// destination, and an existing file is never replaced. The token is checked before
     /// every page and passed to the writer. Returns the path written.
     /// </summary>
     private async Task<string> WritePdfAtomically(List<ScannedPage> pages, ScanSettings s, string path,
-                                                  CancellationToken token)
+                                                  CancellationToken token, PdfText? text = null)
     {
         var inputs = new List<PdfPageInput>();
         for (int i = 0; i < pages.Count; i++)
@@ -2750,16 +2823,24 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             var prepared = await Task.Run(() => PdfBuilder.PreparePage(page, SpoolImage(page)), token);
             var image = prepared.Image;
             IReadOnlyList<OcrLine>? lines = null;
-            if (s.PdfSearchable)
+            if (s.PdfSearchable || text is { Problem: null })
             {
                 StatusMessage = $"OCR page {i + 1} of {pages.Count}…";
                 NotifyAll();
-                // If OCR fails for a page, the PDF is still produced without a text layer.
-                // Cancel stops waiting at once (the recognizer has no cancellation of its own;
-                // its late result is simply ignored).
+                // If OCR fails for a page, the PDF is still produced without a text layer (and
+                // without the text file beside it). Cancel stops waiting at once (the recognizer
+                // has no cancellation of its own; its late result is simply ignored).
                 try { lines = await _ocrService.RecognizeLinesAsync(image).WaitAsync(token); }
                 catch (OperationCanceledException) { throw; }
-                catch { lines = null; }
+                catch (Exception e)
+                {
+                    lines = null;
+                    if (text is not null) text.Problem ??= e.Message;
+                }
+                if (lines is not null && text is { Problem: null })
+                {
+                    text.Pages.Add(OcrPage.Of(lines, prepared.PixelWidth, prepared.PixelHeight, page.Dpi));
+                }
             }
             // The PDF size decides how the page is stored (PdfImageEncoding): OCR above has
             // read the full pixels; the stored image may be downsampled and gray. The page
@@ -2771,7 +2852,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                 var stored = PdfImageEncoding.Downsample(image, imageDpi, plan);
                 return WpfImageCodec.EncodeJpeg(stored, plan.TargetDpi, plan.Quality, plan.IsGray);
             }, token);
-            inputs.Add(new PdfPageInput(jpeg, prepared.PixelWidth, prepared.PixelHeight, page.Dpi, lines));
+            inputs.Add(new PdfPageInput(jpeg, prepared.PixelWidth, prepared.PixelHeight, page.Dpi,
+                                        s.PdfSearchable ? lines : null));
         }
 
         StatusMessage = "Writing PDF…";
@@ -2780,6 +2862,119 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         try { LastPdfBytes = new FileInfo(written).Length; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { LastPdfBytes = null; }
         return written;
+    }
+
+    /// <summary>
+    /// The text file beside a PDF just saved, with the PDF's name (the next free one when that is
+    /// taken). Returns its path; null when the text could not be read or written, which
+    /// <see cref="ErrorMessage"/> then says: the PDF is saved either way.
+    /// </summary>
+    private async Task<string?> WriteTextBeside(string pdfPath, PdfText text)
+    {
+        if (text.Problem is { } problem)
+        {
+            ErrorMessage = TextExport.SidecarFailed(problem);
+            return null;
+        }
+        try
+        {
+            byte[] bytes = TextExport.Encode(text.Pages);
+            return await Task.Run(() => TextExport.WriteNewFile(bytes, Path.ChangeExtension(pdfPath, "txt")));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            ErrorMessage = TextExport.SidecarFailed(e.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads the text of every page with OCR, on full-resolution pixels with the page's rotation,
+    /// and writes it as a Word document or a text file (<paramref name="format"/>) under a hidden
+    /// temporary name moved into place without replacing a file. A page whose text cannot be read
+    /// fails the save, saying why (a missing OCR language names the setting to add one).
+    /// Returns the path written and whether any text was found.
+    /// </summary>
+    private async Task<(string Path, bool HasText)> WriteTextDocument(List<ScannedPage> pages, OutputFormat format,
+                                                                     string path, CancellationToken token)
+    {
+        var ocrPages = new List<OcrPage>();
+        for (int i = 0; i < pages.Count; i++)
+        {
+            token.ThrowIfCancellationRequested();
+            var page = pages[i];
+            var prepared = await Task.Run(() => PdfBuilder.PreparePage(page, SpoolImage(page)), token);
+            StatusMessage = $"Reading the text of page {i + 1} of {pages.Count}…";
+            NotifyAll();
+            ocrPages.Add(OcrPage.Of(await RecognizeForText(prepared.Image, token),
+                                    prepared.PixelWidth, prepared.PixelHeight, page.Dpi));
+        }
+        StatusMessage = format == OutputFormat.Word ? "Writing the Word document…" : "Writing the text file…";
+        NotifyAll();
+        byte[] bytes = await Task.Run(() => format == OutputFormat.Word ? DocxWriter.Make(ocrPages) : TextExport.Encode(ocrPages), token);
+        string written = await Task.Run(() => TextExport.WriteNewFile(bytes, path), token);
+        return (written, TextExport.HasText(ocrPages));
+    }
+
+    /// <summary>
+    /// The lines OCR finds on <paramref name="image"/>, for text the user asked for: a failure is an
+    /// error that says why (not a scanner failure, so the troubleshooter does not record it).
+    /// </summary>
+    private async Task<IReadOnlyList<OcrLine>> RecognizeForText(RgbaImage image, CancellationToken token)
+    {
+        try
+        {
+            return await _ocrService.RecognizeLinesAsync(image).WaitAsync(token);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            throw new TextUnreadableException(TextExport.RecognitionFailed(e.Message), e);
+        }
+    }
+
+    /// <summary>
+    /// The text of a page could not be read (<see cref="RecognizeForText"/>); the OCR error is the
+    /// inner exception. Told apart from a file that could not be written, which has other advice.
+    /// </summary>
+    private sealed class TextUnreadableException(string message, Exception inner)
+        : InvalidOperationException(message, inner);
+
+    /// <summary>
+    /// Copy Text on a page in the queue: reads its text with OCR (full resolution, as turned) and
+    /// puts it on the clipboard, a blank line between paragraphs.
+    /// </summary>
+    public Task CopyPageText(Guid id)
+    {
+        if (IsBusy || IndexOfPage(id) < 0) return Task.CompletedTask;
+        return RunExclusive(async token =>
+        {
+            // A turn clicked just before must be in the text's reading order.
+            await Settled(_pageRotateChain);
+            int index = IndexOfPage(id);
+            if (index < 0) return;
+            var page = ScannedPages[index].Page;
+            StatusMessage = $"Reading the text of page {index + 1}…";
+            NotifyAll();
+            var prepared = await Task.Run(() => PdfBuilder.PreparePage(page, SpoolImage(page)), token);
+            var lines = await RecognizeForText(prepared.Image, token);
+            string text = OcrText.PageText(OcrPage.Of(lines, prepared.PixelWidth, prepared.PixelHeight, page.Dpi));
+            if (text.Length > 0)
+            {
+                try
+                {
+                    _fileActions.CopyText(text.ReplaceLineEndings("\r\n"));
+                }
+                catch (Exception e) when (e is not OperationCanceledException)
+                {
+                    throw new InvalidOperationException($"Copy did not work: {e.Message}", e);
+                }
+            }
+            StatusMessage = TextExport.CopiedMessage(index + 1, text.Length > 0);
+        });
     }
 
     /// <summary>" (412 KB)" after the name of the PDF just saved, or nothing when its size is unknown.</summary>

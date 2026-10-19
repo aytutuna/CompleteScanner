@@ -19,7 +19,7 @@ public struct TaskDefinition: Equatable, Sendable {
     public let title: String
     public let subtitle: String
     /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-    /// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy".
+    /// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word".
     public let iconKey: String
     public let flow: TaskFlowKind
     /// The scan mode the task uses.
@@ -120,6 +120,14 @@ public enum TaskCatalog {
             steps: [TaskStep(id: "scan", title: "Make a copy",
                              prompt: "Place the original face down on the glass, or load the feeder, and copy. It prints at real size; choose the printer and the number of copies first.",
                              primaryActionLabel: "Copy", repeats: true)]),
+        TaskDefinition(
+            task: .word, title: "Scan to Word",
+            subtitle: "Turn printed pages into a Word document you can edit.",
+            iconKey: "word", flow: .documentQueue, intent: .document, requiredSource: nil,
+            fileLabel: "Document",
+            steps: [TaskStep(id: "scan", title: "Scan each page",
+                             prompt: "Place a page face down on the glass and scan it. Repeat for every page, then save: the text is read from the pages into a Word document.",
+                             primaryActionLabel: "Scan page", repeats: true)]),
     ]
 
     public static func definition(_ task: ScanTask) -> TaskDefinition {
@@ -128,7 +136,8 @@ public enum TaskCatalog {
     }
 
     /// `current` with the task's settings laid over it: mode, source, resolution, color,
-    /// format, JPEG quality, PDF size, the after-save action, the photo and document switches,
+    /// format, JPEG quality, PDF size, the after-save action, the text beside a PDF (off: only the
+    /// Scan to Word task saves text), the photo and document switches,
     /// searchable PDF, adjustments, two-sided scanning, skipping blank pages, crop and straighten,
     /// file name and the task itself. The destination folder, the photo detection tuning, the
     /// legacy OCR languages, the paper size, the edge backs are turned on, how much counts as blank
@@ -151,6 +160,7 @@ public enum TaskCatalog {
         s.adjustments = AdjustmentSettings()
         s.output.pdfSize = .standard
         s.output.afterSave = AfterSaveAction.none
+        s.output.alsoSaveText = false
         s.duplex = .off
         s.document.removeBlankPages = task == .twoSided
         s.document.autoCrop = false
@@ -209,6 +219,11 @@ public enum TaskCatalog {
             s.resolution = 300
             s.format = .pdf
             s.namingTemplate = "Copy {date} {counter}"
+        case .word:
+            s.intent = .document
+            s.resolution = 300
+            s.format = .word
+            s.namingTemplate = "Scan {date} {counter}"
         }
         s.taskId = task.rawValue
         return s
@@ -222,7 +237,8 @@ public enum TaskCatalog {
             return settings.adjustments.restoreFadedColors ? .photoRestore : .photos
         }
         if settings.source == .documentFeeder { return settings.duplex == .off ? .feeder : .twoSided }
-        if !settings.documentMultiPage && settings.format != .pdf { return .quickScan }
+        if settings.format == .word { return .word }
+        if !settings.documentMultiPage && settings.format.isImageFormat { return .quickScan }
         return .document
     }
 
@@ -246,12 +262,14 @@ public enum TaskCatalog {
     }
 
     /// The settings still do what the task is for: the same scan mode, and the task's required
-    /// source; for the two-sided task, both sides. Changing the mode by hand (or choosing one
-    /// side), or a scanner without that source, ends the task.
+    /// source; for the two-sided task, both sides; for Scan to Word, a Word document. Changing the
+    /// mode by hand (or choosing one side, or another format), or a scanner without that source,
+    /// ends the task.
     public static func fits(_ task: ScanTask, _ settings: ScanSettings) -> Bool {
         let taskDefinition = TaskCatalog.definition(task)
         guard settings.intent == taskDefinition.intent else { return false }
         if task == .twoSided && settings.duplex == .off { return false }
+        if task == .word && settings.format != .word { return false }
         if let source = taskDefinition.requiredSource { return settings.source == source }
         return true
     }

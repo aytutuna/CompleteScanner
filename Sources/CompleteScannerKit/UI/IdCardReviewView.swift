@@ -100,8 +100,12 @@ struct IdCardReviewView: View {
                 .pickerStyle(.menu)
                 .fixedSize()
                 .help("The page both sides are laid out on")
-                Picker("Save as", selection: $state.settings.format) {
-                    ForEach(OutputFormat.allCases) { format in
+                // The card is a picture: a PDF or an image. A text format chosen in the inspector
+                // shows (and saves) as PDF here.
+                Picker("Save as", selection: Binding(
+                    get: { state.settings.format.pageFormat },
+                    set: { state.settings.format = $0 })) {
+                    ForEach(OutputFormat.allCases.filter { $0.pageFormat == $0 }) { format in
                         Text(format.label).tag(format)
                     }
                 }
@@ -144,7 +148,7 @@ struct IdCardReviewView: View {
 
     /// "Save PDF", "Save JPEG".
     private var saveTitle: String {
-        state.settings.format == .pdf ? "Save PDF" : "Save \(state.settings.format.label)"
+        state.settings.format.pageFormat == .pdf ? "Save PDF" : "Save \(state.settings.format.pageFormat.label)"
     }
 
     private var saveHelp: String {

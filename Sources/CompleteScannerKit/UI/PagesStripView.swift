@@ -12,7 +12,7 @@ struct PagesStripView: View {
     var body: some View {
         let options = state.settings.document
         let saveCount = PageFilter.pagesToSave(state.scannedPages, options: options).count
-        let saveTitle: String = saveCount > 0 ? "Save PDF (\(saveCount) page\(saveCount == 1 ? "" : "s"))" : "Save PDF"
+        let saveTitle = state.settings.format.saveTitle(pageCount: saveCount)
         let saveHelp: String = saveCount == 0 && !state.scannedPages.isEmpty ? PageFilter.nothingToSaveMessage : ""
         HStack(spacing: 12) {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -28,7 +28,8 @@ struct PagesStripView: View {
                             onMove: { state.movePage(id: page.id, by: $0) },
                             onRotate: { state.rotatePage(id: page.id) },
                             onToggle: { state.togglePageInclusion(id: page.id) },
-                            onSwap: { state.togglePageGeometry(id: page.id) })
+                            onSwap: { state.togglePageGeometry(id: page.id) },
+                            onCopyText: { state.copyPageText(id: page.id) })
                     }
                 }
                 .padding(.horizontal, 12)
@@ -80,6 +81,8 @@ fileprivate struct PageThumbnailCell: View {
     let onToggle: () -> Void
     /// Show the page as scanned, or cropped and straightened again (`AppState.togglePageGeometry`).
     let onSwap: () -> Void
+    /// The page's text, read with OCR, on the pasteboard (`AppState.copyPageText`).
+    let onCopyText: () -> Void
 
     @State private var thumbnail: CGImage?
     @State private var hovering = false
@@ -110,6 +113,9 @@ fileprivate struct PageThumbnailCell: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityName)
+        .contextMenu {
+            Button("Copy Text", action: onCopyText)
+        }
         // Re-render when the page is rotated or shown as scanned (the cell keeps its identity, so
         // a plain run-once task would show stale pixels).
         .task(id: page.rotationQuarterTurns * 2 + (page.showsOriginal ? 1 : 0)) {

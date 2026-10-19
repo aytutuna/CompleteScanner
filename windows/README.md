@@ -25,9 +25,11 @@ UI per platform** architecture:
   image toolkit it works with (`GrayImage.cs`, `BackgroundMap.cs`, `MaskOps.cs` next to
   `RgbaImage.cs`), starting with blank-page detection (`BlankPageDetector.cs`) and crop and
   straighten (`DocumentGeometry.cs`), the ID card task (`IdCard.cs`: finding the card on the
-  glass, laying both sides out at real size and drawing the page), and copy and print
+  glass, laying both sides out at real size and drawing the page), copy and print
   (`PrintLayout.cs`: where a page goes on a printer's paper at real size or fitted, copies, the
-  ruler test page).
+  ruler test page), and text output (`OcrText.cs`: OCR lines in reading order and paragraphs;
+  `TextExport.cs`, `DocxWriter.cs` and `ZipStore.cs`: the text file, the Word document and its
+  zip package, written by hand so both platforms write the same bytes).
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
   xUnit with the same fixtures, geometry, and tolerances. **This is the contract that keeps
   the Swift and C# cores behaviorally identical** — change an algorithm on one side, port
@@ -394,6 +396,77 @@ offered, what Copy puts on the clipboard, the email route) and carried out by
 `Services/FileActions.cs` and `Services/ShareService.cs`, which the view model takes as a
 stand-in in checks.
 
+### Text: Word documents, text files and Copy Text
+
+For editable text rather than a picture of the paper:
+
+- **Format** (inspector, Output) offers **Word (.docx)** and **Text (.txt)** for documents, next
+  to PDF and the image formats; Photos offers the image formats only (a PDF or text format chosen
+  for documents shows as JPEG there and is kept). With the pages collected, the queue's button
+  becomes **Save Word** or **Save Text** and writes one file with the text of every page; a scan
+  saved at once is written as its own Word document or text file. The ID card's page is a PDF or
+  an image whatever the format says.
+- **Also save text (.txt)** (inspector, Document) writes a text file with the PDF's name next to
+  every PDF of a document saved (the next free name when that one is taken; nothing is ever
+  replaced). It is greyed out, with the reason, when a save writes no PDF, and in the ID card and
+  Copy tasks, whose PDFs are pictures of a card or of a copy. Picking a task turns it off.
+- **Scan to Word** on the start screen: 300 dpi, color, pages collected, saved as a Word
+  document. Choosing another format ends the task.
+- **Copy text** in a queued page's right-click menu reads that page and puts its text on the
+  clipboard (Windows line breaks, a blank line between paragraphs). The page stays queued.
+
+OCR reads each page once per save, on the full-resolution page with its rotation: the same
+lines make the PDF's text layer and the text file beside it, and nothing is read when neither is
+asked for. When a page cannot be read (no OCR language installed), a Word or text save fails
+with "The text could not be read: no OCR language pack is installed (Settings → Time & Language
+→ Language).", the pages stay queued (a scan saved at once goes to the queue, as does one whose
+file cannot be written or whose save is cancelled, so it can be saved once the text can be read
+or the destination is back, or as a PDF; the status says to wait for the text only when the text
+was what failed), and the
+troubleshooter does not count it as a scanner failure; a PDF is still saved, without its text
+file ("The PDF was saved, but not its text file: …"). A page with no text gives an empty file, and the status says no text was found.
+
+The files (`TextExport`, `DocxWriter`, `ZipStore`): the text file is UTF-8 without a byte order
+mark, "\n" line breaks, one line of text per line on the page, a blank line between paragraphs
+and two between pages. The Word document is the smallest package Word and LibreOffice open
+(`[Content_Types].xml`, `_rels/.rels`, `word/document.xml`, stored uncompressed in a zip dated
+1980-01-01): one Word paragraph per paragraph found, wrapped lines joined (a word broken by a
+hyphen at the end of a line joined again), short lines and the rows of a table kept on lines
+of their own (`w:br`), the pieces of a row separated by tabs, each page after the first starting
+a new page, the paper the first page's size with one-inch margins (less on a page under 8
+inches), and no styles part, so the text takes the reader's default font.
+
+**Reading order** (`OcrText`): the OCR engine's own order is not a reading order. On the
+public-domain 1903 letter (2673 × 3500 px) Windows OCR returns 41 lines with the letterhead's
+list of officers before the small print beside it but "Honorable" among them, fourteen lines
+before "Charles G. Washburn,", and "Mass." between "August" and "31,"; it also splits rows such
+as "The full list is as follows:" | "General Rockwood Hoar;". The page is therefore cut along its empty
+gaps (a recursive X-Y cut): first a wide gap across the page (1.5 line heights), then a gap down
+the page (2 line heights) between two columns of text, then any gap across. Two sides that pair
+up row by row with a gap at least as wide as the narrower side's lines are a table and are read
+row by row; lines of one row become one line, with a tab across a wide gap. Paragraphs start
+at a jump up to the next column, at a gap clearly wider than the usual gap around it, at a left
+edge that moves by a fifth of the page, and at an indented line; lines centred on each other (a
+letterhead) stay together. Results on the two public-domain scans used for the PDF sizes,
+through the app's save path with the OCR installed here:
+
+- **Letter**: 41 OCR lines become 36 lines in reading order and 14 paragraphs: the title, the
+  officers (one paragraph), the small print, the office's address, the date, the three address
+  lines, the salutation, the three body paragraphs (indented first lines) and the two closing
+  lines. "forward-" / "ing" is joined in the Word document. What is still wrong comes from the
+  recognizer, not the order: "Ily dear Sir:-", "1003" for 1903, "l!orcester", "Worce ster", "Rea
+  Cross"; the signature and the pencilled notes are not read.
+- **Menu** (1900, three columns of dishes and prices under section headings, a library stamp and
+  pencilled notes): 95 OCR lines become 65 lines: every heading before its section, the sections
+  in order, each read row by row with the dishes of one row on one line, tab-separated ("Wahl's
+  Vegetable Bouillon, 15c → Soup without Meat or Fish order, 15"). Windows OCR itself joins two
+  dishes into one line in two places, and the stamp garbles the dishes under it ("Prime Bee ,
+  .t"); the handwritten heading is not read.
+
+A two-column page whose columns sit closer than two line heights, or a page in two columns with
+paragraph breaks that line up across both, is read across the columns; the engine's order is
+used only to break ties.
+
 ### Why isn't my scanner listed?
 
 The **?** button next to **Scanners**, the link under the scanner list while only the Demo
@@ -451,6 +524,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | ID card (`IdCard`, the review) | Covered by `IdCardTests` (paper, steps, layout on Letter and A4, scaled to fit, the composed page in pixels and as a 612 × 792 pt PDF page, the detector on a synthetic bed with a card turned 7° among other objects, the back taking the front's place, moved to another resolution and refused for another part of the glass, the page at most 600 dpi, Skip only for the card's back) and the ID card cases of `ScanTaskTests`, `ModelsCompatTests`, `TaskFlowTests` and `MockScannerTests` (same cases as macOS). Checked by driving the view model with the demo scanner's sample card (front, back, the review, turning and swapping the sides, fixing a crop, Letter and A4, saving a PDF at 612 × 792 pt with no text layer, a PNG page at 300 dpi with the front as an image, skipping the back, scanning a side again, discarding, leaving the task, picking a task again) and with a white-on-white back (at the front's resolution, at twice it, and with another selection), a scanner going away with the review open and between the sides (no switch until the card is saved, discarded or the task left), a page saved from a 1200 dpi scan (A4 at 600 dpi, the side at 1200), the stage cleared on leaving with no side held, checking that nothing goes to the history or the page spool and that the stage is cleared, and by building the window without showing it: the task card, the banner's steps and Skip back side (and no Skip for the backs of a stack turned over by hand), Mode and Source locked while a side is held, Leave the task and picking a task asking first (Cancel keeps the card, Discard drops it), the review with both sides, the front only, the not-at-real-size warning, the paper and format pickers, rendered off screen in light and dark. **Unverified:** real cards on real lids (see [ID card](#id-card)), printing at real size |
 | Blank pages (`BlankPageDetector`, `PageProcessor`, `PageFilter`, image toolkit) | Covered by `BlankPageDetectorTests`, `PageProcessorTests`, `GrayImageTests`, `RgbaImageTests`, `MaskOpsTests` and the blank-page cases of `ModelsCompatTests`, `ScanTaskTests` and `MockScannerTests` (same cases as macOS; `MaskOpsTests` also pins PhotoDetector's regions on the demo bed to the last bit, unchanged by moving the mask code out of it). Checked on public-domain scans of letters, menus and photos (none taken for blank, at any level, with or without their dark surroundings) and on blank backs made from them (all found blank), and by driving the view model with the demo scanner (flagging, Skip blank pages turned on and off with pages queued, Keep and Skip per page, rotating a flagged page, saving 5 of 6 pages, nothing to save, pages saved at once keeping every page, the two-sided task, turning over by hand) and by building the window without showing it: the switch, the levels, the badges, Keep and Skip, the strip label, Save PDF's count, rendered off screen in light and dark. **Unverified:** blank backs from real scanners (see [Blank pages](#blank-pages)) |
 | Copy and print (`PrintLayout`, `PrintService`, the Copies section) | The layout is covered by `PrintLayoutTests` (real size on A4 and Letter, a whole glass cut off on A4, printer margins, a selection centred, turning only when that cuts off less, fit with and without turning, never enlarged, units, printer paper, copies, the ruler page by pixel, the texts) and the copy cases of `ScanTaskTests`, `ModelsCompatTests`, `PaperSizeTests` and `IdCardTests` (same cases as macOS); the print document by `CompleteScanner.App.Tests` (written to XPS and read back: the page is the paper, each image at its place in 1/96 in, turned pages turned in their pixels, fitted pages placed smaller, copies the printer does not make repeated, every page its own picture, grey images, cancel). Checked by reading the real print system on Windows 11 without printing (the printers, the default printer's Letter paper and printable area, A4 and Letter asked of Microsoft Print to PDF, an unknown printer; the default printer and its ticket compared before and after: unchanged), by driving the view model with the demo scanner and a stand-in printer service that records the jobs (a copy from the corner at real size, the printer's paper area of the glass scanned, A4 asked and scanned, a selection centred, 3 copies on a printer that makes 2 at most, fit to page, grey, also a PDF, the feeder's stack, another printer, a printer gone, a refused job and Cancel while printing, no printer; the ID card printed on Letter at real size with the review kept, A4 on a Letter-only printer, margins reaching the card; Automatic paper following the default printer; the ruler page), with every recorded job's document written to XPS by the app's own code and its geometry read back, and by building the window without showing it: the Copy card, the Copies section and its controls, no printer, the review's Print button, rendered off screen in light and dark. **Not done:** printing to a real printer, including Microsoft Print to PDF (its file name cannot be set without its save dialog). **Unverified:** real printer margins and offsets, measured with the ruler page |
+| Text output (`OcrText`, `TextExport`, `DocxWriter`, `ZipStore`, Copy Text) | Covered by `OcrTextTests`, `TextExportTests` (with `OutputFormatsTests`), `DocxWriterTests` (with `ZipStoreTests`: CRC-32 known values, exact zip bytes, the package opened with `ZipArchive`, its parts, content types and relationship checked) and the text cases of `ModelsCompatTests`, `ScanTaskTests` and `SaveActionsTests` (same cases as macOS; both platforms pin the same CRC-32 of the sample text file and Word document). Checked by driving the view model with the demo scanner, the public-domain letter scan and Windows OCR (a PDF and its text file with one OCR pass per page, no OCR when neither is asked for, a taken name kept, Scan to Word with the letter, Text and Word saved at once, Copy Text into a stand-in clipboard, a blank page, a PC without an OCR language), and by building the window without showing it: the format lists for documents and photos, Also save text, the Save Word button, the Scan to Word card, the page menu's Copy text, rendered off screen in light and dark. **Not tried:** opening the documents in Word or LibreOffice (neither is installed here), and the real clipboard |
 | Share, email, open with, copy (`SaveActions`, `FileActions`, `ShareService`) | The choices are covered by `SaveActionsTests` and the after-save cases of `ModelsCompatTests` (same cases as macOS). Checked by driving the view model's real save paths with a stand-in for Windows (each after-save action after a PDF, a file saved at once and a photo batch; the Email task sharing; no share window; a refused action; a moved file; a cancelled save running nothing), by building the real clipboard data and share package without placing them anywhere, and by building the window without showing it: the bar, its buttons and menu, the narrow layout, the "After saving" choices, the Saved tab's buttons and menus, rendered off screen in light and dark. **Not tried on screen:** the share window, the Open with dialog and the clipboard themselves (checks must not send, open or overwrite anything), and Mail or Outlook as share targets |
 | Troubleshooter (`Troubleshooter`, `SystemDiagnostics`, `TroubleshooterWindow`) | The checks are covered by `TroubleshooterTests` (same cases as macOS) and the Windows service and network values by `WindowsSystemStatusTests`. Checked by driving the view model with stand-in connections and a stand-in for Windows (the snapshot, the order of the checks, devices.txt, Refresh, Copy diagnostics and Settings refused, a busy scanner at connect and at scan, a connection that works clearing it, a cancelled scan not counting), by reading the real WIA service and network on Windows 11 (Running and Public, as `sc query` and `Get-NetConnectionProfile` report, from UI and thread-pool threads), by copying to the real clipboard with the user's clipboard saved and restored, by an address added by hand on loopback where nothing listens, by a discovered scanner (a stand-in service for a loopback scanner) that stays listed, selected and connected across a Refresh when Windows aborts either network watcher, and dropped only once the restarted watcher's first pass did not find it again, and by building the sidebar, error bar and troubleshooter window without showing them: the header button, the empty state's links, the error bar's Troubleshoot (and none on a file or photo error shown later), one card per check with its buttons and screen-reader names (each card a named group in the UI Automation tree), a Refresh while one runs ignored, rendered off screen in light and dark. **Not tried on screen:** opening Windows Settings and the real Add scanner dialog from it. **Unverified:** a stopped or disabled WIA service, a TWAIN install with 32-bit-only drivers, and a scanner that is really busy in another app |
 | eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — see [Network scanners](#network-scanners-escl) below for discovery, adding by address and HTTPS. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the paper size's region, clamped to the feeder (the feeder's own sheet size for Automatic, at most 17 in tall); two-sided feeder jobs send `<scan:Duplex>true</scan:Duplex>` and use the two-sided feeder's capabilities (`AdfDuplexInputCaps`) when the device lists them, and a device that lists no two-sided feeding scans one side and says so; black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. The protocol client (`EsclClient`, `EsclScannerSession`) is covered by `EsclClientTests` through a stub HTTP handler. Checked against local fake eSCL servers (plain and HTTPS), not a real device |
@@ -524,6 +598,12 @@ Known divergences from the macOS app (all documented in the source):
   so. The review is an overlay on Windows and a sheet on the Mac. Closing the window with an
   unsaved card asks first on Windows; on the Mac the app keeps running and the card stays until it
   is saved or discarded.
+- Text output: the reading order, paragraphs, text file and Word document are the same code on
+  both platforms (the same bytes for the same lines), but the lines come from different
+  recognizers (Windows OCR here, Vision on the Mac), so the same scan gives different text. Copy
+  Text puts "\r\n" line breaks on the Windows clipboard and "\n" on the Mac pasteboard. The Mac's
+  PDF writer asks for each page's text layer while it draws the page (`PDFTextLayer`); Windows
+  reads the pages first and hands the writer their lines.
 - PDF sizes: Windows writes the planned JPEG into its own PDF writer. The Mac, whose PDFs come
   from CoreGraphics, encodes the same plan with ImageIO and draws a JPEG-backed image, which
   CoreGraphics is expected to store unchanged; this, and the resulting file sizes, still need

@@ -18,6 +18,7 @@ Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Pipeline/DocumentGeometry.swift` — crop to the page and straighten it: the sheet's edges on the scanner's background, the skew of the text lines, and what is done to the page (see below).
 - `Sources/CompleteScannerKit/Pipeline/IdCard.swift`, `App/AppState+IdCard.swift`, `UI/IdCardReviewView.swift` — the ID card task: both sides of a card found on the glass and laid out on one page at real size (see below).
 - `Sources/CompleteScannerKit/Output/PrintLayout.swift`, `App/PrintController.swift`, `App/AppState+Copy.swift` — copy and print: the Copy task, printing the ID card's page and the ruler test page, at real size (see below).
+- `Sources/CompleteScannerKit/Output/OCRText.swift`, `TextExport.swift`, `DocxWriter.swift`, `ZipStore.swift` — text output: OCR lines in reading order and paragraphs, the text file, the Word document and its zip package, Copy Text (see below).
 - `Sources/CompleteScannerKit/App/AppState.swift` — the `@MainActor ObservableObject` all UI binds to; its task members are in `App/AppState+Tasks.swift`.
 - `Sources/CompleteScannerKit/App/ContentView.swift`, `CompleteScannerApp.swift`.
 
@@ -180,7 +181,7 @@ Twin of `windows/CompleteScanner.Core/DeviceMerge.cs` (`HardwareId`, `Connection
 // wants a task done, kept when a task is picked (see Pipeline/IdCard.swift).
 
 public enum ScanTask: String, CaseIterable, Identifiable, Sendable {
-    case document, feeder, photos, photoRestore, quickScan, email, twoSided, idCard, copy   // add new tasks after these
+    case document, feeder, photos, photoRestore, quickScan, email, twoSided, idCard, copy, word   // add new tasks after these
     public static func tryParse(_ rawValue: String?) -> ScanTask?
 }
 
@@ -189,7 +190,7 @@ public enum TaskFlowKind: String, Sendable { case documentQueue, photoSplit, idC
 public struct TaskDefinition: Equatable, Sendable {
     public let task: ScanTask
     public let title: String, subtitle: String
-    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy"
+    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word"
     public let flow: TaskFlowKind
     public let intent: ScanIntent
     public let requiredSource: ScanSource?
@@ -210,15 +211,18 @@ public enum TaskCatalog {
     /// tuning, the legacy OCR languages, the paper size, the back binding and `taskOptions`; sets
     /// `taskId`. Only `.twoSided` sets `duplex` (`.both`); the others set `.off`. Only `.idCard`
     /// (the numbers on an ID are better not indexed) and `.copy` (a copy is for paper) turn
-    /// `pdfSearchable` off.
+    /// `pdfSearchable` off. Every task turns `output.alsoSaveText` off; `.word` (Scan to Word)
+    /// saves a Word document (`format = .word`, 300 dpi, collected pages).
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings
-    /// The stored task, else the task the settings look like (display and file names only).
+    /// The stored task, else the task the settings look like (display and file names only): a
+    /// Word document is `.word` (from the feeder, `.feeder`); a scan saved at once as an image is
+    /// `.quickScan`.
     public static func infer(_ settings: ScanSettings) -> ScanTask
     /// `.copy` also needs a printer: `hasPrinter` false gives `PrintText.noPrinterReason` ("No printer is installed.").
     public static func availability(of task: ScanTask, capabilities: ScannerCapabilities?,
                                     hasPrinter: Bool = true) -> TaskAvailability
     /// Same scan mode and, when the task has one, the required source; `.twoSided` also needs
-    /// `duplex != .off`.
+    /// `duplex != .off`, `.word` a Word document.
     public static func fits(_ task: ScanTask, _ settings: ScanSettings) -> Bool
     /// The steps the scan screen guides: `DocumentSides.manualSteps` whenever the settings turn
     /// a stack over by hand (`DocumentSides.usesManualSteps`), otherwise the fitting task's steps;
@@ -768,7 +772,15 @@ Storage: JSON under `~/Library/Application Support/CompleteScanner/` (`presets.j
 ### Output/PDFBuilder.swift
 
 ```swift
+/// A page's text layer: called with its index and its prepared page (full pixels, rotation
+/// applied, full-resolution size) before it is drawn; nil draws none.
+public typealias PDFTextLayer = (_ index: Int, _ page: PDFBuilder.PreparedPage) -> [OCRLine]?
+
 public enum PDFBuilder {
+    public struct PreparedPage { image: CGImage; pixelWidth: Int; pixelHeight: Int }
+    /// The spill file's full pixels with the page's rotation, else the in-memory image; the size
+    /// from the recorded full-resolution size. Twin of C# `PdfBuilder.PreparePage`.
+    public static func preparePage(_ page: ScannedPage) -> PreparedPage
     /// Multi-page PDF; each page sized pixels/dpi*72 points. When `searchable`, run OCR per page
     /// (on the full pixels) and draw an invisible text layer aligned with the words. Each page
     /// image is stored as `pdfSize` plans it (`PDFImageEncoding.encodedPage`).
@@ -780,8 +792,80 @@ public enum PDFBuilder {
                                 pdfSize: PDFSizePreset = .best,
                                 to url: URL, progress: ((String) -> Void)?,
                                 shouldContinue: (() -> Bool)? = nil) throws
+    /// The text layer read beforehand: `ocrLines[i]` on page `i` (nil, or past the end: none). No OCR runs.
+    public static func makePDF(pages: [ScannedPage], ocrLines: [[OCRLine]?], pdfSize: PDFSizePreset = .best,
+                               progress: ((String) -> Void)?, shouldContinue: (() -> Bool)? = nil) throws -> Data
+    public static func writePDF(pages: [ScannedPage], ocrLines: [[OCRLine]?], pdfSize: PDFSizePreset = .best,
+                                to url: URL, progress: ((String) -> Void)?, shouldContinue: (() -> Bool)? = nil) throws
+    /// Each page's text layer from `textLayer` (none when nil): the app's one OCR pass per save.
+    public static func makePDF(pages: [ScannedPage], pdfSize: PDFSizePreset = .best, progress: ((String) -> Void)?,
+                               shouldContinue: (() -> Bool)? = nil, textLayer: PDFTextLayer?) throws -> Data
+    public static func writePDF(pages: [ScannedPage], pdfSize: PDFSizePreset = .best, to url: URL,
+                                progress: ((String) -> Void)?, shouldContinue: (() -> Bool)? = nil,
+                                textLayer: PDFTextLayer?) throws
 }
 ```
+The `searchable:` overloads are kept for existing callers (OCR on every page when searchable). The app saves through the `textLayer:` overload so OCR reads each page once per save, for the text layer and for the text file beside the PDF (`output.alsoSaveText`). Windows has no twin of these overloads: its view model reads the pages with OCR and hands `PdfBuilder` the lines in `PdfPageInput`.
+
+### Output/OCRText.swift, TextExport.swift, DocxWriter.swift, ZipStore.swift (+ OutputFormat, OutputOptions in Core/Models.swift)
+
+```swift
+// OutputFormat gains `.text` ("Text (.txt)", txt) and `.word` ("Word (.docx)", docx), after the
+// earlier cases, and:
+//   isImageFormat (jpeg, png, tiff), isTextFormat (text, word),
+//   static offered(for: ScanIntent) -> [OutputFormat]   // documents: pdf, word, text, jpeg, png, tiff; photos: jpeg, png, tiff
+//   imageFormatOrJPEG (what a photo is saved as), queueFormat (collected pages: text and word as chosen, else pdf),
+//   pageFormat (the ID card's page: pdf or the image format), savesPDF(collectsPages:) -> Bool,
+//   saveTitle ("Save PDF", "Save Word", "Save Text"), saveTitle(pageCount:) ("Save Word (3 pages)").
+// Every switch over OutputFormat lists the new cases (ImageExporter throws ScanError.unsupported for them).
+// OutputOptions gains `alsoSaveText: Bool` ("alsoSaveText" in the "output" object; false by default and
+// for files written before it existed): a .txt with the PDF's name beside each saved PDF.
+
+public struct OCRPage { lines: [OCRLine]; widthPoints: Double; heightPoints: Double     // any one unit
+    public static func of(_ lines: [OCRLine], pixelWidth: Int, pixelHeight: Int, dpi: Int) -> OCRPage }
+public struct OCRParagraph { public let lines: [OCRLine]; public var text: String }    // paragraphText(lines)
+public enum OCRText {
+    // columnGap 2, blockGap 1.5, tableGapShare 1, sameRowOverlap 0.5 (line heights / shares);
+    // paragraphGap 0.75, paragraphGapFactor 1.5, indentLines 1, leftEdgeShift 0.2, shortLineShare 0.15,
+    // centredLines 0.25, jumpLines 0.5; cellSeparator "\t".
+    /// Recursive X-Y cut: a gap across ≥ blockGap line heights first, else a gap down ≥ columnGap
+    /// between two columns of text (≥ 2 lines a side, not a table), else any gap across; a row's
+    /// lines joined by " " (a tab across ≥ columnGap); empty lines dropped; ties broken by the engine's order.
+    public static func readingOrder(_ lines: [OCRLine], pageWidth: Double = 1, pageHeight: Double = 1) -> [OCRLine]
+    public static func paragraphs(_ page: OCRPage) -> [OCRParagraph]
+    public static func paragraphs(_ ordered: [OCRLine], pageWidth: Double = 1, pageHeight: Double = 1) -> [OCRParagraph]
+    public static func paragraphText(_ lines: [OCRLine]) -> String    // wrapped lines joined, short lines and table rows keep "\n"
+    public static func joinLines(_ lines: [String]) -> String         // "forward-" + "ing" -> "forwarding"
+    public static func pageText(_ page: OCRPage) -> String            // a line per line, "\n\n" between paragraphs
+    public static func plainText(_ pages: [OCRPage]) -> String        // "\n\n\n" between pages, "\n" at the end; "" without text
+    public static func cleanLine(_ text: String) -> String
+}
+public enum TextExport {
+    public static func encode(_ pages: [OCRPage]) -> Data             // UTF-8, no BOM, LF
+    public static func hasText(_ pages: [OCRPage]) -> Bool
+    public static func savedMessage(format: OutputFormat, pageCount: Int, fileName: String, hasText: Bool) -> String
+    public static func sidecarSuffix(_ textFileName: String) -> String    // " and its text, Scan 1.txt"
+    public static func recognitionFailed(_ ocrMessage: String) -> String  // "The text could not be read: …"
+    public static func sidecarFailed(_ message: String) -> String         // "The PDF was saved, but not its text file: …"
+    public static func copiedMessage(pageNumber: Int, hasText: Bool) -> String
+}
+public struct TextOutputError: LocalizedError, Equatable { public init(_ message: String) }   // not a ScanError
+public enum DocxWriter {
+    public static let twipsPerInch = 1440, minPageTwips = 144, maxPageTwips = 31680
+    public static let contentTypesXML: String, relationshipsXML: String
+    public static func make(_ pages: [OCRPage]) -> Data                // [Content_Types].xml, _rels/.rels, word/document.xml
+    public static func documentXML(_ pages: [OCRPage]) -> String       // a w:p per paragraph, pageBreakBefore per page, w:tab, w:br
+    public static func pageSizeTwips(_ page: OCRPage?) -> (width: Int, height: Int)   // page 1 × 20, clamped; Letter without a page
+    public static func marginTwips(width: Int, height: Int) -> Int    // min(1440, shorter side / 8)
+    public static func escapeXML(_ text: String) -> String
+}
+public struct ZipStoreEntry { public let name: String; public let data: Data }
+public enum ZipStore {
+    public static func crc32<Bytes: Sequence>(_ data: Bytes) -> UInt32 where Bytes.Element == UInt8
+    public static func make(_ entries: [ZipStoreEntry]) -> Data       // stored, 1980-01-01, in order, no zip64
+}
+```
+Twins of `windows/CompleteScanner.Core/OcrText.cs` (`OcrPage.Of`, `OcrParagraph`, `OcrText`), `TextExport.cs`, `DocxWriter.cs`, `ZipStore.cs` and `OutputFormats` in `Models.cs` (`IsImageFormat`, `IsTextFormat`, `Offered`, `ImageFormatOrJpeg`, `QueueFormat`, `PageFormat`, `SavesPdf`, `SaveTitle`); `OCRTextTests`, `TextExportTests` (with `OutputFormatsTests`), `DocxWriterTests` (with `ZipStoreTests`) are the same cases on both sides, and both pin the same CRC-32 and length of the sample text file and Word document, so the two platforms write the same bytes. `TextExport.WriteNewFile` (a hidden temporary file moved to a free name) is Windows only; the Mac writes with `Data.write`. `AppState` saves the collected pages as `settings.format.queueFormat` (`savePDF()`: a Word document or text file, else a PDF and, with `alsoSaveText`, its text beside it), a scan saved at once as Text or Word too, reads each page with OCR once per save (`PDFTextLayer`), and offers `copyPageText(id:)` (Copy Text in a queued page's menu: the page's `OCRText.pageText` on the pasteboard). A page whose text cannot be read fails a Text or Word save with `TextOutputError(TextExport.recognitionFailed(…))`; for the text beside a PDF the PDF is kept and `errorMessage` is `TextExport.sidecarFailed(…)`. A scan saved at once as Text or Word whose text cannot be read, whose file cannot be written, or whose save is cancelled, is put in the queue instead of being lost (`statusMessage` is `TextExport.keptInQueue(…)`, with `textUnreadable` true only when the error is a `TextOutputError` from OCR, so a file error is not told to wait for the text; on Windows the OCR error is a private `InvalidOperationException` subclass in `AppViewModel`). `FileActionService` gains `copyText(_:)` (Windows: `IFileActions.CopyText`, with "\r\n" line breaks). Windows: `AppViewModel.SavePdf` / `CopyPageText`, the inspector's "Also save text (.txt)" and format list, the page strip's menu.
 
 ### Output/PDFImageEncoding.swift, Pipeline/ColorAnalysis.swift (+ ScanSettings in Core/Models.swift)
 
@@ -877,6 +961,7 @@ public enum SaveActions {
     func share(_ urls: [URL], title: String) throws     // NSSharingServicePicker
     func composeEmail(_ urls: [URL]) throws             // NSSharingService(named: .composeEmail)
     func copy(_ content: ClipboardContent) throws       // NSPasteboard: the files, and the picture of one image
+    func copyText(_ text: String) throws                // NSPasteboard: Copy Text on a scanned page
 }
 @MainActor public final class SystemFileActions: FileActionService { public init() }
 extension FileAction { var systemImage: String; func hint(fileCount: Int) -> String }   // internal, UI only
@@ -903,7 +988,7 @@ public enum OCRService {
 
 ```swift
 public enum ImageExporter {
-    /// Write jpeg/png/tiff with DPI metadata. Throws ScanError.unsupported for .pdf.
+    /// Write jpeg/png/tiff with DPI metadata. Throws ScanError.unsupported for .pdf, .text and .word.
     public static func write(_ image: CGImage, to url: URL, format: OutputFormat, dpi: Int, jpegQuality: Double) throws
 }
 ```
@@ -954,11 +1039,11 @@ One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: 
 
 - `UI/SidebarView.swift` — `struct SidebarView: View`: device list + refresh (`refreshScanners()`), the "Why isn't my scanner listed?" button in the Scanners header and link in the empty list, and the troubleshooter sheet (`state.showTroubleshooter`).
 - `UI/TroubleshooterView.swift` — `struct TroubleshooterView: View`: the troubleshooter's checks as cards with their buttons, Refresh, Copy Diagnostics and Done.
-- `UI/InspectorView.swift` — `struct InspectorView: View`: all settings + Overview/Scan/Cancel buttons + presets; the Document section's "Skip blank pages" and "What counts as blank", "Crop to page" and "Straighten pages" (off, with the reason, when each scan is saved at once); for the Copy task a Copies section (Printer, its paper, Copies 1–99, Fit to page with its hint, the margin warning, Also save a PDF, Print Ruler Test Page…; without a printer, the reason and Look Again).
+- `UI/InspectorView.swift` — `struct InspectorView: View`: all settings + Overview/Scan/Cancel buttons + presets; the Output section's formats (`OutputFormat.offered(for:)`); the Document section's "Collect pages, then Save …" (the format's `saveTitle`), "Also save text (.txt)" (off, with the reason, when the save writes no PDF and in the ID card and Copy tasks), "Skip blank pages" and "What counts as blank", "Crop to page" and "Straighten pages" (off, with the reason, when each scan is saved at once); for the Copy task a Copies section (Printer, its paper, Copies 1–99, Fit to page with its hint, the margin warning, Also save a PDF, Print Ruler Test Page…; without a printer, the reason and Look Again).
 - `UI/StatusBarView.swift` — `struct StatusBarView: View`: status text, progress, and the actions for the files saved last (open, show, share, copy; More adds open with and email).
 - `UI/PreviewCanvasView.swift` — `struct PreviewCanvasView: View`: shows `state.canvasImage`, marquee selection editing `state.selectionRect` (only when `state.overviewImage != nil`).
-- `UI/PagesStripView.swift` — `struct PagesStripView: View`: page-queue thumbnails + Save PDF / Clear; the queue summary, each flagged page's badge and its Keep or Skip button (always shown), left-out pages dimmed, Save PDF counting the pages it writes; under a cropped or straightened page, its swap button (always shown: `PageCorrections.toggleLabel`, help = caption and label) calling `state.togglePageGeometry(id:)`.
+- `UI/PagesStripView.swift` — `struct PagesStripView: View`: page-queue thumbnails + Save PDF (or Save Word / Save Text: `format.saveTitle(pageCount:)`) / Clear; Copy Text in each page's context menu (`state.copyPageText(id:)`); the queue summary, each flagged page's badge and its Keep or Skip button (always shown), left-out pages dimmed, Save PDF counting the pages it writes; under a cropped or straightened page, its swap button (always shown: `PageCorrections.toggleLabel`, help = caption and label) calling `state.togglePageGeometry(id:)`.
 - `UI/PhotoReviewView.swift` — `struct PhotoReviewView: View`: detected-photo grid sheet with the "After saving" choice; Save via `state.saveReviewedPhotos()`, cancel via `state.cancelPhotoReview()`.
-- `UI/IdCardReviewView.swift` — `struct IdCardReviewView: View`: the ID card's sheet (`state.showIdCardReview`, presented from the detail in `ContentView`): each side with turn, Fix crop (the crop editor) and Scan again, a missing back with Scan the Back, Swap Front and Back, the page picture with its caption and the not-at-real-size warning, and Paper, Save as, "Also save each side as an image", Print…, Discard and Save.
+- `UI/IdCardReviewView.swift` — `struct IdCardReviewView: View`: the ID card's sheet (`state.showIdCardReview`, presented from the detail in `ContentView`): each side with turn, Fix crop (the crop editor) and Scan again, a missing back with Scan the Back, Swap Front and Back, the page picture with its caption and the not-at-real-size warning, and Paper, Save as (PDF or an image format: `format.pageFormat`; a text format chosen in the inspector shows and saves as PDF), "Also save each side as an image", Print…, Discard and Save.
 - `UI/TaskStartView.swift` — `struct TaskStartView: View` (`onOpenScanner: () -> Void`): the start screen's task cards (`state.taskCards`) and preset cards; also `enum TaskSymbols` (icon key → SF Symbol).
 - `UI/TaskBannerView.swift` — `struct TaskBannerView: View` (`definition: TaskDefinition?`, `onChangeTask: () -> Void`): the active task, or turning a stack over by hand without one (`definition` nil), above the preview, with Change Task and a leave-task button (without a task: scan one side only); fronts scanned without moving on (the feeder stopped early), Done with Fronts; while the backs are due, Keep Fronts Only, before any back is scanned Scan More Fronts, and on a count mismatch also Combine Anyway and Scan Back Sides Again; the back of an ID card (`state.canSkipStep`) offers "Skip back side" (`state.skipStep()`); the leave-task button goes through `state.leaveIdCard(then:)`.

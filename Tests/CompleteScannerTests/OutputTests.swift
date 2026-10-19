@@ -118,6 +118,48 @@ final class OutputTests: XCTestCase {
         }
     }
 
+    func test_makePDF_withTheTextLayerGiven_drawsItWithoutRunningOCR() throws {
+        let page = ScannedPage(image: makeSolidImage(width: 400, height: 300, red: 1, green: 1, blue: 1),
+                               dpi: 100, colorMode: .color)
+        let line = OCRLine(text: "Given words here", boundingBox: CGRect(x: 0.1, y: 0.5, width: 0.6, height: 0.08),
+                           confidence: 1)
+        let data = try PDFBuilder.makePDF(pages: [page, page], ocrLines: [[line]], progress: nil)
+        let document = try XCTUnwrap(PDFDocument(data: data))
+        XCTAssertEqual(document.pageCount, 2)
+        XCTAssertTrue((document.page(at: 0)?.string ?? "").contains("Given words here"))
+        // A page past the end of the list gets no text layer.
+        XCTAssertEqual((document.page(at: 1)?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines), "")
+    }
+
+    func test_makePDF_textLayer_isAskedOncePerPage_withThePreparedPage() throws {
+        let first = ScannedPage(image: makeSolidImage(width: 400, height: 300, red: 1, green: 1, blue: 1),
+                                dpi: 100, colorMode: .color, fullPixelSize: CGSize(width: 800, height: 600))
+        let second = ScannedPage(image: makeSolidImage(width: 200, height: 100, red: 1, green: 1, blue: 1),
+                                 dpi: 100, colorMode: .color)
+        var asked: [String] = []
+        _ = try PDFBuilder.makePDF(pages: [first, second], progress: nil, textLayer: { index, prepared in
+            asked.append("\(index): \(prepared.pixelWidth)x\(prepared.pixelHeight) \(prepared.image.width)")
+            return nil
+        })
+        // The recorded full-resolution size sizes the page; the pixels at hand are the preview's.
+        XCTAssertEqual(asked, ["0: 800x600 400", "1: 200x100 200"])
+    }
+
+    func test_imageExporterRejectsTextFormats() throws {
+        let image = makeSolidImage(width: 20, height: 10, red: 0.3, green: 0.7, blue: 0.4)
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for format in [OutputFormat.text, .word] {
+            let url = dir.appendingPathComponent("export.\(format.fileExtension)")
+            XCTAssertThrowsError(try ImageExporter.write(image, to: url, format: format,
+                                                         dpi: 300, jpegQuality: 0.9)) { error in
+                guard case ScanError.unsupported = error else {
+                    return XCTFail("Expected ScanError.unsupported, got \(error)")
+                }
+            }
+        }
+    }
+
     func test_imageExporterRejectsPDF() throws {
         let image = makeSolidImage(width: 200, height: 150, red: 0.3, green: 0.7, blue: 0.4)
         let dir = try makeTempDirectory()

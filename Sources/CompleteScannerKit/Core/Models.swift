@@ -44,8 +44,11 @@ public enum ScanSource: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// What a save writes. `.text` and `.word` hold the recognized text of the pages instead of their
+/// pictures (`TextExport`, `DocxWriter`); which formats a mode offers and what each save does with
+/// a format are below. Twin of C# `OutputFormat` and `OutputFormats`.
 public enum OutputFormat: String, Codable, CaseIterable, Identifiable, Sendable {
-    case pdf, jpeg, png, tiff
+    case pdf, jpeg, png, tiff, text, word
 
     public var id: String { rawValue }
     public var label: String {
@@ -54,6 +57,8 @@ public enum OutputFormat: String, Codable, CaseIterable, Identifiable, Sendable 
         case .jpeg: return "JPEG"
         case .png: return "PNG"
         case .tiff: return "TIFF"
+        case .text: return "Text (.txt)"
+        case .word: return "Word (.docx)"
         }
     }
     public var fileExtension: String {
@@ -62,7 +67,62 @@ public enum OutputFormat: String, Codable, CaseIterable, Identifiable, Sendable 
         case .jpeg: return "jpg"
         case .png: return "png"
         case .tiff: return "tiff"
+        case .text: return "txt"
+        case .word: return "docx"
         }
+    }
+
+    /// JPEG, PNG and TIFF: a picture of each page. Photos are saved in these only.
+    public var isImageFormat: Bool {
+        switch self {
+        case .jpeg, .png, .tiff: return true
+        case .pdf, .text, .word: return false
+        }
+    }
+
+    /// Text and Word: the recognized text of the pages, read by OCR when the file is saved.
+    public var isTextFormat: Bool {
+        switch self {
+        case .text, .word: return true
+        case .pdf, .jpeg, .png, .tiff: return false
+        }
+    }
+
+    /// The formats the inspector offers: every format for documents, the image formats for photos
+    /// (a photo has no text to save, and PDF photos are saved as JPEG).
+    public static func offered(for intent: ScanIntent) -> [OutputFormat] {
+        intent == .photo ? [.jpeg, .png, .tiff] : [.pdf, .word, .text, .jpeg, .png, .tiff]
+    }
+
+    /// The format a photo is saved in: this one when it is an image format, otherwise JPEG.
+    public var imageFormatOrJPEG: OutputFormat { isImageFormat ? self : .jpeg }
+
+    /// The format the collected pages are saved in together: Text and Word as chosen, anything
+    /// else as one PDF (the image formats apply to scans saved one at a time).
+    public var queueFormat: OutputFormat { isTextFormat ? self : .pdf }
+
+    /// Whether a save writes a PDF: the collected pages in any format but Text and Word, a scan
+    /// saved at once only in PDF. The text beside a PDF can be asked for then.
+    public func savesPDF(collectsPages: Bool) -> Bool {
+        collectsPages ? queueFormat == .pdf : self == .pdf
+    }
+
+    /// The format of a page made of a scan, like the ID card's: PDF or the image format chosen;
+    /// PDF for the text formats.
+    public var pageFormat: OutputFormat { isImageFormat ? self : .pdf }
+
+    /// "Save PDF", "Save Word", "Save Text": the button that saves the collected pages.
+    public var saveTitle: String {
+        switch queueFormat {
+        case .word: return "Save Word"
+        case .text: return "Save Text"
+        default: return "Save PDF"
+        }
+    }
+
+    /// "Save PDF (3 pages)", or just the `saveTitle` when no page would be saved.
+    public func saveTitle(pageCount: Int) -> String {
+        pageCount > 0 ? "\(saveTitle) (\(pageCount) page\(pageCount == 1 ? "" : "s"))" : saveTitle
     }
 }
 
@@ -238,14 +298,17 @@ extension AdjustmentSettings {
 }
 
 /// Settings for the saved files themselves, kept together as `ScanSettings.output` (the "output"
-/// object in settings files): the PDF size and the after-save action. Later output features add
-/// their fields here. Twin of C# `OutputOptions`.
+/// object in settings files): the PDF size, the after-save action and the text file beside a PDF.
+/// Later output features add their fields here. Twin of C# `OutputOptions`.
 public struct OutputOptions: Codable, Equatable, Sendable {
     /// How small saved PDFs are made. Settings without it get `.standard`.
     public var pdfSize: PDFSizePreset = .standard
     /// What happens on its own after a save (see `SaveActions.plan`). Settings without it, or
     /// with an action this version does not know, get `.none`.
     public var afterSave: AfterSaveAction = AfterSaveAction.none
+    /// A saved PDF gets a text file beside it with the same name (`TextExport`): the recognized
+    /// text of its pages, read once for both. Settings without it get false.
+    public var alsoSaveText: Bool = false
 
     public init() {}
 
@@ -253,6 +316,7 @@ public struct OutputOptions: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case pdfSize
         case afterSave
+        case alsoSaveText
     }
 }
 
@@ -263,6 +327,7 @@ extension OutputOptions {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         pdfSize = container.decodeLenient(forKey: .pdfSize, default: pdfSize)
         afterSave = container.decodeLenient(forKey: .afterSave, default: afterSave)
+        alsoSaveText = container.decodeLenient(forKey: .alsoSaveText, default: alsoSaveText)
     }
 }
 
@@ -385,7 +450,7 @@ public struct ScanSettings: Codable, Equatable, Sendable {
     /// one) reads as no `task` but is written back unchanged. Left out of the file when nil.
     public var taskId: String?
 
-    /// Settings for the saved files (the PDF size, the after-save action).
+    /// Settings for the saved files (the PDF size, the after-save action, the text beside a PDF).
     public var output: OutputOptions = OutputOptions()
 
     /// Which sides of each sheet a feeder scan captures. Read by the backends (two-sided feeder

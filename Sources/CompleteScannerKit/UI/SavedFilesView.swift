@@ -81,7 +81,7 @@ struct SavedFilesView: View {
             return
         }
         loadFailed = false
-        let known: Set<String> = ["pdf", "jpg", "jpeg", "png", "tiff", "tif"]
+        let known: Set<String> = ["pdf", "jpg", "jpeg", "png", "tiff", "tif", "txt", "docx"]
         files = urls
             .filter { known.contains($0.pathExtension.lowercased()) }
             .compactMap { url -> SavedFileItem? in
@@ -160,6 +160,9 @@ fileprivate struct SavedFileItem: Identifiable, Equatable {
 
     var isPdf: Bool { url.pathExtension.lowercased() == "pdf" }
 
+    /// A text file or Word document: no picture to show.
+    var isTextDocument: Bool { ["txt", "docx"].contains(url.pathExtension.lowercased()) }
+
     var imageFormat: OutputFormat? {
         switch url.pathExtension.lowercased() {
         case "jpg", "jpeg": return .jpeg
@@ -194,7 +197,7 @@ fileprivate struct SavedFileCard: View {
                         .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
                         .padding(6)
                 } else {
-                    Image(systemName: file.isPdf ? "doc.richtext" : "photo")
+                    Image(systemName: file.isTextDocument ? "doc.text" : file.isPdf ? "doc.richtext" : "photo")
                         .font(.system(size: 36, weight: .light))
                         .foregroundStyle(.secondary)
                 }
@@ -293,8 +296,9 @@ fileprivate struct SavedFileCard: View {
 // MARK: - File-private helpers
 
 /// Small preview of a saved file: CGImageSource thumbnailing for images, first-page
-/// rasterization via NSImage for PDFs.
+/// rasterization via NSImage for PDFs; none for text files and Word documents, which show their icon.
 fileprivate func loadThumbnail(for file: SavedFileItem) async -> CGImage? {
+    if file.isTextDocument { return nil }
     let url = file.url
     let isPdf = file.isPdf
     return await Task.detached(priority: .utility) { () -> CGImage? in

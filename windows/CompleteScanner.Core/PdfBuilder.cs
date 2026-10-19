@@ -147,7 +147,7 @@ public static class PdfBuilder
     /// leading dot alone, so this is a no-op there). Never throws: a temp file that stays
     /// visible is cosmetic, not a reason to fail the save.
     /// </summary>
-    private static void SetHidden(string path, bool hidden)
+    internal static void SetHidden(string path, bool hidden)
     {
         if (!OperatingSystem.IsWindows()) return;
         try

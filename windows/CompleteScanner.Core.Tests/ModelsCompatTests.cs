@@ -58,6 +58,7 @@ internal static class CompatFixtures
         settings.Adjustments.BlackWhiteThreshold = 0.375;
         settings.Output.PdfSize = PdfSizePreset.Compact;
         settings.Output.AfterSave = AfterSaveAction.Share;
+        settings.Output.AlsoSaveText = true;
         settings.Duplex = DuplexMode.Manual;
         settings.BackBinding = DuplexBinding.ShortEdge;
         settings.PaperSize = PaperSize.A4;
@@ -126,7 +127,8 @@ internal static class CompatFixtures
     /// </summary>
     public static readonly string CurrentFormatPresetsJson = PresetsJsonBeforePdfSize.ReplaceLineEndings("\n").Replace(
         "        \"blackWhiteThreshold\": 0.375\n      }\n",
-        "        \"blackWhiteThreshold\": 0.375\n      },\n      \"output\": {\n        \"pdfSize\": \"compact\",\n        \"afterSave\": \"share\"\n      },\n"
+        "        \"blackWhiteThreshold\": 0.375\n      },\n      \"output\": {\n        \"pdfSize\": \"compact\",\n        \"afterSave\": \"share\",\n"
+        + "        \"alsoSaveText\": true\n      },\n"
         + "      \"duplex\": \"manual\",\n      \"backBinding\": \"shortEdge\",\n      \"paperSize\": \"a4\",\n"
         + "      \"document\": {\n        \"removeBlankPages\": true,\n        \"blankSensitivity\": \"high\",\n"
         + "        \"autoCrop\": true,\n        \"autoStraighten\": true\n      },\n"
@@ -438,6 +440,7 @@ public class ModelsCompatTests
         var expected = CompatFixtures.NonDefaultSettings();
         expected.Output.PdfSize = PdfSizePreset.Standard;
         expected.Output.AfterSave = AfterSaveAction.None;
+        expected.Output.AlsoSaveText = false;
         expected.Duplex = DuplexMode.Off;
         expected.BackBinding = DuplexBinding.LongEdge;
         expected.PaperSize = PaperSize.Auto;
@@ -473,7 +476,7 @@ public class ModelsCompatTests
             settings.Output.PdfSize = size;
             string json = CompatFixtures.Encode(settings);
             using var written = JsonDocument.Parse(json);
-            Assert.Equal(["pdfSize", "afterSave"], written.RootElement.GetProperty("output").EnumerateObject().Select(p => p.Name));
+            Assert.Equal(["pdfSize", "afterSave", "alsoSaveText"], written.RootElement.GetProperty("output").EnumerateObject().Select(p => p.Name));
             Assert.Equal(size, Decode<ScanSettings>(json).Output.PdfSize);
         }
     }
@@ -488,6 +491,47 @@ public class ModelsCompatTests
         Assert.NotSame(settings.Output, clone.Output);
         clone.Output.PdfSize = PdfSizePreset.Best;
         Assert.Equal(PdfSizePreset.Smallest, settings.Output.PdfSize);
+    }
+
+    // MARK: - Text output (CONTRACTS.md, rule 6)
+
+    [Fact]
+    public void Formats_NewMembersComeLast_WithTheirStoredNames()
+    {
+        Assert.Equal(["pdf", "jpeg", "png", "tiff", "text", "word"],
+                     Enum.GetValues<OutputFormat>().Select(f => JsonSerializer.Serialize(f, StoreFiles.JsonOptions).Trim('"')));
+        Assert.Equal(OutputFormat.Word, Decode<ScanSettings>("""{"format": "word"}""").Format);
+        Assert.Equal(OutputFormat.Text, Decode<ScanSettings>("""{"format": "text"}""").Format);
+        // A format of a newer version is read as PDF.
+        Assert.Equal(OutputFormat.Pdf, Decode<ScanSettings>("""{"format": "markdown", "resolution": 150}""").Format);
+    }
+
+    [Fact]
+    public void AlsoSaveText_OffByDefault_AndInFilesWithoutIt()
+    {
+        Assert.False(new ScanSettings().Output.AlsoSaveText);
+        Assert.False(Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize)[0].Settings.Output.AlsoSaveText);
+        Assert.False(Decode<ScanSettings>("""{"output": {"pdfSize": "compact", "afterSave": "share"}}""").Output.AlsoSaveText);
+        foreach (string value in new[] { "\"yes\"", "1", "null", "{}" })
+        {
+            var settings = Decode<ScanSettings>($$"""{"output": {"pdfSize": "best", "alsoSaveText": {{value}}}, "resolution": 150}""");
+            Assert.False(settings.Output.AlsoSaveText);
+            Assert.Equal(PdfSizePreset.Best, settings.Output.PdfSize);
+            Assert.Equal(150, settings.Resolution);
+        }
+        Assert.True(Decode<ScanSettings>("""{"output": {"alsoSaveText": true}}""").Output.AlsoSaveText);
+    }
+
+    [Fact]
+    public void Clone_CopiesAlsoSaveText()
+    {
+        var settings = new ScanSettings();
+        settings.Output.AlsoSaveText = true;
+        var clone = settings.Clone();
+        Assert.True(clone.Output.AlsoSaveText);
+        clone.Output.AlsoSaveText = false;
+        Assert.True(settings.Output.AlsoSaveText);
+        Assert.NotEqual(settings.Output, clone.Output);
     }
 
     // MARK: - Two-sided scanning and paper size (CONTRACTS.md, rule 6)

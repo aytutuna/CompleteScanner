@@ -15,6 +15,15 @@ scanners** — including the Epson Perfection V39 II.
 - **Document mode**: scan pages into a queue, reorder/delete, then save one multi-page PDF.
   Optional **searchable PDF** — OCR (Apple Vision) embeds an invisible text layer so the PDF
   is selectable and searchable. Or save every scan immediately as its own PDF/JPEG/PNG/TIFF.
+- **Text: Word documents, text files, Copy Text**: save the collected pages as a **Word
+  document (.docx)** or a **text file (.txt)** with the recognized text instead of the pictures,
+  or tick **Also save text (.txt)** to get a text file next to the PDF of the pages; **Copy Text** in a
+  queued page's menu puts its text on the clipboard. The lines OCR finds are put in reading order
+  (columns, tables of dishes and prices, a letterhead beside the text) and split into paragraphs;
+  OCR reads each page once per save. The files are written without any library: a minimal Word
+  package (text only, the first page's paper size) that both platforms write byte for byte the
+  same, and UTF-8 text with a blank line between paragraphs. When no OCR language is installed
+  (Windows) the save says so and names the setting.
 - **Photo batch mode**: lay several photos on the glass, press Scan once. The app detects
   each photo, measures its tilt, deskews and crops each one, and shows a review grid —
   untick false positives, rotate, then save all as separate JPEG/PNG/TIFF files with correct
@@ -97,7 +106,8 @@ scanners** — including the Epson Perfection V39 II.
   descreen (moiré reduction for printed material), faded-color restoration for old photos,
   black-and-white threshold.
 - **Start screen**: pick what you are scanning (Document to PDF, Multi-page from feeder,
-  Photos, Old photo restoration, Quick scan, Email a document, Two-sided document, ID card, Copy) and everything is set up for it, with a short
+  Photos, Old photo restoration, Quick scan, Email a document, Two-sided document, ID card, Copy,
+  Scan to Word) and everything is set up for it, with a short
   guide on the scan screen. Tasks the connected scanner cannot do are greyed out with the
   reason (Copy also needs a printer). The app remembers the task you used last.
 - **Presets**: save your own settings as presets; they appear on the start screen too.

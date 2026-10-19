@@ -13,6 +13,9 @@ public sealed record SavedFile(string Path, DateTime Modified, long Size)
     public string Name => System.IO.Path.GetFileName(Path);
     public bool IsPdf => System.IO.Path.GetExtension(Path).Equals(".pdf", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>A text file or Word document: no picture to show.</summary>
+    public bool IsTextDocument => System.IO.Path.GetExtension(Path).ToLowerInvariant() is ".txt" or ".docx";
+
     /// <summary>The image format for rotatable files; null for PDFs.</summary>
     public OutputFormat? ImageFormat => System.IO.Path.GetExtension(Path).ToLowerInvariant() switch
     {
@@ -31,7 +34,7 @@ public sealed record SavedFile(string Path, DateTime Modified, long Size)
 public static class SavedFiles
 {
     private static readonly HashSet<string> KnownExtensions =
-        new(StringComparer.OrdinalIgnoreCase) { ".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff" };
+        new(StringComparer.OrdinalIgnoreCase) { ".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".txt", ".docx" };
 
     /// <summary>One lock per file so concurrent rotates of the same file run one after another.</summary>
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> FileLocks =
@@ -163,12 +166,14 @@ public static class SavedFiles
     /// <summary>
     /// A small frozen preview: images decode at <paramref name="decodeWidth"/> (never the full
     /// pixels) with their EXIF orientation applied; PDFs render their first page through the
-    /// built-in Windows PDF renderer. null when the file cannot be read.
+    /// built-in Windows PDF renderer. null when the file cannot be read, and for text files and
+    /// Word documents, which show their icon.
     /// </summary>
     public static async Task<BitmapSource?> LoadThumbnailAsync(SavedFile file, int decodeWidth)
     {
         try
         {
+            if (file.IsTextDocument) return null;
             if (file.IsPdf) return await RenderPdfThumbnailAsync(file.Path, decodeWidth);
             return await Task.Run(() => LoadImageThumbnail(file.Path, decodeWidth));
         }

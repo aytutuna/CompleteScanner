@@ -30,6 +30,15 @@ final class CancelFlag: @unchecked Sendable {
     }
 }
 
+/// The recognized text of a PDF's pages, collected while the PDF is written for the text file
+/// beside it (`OutputOptions.alsoSaveText`), so OCR reads each page once. Filled by the one task
+/// that writes the PDF and read once that task has finished. Twin of the Windows `PdfText`.
+fileprivate final class PDFTextCollector: @unchecked Sendable {
+    var pages: [OCRPage] = []
+    /// The OCR error of the first page whose text could not be read; no text file is written then.
+    var problem: String?
+}
+
 /// Central controller: owns backends, the open scanner session, settings, scan results,
 /// and every user-triggered operation. All UI binds to this object.
 @MainActor
@@ -699,11 +708,11 @@ public final class AppState: ObservableObject {
                         self.afterTurnedOverScan(manualSide, count: n, stopped: stop != nil)
                     } else if twoSided {
                         let sheets = Set(processed.compactMap(\.sheetIndex)).count
-                        self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") from \(sheets) sheet\(sheets == 1 ? "" : "s"), both sides — \(self.scannedPages.count) in queue. Scan more or Save PDF."
+                        self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") from \(sheets) sheet\(sheets == 1 ? "" : "s"), both sides — \(self.scannedPages.count) in queue. Scan more or \(self.settings.format.saveTitle)."
                     } else if sides == .both {
-                        self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s"), one side of each sheet: the scanner did not scan both sides — \(self.scannedPages.count) in queue. Scan more or Save PDF."
+                        self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s"), one side of each sheet: the scanner did not scan both sides — \(self.scannedPages.count) in queue. Scan more or \(self.settings.format.saveTitle)."
                     } else {
-                        self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") — \(self.scannedPages.count) in queue. Scan more or Save PDF."
+                        self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") — \(self.scannedPages.count) in queue. Scan more or \(self.settings.format.saveTitle)."
                     }
                     self.statusMessage += blankNote
                 } else {
@@ -821,6 +830,9 @@ public final class AppState: ObservableObject {
 
     // MARK: Saving
 
+    /// Saves the collected pages as one file: a PDF (with its text beside it when
+    /// `OutputOptions.alsoSaveText` is on), or a Word document or text file when that is the format
+    /// chosen (`OutputFormat.queueFormat`). OCR reads each page once.
     public func savePDF() {
         guard !scannedPages.isEmpty else { return }
         let s = settings
@@ -836,42 +848,111 @@ public final class AppState: ObservableObject {
                 self.statusMessage = PageFilter.queueSummary(queued, options: s.document) + "."
                 return
             }
-            self.statusMessage = s.pdfSearchable ? "Running OCR and building PDF…" : "Building PDF…"
+            let skipped = queued.count - pages.count
+            let left = skipped == 0 ? "" : " — \(skipped) skipped page\(skipped == 1 ? " was" : "s were") left out"
+            let format = s.format.queueFormat
+            if format.isTextFormat {
+                self.statusMessage = "Reading the text of the pages…"
+                let url = try self.outputURL(fileExtension: format.fileExtension)
+                let hasText = try await Task.detached(priority: .userInitiated) {
+                    try Self.writeTextDocument(pages: pages, format: format, to: url,
+                                               shouldContinue: { !flag.isCancelled }) { [weak self] msg in
+                        Task { @MainActor in self?.statusMessage = msg }
+                    }
+                }.value
+                self.lastSavedURLs = [url]
+                self.deleteSpoolFiles(of: queued)
+                self.scannedPages = []
+                self.resetFlow()
+                self.statusMessage = TextExport.savedMessage(format: format, pageCount: pages.count,
+                                                             fileName: url.lastPathComponent, hasText: hasText) + left
+                self.runAfterSave(s.output.afterSave, saved: [url])
+                return
+            }
+            let text = s.output.alsoSaveText ? PDFTextCollector() : nil
+            self.statusMessage = s.pdfSearchable || text != nil ? "Running OCR and building PDF…" : "Building PDF…"
             let url = try self.outputURL(fileExtension: "pdf")
-            try await Task.detached(priority: .userInitiated) {
-                try Self.writePDFAtomically(pages: pages, searchable: s.pdfSearchable,
-                                            languages: s.ocrLanguages, pdfSize: s.output.pdfSize, to: url,
+            let textResult = try await Task.detached(priority: .userInitiated) { () throws -> (url: URL?, problem: String?)? in
+                try Self.writePDFAtomically(pages: pages, pdfSize: s.output.pdfSize, to: url,
+                                            textLayer: Self.textLayer(searchable: s.pdfSearchable, collecting: text,
+                                                                      pages: pages),
                                             shouldContinue: { !flag.isCancelled }) { [weak self] msg in
                     Task { @MainActor in self?.statusMessage = msg }
                 }
+                return text.map { Self.writeTextBeside(pdf: url, text: $0) }
             }.value
             self.lastSavedURLs = [url]
             self.notePDFSize(of: url)
             self.deleteSpoolFiles(of: queued)
             self.scannedPages = []
             self.resetFlow()
-            let skipped = queued.count - pages.count
-            let left = skipped == 0 ? "" : " — \(skipped) skipped page\(skipped == 1 ? " was" : "s were") left out"
-            self.statusMessage = "Saved \(pages.count)-page PDF: \(url.lastPathComponent)\(self.pdfSizeSuffix)\(left)"
+            if let problem = textResult?.problem { self.errorMessage = TextExport.sidecarFailed(problem) }
+            let textNote = textResult?.url.map { TextExport.sidecarSuffix($0.lastPathComponent) } ?? ""
+            self.statusMessage = "Saved \(pages.count)-page PDF: \(url.lastPathComponent)\(self.pdfSizeSuffix)\(textNote)\(left)"
             self.runAfterSave(s.output.afterSave, saved: [url])
         }
     }
 
     /// Used when documentMultiPage is off: write each scan to disk as soon as it lands, with the
-    /// settings it was scanned with.
+    /// settings it was scanned with. A Word document or text file is one file: when its text cannot
+    /// be read or it cannot be written (or the save is cancelled) the pages are put in the queue
+    /// instead, as the pages are held nowhere else.
     private func saveImmediately(_ pages: [ScannedPage], settings s: ScanSettings, flag: CancelFlag) async throws {
         var saved: [URL] = []
+        var note = ""
+        if s.format.isTextFormat {
+            let url: URL
+            let hasText: Bool
+            do {
+                let target = try outputURL(fileExtension: s.format.fileExtension)
+                hasText = try await Task.detached(priority: .userInitiated) {
+                    try Self.writeTextDocument(pages: pages, format: s.format, to: target,
+                                               shouldContinue: { !flag.isCancelled }) { [weak self] msg in
+                        Task { @MainActor in self?.statusMessage = msg }
+                    }
+                }.value
+                url = target
+            } catch {
+                // Nothing was written: the pages go to the queue rather than being lost, to be
+                // saved once the text can be read or the file written, or in another format.
+                let spooled = await Task.detached(priority: .userInitiated) {
+                    Self.spoolPages(pages)
+                }.value
+                scannedPages.append(contentsOf: spooled)
+                let cancelled: Bool
+                switch error {
+                case ScanError.cancelled, is CancellationError:
+                    cancelled = true
+                default:
+                    cancelled = false
+                }
+                if !cancelled { errorMessage = error.localizedDescription }
+                statusMessage = TextExport.keptInQueue(format: s.format, pageCount: pages.count, cancelled: cancelled,
+                                                       textUnreadable: error is TextOutputError)
+                return
+            }
+            lastSavedURLs = [url]
+            statusMessage = TextExport.savedMessage(format: s.format, pageCount: pages.count,
+                                                    fileName: url.lastPathComponent, hasText: hasText)
+            runAfterSave(s.output.afterSave, saved: [url])
+            return
+        }
         if s.format == .pdf {
             let url = try outputURL(fileExtension: "pdf")
-            try await Task.detached(priority: .userInitiated) {
-                try Self.writePDFAtomically(pages: pages, searchable: s.pdfSearchable,
-                                            languages: s.ocrLanguages, pdfSize: s.output.pdfSize, to: url,
+            let text = s.output.alsoSaveText ? PDFTextCollector() : nil
+            let textResult = try await Task.detached(priority: .userInitiated) { () throws -> (url: URL?, problem: String?)? in
+                try Self.writePDFAtomically(pages: pages, pdfSize: s.output.pdfSize, to: url,
+                                            textLayer: Self.textLayer(searchable: s.pdfSearchable, collecting: text,
+                                                                      pages: pages),
                                             shouldContinue: { !flag.isCancelled }) { [weak self] msg in
                     Task { @MainActor in self?.statusMessage = msg }
                 }
+                return text.map { Self.writeTextBeside(pdf: url, text: $0) }
             }.value
             saved = [url]
             notePDFSize(of: url)
+            if let problem = textResult?.problem { errorMessage = TextExport.sidecarFailed(problem) }
+            note = pdfSizeSuffix + (textResult?.url.map { TextExport.sidecarSuffix($0.lastPathComponent) } ?? "")
         } else {
             for page in pages {
                 if flag.isCancelled { throw ScanError.cancelled }
@@ -884,8 +965,7 @@ public final class AppState: ObservableObject {
             }
         }
         lastSavedURLs = saved
-        statusMessage = "Saved \(saved.map(\.lastPathComponent).joined(separator: ", "))"
-            + (s.format == .pdf ? pdfSizeSuffix : "")
+        statusMessage = "Saved \(saved.map(\.lastPathComponent).joined(separator: ", "))\(note)"
         runAfterSave(s.output.afterSave, saved: saved)
     }
 
@@ -893,7 +973,7 @@ public final class AppState: ObservableObject {
         let photos = detectedPhotos.filter(\.included)
         guard !photos.isEmpty else { return cancelPhotoReview() }
         let s = settings
-        let format: OutputFormat = s.format == .pdf ? .jpeg : s.format
+        let format = s.format.imageFormatOrJPEG
         runExclusive { flag in
             var saved: [URL] = []
             for (index, photo) in photos.enumerated() {
@@ -1219,7 +1299,7 @@ public final class AppState: ObservableObject {
         resetFlow()
         let sheets = max(counts.fronts, counts.backs)
         let pages = counts.fronts + counts.backs
-        statusMessage = "Put \(sheets) sheet\(sheets == 1 ? "" : "s") in order (\(pages) page\(pages == 1 ? "" : "s")) — \(scannedPages.count) in queue. Scan another stack or Save PDF."
+        statusMessage = "Put \(sheets) sheet\(sheets == 1 ? "" : "s") in order (\(pages) page\(pages == 1 ? "" : "s")) — \(scannedPages.count) in queue. Scan another stack or \(settings.format.saveTitle)."
     }
 
     /// The backs did not pair up with the fronts, but the pages are combined as they are (the
@@ -1246,7 +1326,7 @@ public final class AppState: ObservableObject {
         let queued = Set(scannedPages.map(\.id))
         let fronts = flow.captures(for: DocumentSides.frontsStepID).filter { queued.contains($0) }.count
         resetFlow()
-        statusMessage = "Kept \(fronts) front side\(fronts == 1 ? "" : "s") — \(scannedPages.count) in queue. Scan another stack or Save PDF."
+        statusMessage = "Kept \(fronts) front side\(fronts == 1 ? "" : "s") — \(scannedPages.count) in queue. Scan another stack or \(settings.format.saveTitle)."
     }
 
     /// Stops turning stacks over by hand (the close button of its banner without a task): feeder
@@ -1450,16 +1530,131 @@ public final class AppState: ObservableObject {
                                                        to url: URL,
                                                        shouldContinue: (() -> Bool)? = nil,
                                                        progress: ((String) -> Void)?) throws {
+        let layer: PDFTextLayer? = searchable
+            ? { _, page in try? OCRService.recognizeLines(in: page.image, languages: languages) }
+            : nil
+        try writePDFAtomically(pages: pages, pdfSize: pdfSize, to: url, textLayer: layer,
+                               shouldContinue: shouldContinue, progress: progress)
+    }
+
+    /// The same, with each page's text layer from `textLayer` (none when nil).
+    nonisolated static func writePDFAtomically(pages: [ScannedPage], pdfSize: PDFSizePreset, to url: URL,
+                                               textLayer: PDFTextLayer?, shouldContinue: (() -> Bool)? = nil,
+                                               progress: ((String) -> Void)?) throws {
         let tmp = url.deletingLastPathComponent()
             .appendingPathComponent(".\(UUID().uuidString).pdf.tmp")
         do {
-            try PDFBuilder.writePDF(pages: pages, searchable: searchable, ocrLanguages: languages,
-                                    pdfSize: pdfSize, to: tmp, progress: progress, shouldContinue: shouldContinue)
+            try PDFBuilder.writePDF(pages: pages, pdfSize: pdfSize, to: tmp, progress: progress,
+                                    shouldContinue: shouldContinue, textLayer: textLayer)
             try? FileManager.default.removeItem(at: url)
             try FileManager.default.moveItem(at: tmp, to: url)
         } catch {
             try? FileManager.default.removeItem(at: tmp)
             throw error
+        }
+    }
+
+    /// The text layer of a PDF being saved: OCR reads each page once, for the searchable text
+    /// layer (when `searchable`) and for the text file beside the PDF (when `collecting`, which
+    /// keeps the lines, or the first OCR error, page by page).
+    nonisolated fileprivate static func textLayer(searchable: Bool, collecting text: PDFTextCollector?,
+                                                  pages: [ScannedPage]) -> PDFTextLayer? {
+        guard searchable || text != nil else { return nil }
+        return { index, prepared in
+            // Once the text file is known to be lost, a PDF that is not searchable needs no more OCR.
+            if !searchable && (text == nil || text?.problem != nil) { return nil }
+            let lines: [OCRLine]?
+            do {
+                lines = try OCRService.recognizeLines(in: prepared.image)
+            } catch {
+                lines = nil
+                if let text, text.problem == nil { text.problem = error.localizedDescription }
+            }
+            if let lines, let text, text.problem == nil {
+                text.pages.append(OCRPage.of(lines, pixelWidth: prepared.pixelWidth,
+                                             pixelHeight: prepared.pixelHeight, dpi: pages[index].dpi))
+            }
+            return searchable ? lines : nil
+        }
+    }
+
+    /// The text file beside a PDF just written, with the PDF's name (the next free one when that is
+    /// taken): its URL, or why it was not written (the PDF is saved either way).
+    nonisolated fileprivate static func writeTextBeside(pdf url: URL, text: PDFTextCollector) -> (url: URL?, problem: String?) {
+        if let problem = text.problem { return (nil, problem) }
+        let target = NamingTemplate.uniqueURL(in: url.deletingLastPathComponent(),
+                                              base: url.deletingPathExtension().lastPathComponent,
+                                              fileExtension: "txt")
+        do {
+            try TextExport.encode(text.pages).write(to: target, options: .withoutOverwriting)
+            return (target, nil)
+        } catch {
+            return (nil, error.localizedDescription)
+        }
+    }
+
+    /// Reads the text of every page with OCR, on full-resolution pixels with the page's rotation,
+    /// and writes it as a Word document or a text file (`format`). A page whose text cannot be read
+    /// fails the save, saying why. Returns whether any text was found.
+    nonisolated fileprivate static func writeTextDocument(pages: [ScannedPage], format: OutputFormat, to url: URL,
+                                                          shouldContinue: () -> Bool,
+                                                          progress: (String) -> Void) throws -> Bool {
+        var ocrPages: [OCRPage] = []
+        for (index, page) in pages.enumerated() {
+            if !shouldContinue() { throw ScanError.cancelled }
+            progress("Reading the text of page \(index + 1) of \(pages.count)…")
+            let prepared = PDFBuilder.preparePage(page)
+            let lines = try recognizeForText(prepared.image)
+            ocrPages.append(OCRPage.of(lines, pixelWidth: prepared.pixelWidth,
+                                       pixelHeight: prepared.pixelHeight, dpi: page.dpi))
+        }
+        if !shouldContinue() { throw ScanError.cancelled }
+        progress(format == .word ? "Writing the Word document…" : "Writing the text file…")
+        let data = format == .word ? DocxWriter.make(ocrPages) : TextExport.encode(ocrPages)
+        do {
+            try data.write(to: url, options: .atomic)
+        } catch {
+            throw ScanError.exportFailed("Could not write \(url.lastPathComponent): \(error.localizedDescription)")
+        }
+        return TextExport.hasText(ocrPages)
+    }
+
+    /// The lines OCR finds on `image`, for text the user asked for: a failure is an error that says
+    /// why (`TextOutputError`, not a scanner failure, so the troubleshooter does not record it).
+    nonisolated fileprivate static func recognizeForText(_ image: CGImage) throws -> [OCRLine] {
+        do {
+            return try OCRService.recognizeLines(in: image)
+        } catch {
+            throw TextOutputError(TextExport.recognitionFailed(error.localizedDescription))
+        }
+    }
+
+    /// Copy Text on a page in the queue: reads its text with OCR (full resolution, as turned) and
+    /// puts it on the pasteboard, a blank line between paragraphs. Twin of the Windows
+    /// `AppViewModel.CopyPageText`.
+    public func copyPageText(id: UUID) {
+        guard !isBusy, scannedPages.contains(where: { $0.id == id }) else { return }
+        runExclusive { flag in
+            // A turn clicked just before must be in the text's reading order.
+            await self.pageEditChain?.value
+            guard let index = self.scannedPages.firstIndex(where: { $0.id == id }) else { return }
+            let page = self.scannedPages[index]
+            self.statusMessage = "Reading the text of page \(index + 1)…"
+            let text = try await Task.detached(priority: .userInitiated) { () throws -> String in
+                let prepared = PDFBuilder.preparePage(page)
+                let lines = try Self.recognizeForText(prepared.image)
+                return OCRText.pageText(OCRPage.of(lines, pixelWidth: prepared.pixelWidth,
+                                                   pixelHeight: prepared.pixelHeight, dpi: page.dpi))
+            }.value
+            if flag.isCancelled { throw ScanError.cancelled }
+            if !text.isEmpty {
+                do {
+                    try self.fileActions.copyText(text)
+                } catch {
+                    throw TextOutputError("Copy did not work: \(Self.describe(error))")
+                }
+            }
+            self.statusMessage = TextExport.copiedMessage(pageNumber: index + 1, hasText: !text.isEmpty)
         }
     }
 

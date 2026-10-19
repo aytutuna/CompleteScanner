@@ -402,6 +402,12 @@
                                         <ListBox.ItemTemplate>
                                             <DataTemplate>
                                                 <Grid Width="116" Height="128">
+                                                    <!-- The page's text, read with OCR, on the clipboard. -->
+                                                    <Grid.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="Copy text" Click="PageCopyText_Click" Tag="{Binding Page.Id}" />
+                                                        </ContextMenu>
+                                                    </Grid.ContextMenu>
                                                     <Border x:Name="Card" Style="{StaticResource CardStyle}" Padding="6"
                                                             ToolTip="{Binding SideLabel}">
                                                         <Image x:Name="Thumb" Source="{Binding Thumbnail}" MaxHeight="112" MaxWidth="104"
@@ -735,7 +741,7 @@
                                         <StackPanel>
                                             <TextBlock Text="Format" Style="{StaticResource FieldLabelText}" />
                                             <ComboBox x:Name="FormatBox" HorizontalAlignment="Stretch"
-                                                      AutomationProperties.Name="Format" SelectionChanged="Setting_Changed" />
+                                                      AutomationProperties.Name="Format" SelectionChanged="Format_Changed" />
                                             <!-- PDF output only: how small the file is made. The segments
                                                  (largest first) are added in code from PdfSizePresets. -->
                                             <StackPanel x:Name="PdfSizeOptions" Margin="0,12,0,0">
@@ -757,6 +763,10 @@
                                                 <CheckBox x:Name="SearchableBox" Style="{StaticResource ToggleSwitchStyle}"
                                                           Content="Searchable PDF (OCR)"
                                                           ToolTip="Text is recognized automatically — nothing to configure."
+                                                          Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                                                <!-- The text of the pages in a .txt file beside each PDF; OCR reads each page once for both. -->
+                                                <CheckBox x:Name="AlsoSaveTextBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                          Content="Also save text (.txt)" ToolTipService.ShowOnDisabled="True"
                                                           Checked="Setting_Changed" Unchecked="Setting_Changed" />
                                                 <!-- Blank pages: flagged in the page strip, left out when saving. The
                                                      sensitivity segments (least first) are added in code. -->

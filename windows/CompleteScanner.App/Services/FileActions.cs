@@ -30,6 +30,8 @@ public interface IFileActions
     void ComposeEmail(IReadOnlyList<string> paths);
     /// <summary>Puts the files (and the picture of a single image) on the clipboard.</summary>
     void Copy(ClipboardContent content);
+    /// <summary>Puts <paramref name="text"/> on the clipboard (Copy Text on a scanned page).</summary>
+    void CopyText(string text);
 }
 
 /// <summary>
@@ -81,6 +83,14 @@ public sealed class WindowsFileActions : IFileActions
         var data = ClipboardData(content, LoadImage);
         // copy: true renders every format now, so the clipboard keeps them after the app exits.
         // WPF retries while another app holds the clipboard open, then throws.
+        Clipboard.SetDataObject(data, copy: true);
+    }
+
+    public void CopyText(string text)
+    {
+        var data = new DataObject();
+        data.SetText(text, TextDataFormat.UnicodeText);
+        // copy: true keeps the text on the clipboard after the app exits.
         Clipboard.SetDataObject(data, copy: true);
     }
 

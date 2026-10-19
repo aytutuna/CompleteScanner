@@ -30,12 +30,19 @@ public enum ScanSource
     DocumentFeeder,
 }
 
+/// <summary>
+/// What a save writes. <see cref="Text"/> and <see cref="Word"/> hold the recognized text of the
+/// pages instead of their pictures (<see cref="TextExport"/>, <see cref="DocxWriter"/>); which
+/// formats a mode offers and what each save does with a format are in <see cref="OutputFormats"/>.
+/// </summary>
 public enum OutputFormat
 {
     Pdf,
     Jpeg,
     Png,
     Tiff,
+    Text,
+    Word,
 }
 
 /// <summary>
@@ -146,6 +153,8 @@ public static class ModelLabels
         OutputFormat.Jpeg => "JPEG",
         OutputFormat.Png => "PNG",
         OutputFormat.Tiff => "TIFF",
+        OutputFormat.Text => "Text (.txt)",
+        OutputFormat.Word => "Word (.docx)",
         _ => format.ToString(),
     };
 
@@ -245,8 +254,68 @@ public static class ModelLabels
         OutputFormat.Jpeg => "jpg",
         OutputFormat.Png => "png",
         OutputFormat.Tiff => "tiff",
+        OutputFormat.Text => "txt",
+        OutputFormat.Word => "docx",
         _ => format.ToString().ToLowerInvariant(),
     };
+}
+
+/// <summary>
+/// Which formats each mode offers and what each save writes for a format. Twin of the
+/// <c>OutputFormat</c> members in Sources/CompleteScannerKit/Core/Models.swift.
+/// </summary>
+public static class OutputFormats
+{
+    /// <summary>JPEG, PNG and TIFF: a picture of each page. Photos are saved in these only.</summary>
+    public static bool IsImageFormat(this OutputFormat format) =>
+        format is OutputFormat.Jpeg or OutputFormat.Png or OutputFormat.Tiff;
+
+    /// <summary>Text and Word: the recognized text of the pages, read by OCR when the file is saved.</summary>
+    public static bool IsTextFormat(this OutputFormat format) =>
+        format is OutputFormat.Text or OutputFormat.Word;
+
+    /// <summary>
+    /// The formats the inspector offers: every format for documents, the image formats for
+    /// photos (a photo has no text to save, and PDF photos are saved as JPEG).
+    /// </summary>
+    public static IReadOnlyList<OutputFormat> Offered(ScanIntent intent) =>
+        intent == ScanIntent.Photo
+            ? [OutputFormat.Jpeg, OutputFormat.Png, OutputFormat.Tiff]
+            : [OutputFormat.Pdf, OutputFormat.Word, OutputFormat.Text, OutputFormat.Jpeg, OutputFormat.Png, OutputFormat.Tiff];
+
+    /// <summary>The format a photo is saved in: <paramref name="format"/> when it is an image format, otherwise JPEG.</summary>
+    public static OutputFormat ImageFormatOrJpeg(OutputFormat format) =>
+        format.IsImageFormat() ? format : OutputFormat.Jpeg;
+
+    /// <summary>
+    /// The format the collected pages are saved in together: Text and Word as chosen, anything
+    /// else as one PDF (the image formats apply to scans saved one at a time).
+    /// </summary>
+    public static OutputFormat QueueFormat(OutputFormat format) =>
+        format.IsTextFormat() ? format : OutputFormat.Pdf;
+
+    /// <summary>
+    /// Whether a save writes a PDF: the collected pages in any format but Text and Word, a scan
+    /// saved at once only in PDF. The text beside a PDF can be asked for then.
+    /// </summary>
+    public static bool SavesPdf(OutputFormat format, bool collectsPages) =>
+        collectsPages ? QueueFormat(format) == OutputFormat.Pdf : format == OutputFormat.Pdf;
+
+    /// <summary>The format of a page made of a scan, like the ID card's: PDF or the image format chosen; PDF for the text formats.</summary>
+    public static OutputFormat PageFormat(OutputFormat format) =>
+        format.IsImageFormat() ? format : OutputFormat.Pdf;
+
+    /// <summary>"Save PDF", "Save Word", "Save Text": the button that saves the collected pages.</summary>
+    public static string SaveTitle(OutputFormat format) => QueueFormat(format) switch
+    {
+        OutputFormat.Word => "Save Word",
+        OutputFormat.Text => "Save Text",
+        _ => "Save PDF",
+    };
+
+    /// <summary>"Save PDF (3 pages)", or just the <see cref="SaveTitle"/> when no page would be saved.</summary>
+    public static string SaveTitle(OutputFormat format, int pageCount) =>
+        pageCount > 0 ? $"{SaveTitle(format)} ({pageCount} page{(pageCount == 1 ? "" : "s")})" : SaveTitle(format);
 }
 
 // MARK: - Settings
@@ -292,8 +361,8 @@ public sealed class AdjustmentSettings : IEquatable<AdjustmentSettings>
 
 /// <summary>
 /// Settings for the saved files themselves, kept together as <see cref="ScanSettings.Output"/>
-/// (the "output" object in settings files): the PDF size and the after-save action. Later
-/// output features add their fields here.
+/// (the "output" object in settings files): the PDF size, the after-save action and the text
+/// file beside a PDF. Later output features add their fields here.
 /// </summary>
 public sealed class OutputOptions : IEquatable<OutputOptions>
 {
@@ -306,12 +375,19 @@ public sealed class OutputOptions : IEquatable<OutputOptions>
     /// </summary>
     public AfterSaveAction AfterSave { get; set; } = AfterSaveAction.None;
 
+    /// <summary>
+    /// A saved PDF gets a text file beside it with the same name (<see cref="TextExport"/>): the
+    /// recognized text of its pages, read once for both. Settings without it get false.
+    /// </summary>
+    public bool AlsoSaveText { get; set; } = false;
+
     public OutputOptions Clone() => (OutputOptions)MemberwiseClone();
 
     public bool Equals(OutputOptions? other) =>
-        other is not null && PdfSize == other.PdfSize && AfterSave == other.AfterSave;
+        other is not null && PdfSize == other.PdfSize && AfterSave == other.AfterSave
+        && AlsoSaveText == other.AlsoSaveText;
     public override bool Equals(object? obj) => Equals(obj as OutputOptions);
-    public override int GetHashCode() => HashCode.Combine(PdfSize, AfterSave);
+    public override int GetHashCode() => HashCode.Combine(PdfSize, AfterSave, AlsoSaveText);
 }
 
 /// <summary>
@@ -448,7 +524,7 @@ public sealed class ScanSettings
     [JsonIgnore]
     public ScanTask? Task => ScanTasks.TryParse(TaskId);
 
-    /// <summary>Settings for the saved files (the PDF size, the after-save action). Written after the earlier keys.</summary>
+    /// <summary>Settings for the saved files (the PDF size, the after-save action, the text beside a PDF). Written after the earlier keys.</summary>
     public OutputOptions Output { get; set; } = new();
 
     /// <summary>
