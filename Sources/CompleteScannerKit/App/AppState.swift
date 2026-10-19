@@ -109,6 +109,8 @@ public final class AppState: ObservableObject {
 
     private let backends: [any ScannerBackend]
     private let presetStore: PresetStore
+    /// Opens, shows, shares and copies saved files through macOS (a stand-in in tests).
+    private let fileActions: any FileActionService
     private var session: (any ScannerSession)?
     private var sessionDeviceID: String?
     private var userPickedDevice = false
@@ -133,7 +135,8 @@ public final class AppState: ObservableObject {
 
     public static let fallbackResolutions = [75, 150, 200, 300, 600, 1200]
 
-    public init(backends: [any ScannerBackend]? = nil, presetStore: PresetStore = PresetStore()) {
+    public init(backends: [any ScannerBackend]? = nil, presetStore: PresetStore = PresetStore(),
+                fileActions: (any FileActionService)? = nil) {
         let saved = SettingsStore.load()
         self.isFirstRun = saved == nil
         // A task saved last time is still active: its banner comes back with the settings.
@@ -142,6 +145,7 @@ public final class AppState: ObservableObject {
         self.settings = initial
         self.backends = backends ?? [ICScannerBackend(), MockScannerBackend()]
         self.presetStore = presetStore
+        self.fileActions = fileActions ?? SystemFileActions()
         self.presets = presetStore.load()
         syncTaskFlow()
         // Clear page spill files left behind by a previous run.
@@ -522,6 +526,7 @@ public final class AppState: ObservableObject {
             self.scannedPages = []
             self.taskFlow?.reset()
             self.statusMessage = "Saved \(pages.count)-page PDF: \(url.lastPathComponent)\(self.pdfSizeSuffix)"
+            self.runAfterSave(s.output.afterSave, saved: [url])
         }
     }
 
@@ -554,6 +559,7 @@ public final class AppState: ObservableObject {
         lastSavedURLs = saved
         statusMessage = "Saved \(saved.map(\.lastPathComponent).joined(separator: ", "))"
             + (s.format == .pdf ? pdfSizeSuffix : "")
+        runAfterSave(s.output.afterSave, saved: saved)
     }
 
     public func saveReviewedPhotos() {
@@ -581,6 +587,7 @@ public final class AppState: ObservableObject {
             self.photoSourceImages = [:]
             self.taskFlow?.reset()
             self.statusMessage = "Saved \(saved.count) photo\(saved.count == 1 ? "" : "s") to \(s.destinationPath)"
+            self.runAfterSave(s.output.afterSave, saved: saved)
         }
     }
 
@@ -690,6 +697,85 @@ public final class AppState: ObservableObject {
 
     public func revealInFinder(_ url: URL) {
         NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    // MARK: Saved files: open, share, copy
+
+    /// The actions offered for the last save's files (the status bar).
+    public var savedFileActions: [FileAction] { SaveActions.offered(fileCount: lastSavedURLs.count) }
+
+    /// Opens, shows, shares, emails or copies saved files (the Saved tab and the status bar after
+    /// a save). Nothing leaves the Mac here: sharing and email open the share menu or a new Mail
+    /// message, and the user decides where the files go. A file that is gone, or an action macOS
+    /// refuses, is reported. Open and Open with use the first file. Returns whether the action
+    /// was carried out. Twin of the Windows `AppViewModel.RunFileAction`.
+    @discardableResult
+    public func runFileAction(_ action: FileAction, urls: [URL]) -> Bool {
+        guard !urls.isEmpty else { return false }
+        let missing = urls.filter { !FileManager.default.fileExists(atPath: $0.path) }
+        if !missing.isEmpty {
+            errorMessage = missing.count == 1
+                ? "\(missing[0].lastPathComponent) is no longer in its folder. It may have been moved, renamed or deleted."
+                : "\(missing.count) of the files are no longer in their folder. They may have been moved, renamed or deleted."
+            return false
+        }
+        do {
+            switch action {
+            case .open:
+                try fileActions.open(urls[0])
+            case .openWith:
+                try fileActions.openWith(urls[0])
+            case .reveal:
+                fileActions.reveal(urls)
+            case .share:
+                try send(SaveActions.shareRoute(fileActions.sendProbe(for: urls)), urls: urls)
+            case .email:
+                try send(SaveActions.emailRoute(fileActions.sendProbe(for: urls)), urls: urls)
+            case .copy:
+                let content = SaveActions.clipboardContent(for: urls)
+                try fileActions.copy(content)
+                statusMessage = urls.count == 1
+                    ? "Copied \(urls[0].lastPathComponent)\(content.imageFile == nil ? "" : " and its picture") to the clipboard."
+                    : "Copied \(urls.count) files to the clipboard."
+            }
+        } catch {
+            let name = action.label.replacingOccurrences(of: "\u{2026}", with: "")
+            errorMessage = "\(name) did not work: \(Self.describe(error))"
+            return false
+        }
+        return true
+    }
+
+    private func send(_ route: SendRoute, urls: [URL]) throws {
+        switch route {
+        case .compose:
+            try fileActions.composeEmail(urls)
+        case .shareSheet:
+            try fileActions.share(urls, title: SaveActions.shareTitle(urls))
+        case .showInFolder:
+            fileActions.reveal(urls)
+            statusMessage = SaveActions.showInFolderMessage
+        }
+    }
+
+    /// The after-save action of the settings the files were saved with, once a save has finished
+    /// (never after a cancelled or failed one). A refusal is reported; the save stands.
+    private func runAfterSave(_ action: AfterSaveAction, saved: [URL]) {
+        guard let step = SaveActions.plan(action, saved: saved) else { return }
+        runFileAction(step.fileAction, urls: step.urls)
+    }
+
+    /// The message of a refused file action, without ScanError's "Saving failed:" style prefix.
+    private static func describe(_ error: Error) -> String {
+        if let scanError = error as? ScanError {
+            switch scanError {
+            case .exportFailed(let message), .unsupported(let message):
+                return message
+            default:
+                break
+            }
+        }
+        return error.localizedDescription
     }
 
     private func noDevice() {

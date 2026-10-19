@@ -25,10 +25,17 @@
         <!-- One card. Its thumbnail is decoded when the card is realized and dropped when the
              card scrolls out of the virtualized list (Card_Loaded / Card_Unloaded). The width
              and margin match CardSlotWidth in code. The action bar is hidden by Opacity only,
-             so its buttons stay reachable with Tab; it shows on hover and on keyboard focus. -->
+             so its buttons stay reachable with Tab; it shows on hover and on keyboard focus.
+             Every action on the file is also in the card's context menu (right-click, Shift+F10
+             or the Menu key on any of its buttons) and in the bar's More menu. -->
         <DataTemplate x:Key="CardTemplate">
             <Grid x:Name="Card" Width="200" Margin="6" Background="Transparent"
-                  Loaded="Card_Loaded" Unloaded="Card_Unloaded">
+                  Loaded="Card_Loaded" Unloaded="Card_Unloaded"
+                  ContextMenuOpening="Card_ContextMenuOpening">
+                <!-- Replaced by the file's menu as it opens (Card_ContextMenuOpening). -->
+                <Grid.ContextMenu>
+                    <ContextMenu />
+                </Grid.ContextMenu>
                 <!-- Solid layer behind the translucent card that carries the hover shadow. -->
                 <Border x:Name="Elevation" CornerRadius="{StaticResource CardCornerRadius}" Visibility="Hidden"
                         Background="{DynamicResource SolidBackgroundFillColorBaseBrush}" />
@@ -56,6 +63,9 @@
                                     <Button Style="{StaticResource SmallIconButtonStyle}" Content="&#xE8A7;"
                                             Click="Open_Click" ToolTip="Open with the default app"
                                             AutomationProperties.Name="{Binding Name, StringFormat='Open {0}'}" />
+                                    <Button Style="{StaticResource SmallIconButtonStyle}" Content="&#xE72D;"
+                                            Click="Share_Click" ToolTip="Share: send with Mail, Outlook, nearby sharing or another app"
+                                            AutomationProperties.Name="{Binding Name, StringFormat='Share {0}'}" />
                                     <Button Style="{StaticResource SmallIconButtonStyle}" Content="&#xE838;"
                                             Click="Reveal_Click" ToolTip="Show in File Explorer"
                                             AutomationProperties.Name="{Binding Name, StringFormat='Show {0} in File Explorer'}" />
@@ -64,6 +74,10 @@
                                             AutomationProperties.Name="{Binding Name, StringFormat='Rotate {0} 90° clockwise'}"
                                             Visibility="{Binding RotateVisibility}"
                                             IsEnabled="{Binding CanRotate}" />
+                                    <Button Style="{StaticResource SmallIconButtonStyle}" Content="&#xE712;"
+                                            Click="More_Click" ToolTip="More: open with, email, copy"
+                                            AutomationProperties.Name="{Binding Name, StringFormat='More actions for {0}'}"
+                                            AutomationProperties.HelpText="Opens a menu: open, open with, show in folder, share, email, copy" />
                                 </StackPanel>
                             </Border>
                         </Grid>

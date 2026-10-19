@@ -8,6 +8,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using CompleteScanner.App.Services;
+using CompleteScanner.Core;
 
 namespace CompleteScanner.App;
 
@@ -78,9 +79,10 @@ public sealed class SavedFileRow(IReadOnlyList<SavedFileItem> items)
 }
 
 /// <summary>
-/// The Saved tab: everything in the destination folder, newest first, with open/reveal and
-/// 90° rotate-in-place for saved image files. Port of UI/SavedFilesView.swift; the file work
-/// lives in <see cref="SavedFiles"/>.
+/// The Saved tab: everything in the destination folder, newest first, with open, open with,
+/// show in folder, share, email, copy (<see cref="AppViewModel.RunFileAction"/>) and 90°
+/// rotate-in-place for saved image files. Port of UI/SavedFilesView.swift; the file work lives
+/// in <see cref="SavedFiles"/>.
 /// </summary>
 public partial class SavedFilesView : UserControl
 {
@@ -363,34 +365,65 @@ public partial class SavedFilesView : UserControl
         if (ItemOf(sender) is { } item) Open(item);
     }
 
-    private void Open(SavedFileItem item)
-    {
-        try
-        {
-            SavedFiles.Open(item.File.Path);
-        }
-        catch (Exception ex)
-        {
-            _showError?.Invoke($"Could not open {item.Name}: {ex.Message}");
-        }
-    }
+    private void Open(SavedFileItem item) => Run(FileAction.Open, item);
 
     private void Reveal_Click(object sender, RoutedEventArgs e)
     {
-        if (ItemOf(sender) is not { } item) return;
-        try
+        if (ItemOf(sender) is { } item) Run(FileAction.Reveal, item);
+    }
+
+    private void Share_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf(sender) is { } item) Run(FileAction.Share, item);
+    }
+
+    /// <summary>The card's More button: every action on the file, under the button.</summary>
+    private void More_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement button && ItemOf(sender) is { } item)
         {
-            SavedFiles.Reveal(item.File.Path);
-        }
-        catch (Exception ex)
-        {
-            _showError?.Invoke($"Could not show {item.Name}: {ex.Message}");
+            FileActionMenu.ShowBelow(BuildFileMenu(item), button);
         }
     }
 
-    private async void Rotate_Click(object sender, RoutedEventArgs e)
+    /// <summary>The card's context menu (right-click, Shift+F10, Menu key): the same as More.</summary>
+    private void Card_ContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
-        if (ItemOf(sender) is not { } item || item.IsRotating) return;
+        if (sender is FrameworkElement card && card.DataContext is SavedFileItem item)
+        {
+            card.ContextMenu = BuildFileMenu(item);
+        }
+        else
+        {
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>Every action on one saved file, then Rotate for image files.</summary>
+    internal ContextMenu BuildFileMenu(SavedFileItem item)
+    {
+        List<MenuItem> extra = [];
+        if (item.File.ImageFormat is not null)
+        {
+            var rotate = FileActionMenu.Item("Rotate 90° clockwise", "\uE7AD", "Rotate the saved file 90° clockwise",
+                                             () => RotateItem(item));
+            rotate.IsEnabled = item.CanRotate;
+            extra.Add(rotate);
+        }
+        return FileActionMenu.Build(SaveActions.Offered(1), 1, action => Run(action, item), extra);
+    }
+
+    /// <summary>Carries out an action on the card's file; problems are reported in the InfoBar.</summary>
+    private void Run(FileAction action, SavedFileItem item) => _viewModel?.RunFileAction(action, [item.File.Path]);
+
+    private void Rotate_Click(object sender, RoutedEventArgs e)
+    {
+        if (ItemOf(sender) is { } item) RotateItem(item);
+    }
+
+    private async void RotateItem(SavedFileItem item)
+    {
+        if (item.IsRotating) return;
         item.IsRotating = true;
         var rotation = SavedFiles.RotateClockwiseAsync(item.File.Path);
         _pendingWork = Task.WhenAll(_pendingWork, rotation);

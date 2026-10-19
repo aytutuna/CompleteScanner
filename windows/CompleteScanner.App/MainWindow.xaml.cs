@@ -43,6 +43,8 @@ public partial class MainWindow : Window
         ColorModeBox.ItemsSource = Enum.GetValues<ColorMode>().Select(m => m.Label());
         FormatBox.ItemsSource = Enum.GetValues<OutputFormat>().Select(f => f.Label());
         BuildPdfSizeSegments();
+        AfterSaveBox.ItemsSource = AfterSaveItems();
+        ReviewAfterSaveBox.ItemsSource = AfterSaveItems();
 
         Loaded += (_, _) =>
         {
@@ -303,6 +305,7 @@ public partial class MainWindow : Window
             SavedView.Reload();
         }
         HistoryView.Refresh();
+        SyncSavedBar();
 
         // Capabilities-driven pickers.
         SyncCapabilityPickers();
@@ -328,6 +331,131 @@ public partial class MainWindow : Window
     }
 
     private void InfoBarClose_Click(object sender, RoutedEventArgs e) => InfoBar.Visibility = Visibility.Collapsed;
+
+    // MARK: - The bar after a save
+
+    /// <summary>The paths the bar shows; a new list means a new save, which is announced.</summary>
+    private IReadOnlyList<string>? _shownSavedPaths;
+
+    /// <summary>
+    /// The bar above the window content after a save: what was saved and the actions for it
+    /// (Open only for one file; Open with and Email are in More).
+    /// </summary>
+    private void SyncSavedBar()
+    {
+        if (ViewModel.SavedBarPaths is not { } paths)
+        {
+            if (SavedBar.IsKeyboardFocusWithin) FocusMainAction();
+            SavedBar.Visibility = Visibility.Collapsed;
+            _shownSavedPaths = null;
+            return;
+        }
+        bool isNew = !ReferenceEquals(paths, _shownSavedPaths);
+        _shownSavedPaths = paths;
+        SavedBarMessage.Text = ViewModel.SavedBarText;
+        SavedBarText.ToolTip = string.Join(Environment.NewLine, paths);
+        var offered = ViewModel.SavedBarActions;
+        foreach (var button in SavedBarButtons.Children.OfType<Button>())
+        {
+            if (button.Tag is not string tag) continue;
+            var action = Enum.Parse<FileAction>(tag);
+            button.Visibility = offered.Contains(action) ? Visibility.Visible : Visibility.Collapsed;
+            button.ToolTip = FileActionMenu.Hint(action, paths.Count);
+        }
+        SavedBar.Visibility = Visibility.Visible;
+        if (isNew) AnnounceWhenShown(SavedBarText);
+    }
+
+    private void SavedBarAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string tag } && ViewModel.SavedBarPaths is { } paths)
+        {
+            ViewModel.RunFileAction(Enum.Parse<FileAction>(tag), paths);
+        }
+    }
+
+    /// <summary>More: every action for the saved files (Open with and Email are only here).</summary>
+    private void SavedBarMore_Click(object sender, RoutedEventArgs e)
+    {
+        if (BuildSavedBarMenu() is { } menu) FileActionMenu.ShowBelow(menu, SavedMoreButton);
+    }
+
+    /// <summary>The bar's More menu; null without saved files.</summary>
+    internal ContextMenu? BuildSavedBarMenu()
+    {
+        if (ViewModel.SavedBarPaths is not { } paths) return null;
+        return FileActionMenu.Build(ViewModel.SavedBarActions, paths.Count, action => ViewModel.RunFileAction(action, paths));
+    }
+
+    private void SavedBarClose_Click(object sender, RoutedEventArgs e)
+    {
+        // The bar goes away with the focused button: give the focus to the main action first.
+        FocusMainAction();
+        ViewModel.DismissSavedBar();
+    }
+
+    /// <summary>Below this bar width the action buttons show only their glyphs.</summary>
+    private const double SavedBarCompactBelowWidth = 760;
+
+    private void SavedBar_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!e.WidthChanged) return;
+        bool compact = e.NewSize.Width < SavedBarCompactBelowWidth;
+        foreach (var button in SavedBarButtons.Children.OfType<Button>().Where(b => b.Tag is string))
+        {
+            if (compact)
+            {
+                button.ContentTemplate = (DataTemplate)FindResource("IconOnlyTemplate");
+                button.Padding = new Thickness(8, 5, 8, 6);
+            }
+            else
+            {
+                button.ClearValue(ContentControl.ContentTemplateProperty);
+                button.ClearValue(PaddingProperty);
+            }
+        }
+    }
+
+    /// <summary>Keyboard focus to the screen's main action, when a focused bar goes away.</summary>
+    private void FocusMainAction()
+    {
+        if (ViewModel.ShowPhotoReview && ReviewSaveButton.IsEnabled) ReviewSaveButton.Focus();
+        else if (ScanTab.IsSelected && ScanButton.IsEnabled) ScanButton.Focus();
+        else MainTabs.Focus();
+    }
+
+    // MARK: - After saving
+
+    /// <summary>The after-save choices, in their order, with what each does as its tooltip.</summary>
+    private static List<ComboBoxItem> AfterSaveItems() =>
+        Enum.GetValues<AfterSaveAction>()
+            .Select(action => new ComboBoxItem { Content = action.Label(), Tag = action, ToolTip = action.Hint() })
+            .ToList();
+
+    private static void SelectAfterSave(ComboBox box, AfterSaveAction action)
+    {
+        box.SelectedItem = box.Items.OfType<ComboBoxItem>().FirstOrDefault(item => (AfterSaveAction)item.Tag == action);
+        box.ToolTip = action.Hint();
+    }
+
+    /// <summary>The inspector's and the photo review's "After saving": one setting, two places.</summary>
+    private void AfterSave_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updatingUi || !IsLoaded || sender is not ComboBox { SelectedItem: ComboBoxItem { Tag: AfterSaveAction action } }) return;
+        ViewModel.Settings.Output.AfterSave = action;
+        _updatingUi = true;
+        try
+        {
+            SelectAfterSave(AfterSaveBox, action);
+            SelectAfterSave(ReviewAfterSaveBox, action);
+        }
+        finally
+        {
+            _updatingUi = false;
+        }
+        ViewModel.SettingsEdited();
+        RefreshFromViewModel();
+    }
 
     // MARK: - Tasks
 
@@ -577,6 +705,8 @@ public partial class MainWindow : Window
             {
                 segment.IsChecked = (PdfSizePreset)segment.Tag == s.Output.PdfSize;
             }
+            SelectAfterSave(AfterSaveBox, s.Output.AfterSave);
+            SelectAfterSave(ReviewAfterSaveBox, s.Output.AfterSave);
             SyncPdfSizeOptions();
             SyncCapabilityPickers();
         }

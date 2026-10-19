@@ -49,6 +49,16 @@ struct PhotoReviewView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
+                // The same setting as the inspector's "After saving".
+                Picker("After saving", selection: $state.settings.output.afterSave) {
+                    ForEach(AfterSaveAction.allCases) { action in
+                        Text(action.label).tag(action)
+                    }
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
+                .help(state.settings.output.afterSave.hint)
+                .disabled(state.isBusy)
                 Button("Cancel") {
                     state.cancelPhotoReview()
                 }

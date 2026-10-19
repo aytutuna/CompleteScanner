@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
+using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using CompleteScanner.App.Services;
@@ -169,6 +171,14 @@ public sealed class AppViewModel : INotifyPropertyChanged
     /// <summary>Bumped whenever files are written to the destination folder (drives the Saved tab).</summary>
     public int SavedRevision { get; private set; }
 
+    /// <summary>
+    /// The files of the last save, offered with their actions (open, share, copy, …) in the bar
+    /// above the window content; null once the bar is dismissed or the next scan starts.
+    /// </summary>
+    public IReadOnlyList<string>? SavedBarPaths { get; private set; }
+    /// <summary>What the bar says was saved: "Scan 2026-10-19 3.pdf (412 KB)", or "3 files in Scans".</summary>
+    public string SavedBarText { get; private set; } = "";
+
     public ObservableCollection<Preset> Presets { get; } = [];
 
     /// <summary>No settings were saved before this start: the app opens on the start screen.</summary>
@@ -213,6 +223,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
     private readonly IReadOnlyList<IScannerBackend> _backends;
     private readonly PresetStore _presetStore;
     private readonly IOcrService _ocrService;
+    /// <summary>Opens, shows, shares and copies saved files through Windows (a stand-in in tests).</summary>
+    private readonly IFileActions _fileActions;
     private readonly Dispatcher _dispatcher;
     /// <summary>Where queued document pages are spilled to disk (this process's own folder).</summary>
     private readonly PageSpool _spool;
@@ -272,7 +284,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
     private readonly record struct CanvasRenderKey(int Revision, AdjustmentSettings Adjustments, ColorMode ColorMode);
 
     public AppViewModel(IReadOnlyList<IScannerBackend>? backends = null,
-                        IOcrService? ocrService = null)
+                        IOcrService? ocrService = null,
+                        IFileActions? fileActions = null)
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
         var saved = SettingsStore.Load();
@@ -292,6 +305,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             .ToDictionary(pair => pair.Key, pair => pair.Value);
         _driverWindowDevices = [.. preferences.TwainDriverWindow.Where(id => id is not null)];
         _ocrService = ocrService ?? new WindowsOcrService();
+        _fileActions = fileActions ?? new WindowsFileActions(MainWindowHandle);
         foreach (var preset in _presetStore.Load()) Presets.Add(preset);
         _renderTimer = new DispatcherTimer(DispatcherPriority.Normal, _dispatcher) { Interval = CanvasRenderDebounce };
         _renderTimer.Tick += (_, _) =>
@@ -752,6 +766,8 @@ public sealed class AppViewModel : INotifyPropertyChanged
         return RunExclusive(async token =>
         {
             StatusMessage = "Scanning…";
+            // The bar of the previous save makes way for the new scan.
+            SavedBarPaths = null;
             NotifyAll();
             var raw = await session.PerformScanAsync(s, selection);
             // Discard results that arrive after the user switched devices.
@@ -921,6 +937,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             ScannedPages.Clear();
             Flow?.Reset();
             StatusMessage = $"Saved {pages.Count}-page PDF: {Path.GetFileName(path)}{PdfSizeSuffix()}";
+            RunAfterSave(s.Output.AfterSave, [path]);
         });
     }
 
@@ -963,6 +980,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
         MarkSaved(saved);
         StatusMessage = $"Saved {string.Join(", ", saved.Select(Path.GetFileName))}" +
                         (s.Format == OutputFormat.Pdf ? PdfSizeSuffix() : "");
+        RunAfterSave(s.Output.AfterSave, saved);
     }
 
     public Task SaveReviewedPhotos()
@@ -1001,6 +1019,7 @@ public sealed class AppViewModel : INotifyPropertyChanged
             _photoSourceImages = [];
             Flow?.Reset();
             StatusMessage = $"Saved {saved.Count} photo{(saved.Count == 1 ? "" : "s")} to {s.DestinationPath}";
+            RunAfterSave(s.Output.AfterSave, saved);
         });
     }
 
@@ -1420,6 +1439,120 @@ public sealed class AppViewModel : INotifyPropertyChanged
     {
         LastSavedPaths = paths;
         SavedRevision++;
+        SavedBarPaths = paths.Count > 0 ? [.. paths] : null;
+        SavedBarText = SavedSummary(paths);
+    }
+
+    /// <summary>"Scan 3.pdf (412 KB)" for one file (the size for PDFs), "3 files in Scans" for several.</summary>
+    private string SavedSummary(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 1)
+        {
+            bool pdf = Path.GetExtension(paths[0]).Equals(".pdf", StringComparison.OrdinalIgnoreCase);
+            return Path.GetFileName(paths[0]) + (pdf ? PdfSizeSuffix() : "");
+        }
+        string folder = paths.Count > 0 ? Path.GetFileName(Path.GetDirectoryName(paths[0]) ?? "") : "";
+        return folder.Length > 0 ? $"{paths.Count} files in {folder}" : $"{paths.Count} files";
+    }
+
+    // MARK: Saved files: open, share, copy
+
+    /// <summary>The main window's handle, for the share window and the Open with dialog; zero without one.</summary>
+    private static IntPtr MainWindowHandle() =>
+        Application.Current?.MainWindow is { } window ? new WindowInteropHelper(window).Handle : IntPtr.Zero;
+
+    /// <summary>Hides the bar of the last save.</summary>
+    public void DismissSavedBar()
+    {
+        if (SavedBarPaths is null) return;
+        SavedBarPaths = null;
+        NotifyAll();
+    }
+
+    /// <summary>The actions the bar offers for the last save's files.</summary>
+    public IReadOnlyList<FileAction> SavedBarActions => SaveActions.Offered(SavedBarPaths?.Count ?? 0);
+
+    /// <summary>
+    /// Opens, shows, shares, emails or copies saved files (the Saved tab and the bar after a
+    /// save). Nothing leaves the PC here: sharing and email open the share window, where the
+    /// user picks where the files go. A file that is gone, or an action Windows refuses, is
+    /// reported in the InfoBar. Open and Open with use the first file. Returns whether the
+    /// action was carried out.
+    /// </summary>
+    public bool RunFileAction(FileAction action, IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0) return false;
+        var missing = paths.Where(path => !File.Exists(path)).ToList();
+        if (missing.Count > 0)
+        {
+            ErrorMessage = missing.Count == 1
+                ? $"{Path.GetFileName(missing[0])} is no longer in its folder. It may have been moved, renamed or deleted."
+                : $"{missing.Count} of the files are no longer in their folder. They may have been moved, renamed or deleted.";
+            NotifyAll();
+            return false;
+        }
+        try
+        {
+            switch (action)
+            {
+                case FileAction.Open:
+                    _fileActions.Open(paths[0]);
+                    break;
+                case FileAction.OpenWith:
+                    _fileActions.OpenWith(paths[0]);
+                    break;
+                case FileAction.Reveal:
+                    _fileActions.Reveal(paths);
+                    break;
+                case FileAction.Share:
+                    Send(SaveActions.ShareRoute(_fileActions.SendProbe), paths);
+                    break;
+                case FileAction.Email:
+                    Send(SaveActions.EmailRoute(_fileActions.SendProbe), paths);
+                    break;
+                case FileAction.Copy:
+                    var content = SaveActions.ClipboardContentFor(paths);
+                    _fileActions.Copy(content);
+                    StatusMessage = paths.Count == 1
+                        ? $"Copied {Path.GetFileName(paths[0])}{(content.ImageFile is null ? "" : " and its picture")} to the clipboard."
+                        : $"Copied {paths.Count} files to the clipboard.";
+                    break;
+            }
+        }
+        catch (Exception e)
+        {
+            ErrorMessage = $"{action.Label().TrimEnd('…')} did not work: {FileActionErrors.Describe(e)}";
+            NotifyAll();
+            return false;
+        }
+        NotifyAll();
+        return true;
+    }
+
+    private void Send(SendRoute route, IReadOnlyList<string> paths)
+    {
+        switch (route)
+        {
+            case SendRoute.Compose:
+                _fileActions.ComposeEmail(paths);
+                break;
+            case SendRoute.ShareSheet:
+                _fileActions.Share(paths, SaveActions.ShareTitle(paths));
+                break;
+            case SendRoute.ShowInFolder:
+                _fileActions.Reveal(paths);
+                StatusMessage = SaveActions.ShowInFolderMessage;
+                break;
+        }
+    }
+
+    /// <summary>
+    /// The after-save action of the settings the files were saved with, once a save has
+    /// finished (never after a cancelled or partial one). A refusal is reported; the save stands.
+    /// </summary>
+    private void RunAfterSave(AfterSaveAction action, IReadOnlyList<string> saved)
+    {
+        if (SaveActions.Plan(action, saved) is { } step) RunFileAction(step.FileAction, step.Paths);
     }
 
     private void NoDevice()

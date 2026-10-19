@@ -755,6 +755,11 @@
         <Setter Property="Padding" Value="12,8,4,8" />
         <Setter Property="Margin" Value="8,4,8,6" />
     </Style>
+    <!-- The bar after a save (success InfoBar): what was saved, with its actions. -->
+    <Style x:Key="SavedBarStyle" TargetType="Border" BasedOn="{StaticResource InfoBarStyle}">
+        <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+        <Setter Property="Padding" Value="12,4,4,4" />
+    </Style>
 
     <!-- ===== Dialog surfaces (in-window modal and dialog windows) ===== -->
     <Style x:Key="DialogCardStyle" TargetType="Border">

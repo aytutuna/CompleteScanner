@@ -151,17 +151,21 @@ extension AdjustmentSettings {
 }
 
 /// Settings for the saved files themselves, kept together as `ScanSettings.output` (the "output"
-/// object in settings files). Later output features add their fields here. Twin of C#
-/// `OutputOptions`.
+/// object in settings files): the PDF size and the after-save action. Later output features add
+/// their fields here. Twin of C# `OutputOptions`.
 public struct OutputOptions: Codable, Equatable, Sendable {
     /// How small saved PDFs are made. Settings without it get `.standard`.
     public var pdfSize: PDFSizePreset = .standard
+    /// What happens on its own after a save (see `SaveActions.plan`). Settings without it, or
+    /// with an action this version does not know, get `.none`.
+    public var afterSave: AfterSaveAction = AfterSaveAction.none
 
     public init() {}
 
     /// `encode(to:)` stays synthesized.
     private enum CodingKeys: String, CodingKey {
         case pdfSize
+        case afterSave
     }
 }
 
@@ -171,6 +175,7 @@ extension OutputOptions {
         self.init()
         let container = try decoder.container(keyedBy: CodingKeys.self)
         pdfSize = container.decodeLenient(forKey: .pdfSize, default: pdfSize)
+        afterSave = container.decodeLenient(forKey: .afterSave, default: afterSave)
     }
 }
 
@@ -208,7 +213,7 @@ public struct ScanSettings: Codable, Equatable, Sendable {
     /// one) reads as no `task` but is written back unchanged. Left out of the file when nil.
     public var taskId: String?
 
-    /// Settings for the saved files (the PDF size).
+    /// Settings for the saved files (the PDF size, the after-save action).
     public var output: OutputOptions = OutputOptions()
 
     public init() {}

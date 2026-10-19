@@ -31,20 +31,62 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Error InfoBar: outside MainContent, so it stays usable while the photo review is open. -->
-        <Border Grid.Row="0" x:Name="InfoBar" Style="{StaticResource InfoBarStyle}" Visibility="Collapsed">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Left" Style="{StaticResource GlyphText}" Text="&#xEB90;" Margin="0,0,12,0"
-                           VerticalAlignment="Top" Padding="0,2,0,0"
-                           Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
-                <Button DockPanel.Dock="Right" Style="{StaticResource SmallIconButtonStyle}" Content="&#xE711;"
-                        ToolTip="Dismiss" AutomationProperties.Name="Dismiss" VerticalAlignment="Top"
-                        Click="InfoBarClose_Click" />
-                <TextBlock x:Name="InfoBarText" Style="{StaticResource BodyText}" TextWrapping="Wrap"
-                           VerticalAlignment="Center" AutomationProperties.LiveSetting="Assertive"><Run
-                        Text="Something went wrong" FontWeight="SemiBold" /><Run Text="  " /><Run x:Name="InfoBarMessage" /></TextBlock>
-            </DockPanel>
-        </Border>
+        <!-- The InfoBars: outside MainContent, so they stay usable while the photo review is open. -->
+        <StackPanel Grid.Row="0">
+            <!-- Errors. -->
+            <Border x:Name="InfoBar" Style="{StaticResource InfoBarStyle}" Visibility="Collapsed">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource GlyphText}" Text="&#xEB90;" Margin="0,0,12,0"
+                               VerticalAlignment="Top" Padding="0,2,0,0"
+                               Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                    <Button DockPanel.Dock="Right" Style="{StaticResource SmallIconButtonStyle}" Content="&#xE711;"
+                            ToolTip="Dismiss" AutomationProperties.Name="Dismiss" VerticalAlignment="Top"
+                            Click="InfoBarClose_Click" />
+                    <TextBlock x:Name="InfoBarText" Style="{StaticResource BodyText}" TextWrapping="Wrap"
+                               VerticalAlignment="Center" AutomationProperties.LiveSetting="Assertive"><Run
+                            Text="Something went wrong" FontWeight="SemiBold" /><Run Text="  " /><Run x:Name="InfoBarMessage" /></TextBlock>
+                </DockPanel>
+            </Border>
+
+            <!-- After a save: what was saved, with what can be done with it. Hidden by its close
+                 button or when the next scan starts. The buttons fold to their glyphs in narrow
+                 windows (SavedBar_SizeChanged); their names stay in tooltips and for screen readers. -->
+            <Border x:Name="SavedBar" Style="{StaticResource SavedBarStyle}" Visibility="Collapsed"
+                    SizeChanged="SavedBar_SizeChanged">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource GlyphText}" Text="&#xE930;" Margin="0,0,12,0"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource SystemFillColorSuccessBrush}" />
+                    <Button DockPanel.Dock="Right" Style="{StaticResource SmallIconButtonStyle}" Content="&#xE711;"
+                            ToolTip="Dismiss" AutomationProperties.Name="Dismiss" VerticalAlignment="Center"
+                            Margin="4,0,0,0" Click="SavedBarClose_Click" />
+                    <StackPanel DockPanel.Dock="Right" x:Name="SavedBarButtons" Orientation="Horizontal"
+                                VerticalAlignment="Center" Margin="8,0,0,0">
+                        <Button x:Name="SavedOpenButton" Style="{StaticResource SubtleButtonStyle}"
+                                local:Icon.Glyph="&#xE8A7;" Content="Open" Tag="Open"
+                                ToolTip="Open with the default app" Click="SavedBarAction_Click" />
+                        <Button x:Name="SavedRevealButton" Style="{StaticResource SubtleButtonStyle}"
+                                local:Icon.Glyph="&#xE838;" Content="Show in folder" Tag="Reveal"
+                                ToolTip="Show in File Explorer" Click="SavedBarAction_Click" />
+                        <Button x:Name="SavedShareButton" Style="{StaticResource SubtleButtonStyle}"
+                                local:Icon.Glyph="&#xE72D;" Content="Share" Tag="Share"
+                                ToolTip="Send with Mail, Outlook, nearby sharing or another app" Click="SavedBarAction_Click" />
+                        <Button x:Name="SavedCopyButton" Style="{StaticResource SubtleButtonStyle}"
+                                local:Icon.Glyph="&#xE8C8;" Content="Copy" Tag="Copy"
+                                ToolTip="Copy to the clipboard" Click="SavedBarAction_Click" />
+                        <Button x:Name="SavedMoreButton" Style="{StaticResource SmallIconButtonStyle}" Content="&#xE712;"
+                                Width="32" Height="32"
+                                ToolTip="More: open with, email" AutomationProperties.Name="More actions"
+                                AutomationProperties.HelpText="Opens a menu: open with, email and the other actions"
+                                Click="SavedBarMore_Click" />
+                    </StackPanel>
+                    <TextBlock x:Name="SavedBarText" Style="{StaticResource BodyText}" TextWrapping="NoWrap"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                               AutomationProperties.LiveSetting="Polite"><Run
+                            Text="Saved" FontWeight="SemiBold" /><Run Text="  " /><Run x:Name="SavedBarMessage" /></TextBlock>
+                </DockPanel>
+            </Border>
+        </StackPanel>
 
         <DockPanel Grid.Row="1" x:Name="MainContent">
             <!-- Sidebar: scanners + presets, directly on the window backdrop. Below a width
@@ -539,6 +581,10 @@
                                                           ToolTip="Text is recognized automatically — nothing to configure."
                                                           Checked="Setting_Changed" Unchecked="Setting_Changed" />
                                             </StackPanel>
+                                            <TextBlock Text="After saving" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />
+                                            <ComboBox x:Name="AfterSaveBox" HorizontalAlignment="Stretch"
+                                                      AutomationProperties.Name="After saving"
+                                                      SelectionChanged="AfterSave_Changed" />
                                             <TextBlock Text="Save to" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />
                                             <DockPanel Margin="{StaticResource FieldSpacing}">
                                                 <Button DockPanel.Dock="Right" Style="{StaticResource IconButtonStyle}" Content="&#xE838;"
@@ -618,15 +664,25 @@
                     HorizontalAlignment="Center" VerticalAlignment="Center" MinWidth="360">
                 <DockPanel>
                     <Border DockPanel.Dock="Bottom" Padding="24,16">
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button x:Name="ReviewDiscardButton" Style="{StaticResource IconTextButtonStyle}"
-                                    local:Icon.Glyph="&#xE74D;" Content="Discard" MinWidth="120"
-                                    Click="ReviewCancel_Click" />
-                            <Button x:Name="ReviewSaveButton" Style="{StaticResource AccentIconTextButtonStyle}"
-                                    local:Icon.Glyph="&#xE74E;" Content="Save Photos" MinWidth="120"
-                                    HorizontalAlignment="Right" Margin="8,0,0,0"
-                                    Click="ReviewSave_Click" />
-                        </StackPanel>
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button x:Name="ReviewDiscardButton" Style="{StaticResource IconTextButtonStyle}"
+                                        local:Icon.Glyph="&#xE74D;" Content="Discard" MinWidth="120"
+                                        Click="ReviewCancel_Click" />
+                                <Button x:Name="ReviewSaveButton" Style="{StaticResource AccentIconTextButtonStyle}"
+                                        local:Icon.Glyph="&#xE74E;" Content="Save Photos" MinWidth="120"
+                                        HorizontalAlignment="Right" Margin="8,0,0,0"
+                                        Click="ReviewSave_Click" />
+                            </StackPanel>
+                            <!-- The same setting as the inspector's "After saving". -->
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
+                                <TextBlock x:Name="ReviewAfterSaveLabel" Text="After saving" Style="{StaticResource BodyText}"
+                                           TextWrapping="NoWrap" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <ComboBox x:Name="ReviewAfterSaveBox" MinWidth="140" MaxWidth="180"
+                                          AutomationProperties.Name="After saving"
+                                          SelectionChanged="AfterSave_Changed" />
+                            </StackPanel>
+                        </DockPanel>
                     </Border>
                     <Border Background="{DynamicResource LayerFillColorAltBrush}"
                             BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1"

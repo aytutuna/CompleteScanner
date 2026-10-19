@@ -49,12 +49,13 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.adjustments.restoreFadedColors = true
     settings.adjustments.blackWhiteThreshold = 0.375
     settings.output.pdfSize = .compact
+    settings.output.afterSave = .share
     return settings
 }
 
 /// `nonDefaultSettings()` as a presets file written by the synthesized Codable
-/// implementation (pretty-printed, sorted keys, every property present), before the PDF size
-/// existed: it has no "output" object.
+/// implementation (pretty-printed, sorted keys, every property present), before the PDF size and
+/// the after-save action existed: it has no "output" object.
 private let presetsJSONBeforePDFSize = """
 [
   {
@@ -98,7 +99,7 @@ private let presetsJSONBeforePDFSize = """
 /// "output" object in its sorted place.
 private let currentFormatPresetsJSON = presetsJSONBeforePDFSize.replacingOccurrences(
     of: "\"pdfSearchable\" : false",
-    with: "\"output\" : {\n        \"pdfSize\" : \"compact\"\n      },\n      \"pdfSearchable\" : false")
+    with: "\"output\" : {\n        \"afterSave\" : \"share\",\n        \"pdfSize\" : \"compact\"\n      },\n      \"pdfSearchable\" : false")
 
 // MARK: - Decoding compatibility
 
@@ -330,6 +331,7 @@ final class ModelsCompatTests: XCTestCase {
         let presets = try decode([Preset].self, presetsJSONBeforePDFSize)
         var expected = nonDefaultSettings()
         expected.output.pdfSize = .standard
+        expected.output.afterSave = AfterSaveAction.none
         XCTAssertEqual(presets[0].settings, expected)
         XCTAssertEqual(try decode(ScanSettings.self, "{}").output.pdfSize, .standard)
         XCTAssertEqual(try decode(ScanSettings.self, #"{"output": {}}"#).output.pdfSize, .standard)
@@ -346,6 +348,7 @@ final class ModelsCompatTests: XCTestCase {
         }
         let nested = try decode(ScanSettings.self, #"{"output": {"pdfSize": "smallest", "afterSave": "share"}}"#)
         XCTAssertEqual(nested.output.pdfSize, .smallest)
+        XCTAssertEqual(nested.output.afterSave, .share)
     }
 
     func test_pdfSize_isWrittenUnderOutput_andRoundTrips() throws {
@@ -354,7 +357,7 @@ final class ModelsCompatTests: XCTestCase {
             settings.output.pdfSize = size
             let data = try encode(settings)
             let output = try XCTUnwrap(try jsonObject(data)["output"] as? [String: Any])
-            XCTAssertEqual(Set(output.keys), ["pdfSize"])
+            XCTAssertEqual(Set(output.keys), ["pdfSize", "afterSave"])
             XCTAssertEqual(output["pdfSize"] as? String, size.rawValue)
             XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: data).output.pdfSize, size)
         }

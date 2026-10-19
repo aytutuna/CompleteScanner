@@ -11,6 +11,7 @@ Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Core/ScannerBackend.swift` — `ScannerBackend` / `ScannerSession` protocols (both `@MainActor`).
 - `Sources/CompleteScannerKit/Core/ScanTask.swift`, `TaskCatalog.swift`, `TaskFlow.swift`, `SettingsAdapter.swift` — the start screen's tasks, their guided steps, and fitting settings to a scanner (see below).
 - `Sources/CompleteScannerKit/Output/PDFImageEncoding.swift`, `Pipeline/ColorAnalysis.swift` — the PDF sizes: how each page image is stored in a PDF (see below).
+- `Sources/CompleteScannerKit/Core/SaveActions.swift`, `App/FileActions.swift` — what can be done with saved files (open, open with, show in Finder, share, email, copy) and the after-save action (see below).
 - `Sources/CompleteScannerKit/App/AppState.swift` — the `@MainActor ObservableObject` all UI binds to; its task members are in `App/AppState+Tasks.swift`.
 - `Sources/CompleteScannerKit/App/ContentView.swift`, `CompleteScannerApp.swift`.
 
@@ -306,6 +307,55 @@ Twins of `windows/CompleteScanner.Core/PdfImageEncoding.cs` (`PdfSizePreset`, `P
 Note: `ScannedPage.fileURL` (optional) points at a full-resolution spill TIFF; when set,
 `page.image` is only a preview and PDFBuilder reloads the full pixels from the file per page.
 
+### Core/SaveActions.swift (+ OutputOptions in Core/Models.swift), App/FileActions.swift
+
+```swift
+// OutputOptions gains `afterSave: AfterSaveAction` ("afterSave" in the "output" object; `.none`
+// for files written before it existed and for an action this version does not know).
+public enum AfterSaveAction: String, Codable, CaseIterable, Identifiable, Sendable {
+    case none, open, reveal, share             // first case = default and fallback
+    public var label: String                   // "Do nothing", "Open", "Show in folder", "Share…"
+    public var hint: String                    // one line, the picker's tooltip
+}
+public enum FileAction: String, CaseIterable, Identifiable, Sendable {
+    case open, openWith, reveal, share, email, copy
+    public var label: String                   // "Open", "Open with…", "Show in folder", "Share…", "Email…", "Copy"
+}
+public struct SaveFollowUp: Equatable, Sendable { action: AfterSaveAction; urls: [URL]; var fileAction: FileAction }
+public struct ClipboardContent: Equatable, Sendable { files: [URL]; imageFile: URL? }
+public enum SendRoute: Equatable, Sendable { case compose, shareSheet, showInFolder }
+public struct SendProbe: Equatable, Sendable { canCompose: Bool; canShare: Bool }
+
+public enum SaveActions {
+    public static let showInFolderMessage: String
+    /// nil for `.none` or no files; `.open` with several files becomes `.reveal` (no viewer per photo).
+    /// Run only after a save that finished, never after a cancelled or failed one.
+    public static func plan(_ action: AfterSaveAction, saved: [URL]) -> SaveFollowUp?
+    /// One file: all six, in that order; several: reveal, share, email, copy; none: [].
+    public static func offered(fileCount: Int) -> [FileAction]
+    public static func isImageFile(_ url: URL) -> Bool                       // jpg, jpeg, png, tif, tiff
+    /// The files, and the picture too for exactly one image file.
+    public static func clipboardContent(for urls: [URL]) -> ClipboardContent
+    public static func emailRoute(_ probe: SendProbe) -> SendRoute          // compose, else share sheet, else folder
+    public static func shareRoute(_ probe: SendProbe) -> SendRoute          // share sheet, else folder
+    public static func shareTitle(_ urls: [URL]) -> String                  // the file's name, or "3 files"
+}
+
+// App/FileActions.swift: the system side, injected into AppState so tests can stand in for it.
+@MainActor public protocol FileActionService: AnyObject {
+    func open(_ url: URL) throws
+    func openWith(_ url: URL) throws                    // a menu of the apps that open the file, then "Other…"
+    func reveal(_ urls: [URL])
+    func sendProbe(for urls: [URL]) -> SendProbe        // compose = Mail can take the files
+    func share(_ urls: [URL], title: String) throws     // NSSharingServicePicker
+    func composeEmail(_ urls: [URL]) throws             // NSSharingService(named: .composeEmail)
+    func copy(_ content: ClipboardContent) throws       // NSPasteboard: the files, and the picture of one image
+}
+@MainActor public final class SystemFileActions: FileActionService { public init() }
+extension FileAction { var systemImage: String; func hint(fileCount: Int) -> String }   // internal, UI only
+```
+Twin of `windows/CompleteScanner.Core/SaveActions.cs` (`AfterSaveAction`, `FileAction`, `ModelLabels.Label` / `Hint`, `SaveFollowUp` with `Paths` and `FileAction`, `ClipboardContent`, `SendRoute`, `SendProbe`, `SaveActions.Plan` / `Offered` / `IsImageFile` / `ClipboardContentFor` / `EmailRoute` / `ShareRoute` / `ShareTitle`, paths as strings); `SaveActionsTests` are the same cases on both sides, and the after-save cases of `ModelsCompatTests` match. `AppState` takes an optional `fileActions:` (default `SystemFileActions()`), offers `savedFileActions` (for `lastSavedURLs`) and `runFileAction(_:urls:)`, which reports a missing file or a refusal in `errorMessage`, and runs the plan of `settings.output.afterSave` after `savePDF`, `saveImmediately` and `saveReviewedPhotos` finish. Windows (`App/Services/FileActions.cs`, `ShareService.cs`) has no compose route, so Email opens the share window there; nothing is ever sent without the user sending it. `TaskCatalog.apply` sets the after-save action: `.share` for the Email task, `.none` for the others.
+
 ### Output/OCRService.swift
 
 ```swift
@@ -377,9 +427,9 @@ One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: 
 
 - `UI/SidebarView.swift` — `struct SidebarView: View`: device list + refresh.
 - `UI/InspectorView.swift` — `struct InspectorView: View`: all settings + Overview/Scan/Cancel buttons + presets.
-- `UI/StatusBarView.swift` — `struct StatusBarView: View`: status text, progress, last-saved reveal buttons.
+- `UI/StatusBarView.swift` — `struct StatusBarView: View`: status text, progress, and the actions for the files saved last (open, show, share, copy; More adds open with and email).
 - `UI/PreviewCanvasView.swift` — `struct PreviewCanvasView: View`: shows `state.canvasImage`, marquee selection editing `state.selectionRect` (only when `state.overviewImage != nil`).
 - `UI/PagesStripView.swift` — `struct PagesStripView: View`: page-queue thumbnails + Save PDF / Clear.
-- `UI/PhotoReviewView.swift` — `struct PhotoReviewView: View`: detected-photo grid sheet; Save via `state.saveReviewedPhotos()`, cancel via `state.cancelPhotoReview()`.
+- `UI/PhotoReviewView.swift` — `struct PhotoReviewView: View`: detected-photo grid sheet with the "After saving" choice; Save via `state.saveReviewedPhotos()`, cancel via `state.cancelPhotoReview()`.
 - `UI/TaskStartView.swift` — `struct TaskStartView: View` (`onOpenScanner: () -> Void`): the start screen's task cards (`state.taskCards`) and preset cards; also `enum TaskSymbols` (icon key → SF Symbol).
 - `UI/TaskBannerView.swift` — `struct TaskBannerView: View` (`definition: TaskDefinition`, `onChangeTask: () -> Void`): the active task above the preview, with Change Task and a leave-task button.

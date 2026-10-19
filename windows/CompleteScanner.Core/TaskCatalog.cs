@@ -72,7 +72,7 @@ public static class TaskCatalog
             "Scan pages into a small PDF that is easy to attach to an email.",
             "email", TaskFlowKind.DocumentQueue, ScanIntent.Document, null, "Document",
             [new TaskStep("scan", "Scan each page",
-                          "Place a page face down on the glass and scan it. Repeat for every page, then save the PDF and attach it to your email.",
+                          "Place a page face down on the glass and scan it. Repeat for every page, then save the PDF: the share window opens so you can email it.",
                           "Scan page", Repeats: true)]),
     ];
 
@@ -83,8 +83,8 @@ public static class TaskCatalog
 
     /// <summary>
     /// <paramref name="current"/> with the task's settings laid over it: mode, source,
-    /// resolution, color, format, JPEG quality, PDF size, the photo and document switches,
-    /// searchable PDF, adjustments, file name and the task itself. The destination folder, the photo
+    /// resolution, color, format, JPEG quality, PDF size, the after-save action, the photo and
+    /// document switches, searchable PDF, adjustments, file name and the task itself. The destination folder, the photo
     /// detection tuning and the legacy OCR languages are kept. <paramref name="current"/> is
     /// not changed.
     /// </summary>
@@ -100,6 +100,7 @@ public static class TaskCatalog
         s.PdfSearchable = true;
         s.Adjustments = new AdjustmentSettings();
         s.Output.PdfSize = PdfSizePreset.Standard;
+        s.Output.AfterSave = AfterSaveAction.None;
         switch (task)
         {
             case ScanTask.Document:
@@ -141,6 +142,7 @@ public static class TaskCatalog
                 s.Resolution = 300;
                 s.Format = OutputFormat.Pdf;
                 s.Output.PdfSize = PdfSizePreset.Compact;
+                s.Output.AfterSave = AfterSaveAction.Share;
                 s.NamingTemplate = "Scan {date} {counter}";
                 break;
         }

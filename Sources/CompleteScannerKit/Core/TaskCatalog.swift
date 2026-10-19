@@ -92,7 +92,7 @@ public enum TaskCatalog {
             iconKey: "email", flow: .documentQueue, intent: .document, requiredSource: nil,
             fileLabel: "Document",
             steps: [TaskStep(id: "scan", title: "Scan each page",
-                             prompt: "Place a page face down on the glass and scan it. Repeat for every page, then save the PDF and attach it to your email.",
+                             prompt: "Place a page face down on the glass and scan it. Repeat for every page, then save the PDF: the share window opens so you can email it.",
                              primaryActionLabel: "Scan page", repeats: true)]),
     ]
 
@@ -102,8 +102,8 @@ public enum TaskCatalog {
     }
 
     /// `current` with the task's settings laid over it: mode, source, resolution, color,
-    /// format, JPEG quality, PDF size, the photo and document switches, searchable PDF,
-    /// adjustments, file name and the task itself. The destination folder, the photo detection tuning and
+    /// format, JPEG quality, PDF size, the after-save action, the photo and document switches,
+    /// searchable PDF, adjustments, file name and the task itself. The destination folder, the photo detection tuning and
     /// the legacy OCR languages are kept.
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings {
         var s = current
@@ -116,6 +116,7 @@ public enum TaskCatalog {
         s.pdfSearchable = true
         s.adjustments = AdjustmentSettings()
         s.output.pdfSize = .standard
+        s.output.afterSave = AfterSaveAction.none
         switch task {
         case .document:
             s.intent = .document
@@ -151,6 +152,7 @@ public enum TaskCatalog {
             s.resolution = 300
             s.format = .pdf
             s.output.pdfSize = .compact
+            s.output.afterSave = .share
             s.namingTemplate = "Scan {date} {counter}"
         }
         s.taskId = task.rawValue

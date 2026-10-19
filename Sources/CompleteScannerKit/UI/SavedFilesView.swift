@@ -3,8 +3,9 @@ import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The "Saved" tab: everything in the destination folder, newest first, with quick
-/// open/reveal actions and 90°-rotation for saved image files.
+/// The "Saved" tab: everything in the destination folder, newest first, with open, open with,
+/// show in Finder, share, email, copy (`AppState.runFileAction`) and 90°-rotation for saved image
+/// files. Every action is also in the card's More menu and context menu.
 struct SavedFilesView: View {
     @EnvironmentObject var state: AppState
 
@@ -24,8 +25,7 @@ struct SavedFilesView: View {
                         ForEach(files) { file in
                             SavedFileCard(file: file,
                                           rotating: rotatingPaths.contains(file.url.path),
-                                          onOpen: { NSWorkspace.shared.open(file.url) },
-                                          onReveal: { state.revealInFinder(file.url) },
+                                          onAction: { state.runFileAction($0, urls: [file.url]) },
                                           onRotate: { rotate(file) })
                         }
                     }
@@ -175,8 +175,7 @@ fileprivate struct SavedFileItem: Identifiable, Equatable {
 fileprivate struct SavedFileCard: View {
     let file: SavedFileItem
     let rotating: Bool
-    let onOpen: () -> Void
-    let onReveal: () -> Void
+    let onAction: (FileAction) -> Void
     let onRotate: () -> Void
 
     @State private var thumbnail: CGImage?
@@ -201,7 +200,7 @@ fileprivate struct SavedFileCard: View {
                 }
             }
             .frame(height: 140)
-            .onTapGesture(count: 2, perform: onOpen)
+            .onTapGesture(count: 2) { onAction(.open) }
 
             Text(file.url.lastPathComponent)
                 .font(.caption)
@@ -214,13 +213,21 @@ fileprivate struct SavedFileCard: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 10) {
-                Button("Open", action: onOpen)
+                Button("Open") { onAction(.open) }
                 Button {
-                    onReveal()
+                    onAction(.share)
+                } label: {
+                    Label(FileAction.share.label, systemImage: FileAction.share.systemImage)
+                        .labelStyle(.iconOnly)
+                }
+                .help(FileAction.share.hint(fileCount: 1))
+                Button {
+                    onAction(.reveal)
                 } label: {
                     Image(systemName: "magnifyingglass")
                 }
                 .help("Show in Finder")
+                .accessibilityLabel("Show in Finder")
                 if file.imageFormat != nil {
                     Button {
                         onRotate()
@@ -234,10 +241,21 @@ fileprivate struct SavedFileCard: View {
                     .disabled(rotating)
                     .help("Rotate the saved file 90° clockwise")
                 }
+                Menu {
+                    actionMenu
+                } label: {
+                    Label("More actions", systemImage: "ellipsis.circle")
+                        .labelStyle(.iconOnly)
+                }
+                .menuStyle(.button)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("More: open with, email, copy")
             }
             .buttonStyle(.borderless)
             .controlSize(.small)
         }
+        .contextMenu { actionMenu }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.08)))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1))
@@ -248,6 +266,27 @@ fileprivate struct SavedFileCard: View {
 
     private var sizeText: String {
         ByteCountFormatter.string(fromByteCount: Int64(file.fileSize), countStyle: .file)
+    }
+
+    /// Every action on the file, then Rotate for image files: the More menu and the context menu.
+    @ViewBuilder
+    private var actionMenu: some View {
+        ForEach(SaveActions.offered(fileCount: 1)) { action in
+            Button {
+                onAction(action)
+            } label: {
+                Label(action.label, systemImage: action.systemImage)
+            }
+        }
+        if file.imageFormat != nil {
+            Divider()
+            Button {
+                onRotate()
+            } label: {
+                Label("Rotate 90\u{00B0} Clockwise", systemImage: "rotate.right")
+            }
+            .disabled(rotating)
+        }
     }
 }
 

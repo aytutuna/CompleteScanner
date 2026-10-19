@@ -116,6 +116,36 @@ public static class ModelLabels
         _ => "",
     };
 
+    public static string Label(this AfterSaveAction action) => action switch
+    {
+        AfterSaveAction.None => "Do nothing",
+        AfterSaveAction.Open => "Open",
+        AfterSaveAction.Reveal => "Show in folder",
+        AfterSaveAction.Share => "Share…",
+        _ => action.ToString(),
+    };
+
+    /// <summary>One line saying what the after-save action does, shown as its tooltip.</summary>
+    public static string Hint(this AfterSaveAction action) => action switch
+    {
+        AfterSaveAction.None => "Stay in the app after saving.",
+        AfterSaveAction.Open => "Open the saved file in its app. Several files are shown in their folder instead.",
+        AfterSaveAction.Reveal => "Show the saved files in their folder.",
+        AfterSaveAction.Share => "Open the share window to email the saved files or send them to an app.",
+        _ => "",
+    };
+
+    public static string Label(this FileAction action) => action switch
+    {
+        FileAction.Open => "Open",
+        FileAction.OpenWith => "Open with…",
+        FileAction.Reveal => "Show in folder",
+        FileAction.Share => "Share…",
+        FileAction.Email => "Email…",
+        FileAction.Copy => "Copy",
+        _ => action.ToString(),
+    };
+
     public static string FileExtension(this OutputFormat format) => format switch
     {
         OutputFormat.Pdf => "pdf",
@@ -169,18 +199,26 @@ public sealed class AdjustmentSettings : IEquatable<AdjustmentSettings>
 
 /// <summary>
 /// Settings for the saved files themselves, kept together as <see cref="ScanSettings.Output"/>
-/// (the "output" object in settings files). Later output features add their fields here.
+/// (the "output" object in settings files): the PDF size and the after-save action. Later
+/// output features add their fields here.
 /// </summary>
 public sealed class OutputOptions : IEquatable<OutputOptions>
 {
     /// <summary>How small saved PDFs are made. Settings without it get Standard.</summary>
     public PdfSizePreset PdfSize { get; set; } = PdfSizePreset.Standard;
 
+    /// <summary>
+    /// What happens on its own after a save (see <see cref="SaveActions.Plan"/>). Settings
+    /// without it, or with an action this version does not know, get None.
+    /// </summary>
+    public AfterSaveAction AfterSave { get; set; } = AfterSaveAction.None;
+
     public OutputOptions Clone() => (OutputOptions)MemberwiseClone();
 
-    public bool Equals(OutputOptions? other) => other is not null && PdfSize == other.PdfSize;
+    public bool Equals(OutputOptions? other) =>
+        other is not null && PdfSize == other.PdfSize && AfterSave == other.AfterSave;
     public override bool Equals(object? obj) => Equals(obj as OutputOptions);
-    public override int GetHashCode() => PdfSize.GetHashCode();
+    public override int GetHashCode() => HashCode.Combine(PdfSize, AfterSave);
 }
 
 public sealed class ScanSettings
@@ -233,7 +271,7 @@ public sealed class ScanSettings
     [JsonIgnore]
     public ScanTask? Task => ScanTasks.TryParse(TaskId);
 
-    /// <summary>Settings for the saved files (the PDF size). Written after the earlier keys.</summary>
+    /// <summary>Settings for the saved files (the PDF size, the after-save action). Written after the earlier keys.</summary>
     public OutputOptions Output { get; set; } = new();
 
     public static string DefaultDestinationPath =>

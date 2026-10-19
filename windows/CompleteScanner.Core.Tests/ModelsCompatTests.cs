@@ -57,13 +57,14 @@ internal static class CompatFixtures
         settings.Adjustments.RestoreFadedColors = true;
         settings.Adjustments.BlackWhiteThreshold = 0.375;
         settings.Output.PdfSize = PdfSizePreset.Compact;
+        settings.Output.AfterSave = AfterSaveAction.Share;
         return settings;
     }
 
     /// <summary>
     /// <see cref="NonDefaultSettings"/> as a presets file written by the serializer before
     /// tolerant decoding existed (indented, camelCase, every property present), and before the
-    /// PDF size existed: it has no "output" object.
+    /// PDF size and the after-save action existed: it has no "output" object.
     /// </summary>
     public const string PresetsJsonBeforePdfSize = """
         [
@@ -110,7 +111,7 @@ internal static class CompatFixtures
     /// </summary>
     public static readonly string CurrentFormatPresetsJson = PresetsJsonBeforePdfSize.ReplaceLineEndings("\n").Replace(
         "        \"blackWhiteThreshold\": 0.375\n      }\n",
-        "        \"blackWhiteThreshold\": 0.375\n      },\n      \"output\": {\n        \"pdfSize\": \"compact\"\n      }\n");
+        "        \"blackWhiteThreshold\": 0.375\n      },\n      \"output\": {\n        \"pdfSize\": \"compact\",\n        \"afterSave\": \"share\"\n      }\n");
 
     /// <summary>Field-by-field equality, including the legacy OCR languages.</summary>
     public static void AssertSettingsEqual(ScanSettings expected, ScanSettings actual)
@@ -413,6 +414,7 @@ public class ModelsCompatTests
         var presets = Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize);
         var expected = CompatFixtures.NonDefaultSettings();
         expected.Output.PdfSize = PdfSizePreset.Standard;
+        expected.Output.AfterSave = AfterSaveAction.None;
         CompatFixtures.AssertSettingsEqual(expected, presets[0].Settings);
         Assert.Equal(PdfSizePreset.Standard, Decode<ScanSettings>("{}").Output.PdfSize);
         Assert.Equal(PdfSizePreset.Standard, Decode<ScanSettings>("""{"output": {}}""").Output.PdfSize);
@@ -431,6 +433,7 @@ public class ModelsCompatTests
         }
         var nested = Decode<ScanSettings>("""{"output": {"pdfSize": "smallest", "afterSave": "share"}}""");
         Assert.Equal(PdfSizePreset.Smallest, nested.Output.PdfSize);
+        Assert.Equal(AfterSaveAction.Share, nested.Output.AfterSave);
     }
 
     [Fact]
@@ -442,7 +445,7 @@ public class ModelsCompatTests
             settings.Output.PdfSize = size;
             string json = CompatFixtures.Encode(settings);
             using var written = JsonDocument.Parse(json);
-            Assert.Equal(["pdfSize"], written.RootElement.GetProperty("output").EnumerateObject().Select(p => p.Name));
+            Assert.Equal(["pdfSize", "afterSave"], written.RootElement.GetProperty("output").EnumerateObject().Select(p => p.Name));
             Assert.Equal(size, Decode<ScanSettings>(json).Output.PdfSize);
         }
     }

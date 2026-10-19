@@ -61,8 +61,10 @@ The main window has four tabs, like the macOS app:
   (scanning, processing, photo detection, OCR, PDF writing, exports) and never leaves a
   partial file behind.
 - **Scans** — this session's scans, newest first; click one to enlarge it.
-- **Saved** — the destination folder's files, newest first, with open, show-in-Explorer and
-  rotate-in-place for JPEG/PNG/TIFF.
+- **Saved** — the destination folder's files, newest first, with open, share, show-in-Explorer
+  and rotate-in-place for JPEG/PNG/TIFF on each card; its **…** button and its context menu
+  (right-click, Shift+F10 or the Menu key) add open with, email and copy (see
+  [Share, email, open with, copy](#share-email-open-with-copy)).
 
 A scanner that several backends reach (WIA and TWAIN for one USB scanner, WIA and eSCL for
 one network MFP) is one row in the sidebar. The app connects through WIA when it can, then
@@ -103,8 +105,8 @@ color page counts as having no color when fewer than 0.1 % of its sampled pixels
 pixel of every 4th row) differ by more than 32 between their strongest and weakest channel,
 so a stamp or a highlighter mark keeps the page in color. The size alone sets the JPEG
 quality of PDF pages; the JPEG quality setting (stored in the settings file, no control on
-Windows) applies to JPEG files only, as before. The **Email a document** task scans at 300 dpi
-and saves Compact.
+Windows) applies to JPEG files only, as before. The **Email a document** task scans at 300 dpi,
+saves Compact and then opens the share window.
 
 **Behavior change:** Standard is the default for everyone, including existing settings and
 presets, which have no size stored; earlier versions always wrote full-resolution RGB JPEGs
@@ -129,6 +131,36 @@ Both real pages have color, so they stay color; the last row shows a color scan 
 without color being stored gray. Black & white pages are still JPEGs; CCITT G4 (a later
 step) would make them far smaller.
 
+### Share, email, open with, copy
+
+After every save a green bar above the window names what was saved (the PDF's size too) and
+offers **Open**, **Show in folder**, **Share** and **Copy**; its **…** button adds **Open
+with…** and **Email…**. With several files (a batch of photos) Open and Open with are left out.
+The bar goes away with its close button or when the next scan starts; in narrow windows its
+buttons show only their icons (names stay in tooltips and for screen readers). The Saved tab's
+cards offer the same actions. Nothing leaves the PC without the user choosing where it goes:
+
+- **Share** opens the Windows share window (the SDK's `DataTransferManagerInterop` for desktop
+  windows), which lists Mail, Outlook, nearby sharing and other apps. The files are offered as
+  read-only copies. Where Windows has no share window, the files are shown in their folder with
+  a note instead.
+- **Email** opens the same share window: pick Mail or Outlook there. The app does not use
+  Simple MAPI or `mailto:` (the new Outlook does not support Simple MAPI, and `mailto:` cannot
+  attach files), and it never writes a message or an address itself.
+- **Open with…** is the Windows "Open with" dialog for the file.
+- **Copy** puts the files on the clipboard (pasting into a folder copies them); for one image
+  file its picture goes on the clipboard too, for pasting into a document or an image editor.
+
+**After saving** (in the inspector's Output section, and next to the photo review's Save
+button) runs one of these on its own once a save has finished: **Do nothing** (the default),
+**Open**, **Show in folder** or **Share…**. Several files are shown in their folder rather than
+opened one by one. A cancelled or failed save runs nothing, and a file that has been moved or
+deleted since is reported instead. Picking a task sets it: the **Email a document** task shares,
+the others do nothing. The choice is decided in Core (`SaveActions`: the plan, the actions
+offered, what Copy puts on the clipboard, the email route) and carried out by
+`Services/FileActions.cs` and `Services/ShareService.cs`, which the view model takes as a
+stand-in in checks.
+
 ## Status — what's verified vs. what needs scanner hardware
 
 | Component | Status |
@@ -142,6 +174,7 @@ step) would make them far smaller.
 | PDF sizes (`PdfImageEncoding`, `ColorAnalysis`) | Covered by `PdfImageEncodingTests`, `ColorAnalysisTests`, the gray-JPEG cases in `PdfBuilderTests` and the size cases in `ModelsCompatTests` and `ScanTaskTests` (same cases as macOS). Checked by driving the view model's real save path with two public-domain document scans in every color mode and size (image size and color space as planned, page size unchanged, every PDF renders through Windows.Data.Pdf close to the scan, sizes shrink in order; see [PDF size](#pdf-size)) and by building the window without showing it: the size control, its hint and last-size line, hiding it for other formats and Photos, the Email card, rendered off screen in light and dark |
 | One row per scanner (`DeviceMerge`, connection chooser) | Matching rules, ranking and the saved choice are covered by `DeviceMergeTests` (same table as macOS) and were checked by driving the view model with fake WIA and TWAIN backends: one row, WIA preferred, a later-appearing better connection taken over once the running scan ends, the user's choice saved and used at the next start, a choice made during a scan applied after it. A saved choice is keyed by the eSCL UUID or the model name, whichever the current set of connections yields, so it lapses when that set changes (see above). **Unverified with real drivers:** the names real WIA, eSCL and TWAIN drivers report; `devices.txt` collects them |
 | TWAIN backend (`Scanning/Twain`) | **Experimental, untested against hardware** — see [TWAIN](#twain) below. The scan logic in Core (negotiation choices, the acquisition state machine, strip and bitmap conversion, paper sizes, error mapping, 32-bit driver detection) is covered by `TwainScanLoopTests`, `TwainRasterTests` and `TwainScanRequestsTests` through a fake transport. Driving the view model with the real session class over a scripted transport checked flatbed, feeder, preview, empty feeder, a jam after two sheets (pages kept, reason shown), cancel while the driver is silent (returns at once, the source is reset and disabled in the background), switching away (the source is closed without waiting), the driver-window switch and its saved choice (kept when connecting finds the scanner off), a driver stuck while enabling (reported after the start limit, the next scan refused at once, the late scan stopped when the driver answers), and that a scanner only TWAIN lists is never opened unless the user picks it. On a PC without a TWAIN Data Source Manager the backend lists nothing and `devices.txt` says why; the app starts normally. **Unverified:** real drivers, NTwain's message loop with them, the TWAIN Working Group sample source (not installed here) |
+| Share, email, open with, copy (`SaveActions`, `FileActions`, `ShareService`) | The choices are covered by `SaveActionsTests` and the after-save cases of `ModelsCompatTests` (same cases as macOS). Checked by driving the view model's real save paths with a stand-in for Windows (each after-save action after a PDF, a file saved at once and a photo batch; the Email task sharing; no share window; a refused action; a moved file; a cancelled save running nothing), by building the real clipboard data and share package without placing them anywhere, and by building the window without showing it: the bar, its buttons and menu, the narrow layout, the "After saving" choices, the Saved tab's buttons and menus, rendered off screen in light and dark. **Not tried on screen:** the share window, the Open with dialog and the clipboard themselves (checks must not send, open or overwrite anything), and Mail or Outlook as share targets |
 | eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — see [Network scanners](#network-scanners-escl) below for discovery, adding by address and HTTPS. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the feeder's own sheet size (at most 17 in tall); black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. The protocol client (`EsclClient`, `EsclScannerSession`) is covered by `EsclClientTests` through a stub HTTP handler. Checked against local fake eSCL servers (plain and HTTPS), not a real device |
 
 Known divergences from the macOS app (all documented in the source):
@@ -175,6 +208,10 @@ Known divergences from the macOS app (all documented in the source):
   running operation is then cancelled and allowed to finish its cleanup before the window closes.
 - Rotating a saved JPEG re-encodes it at its own estimated quality (read from the file's
   quantization table) instead of a fixed 95%.
+- Email: the Mac starts a new Mail message with the files attached; Windows has no such route
+  (no Simple MAPI), so Email opens the share window, where Mail and Outlook are listed. The
+  actions after a save are a bar above the window on Windows and buttons in the status bar on
+  the Mac.
 - PDF sizes: Windows writes the planned JPEG into its own PDF writer. The Mac, whose PDFs come
   from CoreGraphics, encodes the same plan with ImageIO and draws a JPEG-backed image, which
   CoreGraphics is expected to store unchanged; this, and the resulting file sizes, still need
@@ -291,8 +328,8 @@ window), next to the network scanners added by address (`escl-hosts.json`) and t
 trusted certificates (`escl-trust.json`). The scan settings and presets remember the task
 they were set up for as text (`"taskId": "document"`), left out when there is none, so a task
 added by a newer version is kept by an older one. They also hold an `"output"` object with the
-PDF size (`"output": {"pdfSize": "standard"}`); a file without it, or with a size this version
-does not know, reads as Standard. A first run starts without presets: the task
+PDF size and the after-save action (`"output": {"pdfSize": "standard", "afterSave": "none"}`); a
+file without them, or with a value this version does not know, reads as Standard and Do nothing. A first run starts without presets: the task
 cards replaced the five starter presets earlier versions wrote, and presets files that already
 hold them keep them. They load across versions the same way as on macOS (`../CONTRACTS.md`, rule 6): a value this version does not understand resets only
 that setting; a file that cannot be decoded is kept next to it as

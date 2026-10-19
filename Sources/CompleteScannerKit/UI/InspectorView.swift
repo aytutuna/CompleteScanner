@@ -122,6 +122,7 @@ struct InspectorView: View {
             if state.settings.format == .pdf {
                 pdfSizeRow
             }
+            afterSavePicker
             LabeledContent("Destination") {
                 HStack(spacing: 6) {
                     Text(destinationURL.lastPathComponent)
@@ -183,6 +184,17 @@ struct InspectorView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// What happens on its own after a save. Twin of the Windows inspector's "After saving"; the
+    /// photo review offers the same choice.
+    private var afterSavePicker: some View {
+        Picker("After saving", selection: $state.settings.output.afterSave) {
+            ForEach(AfterSaveAction.allCases) { action in
+                Text(action.label).tag(action)
+            }
+        }
+        .help(state.settings.output.afterSave.hint)
     }
 
     private var availableFormats: [OutputFormat] {
