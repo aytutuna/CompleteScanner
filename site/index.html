@@ -1,0 +1,1529 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CompleteScanner &mdash; one scanning app for documents and photos, on macOS and Windows</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+:root{
+  --paper:#ECEEE9; --paper-2:#E1E5DF; --sheet:#F8F9F6; --well:#E6E9E4;
+  --ink:#13171A; --ink-2:#384046; --ink-3:#59636A;
+  --rule:#C3C9C2; --rule-strong:#89928B;
+  --accent:#006B82; --accent-hover:#00546A; --accent-ink:#FFFFFF; --accent-soft:#D3E7EA;
+  --mark:#B5155A; --ok:#1E6E44; --busy:#8F5000; --focus:#B5155A;
+  --code-bg:#172023; --code-ink:#E3EBE8; --code-dim:#93A6A2;
+  --head-bg:rgba(236,238,233,.9);
+  --shot-shadow:0 1px 1px rgba(19,23,26,.06),0 14px 30px -12px rgba(19,23,26,.30),0 44px 80px -44px rgba(19,23,26,.40);
+  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --f-display:"Bricolage Grotesque","Segoe UI Variable Display","Segoe UI",system-ui,-apple-system,sans-serif;
+  --f-body:"IBM Plex Sans","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,Menlo,monospace;
+  --s-n2:.75rem; --s-n1:.875rem; --s-0:1.0625rem; --s-1:1.25rem;
+  --s-2:clamp(1.4rem,1.15rem + 1vw,1.85rem);
+  --s-3:clamp(1.95rem,1.3rem + 2.5vw,3.15rem);
+  --s-4:clamp(2.45rem,1.3rem + 4.8vw,5.5rem);
+  --gutter:clamp(16px,4vw,48px);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#101416; --paper-2:#151B1D; --sheet:#1B2225; --well:#232B2E;
+    --ink:#E6EBE8; --ink-2:#B4BEBB; --ink-3:#8E9A97;
+    --rule:#2C3538; --rule-strong:#58645F;
+    --accent:#58C7DC; --accent-hover:#82D8E8; --accent-ink:#04191E; --accent-soft:#15383F;
+    --mark:#FF639F; --ok:#72CF99; --busy:#F2B24C; --focus:#FF639F;
+    --code-bg:#0A0E10; --code-ink:#E3EBE8; --code-dim:#7E918D;
+    --head-bg:rgba(16,20,22,.88);
+    --shot-shadow:0 1px 1px rgba(0,0,0,.5),0 18px 44px -14px rgba(0,0,0,.75);
+    --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .035 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#101416; --paper-2:#151B1D; --sheet:#1B2225; --well:#232B2E;
+  --ink:#E6EBE8; --ink-2:#B4BEBB; --ink-3:#8E9A97;
+  --rule:#2C3538; --rule-strong:#58645F;
+  --accent:#58C7DC; --accent-hover:#82D8E8; --accent-ink:#04191E; --accent-soft:#15383F;
+  --mark:#FF639F; --ok:#72CF99; --busy:#F2B24C; --focus:#FF639F;
+  --code-bg:#0A0E10; --code-ink:#E3EBE8; --code-dim:#7E918D;
+  --head-bg:rgba(16,20,22,.88);
+  --shot-shadow:0 1px 1px rgba(0,0,0,.5),0 18px 44px -14px rgba(0,0,0,.75);
+  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .035 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  color-scheme:dark;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+@media (prefers-reduced-motion: no-preference){html{scroll-behavior:smooth}}
+body{margin:0;background-color:var(--paper);background-image:var(--grain);color:var(--ink);font-family:var(--f-body);font-size:var(--s-0);line-height:1.6;overflow-x:clip;-webkit-font-smoothing:antialiased}
+img{max-width:100%;height:auto;display:block}
+a{color:var(--accent);text-underline-offset:.18em;text-decoration-thickness:1px}
+a:hover{color:var(--accent-hover);text-decoration-thickness:2px}
+:focus-visible{outline:3px solid var(--focus);outline-offset:3px;border-radius:3px}
+[id]{scroll-margin-top:84px}
+h1,h2,h3,h4{font-family:var(--f-display);font-weight:650;line-height:1.08;letter-spacing:-.015em;margin:0;color:var(--ink);text-wrap:balance}
+h1{font-size:var(--s-4);font-weight:720;letter-spacing:-.03em;line-height:.98}
+h2{font-size:var(--s-3);letter-spacing:-.025em}
+h3{font-size:var(--s-2)}
+h4{font-size:var(--s-1)}
+p{margin:0 0 1em}
+code,kbd,pre,.mono{font-family:var(--f-mono);font-size:.92em}
+.sr{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.wrap{max-width:1240px;margin-inline:auto;padding-left:max(var(--gutter),env(safe-area-inset-left,0px));padding-right:max(var(--gutter),env(safe-area-inset-right,0px))}
+.skip{position:absolute;left:12px;top:-60px;z-index:50;background:var(--ink);color:var(--paper);padding:10px 14px;border-radius:4px;font-weight:600}
+.skip:focus{top:12px;color:var(--paper)}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;gap:.5em;min-height:44px;padding:.55em 1.1em;border-radius:6px;border:1px solid transparent;font:600 var(--s-n1)/1.2 var(--f-body);letter-spacing:.01em;text-decoration:none;cursor:pointer;transition:background-color .15s,border-color .15s,color .15s,transform .15s}
+.btn svg{width:18px;height:18px;flex:none}
+.btn-primary{background:var(--accent);color:var(--accent-ink)}
+.btn-primary:hover{background:var(--accent-hover);color:var(--accent-ink)}
+.btn-ghost{background:transparent;color:var(--ink);border-color:var(--rule-strong)}
+.btn-ghost:hover{border-color:var(--ink);color:var(--ink)}
+.btn-small{min-height:36px;padding:.4em .85em;font-size:var(--s-n2)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:active:not(:disabled){transform:translateY(1px)}
+
+/* header */
+.site-head{position:sticky;top:0;z-index:20;background:var(--head-bg);-webkit-backdrop-filter:saturate(1.2) blur(10px);backdrop-filter:saturate(1.2) blur(10px);border-bottom:1px solid var(--rule)}
+.head-row{display:flex;align-items:center;gap:20px;min-height:64px}
+.brand{display:inline-flex;align-items:center;gap:10px;color:var(--ink);text-decoration:none;font:700 1.08rem/1 var(--f-display);letter-spacing:-.01em}
+.brand:hover{color:var(--ink)}
+.brand svg{width:28px;height:28px;color:var(--mark)}
+.nav-list{display:flex;gap:4px;list-style:none;margin:0 0 0 auto;padding:0}
+.nav-list a{display:block;padding:8px 10px;color:var(--ink-2);text-decoration:none;font-size:var(--s-n1);font-weight:500;border-radius:4px}
+.nav-list a:hover{color:var(--ink);background:var(--paper-2)}
+.head-actions{display:flex;align-items:center;gap:8px}
+.theme-btn{display:inline-grid;place-items:center;width:40px;height:40px;border-radius:6px;border:1px solid var(--rule-strong);background:transparent;color:var(--ink);cursor:pointer}
+.theme-btn:hover{border-color:var(--ink)}
+.theme-btn svg{width:19px;height:19px}
+.theme-btn .i-sun{display:none}
+.theme-btn[aria-pressed="true"] .i-sun{display:block}
+.theme-btn[aria-pressed="true"] .i-moon{display:none}
+@media (max-width:900px){
+  .head-row{flex-wrap:wrap;row-gap:0;min-height:56px}
+  .head-actions{margin-left:auto}
+  .site-head nav{order:3;flex:1 0 100%;min-width:0}
+  .nav-list{margin:0;padding:2px 0 10px;overflow-x:auto;scrollbar-width:none;gap:6px}
+  .nav-list::-webkit-scrollbar{display:none}
+  .nav-list li{flex:none}
+  .nav-list a{padding:5px 10px;border:1px solid var(--rule);white-space:nowrap}
+  [id]{scroll-margin-top:118px}
+}
+
+/* shared bits */
+.kicker{display:flex;align-items:center;gap:10px;margin:0 0 18px;font:500 var(--s-n2)/1.3 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.kicker svg{width:16px;height:16px;color:var(--mark);flex:none}
+.lede{font-size:var(--s-1);line-height:1.55;color:var(--ink-2);max-width:40em}
+.fine{font-size:var(--s-n1);color:var(--ink-3)}
+.note{font-size:var(--s-n1);color:var(--ink-3);max-width:62em;margin-top:28px;padding-left:14px;border-left:2px solid var(--rule)}
+.section{padding-block:clamp(64px,9vw,128px)}
+.sec-head{max-width:900px;margin-bottom:clamp(32px,5vw,56px)}
+.sec-head h2{margin-bottom:18px}
+.band{background:var(--paper-2);border-block:1px solid var(--rule)}
+
+/* dpi ruler */
+.ruler{position:relative;display:flex;height:26px;overflow:hidden;color:var(--ink-3);font:500 10px/1 var(--f-mono);
+  background:
+    repeating-linear-gradient(90deg,var(--rule-strong) 0 1px,transparent 1px 9.6px) left bottom/100% 5px no-repeat,
+    repeating-linear-gradient(90deg,var(--rule-strong) 0 1px,transparent 1px 48px) left bottom/100% 9px no-repeat,
+    repeating-linear-gradient(90deg,var(--ink-2) 0 1px,transparent 1px 96px) left bottom/100% 14px no-repeat;
+  border-bottom:1px solid var(--rule-strong)}
+.ruler span{flex:0 0 96px;padding:2px 0 0 4px}
+.ruler span:first-child::after{content:" in";}
+
+/* screenshot frames with crop marks */
+.shot{margin:0;position:relative}
+.frame{position:relative}
+.frame img{width:100%;border-radius:9px;box-shadow:var(--shot-shadow);background:var(--well)}
+.frame::before{content:"";position:absolute;inset:-15px;pointer-events:none;--c:var(--rule-strong);
+  background:
+    linear-gradient(var(--c),var(--c)) left 0 top 15px/10px 1px,
+    linear-gradient(var(--c),var(--c)) left 15px top 0/1px 10px,
+    linear-gradient(var(--c),var(--c)) right 0 top 15px/10px 1px,
+    linear-gradient(var(--c),var(--c)) right 15px top 0/1px 10px,
+    linear-gradient(var(--c),var(--c)) left 0 bottom 15px/10px 1px,
+    linear-gradient(var(--c),var(--c)) left 15px bottom 0/1px 10px,
+    linear-gradient(var(--c),var(--c)) right 0 bottom 15px/10px 1px,
+    linear-gradient(var(--c),var(--c)) right 15px bottom 0/1px 10px;
+  background-repeat:no-repeat}
+.shot figcaption{margin-top:22px;font-size:var(--s-n1);color:var(--ink-3);max-width:60em}
+.shot figcaption b{font:500 var(--s-n2)/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin-right:.6em}
+.sweep::after{content:"";position:absolute;inset:0;border-radius:9px;pointer-events:none;mix-blend-mode:screen;opacity:0;
+  background:linear-gradient(180deg,transparent 0,transparent 44%,rgba(170,250,236,.30) 48.6%,rgba(255,255,255,.95) 50%,rgba(170,250,236,.30) 51.4%,transparent 56%,transparent 100%);
+  background-size:100% 240%;background-repeat:no-repeat}
+@media (prefers-reduced-motion: no-preference){
+  .sweep::after{animation:sweep 2.8s .5s cubic-bezier(.5,.05,.4,1) 1 both}
+}
+@keyframes sweep{0%{background-position:0 100%;opacity:1}92%{opacity:1}100%{background-position:0 0;opacity:0}}
+
+/* platform labels */
+.plat{display:inline-block;padding:3px 8px 2px;border:1px solid var(--rule-strong);border-radius:3px;font:500 11px/1.3 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap;vertical-align:.12em}
+.plat--win{border-color:var(--accent);color:var(--accent)}
+.plat--mac{border-color:var(--mark);color:var(--mark)}
+
+/* hero */
+.hero{padding-top:clamp(40px,7vw,96px);padding-bottom:clamp(56px,8vw,112px)}
+.hero-grid{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);gap:clamp(24px,4vw,64px);align-items:end}
+.hero h1 span{color:var(--accent)}
+.hero .lede{margin-bottom:26px}
+.cta-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:18px}
+.hero-figure{margin-top:clamp(40px,6vw,72px)}
+.hero-figure .ruler{margin-bottom:28px}
+.facts-row{display:flex;flex-wrap:wrap;gap:8px 28px;margin:34px 0 0;padding:0;list-style:none;font:500 var(--s-n2)/1.4 var(--f-mono);letter-spacing:.04em;color:var(--ink-2)}
+.facts-row li{padding-left:16px;position:relative}
+.facts-row li::before{content:"";position:absolute;left:0;top:.45em;width:7px;height:7px;border:1px solid var(--mark);transform:rotate(45deg)}
+@media (max-width:860px){.hero-grid{grid-template-columns:minmax(0,1fr);align-items:start}}
+
+/* photo demo */
+.demo{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);gap:clamp(24px,3.5vw,48px);align-items:start}
+.demo-stage canvas{display:block;width:100%;border-radius:12px;box-shadow:var(--shot-shadow);background:#232B2E;cursor:default;touch-action:pan-y}
+.demo-controls{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:22px}
+.steps{list-style:none;margin:0 0 20px;padding:0;border-top:1px solid var(--rule)}
+.steps li{border-bottom:1px solid var(--rule)}
+.steps button{display:grid;grid-template-columns:34px 1fr;gap:10px;width:100%;padding:13px 6px 13px 0;background:none;border:0;color:var(--ink-2);text-align:left;font:inherit;font-size:var(--s-n1);line-height:1.45;cursor:pointer}
+.steps button:hover strong{color:var(--accent)}
+.steps strong{display:block;color:var(--ink);font-family:var(--f-display);font-size:1.08rem;font-weight:620;margin-bottom:2px}
+.step-n{display:inline-grid;place-items:center;width:28px;height:28px;border:1px solid var(--rule-strong);border-radius:50%;font:500 12px/1 var(--f-mono);color:var(--ink-2);margin-top:1px}
+.steps button[aria-current="step"] .step-n{background:var(--mark);border-color:var(--mark);color:var(--paper)}
+.steps button[aria-current="step"] strong{color:var(--mark)}
+.demo-status{min-height:3.2em;font-size:var(--s-n1);color:var(--ink-2);margin-bottom:14px}
+.keep{border:1px solid var(--rule);border-radius:8px;padding:12px 14px 14px;margin:0;background:var(--sheet)}
+.keep legend{font:500 var(--s-n2)/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);padding:0 6px}
+.keep[disabled]{opacity:.55}
+.keep-list{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px;margin-bottom:12px}
+.keep-list label{display:flex;align-items:center;gap:8px;font-size:var(--s-n1);min-height:32px;cursor:pointer}
+.keep-list input{width:18px;height:18px;accent-color:var(--accent);margin:0}
+.save-out{margin-top:14px;font-size:var(--s-n1);color:var(--ink-2)}
+.save-out ul{margin:6px 0 0;padding:0;list-style:none;font-family:var(--f-mono);font-size:.82rem;color:var(--ink)}
+.save-out li{padding:3px 0;border-bottom:1px dashed var(--rule);overflow-wrap:anywhere}
+@media (max-width:900px){.demo{grid-template-columns:minmax(0,1fr)}}
+
+/* adjustments demo */
+.adj{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(0,1fr);gap:clamp(24px,3.5vw,48px);align-items:start}
+.adj-stage canvas{display:block;width:100%;height:auto;border-radius:9px;box-shadow:var(--shot-shadow);background:var(--well);cursor:ew-resize;touch-action:pan-y}
+.split-row{display:flex;align-items:center;gap:12px;margin-top:16px;font:500 var(--s-n2)/1 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.split-row input{flex:1}
+.panel{background:var(--sheet);border:1px solid var(--rule);border-radius:10px;padding:18px 18px 16px}
+.panel-title{font-size:1.1rem;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.panel-title svg{width:18px;height:18px;color:var(--ink-3)}
+.panel hr{border:0;border-top:1px solid var(--rule);margin:14px 0}
+.seg{display:flex;flex-wrap:wrap;border:1px solid var(--rule-strong);border-radius:6px;padding:3px;gap:3px;margin:0 0 16px}
+.seg label{flex:1 1 auto;position:relative}
+.seg input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.seg span{display:block;text-align:center;padding:7px 10px;border-radius:4px;font-size:var(--s-n1);font-weight:500;color:var(--ink-2);white-space:nowrap}
+.seg input:checked+span{background:var(--accent);color:var(--accent-ink)}
+.seg input:focus-visible+span{outline:3px solid var(--focus);outline-offset:1px}
+.seg-label{font:500 var(--s-n2)/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin:0 0 8px}
+.sl{display:grid;grid-template-columns:6.4em 1fr 3em;align-items:center;gap:10px;min-height:38px}
+.sl label{font-size:var(--s-n1);color:var(--ink)}
+.sl output{font:500 .85rem/1 var(--f-mono);text-align:right;color:var(--ink-2)}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:28px;background:transparent;margin:0;cursor:pointer;--a:50%;--b:50%}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:linear-gradient(90deg,transparent calc(50% - 1px),var(--ink-3) calc(50% - 1px) calc(50% + 1px),transparent calc(50% + 1px)) center/100% 12px no-repeat,linear-gradient(90deg,var(--rule-strong) 0 var(--a),var(--accent) var(--a) var(--b),var(--rule-strong) var(--b) 100%)}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:linear-gradient(90deg,var(--rule-strong) 0 var(--a),var(--accent) var(--a) var(--b),var(--rule-strong) var(--b) 100%)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:18px;height:18px;margin-top:-7px;border-radius:50%;background:var(--sheet);border:5px solid var(--accent);box-shadow:0 0 0 1px var(--rule-strong)}
+input[type=range]::-moz-range-thumb{width:10px;height:10px;border-radius:50%;background:var(--sheet);border:5px solid var(--accent);box-shadow:0 0 0 1px var(--rule-strong)}
+input[type=range].plain::-webkit-slider-runnable-track{background:var(--rule-strong)}
+input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px;font-size:var(--s-n1);cursor:pointer}
+.sw input{-webkit-appearance:none;appearance:none;flex:none;width:40px;height:22px;border-radius:11px;border:1px solid var(--ink-3);background:transparent;position:relative;cursor:pointer;margin:0;transition:background-color .15s}
+.sw input::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:var(--ink-3);transition:transform .15s}
+.sw input:checked{background:var(--accent);border-color:var(--accent)}
+.sw input:checked::after{transform:translateX(18px);background:var(--accent-ink)}
+@media (max-width:900px){.adj{grid-template-columns:minmax(0,1fr)}}
+
+/* needs */
+.needs{display:grid;grid-template-columns:180px minmax(0,1fr);gap:clamp(24px,4vw,64px)}
+.needs-index{position:sticky;top:96px;align-self:start}
+.needs-index p{font:500 var(--s-n2)/1 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:12px}
+.needs-index ul{list-style:none;margin:0;padding:0;border-left:1px solid var(--rule)}
+.needs-index a{display:block;padding:7px 0 7px 14px;margin-left:-1px;border-left:2px solid transparent;color:var(--ink-2);text-decoration:none;font-size:var(--s-n1);line-height:1.35}
+.needs-index a:hover{color:var(--ink);border-left-color:var(--mark)}
+.need{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:clamp(24px,3.5vw,52px);padding-block:clamp(40px,5vw,64px);border-top:1px solid var(--rule);align-items:start}
+.need:first-child{border-top:0;padding-top:0}
+.need--wide{grid-template-columns:minmax(0,1fr);gap:clamp(20px,3vw,36px)}
+.need--wide .need-text{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:clamp(24px,3.5vw,52px)}
+.need h3{margin-bottom:12px}
+.need .plat{margin-bottom:16px}
+.need ul .plat{margin:0 .45em 0 0;padding:1px 6px 0;font-size:10px;vertical-align:.08em}
+.need p{color:var(--ink-2)}
+.need ul.ticks{margin:0;padding:0;list-style:none;font-size:var(--s-n1);color:var(--ink-2)}
+.need ul.ticks li{position:relative;padding:8px 0 8px 22px;border-top:1px dashed var(--rule)}
+.need ul.ticks li::before{content:"";position:absolute;left:2px;top:.95em;width:9px;height:9px;border-left:1px solid var(--mark);border-top:1px solid var(--mark)}
+.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:clamp(40px,5vw,56px)}
+.crop picture{display:block;overflow:hidden;border-radius:9px;box-shadow:var(--shot-shadow);background:var(--well)}
+.crop--scans picture{aspect-ratio:1280/730}
+.crop--saved picture{aspect-ratio:1280/620}
+.frame.crop img{width:125%;max-width:none;margin-left:-19.53125%;margin-top:-2.34375%;border-radius:0;box-shadow:none;background:none}
+.tag-label{position:relative;max-width:360px;margin-top:8px;padding:22px 22px 18px 30px;background:var(--sheet);border:1px solid var(--rule-strong);border-radius:4px 14px 14px 4px;box-shadow:0 10px 24px -16px rgba(0,0,0,.4);transform:rotate(-1.4deg)}
+.tag-label::before{content:"";position:absolute;left:10px;top:50%;width:10px;height:10px;margin-top:-5px;border-radius:50%;border:1px solid var(--rule-strong);background:var(--paper)}
+.tag-label dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:var(--s-n1)}
+.tag-label dt{font:500 var(--s-n2)/1.6 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.tag-label dd{margin:0;color:var(--ink)}
+.tag-label .tag-title{font-family:var(--f-display);font-size:1.3rem;font-weight:650;margin:0 0 12px}
+.presets{list-style:none;margin:0 0 22px;padding:0;font-size:var(--s-n1)}
+.presets li{display:grid;gap:1px;padding:9px 0;border-bottom:1px solid var(--rule)}
+.presets li span:first-child{color:var(--ink);font-weight:500}
+.presets li span:last-child{font-family:var(--f-mono);font-size:.8rem;color:var(--ink-3)}
+.namer{background:var(--sheet);border:1px solid var(--rule);border-radius:10px;padding:18px}
+.namer h4{margin-bottom:12px;font-size:1.1rem}
+.namer label.lbl{display:block;font:500 var(--s-n2)/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px}
+.namer input[type=text]{width:100%;min-height:44px;padding:8px 12px;border:1px solid var(--rule-strong);border-radius:6px;background:var(--paper);color:var(--ink);font:500 .95rem/1.3 var(--f-mono)}
+.tokens{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 16px}
+.tokens button{min-height:32px;padding:4px 8px;border:1px dashed var(--rule-strong);border-radius:4px;background:transparent;color:var(--ink-2);font:500 .78rem/1 var(--f-mono);cursor:pointer}
+.tokens button:hover{border-style:solid;color:var(--accent);border-color:var(--accent)}
+.namer-out{margin:0 0 12px;padding:0;list-style:none;font:500 .86rem/1.4 var(--f-mono)}
+.namer-out li{padding:7px 10px;margin-bottom:4px;background:var(--paper);border-left:3px solid var(--accent);overflow-wrap:anywhere}
+.namer-out li.taken{border-left-color:var(--mark);color:var(--ink-2)}
+.small-things{columns:2 300px;column-gap:48px;margin:0;padding:0;list-style:none}
+.small-things li{break-inside:avoid;padding:14px 0;border-top:1px solid var(--rule);font-size:var(--s-n1);color:var(--ink-2)}
+.small-things strong{display:block;color:var(--ink);font-size:var(--s-0);margin-bottom:2px}
+@media (max-width:1060px){.needs{grid-template-columns:minmax(0,1fr)}.needs-index{position:static}.needs-index ul{display:flex;flex-wrap:wrap;gap:6px;border:0}.needs-index a{border:1px solid var(--rule-strong);border-radius:4px;padding:6px 10px;margin:0}.needs-index a:hover{border-color:var(--mark)}}
+@media (max-width:860px){.need,.need--wide .need-text{grid-template-columns:minmax(0,1fr)}}
+
+/* scanners */
+.spec{width:100%;border-collapse:collapse;font-size:var(--s-n1);background:var(--sheet);border:1px solid var(--rule)}
+.spec th,.spec td{text-align:left;vertical-align:top;padding:16px 18px;border-bottom:1px solid var(--rule)}
+.spec thead th{font:500 var(--s-n2)/1.2 var(--f-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);background:var(--paper-2)}
+.spec tbody th{font-family:var(--f-display);font-size:1.05rem;font-weight:620;width:22%;color:var(--ink)}
+.spec td{color:var(--ink-2);width:39%}
+.flag{display:block;margin-top:6px;font-style:normal;font:500 .78rem/1.4 var(--f-mono);color:var(--busy)}
+.spec .no{color:var(--ink-3)}
+@media (max-width:760px){
+  .spec,.spec tbody,.spec tr,.spec th,.spec td{display:block;width:auto}
+  .spec tbody th,.spec td{width:auto}
+  .spec thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .spec tr{border-bottom:1px solid var(--rule-strong)}
+  .spec tbody th{padding-bottom:4px;border:0}
+  .spec td{border:0;padding-top:6px;padding-bottom:6px}
+  .spec td::before{content:attr(data-label);display:block;font:500 var(--s-n2)/1.6 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  .spec td:last-child{padding-bottom:16px}
+}
+.scan-notes{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:32px;margin-top:36px}
+@media (max-width:860px){.scan-notes{grid-template-columns:minmax(0,1fr)}}
+
+/* code blocks */
+.code{background:var(--code-bg);color:var(--code-ink);border-radius:8px;overflow:hidden;margin:0 0 18px}
+.code-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 8px 6px 14px;border-bottom:1px solid rgba(255,255,255,.08);font:500 11px/1 var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--code-dim)}
+.copy{min-height:32px;padding:4px 12px;border:1px solid rgba(255,255,255,.22);border-radius:4px;background:transparent;color:var(--code-ink);font:500 12px/1 var(--f-mono);cursor:pointer}
+.copy:hover{border-color:rgba(255,255,255,.5)}
+.code pre{margin:0;padding:14px 16px 16px;overflow-x:auto;font-size:.84rem;line-height:1.6;white-space:pre}
+.code .c{color:var(--code-dim)}
+.code-intro{margin:0 0 8px;font-size:var(--s-n1);color:var(--ink-2)}
+
+/* roadmap */
+.road-top{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:clamp(28px,4vw,56px);align-items:start}
+.road-next{margin-top:clamp(40px,5vw,64px)}
+.road h3{font:500 var(--s-n2)/1 var(--f-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin-bottom:16px;display:flex;align-items:center;gap:10px}
+.road h3 i{display:inline-block;width:10px;height:10px;border-radius:50%}
+.road-done h3 i{background:var(--ok)}
+.road-now h3 i{background:var(--busy)}
+.road-next h3 i{border:1px solid var(--ink-3)}
+.road ol{list-style:none;margin:0;padding:0}
+.road li{display:grid;grid-template-columns:3.2em 1fr;gap:12px;padding:12px 0;border-top:1px solid var(--rule);font-size:var(--s-n1);color:var(--ink-2)}
+.road li strong{color:var(--ink);font-weight:600}
+.ms{font:500 .8rem/1.6 var(--f-mono);color:var(--ink-3)}
+.road-done .ms{color:var(--ok)}
+.road-aside{margin:0;padding-top:12px;border-top:1px solid var(--rule);font-size:var(--s-n2);line-height:1.5;color:var(--ink-3)}
+.road-now{position:relative}
+.road-now li{position:relative;border-top:0;padding:16px 0 18px}
+.road-now .ms{color:var(--busy)}
+.road-now li::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,rgba(120,240,225,.9) 20%,#fff 50%,rgba(120,240,225,.9) 80%,transparent);box-shadow:0 0 14px 3px rgba(120,240,225,.55)}
+.road-next ol{columns:3 250px;column-gap:36px}
+.road-next li{break-inside:avoid}
+@media (max-width:900px){.road-top{grid-template-columns:minmax(0,1fr)}}
+
+/* get it */
+.get{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(28px,4vw,56px)}
+.get h3{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.req{margin:0 0 18px;padding:0;list-style:none;font-size:var(--s-n1);color:var(--ink-2)}
+.req li{padding:7px 0;border-bottom:1px dashed var(--rule)}
+.clone{margin-bottom:clamp(28px,4vw,44px);max-width:720px}
+.limits{margin-top:clamp(40px,5vw,64px);padding-top:28px;border-top:1px solid var(--rule)}
+.limits h3{margin-bottom:16px}
+.limits ul{columns:2 320px;column-gap:48px;margin:0;padding:0;list-style:none}
+.limits li{break-inside:avoid;padding:10px 0 10px 20px;position:relative;font-size:var(--s-n1);color:var(--ink-2)}
+.limits li::before{content:"";position:absolute;left:0;top:1.05em;width:10px;height:1px;background:var(--mark)}
+@media (max-width:860px){.get{grid-template-columns:minmax(0,1fr)}}
+
+/* footer */
+.site-foot{border-top:1px solid var(--rule);padding-block:40px 48px;font-size:var(--s-n1);color:var(--ink-3)}
+.foot-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:16px 40px;align-items:center}
+@media (max-width:760px){.foot-row{grid-template-columns:minmax(0,1fr);justify-items:start}}
+.foot-row .brand{font-size:1rem}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+</style>
+<meta name="description" content="CompleteScanner is a native scanning app for macOS and Windows. Documents become searchable PDFs; several photos on the glass become separate, straightened files with one press of Scan.">
+<meta name="theme-color" content="#ECEEE9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101416" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:title" content="CompleteScanner &mdash; one scanning app for documents and photos">
+<meta property="og:description" content="A native scanning app for macOS and Windows. Paperwork into searchable PDFs, a pile of photos into separate, straightened files.">
+<meta property="og:image" content="https://raw.githubusercontent.com/aytutuna/CompleteScanner/main/site/assets/photo-review-light.png">
+<meta property="og:image:alt" content="The CompleteScanner window on Windows, showing three detected photos ready for review.">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&amp;display=swap">
+<script>try{var t=localStorage.getItem("cs-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="reg" viewBox="0 0 32 32"><g fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="16" cy="16" r="8.5"/><path d="M16 1.5v29M1.5 16h29"/></g><path d="M16 7.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14.5h18v4.5H3z"/><path d="M4.5 14.5 19 7"/><path d="M6.5 17h3"/></g></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></g></symbol>
+</svg>
+
+<header class="site-head">
+  <div class="wrap head-row">
+    <a class="brand" href="#top"><svg aria-hidden="true"><use href="#reg"/></svg><span>CompleteScanner</span></a>
+    <nav aria-label="Sections">
+      <ul class="nav-list">
+        <li><a href="#demo">See it work</a></li>
+        <li><a href="#adjust">Adjust</a></li>
+        <li><a href="#needs">What it does</a></li>
+        <li><a href="#scanners">Scanners</a></li>
+        <li><a href="#roadmap">Roadmap</a></li>
+        <li><a href="#get">Get it</a></li>
+      </ul>
+    </nav>
+    <div class="head-actions">
+      <button class="theme-btn" id="themeBtn" type="button" aria-pressed="false">
+        <span class="sr">Dark theme</span>
+        <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></g></svg>
+      </button>
+      <a class="btn btn-ghost btn-small" href="https://github.com/aytutuna/CompleteScanner">GitHub</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero" id="top" aria-labelledby="hero-title">
+  <div class="wrap hero-grid">
+    <div>
+      <p class="kicker"><svg aria-hidden="true"><use href="#reg"/></svg>Scanning app for macOS and Windows</p>
+      <h1 id="hero-title">One app for the <span>pages and prints</span> on your scanner.</h1>
+    </div>
+    <div>
+      <p class="lede">Letters and contracts become one searchable PDF. A handful of photos laid on the glass come back as separate, straightened files from a single press of Scan. CompleteScanner is a native app on both systems and talks to your scanner through the drivers your computer already uses, or over the network.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/aytutuna/CompleteScanner">Get it on GitHub</a>
+        <a class="btn btn-ghost" href="#demo">See it work</a>
+      </div>
+      <p class="fine">There is no installer yet. You build the app from its source code with a few commands, <a href="#get">shown below</a>.</p>
+    </div>
+  </div>
+  <div class="wrap hero-figure">
+    <div class="ruler" aria-hidden="true"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span><span>11</span><span>12</span><span>13</span></div>
+    <figure class="shot">
+      <div class="frame sweep">
+        <picture data-shot>
+          <source media="(prefers-color-scheme: dark)" srcset="assets/photo-review-dark.png">
+          <img src="assets/photo-review-light.png" width="1600" height="1002" fetchpriority="high" alt="The CompleteScanner window on Windows 11 in Photos mode. A dialog titled Detected 3 photos shows three straightened photos, each with a Keep checkbox, over the scan of three tilted photos. Buttons read Discard and Save 3 Photos.">
+        </picture>
+      </div>
+      <figcaption><b>Windows 11</b>Photos mode with the built-in Demo Scanner: three tilted prints on the glass, found and straightened for review.</figcaption>
+    </figure>
+    <ul class="facts-row" aria-label="At a glance">
+      <li>macOS 14 Sonoma or later</li>
+      <li>Windows 10 (version 2004) or later, Windows 11</li>
+      <li>Try it with no scanner: built-in Demo Scanner</li>
+    </ul>
+  </div>
+</section>
+
+<section class="section band" id="demo" aria-labelledby="demo-title">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="kicker"><svg aria-hidden="true"><use href="#reg"/></svg>See it work</p>
+      <h2 id="demo-title">Four photos on the glass. Four files out.</h2>
+      <p class="lede">Lay several prints on the scanner, crooked is fine, and press Scan once. The app finds each print, measures how far it is tilted, straightens and crops it, and lets you check the results before anything is saved.</p>
+    </header>
+    <div class="demo">
+      <div class="demo-stage">
+        <canvas id="bed" role="img" aria-label="A scanner bed with four photos lying at different angles. Not scanned yet.">A scanner bed with four tilted photos.</canvas>
+      </div>
+      <div class="demo-side">
+        <div class="demo-controls">
+          <button class="btn btn-primary" id="scanBtn" type="button"><svg aria-hidden="true"><use href="#i-scan"/></svg><span>Scan</span></button>
+          <button class="btn btn-ghost" id="shuffleBtn" type="button">New photos</button>
+        </div>
+        <ol class="steps" aria-label="Steps of a photo scan; select one to see it">
+          <li><button type="button" data-stage="scan"><span class="step-n">1</span><span><strong>Scan the bed</strong>One pass of the light bar captures the whole glass.</span></button></li>
+          <li><button type="button" data-stage="detect"><span class="step-n">2</span><span><strong>Find each photo</strong>Every print is outlined and its tilt is measured.</span></button></li>
+          <li><button type="button" data-stage="straighten"><span class="step-n">3</span><span><strong>Straighten and crop</strong>Each print is turned upright and cut out on its own.</span></button></li>
+          <li><button type="button" data-stage="review"><span class="step-n">4</span><span><strong>Review, then save</strong>Untick anything that isn't a photo, then save them all as separate files.</span></button></li>
+        </ol>
+        <p class="demo-status" id="demoStatus" role="status" aria-live="polite">Four prints are lying on the glass. Press Scan.</p>
+        <fieldset class="keep" id="keepSet" disabled>
+          <legend>Keep</legend>
+          <div class="keep-list" id="keepList"></div>
+          <button class="btn btn-primary btn-small" id="saveBtn" type="button">Save 4 Photos</button>
+        </fieldset>
+        <div class="save-out" id="saveOut" aria-live="polite"></div>
+      </div>
+    </div>
+    <p class="note">Drawn live in your browser to show the steps. In the app they run on the real scan, and both Auto-split photos and Auto-straighten can be switched off. In the review you can also rotate a photo or fix its crop by hand.</p>
+  </div>
+</section>
+
+<section class="section" id="adjust" aria-labelledby="adjust-title">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="kicker"><svg aria-hidden="true"><use href="#reg"/></svg>Image adjustments</p>
+      <h2 id="adjust-title">Fix the scan before you save it.</h2>
+      <p class="lede">Brightness, contrast, saturation and sharpness sit on centered sliders: 0 changes nothing, &minus;100 and +100 are the far ends. Restore faded colors brings washed-out prints back, and Descreen smooths the dot pattern of anything printed in a magazine or book. Each sample starts with the switches that suit it; drag across the picture to compare.</p>
+    </header>
+    <div class="adj">
+      <div class="adj-stage">
+        <canvas id="adjCanvas" width="720" height="480" role="img" aria-label="Before and after comparison of a sample scan.">A sample scan, original on the left and adjusted on the right.</canvas>
+        <div class="split-row">
+          <label for="split">Original</label>
+          <input id="split" class="plain" type="range" min="0" max="100" value="50" aria-label="Divider position between original and adjusted">
+          <span aria-hidden="true">Adjusted</span>
+        </div>
+      </div>
+      <div class="panel" role="group" aria-labelledby="panel-title">
+        <h3 class="panel-title" id="panel-title"><svg aria-hidden="true"><use href="#i-sliders"/></svg>Adjustments</h3>
+        <p class="seg-label" id="sample-label">Sample</p>
+        <div class="seg" role="radiogroup" aria-labelledby="sample-label">
+          <label><input type="radio" name="sample" value="faded" checked><span>Faded photo</span></label>
+          <label><input type="radio" name="sample" value="print"><span>Magazine</span></label>
+          <label><input type="radio" name="sample" value="letter"><span>Letter</span></label>
+        </div>
+        <div class="sl"><label for="sBright">Brightness</label><input id="sBright" data-key="bright" type="range" min="-100" max="100" step="1" value="0"><output for="sBright">0</output></div>
+        <div class="sl"><label for="sContrast">Contrast</label><input id="sContrast" data-key="contrast" type="range" min="-100" max="100" step="1" value="0"><output for="sContrast">0</output></div>
+        <div class="sl"><label for="sSat">Saturation</label><input id="sSat" data-key="sat" type="range" min="-100" max="100" step="1" value="0"><output for="sSat">0</output></div>
+        <div class="sl"><label for="sSharp">Sharpness</label><input id="sSharp" data-key="sharp" type="range" min="-100" max="100" step="1" value="0"><output for="sSharp">0</output></div>
+        <button class="btn btn-ghost btn-small" id="resetAdj" type="button">Reset sliders</button>
+        <hr>
+        <label class="sw" for="tAuto">Auto enhance<input id="tAuto" data-key="auto" type="checkbox" role="switch" checked></label>
+        <label class="sw" for="tRestore">Restore faded colors<input id="tRestore" data-key="restore" type="checkbox" role="switch" checked></label>
+        <label class="sw" for="tDescreen">Descreen (printed material)<input id="tDescreen" data-key="descreen" type="checkbox" role="switch"></label>
+        <hr>
+        <p class="seg-label" id="mode-label">Color</p>
+        <div class="seg" role="radiogroup" aria-labelledby="mode-label" style="margin-bottom:0">
+          <label><input type="radio" name="mode" value="color" checked><span>Color</span></label>
+          <label><input type="radio" name="mode" value="gray"><span>Grayscale</span></label>
+          <label><input type="radio" name="mode" value="bw"><span>Black &amp; white</span></label>
+        </div>
+      </div>
+    </div>
+    <p class="note">The demo follows the Windows app's image steps in order: auto enhance, brightness (exposure plus a small lift), contrast around mid-gray on an exponential scale (&minus;100 is a quarter, +100 is four times), saturation, sharpness (below 0 it softens), descreen, restore faded colors, then the color mode. Black &amp; white uses the Windows threshold of 50%; the Mac app has a slider for it. Mac results come from Apple's Core Image and look close, not identical.</p>
+  </div>
+</section>
+
+<section class="section band" id="needs" aria-labelledby="needs-title">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="kicker"><svg aria-hidden="true"><use href="#reg"/></svg>What it does</p>
+      <h2 id="needs-title">Start from what you're holding.</h2>
+      <p class="lede">A stack of bills, a shoebox of prints, one faded wedding photo, a newspaper clipping. Each has its own way through the app. Everything below works on both systems unless it's marked otherwise.</p>
+    </header>
+    <div class="needs">
+      <nav class="needs-index" aria-label="Scanning jobs">
+        <p>Jobs</p>
+        <ul>
+          <li><a href="#need-pdf">Paperwork to searchable PDF</a></li>
+          <li><a href="#need-photos">Photo albums and shoeboxes</a></li>
+          <li><a href="#need-restore">Old, faded photos</a></li>
+          <li><a href="#need-area">Just part of the glass</a></li>
+          <li><a href="#need-presets">Presets and file names</a></li>
+          <li><a href="#need-find">Finding your scans</a></li>
+          <li><a href="#need-small">The small things</a></li>
+        </ul>
+      </nav>
+      <div>
+        <article class="need need--wide" id="need-pdf" aria-labelledby="need-pdf-t">
+          <div class="need-text">
+            <div>
+              <h3 id="need-pdf-t">Paperwork into one searchable PDF</h3>
+              <span class="plat">macOS + Windows</span>
+            </div>
+            <div>
+            <p>Choose Document, then press Scan for each page. Pages wait in a queue where you can put them in order, turn them a quarter turn or drop one. Save PDF writes them as one file. Searchable PDF is on from the start: the app adds an invisible layer of recognized text, so you can select words and find them with search.</p>
+            <ul class="ticks">
+              <li>Prefer one file per scan? Save each scan straight away as PDF, JPEG, PNG or TIFF.</li>
+              <li>Document feeder: a stack goes through in one go. If the paper jams or the connection drops, the pages already scanned are kept and the app tells you why it stopped.</li>
+              <li>Text recognition uses Apple Vision on the Mac, which picks the language by itself, and Windows OCR on Windows, which needs a Windows OCR language pack.</li>
+            </ul>
+            </div>
+          </div>
+          <figure class="shot">
+            <div class="frame">
+              <picture data-shot>
+                <source media="(prefers-color-scheme: dark)" srcset="assets/scan-documents-dark.png">
+                <img src="assets/scan-documents-light.png" width="1600" height="1002" loading="lazy" decoding="async" alt="Document mode in CompleteScanner on Windows. A demo document page, drawn as lines of placeholder text, fills the canvas, three page thumbnails sit in the queue below it, and the inspector on the right has a Save PDF (3 pages) button.">
+              </picture>
+            </div>
+            <figcaption><b>Windows</b>Three pages queued, one PDF to save.</figcaption>
+          </figure>
+        </article>
+
+        <article class="need need--wide" id="need-photos" aria-labelledby="need-photos-t">
+          <div class="need-text">
+            <div>
+              <h3 id="need-photos-t">A shoebox of photos into separate files</h3>
+              <span class="plat">macOS + Windows</span>
+            </div>
+            <div>
+              <p>Choose Photos, fill the glass with prints and press Scan. Each one is found, straightened and cropped, then shown in a review grid. Untick anything that isn't a photo, rotate one, or open the crop editor and drag the corners yourself. Save Photos writes every print as its own JPEG, PNG or TIFF, with the right resolution recorded in the file.</p>
+              <ul class="ticks">
+                <li>The crop editor shows the crop's size in pixels and its angle as you work.</li>
+                <li><span class="plat plat--win">Windows only</span> The crop editor works from the keyboard too: arrow keys move the frame, Ctrl with the arrows resizes it, and Shift takes bigger steps.</li>
+                <li>Auto-split photos and Auto-straighten are switches, so a single print can be scanned as it is.</li>
+                <li><span class="plat plat--mac">macOS only</span> Settings for the smallest photo to look for and for trimming the edges.</li>
+              </ul>
+            </div>
+          </div>
+          <div>
+            <figure class="shot">
+              <div class="frame">
+                <picture data-shot>
+                  <source media="(prefers-color-scheme: dark)" srcset="assets/crop-editor-dark.png">
+                  <img src="assets/crop-editor-light.png" width="1600" height="1052" loading="lazy" decoding="async" alt="The Adjust crop window. A tilted purple photo has a blue crop frame with corner handles; badges at the top read 1050 by 750 px and 17.0 degrees.">
+                </picture>
+              </div>
+              <figcaption><b>Windows</b>The crop editor on a print tilted 17&deg;. The review grid is the picture at the <a href="#top">top of the page</a>.</figcaption>
+            </figure>
+          </div>
+        </article>
+
+        <article class="need" id="need-restore" aria-labelledby="need-restore-t">
+          <div class="need-text">
+            <h3 id="need-restore-t">Old, faded photos</h3>
+            <span class="plat">macOS + Windows</span>
+            <p>The Old photo restoration preset scans at 600 dpi and saves PNG, so nothing is lost to compression. It turns on Restore faded colors, which brings back washed-out color, and Auto enhance, which stretches the tones.</p>
+            <p>For a photo printed in a book or magazine, also switch on Descreen to smooth the dot pattern. The preset leaves it off.</p>
+            <p><a href="#adjust">Try them on a faded sample above.</a></p>
+            <ul class="ticks">
+              <li><span class="plat plat--mac">macOS only</span> A black &amp; white threshold slider and a JPEG quality slider. Windows uses fixed defaults.</li>
+              <li>Auto enhance on Windows stretches the histogram; it looks close to the Mac version but isn't identical.</li>
+            </ul>
+          </div>
+          <div>
+            <div class="tag-label">
+              <p class="tag-title">Old photo restoration</p>
+              <dl>
+                <dt>Preset</dt><dd>Built in</dd>
+                <dt>Resolution</dt><dd>600 dpi</dd>
+                <dt>Color</dt><dd>Color</dd>
+                <dt>Saves as</dt><dd>PNG</dd>
+                <dt>Turns on</dt><dd>Restore faded colors, Auto enhance</dd>
+              </dl>
+            </div>
+          </div>
+        </article>
+
+        <article class="need need--wide" id="need-area" aria-labelledby="need-area-t">
+          <div class="need-text">
+            <div>
+              <h3 id="need-area-t">Just one part of the glass</h3>
+              <span class="plat">macOS + Windows</span>
+            </div>
+            <div>
+            <p>Press Preview for a quick, low-resolution look at the whole bed. Drag a box over the part you want, a stamp, a receipt, one picture from a page, and Scan captures only that area at the resolution you chose.</p>
+            <ul class="ticks">
+              <li>Resolution offers only the values your scanner really supports. Color, Grayscale or Black &amp; white.</li>
+              <li>A scanner with only a document feeder has no glass to preview, so Preview is turned off for it.</li>
+              <li><span class="plat plat--mac">macOS only</span> The selected area's size is shown in inches.</li>
+            </ul>
+            </div>
+          </div>
+          <figure class="shot">
+            <div class="frame">
+              <picture data-shot>
+                <source media="(prefers-color-scheme: dark)" srcset="assets/scan-empty-dark.png">
+                <img src="assets/scan-empty-light.png" width="1600" height="1002" loading="lazy" decoding="async" alt="The Scan tab before the first scan. The canvas reads Ready to scan: place a document or photos on the glass, then press Preview for a quick look or Scan to capture; after a preview, drag over it to scan just that area.">
+              </picture>
+            </div>
+            <figcaption><b>Windows</b>Ready to scan, with Preview and Scan at the bottom right.</figcaption>
+          </figure>
+        </article>
+
+        <article class="need" id="need-presets" aria-labelledby="need-presets-t">
+          <div class="need-text">
+            <h3 id="need-presets-t">Same settings, every time</h3>
+            <span class="plat">macOS + Windows</span>
+            <p>Five starter presets cover the usual jobs, and you can save your own. Files are named from a template, and nothing is ever overwritten: if a name is taken, a number is added.</p>
+            <ul class="presets" aria-label="Built-in presets">
+              <li><span>Document &rarr; PDF</span><span>300 dpi &middot; Color &middot; PDF</span></li>
+              <li><span>Text document, compact</span><span>200 dpi &middot; Grayscale &middot; PDF</span></li>
+              <li><span>Photos &rarr; JPEG</span><span>600 dpi &middot; Color &middot; JPEG &middot; auto-split</span></li>
+              <li><span>Old photo restoration</span><span>600 dpi &middot; Color &middot; PNG</span></li>
+              <li><span>Quick preview scan</span><span>150 dpi &middot; Color &middot; JPEG</span></li>
+            </ul>
+          </div>
+          <div class="namer" role="group" aria-labelledby="namer-title">
+            <h4 id="namer-title">Try a file-name template</h4>
+            <label class="lbl" for="tpl">Template</label>
+            <input id="tpl" type="text" value="Scan {date} {counter}" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="namer-help">
+            <div class="tokens" role="group" aria-label="Insert a token">
+              <button type="button">{date}</button><button type="button">{time}</button><button type="button">{counter}</button><button type="button">{counter:4}</button><button type="button">{intent}</button><button type="button">{index}</button><button type="button">{year}</button><button type="button">{month}</button><button type="button">{day}</button>
+            </div>
+            <div class="seg" role="radiogroup" aria-label="Kind of scan">
+              <label><input type="radio" name="intent" value="doc" checked><span>Document (PDF)</span></label>
+              <label><input type="radio" name="intent" value="photo"><span>3 photos (JPEG)</span></label>
+            </div>
+            <ol class="namer-out" id="namerOut" aria-live="polite" aria-label="Resulting file names"></ol>
+            <p class="fine" id="namer-help" style="margin:0">Uses today's date and time. The counter starts at 12 and goes up by one for each file. Characters a file name can't contain become a dash. In a photo batch, each photo gets its number even without <code>{index}</code>.</p>
+          </div>
+        </article>
+
+        <article class="need need--wide" id="need-find" aria-labelledby="need-find-t">
+          <div class="need-text">
+            <div>
+              <h3 id="need-find-t">Find what you scanned</h3>
+              <span class="plat">macOS + Windows</span>
+            </div>
+            <div>
+              <p>The Scans tab shows everything from this session, newest first; select one to see it large. The Saved tab lists the files in your destination folder, also newest first, and lets you open a file, show it in Finder or File Explorer, or rotate a JPEG, PNG or TIFF in place.</p>
+            </div>
+          </div>
+          <div class="stack">
+            <figure class="shot">
+              <div class="frame crop crop--scans">
+                <picture data-shot>
+                  <source media="(prefers-color-scheme: dark)" srcset="assets/scans-history-dark.png">
+                  <img src="assets/scans-history-light.png" width="1600" height="1002" loading="lazy" decoding="async" alt="The Scans tab headed This session: 7 scans, newest first, shown as cards for six documents and one photo scan, each with 300 dpi and its size in pixels.">
+                </picture>
+              </div>
+              <figcaption><b>Scans</b>This session, newest first. Cropped to the tab's content.</figcaption>
+            </figure>
+            <figure class="shot">
+              <div class="frame crop crop--saved">
+                <picture data-shot>
+                  <source media="(prefers-color-scheme: dark)" srcset="assets/saved-files-dark.png">
+                  <img src="assets/saved-files-light.png" width="1600" height="1002" loading="lazy" decoding="async" alt="The Saved tab for the folder C:\Scans, showing two PDFs, four JPG files and one PNG with names like Scan 2026-10-18 7.pdf, plus Show in Explorer and Refresh buttons.">
+                </picture>
+              </div>
+              <figcaption><b>Saved</b>The files in your folder, with their names and sizes. Cropped to the tab's content.</figcaption>
+            </figure>
+          </div>
+        </article>
+
+        <article class="need need--wide" id="need-small" aria-labelledby="need-small-t">
+          <h3 id="need-small-t">The small things</h3>
+          <ul class="small-things">
+            <li><strong>Cancel means cancel</strong>Cancel works during every busy step, from scanning to writing the PDF. On Windows this is tested to never leave a half-written file behind.</li>
+            <li><strong>Plain messages</strong>&ldquo;Load paper in the feeder, then scan again.&rdquo; Jams, an open cover or a busy scanner are explained the same way.</li>
+            <li><strong>Settings that survive updates</strong>A setting the app can't read resets on its own; a damaged settings file is set aside, never overwritten.</li>
+            <li><strong>Try it without a scanner</strong>The Demo Scanner has a flatbed and a three-sheet document feeder, so every feature can be tried with nothing plugged in.</li>
+            <li><strong>At home on Windows 11</strong><span class="plat plat--win">Windows only</span> The Fluent look with Mica in light and dark; in a narrow window the sidebar folds to icons.</li>
+            <li><strong>Light or dark, your choice</strong><span class="plat plat--win">Windows only</span> An Appearance menu: follow the system, Light or Dark. The Mac app follows the system setting.</li>
+            <li><strong>Nothing lost on close</strong><span class="plat plat--win">Windows only</span> The app asks before closing while a scan is running or pages and photos are still unsaved.</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="scanners" aria-labelledby="scanners-title">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="kicker"><svg aria-hidden="true"><use href="#reg"/></svg>Scanners</p>
+      <h2 id="scanners-title">Which scanners work</h2>
+      <p class="lede">CompleteScanner uses the scanner support built into each system, so it needs no extra software from the scanner maker beyond the usual driver. Network scanners that speak AirScan (also called eSCL) need no driver at all.</p>
+    </header>
+    <table class="spec">
+      <caption class="sr">Scanner support on macOS and Windows</caption>
+      <thead><tr><th scope="col">Connection</th><th scope="col">macOS</th><th scope="col">Windows</th></tr></thead>
+      <tbody>
+        <tr>
+          <th scope="row">USB scanner with a driver</th>
+          <td data-label="macOS">Any scanner with a macOS driver, through Apple's ImageCaptureCore. That includes the Epson Perfection V39 II.</td>
+          <td data-label="Windows">Scanners with a WIA driver, the standard Windows scanner driver. Plugging one in or out is noticed without restarting the app.<em class="flag">Experimental: not yet tried on a physical scanner</em></td>
+        </tr>
+        <tr>
+          <th scope="row">Network scanner (AirScan / eSCL)</th>
+          <td data-label="macOS">Found automatically over Bonjour, along with scanners shared from other Macs.</td>
+          <td data-label="Windows">Added by IP address or host name in a small settings file (see below). A busy scanner is retried for up to a minute, black &amp; white works, and a cancelled job is removed from the scanner.<em class="flag">Experimental: not yet tried on a physical scanner</em></td>
+        </tr>
+        <tr>
+          <th scope="row">Scanners with only a TWAIN driver</th>
+          <td data-label="macOS" class="no">Not needed: the Mac uses its own scanner drivers.</td>
+          <td data-label="Windows">Yes, with 64-bit TWAIN drivers. The scanner maker's driver installs what TWAIN needs. You can also use the scanner's own settings window if you prefer it.<em class="flag">Experimental: not yet tried on a physical scanner</em></td>
+        </tr>
+        <tr>
+          <th scope="row">Flatbed and document feeder</th>
+          <td data-label="macOS">Both, as the scanner reports them.</td>
+          <td data-label="Windows">Both. Each scanner shows only the sources it really has, and a feeder batch runs over one connection using the feeder's own paper size.</td>
+        </tr>
+        <tr>
+          <th scope="row">No scanner at all</th>
+          <td data-label="macOS">Demo Scanner, built in: flatbed and a three-sheet feeder.</td>
+          <td data-label="Windows">Demo Scanner, built in: flatbed and a three-sheet feeder. Fully checked on Windows 11.</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="scan-notes">
+      <div>
+        <h3 style="font-size:var(--s-1);margin-bottom:10px">Adding a network scanner on Windows</h3>
+        <p class="fine" style="color:var(--ink-2)">Until automatic discovery arrives, list your scanner's address in <code>%APPDATA%\CompleteScanner\escl-hosts.json</code>:</p>
+        <div class="code">
+          <div class="code-bar"><span>escl-hosts.json</span><button class="copy" type="button" data-copy="c-escl">Copy</button></div>
+          <pre id="c-escl"><code>["192.168.1.50"]</code></pre>
+        </div>
+      </div>
+      <div>
+        <h3 style="font-size:var(--s-1);margin-bottom:10px">One entry per scanner</h3>
+        <p class="fine" style="color:var(--ink-2)">A scanner you can reach two ways, say over USB and over the network, shows up once. On Windows, a &ldquo;via&rdquo; menu in the sidebar offers Automatic or each connection, and your choice is remembered for that scanner. The Mac picks by itself: USB first, then the network, then a scanner shared from another Mac.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section band" id="roadmap" aria-labelledby="roadmap-title">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="kicker"><svg aria-hidden="true"><use href="#reg"/></svg>Roadmap</p>
+      <h2 id="roadmap-title">What&rsquo;s done, what&rsquo;s next</h2>
+      <p class="lede">The work is planned as numbered milestones, built in order. Nothing in the planned list is in the app yet.</p>
+    </header>
+    <div class="road">
+      <div class="road-top">
+        <div class="road-done">
+          <h3><i aria-hidden="true"></i>Done</h3>
+          <ol>
+            <li><span class="ms">M0</span><span><strong>Settings that survive updates.</strong> Presets and settings stay readable from one version to the next, and a damaged file is kept instead of overwritten. Both apps now have an automatic build and test run.</span></li>
+            <li><span class="ms">M1</span><span><strong>More reliable feeder and network scanning.</strong> Each scanner shows only its real sources, feeder scans use the feeder's paper size, black &amp; white works over the network, busy scanners are retried, an empty feeder gets a clear message, and pages are kept when a batch stops partway. The Demo Scanner gained a feeder.</span></li>
+            <li><span class="ms">M2</span><span><strong>One entry per scanner.</strong> A scanner reachable several ways shows once. Windows lets you choose the connection; on the Mac the duplicates are merged automatically.</span></li>
+            <li><span class="ms">M3</span><span><strong>TWAIN scanners on Windows</strong>, 64-bit drivers first, so scanners whose Windows driver offers only TWAIN show up too.</span></li>
+          </ol>
+          <p class="road-aside">Built and tested on Windows. The Mac side of these waits for its first automatic build, and the scanner connections still need a run on real hardware.</p>
+        </div>
+        <div class="road-now">
+          <h3><i aria-hidden="true"></i>In progress</h3>
+          <ol>
+            <li><span class="ms">M4</span><span><strong>Network scanners found automatically</strong>, an &ldquo;Add scanner by address&rdquo; option and secure connections.</span></li>
+          </ol>
+        </div>
+      </div>
+      <div class="road-next">
+        <h3><i aria-hidden="true"></i>Planned, in build order</h3>
+        <ol>
+          <li><span class="ms">M5</span><span><strong>A start screen</strong>: pick the job and the app sets itself up.</span></li>
+          <li><span class="ms">M6</span><span><strong>Smaller PDFs</strong>, from Best to Smallest.</span></li>
+          <li><span class="ms">M7</span><span><strong>Share, email, open with, copy</strong>, and an automatic step after saving.</span></li>
+          <li><span class="ms">M8</span><span><strong>Two-sided scanning and paper size</strong>, including two-sided on single-sided feeders.</span></li>
+          <li><span class="ms">M9</span><span><strong>&ldquo;Why isn't my scanner listed?&rdquo;</strong> troubleshooter.</span></li>
+          <li><span class="ms">M10</span><span><strong>Page clean-up and blank-page removal.</strong></span></li>
+          <li><span class="ms">M11</span><span><strong>Automatic crop and straighten for documents.</strong></span></li>
+          <li><span class="ms">M12</span><span><strong>ID cards</strong>, front and back on one page.</span></li>
+          <li><span class="ms">M13</span><span><strong>Copy to a printer</strong>: scanner and printer as a copier.</span></li>
+          <li><span class="ms">M14</span><span><strong>Text export</strong> as .txt or Word (.docx).</span></li>
+          <li><span class="ms">M15</span><span><strong>Receipts</strong>: one clean file each, named by its date.</span></li>
+          <li><span class="ms">M16</span><span><strong>Split a stack into documents</strong> by separator sheets, blank sheets or every few pages.</span></li>
+          <li><span class="ms">M17</span><span><strong>Pages turned upright automatically.</strong></span></li>
+          <li><span class="ms">M18</span><span><strong>Books and magazines</strong> split into single pages.</span></li>
+          <li><span class="ms">M19</span><span><strong>Archival PDF (PDF/A)</strong> with searchable text in any script.</span></li>
+          <li><span class="ms">M20</span><span><strong>Password-protected PDFs.</strong></span></li>
+          <li><span class="ms">M21</span><span><strong>Add pages to an existing PDF.</strong></span></li>
+          <li><span class="ms">M22</span><span><strong>Later</strong>: very compact black &amp; white PDFs, older 32-bit TWAIN drivers, barcode separator sheets, Word files with page images, softer spine shadows in book scans.</span></li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="get" aria-labelledby="get-title">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="kicker"><svg aria-hidden="true"><use href="#reg"/></svg>Get it</p>
+      <h2 id="get-title">Build it from source</h2>
+      <p class="lede">There are no ready-made downloads yet; the app is built from the code on <a href="https://github.com/aytutuna/CompleteScanner">GitHub</a>. Start by getting the code, then follow the steps for your system.</p>
+    </header>
+    <div class="clone">
+      <div class="code">
+        <div class="code-bar"><span>Get the code</span><button class="copy" type="button" data-copy="c-clone">Copy</button></div>
+        <pre id="c-clone"><code>git clone https://github.com/aytutuna/CompleteScanner.git
+cd CompleteScanner</code></pre>
+      </div>
+    </div>
+    <div class="get">
+      <div>
+        <h3>macOS</h3>
+        <ul class="req">
+          <li>macOS 14 Sonoma or later</li>
+          <li>Xcode, or its command-line tools</li>
+        </ul>
+        <p class="code-intro">Run it straight from the source folder:</p>
+        <div class="code">
+          <div class="code-bar"><span>Terminal &middot; run directly</span><button class="copy" type="button" data-copy="c-mac-run" aria-label="Copy the command to run directly">Copy</button></div>
+          <pre id="c-mac-run"><code>swift run CompleteScanner</code></pre>
+        </div>
+        <p class="code-intro">Or build a double-clickable app, <code>dist/CompleteScanner.app</code>, and open it:</p>
+        <div class="code">
+          <div class="code-bar"><span>Terminal &middot; build an app</span><button class="copy" type="button" data-copy="c-mac-app" aria-label="Copy the commands to build an app">Copy</button></div>
+          <pre id="c-mac-app"><code>./scripts/make_app.sh
+open dist/CompleteScanner.app</code></pre>
+        </div>
+        <p class="fine">Run the tests with <code>swift test</code>. All commands run in the <code>CompleteScanner</code> folder.</p>
+      </div>
+      <div>
+        <h3>Windows</h3>
+        <ul class="req">
+          <li>Windows 10 version 2004 (build 19041) or later, or Windows 11</li>
+          <li>The .NET 10 SDK, or Visual Studio 2026 (18.0 or later)</li>
+        </ul>
+        <p class="code-intro">Build and launch the app:</p>
+        <div class="code">
+          <div class="code-bar"><span>PowerShell &middot; run the app</span><button class="copy" type="button" data-copy="c-win-run" aria-label="Copy the command to run the app">Copy</button></div>
+          <pre id="c-win-run"><code>dotnet run --project windows\CompleteScanner.App</code></pre>
+        </div>
+        <p class="code-intro">Run the test suite, if you like:</p>
+        <div class="code">
+          <div class="code-bar"><span>PowerShell &middot; run the tests</span><button class="copy" type="button" data-copy="c-win-test" aria-label="Copy the command to run the tests">Copy</button></div>
+          <pre id="c-win-test"><code>dotnet test windows\CompleteScanner.sln</code></pre>
+        </div>
+        <p class="fine">Both commands run in the <code>CompleteScanner</code> folder. No scanner handy? Pick <strong>Demo Scanner</strong> in the sidebar.</p>
+      </div>
+    </div>
+    <div class="limits">
+      <h3>Good to know before you build</h3>
+      <ul>
+        <li>There is no installer or signed app yet, on either system.</li>
+        <li>On Windows, the WIA and network scanner support follows the published standards and passes its tests, but hasn't been tried with a physical scanner yet. The Demo Scanner is fully checked.</li>
+        <li>The newest macOS changes were written without a Mac at hand. The project's automatic Mac build compiles and tests them once they are published.</li>
+        <li>Searchable PDFs on Windows need a Windows OCR language pack. The hidden text covers Western European letters only; others turn into &ldquo;?&rdquo; in the text layer, while the page image is unaffected.</li>
+        <li>The Windows Demo Scanner draws text-like bars instead of real letters, so trying text recognition on Windows needs a real scan.</li>
+        <li>Not in the app yet: two-sided scanning, paper-size choice, blank-page removal, document crop and straighten, sharing, printing and password-protected PDFs. All are on the roadmap.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap foot-row">
+    <a class="brand" href="#top"><svg aria-hidden="true"><use href="#reg"/></svg><span>CompleteScanner</span></a>
+    <p style="margin:0">One scanning app for macOS and Windows. Screenshots show the Windows app with its Demo Scanner.</p>
+    <a href="https://github.com/aytutuna/CompleteScanner">github.com/aytutuna/CompleteScanner</a>
+  </div>
+</footer>
+<div class="sr" id="liveMsg" aria-live="polite"></div>
+
+<script>
+(function(){
+"use strict";
+var root=document.documentElement;
+var mqDark=window.matchMedia("(prefers-color-scheme: dark)");
+var mqReduce=window.matchMedia("(prefers-reduced-motion: reduce)");
+function reduced(){return mqReduce.matches;}
+function isDark(){var t=root.getAttribute("data-theme");if(t==="dark")return true;if(t==="light")return false;return mqDark.matches;}
+function cssVar(n){return getComputedStyle(root).getPropertyValue(n).trim();}
+function onMq(mq,fn){if(mq.addEventListener)mq.addEventListener("change",fn);else if(mq.addListener)mq.addListener(fn);}
+var themeHooks=[];
+
+/* ---------- theme ---------- */
+var themeBtn=document.getElementById("themeBtn");
+function syncShots(){
+  var t=root.getAttribute("data-theme");
+  var m=t==="dark"?"all":(t==="light"?"not all":"(prefers-color-scheme: dark)");
+  var s=document.querySelectorAll("picture[data-shot] source");
+  for(var i=0;i<s.length;i++){if(s[i].getAttribute("media")!==m)s[i].setAttribute("media",m);}
+}
+function syncTheme(){
+  themeBtn.setAttribute("aria-pressed",isDark()?"true":"false");
+  syncShots();
+  themeHooks.forEach(function(f){f();});
+}
+themeBtn.addEventListener("click",function(){
+  var next=isDark()?"light":"dark";
+  root.setAttribute("data-theme",next);
+  try{localStorage.setItem("cs-theme",next);}catch(e){}
+  syncTheme();
+});
+onMq(mqDark,syncTheme);
+
+/* ---------- helpers ---------- */
+function clamp(v,a,b){if(a===undefined){a=0;b=1;}return v<a?a:(v>b?b:v);}
+function lerp(a,b,t){return a+(b-a)*t;}
+function easeInOut(t){return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
+function easeOut(t){return 1-Math.pow(1-t,3);}
+function rr(c,x,y,w,h,r){r=Math.min(r,w/2,h/2);c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath();}
+function lg(c,x0,y0,x1,y1,stops){var g=c.createLinearGradient(x0,y0,x1,y1);stops.forEach(function(s){g.addColorStop(s[0],s[1]);});return g;}
+function rng(seed){var s=(seed>>>0)||1;return function(){s=(Math.imul(s,1664525)+1013904223)>>>0;return s/4294967296;};}
+var MONO='"IBM Plex Mono", ui-monospace, Consolas, monospace';
+var DISP='"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif';
+var BODY='"IBM Plex Sans", "Segoe UI", system-ui, sans-serif';
+function fmtA(a){var v=Math.round(Math.abs(a)*10)/10;return (a<-0.05?"\u2212":"")+v.toFixed(1)+"\u00b0";}
+function pad2(n){return (n<10?"0":"")+n;}
+function today(){var d=new Date();return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());}
+var live=document.getElementById("liveMsg");
+function announce(t){live.textContent="";setTimeout(function(){live.textContent=t;},40);}
+
+/* ---------- photo scenes ---------- */
+function circle(c,x,y,r){c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill();}
+var SCENES=[
+  function dusk(c,w,h){
+    var m=Math.min(w,h);
+    c.fillStyle=lg(c,0,0,0,h,[[0,"#3b3970"],[.5,"#c96a7b"],[.8,"#f4b166"]]);c.fillRect(0,0,w,h);
+    c.fillStyle="#ffe2a6";circle(c,w*.64,h*.62,m*.13);
+    c.fillStyle="#62436b";c.beginPath();c.moveTo(0,h*.72);c.quadraticCurveTo(w*.25,h*.52,w*.5,h*.7);c.quadraticCurveTo(w*.75,h*.58,w,h*.68);c.lineTo(w,h);c.lineTo(0,h);c.fill();
+    c.fillStyle="#2e2340";c.beginPath();c.moveTo(0,h*.85);c.quadraticCurveTo(w*.4,h*.72,w*.7,h*.86);c.quadraticCurveTo(w*.85,h*.8,w,h*.83);c.lineTo(w,h);c.lineTo(0,h);c.fill();
+  },
+  function sea(c,w,h){
+    var m=Math.min(w,h);
+    c.fillStyle=lg(c,0,0,0,h*.56,[[0,"#78b2dc"],[1,"#dcecf4"]]);c.fillRect(0,0,w,h*.56);
+    c.fillStyle="#fff7da";circle(c,w*.78,h*.2,m*.08);
+    c.fillStyle=lg(c,0,h*.56,0,h*.86,[[0,"#3a80a9"],[1,"#1e4c70"]]);c.fillRect(0,h*.56,w,h*.3);
+    c.fillStyle="rgba(255,255,255,.4)";for(var k=0;k<5;k++)c.fillRect(w*(.56+k*.025),h*(.6+k*.045),w*.13*(1-k*.13),Math.max(1,h*.008));
+    c.fillStyle="#e6d29f";c.fillRect(0,h*.86,w,h*.14);
+    c.fillStyle="#3b2b22";c.beginPath();c.moveTo(w*.26,h*.63);c.lineTo(w*.44,h*.63);c.lineTo(w*.41,h*.675);c.lineTo(w*.29,h*.675);c.fill();
+    c.fillStyle="#fbfaf4";c.beginPath();c.moveTo(w*.35,h*.33);c.lineTo(w*.35,h*.61);c.lineTo(w*.43,h*.61);c.fill();
+    c.fillStyle="#d84a3a";c.beginPath();c.moveTo(w*.34,h*.38);c.lineTo(w*.34,h*.61);c.lineTo(w*.28,h*.61);c.fill();
+  },
+  function tree(c,w,h){
+    var m=Math.min(w,h);
+    c.fillStyle=lg(c,0,0,0,h,[[0,"#e7d6ad"],[1,"#c3a676"]]);c.fillRect(0,0,w,h);
+    c.fillStyle="#9b8458";c.fillRect(0,h*.74,w,h*.26);
+    c.fillStyle="#5e4b32";c.fillRect(w*.47,h*.44,w*.06,h*.32);
+    c.fillStyle="#6f5b3b";circle(c,w*.5,h*.36,m*.21);circle(c,w*.38,h*.45,m*.15);circle(c,w*.62,h*.45,m*.16);
+    var g=c.createRadialGradient(w/2,h/2,m*.3,w/2,h/2,Math.max(w,h)*.75);g.addColorStop(0,"rgba(70,48,25,0)");g.addColorStop(1,"rgba(70,48,25,.45)");c.fillStyle=g;c.fillRect(0,0,w,h);
+  },
+  function house(c,w,h){
+    var m=Math.min(w,h);
+    c.fillStyle=lg(c,0,0,0,h,[[0,"#9ccfca"],[1,"#eaf2e3"]]);c.fillRect(0,0,w,h);
+    c.fillStyle="#6e9e53";c.fillRect(0,h*.72,w,h*.28);
+    var bx=w*.28,bw=w*.42,by=h*.45,bh=h*.29;
+    c.fillStyle="#f0e7d3";c.fillRect(bx,by,bw,bh);
+    c.fillStyle="#b4523c";c.beginPath();c.moveTo(bx-w*.04,by);c.lineTo(bx+bw/2,by-h*.2);c.lineTo(bx+bw+w*.04,by);c.fill();
+    c.fillStyle="#4c3a2c";c.fillRect(bx+bw*.42,by+bh*.42,bw*.16,bh*.58);
+    c.fillStyle="#f2dc8c";c.fillRect(bx+bw*.1,by+bh*.2,bw*.2,bh*.26);c.fillRect(bx+bw*.7,by+bh*.2,bw*.2,bh*.26);
+    c.fillStyle="#5a4632";c.fillRect(w*.83,h*.55,w*.025,h*.18);
+    c.fillStyle="#3f6f3b";circle(c,w*.84,h*.52,m*.12);
+  }
+];
+
+/* ---------- photo batch demo ---------- */
+var bed=document.getElementById("bed");
+var bctx=bed.getContext("2d");
+var T1=2600,T2=3900,T3=5000,T4=6500;
+var MARK="#FF4F93", LAMP="rgba(205,252,243,";
+var D={W:0,H:0,dpr:1,narrow:false,G:null,seed:3,photos:[],keep:[true,true,true,true],t:-1,raf:0,start:0,playing:false,stage:"idle"};
+var statusEl=document.getElementById("demoStatus");
+var scanBtn=document.getElementById("scanBtn");
+var keepSet=document.getElementById("keepSet");
+var keepList=document.getElementById("keepList");
+var saveBtn=document.getElementById("saveBtn");
+var saveOut=document.getElementById("saveOut");
+var stepBtns=[].slice.call(document.querySelectorAll(".steps button"));
+
+function layoutBed(){
+  var w=bed.clientWidth||bed.parentNode.clientWidth||600;
+  var narrow=w<560;
+  var h=Math.round(w*(narrow?1.06:0.64));
+  var dpr=Math.min(window.devicePixelRatio||1,2);
+  bed.width=Math.round(w*dpr);bed.height=Math.round(h*dpr);bed.style.height=h+"px";
+  D.W=w;D.H=h;D.dpr=dpr;D.narrow=narrow;
+  var m=Math.max(10,Math.round(w*.022)),top=narrow?18:20;
+  D.m=m;D.G={x:m,y:m+top,w:w-2*m,h:h-2*m-top};
+  makePhotos();
+}
+function shuffle(a,r){for(var i=a.length-1;i>0;i--){var j=Math.floor(r()*(i+1));var t=a[i];a[i]=a[j];a[j]=t;}return a;}
+function makePhotos(){
+  var r=rng(D.seed*7919+17),G=D.G;
+  var pad=Math.min(G.w,G.h)*.04;
+  var cw=(G.w-pad*2)/2,ch=(G.h-pad*2)/2;
+  var aspects=shuffle([1.5,0.76,1.33,1.42],r);
+  var scenes=shuffle([0,1,2,3],r);
+  D.photos=[];
+  for(var i=0;i<4;i++){
+    var col=i%2,row=i>>1;
+    var ang=(3+r()*15)*(r()<.5?-1:1);ang=Math.round(ang*10)/10;
+    var a=aspects[i],rad=ang*Math.PI/180,co=Math.abs(Math.cos(rad)),si=Math.abs(Math.sin(rad));
+    var hh=Math.min(cw*.8/(a*co+si),ch*.8/(a*si+co)),ww=a*hh;
+    var cx=G.x+pad+cw*(col+.5)+(r()-.5)*cw*.08,cy=G.y+pad+ch*(row+.5)+(r()-.5)*ch*.08;
+    D.photos.push({cx:cx,cy:cy,w:ww,h:hh,ang:ang,scene:scenes[i],img:renderPhoto(scenes[i],ww,hh)});
+  }
+}
+function renderPhoto(scene,w,h){
+  var dpr=D.dpr*1.5,off=document.createElement("canvas");
+  off.width=Math.ceil(w*dpr);off.height=Math.ceil(h*dpr);
+  var c=off.getContext("2d");c.scale(dpr,dpr);
+  var b=Math.min(w,h)*.05;
+  c.fillStyle="#f5f2e9";c.fillRect(0,0,w,h);
+  c.save();c.translate(b,b);c.beginPath();c.rect(0,0,w-2*b,h-2*b);c.clip();SCENES[scene](c,w-2*b,h-2*b);c.restore();
+  return off;
+}
+function corners(p,cx,cy,ang,s){
+  var a=ang*Math.PI/180,co=Math.cos(a),si=Math.sin(a),hw=p.w*s/2,hh=p.h*s/2;
+  return [[-hw,-hh],[hw,-hh],[hw,hh],[-hw,hh]].map(function(q){return [cx+q[0]*co-q[1]*si,cy+q[0]*si+q[1]*co];});
+}
+function drawPhoto(c,p,cx,cy,ang,s,alpha,shadow){
+  c.save();c.globalAlpha=alpha;c.translate(cx,cy);c.rotate(ang*Math.PI/180);c.scale(s,s);
+  if(shadow){c.shadowColor="rgba(0,0,0,.32)";c.shadowBlur=9;c.shadowOffsetY=3;}
+  c.drawImage(p.img,-p.w/2,-p.h/2,p.w,p.h);c.restore();
+}
+function outline(c,pts,frac){
+  var per=0;for(var i=0;i<4;i++){var a=pts[i],b=pts[(i+1)%4];per+=Math.hypot(b[0]-a[0],b[1]-a[1]);}
+  c.save();c.strokeStyle=MARK;c.lineWidth=2;c.lineJoin="round";
+  if(frac<1)c.setLineDash([per*frac,per+10]);
+  c.beginPath();pts.forEach(function(p,i){if(i)c.lineTo(p[0],p[1]);else c.moveTo(p[0],p[1]);});c.closePath();c.stroke();c.restore();
+}
+function handles(c,pts){pts.forEach(function(p){c.beginPath();c.arc(p[0],p[1],4,0,Math.PI*2);c.fillStyle="#fff";c.fill();c.lineWidth=2;c.strokeStyle=MARK;c.stroke();});}
+function tag(c,pts,text,alpha){
+  var top=pts[0];pts.forEach(function(p){if(p[1]<top[1])top=p;});
+  var G=D.G;c.save();c.globalAlpha=alpha;c.font="500 11px "+MONO;
+  var w=c.measureText(text).width+16,h=20,x=clamp(top[0]-w/2,G.x+4,G.x+G.w-w-4),y=top[1]-h-9;
+  if(y<G.y+4)y=top[1]+9;
+  rr(c,x,y,w,h,10);c.fillStyle=MARK;c.fill();c.fillStyle="#fff";c.textBaseline="middle";c.fillText(text,x+8,y+h/2+.5);c.restore();
+}
+function drawFrame(c){
+  var W=D.W,H=D.H,G=D.G;
+  rr(c,0,0,W,H,12);c.fillStyle=lg(c,0,0,0,H,[[0,"#323b3e"],[1,"#1c2326"]]);c.fill();
+  /* ruler on the frame above the glass */
+  var inches=D.narrow?8.5:11.7,ppi=G.w/inches,y0=G.y-3;
+  c.strokeStyle="rgba(214,232,228,.55)";c.lineWidth=1;c.beginPath();
+  for(var i=0;;i++){var x=G.x+i*ppi/10;if(x>G.x+G.w+.5)break;var len=i%10===0?9:(i%5===0?6:3);var xx=Math.round(x)+.5;c.moveTo(xx,y0);c.lineTo(xx,y0-len);}
+  c.stroke();
+  c.fillStyle="rgba(214,232,228,.75)";c.font="500 9px "+MONO;c.textBaseline="alphabetic";
+  for(var n=1;n<inches;n++){var nx=G.x+n*ppi;c.fillText(String(n),nx+3,y0-6);}
+  /* glass */
+  c.fillStyle=lg(c,G.x,G.y,G.x+G.w,G.y+G.h,[[0,"#172226"],[1,"#0e1517"]]);c.fillRect(G.x,G.y,G.w,G.h);
+  c.strokeStyle="rgba(255,255,255,.09)";c.strokeRect(G.x+.5,G.y+.5,G.w-1,G.h-1);
+}
+function originMark(c){var G=D.G;c.fillStyle=LAMP+".8)";c.beginPath();c.moveTo(G.x+3,G.y+3);c.lineTo(G.x+15,G.y+3);c.lineTo(G.x+3,G.y+15);c.closePath();c.fill();}
+function sheen(c){var G=D.G;c.save();c.beginPath();c.rect(G.x,G.y,G.w,G.h);c.clip();var g=c.createLinearGradient(G.x,G.y,G.x+G.w*.6,G.y+G.h);g.addColorStop(0,"rgba(255,255,255,0)");g.addColorStop(.42,"rgba(255,255,255,0)");g.addColorStop(.5,"rgba(255,255,255,.07)");g.addColorStop(.6,"rgba(255,255,255,0)");c.fillStyle=g;c.fillRect(G.x,G.y,G.w,G.h);c.restore();}
+function photosOnGlass(c){D.photos.forEach(function(p){drawPhoto(c,p,p.cx,p.cy,p.ang,1,.82,true);});}
+function scannedBed(c){var G=D.G;c.fillStyle="#b9bab5";c.fillRect(G.x,G.y,G.w,G.h);}
+function lamp(c,y){
+  var G=D.G,W=D.W;
+  var g=c.createLinearGradient(0,y-46,0,y+46);
+  g.addColorStop(0,LAMP+"0)");g.addColorStop(.42,LAMP+".16)");g.addColorStop(.5,LAMP+".85)");g.addColorStop(.58,LAMP+".16)");g.addColorStop(1,LAMP+"0)");
+  c.save();c.beginPath();c.rect(G.x,G.y,G.w,G.h);c.clip();c.fillStyle=g;c.fillRect(G.x,y-46,G.w,92);c.restore();
+  c.fillStyle="#ffffff";c.fillRect(G.x,y-1,G.w,2);
+  c.fillStyle=LAMP+".9)";c.fillRect(2,y-3,G.x-4,6);c.fillRect(G.x+G.w+2,y-3,W-G.x-G.w-4,6);
+}
+function pill(c,text,x,y){c.save();c.font="500 11px "+MONO;var w=c.measureText(text).width+18;rr(c,x,y,w,22,11);c.fillStyle="rgba(5,10,12,.7)";c.fill();c.fillStyle="rgba(214,240,236,.95)";c.textBaseline="middle";c.fillText(text,x+9,y+11.5);c.restore();}
+function panelRect(){var G=D.G,i=D.narrow?8:14;return {x:G.x+i,y:G.y+i,w:G.w-2*i,h:G.h-2*i};}
+function cardRect(i){
+  var P=panelRect(),pad=D.narrow?10:16,head=D.narrow?58:70,gap=D.narrow?8:12,foot=30;
+  var cols=D.narrow?2:4,rows=Math.ceil(4/cols);
+  var aw=P.w-2*pad,ah=P.h-head-pad;
+  var cw=(aw-gap*(cols-1))/cols,ch=Math.min((ah-gap*(rows-1))/rows,cw*1.12+foot);
+  var th=rows*ch+(rows-1)*gap,y0=P.y+head+Math.max(0,(ah-th)/2);
+  var x=P.x+pad+(i%cols)*(cw+gap),y=y0+Math.floor(i/cols)*(ch+gap);
+  return {x:x,y:y,w:cw,h:ch,ix:x+6,iy:y+6,iw:cw-12,ih:ch-12-foot,fy:y+ch-foot/2-2};
+}
+function render(t){
+  var c=bctx,G=D.G;
+  c.setTransform(D.dpr,0,0,D.dpr,0,0);c.clearRect(0,0,D.W,D.H);
+  drawFrame(c);
+  if(t<0){photosOnGlass(c);sheen(c);originMark(c);pill(c,"4 prints on the glass \u00b7 not scanned",G.x+10,G.y+G.h-32);return;}
+  var i,p,pts;
+  if(t<T2){
+    var sp=clamp(t/T1),y=G.y+G.h*easeInOut(sp);
+    if(sp<1){c.save();c.beginPath();c.rect(G.x,y,G.w,G.y+G.h-y);c.clip();photosOnGlass(c);sheen(c);c.restore();}
+    c.save();c.beginPath();c.rect(G.x,G.y,G.w,y-G.y);c.clip();scannedBed(c);D.photos.forEach(function(p){drawPhoto(c,p,p.cx,p.cy,p.ang,1,1,true);});c.restore();
+    if(sp<1)lamp(c,y);
+    if(t>T1){
+      var dp=clamp((t-T1)/(T2-T1));
+      for(i=0;i<4;i++){p=D.photos[i];var pi=clamp((dp-i*.12)/.42);if(pi<=0)continue;pts=corners(p,p.cx,p.cy,p.ang,1);outline(c,pts,pi);if(pi>=1)handles(c,pts);var ta=clamp((dp-i*.12-.42)/.12);if(ta>0)tag(c,pts,fmtA(p.ang),ta);}
+    }
+    return;
+  }
+  if(t<T3){
+    var s2=clamp((t-T2)/(T3-T2));
+    scannedBed(c);c.fillStyle="rgba(18,24,26,"+(.4*easeOut(s2))+")";c.fillRect(G.x,G.y,G.w,G.h);
+    for(i=0;i<4;i++){p=D.photos[i];var q=easeInOut(clamp((s2-i*.08)/.7)),a=p.ang*(1-q);drawPhoto(c,p,p.cx,p.cy,a,1,1,true);pts=corners(p,p.cx,p.cy,a,1);outline(c,pts,1);handles(c,pts);tag(c,pts,q>=1?"0.0\u00b0 \u00b7 was "+fmtA(p.ang):fmtA(a),1);}
+    return;
+  }
+  var rp=clamp((t-T3)/(T4-T3));
+  scannedBed(c);c.fillStyle="rgba(18,24,26,.4)";c.fillRect(G.x,G.y,G.w,G.h);
+  var P=panelRect(),pa=easeOut(clamp(rp*2.2)),padx=D.narrow?10:16;
+  var SHEET=cssVar("--sheet")||"#fff",INK=cssVar("--ink")||"#111",INK2=cssVar("--ink-2")||"#444",RULE=cssVar("--rule")||"#ccc",ACC=cssVar("--accent")||"#06c",WELL=cssVar("--well")||"#eee",ACCI=cssVar("--accent-ink")||"#fff";
+  c.save();c.globalAlpha=pa;c.shadowColor="rgba(0,0,0,.4)";c.shadowBlur=26;c.shadowOffsetY=6;rr(c,P.x,P.y,P.w,P.h,10);c.fillStyle=SHEET;c.fill();c.restore();
+  var kept=D.keep.filter(Boolean).length;
+  c.save();c.globalAlpha=pa;c.fillStyle=INK;c.font="650 "+(D.narrow?17:20)+"px "+DISP;c.textBaseline="alphabetic";
+  c.fillText("Detected 4 photos",P.x+padx,P.y+(D.narrow?27:34));
+  c.font="400 "+(D.narrow?11.5:13)+"px "+BODY;c.fillStyle=INK2;c.fillText("Untick any false positives, or fix a crop.",P.x+padx,P.y+(D.narrow?45:54));c.restore();
+  for(i=0;i<4;i++){
+    p=D.photos[i];var k=easeInOut(clamp((rp-.12-i*.07)/.6)),cr=cardRect(i),on=D.keep[i];
+    c.save();c.globalAlpha=k;rr(c,cr.x,cr.y,cr.w,cr.h,8);c.fillStyle=SHEET;c.fill();c.lineWidth=on?2:1;c.strokeStyle=on?ACC:RULE;c.stroke();rr(c,cr.ix,cr.iy,cr.iw,cr.ih,4);c.fillStyle=WELL;c.fill();c.restore();
+    var fs=Math.min(cr.iw/p.w,cr.ih/p.h)*.9;
+    var cx=lerp(p.cx,cr.ix+cr.iw/2,k),cy=lerp(p.cy,cr.iy+cr.ih/2,k),sc=lerp(1,fs,k);
+    drawPhoto(c,p,cx,cy,0,sc,(rp>=1&&!on)?.3:1,k<1);
+    var fa=clamp((k-.6)/.4);
+    if(fa>0){
+      c.save();c.globalAlpha=fa;var bx=cr.x+9,by=cr.fy-8;
+      rr(c,bx,by,16,16,3);if(on){c.fillStyle=ACC;c.fill();c.strokeStyle=ACCI;c.lineWidth=2;c.beginPath();c.moveTo(bx+4,by+8.5);c.lineTo(bx+7,by+11.5);c.lineTo(bx+12.5,by+5);c.stroke();}else{c.strokeStyle=INK2;c.lineWidth=1.3;c.stroke();}
+      c.fillStyle=INK;c.font="500 12.5px "+BODY;c.textBaseline="middle";c.fillText("Keep",bx+23,cr.fy+.5);
+      c.fillStyle=INK2;c.font="500 10.5px "+MONO;var at=fmtA(p.ang),aw=c.measureText(at).width;if(cr.w>110)c.fillText(at,cr.x+cr.w-aw-10,cr.fy+.5);
+      c.restore();
+    }
+  }
+  if(rp<.3){c.save();c.globalAlpha=1-rp/.3;for(i=0;i<4;i++){p=D.photos[i];outline(c,corners(p,p.cx,p.cy,0,1),1);}c.restore();}
+}
+function stageOf(t){if(t<0)return "idle";if(t<T1)return "scan";if(t<T2)return "detect";if(t<T3)return "straighten";if(t<T4)return "review";return "done";}
+var STAGE_END={scan:T1,detect:T2-1,straighten:T3-1,review:T4};
+function angleList(){return D.photos.map(function(p){return fmtA(p.ang);}).join(", ");}
+function describe(st){
+  if(st==="idle")return ["Four prints are lying on the glass. Press Scan.","A scanner bed with four photos lying at different angles. Not scanned yet."];
+  if(st==="scan")return ["Scanning the whole bed\u2026","The light bar is moving down the scanner bed."];
+  if(st==="detect")return ["Found 4 photos, tilted "+angleList()+".","The scanned bed with each of four photos outlined and labelled with its tilt: "+angleList()+"."];
+  if(st==="straighten")return ["Each photo is turned upright and cropped on its own.","Four photos turned upright on the scanned bed, each outlined."];
+  var n=D.keep.filter(Boolean).length;
+  return ["Detected 4 photos. Untick any you don't want, then save "+n+".","Review grid with four straightened photos; "+n+" marked Keep."];
+}
+function setStage(st){
+  var key=st==="done"?"review":st;
+  stepBtns.forEach(function(b){if(b.getAttribute("data-stage")===key)b.setAttribute("aria-current","step");else b.removeAttribute("aria-current");});
+  var inReview=key==="review"&&D.t>=T4;
+  keepSet.disabled=!inReview;
+  if(st!==D.stage){var d=describe(st);statusEl.textContent=d[0];bed.setAttribute("aria-label",d[1]);D.stage=st;}
+}
+function show(t){D.t=t;render(t);setStage(stageOf(t));}
+function stop(){if(D.raf)cancelAnimationFrame(D.raf);D.raf=0;D.playing=false;}
+function play(){
+  stop();saveOut.textContent="";
+  if(reduced()){show(T4);scanBtn.querySelector("span").textContent="Scan again";return;}
+  D.playing=true;D.start=performance.now();
+  var step=function(now){var t=now-D.start;if(t>=T4){D.playing=false;D.raf=0;show(T4);return;}show(t);D.raf=requestAnimationFrame(step);};
+  D.raf=requestAnimationFrame(step);
+  scanBtn.querySelector("span").textContent="Scan again";
+}
+function buildKeep(){
+  keepList.innerHTML="";
+  D.photos.forEach(function(p,i){
+    var l=document.createElement("label"),c=document.createElement("input");
+    c.type="checkbox";c.checked=D.keep[i];
+    c.addEventListener("change",function(){D.keep[i]=c.checked;afterKeep();});
+    l.appendChild(c);l.appendChild(document.createTextNode("Photo "+(i+1)+" ("+fmtA(p.ang)+")"));
+    keepList.appendChild(l);
+  });
+  afterKeep(true);
+}
+function afterKeep(quiet){
+  var n=D.keep.filter(Boolean).length;
+  saveBtn.textContent="Save "+n+" Photo"+(n===1?"":"s");saveBtn.disabled=n===0;
+  saveOut.textContent="";
+  if(!quiet&&D.t>=T4){render(D.t);var d=describe("done");statusEl.textContent=d[0];bed.setAttribute("aria-label",d[1]);}
+}
+saveBtn.addEventListener("click",function(){
+  var names=[],idx=0,dt=today();
+  D.keep.forEach(function(k){if(k){idx++;names.push("Scan "+dt+" "+idx+" "+idx+".jpg");}});
+  saveOut.innerHTML="";
+  var p=document.createElement("p");p.style.margin="0";p.textContent="In the app, with the default name template and the counter starting at 1, this writes one file per photo (the counter goes up for each file):";saveOut.appendChild(p);
+  var ul=document.createElement("ul");names.forEach(function(n){var li=document.createElement("li");li.textContent=n;ul.appendChild(li);});saveOut.appendChild(ul);
+});
+scanBtn.addEventListener("click",play);
+document.getElementById("shuffleBtn").addEventListener("click",function(){
+  stop();D.seed=(D.seed*31+11)%100003;D.keep=[true,true,true,true];makePhotos();buildKeep();saveOut.textContent="";
+  scanBtn.querySelector("span").textContent="Scan";D.stage="";show(-1);
+});
+stepBtns.forEach(function(b){b.addEventListener("click",function(){stop();show(STAGE_END[b.getAttribute("data-stage")]);});});
+bed.addEventListener("click",function(e){
+  if(D.t<T4)return;
+  var r=bed.getBoundingClientRect(),x=(e.clientX-r.left)*(D.W/r.width),y=(e.clientY-r.top)*(D.H/r.height);
+  for(var i=0;i<4;i++){var cr=cardRect(i);if(x>=cr.x&&x<=cr.x+cr.w&&y>=cr.y&&y<=cr.y+cr.h){D.keep[i]=!D.keep[i];keepList.querySelectorAll("input")[i].checked=D.keep[i];afterKeep();break;}}
+});
+bed.addEventListener("mousemove",function(e){
+  if(D.t<T4){bed.style.cursor="default";return;}
+  var r=bed.getBoundingClientRect(),x=(e.clientX-r.left)*(D.W/r.width),y=(e.clientY-r.top)*(D.H/r.height),hit=false;
+  for(var i=0;i<4;i++){var cr=cardRect(i);if(x>=cr.x&&x<=cr.x+cr.w&&y>=cr.y&&y<=cr.y+cr.h)hit=true;}
+  bed.style.cursor=hit?"pointer":"default";
+});
+var lastW=0;
+function relayout(force){var w=bed.clientWidth;if(!force&&w===lastW)return;lastW=w;layoutBed();buildKeep();render(D.t);}
+themeHooks.push(function(){render(D.t);});
+
+/* ---------- adjustment demo ---------- */
+var adj=document.getElementById("adjCanvas");
+var actx=adj.getContext("2d",{willReadFrequently:true});
+/* Samples are laid out on a 720x480 grid (AK = backing px per grid unit). The backing store
+   follows the displayed width times the pixel ratio, capped to keep the pixel pipeline quick.
+   APX = backing px per CSS px, used to keep the divider and labels a fixed on-screen size. */
+var AW=720,AH=480,AK=1,APX=1;
+function sizeAdj(){
+  var cssW=adj.clientWidth||(adj.parentNode&&adj.parentNode.clientWidth)||720;
+  var dpr=Math.min(window.devicePixelRatio||1,2);
+  var w=Math.round(clamp(cssW*dpr,360,1400)),changed=false;
+  if(w!==AW||adj.width!==w){AW=w;AH=Math.round(w*2/3);AK=AW/720;adj.width=AW;adj.height=AH;A.base=null;changed=true;}
+  APX=AW/cssW;
+  return changed;
+}
+var A={sample:"faded",base:null,orig:null,out:null,half:null,draft:false,full:false,split:.5,pending:false};
+var S={bright:0,contrast:0,sat:0,sharp:0,auto:true,restore:true,descreen:false,mode:"color"};
+function luma(r,g,b){return .299*r+.587*g+.114*b;}
+function lakeScene(c,w,h){
+  c.fillStyle="#86ad5a";c.fillRect(0,0,w,h);
+  c.fillStyle=lg(c,0,0,0,h*.56,[[0,"#7fb3df"],[1,"#eadfc6"]]);c.fillRect(0,0,w,h*.56);
+  c.fillStyle="#fffaf0";circle(c,w*.2,h*.17,h*.065);
+  c.fillStyle="#ffffff";[[.42,.12,.07],[.48,.1,.05],[.53,.13,.06],[.74,.18,.05],[.79,.16,.06],[.84,.19,.045]].forEach(function(q){c.beginPath();c.ellipse(w*q[0],h*q[1],w*q[2],h*q[2]*.9,0,0,Math.PI*2);c.fill();});
+  c.fillStyle="#8fa6c2";c.beginPath();c.moveTo(0,h*.5);
+  var pk=[[.08,.3],[.18,.42],[.3,.22],[.42,.4],[.55,.27],[.68,.42],[.8,.25],[.92,.38],[1,.33]];
+  pk.forEach(function(q){c.lineTo(w*q[0],h*q[1]);});c.lineTo(w,h*.56);c.lineTo(0,h*.56);c.fill();
+  c.fillStyle="#eef2f6";c.beginPath();c.moveTo(w*.26,h*.26);c.lineTo(w*.3,h*.22);c.lineTo(w*.34,h*.27);c.lineTo(w*.31,h*.255);c.fill();
+  c.beginPath();c.moveTo(w*.77,h*.29);c.lineTo(w*.8,h*.25);c.lineTo(w*.835,h*.3);c.fill();
+  c.fillStyle="#6a8f5f";c.beginPath();c.moveTo(0,h*.5);c.quadraticCurveTo(w*.3,h*.43,w*.6,h*.52);c.quadraticCurveTo(w*.8,h*.47,w,h*.5);c.lineTo(w,h*.57);c.lineTo(0,h*.57);c.fill();
+  c.fillStyle=lg(c,0,h*.56,0,h*.86,[[0,"#78acd0"],[1,"#4a80a8"]]);c.fillRect(0,h*.56,w,h*.36);
+  c.fillStyle="#1f2e1c";c.beginPath();c.moveTo(0,h*.548);for(var tq=0;tq<=40;tq++){c.lineTo(w*tq/40,h*(.538-((tq*7)%5)*.006));}c.lineTo(w,h*.575);c.lineTo(0,h*.575);c.fill();
+  c.save();c.globalAlpha=.22;c.translate(0,h*1.12);c.scale(1,-1);c.fillStyle="#2f4b3a";c.beginPath();c.moveTo(0,h*.5);c.quadraticCurveTo(w*.3,h*.43,w*.6,h*.52);c.quadraticCurveTo(w*.8,h*.47,w,h*.5);c.lineTo(w,h*.56);c.lineTo(0,h*.56);c.fill();c.restore();
+  c.fillStyle="rgba(255,255,255,.5)";for(var k=0;k<6;k++)c.fillRect(w*(.48+k*.03),h*(.72+k*.012),w*(.06-k*.006),1.5);
+  c.fillStyle="#c8372d";c.beginPath();c.moveTo(w*.52,h*.69);c.lineTo(w*.66,h*.69);c.lineTo(w*.63,h*.715);c.lineTo(w*.545,h*.715);c.fill();
+  c.fillStyle="#f5efe2";c.fillRect(w*.575,h*.655,w*.018,h*.036);
+  c.fillStyle="#86ad5a";c.beginPath();c.moveTo(0,h*.86);c.quadraticCurveTo(w*.5,h*.8,w,h*.9);c.lineTo(w,h);c.lineTo(0,h);c.fill();
+  c.strokeStyle="#5f8a3f";c.lineWidth=2;c.beginPath();for(var j=0;j<38;j++){var x=w*(.02+j*.026),y=h*(.9+((j*37)%7)*.005);c.moveTo(x,h);c.lineTo(x+((j%3)-1)*4,y-h*.06);}c.stroke();
+}
+function fade(c){
+  var d=c.getImageData(0,0,c.canvas.width,c.canvas.height),a=d.data,r=rng(42);
+  for(var i=0;i<a.length;i+=4){
+    var R=a[i]/255,G=a[i+1]/255,B=a[i+2]/255,y=luma(R,G,B);
+    R=y+(R-y)*.5;G=y+(G-y)*.5;B=y+(B-y)*.5;
+    R=.24+R*.6+.025;G=.24+G*.6+.008;B=.24+B*.6-.02;
+    var n=(r()-.5)*.022;
+    a[i]=(R+n)*255;a[i+1]=(G+n)*255;a[i+2]=(B+n)*255;
+  }
+  c.putImageData(d,0,0);
+}
+var SAMPLES={
+  faded:function(c,w,h){lakeScene(c,w,h);fade(c);},
+  print:function(c,w,h,k){
+    c.fillStyle="#f3efe6";c.fillRect(0,0,w,h);
+    var ix=Math.round(26*k),iy=Math.round(26*k),iw=Math.round(w*.56*k),ih=Math.round((h-52)*k);
+    var tmp=document.createElement("canvas");tmp.width=iw;tmp.height=ih;var tc=tmp.getContext("2d");SCENES[1](tc,iw,ih);
+    var src=tc.getImageData(0,0,iw,ih).data,n=iw*ih;
+    var C=new Float32Array(n),M=new Float32Array(n),Y=new Float32Array(n),K=new Float32Array(n);
+    for(var i=0;i<n;i++){var cc=1-src[i*4]/255,mm=1-src[i*4+1]/255,yy=1-src[i*4+2]/255,kk=Math.min(cc,mm,yy)*.7;C[i]=cc-kk;M[i]=mm-kk;Y[i]=yy-kk;K[i]=kk;}
+    var cell=2.6*k,chans=[C,M,Y,K],angs=[15,75,0,45].map(function(a){a=a*Math.PI/180;return [Math.cos(a),Math.sin(a)];});
+    var page=c.getImageData(ix,iy,iw,ih),pd=page.data,ink=[0,0,0,0];
+    for(var yv=0;yv<ih;yv++)for(var xv=0;xv<iw;xv++){
+      for(var s=0;s<4;s++){
+        var co=angs[s][0],si=angs[s][1],u=xv*co+yv*si,v=-xv*si+yv*co,cu=(Math.floor(u/cell)+.5)*cell,cv=(Math.floor(v/cell)+.5)*cell;
+        var X=Math.round(cu*co-cv*si),Yy=Math.round(cu*si+cv*co);X=X<0?0:(X>=iw?iw-1:X);Yy=Yy<0?0:(Yy>=ih?ih-1:Yy);
+        var val=chans[s][Yy*iw+X],rad=cell*.74*Math.sqrt(Math.max(0,val)),dd=Math.hypot(u-cu,v-cv);
+        ink[s]=clamp(rad-dd+.5);
+      }
+      var o=(yv*iw+xv)*4,kf=1-.9*ink[3];
+      pd[o]=243*(1-.92*ink[0])*kf;pd[o+1]=239*(1-.88*ink[1])*kf;pd[o+2]=230*(1-.85*ink[2])*kf;pd[o+3]=255;
+    }
+    c.putImageData(page,ix,iy);
+    ix=26;iy=26;iw=Math.round(w*.56);
+    var tx=ix+iw+24,tw=w-tx-26;
+    c.fillStyle="#1d1b19";c.font="700 30px "+DISP;c.textBaseline="alphabetic";c.fillText("Summer",tx,iy+30);c.fillText("by the sea",tx,iy+64);
+    c.fillStyle="#b23a2e";c.fillRect(tx,iy+80,40,3);
+    c.fillStyle="#6b6660";var yy2=iy+104;
+    for(var l=0;l<17;l++){var lw=tw*(l%6===5?.55:(.86+((l*13)%7)*.02));c.fillRect(tx,yy2,lw,4);yy2+=15;if(l===8)yy2+=10;}
+  },
+  letter:function(c,w,h,k){
+    c.fillStyle=lg(c,0,0,w,h,[[0,"#efe8d9"],[1,"#e2d8c3"]]);c.fillRect(0,0,w,h);
+    c.fillStyle="rgba(90,70,40,.06)";c.fillRect(0,h*.5,w,1.5);
+    var t=document.createElement("canvas");t.width=c.canvas.width;t.height=c.canvas.height;var tc=t.getContext("2d");tc.scale(k,k);
+    tc.fillStyle="#5a554c";tc.font="400 19px "+MONO;tc.textBaseline="alphabetic";
+    var lines=["Lisbon, 12 May","","Dear Ana,","","The photos from the lake came back today.","I have put the best ones in the blue album","and kept the rest in the shoebox for you.","","The one of the red boat is my favourite.","","With love,","Mum"];
+    lines.forEach(function(s,i){tc.fillText(s,64,74+i*31);});
+    c.save();c.setTransform(1,0,0,1,0,0);
+    if("filter" in c){c.filter="blur("+(.9*k).toFixed(2)+"px)";c.drawImage(t,0,0);c.filter="none";}else{c.globalAlpha=.5;c.drawImage(t,-.6*k,0);c.drawImage(t,.6*k,0);}
+    c.restore();
+  }
+};
+function buildBase(){
+  var off=document.createElement("canvas");off.width=AW;off.height=AH;var c=off.getContext("2d",{willReadFrequently:true});
+  c.setTransform(AK,0,0,AK,0,0);SAMPLES[A.sample](c,720,480,AK);c.setTransform(1,0,0,1,0,0);
+  var d=c.getImageData(0,0,AW,AH),n=AW*AH,r=new Float32Array(n),g=new Float32Array(n),b=new Float32Array(n);
+  for(var i=0;i<n;i++){r[i]=d.data[i*4]/255;g[i]=d.data[i*4+1]/255;b[i]=d.data[i*4+2]/255;}
+  A.base={r:r,g:g,b:b};A.orig=d;A.out=actx.createImageData(AW,AH);A.half=null;A.draft=false;
+  /* a half-size copy keeps slider drags responsive on large backing stores */
+  if(AW>1000){
+    var w2=AW>>1,h2=AH>>1,m=w2*h2,r2=new Float32Array(m),g2=new Float32Array(m),b2=new Float32Array(m);
+    for(var y=0;y<h2;y++)for(var x=0;x<w2;x++){var a=(2*y)*AW+2*x,q=y*w2+x;r2[q]=(r[a]+r[a+1]+r[a+AW]+r[a+AW+1])/4;g2[q]=(g[a]+g[a+1]+g[a+AW]+g[a+AW+1])/4;b2[q]=(b[a]+b[a+1]+b[a+AW]+b[a+AW+1])/4;}
+    var hc=document.createElement("canvas");hc.width=w2;hc.height=h2;
+    A.half={base:{r:r2,g:g2,b:b2},w:w2,h:h2,k:AK/2,out:actx.createImageData(w2,h2),canvas:hc,ctx:hc.getContext("2d")};
+  }
+}
+function colorControls(r,g,b,n,add,con,sat){
+  for(var i=0;i<n;i++){
+    var pr=r[i]+add,pg=g[i]+add,pb=b[i]+add;
+    if(con!==1){pr=(pr-.5)*con+.5;pg=(pg-.5)*con+.5;pb=(pb-.5)*con+.5;}
+    if(sat!==1){var y=luma(pr,pg,pb);pr=y+(pr-y)*sat;pg=y+(pg-y)*sat;pb=y+(pb-y)*sat;}
+    r[i]=pr;g[i]=pg;b[i]=pb;
+  }
+}
+function blurPass(a,w,h,t){
+  var x,y,i;
+  for(y=0;y<h;y++){var row=y*w;for(x=0;x<w;x++){i=row+x;t[i]=(a[x>0?i-1:i]+2*a[i]+a[x<w-1?i+1:i])/4;}}
+  for(y=0;y<h;y++){for(x=0;x<w;x++){i=y*w+x;a[i]=(t[y>0?i-w:i]+2*t[i]+t[y<h-1?i+w:i])/4;}}
+}
+function blur3(r,g,b,w,h){var t=new Float32Array(w*h);blurPass(r,w,h,t);blurPass(g,w,h,t);blurPass(b,w,h,t);}
+function sharpen(r,g,b,w,h,amt,k){
+  var br=r.slice(),bg=g.slice(),bb=b.slice();softBlur(br,bg,bb,w,h,k);
+  for(var i=0;i<r.length;i++){r[i]+=amt*(r[i]-br[i]);g[i]+=amt*(g[i]-bg[i]);b[i]+=amt*(b[i]-bb[i]);}
+}
+function gauss(a,w,h,sigma,t){
+  var rad=Math.max(1,Math.ceil(sigma*3)),k=new Float32Array(rad*2+1),sum=0,j,x,y;
+  for(j=-rad;j<=rad;j++){k[j+rad]=Math.exp(-(j*j)/(2*sigma*sigma));sum+=k[j+rad];}
+  for(j=0;j<k.length;j++)k[j]/=sum;
+  for(y=0;y<h;y++){var row=y*w;for(x=0;x<w;x++){var s=0;for(j=-rad;j<=rad;j++){var xx=x+j;xx=xx<0?0:(xx>=w?w-1:xx);s+=a[row+xx]*k[j+rad];}t[row+x]=s;}}
+  for(y=0;y<h;y++){for(x=0;x<w;x++){var s2=0;for(j=-rad;j<=rad;j++){var yy=y+j;yy=yy<0?0:(yy>=h?h-1:yy);s2+=t[yy*w+x]*k[j+rad];}a[y*w+x]=s2;}}
+}
+/* the 3x3 blur at the 720 grid; a matching Gaussian when the backing store is larger */
+function softBlur(r,g,b,w,h,k){
+  var sigma=.707*k;
+  if(sigma<.9){blur3(r,g,b,w,h);return;}
+  var t=new Float32Array(w*h);gauss(r,w,h,sigma,t);gauss(g,w,h,sigma,t);gauss(b,w,h,sigma,t);
+}
+function vibrance(r,g,b,n,amt){
+  for(var i=0;i<n;i++){var mx=Math.max(r[i],g[i],b[i]),mn=Math.min(r[i],g[i],b[i]),boost=1+amt*(1-clamp((mx-mn)*2)),y=luma(r[i],g[i],b[i]);r[i]=y+(r[i]-y)*boost;g[i]=y+(g[i]-y)*boost;b[i]=y+(b[i]-y)*boost;}
+}
+function autoLevels(r,g,b,n){
+  var bins=4096,hist=new Uint32Array(bins),i;
+  for(i=0;i<n;i++){var l=luma(r[i],g[i],b[i]);hist[Math.max(0,Math.min(bins-1,Math.floor(l*(bins-1))))]++;}
+  var loIdx=Math.floor(n*.01),hiIdx=Math.min(n-1,Math.floor(n*.99)),cum=0,lo=0,hi=1,gotLo=false;
+  for(i=0;i<bins;i++){cum+=hist[i];if(!gotLo&&cum>loIdx){lo=i/(bins-1);gotLo=true;}if(cum>hiIdx){hi=i/(bins-1);break;}}
+  if(hi-lo<.05)return;
+  var gain=1/(hi-lo);
+  for(i=0;i<n;i++){r[i]=(r[i]-lo)*gain;g[i]=(g[i]-lo)*gain;b[i]=(b[i]-lo)*gain;}
+}
+function pipeline(P){
+  var W=P.w,H=P.h,K=P.k,n=W*H,r=P.base.r.slice(),g=P.base.g.slice(),b=P.base.b.slice(),i;
+  if(S.auto)autoLevels(r,g,b,n);
+  var br=S.bright/100;
+  if(br!==0){var gain=Math.pow(2,br*1.5);for(i=0;i<n;i++){r[i]*=gain;g[i]*=gain;b[i]*=gain;}}
+  var add=br*.15,con=Math.pow(4,S.contrast/100),sat=1+S.sat/100;
+  if(add!==0||con!==1||sat!==1)colorControls(r,g,b,n,add,con,sat);
+  var sh=S.sharp/50;
+  if(sh>0)sharpen(r,g,b,W,H,sh,K);
+  else if(sh<0){var sg=Math.min(-sh,2)*2*K,t=new Float32Array(n);gauss(r,W,H,sg,t);gauss(g,W,H,sg,t);gauss(b,W,H,sg,t);}
+  if(S.descreen){softBlur(r,g,b,W,H,K);sharpen(r,g,b,W,H,.4,K);}
+  if(S.restore){vibrance(r,g,b,n,.5);colorControls(r,g,b,n,0,1.05,1);}
+  if(S.mode==="gray")colorControls(r,g,b,n,0,1,0);
+  else if(S.mode==="bw"){colorControls(r,g,b,n,0,1,0);for(i=0;i<n;i++){var v=r[i]>.5?1:0;r[i]=v;g[i]=v;b[i]=v;}}
+  var o=P.out.data;
+  for(i=0;i<n;i++){o[i*4]=Math.round(r[i]*255);o[i*4+1]=Math.round(g[i]*255);o[i*4+2]=Math.round(b[i]*255);o[i*4+3]=255;}
+}
+function drawAdj(){
+  if(!A.orig)return;
+  var sx=Math.round(AW*A.split);
+  actx.putImageData(A.orig,0,0);
+  if(sx<AW){
+    if(A.draft&&A.half){actx.save();actx.beginPath();actx.rect(sx,0,AW-sx,AH);actx.clip();actx.drawImage(A.half.canvas,0,0,AW,AH);actx.restore();}
+    else actx.putImageData(A.out,0,0,sx,0,AW-sx,AH);
+  }
+  var u=APX,cy=AH/2;
+  actx.save();actx.scale(u,u);
+  var x=sx/u,W=AW/u;cy=cy/u;
+  actx.fillStyle="#ffffff";actx.fillRect(x-1,0,2,AH/u);
+  actx.beginPath();actx.arc(x,cy,16,0,Math.PI*2);actx.fillStyle="rgba(19,23,26,.78)";actx.fill();actx.lineWidth=2;actx.strokeStyle="#fff";actx.stroke();
+  actx.fillStyle="#fff";actx.beginPath();actx.moveTo(x-10.5,cy);actx.lineTo(x-4,cy-5.5);actx.lineTo(x-4,cy+5.5);actx.fill();actx.beginPath();actx.moveTo(x+10.5,cy);actx.lineTo(x+4,cy-5.5);actx.lineTo(x+4,cy+5.5);actx.fill();
+  actx.font="500 12px "+MONO;actx.textBaseline="middle";
+  var m=W<480?8:12,lw=actx.measureText("ADJUSTED").width+18;
+  function lab(t,lx,right){var w=actx.measureText(t).width+18;var bx=right?lx-w:lx;rr(actx,bx,m,w,24,12);actx.fillStyle="rgba(19,23,26,.74)";actx.fill();actx.fillStyle="#fff";actx.fillText(t,bx+9,m+12.5);}
+  if(x>lw+m+6)lab("ORIGINAL",m,false);
+  if(x<W-lw-m-6)lab("ADJUSTED",W-m,true);
+  actx.restore();
+}
+function processAdj(draft){
+  if(!A.base)buildBase();
+  if(draft&&A.half){pipeline(A.half);A.half.ctx.putImageData(A.half.out,0,0);A.draft=true;}
+  else{pipeline({base:A.base,w:AW,h:AH,k:AK,out:A.out});A.draft=false;}
+  drawAdj();
+}
+/* slider drags render the half-size draft; a full render follows on release or after a short pause */
+var fullTimer=0;
+function scheduleAdj(draft){
+  clearTimeout(fullTimer);
+  if(draft)fullTimer=setTimeout(function(){scheduleAdj(false);},250);else A.full=true;
+  if(A.pending)return;A.pending=true;
+  requestAnimationFrame(function(){A.pending=false;var full=A.full;A.full=false;processAdj(!full);});
+}
+function amountText(v){v=Math.round(v);return v===0?"0":(v>0?"+"+v:"\u2212"+Math.abs(v));}
+function fillRange(inp){var min=+inp.min,max=+inp.max,p=(inp.value-min)/(max-min)*100;inp.style.setProperty("--a",Math.min(50,p)+"%");inp.style.setProperty("--b",Math.max(50,p)+"%");}
+var sliders=[].slice.call(document.querySelectorAll(".sl input"));
+sliders.forEach(function(inp){
+  fillRange(inp);
+  inp.addEventListener("input",function(){S[inp.getAttribute("data-key")]=+inp.value;inp.nextElementSibling.textContent=amountText(+inp.value);fillRange(inp);scheduleAdj(true);});
+  inp.addEventListener("change",function(){scheduleAdj(false);});
+});
+document.getElementById("resetAdj").addEventListener("click",function(){sliders.forEach(function(inp){inp.value=0;S[inp.getAttribute("data-key")]=0;inp.nextElementSibling.textContent="0";fillRange(inp);});scheduleAdj();announce("Sliders reset to 0.");});
+[].slice.call(document.querySelectorAll(".sw input")).forEach(function(inp){inp.addEventListener("change",function(){S[inp.getAttribute("data-key")]=inp.checked;scheduleAdj();});});
+[].slice.call(document.querySelectorAll('input[name="mode"]')).forEach(function(inp){inp.addEventListener("change",function(){if(inp.checked){S.mode=inp.value;scheduleAdj();}});});
+var SUGGEST={faded:{auto:true,restore:true,descreen:false},print:{auto:false,restore:false,descreen:true},letter:{auto:true,restore:false,descreen:false}};
+var SAMPLE_LABEL={faded:"a faded color photo of a lake with a red boat",print:"a magazine page whose photo is printed as a dot pattern",letter:"a slightly blurry typed letter on yellowed paper"};
+function adjLabel(){adj.setAttribute("aria-label","Before and after comparison of "+SAMPLE_LABEL[A.sample]+". Original on the left, adjusted on the right; divider at "+Math.round(A.split*100)+"%.");}
+[].slice.call(document.querySelectorAll('input[name="sample"]')).forEach(function(inp){inp.addEventListener("change",function(){if(inp.checked){A.sample=inp.value;A.base=null;var sug=SUGGEST[A.sample];["auto","restore","descreen"].forEach(function(k){S[k]=sug[k];document.querySelector('.sw input[data-key="'+k+'"]').checked=sug[k];});adjLabel();scheduleAdj();}});});
+var splitIn=document.getElementById("split");
+splitIn.addEventListener("input",function(){A.split=splitIn.value/100;drawAdj();});
+splitIn.addEventListener("change",adjLabel);
+var dragging=false;
+function splitFromEvent(e){var r=adj.getBoundingClientRect();A.split=clamp((e.clientX-r.left)/r.width);splitIn.value=Math.round(A.split*100);drawAdj();}
+adj.addEventListener("pointerdown",function(e){dragging=true;try{adj.setPointerCapture(e.pointerId);}catch(x){}splitFromEvent(e);});
+adj.addEventListener("pointermove",function(e){if(dragging)splitFromEvent(e);});
+function endDrag(){if(dragging){dragging=false;adjLabel();}}
+adj.addEventListener("pointerup",endDrag);adj.addEventListener("pointercancel",endDrag);
+
+/* ---------- naming template ---------- */
+var tpl=document.getElementById("tpl"),namerOut=document.getElementById("namerOut");
+function baseName(t,counter,d,intent,index){
+  var res=t.replace(/\{counter:([0-9]+)\}/g,function(m,wd){var w=Math.min(parseInt(wd,10)||1,20);var s=String(counter);while(s.length<w)s="0"+s;return s;});
+  var reps=[["{date}",d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate())],["{time}",pad2(d.getHours())+"."+pad2(d.getMinutes())+"."+pad2(d.getSeconds())],["{year}",String(d.getFullYear())],["{month}",pad2(d.getMonth()+1)],["{day}",pad2(d.getDate())],["{counter}",String(counter)],["{intent}",intent==="photo"?"Photos":"Document"],["{index}",index==null?"":String(index)]];
+  reps.forEach(function(p){res=res.split(p[0]).join(p[1]);});
+  if(index!=null&&t.indexOf("{index}")<0)res+=" "+index;
+  res=res.replace(/[\/:\\*?"<>|\u0000-\u001f\u007f]/g,"-").trim();
+  while(res.indexOf("  ")>=0)res=res.split("  ").join(" ");
+  return res.length?res:"Scan";
+}
+function renderNames(){
+  var intent=document.querySelector('input[name="intent"]:checked').value,d=new Date(),out=[];
+  if(intent==="doc"){var a=baseName(tpl.value,12,d,"doc",null);out.push([a+".pdf",false]);out.push([a+" 2.pdf",true]);}
+  else{for(var i=1;i<=3;i++)out.push([baseName(tpl.value,12+i-1,d,"photo",i)+".jpg",false]);}
+  namerOut.innerHTML="";
+  out.forEach(function(o){var li=document.createElement("li");li.textContent=o[0];if(o[1]){li.className="taken";li.textContent=o[0]+"  (if the first name is already taken)";}namerOut.appendChild(li);});
+}
+tpl.addEventListener("input",renderNames);
+[].slice.call(document.querySelectorAll('input[name="intent"]')).forEach(function(i){i.addEventListener("change",renderNames);});
+[].slice.call(document.querySelectorAll(".tokens button")).forEach(function(b){
+  b.addEventListener("click",function(){
+    var tok=b.textContent,s=tpl.selectionStart==null?tpl.value.length:tpl.selectionStart,e=tpl.selectionEnd==null?s:tpl.selectionEnd;
+    var before=tpl.value.slice(0,s),after=tpl.value.slice(e);
+    var sep=before.length&&!/\s$/.test(before)?" ":"";
+    tpl.value=before+sep+tok+after;var pos=(before+sep+tok).length;tpl.focus();try{tpl.setSelectionRange(pos,pos);}catch(x){}
+    renderNames();
+  });
+});
+
+/* ---------- copy buttons ---------- */
+function copyText(text){
+  if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text).then(function(){return true;},function(){return legacyCopy(text);});}
+  return Promise.resolve(legacyCopy(text));
+}
+function legacyCopy(text){
+  try{var ta=document.createElement("textarea");ta.value=text;ta.setAttribute("readonly","");ta.style.position="fixed";ta.style.top="-1000px";ta.style.opacity="0";document.body.appendChild(ta);ta.select();var ok=document.execCommand("copy");document.body.removeChild(ta);return !!ok;}catch(e){return false;}
+}
+[].slice.call(document.querySelectorAll(".copy")).forEach(function(btn){
+  btn.addEventListener("click",function(){
+    var pre=document.getElementById(btn.getAttribute("data-copy")),text=pre.textContent.replace(/\s+$/,"");
+    copyText(text).then(function(ok){
+      if(ok){btn.textContent="Copied";announce("Copied to the clipboard.");}
+      else{var r=document.createRange();r.selectNodeContents(pre);var sel=window.getSelection();sel.removeAllRanges();sel.addRange(r);btn.textContent="Press Ctrl+C";announce("Copy was blocked. The text is selected; press Ctrl+C or Command+C.");}
+      setTimeout(function(){btn.textContent="Copy";},2200);
+    });
+  });
+});
+
+/* ---------- start ---------- */
+function start(){
+  relayout(true);show(-1);sizeAdj();processAdj();adjLabel();renderNames();syncTheme();
+}
+start();
+if(window.ResizeObserver){var ro=new ResizeObserver(function(){requestAnimationFrame(function(){relayout(false);});});ro.observe(bed.parentNode);}
+else window.addEventListener("resize",function(){relayout(false);});
+var adjTimer=0;
+function adjResize(){clearTimeout(adjTimer);adjTimer=setTimeout(function(){if(sizeAdj())processAdj();else drawAdj();},120);}
+if(window.ResizeObserver)new ResizeObserver(adjResize).observe(adj);
+window.addEventListener("resize",adjResize);
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(function(){render(D.t);A.base=null;processAdj();});
+})();
+</script>
+</body>
+</html>
