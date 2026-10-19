@@ -122,6 +122,7 @@ final class ModelsCompatTests: XCTestCase {
         let preset = try decode(Preset.self, #"{"name": "Mine", "settings": {"resolution": 150}}"#)
         XCTAssertEqual(preset.name, "Mine")
         XCTAssertEqual(preset.settings.resolution, 150)
+        XCTAssertNotEqual(preset.id, try decode(Preset.self, #"{"name": "Mine"}"#).id)
     }
 
     func test_unknownEnumValues_fallBackToDefault_restOfPresetIntact() throws {
@@ -143,12 +144,31 @@ final class ModelsCompatTests: XCTestCase {
         XCTAssertEqual(presets[0].settings, expected)
     }
 
+    func test_numericOrMiscasedEnumValues_fallBackToDefault() throws {
+        // Enums decode only their exact raw value: no numbers, no other casing.
+        let settings = try decode(ScanSettings.self, """
+            {"colorMode": 1, "format": "Tiff", "intent": "PHOTO", "source": "documentFeeder"}
+            """)
+        var expected = ScanSettings()
+        expected.source = .documentFeeder
+        XCTAssertEqual(settings, expected)
+    }
+
     func test_wrongTypedField_fallsBackToDefault_restIntact() throws {
         let settings = try decode(ScanSettings.self, """
             {"resolution": "high", "pdfSearchable": false, "ocrLanguages": "en-US"}
             """)
         var expected = ScanSettings()
         expected.pdfSearchable = false
+        XCTAssertEqual(settings, expected)
+    }
+
+    func test_nullListElement_resetsThatField() throws {
+        let settings = try decode(ScanSettings.self, """
+            {"resolution": 150, "ocrLanguages": ["de-DE", null]}
+            """)
+        var expected = ScanSettings()
+        expected.resolution = 150
         XCTAssertEqual(settings, expected)
     }
 
@@ -178,6 +198,9 @@ final class ModelsCompatTests: XCTestCase {
 
         let settings = try decode(ScanSettings.self, #"{"resolution": null, "adjustments": null}"#)
         XCTAssertEqual(settings, ScanSettings())
+
+        let named = try decode(Preset.self, #"{"id": null, "name": null}"#)
+        XCTAssertEqual(named.name, Preset.fallbackName)
     }
 
     func test_keysFromNewerVersions_areIgnored() throws {
@@ -295,6 +318,53 @@ final class PresetStoreFileTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent(kept[0])), wrongShape)
     }
 
+    func test_nullPresetsFile_isKept() throws {
+        for json in ["null", "[null]"] {
+            try Data(json.utf8).write(to: presetsURL)
+
+            let presets = PresetStore(directory: directory).load()
+
+            XCTAssertFalse(presets.isEmpty, json)
+            let kept = try keptFiles(prefix: "presets.unreadable-")
+            XCTAssertEqual(kept.count, 1, json)
+            let name = try XCTUnwrap(kept.first)
+            let keptURL = directory.appendingPathComponent(name)
+            XCTAssertEqual(try Data(contentsOf: keptURL), Data(json.utf8), json)
+            try FileManager.default.removeItem(at: keptURL)
+        }
+    }
+
+    func test_unreadableFile_takenName_getsNumberedSuffix() throws {
+        // Occupy the kept names (plain and -2) for this second and the next few, so the
+        // load below finds them taken whenever it runs.
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let now = Date()
+        var taken: [String] = []
+        for second in 0...5 {
+            let stamp = formatter.string(from: now.addingTimeInterval(TimeInterval(second)))
+            for name in ["presets.unreadable-\(stamp).json", "presets.unreadable-\(stamp)-2.json"] {
+                try Data("taken".utf8).write(to: directory.appendingPathComponent(name))
+                taken.append(name)
+            }
+        }
+        let garbage = Data("this is not JSON {".utf8)
+        try garbage.write(to: presetsURL)
+
+        _ = PresetStore(directory: directory).load()
+
+        let added = try keptFiles(prefix: "presets.unreadable-").filter { !taken.contains($0) }
+        XCTAssertEqual(added.count, 1)
+        let kept = try XCTUnwrap(added.first)
+        XCTAssertNotNil(kept.range(of: #"^presets\.unreadable-\d{8}-\d{6}-3\.json$"#,
+                                   options: .regularExpression), kept)
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent(kept)), garbage)
+        for name in taken {
+            XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent(name)), Data("taken".utf8), name)
+        }
+    }
+
     /// Makes `url` unreadable for the duration of `body`; skipped when running as root,
     /// where permissions do not stop reads.
     private func withoutReadPermission(_ url: URL, _ body: () throws -> Void) throws {
@@ -351,6 +421,32 @@ final class PresetStoreFileTests: XCTestCase {
         XCTAssertEqual(try keptFiles(prefix: "presets.unreadable-"), [])
     }
 
+    // Notepad's "UTF-16 LE" and Windows PowerShell 5.1's Out-File write UTF-16 with a
+    // byte-order mark; JSONDecoder also reads UTF-32 and UTF-16 without one.
+    func test_presetsFileInOtherUnicodeEncodings_loadsInPlace() throws {
+        let cases: [(bom: [UInt8], encoding: String.Encoding)] = [
+            ([0xEF, 0xBB, 0xBF], .utf8),
+            ([0xFF, 0xFE], .utf16LittleEndian),
+            ([0xFE, 0xFF], .utf16BigEndian),
+            ([0xFF, 0xFE, 0x00, 0x00], .utf32LittleEndian),
+            ([0x00, 0x00, 0xFE, 0xFF], .utf32BigEndian),
+            ([], .utf16LittleEndian),
+            ([], .utf16BigEndian),
+            ([], .utf32LittleEndian),
+            ([], .utf32BigEndian),
+        ]
+        for (bom, encoding) in cases {
+            let label = "\(encoding) with \(bom.count)-byte byte-order mark"
+            let text = try XCTUnwrap(currentFormatPresetsJSON.data(using: encoding), label)
+            try (Data(bom) + text).write(to: presetsURL)
+
+            let presets = PresetStore(directory: directory).load()
+
+            XCTAssertEqual(presets.map { $0.id }, [sampleID], label)
+            XCTAssertEqual(try keptFiles(prefix: "presets.unreadable-"), [], label)
+        }
+    }
+
     func test_presetsSaveThenLoad_roundTrips() throws {
         let presets = [Preset(id: sampleID, name: "Receipts", settings: nonDefaultSettings())]
         PresetStore(directory: directory).save(presets)
@@ -360,6 +456,14 @@ final class PresetStoreFileTests: XCTestCase {
     func test_missingSettingsFile_returnsNilWithoutKeepingAnything() throws {
         XCTAssertNil(SettingsStore.load(directory: directory))
         XCTAssertEqual(try keptFiles(prefix: "settings.unreadable-"), [])
+    }
+
+    func test_missingFolder_countsAsMissing() throws {
+        let absent = directory.appendingPathComponent("absent", isDirectory: true)
+        XCTAssertNil(SettingsStore.load(directory: absent))
+        // Not protected: the first save creates the folder and the file.
+        SettingsStore.save(nonDefaultSettings(), directory: absent)
+        XCTAssertEqual(SettingsStore.load(directory: absent), nonDefaultSettings())
     }
 
     func test_unreadableSettingsFile_isKept() throws {

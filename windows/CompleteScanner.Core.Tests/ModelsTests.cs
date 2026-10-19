@@ -226,19 +226,22 @@ public class ModelsTests
     }
 
     [Fact]
-    public void UnknownAppearanceIsRejectedSoLoadFallsBackToDefaults()
+    public void UnknownAppearanceFallsBackToSystemAndTheFileStaysInPlace()
     {
         const string json = """{ "appearance": "sepia" }""";
-        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<AppPreferences>(json, StoreFiles.JsonOptions));
+        // A value written by a newer version resets only that field (see ModelsCompatTests).
+        var preferences = JsonSerializer.Deserialize<AppPreferences>(json, StoreFiles.JsonOptions);
+        Assert.Equal(AppAppearance.System, preferences!.Appearance);
 
-        // The store turns an undecodable file into "nothing saved", which Load maps to defaults.
         string dir = Path.Combine(Path.GetTempPath(), "CompleteScanner.Tests." + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         try
         {
             string path = Path.Combine(dir, "preferences.json");
             File.WriteAllText(path, json);
-            Assert.Null(StoreFiles.Read<AppPreferences>(path));
+            Assert.Equal(AppAppearance.System, AppPreferencesStore.Load(dir).Appearance);
+            // The file decoded, so nothing was moved aside.
+            Assert.Equal([path], Directory.GetFiles(dir));
         }
         finally
         {

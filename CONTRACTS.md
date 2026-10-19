@@ -26,6 +26,7 @@ Already written (READ THESE FIRST, code against them exactly):
    - The first case of every persisted enum is also its default and its safe fallback; an unknown raw value (written by a newer version) decodes as the property's default instead of failing the file. Add new cases after the existing ones and never rename a raw value.
    - Keys never change: encoding stays the synthesized `encode(to:)` with explicit `CodingKeys` named after the properties.
    - Never overwrite a settings file that could not be read. A file that was read but does not decode is moved aside as `<name>.unreadable-<yyyyMMdd-HHmmss>.json` in the same folder before defaults are written. A file that cannot be read at all (permissions, I/O errors) is left in place, defaults are used in memory only, and writes to it are refused for the rest of the session. A missing file (including one removed between checks) means first run.
+   - Windows (`windows/CompleteScanner.Core/Persistence.cs`) follows the same rules without per-type code: `StoreFiles.JsonOptions` reads every property of every type in a settings file on its own and falls back to the value a freshly constructed instance has. A new persisted property only needs an initializer default, a persisted type needs a public parameterless constructor, and enums are read only as their exact camelCase name (the Swift raw value).
 
 ## APIs each module must expose (exact signatures)
 

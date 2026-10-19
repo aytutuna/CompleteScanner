@@ -81,6 +81,16 @@ Known divergences from the macOS app (all documented in the source):
 - Rotating a saved JPEG re-encodes it at its own estimated quality (read from the file's
   quantization table) instead of a fixed 95%.
 
+## Settings files
+
+Presets, scan settings and app preferences are JSON files in `%APPDATA%\CompleteScanner\`
+(`presets.json`, `settings.json`, `preferences.json`). They load across versions the same way
+as on macOS (`../CONTRACTS.md`, rule 6): a value this version does not understand resets only
+that setting; a file that cannot be decoded is kept next to it as
+`<name>.unreadable-<yyyyMMdd-HHmmss>.json` before defaults are written; and a file that cannot
+be read at all (for example, locked by another program) is left alone and not overwritten
+until the app restarts.
+
 ## Porting workflow
 
 When an algorithm changes on either side:

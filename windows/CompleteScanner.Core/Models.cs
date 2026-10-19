@@ -3,8 +3,11 @@ using System.Text.Json.Serialization;
 namespace CompleteScanner.Core;
 
 // Port of Sources/CompleteScannerKit/Core/Models.swift. Enums serialize as camelCase
-// strings (see Persistence.JsonOptions) matching the Swift rawValues, so settings/preset
-// files stay conceptually interchangeable.
+// strings (see StoreFiles.JsonOptions in Persistence.cs) matching the Swift rawValues, so
+// settings/preset files stay conceptually interchangeable. Settings files load across
+// versions (CONTRACTS.md, rule 6): every persisted property needs an initializer default,
+// and the first member of every persisted enum is its default; add new members after the
+// existing ones and never rename one.
 
 // MARK: - Core enums
 
@@ -429,8 +432,11 @@ public sealed record ScanProgress(double? Fraction, string Message)
 
 public sealed class Preset
 {
+    /// <summary>Name given to a stored preset whose name is missing or unreadable.</summary>
+    internal const string FallbackName = "Untitled preset";
+
     public Guid Id { get; set; } = Guid.NewGuid();
-    public string Name { get; set; } = "";
+    public string Name { get; set; } = FallbackName;
     public ScanSettings Settings { get; set; } = new();
 
     public Preset() { }
