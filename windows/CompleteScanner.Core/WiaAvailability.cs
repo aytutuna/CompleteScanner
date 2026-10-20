@@ -6,15 +6,19 @@ namespace CompleteScanner.Core;
 
 /// <summary>
 /// Decides, before any WIA Automation object is created, whether WIA can be asked for scanners:
-/// the Windows Image Acquisition service (stisvc) must be running (or starting) and WIA
+/// the Windows Image Acquisition service (stisvc) must be installed and not disabled, and WIA
 /// Automation (wiaaut.dll) registered. Otherwise the connection lists nothing and says why,
-/// instead of calling into a WIA that is not there.
+/// instead of calling into a WIA that is not there. A service that is merely stopped (or
+/// stopping, or paused) does not stop it: stisvc is the WIA Device Manager's COM server
+/// (its AppID's LocalService), so creating the Device Manager starts it on demand, as a
+/// Manual service is meant to be started.
 /// </summary>
 public static class WiaAvailability
 {
     /// <summary>
-    /// Why WIA cannot be asked now; null when it can. A service state that could not be read
-    /// (<see cref="ServiceStatus.Unknown"/>) does not stop it: WIA then answers for itself.
+    /// Why WIA cannot be asked now; null when it can. Only a service that COM cannot start (not
+    /// installed, or disabled) stops it; a stopped one is started by asking, and a state that
+    /// could not be read (<see cref="ServiceStatus.Unknown"/>) leaves WIA to answer for itself.
     /// </summary>
     public static string? Unavailable(ServiceStatus service, bool automationRegistered)
     {
@@ -23,8 +27,6 @@ public static class WiaAvailability
         {
             ServiceStatus.NotInstalled => "the Windows Image Acquisition service (stisvc) is not installed",
             ServiceStatus.Disabled => "the Windows Image Acquisition service (stisvc) is disabled",
-            ServiceStatus.Stopped or ServiceStatus.Stopping or ServiceStatus.Paused
-                => "the Windows Image Acquisition service (stisvc) is not running",
             _ => null,
         };
     }

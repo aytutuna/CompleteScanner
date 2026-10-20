@@ -17,18 +17,50 @@ internal static class WiaApartment
 {
     private static readonly BlockingCollection<Action> Queue = [];
     private static readonly Lazy<Thread> Worker = new(Start, LazyThreadSafetyMode.ExecutionAndPublication);
-    private static int _active;
-    private static int _mostAtOnce;
+    private static readonly ConcurrentDictionary<int, bool> UsedOn = new();
+    private static int _inUse;
+    private static int _mostInUse;
+    private static long _uses;
     private static long _completed;
 
     /// <summary>The managed id of the WIA thread (it is started if it was not yet).</summary>
     internal static int ThreadId => Worker.Value.ManagedThreadId;
 
-    /// <summary>The most WIA work items that ever ran at the same time: 1 once any has run (harnesses).</summary>
-    internal static int MostAtOnce => Volatile.Read(ref _mostAtOnce);
-
     /// <summary>How many WIA work items have finished (harnesses).</summary>
     internal static long Completed => Interlocked.Read(ref _completed);
+
+    /// <summary>The managed ids of every thread that has created WIA objects (<see cref="Use"/>; harnesses).</summary>
+    internal static IReadOnlyCollection<int> ThreadsThatUsedWia => [.. UsedOn.Keys];
+
+    /// <summary>The most <see cref="Use"/> scopes that were ever open at the same time (harnesses).</summary>
+    internal static int MostUsingWiaAtOnce => Volatile.Read(ref _mostInUse);
+
+    /// <summary>How many <see cref="Use"/> scopes have been opened (harnesses).</summary>
+    internal static long Uses => Interlocked.Read(ref _uses);
+
+    /// <summary>
+    /// Marks where WIA objects are created (an enumeration, a session connecting to its device)
+    /// until it is disposed, noting the thread and how many such places are busy at once. It
+    /// changes nothing; harnesses read it to check that WIA is used on one thread, one at a time,
+    /// whatever the code that queued the work.
+    /// </summary>
+    internal static UseScope Use()
+    {
+        UsedOn.TryAdd(Environment.CurrentManagedThreadId, true);
+        Interlocked.Increment(ref _uses);
+        int inUse = Interlocked.Increment(ref _inUse);
+        int most;
+        while (inUse > (most = Volatile.Read(ref _mostInUse))
+               && Interlocked.CompareExchange(ref _mostInUse, inUse, most) != most)
+        {
+        }
+        return new UseScope();
+    }
+
+    internal readonly struct UseScope : IDisposable
+    {
+        public void Dispose() => Interlocked.Decrement(ref _inUse);
+    }
 
     /// <summary>
     /// Runs <paramref name="work"/> on the WIA thread after the work asked for before it. The task
@@ -69,12 +101,6 @@ internal static class WiaApartment
         // Waiting for the next item on an STA thread pumps COM messages, as the apartment requires.
         foreach (var item in Queue.GetConsumingEnumerable())
         {
-            int active = Interlocked.Increment(ref _active);
-            int most;
-            while (active > (most = Volatile.Read(ref _mostAtOnce))
-                   && Interlocked.CompareExchange(ref _mostAtOnce, active, most) != most)
-            {
-            }
             try
             {
                 item();
@@ -86,7 +112,6 @@ internal static class WiaApartment
             }
             finally
             {
-                Interlocked.Decrement(ref _active);
                 Interlocked.Increment(ref _completed);
             }
         }

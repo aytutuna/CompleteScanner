@@ -11,6 +11,51 @@ namespace CompleteScanner.App.Tests;
 // mirrors of the WinRT enums, the paper sizes the feeder is asked for, and the device watcher
 // running in this unpackaged process. Scanning itself needs a real WIA scanner.
 
+/// <summary>
+/// A test that asks the real WIA Automation for its devices. Where WIA cannot be asked (WIA
+/// Automation not registered, or stisvc not installed or disabled) it is skipped, and the skip
+/// says why, with stisvc's state and start type; with COMPLETESCANNER_REQUIRE_WIA=1 (CI) it runs
+/// anyway and fails there, so it can never pass on CI without WIA having been asked.
+/// </summary>
+public sealed class WiaFactAttribute : FactAttribute
+{
+    public WiaFactAttribute()
+    {
+        if (Environment.GetEnvironmentVariable("COMPLETESCANNER_REQUIRE_WIA") != "1" && WhyNot() is { } reason)
+        {
+            Skip = $"WIA cannot be asked here: {reason} ({ServiceDescription()}).";
+        }
+    }
+
+    /// <summary>Why WIA cannot be asked on this PC; null when it can.</summary>
+    internal static string? WhyNot() =>
+        WiaAvailability.Unavailable(new Services.WindowsSystemDiagnostics().WiaService(), WiaScannerBackend.AutomationRegistered());
+
+    /// <summary>stisvc's state and start type, as the app reads them and as the registry has it.</summary>
+    internal static string ServiceDescription()
+    {
+        object? start = null;
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\stisvc");
+            start = key?.GetValue("Start");
+        }
+        catch (Exception e)
+        {
+            start = e.Message;
+        }
+        string startType = start switch
+        {
+            2 => "Automatic",
+            3 => "Manual",
+            4 => "Disabled",
+            null => "not set",
+            _ => start.ToString()!,
+        };
+        return $"stisvc {new Services.WindowsSystemDiagnostics().WiaService()}, start type {startType}";
+    }
+}
+
 public class WinRtScannerTests
 {
     [Fact]
@@ -190,15 +235,20 @@ public class WiaEnumerationTests
 
     /// <summary>
     /// Many backends start, refresh and stop browsing from many threads at once, while other
-    /// threads list WIA's scanners directly. Every WIA call runs on the one WIA thread, one at a
-    /// time: WIA used from two STA threads at once hands objects across apartments and can crash
-    /// the process (an access violation in CoCreateInstance). Where WIA is not there, this runs
-    /// the same way without creating any WIA object.
+    /// threads list WIA's scanners directly. Every WIA object is created on the one WIA thread,
+    /// one place at a time: WIA used from two STA threads at once hands objects across apartments
+    /// and can crash the process (an access violation in CoCreateInstance). Each enumeration and
+    /// each direct call notes its thread where it creates WIA objects (<see cref="WiaApartment.Use"/>),
+    /// so a thread per call, or two at once, fails here. Needs the real WIA (a stopped stisvc is
+    /// started by asking it); where WIA cannot be asked the test is skipped and says why.
     /// </summary>
-    [Fact]
+    [WiaFact]
     public async Task StartingAndStoppingFromManyThreadsKeepsWiaOnOneThread()
     {
+        Assert.True(WiaFactAttribute.WhyNot() is null,
+                    $"WIA cannot be asked here: {WiaFactAttribute.WhyNot()} ({WiaFactAttribute.ServiceDescription()}).");
         int wiaThread = WiaApartment.ThreadId;
+        long usesBefore = WiaApartment.Uses;
         var askedOn = new System.Collections.Concurrent.ConcurrentBag<(int Thread, ApartmentState Apartment)>();
         var system = new Services.WindowsSystemDiagnostics();
         ServiceStatus Service()
@@ -227,8 +277,7 @@ public class WiaEnumerationTests
                 wia.StartBrowsing();
             }));
             // WIA asked directly too, as sessions do: every call succeeds with the same answer.
-            bool wiaThere = WiaScannerBackend.AutomationRegistered() && system.WiaService() == ServiceStatus.Running;
-            var counts = Enumerable.Range(0, 32).Select(_ => Task.Run(() => WiaApartment.Run(() => wiaThere ? CountWiaDevices() : 0)))
+            var counts = Enumerable.Range(0, 32).Select(_ => Task.Run(() => WiaApartment.Run(CountWiaDevices)))
                                    .ToList();
             await Task.WhenAll(browsers);
             int[] answers = await Task.WhenAll(counts);
@@ -241,7 +290,7 @@ public class WiaEnumerationTests
                 await Task.Delay(20);
             }
             Assert.All(backends, b => Assert.Equal(b.EnumerationsStarted, b.EnumerationsFinished));
-            Assert.All(backends, b => Assert.Equal(backends[0].Unavailable, b.Unavailable));
+            Assert.All(backends, b => Assert.Null(b.Unavailable));
             Assert.All(backends, b => Assert.Equal(backends[0].Devices, b.Devices));
             Assert.All(backends, b => Assert.StartsWith("WIA: ", b.DiagnosticsReport));
         }
@@ -252,12 +301,18 @@ public class WiaEnumerationTests
         }
         Assert.NotEmpty(askedOn);
         Assert.All(askedOn, asked => Assert.Equal((wiaThread, ApartmentState.STA), asked));
-        Assert.Equal(1, WiaApartment.MostAtOnce);
+        // WIA objects were really created: the 32 direct calls and each backend's last enumeration
+        // at least, all on the WIA thread and never two at once.
+        Assert.True(WiaApartment.Uses - usesBefore >= 32 + backends.Count,
+                    $"WIA was asked {WiaApartment.Uses - usesBefore} times");
+        Assert.Equal([wiaThread], WiaApartment.ThreadsThatUsedWia);
+        Assert.Equal(1, WiaApartment.MostUsingWiaAtOnce);
     }
 
     /// <summary>The devices WIA lists, by plain WIA Automation calls that throw when WIA fails.</summary>
     private static int CountWiaDevices()
     {
+        using var use = WiaApartment.Use();
         var type = Type.GetTypeFromProgID(WiaScannerBackend.DeviceManagerProgId, throwOnError: true)!;
         object manager = Activator.CreateInstance(type)!;
         object? infos = null;
@@ -273,11 +328,11 @@ public class WiaEnumerationTests
         }
     }
 
-    /// <summary>Without its service WIA is not asked at all: nothing is listed, devices.txt and the troubleshooter say why.</summary>
+    /// <summary>Without a service COM can start, or without WIA Automation, WIA is not asked at all: nothing is listed, devices.txt and the troubleshooter say why.</summary>
     [Theory]
     [InlineData(ServiceStatus.NotInstalled, true, "the Windows Image Acquisition service (stisvc) is not installed")]
     [InlineData(ServiceStatus.Disabled, true, "the Windows Image Acquisition service (stisvc) is disabled")]
-    [InlineData(ServiceStatus.Stopped, true, "the Windows Image Acquisition service (stisvc) is not running")]
+    [InlineData(ServiceStatus.Stopped, false, "WIA Automation (wiaaut.dll) is not registered on this PC")]
     [InlineData(ServiceStatus.Running, false, "WIA Automation (wiaaut.dll) is not registered on this PC")]
     public void WithoutWiaNothingIsListedAndTheReportSaysWhy(ServiceStatus service, bool registered, string reason)
     {
@@ -312,6 +367,41 @@ public class WiaEnumerationTests
         }
         Assert.Equal("WIA: off\n", wia.DiagnosticsReport);
         Assert.Null(wia.Unavailable);
+    }
+
+    /// <summary>
+    /// A stopped service (stisvc set to Manual and not yet running) does not stop the enumeration:
+    /// creating WIA's Device Manager starts it. The service is read again afterwards, so the
+    /// troubleshooter gets the state the enumeration left it in.
+    /// </summary>
+    [Theory]
+    [InlineData(ServiceStatus.Stopped)]
+    [InlineData(ServiceStatus.Stopping)]
+    [InlineData(ServiceStatus.Paused)]
+    public void AStoppedServiceIsStartedByAskingWia(ServiceStatus before)
+    {
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(null);
+        int asked = 0;
+        long usesBefore = WiaApartment.Uses;
+        var wia = new WiaScannerBackend(() => Interlocked.Increment(ref asked) == 1 ? before : ServiceStatus.Running, () => true);
+        try
+        {
+            wia.StartBrowsing();
+            var waited = System.Diagnostics.Stopwatch.StartNew();
+            while (wia.EnumerationsFinished < 1 && waited.Elapsed < TimeSpan.FromSeconds(60)) Thread.Sleep(10);
+            Assert.Equal(1, wia.EnumerationsFinished);
+            Assert.True(WiaApartment.Uses > usesBefore, "WIA was not asked");
+            Assert.Null(wia.Unavailable);
+            Assert.Equal($"WIA: {wia.Devices.Count} scanner(s)\n", wia.DiagnosticsReport);
+            Assert.Equal(2, Volatile.Read(ref asked));
+            Assert.Equal(ServiceStatus.Running, wia.AddStatus(new DiscoverySnapshot()).WiaService);
+        }
+        finally
+        {
+            wia.StopBrowsing();
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
     }
 
     /// <summary>Work for WIA runs on its STA thread in the order it was asked for, and its failures reach the caller.</summary>

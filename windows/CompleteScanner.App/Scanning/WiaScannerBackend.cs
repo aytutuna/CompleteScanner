@@ -235,14 +235,19 @@ public sealed class WiaScannerBackend : IPolledScannerBackend, IScannerBackendDi
 
     /// <summary>
     /// One enumeration, on the WIA thread: nothing when browsing stopped while it waited there, and
-    /// no WIA object at all when the service or WIA Automation is missing (<see cref="WiaAvailability"/>).
+    /// no WIA object at all when the service cannot start or WIA Automation is missing
+    /// (<see cref="WiaAvailability"/>). A stopped service is started by asking WIA, so it is read
+    /// again afterwards: the troubleshooter gets the state the enumeration left it in.
     /// </summary>
     private EnumerationResult Enumerate(int generation)
     {
         if (generation != Volatile.Read(ref _browseGeneration)) return new([], null, ServiceStatus.Unknown);
         ServiceStatus service = _serviceStatus();
         string? unavailable = WiaAvailability.Unavailable(service, _automationRegistered());
-        return new(unavailable is null ? EnumerateScanners() : [], unavailable, service);
+        if (unavailable is not null) return new([], unavailable, service);
+        var found = EnumerateScanners();
+        if (service is ServiceStatus.Stopped or ServiceStatus.Stopping or ServiceStatus.Paused) service = _serviceStatus();
+        return new(found, null, service);
     }
 
     /// <summary>Run on the thread that started browsing (the UI thread in the app); without one, under the lock.</summary>
@@ -281,6 +286,7 @@ public sealed class WiaScannerBackend : IPolledScannerBackend, IScannerBackendDi
         // The watchdog may enumerate for hours: release every COM object deterministically
         // rather than leaving them to the finalizer of a thread that has already exited.
         var comObjects = new List<object>();
+        using var use = WiaApartment.Use();
         try
         {
             var managerType = Type.GetTypeFromProgID(DeviceManagerProgId);
@@ -690,6 +696,7 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
 
     private dynamic Connect()
     {
+        using var use = WiaApartment.Use();
         var managerType = Type.GetTypeFromProgID(WiaScannerBackend.DeviceManagerProgId)
             ?? throw ScanException.DeviceUnavailable("WIA is not available on this system.");
         dynamic manager = Activator.CreateInstance(managerType)!;

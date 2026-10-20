@@ -32,6 +32,19 @@ jobs:
             & $script -Channel 10.0 -Runtime windowsdesktop -Architecture x86 -InstallDir $root -NoPath
           }
           Get-ChildItem (Join-Path $root 'shared\Microsoft.WindowsDesktop.App') | Select-Object -ExpandProperty Name
+      # WIA's tests ask the real WIA Automation (COMPLETESCANNER_REQUIRE_WIA below). The image's
+      # Windows Image Acquisition service (stisvc) is left stopped if it is: asking WIA starts it,
+      # as the app relies on. Only a disabled one is set to Manual, so it can be started that way.
+      - name: Show the WIA service
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $service = Get-Service stisvc
+          "stisvc: $($service.Status), start type $($service.StartType)"
+          if ($service.StartType -eq 'Disabled') {
+            Set-Service stisvc -StartupType Manual
+            "stisvc: start type set to $((Get-Service stisvc).StartType)"
+          }
       # Built first, so the tests do not share the runner's cores with the compiler.
       - name: Build
         run: dotnet build windows/CompleteScanner.sln -c Release
@@ -44,6 +57,14 @@ jobs:
           COMPLETESCANNER_PDFA_SAMPLES: ${{ runner.temp }}\pdfa-samples
           # The phone link's certificate test uses a certificate store of its own; on the runner only.
           COMPLETESCANNER_CERT_STORE_TESTS: '1'
+          # WIA's tests must ask the real WIA here, never be skipped.
+          COMPLETESCANNER_REQUIRE_WIA: '1'
+      - name: Show the WIA service after the tests
+        if: always()
+        shell: pwsh
+        run: |
+          $service = Get-Service stisvc
+          "stisvc: $($service.Status), start type $($service.StartType)"
       # veraPDF, the PDF/A validator (MPL-2.0 / GPL-3.0), checks those files. It is downloaded here
       # only, pinned to one release and its SHA-256, and never shipped. Its official Docker image is
       # Linux-only, and there is no official action, so the CLI is installed from its release

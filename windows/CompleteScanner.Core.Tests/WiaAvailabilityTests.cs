@@ -11,7 +11,11 @@ public class WiaAvailabilityTests
     [InlineData(ServiceStatus.Running)]
     [InlineData(ServiceStatus.Starting)]
     [InlineData(ServiceStatus.Unknown)]
-    public void WiaIsAskedWhenItsServiceRunsOrCannotBeRead(ServiceStatus service)
+    // Stopped, stopping or paused: creating WIA's Device Manager starts stisvc on demand.
+    [InlineData(ServiceStatus.Stopped)]
+    [InlineData(ServiceStatus.Stopping)]
+    [InlineData(ServiceStatus.Paused)]
+    public void WiaIsAskedWhenItsServiceRunsOrCanBeStarted(ServiceStatus service)
     {
         Assert.Null(WiaAvailability.Unavailable(service, automationRegistered: true));
     }
@@ -19,10 +23,7 @@ public class WiaAvailabilityTests
     [Theory]
     [InlineData(ServiceStatus.NotInstalled, "the Windows Image Acquisition service (stisvc) is not installed")]
     [InlineData(ServiceStatus.Disabled, "the Windows Image Acquisition service (stisvc) is disabled")]
-    [InlineData(ServiceStatus.Stopped, "the Windows Image Acquisition service (stisvc) is not running")]
-    [InlineData(ServiceStatus.Stopping, "the Windows Image Acquisition service (stisvc) is not running")]
-    [InlineData(ServiceStatus.Paused, "the Windows Image Acquisition service (stisvc) is not running")]
-    public void WiaIsNotAskedWithoutItsService(ServiceStatus service, string reason)
+    public void WiaIsNotAskedWhenItsServiceCannotStart(ServiceStatus service, string reason)
     {
         Assert.Equal(reason, WiaAvailability.Unavailable(service, automationRegistered: true));
     }
@@ -30,6 +31,7 @@ public class WiaAvailabilityTests
     [Theory]
     [InlineData(ServiceStatus.Running)]
     [InlineData(ServiceStatus.Unknown)]
+    [InlineData(ServiceStatus.Stopped)]
     [InlineData(ServiceStatus.NotInstalled)]
     public void WiaIsNotAskedWithoutWiaAutomation(ServiceStatus service)
     {
