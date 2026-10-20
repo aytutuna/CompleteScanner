@@ -388,16 +388,21 @@ The inspector's **Output** section has a **PDF size** choice for PDF output: Bes
 Compact or Smallest, with a line under it saying what the chosen size does and how big the
 last saved PDF was (the status bar names the size too). `PdfImageEncoding` plans each page:
 
-| Size | Page images at most | JPEG quality (color / gray) | Color pages without color |
-|---|---|---|---|
-| Best | scan resolution | 0.90 / 0.90 | stay color |
-| Standard | 300 dpi | 0.80 / 0.80 | stored gray |
-| Compact | 200 dpi | 0.65 / 0.70 | stored gray |
-| Smallest | 150 dpi | 0.50 / 0.55 | stored gray |
+| Size | Page images at most | JPEG quality (color / gray) | Color pages without color | Black & white pages (CCITT G4) at most |
+|---|---|---|---|---|
+| Best | scan resolution | 0.90 / 0.90 | stay color | scan resolution |
+| Standard | 300 dpi | 0.80 / 0.80 | stored gray | 600 dpi |
+| Compact | 200 dpi | 0.65 / 0.70 | stored gray | 300 dpi |
+| Smallest | 150 dpi | 0.50 / 0.55 | stored gray | 300 dpi |
 
 Pages are downsampled (box filter) only when they are more than 10 % finer than the limit;
 the page size in the PDF never changes, and text recognition reads the full-resolution page
-first. Grayscale and black & white pages are stored as one-component JPEGs (`/DeviceGray`). A
+first. Grayscale pages are stored as one-component JPEGs (`/DeviceGray`). Black & white pages
+(the Black & White color mode, after its threshold) are stored as 1-bit CCITT Group 4 images
+(`/CCITTFaxDecode`, lossless) at every size, in every PDF the app writes (plain, PDF/A, protected,
+pages added to an existing PDF); a downsampled one is thresholded again (luma below 128 is
+black). One bit per pixel needs more pixels than gray to keep text smooth, hence their own,
+higher limit. A
 color page counts as having no color when fewer than 0.1 % of its sampled pixels (every 4th
 pixel of every 4th row) differ by more than 32 between their strongest and weakest channel,
 so a stamp or a highlighter mark keeps the page in color. The size alone sets the JPEG
@@ -412,21 +417,53 @@ written by a newer version reads as Standard.
 
 Measured on two public-domain document scans (a 1903 letter on aged paper with purple
 typewriting and a red logo, 2673 × 3500 px; a 1900 menu on white paper with a blue stamp and
-pencil notes, 2550 × 3510 px), both saved as 300 dpi one-page PDFs through the app's save path:
+pencil notes, 2550 × 3510 px), both saved as 300 dpi one-page PDFs through the app's save path
+("Before" is the full-resolution RGB JPEG at quality 0.9 that every PDF held before PDF sizes):
 
 | Page | Color mode | Before | Best | Standard | Compact | Smallest |
 |---|---|---|---|---|---|---|
 | letter | Color | 1.17 MB | 1.17 MB | 856 KB | 259 KB | 119 KB |
 | letter | Grayscale | 1.11 MB | 1.07 MB | 778 KB | 263 KB | 111 KB |
-| letter | Black & White | 694 KB | 655 KB | 527 KB | 216 KB | 122 KB |
+| letter | Black & White, gray JPEG (until G4) | 694 KB | 655 KB | 527 KB | 216 KB | 122 KB |
+| letter | Black & White, CCITT G4 | 694 KB | 33 KB | 33 KB | 33 KB | 33 KB |
 | menu | Color | 1.48 MB | 1.48 MB | 905 KB | 309 KB | 160 KB |
 | menu | Grayscale | 1.40 MB | 1.36 MB | 833 KB | 314 KB | 157 KB |
-| menu | Black & White | 997 KB | 956 KB | 760 KB | 309 KB | 183 KB |
+| menu | Black & White, gray JPEG (until G4) | 997 KB | 956 KB | 760 KB | 309 KB | 183 KB |
+| menu | Black & White, CCITT G4 | 997 KB | 47 KB | 47 KB | 47 KB | 47 KB |
 | menu with its color removed, scanned in color | Color | 1.40 MB | 1.40 MB | 833 KB | 314 KB | 157 KB |
 
 Both real pages have color, so they stay color; the last row shows a color scan of a page
-without color being stored gray. Black & white pages are still JPEGs; CCITT G4 (a later
-step) would make them far smaller.
+without color being stored gray. A black & white page is the same 1-bit G4 image at every size
+for 300 dpi scans: 16 times smaller than the gray JPEG that Standard stored before (20 times at
+Best), and still 3.7 to 3.9 times smaller than Smallest's 150 dpi gray JPEG, at twice its
+resolution and without JPEG's halos around the letters. Scanned at 600 dpi, the letter is 58 KB at Best and Standard
+(600 dpi kept; the gray JPEG was 1.63 MB and 472 KB) and 30 KB at Compact and Smallest (300 dpi;
+217 KB and 119 KB before).
+
+**Black & white TIFF files** are CCITT G4 too (compression 4, 1 bit per pixel, WhiteIsZero, the
+scan's resolution; `BilevelTiff`, which also writes multi-page files): each scan saved at once,
+the photos saved from the photo review, and the ID card's page and its sides. The letter is 32 KB
+and the menu 46 KB, against 632 KB and 695 KB as the RGB LZW TIFFs they were. Turning such a file
+in the Saved tab keeps it G4. Other TIFFs stay LZW: color and gray pages, and receipts, which are
+always enhanced gray.
+
+A page is stored in the color mode it was **scanned** in, not the one set when it is saved, so
+only pixels the black & white mode thresholded at the user's level become G4: an ID card or photos
+scanned in color stay color when the mode is switched to Black & White before saving (the card's
+page is black & white only when both sides were; color when either side is color, else gray). A
+book spread joined or split again is made with the current settings, color mode included: in
+Black & White its pages are thresholded at the user's level, in Color with no adjustments they are
+the spread as scanned and stored as color (or gray) JPEGs.
+
+The size hint under the picker names both limits, for example "Up to 200 dpi (black & white
+300), more compression. For email and uploads."; the Mac's hint names the gray limit only until
+its PDF writer brings G4.
+
+The encoder (`CcittG4Encoder`, ITU-T T.6, our own code with no library) codes each row the way
+libtiff does, mode for mode: its output is byte-identical to WIC's own G4 encoder on every page
+tried, the two real scans included. WIC decodes its TIFFs and PdfPig (test-only) its PDF images
+pixel for pixel, and Windows.Data.Pdf renders its pages as it renders the same pixels stored as
+a gray JPEG at quality 100.
 
 ### Archival PDF (PDF/A) and the text layer
 
@@ -924,6 +961,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | WIA backend (`WiaScannerBackend`) | **Experimental, untested against hardware** — documented WIA Automation flow; enumeration runs off the UI thread and re-polls (every 10 s backing off to 60 s while no scanner is present, every 60 s while one is), so scanners plugged in or unplugged later show up without a restart. The sources come from the device's document-handling capabilities, so a feeder-only scanner offers no flatbed and no preview; the feeder's sheet size and two-sided support are reported; two-sided feeder scans select FEEDER, DUPLEX and FRONT_FIRST (without FRONT_FIRST for a driver that refuses it, the feeder alone, one side, for a driver that refuses two-sided feeding, which the app is told) and every sheet (`WIA_DPS_PAGES` 0); a driver that takes no feeder selection at all scans the feeder only when it is already selected (single-source drivers can make the selection read-only), with the sides it has selected, and otherwise fails rather than scanning another source; a feeder paper size is set through `WIA_DPS_PAGE_SIZE` (the custom size and width/height for sizes WIA has no name for) and the item's extents; a feeder batch uses one connection; WIA error codes become plain messages (an empty feeder says "Load paper in the feeder, then scan again."); a batch that fails partway keeps the sheets already scanned and tells the user how many were kept and why it stopped. Expect to iterate with a real scanner attached |
 | Task start screen (`TaskCatalog`, `TaskFlow`, `SettingsAdapter`) | Covered by `ScanTaskTests`, `TaskFlowTests`, `SettingsAdapterTests` and the task cases in `ModelsCompatTests` (same cases as macOS). Checked by driving the view model with the demo scanner and fake flatbed-only and feeder-only scanners (each task's settings, scans and file names, the task ending when the mode is changed by hand or the scanner lacks its source, the reasons on unavailable cards, presets and scanner switches going through `SettingsAdapter`, the task coming back after a restart), and by building the window without showing it: tabs, cards, banner, keyboard navigation, screen-reader names and the banner's announcements of the task and of each new step, rendered off screen in light and dark |
 | PDF sizes (`PdfImageEncoding`, `ColorAnalysis`) | Covered by `PdfImageEncodingTests`, `ColorAnalysisTests`, the gray-JPEG cases in `PdfBuilderTests` and the size cases in `ModelsCompatTests` and `ScanTaskTests` (same cases as macOS). Checked by driving the view model's real save path with two public-domain document scans in every color mode and size (image size and color space as planned, page size unchanged, every PDF renders through Windows.Data.Pdf close to the scan, sizes shrink in order; see [PDF size](#pdf-size)) and by building the window without showing it: the size control, its hint and last-size line, hiding it for other formats and Photos, the Email card, rendered off screen in light and dark |
+| Black & white as CCITT G4 (`CcittG4Encoder`, `Bilevel`, `BilevelTiff`, `PdfCcittImage`) | Covered by `CcittG4EncoderTests` (the code tables against T.4, known answers for all-white and all-black pages, pass, horizontal and every vertical mode, runs past 2560, no rows, single pixels and one-pixel lines; every run length of both colors, odd widths and 20000-pixel rows decoded back by PdfPig's CCITT filter; golden bytes for a checkerboard, seeded noise and the blank-page tests' text page; the threshold), `BilevelOutputTests` in Core (the image dictionary and its data, JPEG and G4 pages with a text layer, PDF/A, a protected file opened with its password, a page added to a PDF, all decoded by PdfPig; one- and three-page TIFFs field by field, golden bytes) and in the App tests (WIC decodes one- and three-page TIFFs pixel for pixel; WIC's own G4 encoder gives the same bytes, strip by strip, for every page and every run length; saving a black & white TIFF writes G4 and others stay LZW; turning one in the Saved tab keeps it G4; Windows.Data.Pdf renders plain, PDF/A and added G4 pages pixel for pixel, read at three times their size), and the G4 cases of `PdfImageEncodingTests` (same cases as macOS). Checked by driving the view model's real save path with the two public-domain scans in black & white at every size, at 300 and 600 dpi, as PDF/A, with a password, added to an existing PDF and as TIFF: the image is the planned 1-bit G4 image, PdfPig decodes exactly the stored pixels, Windows.Data.Pdf renders it as it renders the same pixels in a quality-100 gray JPEG (it resamples large page images whatever their encoding), WIC decodes the TIFFs exactly; sizes in [PDF size](#pdf-size). **Not run:** veraPDF on a black & white PDF/A file here (CI validates the new `pdfa-black-and-white.pdf` sample) and qpdf (neither is installed here). **The Mac** stores black & white pages as gray JPEGs and writes LZW TIFFs until its port of the PDF writer |
 | One row per scanner (`DeviceMerge`, connection chooser) | Matching rules, ranking and the saved choice are covered by `DeviceMergeTests` (same table as macOS) and were checked by driving the view model with fake WIA and TWAIN backends: one row, WIA preferred, a later-appearing better connection taken over once the running scan ends, the user's choice saved and used at the next start, a choice made during a scan applied after it. A saved choice is keyed by the eSCL UUID or the model name, whichever the current set of connections yields, so it lapses when that set changes (see above). **Unverified with real drivers:** the names real WIA, eSCL and TWAIN drivers report; `devices.txt` collects them |
 | TWAIN backend (`Scanning/Twain`) | **Experimental, untested against hardware** — see [TWAIN](#twain) below. The scan logic in Core (negotiation choices, the acquisition state machine, strip and bitmap conversion, paper sizes, error mapping, 32-bit driver detection) is covered by `TwainScanLoopTests`, `TwainRasterTests` and `TwainScanRequestsTests` through a fake transport. Driving the view model with the real session class over a scripted transport checked flatbed, feeder, preview, empty feeder, a jam after two sheets (pages kept, reason shown), cancel while the driver is silent (returns at once, the source is reset and disabled in the background), switching away (the source is closed without waiting), the driver-window switch and its saved choice (kept when connecting finds the scanner off), a driver stuck while enabling (reported after the start limit, the next scan refused at once, the late scan stopped when the driver answers), and that a scanner only TWAIN lists is never opened unless the user picks it. On a PC without a TWAIN Data Source Manager the backend lists nothing and `devices.txt` says why; the app starts normally. **Unverified:** real drivers, NTwain's message loop with them, the TWAIN Working Group sample source (not installed here) |
 | Two-sided scanning and paper size (`DocumentSides`, `PaperSize`) | Covered by `DocumentSidesTests`, `PaperSizeTests` and the sides cases of `ModelsCompatTests`, `ScanTaskTests`, `SettingsAdapterTests` and `MockScannerTests` (same cases as macOS), plus the backend requests in `EsclTests`, `TwainScanRequestsTests` and `WiaErrorsTests`. Checked by driving the view model with the demo scanner (both sides in one pass on the long and the short edge, a jam keeping one sheet's two sides, turning over by hand with matching counts, a mismatch, scanning the backs again, combining anyway, keeping the fronts, a jam during the fronts (the steps stay at the fronts, the rest of them scanned as fronts, Done with fronts), a stack scanned in parts (Scan more fronts), a scanner whose capabilities could not be read on connect asked for both sides by a one-sided feeder (pages kept one-sided, capabilities read after the scan), earlier pages keeping their place, the two-sided task on two-sided and one-sided feeders, paper sizes on the feeder and the glass, the saved PDFs' page counts) and by building the window without showing it: the Sides, Flip on and Paper size choices with their greyed-out items and reasons, the banner's two steps, Scan more fronts, Done with fronts and the mismatch choices, the side badges and the screen reader names in the page strip and the Two-sided document card, rendered off screen in light and dark. **Unverified:** real drivers (see [Two-sided scanning and paper size](#two-sided-scanning-and-paper-size)) |
@@ -1041,6 +1079,12 @@ Known divergences from the macOS app (all documented in the source):
   from CoreGraphics, encodes the same plan with ImageIO and draws a JPEG-backed image, which
   CoreGraphics is expected to store unchanged; this, and the resulting file sizes, still need
   checking on a Mac (the Swift tests check the plan, the JPEGs and the size order).
+- Black & white pages: the plan is the same on both platforms (CCITT G4 up to 600 dpi at
+  Standard, 300 dpi at Compact and Smallest), but only Windows writes G4 (`CcittG4Encoder`,
+  `Bilevel`, `BilevelTiff`, which have no Swift twin yet). The Mac stores a page planned as G4 as
+  a gray JPEG, planned as a gray page is, so its black & white PDFs are as before, and writes its
+  black & white TIFFs as LZW; both change with the Mac's port of the PDF writer, which must give
+  the same G4 bytes (the golden values in `CcittG4EncoderTests`).
 
 ## TWAIN
 

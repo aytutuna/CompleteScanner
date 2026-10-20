@@ -195,7 +195,7 @@ extension AppState {
             guard let self, !self.isBusy, let image else { return }
             guard (side == .front ? self.idCardFront?.id : self.idCardBack?.id) == photo.id else { return }
             var updated = DetectedPhoto(region: region, image: image, dpi: photo.dpi,
-                                        id: photo.id, sourcePageID: photo.sourcePageID)
+                                        id: photo.id, sourcePageID: photo.sourcePageID, colorMode: photo.colorMode)
             updated.rotationQuarterTurns = (side == .front ? self.idCardFront : self.idCardBack)?.rotationQuarterTurns ?? 0
             self.setIdCardSide(side, photo: updated, note: nil)
             self.statusMessage = "Crop updated."
@@ -223,6 +223,8 @@ extension AppState {
         guard let paperInches = PaperSizes.inches(paper) else { return }
         // The page at the scan's resolution, at most 600 dpi; each side's own image keeps the scan's.
         let pageDPI = IdCardComposer.pageDPI(front.dpi)
+        // The sides are what they were scanned as, whatever the color mode is now.
+        let pageMode = IdCardComposer.pageColorMode(front: front.colorMode, back: back?.colorMode)
         runExclusive { flag in
             self.statusMessage = "Saving the ID card\u{2026}"
             let composed: (page: CGImage, front: IdCardSide, back: IdCardSide?)? = await Task.detached(priority: .userInitiated) { () -> (page: CGImage, front: IdCardSide, back: IdCardSide?)? in
@@ -241,7 +243,7 @@ extension AppState {
                 let url: URL
                 if pageFormat == .pdf {
                     url = try self.outputURL(fileExtension: "pdf")
-                    let page = ScannedPage(image: composed.page, dpi: pageDPI, colorMode: s.colorMode)
+                    let page = ScannedPage(image: composed.page, dpi: pageDPI, colorMode: pageMode)
                     try await Task.detached(priority: .userInitiated) {
                         try AppState.writePDFAtomically(pages: [page], searchable: s.pdfSearchable,
                                                         languages: s.ocrLanguages, pdfSize: s.output.pdfSize, to: url,

@@ -200,10 +200,10 @@ public static class ModelLabels
     /// <summary>One line saying what the size does, shown under the size picker.</summary>
     public static string Hint(this PdfSizePreset preset) => preset switch
     {
-        PdfSizePreset.Standard => "Up to 300 dpi, gray pages saved in gray. For most documents.",
+        PdfSizePreset.Standard => "Up to 300 dpi (black & white 600), gray pages saved in gray. For most documents.",
         PdfSizePreset.Best => "Full resolution, high quality. Largest files.",
-        PdfSizePreset.Compact => "Up to 200 dpi, more compression. For email and uploads.",
-        PdfSizePreset.Smallest => "Up to 150 dpi, most compression. For strict size limits.",
+        PdfSizePreset.Compact => "Up to 200 dpi (black & white 300), more compression. For email and uploads.",
+        PdfSizePreset.Smallest => "Up to 150 dpi (black & white 300), most compression. For strict size limits.",
         _ => "",
     };
 
@@ -1206,27 +1206,33 @@ public sealed class DetectedPhoto
     /// produces photos from several pages, and manual re-cropping must use the right one.
     /// </summary>
     public Guid? SourcePageId { get; }
+    /// <summary>
+    /// The color mode of the scan the photo was cut from (its <see cref="ScannedPage.ColorMode"/>):
+    /// what its pixels are, whatever the setting is when it is saved.
+    /// </summary>
+    public ColorMode ColorMode { get; }
     public bool Included { get; set; } = true;
     /// <summary>Extra user-requested rotation applied at save time (0...3 quarter turns clockwise).</summary>
     public int RotationQuarterTurns { get; set; } = 0;
 
     public DetectedPhoto(DetectedPhotoRegion region, RgbaImage image, int dpi, Guid? id = null,
-                         Guid? sourcePageId = null)
+                         Guid? sourcePageId = null, ColorMode colorMode = ColorMode.Color)
     {
         Id = id ?? Guid.NewGuid();
         Region = region;
         Image = image;
         Dpi = dpi;
         SourcePageId = sourcePageId;
+        ColorMode = colorMode;
     }
 
     /// <summary>
-    /// Manual crop correction: the same photo (id, source page, inclusion, rotation) with a
-    /// user-adjusted region and its re-extracted pixels (see
+    /// Manual crop correction: the same photo (id, source page, color mode, inclusion, rotation)
+    /// with a user-adjusted region and its re-extracted pixels (see
     /// <see cref="PhotoDetector.ExtractPhoto"/>). Port of AppState.recropPhoto(id:region:).
     /// </summary>
     public DetectedPhoto Recropped(DetectedPhotoRegion region, RgbaImage image) =>
-        new(region, image, Dpi, Id, SourcePageId)
+        new(region, image, Dpi, Id, SourcePageId, ColorMode)
         {
             Included = Included,
             RotationQuarterTurns = RotationQuarterTurns,

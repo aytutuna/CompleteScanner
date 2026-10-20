@@ -353,6 +353,17 @@ public static class IdCardComposer
     /// <summary>The resolution of the page for sides scanned at <paramref name="sideDpi"/>: theirs, at most <see cref="MaxPageDpi"/>.</summary>
     public static int PageDpi(int sideDpi) => Math.Clamp(sideDpi, 1, MaxPageDpi);
 
+    /// <summary>
+    /// The color mode of the page for sides scanned in <paramref name="front"/> and
+    /// <paramref name="back"/> (null: no back), which is what the page's pixels are: the sides'
+    /// mode when they agree, color when either is color, else grayscale (black &amp; white beside
+    /// gray). The color mode set when the card is saved does not count.
+    /// </summary>
+    public static ColorMode PageColorMode(ColorMode front, ColorMode? back) =>
+        back is not { } b || b == front ? front
+        : front == ColorMode.Color || b == ColorMode.Color ? ColorMode.Color
+        : ColorMode.Grayscale;
+
     /// <summary>The page in pixels: round(paper × dpi), for example 2550 × 3300 for Letter at 300 dpi.</summary>
     public static (int Width, int Height) CanvasSize(SizeD paperInches, int dpi) =>
         (Math.Max(1, Pixels(paperInches.Width, dpi)), Math.Max(1, Pixels(paperInches.Height, dpi)));

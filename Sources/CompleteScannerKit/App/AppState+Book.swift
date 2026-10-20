@@ -149,14 +149,17 @@ extension AppState {
             guard let page = self.scannedPages.first(where: { $0.id == id }), let spreadID = page.spreadID,
                   let source = self.spreadSources[spreadID] else { return }
             self.statusMessage = cut == nil ? "Joining the pages\u{2026}" : "Splitting the spread\u{2026}"
-            // The spread keeps the sheet and side its pages were given.
+            // The spread keeps the sheet and side its pages were given. Its pages are made with the
+            // current settings, color mode included: the adjustment step makes the pixels that mode
+            // says (black & white thresholded at the user's level); when it does not run (color, no
+            // adjustments) the pages are the spread as scanned, labelled color.
             let side = page.side
             let sheetIndex = page.sheetIndex
             let pages: [ScannedPage] = try await Task.detached(priority: .userInitiated) { () throws -> [ScannedPage] in
                 guard let image = Self.loadSpread(source) else {
                     throw ScanError.scanFailed("The spread could not be read.")
                 }
-                var spread = ScannedPage(image: image, dpi: source.dpi, colorMode: source.colorMode, id: spreadID,
+                var spread = ScannedPage(image: image, dpi: source.dpi, colorMode: s.colorMode, id: spreadID,
                                          createdAt: source.createdAt)
                 spread.side = side
                 spread.sheetIndex = sheetIndex

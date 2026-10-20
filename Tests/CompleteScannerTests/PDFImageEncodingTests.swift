@@ -6,9 +6,10 @@ import PDFKit
 // Mirrors windows/CompleteScanner.Core.Tests/PdfImageEncodingTests.cs: the same table and cases.
 // The Mac-only part at the end encodes pages with ImageIO and builds PDFs with CoreGraphics.
 
-/// "300 Color 0.80" — target dpi, kind and quality of one plan.
+/// "300 Color 0.80" — target dpi, kind (Color, Gray or G4) and quality of one plan.
 private func row(_ plan: PDFImagePlan) -> String {
-    "\(plan.targetDPI) \(plan.isGray ? "Gray" : "Color") \(String(format: "%.2f", plan.quality))"
+    let kind = plan.isBilevel ? "G4" : (plan.isGray ? "Gray" : "Color")
+    return "\(plan.targetDPI) \(kind) \(String(format: "%.2f", plan.quality))"
 }
 
 /// C# enum member names, so the table reads the same on both platforms. Not called `name`:
@@ -69,13 +70,17 @@ final class PDFImageEncodingTests: XCTestCase {
 
     func test_profiles_table() {
         XCTAssertEqual(PDFImageEncoding.profile(.best),
-                       PDFSizeProfile(maxDPI: nil, colorQuality: 0.90, grayQuality: 0.90, autoGray: false))
+                       PDFSizeProfile(maxDPI: nil, colorQuality: 0.90, grayQuality: 0.90, autoGray: false,
+                                      bilevelMaxDPI: nil))
         XCTAssertEqual(PDFImageEncoding.profile(.standard),
-                       PDFSizeProfile(maxDPI: 300, colorQuality: 0.80, grayQuality: 0.80, autoGray: true))
+                       PDFSizeProfile(maxDPI: 300, colorQuality: 0.80, grayQuality: 0.80, autoGray: true,
+                                      bilevelMaxDPI: 600))
         XCTAssertEqual(PDFImageEncoding.profile(.compact),
-                       PDFSizeProfile(maxDPI: 200, colorQuality: 0.65, grayQuality: 0.70, autoGray: true))
+                       PDFSizeProfile(maxDPI: 200, colorQuality: 0.65, grayQuality: 0.70, autoGray: true,
+                                      bilevelMaxDPI: 300))
         XCTAssertEqual(PDFImageEncoding.profile(.smallest),
-                       PDFSizeProfile(maxDPI: 150, colorQuality: 0.50, grayQuality: 0.55, autoGray: true))
+                       PDFSizeProfile(maxDPI: 150, colorQuality: 0.50, grayQuality: 0.55, autoGray: true,
+                                      bilevelMaxDPI: 300))
     }
 
     func test_displayOrder_largestFirst_everySizeOnce() {
@@ -84,6 +89,17 @@ final class PDFImageEncodingTests: XCTestCase {
         XCTAssertEqual(PDFSizePreset.displayOrder.map(\.label), ["Best", "Standard", "Compact", "Smallest"])
         for size in PDFSizePreset.displayOrder {
             XCTAssertFalse(size.hint.isEmpty)
+        }
+    }
+
+    func test_hint_namesTheSizesLimits() {
+        // The Mac stores black & white pages as gray JPEGs up to the gray limit until its port of the
+        // C# PDF writer, so its hint names that limit only; the Windows case also checks the black &
+        // white (G4) limit its hint names: "Up to 300 dpi (black & white 600), ...".
+        XCTAssertTrue(PDFSizePreset.best.hint.hasPrefix("Full resolution"))
+        for size in [PDFSizePreset.standard, .compact, .smallest] {
+            let maxDPI = PDFImageEncoding.profile(size).maxDPI ?? 0
+            XCTAssertTrue(size.hint.hasPrefix("Up to \(maxDPI) dpi, "), size.hint)
         }
     }
 
@@ -101,16 +117,16 @@ final class PDFImageEncodingTests: XCTestCase {
         XCTAssertEqual(rows, [
             "Best Color 150: 150 Color 0.90", "Best Color 300: 300 Color 0.90", "Best Color 600: 600 Color 0.90",
             "Best Grayscale 150: 150 Gray 0.90", "Best Grayscale 300: 300 Gray 0.90", "Best Grayscale 600: 600 Gray 0.90",
-            "Best BlackWhite 150: 150 Gray 0.90", "Best BlackWhite 300: 300 Gray 0.90", "Best BlackWhite 600: 600 Gray 0.90",
+            "Best BlackWhite 150: 150 G4 0.90", "Best BlackWhite 300: 300 G4 0.90", "Best BlackWhite 600: 600 G4 0.90",
             "Standard Color 150: 150 Color 0.80", "Standard Color 300: 300 Color 0.80", "Standard Color 600: 300 Color 0.80",
             "Standard Grayscale 150: 150 Gray 0.80", "Standard Grayscale 300: 300 Gray 0.80", "Standard Grayscale 600: 300 Gray 0.80",
-            "Standard BlackWhite 150: 150 Gray 0.80", "Standard BlackWhite 300: 300 Gray 0.80", "Standard BlackWhite 600: 300 Gray 0.80",
+            "Standard BlackWhite 150: 150 G4 0.80", "Standard BlackWhite 300: 300 G4 0.80", "Standard BlackWhite 600: 600 G4 0.80",
             "Compact Color 150: 150 Color 0.65", "Compact Color 300: 200 Color 0.65", "Compact Color 600: 200 Color 0.65",
             "Compact Grayscale 150: 150 Gray 0.70", "Compact Grayscale 300: 200 Gray 0.70", "Compact Grayscale 600: 200 Gray 0.70",
-            "Compact BlackWhite 150: 150 Gray 0.70", "Compact BlackWhite 300: 200 Gray 0.70", "Compact BlackWhite 600: 200 Gray 0.70",
+            "Compact BlackWhite 150: 150 G4 0.70", "Compact BlackWhite 300: 300 G4 0.70", "Compact BlackWhite 600: 300 G4 0.70",
             "Smallest Color 150: 150 Color 0.50", "Smallest Color 300: 150 Color 0.50", "Smallest Color 600: 150 Color 0.50",
             "Smallest Grayscale 150: 150 Gray 0.55", "Smallest Grayscale 300: 150 Gray 0.55", "Smallest Grayscale 600: 150 Gray 0.55",
-            "Smallest BlackWhite 150: 150 Gray 0.55", "Smallest BlackWhite 300: 150 Gray 0.55", "Smallest BlackWhite 600: 150 Gray 0.55",
+            "Smallest BlackWhite 150: 150 G4 0.55", "Smallest BlackWhite 300: 300 G4 0.55", "Smallest BlackWhite 600: 300 G4 0.55",
         ])
     }
 
@@ -154,6 +170,29 @@ final class PDFImageEncodingTests: XCTestCase {
         XCTAssertEqual(target(1200, .best), 1200)
         XCTAssertEqual(target(75, .smallest), 75)   // never upsampled
         XCTAssertEqual(target(0, .standard), 1)     // a page without a resolution
+    }
+
+    func test_plan_blackAndWhite_isG4_upToItsOwnLimit() {
+        func plan(_ dpi: Int, _ size: PDFSizePreset) -> PDFImagePlan {
+            PDFImageEncoding.plan(mode: .blackWhite, imageDPI: dpi, size: size, looksGray: false)
+        }
+        XCTAssertEqual(plan(660, .standard).targetDPI, 660)   // within 10 %
+        XCTAssertEqual(plan(661, .standard).targetDPI, 600)
+        XCTAssertEqual(plan(1200, .standard).targetDPI, 600)
+        XCTAssertEqual(plan(330, .compact).targetDPI, 330)
+        XCTAssertEqual(plan(331, .compact).targetDPI, 300)
+        XCTAssertEqual(plan(600, .smallest).targetDPI, 300)
+        XCTAssertEqual(plan(1200, .best).targetDPI, 1200)
+        XCTAssertEqual(plan(75, .smallest).targetDPI, 75)     // never upsampled
+        XCTAssertEqual(plan(0, .standard).targetDPI, 1)
+        for size in PDFSizePreset.displayOrder {
+            let planned = plan(300, size)
+            XCTAssertEqual(planned.kind, .bilevelG4)
+            XCTAssertTrue(planned.isBilevel && planned.isGray)
+            XCTAssertEqual(planned, PDFImageEncoding.plan(mode: .blackWhite, imageDPI: 300, size: size, looksGray: true))
+            XCTAssertFalse(PDFImageEncoding.plan(mode: .grayscale, imageDPI: 300, size: size, looksGray: false).isBilevel)
+            XCTAssertFalse(PDFImageEncoding.plan(mode: .color, imageDPI: 300, size: size, looksGray: true).isBilevel)
+        }
     }
 
     func test_plan_sizesShrinkInDisplayOrder() {
@@ -252,6 +291,13 @@ final class PDFImageEncodingTests: XCTestCase {
         let best = try XCTUnwrap(PDFImageEncoding.encodedPage(plain, imageDPI: 300, mode: .color,
                                                               size: .best))
         XCTAssertEqual(PDFImageEncoding.readJPEGHeader(best.jpegData), JPEGHeader(width: 300, height: 200, components: 3))
+
+        // A black & white page is planned as G4, which the Mac cannot write yet: it is stored as a
+        // gray JPEG, planned as a gray page is (300 dpi at Standard, not G4's 600).
+        let blackWhite = try XCTUnwrap(PDFImageEncoding.encodedPage(page, imageDPI: 600, mode: .blackWhite,
+                                                                    size: .standard))
+        XCTAssertEqual(blackWhite.plan, PDFImagePlan(targetDPI: 300, kind: .jpegGray, quality: 0.8))
+        XCTAssertEqual(PDFImageEncoding.readJPEGHeader(blackWhite.jpegData), JPEGHeader(width: 300, height: 200, components: 1))
     }
 
     func test_pdfSizesShrinkInOrder_andKeepThePageSize() throws {

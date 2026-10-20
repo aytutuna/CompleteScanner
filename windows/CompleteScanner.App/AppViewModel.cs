@@ -1479,7 +1479,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             token.ThrowIfCancellationRequested();
             if (PhotoDetector.ExtractPhoto(page.Image, region, s.PhotoAutoDeskew) is { } image)
             {
-                photos.Add(new DetectedPhoto(region, image, page.Dpi, sourcePageId: page.Id));
+                photos.Add(new DetectedPhoto(region, image, page.Dpi, sourcePageId: page.Id, colorMode: page.ColorMode));
             }
         }
         return photos;
@@ -1489,7 +1489,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     {
         double w = page.Image.Width, h = page.Image.Height;
         var region = new DetectedPhotoRegion(new PointD(w / 2, h / 2), new SizeD(w, h), 0);
-        return new DetectedPhoto(region, page.Image, page.Dpi, sourcePageId: page.Id);
+        return new DetectedPhoto(region, page.Image, page.Dpi, sourcePageId: page.Id, colorMode: page.ColorMode);
     }
 
     /// <summary>
@@ -1624,7 +1624,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                     token.ThrowIfCancellationRequested();
                     string path = OutputPath(s, s.Format.FileExtension());
                     saved.Add(await Task.Run(() =>
-                        WpfImageCodec.SaveAsNew(page.Image, path, s.Format, page.Dpi, s.JpegQuality)));
+                        WpfImageCodec.SaveAsNew(page.Image, path, s.Format, page.Dpi, s.JpegQuality, page.ColorMode)));
                 }
             }
             catch (Exception e) when (saved.Count > 0)
@@ -1680,7 +1680,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                         var image = photo.RotationQuarterTurns == 0
                             ? photo.Image
                             : ImagePipeline.Rotate(photo.Image, photo.RotationQuarterTurns);
-                        return WpfImageCodec.SaveAsNew(image, path, format, photo.Dpi, s.JpegQuality);
+                        // The mode the photo was scanned in: a black & white TIFF is G4.
+                        return WpfImageCodec.SaveAsNew(image, path, format, photo.Dpi, s.JpegQuality, photo.ColorMode);
                     }));
                 }
             });
@@ -2359,7 +2360,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             var pick = IdCardDetector.Detect(page.Image, page.Dpi, fallback);
             token.ThrowIfCancellationRequested();
             var image = IdCardDetector.Extract(page.Image, pick);
-            var photo = new DetectedPhoto(pick.Region, image, page.Dpi, sourcePageId: page.Id);
+            var photo = new DetectedPhoto(pick.Region, image, page.Dpi, sourcePageId: page.Id, colorMode: page.ColorMode);
             return (new PhotoItem(photo, WpfImageCodec.ToThumbnail(image, PhotoItem.ThumbnailMaxSide)), pick.Note);
         }, token);
         if (_switchGeneration != generation) return;
@@ -2640,6 +2641,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             NotifyAll();
             // The page at the scan's resolution, at most 600 dpi; each side's own image keeps the scan's.
             int dpi = IdCardComposer.PageDpi(frontPhoto.Dpi);
+            // The sides are what they were scanned as, whatever the color mode is now.
+            var pageMode = IdCardComposer.PageColorMode(frontPhoto.ColorMode, backPhoto?.ColorMode);
             var (front, back, page) = await Task.Run(() =>
             {
                 var f = IdCardSideOf(frontPhoto, frontTurns);
@@ -2651,25 +2654,25 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             {
                 if (pageFormat == OutputFormat.Pdf)
                 {
-                    saved.Add(await WritePdfAtomically([new ScannedPage(page, dpi, s.ColorMode)], s, OutputPath(s, "pdf"), token));
+                    saved.Add(await WritePdfAtomically([new ScannedPage(page, dpi, pageMode)], s, OutputPath(s, "pdf"), token));
                 }
                 else
                 {
                     string path = OutputPath(s, pageFormat.FileExtension());
-                    saved.Add(await Task.Run(() => WpfImageCodec.SaveAsNew(page, path, pageFormat, dpi, s.JpegQuality), token));
+                    saved.Add(await Task.Run(() => WpfImageCodec.SaveAsNew(page, path, pageFormat, dpi, s.JpegQuality, pageMode), token));
                 }
                 if (!s.TaskOptions.IdCardSaveSidesAsImages) return;
                 var sideFormat = OutputFormats.ImageFormatOrJpeg(s.Format);
                 string folder = Path.GetDirectoryName(saved[0])!;
                 string baseName = Path.GetFileNameWithoutExtension(saved[0]);
-                foreach (var (side, image) in back is null
-                             ? new[] { (PageSide.Front, front) }
-                             : new[] { (PageSide.Front, front), (PageSide.Back, back) })
+                foreach (var (side, image, mode) in back is null
+                             ? new[] { (PageSide.Front, front, frontPhoto.ColorMode) }
+                             : new[] { (PageSide.Front, front, frontPhoto.ColorMode), (PageSide.Back, back, backPhoto!.ColorMode) })
                 {
                     token.ThrowIfCancellationRequested();
                     string sidePath = NamingTemplate.UniquePath(folder, IdCardComposer.SideFileBase(baseName, side),
                                                                 sideFormat.FileExtension());
-                    saved.Add(await Task.Run(() => WpfImageCodec.SaveAsNew(image.Image, sidePath, sideFormat, image.Dpi, s.JpegQuality)));
+                    saved.Add(await Task.Run(() => WpfImageCodec.SaveAsNew(image.Image, sidePath, sideFormat, image.Dpi, s.JpegQuality, mode)));
                 }
             });
             MarkSaved(saved);
@@ -3061,7 +3064,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// The pages as a PDF stores them (<see cref="WritePdfAtomically"/>, and pages added to an
     /// existing PDF): each one read at full resolution with its rotation, read by OCR when the
     /// text layer or <paramref name="text"/> asks for it (unless <paramref name="knownLines"/> were
-    /// read beforehand), and JPEG-encoded as the PDF size plans it.
+    /// read beforehand), and encoded as the PDF size plans it (JPEG, or G4 for black &amp; white).
     /// </summary>
     private async Task<List<PdfPageInput>> PdfPageInputs(List<ScannedPage> pages, ScanSettings s, CancellationToken token,
                                                          PdfText? text = null,
@@ -3102,16 +3105,18 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                 }
             }
             // The PDF size decides how the page is stored (PdfImageEncoding): OCR above has
-            // read the full pixels; the stored image may be downsampled and gray. The page
-            // keeps its physical size either way.
-            byte[] jpeg = await Task.Run(() =>
+            // read the full pixels; the stored image may be downsampled and gray, and a black &
+            // white page is CCITT G4. The page keeps its physical size either way.
+            PdfImageData stored = await Task.Run(() =>
             {
                 int imageDpi = PdfImageEncoding.EffectiveDpi(image.Width, prepared.PixelWidth, page.Dpi);
                 var plan = PdfImageEncoding.Plan(page.ColorMode, imageDpi, s.Output.PdfSize, image);
-                var stored = PdfImageEncoding.Downsample(image, imageDpi, plan);
-                return WpfImageCodec.EncodeJpeg(stored, plan.TargetDpi, plan.Quality, plan.IsGray);
+                var pixels = PdfImageEncoding.Downsample(image, imageDpi, plan);
+                return plan.IsBilevel
+                    ? PdfCcittImage.Encode(pixels)
+                    : (PdfImageData)new PdfJpegImage(WpfImageCodec.EncodeJpeg(pixels, plan.TargetDpi, plan.Quality, plan.IsGray));
             }, token);
-            inputs.Add(new PdfPageInput(jpeg, prepared.PixelWidth, prepared.PixelHeight, page.Dpi,
+            inputs.Add(new PdfPageInput(stored, prepared.PixelWidth, prepared.PixelHeight, page.Dpi,
                                         s.PdfSearchable ? lines : null));
         }
         return inputs;

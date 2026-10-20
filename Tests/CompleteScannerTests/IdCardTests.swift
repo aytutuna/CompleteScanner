@@ -443,6 +443,26 @@ final class IdCardTests: XCTestCase {
         XCTAssertEqual(pixel(page, page.width / 2 - 320, 600 + 150), [255, 255, 255])
     }
 
+    func test_composer_pageColorMode_isWhatTheSidesWereScannedIn() {
+        for mode in ColorMode.allCases {
+            XCTAssertEqual(IdCardComposer.pageColorMode(front: mode, back: nil), mode)
+            XCTAssertEqual(IdCardComposer.pageColorMode(front: mode, back: mode), mode)
+        }
+        XCTAssertEqual(IdCardComposer.pageColorMode(front: .color, back: .blackWhite), .color)
+        XCTAssertEqual(IdCardComposer.pageColorMode(front: .grayscale, back: .color), .color)
+        XCTAssertEqual(IdCardComposer.pageColorMode(front: .blackWhite, back: .grayscale), .grayscale)
+        XCTAssertEqual(IdCardComposer.pageColorMode(front: .grayscale, back: .blackWhite), .grayscale)
+    }
+
+    func test_detectedPhoto_keepsTheColorModeItWasScannedIn() throws {
+        // C# also checks DetectedPhoto.Recropped; the Mac re-crops in AppState, passing the mode on.
+        let image = try XCTUnwrap(RgbaImage.filled(width: 4, height: 4, r: 255, g: 255, b: 255).makeCGImage())
+        let region = DetectedPhotoRegion(center: CGPoint(x: 2, y: 2), size: CGSize(width: 4, height: 4), angleDegrees: 0)
+        XCTAssertEqual(DetectedPhoto(region: region, image: image, dpi: 300).colorMode, .color)
+        let photo = DetectedPhoto(region: region, image: image, dpi: 300, sourcePageID: UUID(), colorMode: .blackWhite)
+        XCTAssertEqual(photo.colorMode, .blackWhite)
+    }
+
     func test_detect_findsTheCardOnABed_atItsRealSize() throws {
         // 300 dpi, 6.5 × 6.5 in of glass: a blue card turned 7°, a 1 in square and a 2.6 in square.
         let scan = bed(dpi: 300, widthInches: 6.5, heightInches: 6.5, [

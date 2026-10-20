@@ -150,6 +150,8 @@ public enum PDFSizePreset: String, Codable, CaseIterable, Identifiable, Sendable
     /// One line saying what the size does, shown under the size picker.
     public var hint: String {
         switch self {
+        // Windows names its higher black & white (CCITT G4) limits here too; the Mac stores black &
+        // white pages as gray JPEGs up to these limits until its port of the C# PDF writer.
         case .standard: return "Up to 300 dpi, gray pages saved in gray. For most documents."
         case .best: return "Full resolution, high quality. Largest files."
         case .compact: return "Up to 200 dpi, more compression. For email and uploads."
@@ -946,17 +948,21 @@ public struct DetectedPhoto: Identifiable {
     /// The scanned page this photo was extracted from — a multi-sheet (ADF) photo scan
     /// produces photos from several pages, and manual re-cropping must use the right one.
     public let sourcePageID: UUID?
+    /// The color mode of the scan the photo was cut from (its `ScannedPage.colorMode`): what its
+    /// pixels are, whatever the setting is when it is saved.
+    public let colorMode: ColorMode
     public var included: Bool = true
     /// Extra user-requested rotation applied at save time (0...3 quarter turns clockwise).
     public var rotationQuarterTurns: Int = 0
 
     public init(region: DetectedPhotoRegion, image: CGImage, dpi: Int, id: UUID = UUID(),
-                sourcePageID: UUID? = nil) {
+                sourcePageID: UUID? = nil, colorMode: ColorMode = .color) {
         self.id = id
         self.region = region
         self.image = image
         self.dpi = dpi
         self.sourcePageID = sourcePageID
+        self.colorMode = colorMode
     }
 }
 

@@ -109,13 +109,23 @@ public static class WpfImageCodec
     /// then move it to <paramref name="path"/> — or, when that name was taken meanwhile, to
     /// the next free " 2", " 3", … name. An existing file is never replaced, and a failed
     /// or interrupted write never leaves a truncated file under the final name.
-    /// Returns the path actually written.
+    /// Returns the path actually written. A black &amp; white page (<paramref name="colorMode"/>) saved
+    /// as TIFF is a 1-bit CCITT G4 file (<see cref="BilevelTiff"/>); everything else is written by WIC.
     /// </summary>
     public static string SaveAsNew(RgbaImage image, string path, OutputFormat format, int dpi,
-                                   double jpegQuality)
+                                   double jpegQuality, ColorMode colorMode = ColorMode.Color)
     {
-        var encoder = CreateEncoder(image, format, dpi, jpegQuality);
-        string tmp = WriteTempFile(path, encoder.Save);
+        Action<Stream> write;
+        if (BilevelTiff.Applies(format, colorMode))
+        {
+            byte[] tiff = BilevelTiff.Make(image, dpi);
+            write = stream => stream.Write(tiff);
+        }
+        else
+        {
+            write = CreateEncoder(image, format, dpi, jpegQuality).Save;
+        }
+        string tmp = WriteTempFile(path, write);
         try
         {
             string written = NamingTemplate.MoveToFreePath(tmp, path);

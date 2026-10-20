@@ -322,6 +322,8 @@ public static class SavedFiles
                     QualityLevel = Math.Clamp((int)Math.Round(quality * 100), 1, 100),
                 },
                 OutputFormat.Png => new PngBitmapEncoder(),
+                // A black & white TIFF (the app writes them as CCITT G4) stays G4.
+                _ when rotated.Format == PixelFormats.BlackWhite => new TiffBitmapEncoder { Compression = TiffCompressOption.Ccitt4 },
                 _ => new TiffBitmapEncoder { Compression = TiffCompressOption.Lzw },
             };
             encoder.Frames.Add(BitmapFrame.Create(rotated));

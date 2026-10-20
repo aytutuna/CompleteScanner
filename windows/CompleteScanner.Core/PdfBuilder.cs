@@ -4,13 +4,38 @@ using System.Text;
 
 namespace CompleteScanner.Core;
 
+/// <summary>
+/// A page image as a PDF stores it: a JPEG (<see cref="PdfJpegImage"/>) or CCITT G4 data
+/// (<see cref="PdfCcittImage"/>). The image may be smaller than the page (a downsampled image,
+/// or a preview used when the full-resolution spool file is missing); it is stretched across it.
+/// </summary>
+/// <param name="Data">The stored bytes.</param>
+public abstract record PdfImageData(byte[] Data);
+
+/// <summary>
+/// A JPEG, embedded with /DCTDecode. Its dimensions and color space are read from the JPEG
+/// itself; a one-component JPEG is embedded as /DeviceGray, anything else as /DeviceRGB.
+/// </summary>
+public sealed record PdfJpegImage(byte[] Data) : PdfImageData(Data);
+
+/// <summary>
+/// A black &amp; white image as CCITT G4 data (<see cref="CcittG4Encoder"/>), embedded as a 1-bit
+/// /DeviceGray image with /CCITTFaxDecode (/K -1, /BlackIs1 false: black pixels decode to 0).
+/// </summary>
+/// <param name="Width">Image width in pixels (/Columns).</param>
+/// <param name="Height">Image height in pixels (/Rows).</param>
+public sealed record PdfCcittImage(byte[] Data, int Width, int Height) : PdfImageData(Data)
+{
+    /// <summary>
+    /// The page encoded as G4, black where its luma is below <see cref="Bilevel.Threshold"/>
+    /// (<see cref="Bilevel.Pack(RgbaImage)"/>).
+    /// </summary>
+    public static PdfCcittImage Encode(RgbaImage image) =>
+        new(CcittG4Encoder.Encode(image), image.Width, image.Height);
+}
+
 /// <summary>One page to be written into a PDF.</summary>
-/// <param name="JpegData">
-/// JPEG bytes for the page image (embedded via DCTDecode). The image XObject's dimensions
-/// and color space are read from the JPEG itself, so it may be smaller than the page (a
-/// downsampled image, or a preview used when the full-resolution spool file is missing) and
-/// is stretched across the page; a one-component JPEG is embedded as /DeviceGray.
-/// </param>
+/// <param name="Image">The page image (see <see cref="PdfImageData"/>).</param>
 /// <param name="PixelWidth">Full-resolution page width in pixels (sizes the media box).</param>
 /// <param name="PixelHeight">Full-resolution page height in pixels (sizes the media box).</param>
 /// <param name="Dpi">Scan resolution; the PDF page is sized pixels / dpi × 72 points.</param>
@@ -18,8 +43,18 @@ namespace CompleteScanner.Core;
 /// Recognized text to embed as an invisible selectable layer, or null for a plain image page.
 /// Bounding boxes are normalized with a BOTTOM-LEFT origin (see <see cref="OcrLine"/>).
 /// </param>
-public sealed record PdfPageInput(byte[] JpegData, int PixelWidth, int PixelHeight, int Dpi,
-                                  IReadOnlyList<OcrLine>? OcrLines);
+public sealed record PdfPageInput(PdfImageData Image, int PixelWidth, int PixelHeight, int Dpi,
+                                  IReadOnlyList<OcrLine>? OcrLines)
+{
+    /// <summary>A page whose image is the JPEG <paramref name="jpegData"/> (<see cref="PdfJpegImage"/>).</summary>
+    public PdfPageInput(byte[] jpegData, int pixelWidth, int pixelHeight, int dpi, IReadOnlyList<OcrLine>? ocrLines)
+        : this(new PdfJpegImage(jpegData), pixelWidth, pixelHeight, dpi, ocrLines)
+    {
+    }
+
+    /// <summary>The stored image bytes: the JPEG of a JPEG page, the G4 data of a CCITT page.</summary>
+    public byte[] JpegData => Image.Data;
+}
 
 /// <summary>
 /// Minimal, dependency-free PDF writer for scanned pages (the macOS app draws its PDFs with
@@ -27,8 +62,9 @@ public sealed record PdfPageInput(byte[] JpegData, int PixelWidth, int PixelHeig
 /// of this writer). It writes PDF 1.4, PDF/A-2b for keeping, or a PDF 1.7 file that opens only
 /// with a password (AES-256), as <see cref="PdfWriteOptions"/> ask.
 ///
-/// Each page carries one full-page JPEG XObject (/DeviceRGB, or /DeviceGray for a
-/// one-component JPEG); when OCR lines are provided they are drawn with text rendering mode 3
+/// Each page carries one full-page image XObject: a JPEG (/DeviceRGB, or /DeviceGray for a
+/// one-component JPEG) or, for black &amp; white pages, a 1-bit /DeviceGray CCITT G4 image
+/// (<see cref="PdfCcittImage"/>); when OCR lines are provided they are drawn with text rendering mode 3
 /// (invisible) in the embedded <see cref="GlyphlessFont"/>, horizontally scaled (Tz) so each
 /// line's selectable text spans the same width as the printed words. The text is written as
 /// UTF-16 code units, so every script survives: selecting, searching and copying give back
@@ -312,23 +348,36 @@ public static class PdfBuilder
             $"/Resources <</XObject <</Im{index} {imageObject} 0 R>>{fontResource}>> " +
             $"/Contents {contentsObject} 0 R{extraEntries}>>");
 
-        // The XObject must declare the JPEG's own dimensions, which differ from the page's
-        // pixel size when only a preview was available; the content stream's cm scales
-        // the unit-square image onto the full media box either way.
-        // A gray JPEG (one component) must be declared /DeviceGray; anything unreadable
-        // keeps the earlier assumption of an RGB image the size of the page.
-        if (!TryReadJpegHeader(page.JpegData, out int imageWidth, out int imageHeight, out int components))
+        // The XObject must declare the image's own dimensions, which differ from the page's
+        // pixel size when only a preview was available or the image was downsampled; the
+        // content stream's cm scales the unit-square image onto the full media box either way.
+        w.WriteStream(imageObject, ImageEntries(page), page.Image.Data);
+
+        w.WriteStream(contentsObject, "", BuildContentStream(index, widthPts, heightPts, page.OcrLines, codes));
+    }
+
+    /// <summary>
+    /// The image XObject's dictionary entries (before /Length). A JPEG declares its own frame
+    /// size, and /DeviceGray when it has one component; one that cannot be read keeps the
+    /// earlier assumption of an RGB image the size of the page. G4 data is a 1-bit gray image.
+    /// </summary>
+    internal static string ImageEntries(PdfPageInput page)
+    {
+        if (page.Image is PdfCcittImage g4)
+        {
+            return $"/Type /XObject /Subtype /Image /Width {g4.Width} /Height {g4.Height} " +
+                   "/ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /CCITTFaxDecode " +
+                   $"/DecodeParms <</K -1 /Columns {g4.Width} /Rows {g4.Height} /BlackIs1 false>>";
+        }
+        if (!TryReadJpegHeader(page.Image.Data, out int imageWidth, out int imageHeight, out int components))
         {
             imageWidth = page.PixelWidth;
             imageHeight = page.PixelHeight;
             components = 3;
         }
         string colorSpace = components == 1 ? "/DeviceGray" : "/DeviceRGB";
-        w.WriteStream(imageObject,
-            $"/Type /XObject /Subtype /Image /Width {imageWidth} /Height {imageHeight} " +
-            $"/ColorSpace {colorSpace} /BitsPerComponent 8 /Filter /DCTDecode", page.JpegData);
-
-        w.WriteStream(contentsObject, "", BuildContentStream(index, widthPts, heightPts, page.OcrLines, codes));
+        return $"/Type /XObject /Subtype /Image /Width {imageWidth} /Height {imageHeight} " +
+               $"/ColorSpace {colorSpace} /BitsPerComponent 8 /Filter /DCTDecode";
     }
 
     /// <summary>

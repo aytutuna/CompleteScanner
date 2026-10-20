@@ -366,6 +366,15 @@ public enum IdCardComposer {
         min(max(sideDPI, 1), maxPageDPI)
     }
 
+    /// The color mode of the page for sides scanned in `front` and `back` (nil: no back), which is what
+    /// the page's pixels are: the sides' mode when they agree, color when either is color, else
+    /// grayscale (black & white beside gray). The color mode set when the card is saved does not count.
+    public static func pageColorMode(front: ColorMode, back: ColorMode?) -> ColorMode {
+        guard let back, back != front else { return front }
+        if front == .color || back == .color { return .color }
+        return .grayscale
+    }
+
     /// The page in pixels: round(paper × dpi), for example 2550 × 3300 for Letter at 300 dpi.
     public static func canvasSize(paperInches: CGSize, dpi: Int) -> (width: Int, height: Int) {
         (max(1, pixels(Double(paperInches.width), dpi: dpi)), max(1, pixels(Double(paperInches.height), dpi: dpi)))

@@ -472,6 +472,36 @@ public class IdCardTests
     }
 
     [Fact]
+    public void Composer_PageColorMode_IsWhatTheSidesWereScannedIn()
+    {
+        foreach (var mode in Enum.GetValues<ColorMode>())
+        {
+            Assert.Equal(mode, IdCardComposer.PageColorMode(mode, null));
+            Assert.Equal(mode, IdCardComposer.PageColorMode(mode, mode));
+        }
+        Assert.Equal(ColorMode.Color, IdCardComposer.PageColorMode(ColorMode.Color, ColorMode.BlackWhite));
+        Assert.Equal(ColorMode.Color, IdCardComposer.PageColorMode(ColorMode.Grayscale, ColorMode.Color));
+        Assert.Equal(ColorMode.Grayscale, IdCardComposer.PageColorMode(ColorMode.BlackWhite, ColorMode.Grayscale));
+        Assert.Equal(ColorMode.Grayscale, IdCardComposer.PageColorMode(ColorMode.Grayscale, ColorMode.BlackWhite));
+    }
+
+    [Fact]
+    public void DetectedPhoto_KeepsItsColorMode_WhenRecropped()
+    {
+        var image = RgbaImage.Filled(4, 4, 255, 255, 255);
+        var region = new DetectedPhotoRegion(new PointD(2, 2), new SizeD(4, 4), 0);
+        Assert.Equal(ColorMode.Color, new DetectedPhoto(region, image, 300).ColorMode);
+        var photo = new DetectedPhoto(region, image, 300, sourcePageId: Guid.NewGuid(), colorMode: ColorMode.BlackWhite)
+        {
+            RotationQuarterTurns = 1,
+        };
+        var recropped = photo.Recropped(new DetectedPhotoRegion(new PointD(1, 1), new SizeD(2, 2), 0), RgbaImage.Filled(2, 2, 0, 0, 0));
+        Assert.Equal(ColorMode.BlackWhite, recropped.ColorMode);
+        Assert.Equal(photo.SourcePageId, recropped.SourcePageId);
+        Assert.Equal(1, recropped.RotationQuarterTurns);
+    }
+
+    [Fact]
     public void Detect_FindsTheCardOnABed_AtItsRealSize()
     {
         // 300 dpi, 6.5 × 6.5 in of glass: a blue card turned 7°, a 1 in square and a 2.6 in square.

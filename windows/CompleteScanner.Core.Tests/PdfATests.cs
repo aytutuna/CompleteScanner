@@ -45,6 +45,13 @@ public class PdfATests
     private static PdfPageInput Page(IReadOnlyList<OcrLine>? lines = null) =>
         new(PdfBuilderTests.TinyJpeg, 2550, 3300, 300, lines); // US Letter at 300 dpi: 612 × 792 pt
 
+    /// <summary>The blank-page tests' text page in black &amp; white, as a G4 Letter page at 100 dpi.</summary>
+    private static PdfPageInput BlackAndWhitePage()
+    {
+        var page = ImagePipeline.Apply(new AdjustmentSettings(), TestPages.TextPage().ToRgba(), ColorMode.BlackWhite);
+        return new(PdfCcittImage.Encode(page), page.Width, page.Height, 100, ScriptLines());
+    }
+
     private static string Latin1(byte[] pdf) => Encoding.Latin1.GetString(pdf);
 
     // MARK: - Dates, strings, titles
@@ -410,6 +417,8 @@ public class PdfATests
             {
                 ("pdfa-text-layer.pdf", [Page(ScriptLines()), Page()], "Tapu belgesi — Çağrı"),
                 ("pdfa-image-only.pdf", [Page()], null),
+                // A black & white page: a 1-bit CCITT G4 image in /DeviceGray.
+                ("pdfa-black-and-white.pdf", [BlackAndWhitePage(), Page()], "Siyah beyaz"),
             };
             foreach (var (name, pages, title) in files)
             {

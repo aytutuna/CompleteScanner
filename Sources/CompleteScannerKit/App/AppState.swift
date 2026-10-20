@@ -794,7 +794,8 @@ public final class AppState: ObservableObject {
                     let pick = IdCardDetector.detect(page.image, dpi: page.dpi, fallback: fallback)
                     if flag.isCancelled { throw ScanError.cancelled }
                     let image = IdCardDetector.extract(page.image, pick: pick)
-                    return (DetectedPhoto(region: pick.region, image: image, dpi: page.dpi, sourcePageID: page.id),
+                    return (DetectedPhoto(region: pick.region, image: image, dpi: page.dpi, sourcePageID: page.id,
+                                          colorMode: page.colorMode),
                             pick.note)
                 }.value
                 guard self.switchGeneration == generation else { return }
@@ -842,7 +843,7 @@ public final class AppState: ObservableObject {
         guard !regions.isEmpty else { return [wholePagePhoto(page)] }
         return regions.compactMap { region in
             PhotoDetector.extractPhoto(from: page.image, region: region, deskew: s.photoAutoDeskew)
-                .map { DetectedPhoto(region: region, image: $0, dpi: page.dpi, sourcePageID: page.id) }
+                .map { DetectedPhoto(region: region, image: $0, dpi: page.dpi, sourcePageID: page.id, colorMode: page.colorMode) }
         }
     }
 
@@ -850,7 +851,8 @@ public final class AppState: ObservableObject {
         let w = CGFloat(page.image.width), h = CGFloat(page.image.height)
         let region = DetectedPhotoRegion(center: CGPoint(x: w / 2, y: h / 2),
                                          size: CGSize(width: w, height: h), angleDegrees: 0)
-        return DetectedPhoto(region: region, image: page.image, dpi: page.dpi, sourcePageID: page.id)
+        return DetectedPhoto(region: region, image: page.image, dpi: page.dpi, sourcePageID: page.id,
+                             colorMode: page.colorMode)
     }
 
     public func cancelScan() {
@@ -1074,7 +1076,7 @@ public final class AppState: ObservableObject {
                   let idx = self.detectedPhotos.firstIndex(where: { $0.id == id }) else { return }
             let old = self.detectedPhotos[idx]
             var updated = DetectedPhoto(region: region, image: image, dpi: old.dpi,
-                                        id: old.id, sourcePageID: old.sourcePageID)
+                                        id: old.id, sourcePageID: old.sourcePageID, colorMode: old.colorMode)
             updated.included = old.included
             updated.rotationQuarterTurns = old.rotationQuarterTurns
             self.detectedPhotos[idx] = updated

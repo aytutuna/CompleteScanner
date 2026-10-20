@@ -5,8 +5,11 @@ import UniformTypeIdentifiers
 
 // Twin of windows/CompleteScanner.Core/PdfImageEncoding.cs: the same table, the same rules and
 // the same rounding. The Mac part (`encodedPage`, `encodeJPEG`) has no C# counterpart: Windows
-// encodes with WIC in the app and embeds the JPEG through its own PDF writer, while the Mac
-// hands CoreGraphics a JPEG-backed image, which its PDF context stores as that JPEG.
+// encodes with WIC in the app (black & white pages as CCITT G4) and embeds the image through its
+// own PDF writer, while the Mac hands CoreGraphics a JPEG-backed image, which its PDF context
+// stores as that JPEG. The Mac has no G4 writer until its port of the C# PDF writer, so it stores
+// pages planned as G4 as gray JPEGs, planned as gray pages are (see CONTRACTS.md, "CCITT G4 for
+// black & white pages").
 
 /// How a page image is stored in the PDF.
 public enum PDFImageKind: Equatable, Sendable {
@@ -14,6 +17,9 @@ public enum PDFImageKind: Equatable, Sendable {
     case jpegColor
     /// A one-component JPEG (DeviceGray).
     case jpegGray
+    /// A 1-bit black & white image in CCITT G4 (DeviceGray, CCITTFaxDecode). Windows only for now:
+    /// the Mac stores these pages as gray JPEGs (`encodedPage`).
+    case bilevelG4
 }
 
 /// What one PDF size does.
@@ -27,12 +33,18 @@ public struct PDFSizeProfile: Equatable, Sendable {
     public let grayQuality: Double
     /// Pages scanned in color that have no color are stored as gray.
     public let autoGray: Bool
+    /// The limit for black & white pages, stored as CCITT G4 (with the same slack); nil keeps the
+    /// scan resolution. 1-bit pages need more pixels than gray ones to keep text smooth, and cost
+    /// far fewer bytes per pixel.
+    public let bilevelMaxDPI: Int?
 
-    public init(maxDPI: Int?, colorQuality: Double, grayQuality: Double, autoGray: Bool) {
+    public init(maxDPI: Int?, colorQuality: Double, grayQuality: Double, autoGray: Bool,
+                bilevelMaxDPI: Int? = nil) {
         self.maxDPI = maxDPI
         self.colorQuality = colorQuality
         self.grayQuality = grayQuality
         self.autoGray = autoGray
+        self.bilevelMaxDPI = bilevelMaxDPI
     }
 }
 
@@ -41,7 +53,8 @@ public struct PDFImagePlan: Equatable, Sendable {
     /// The resolution of the stored image (the page's own when it is not downsampled).
     public let targetDPI: Int
     public let kind: PDFImageKind
-    /// JPEG quality, 0...1.
+    /// JPEG quality, 0...1. For a G4 page, which is lossless, the size's gray quality: what a
+    /// writer without G4 would use for the page as a gray JPEG.
     public let quality: Double
 
     public init(targetDPI: Int, kind: PDFImageKind, quality: Double) {
@@ -50,7 +63,11 @@ public struct PDFImagePlan: Equatable, Sendable {
         self.quality = quality
     }
 
-    public var isGray: Bool { kind == .jpegGray }
+    /// The stored image has one gray component: a gray JPEG or a G4 page.
+    public var isGray: Bool { kind != .jpegColor }
+
+    /// The page is stored black & white, as CCITT G4.
+    public var isBilevel: Bool { kind == .bilevelG4 }
 }
 
 /// Size and component count (1 = gray, 3 = color) from a JPEG's frame header.
@@ -71,31 +88,48 @@ public struct PDFPageImage {
 
 /// The size presets of saved PDFs and the per-page plan they lead to: downsampling, gray
 /// storage and JPEG quality. The page size in the PDF never changes; only the stored image gets
-/// fewer pixels. Black & white pages are stored as gray JPEG (CCITT G4 is a later step).
+/// fewer pixels. Black & white pages are planned as CCITT G4 at every size (stored as gray JPEGs on
+/// the Mac until its port of the C# PDF writer).
 public enum PDFImageEncoding {
     /// A page is downsampled only when it is finer than this many times the size's limit.
     public static let downsampleSlack = 1.1
 
     /// The size table. The size alone sets the JPEG quality of PDF pages; the JPEG quality
     /// setting is for JPEG files. Best stores what Windows PDFs held before sizes existed: the
-    /// scan resolution at quality 0.9.
+    /// scan resolution at quality 0.9. Black & white pages keep up to 600 dpi at Standard and 300
+    /// dpi at Compact and Smallest.
     public static func profile(_ size: PDFSizePreset) -> PDFSizeProfile {
         switch size {
-        case .best: return PDFSizeProfile(maxDPI: nil, colorQuality: 0.90, grayQuality: 0.90, autoGray: false)
-        case .standard: return PDFSizeProfile(maxDPI: 300, colorQuality: 0.80, grayQuality: 0.80, autoGray: true)
-        case .compact: return PDFSizeProfile(maxDPI: 200, colorQuality: 0.65, grayQuality: 0.70, autoGray: true)
-        case .smallest: return PDFSizeProfile(maxDPI: 150, colorQuality: 0.50, grayQuality: 0.55, autoGray: true)
+        case .best:
+            return PDFSizeProfile(maxDPI: nil, colorQuality: 0.90, grayQuality: 0.90, autoGray: false,
+                                  bilevelMaxDPI: nil)
+        case .standard:
+            return PDFSizeProfile(maxDPI: 300, colorQuality: 0.80, grayQuality: 0.80, autoGray: true,
+                                  bilevelMaxDPI: 600)
+        case .compact:
+            return PDFSizeProfile(maxDPI: 200, colorQuality: 0.65, grayQuality: 0.70, autoGray: true,
+                                  bilevelMaxDPI: 300)
+        case .smallest:
+            return PDFSizeProfile(maxDPI: 150, colorQuality: 0.50, grayQuality: 0.55, autoGray: true,
+                                  bilevelMaxDPI: 300)
         }
     }
 
     /// How to store a page. `imageDPI` is the resolution of the pixels at hand (see
     /// `effectiveDPI`); `mode` is the page's own color mode; `looksGray` says whether a color
     /// page has no color (`ColorAnalysis.isEffectivelyGray`), and only counts for sizes with
-    /// `autoGray`.
+    /// `autoGray`. Black & white pages are G4 up to the size's `bilevelMaxDPI`.
     public static func plan(mode: ColorMode, imageDPI: Int, size: PDFSizePreset,
                             looksGray: Bool) -> PDFImagePlan {
         let sizeProfile = PDFImageEncoding.profile(size)
         let dpi = max(imageDPI, 1)
+        if mode == .blackWhite {
+            var bilevel = dpi
+            if let limit = sizeProfile.bilevelMaxDPI, Double(dpi) > downsampleSlack * Double(limit) {
+                bilevel = limit
+            }
+            return PDFImagePlan(targetDPI: bilevel, kind: .bilevelG4, quality: sizeProfile.grayQuality)
+        }
         var target = dpi
         if let maxDPI = sizeProfile.maxDPI, Double(dpi) > downsampleSlack * Double(maxDPI) {
             target = maxDPI
@@ -171,7 +205,9 @@ public enum PDFImageEncoding {
     /// The page as it goes into the PDF: planned (`plan(mode:...:image:)`), downsampled with the
     /// box filter, converted to gray when planned, JPEG-encoded at the planned quality and
     /// turned back into a JPEG-backed image. The pixels are read once. Nil when the image
-    /// cannot be read or encoded; the caller then draws the page as it is.
+    /// cannot be read or encoded; the caller then draws the page as it is. A page planned as G4
+    /// (black & white) is stored as a gray JPEG, planned as a gray page is, until the Mac's port
+    /// of the C# PDF writer brings G4; the returned plan is that gray plan.
     public static func encodedPage(_ image: CGImage, imageDPI: Int, mode: ColorMode,
                                    size: PDFSizePreset) -> PDFPageImage? {
         guard var rgba = ColorAnalysis.rgbaPixels(of: image) else { return nil }
@@ -179,7 +215,10 @@ public enum PDFImageEncoding {
         var height = image.height
         let looksGray = mode == .color && PDFImageEncoding.profile(size).autoGray
             && ColorAnalysis.isEffectivelyGray(rgba: rgba, width: width, height: height)
-        let pagePlan = PDFImageEncoding.plan(mode: mode, imageDPI: imageDPI, size: size, looksGray: looksGray)
+        var pagePlan = PDFImageEncoding.plan(mode: mode, imageDPI: imageDPI, size: size, looksGray: looksGray)
+        if pagePlan.isBilevel {
+            pagePlan = PDFImageEncoding.plan(mode: .grayscale, imageDPI: imageDPI, size: size, looksGray: true)
+        }
         let target = targetSize(width: width, height: height, imageDPI: imageDPI, targetDPI: pagePlan.targetDPI)
         if target.width != width || target.height != height {
             rgba = downsample(rgba: rgba, width: width, height: height, newWidth: target.width, newHeight: target.height)

@@ -42,8 +42,13 @@ scanners** — including the Epson Perfection V39 II.
   and presets; earlier versions always wrote full-resolution color JPEGs (choose Best for
   that). On the Mac each page is encoded as a JPEG with ImageIO and handed to the CoreGraphics
   PDF writer as a JPEG-backed image, which stores it unchanged; that the files come out as
-  small as on Windows still has to be confirmed on a Mac. Black & white pages are gray JPEGs
-  for now (no CCITT G4 yet).
+  small as on Windows still has to be confirmed on a Mac.
+- **Black & white as CCITT G4** (Windows for now): black & white pages are stored as lossless
+  1-bit CCITT Group 4 images, in every PDF (at every size, up to 600 dpi at Standard and 300 dpi
+  at Compact and Smallest; also PDF/A, password-protected and added pages) and in TIFF files
+  (compression 4, one page or several). A 300 dpi letter page is 33 KB instead of a 527 KB gray
+  JPEG at Standard. The encoder is the app's own code, with no library. The Mac stores black &
+  white pages as gray JPEGs and writes LZW TIFFs until it gets the Windows PDF writer's port.
 - **Archival PDF (PDF/A)** (Windows for now): a switch under the PDF size, and an **Archive
   document** task, save PDF/A-2b files for long-term keeping, with their color profile, fonts and
   description inside. On Windows the invisible text layer is now written in a small font

@@ -13,10 +13,10 @@ public class PdfImageEncodingTests
     [Fact]
     public void Profiles_Table()
     {
-        Assert.Equal(new PdfSizeProfile(null, 0.90, 0.90, false), PdfImageEncoding.Profile(PdfSizePreset.Best));
-        Assert.Equal(new PdfSizeProfile(300, 0.80, 0.80, true), PdfImageEncoding.Profile(PdfSizePreset.Standard));
-        Assert.Equal(new PdfSizeProfile(200, 0.65, 0.70, true), PdfImageEncoding.Profile(PdfSizePreset.Compact));
-        Assert.Equal(new PdfSizeProfile(150, 0.50, 0.55, true), PdfImageEncoding.Profile(PdfSizePreset.Smallest));
+        Assert.Equal(new PdfSizeProfile(null, 0.90, 0.90, false, null), PdfImageEncoding.Profile(PdfSizePreset.Best));
+        Assert.Equal(new PdfSizeProfile(300, 0.80, 0.80, true, 600), PdfImageEncoding.Profile(PdfSizePreset.Standard));
+        Assert.Equal(new PdfSizeProfile(200, 0.65, 0.70, true, 300), PdfImageEncoding.Profile(PdfSizePreset.Compact));
+        Assert.Equal(new PdfSizeProfile(150, 0.50, 0.55, true, 300), PdfImageEncoding.Profile(PdfSizePreset.Smallest));
     }
 
     [Fact]
@@ -29,9 +29,23 @@ public class PdfImageEncodingTests
         Assert.All(PdfSizePresets.DisplayOrder, p => Assert.False(string.IsNullOrWhiteSpace(p.Hint())));
     }
 
-    /// <summary>"300 Color 0.8" — target dpi, kind and quality of one plan.</summary>
+    [Fact]
+    public void Hint_NamesTheSizesLimits_BlackAndWhiteToo()
+    {
+        // Windows stores black & white pages as G4 up to their own limit, and the hint says so. The
+        // Mac's hint names the gray limit only (its black & white pages are gray JPEGs until the port
+        // of the C# PDF writer), so this case differs from the Swift one.
+        Assert.StartsWith("Full resolution", PdfSizePreset.Best.Hint());
+        foreach (var size in new[] { PdfSizePreset.Standard, PdfSizePreset.Compact, PdfSizePreset.Smallest })
+        {
+            var profile = PdfImageEncoding.Profile(size);
+            Assert.StartsWith($"Up to {profile.MaxDpi} dpi (black & white {profile.BilevelMaxDpi}), ", size.Hint());
+        }
+    }
+
+    /// <summary>"300 Color 0.80" — target dpi, kind (Color, Gray or G4) and quality of one plan.</summary>
     private static string Row(PdfImagePlan plan) =>
-        $"{plan.TargetDpi} {(plan.IsGray ? "Gray" : "Color")} {plan.Quality:0.00}";
+        $"{plan.TargetDpi} {(plan.IsBilevel ? "G4" : plan.IsGray ? "Gray" : "Color")} {plan.Quality:0.00}";
 
     [Fact]
     public void Plan_Table_SizeByModeByDpi()
@@ -52,16 +66,16 @@ public class PdfImageEncodingTests
             [
                 "Best Color 150: 150 Color 0.90", "Best Color 300: 300 Color 0.90", "Best Color 600: 600 Color 0.90",
                 "Best Grayscale 150: 150 Gray 0.90", "Best Grayscale 300: 300 Gray 0.90", "Best Grayscale 600: 600 Gray 0.90",
-                "Best BlackWhite 150: 150 Gray 0.90", "Best BlackWhite 300: 300 Gray 0.90", "Best BlackWhite 600: 600 Gray 0.90",
+                "Best BlackWhite 150: 150 G4 0.90", "Best BlackWhite 300: 300 G4 0.90", "Best BlackWhite 600: 600 G4 0.90",
                 "Standard Color 150: 150 Color 0.80", "Standard Color 300: 300 Color 0.80", "Standard Color 600: 300 Color 0.80",
                 "Standard Grayscale 150: 150 Gray 0.80", "Standard Grayscale 300: 300 Gray 0.80", "Standard Grayscale 600: 300 Gray 0.80",
-                "Standard BlackWhite 150: 150 Gray 0.80", "Standard BlackWhite 300: 300 Gray 0.80", "Standard BlackWhite 600: 300 Gray 0.80",
+                "Standard BlackWhite 150: 150 G4 0.80", "Standard BlackWhite 300: 300 G4 0.80", "Standard BlackWhite 600: 600 G4 0.80",
                 "Compact Color 150: 150 Color 0.65", "Compact Color 300: 200 Color 0.65", "Compact Color 600: 200 Color 0.65",
                 "Compact Grayscale 150: 150 Gray 0.70", "Compact Grayscale 300: 200 Gray 0.70", "Compact Grayscale 600: 200 Gray 0.70",
-                "Compact BlackWhite 150: 150 Gray 0.70", "Compact BlackWhite 300: 200 Gray 0.70", "Compact BlackWhite 600: 200 Gray 0.70",
+                "Compact BlackWhite 150: 150 G4 0.70", "Compact BlackWhite 300: 300 G4 0.70", "Compact BlackWhite 600: 300 G4 0.70",
                 "Smallest Color 150: 150 Color 0.50", "Smallest Color 300: 150 Color 0.50", "Smallest Color 600: 150 Color 0.50",
                 "Smallest Grayscale 150: 150 Gray 0.55", "Smallest Grayscale 300: 150 Gray 0.55", "Smallest Grayscale 600: 150 Gray 0.55",
-                "Smallest BlackWhite 150: 150 Gray 0.55", "Smallest BlackWhite 300: 150 Gray 0.55", "Smallest BlackWhite 600: 150 Gray 0.55",
+                "Smallest BlackWhite 150: 150 G4 0.55", "Smallest BlackWhite 300: 300 G4 0.55", "Smallest BlackWhite 600: 300 G4 0.55",
             ],
             rows);
     }
@@ -105,6 +119,30 @@ public class PdfImageEncodingTests
         Assert.Equal(1200, Target(1200, PdfSizePreset.Best));
         Assert.Equal(75, Target(75, PdfSizePreset.Smallest));   // never upsampled
         Assert.Equal(1, Target(0, PdfSizePreset.Standard));     // a page without a resolution
+    }
+
+    [Fact]
+    public void Plan_BlackAndWhite_IsG4_UpToItsOwnLimit()
+    {
+        PdfImagePlan Plan(int dpi, PdfSizePreset size) => PdfImageEncoding.Plan(ColorMode.BlackWhite, dpi, size, looksGray: false);
+        Assert.Equal(660, Plan(660, PdfSizePreset.Standard).TargetDpi);  // within 10 %
+        Assert.Equal(600, Plan(661, PdfSizePreset.Standard).TargetDpi);
+        Assert.Equal(600, Plan(1200, PdfSizePreset.Standard).TargetDpi);
+        Assert.Equal(330, Plan(330, PdfSizePreset.Compact).TargetDpi);
+        Assert.Equal(300, Plan(331, PdfSizePreset.Compact).TargetDpi);
+        Assert.Equal(300, Plan(600, PdfSizePreset.Smallest).TargetDpi);
+        Assert.Equal(1200, Plan(1200, PdfSizePreset.Best).TargetDpi);
+        Assert.Equal(75, Plan(75, PdfSizePreset.Smallest).TargetDpi);    // never upsampled
+        Assert.Equal(1, Plan(0, PdfSizePreset.Standard).TargetDpi);
+        foreach (var size in PdfSizePresets.DisplayOrder)
+        {
+            var plan = Plan(300, size);
+            Assert.Equal(PdfImageKind.BilevelG4, plan.Kind);
+            Assert.True(plan.IsBilevel && plan.IsGray);
+            Assert.Equal(plan, PdfImageEncoding.Plan(ColorMode.BlackWhite, 300, size, looksGray: true));
+            Assert.False(PdfImageEncoding.Plan(ColorMode.Grayscale, 300, size, false).IsBilevel);
+            Assert.False(PdfImageEncoding.Plan(ColorMode.Color, 300, size, true).IsBilevel);
+        }
     }
 
     [Fact]

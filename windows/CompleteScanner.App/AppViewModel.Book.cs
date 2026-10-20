@@ -166,8 +166,12 @@ public sealed partial class AppViewModel
             StatusMessage = cut is null ? "Joining the pages…" : "Splitting the spread…";
             NotifyAll();
             var image = await Task.Run(() => LoadSpread(source), token);
-            // The spread keeps the sheet and side its pages were given.
-            var spread = new ScannedPage(image, source.Dpi, source.ColorMode, spreadId, source.CreatedAt)
+            // The spread keeps the sheet and side its pages were given. Its pages are made with the
+            // current settings, color mode included: the adjustment step makes the pixels that mode
+            // says (black & white thresholded at the user's level); when it does not run (color, no
+            // adjustments) the pages are the spread as scanned, labelled color. A black & white spread
+            // the scanner sent unthresholded is never stored as G4 without the user's threshold.
+            var spread = new ScannedPage(image, source.Dpi, s.ColorMode, spreadId, source.CreatedAt)
             {
                 Side = clicked.Side,
                 SheetIndex = clicked.SheetIndex,
