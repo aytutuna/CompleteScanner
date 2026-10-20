@@ -352,6 +352,32 @@ public class OrientationTests
     }
 
     [Fact]
+    public void Step_DoesNotReadBarcodeSeparatorSheets_ButTurnsPagesACodeStartsADocumentWith()
+    {
+        var scorer = LikeALetter();
+        var split = new DocumentOptions { SplitMode = SplitMode.Barcode };
+        var sheet = Page(TextImage.RotatedQuarterTurns(2))
+            .WithBarcodes([new BarcodeReading(BarcodeSymbology.QrCode, "CS-SEP Lease", new RectD(10, 10, 20, 20))]);
+        Assert.Same(sheet, new OrientationStep(scorer, split: split).Apply(sheet));
+        Assert.Empty(scorer.Seen);
+        // Without the split's options, or under another split, the page is read.
+        Assert.Equal(new UprightTurn(2), new OrientationStep(LikeALetter()).Apply(sheet).Upright);
+        var patchSplit = new DocumentOptions { SplitMode = SplitMode.SeparatorSheet };
+        Assert.Equal(new UprightTurn(2), new OrientationStep(LikeALetter(), split: patchSplit).Apply(sheet).Upright);
+        // A code of the page's own (no separator code) is read.
+        var invoice = Page(TextImage.RotatedQuarterTurns(2))
+            .WithBarcodes([new BarcodeReading(BarcodeSymbology.Code128, "ORDER-4711", new RectD(10, 10, 20, 2))]);
+        Assert.Equal(new UprightTurn(2), new OrientationStep(LikeALetter(), split: split).Apply(invoice).Upright);
+        // A barcode starting a document keeps the page: it is turned upright.
+        var starts = new DocumentOptions { SplitMode = SplitMode.Barcode, BarcodeStartsDocument = true };
+        Assert.Equal(new UprightTurn(2), new OrientationStep(LikeALetter(), split: starts).Apply(sheet).Upright);
+        // The step keeps its own copy of the options.
+        var step = new OrientationStep(LikeALetter(), split: split);
+        split.BarcodeStartsDocument = true;
+        Assert.False(step.Split!.BarcodeStartsDocument);
+    }
+
+    [Fact]
     public void Step_PassesTheTokenOn()
     {
         using var cancelled = new CancellationTokenSource();

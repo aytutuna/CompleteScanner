@@ -115,6 +115,8 @@ public class PageProcessorTests
         Assert.Equal(["blank", "separator", "orientation"], processor.Steps.Select(step => step.Name));
         Assert.Same(scorer, ((OrientationStep)processor.Steps[2]).Scorer);
         Assert.Equal(OrientationDecision.MaxSecondsPerPage, ((OrientationStep)processor.Steps[2]).MaxSeconds);
+        // It knows the split, so barcode or QR separator sheets are not read (BarcodeSeparators.IsSeparatorPage).
+        Assert.Equal(s.Document, ((OrientationStep)processor.Steps[2]).Split);
         s.Document.AutoStraighten = true;
         s.Adjustments.Brightness = 0.25;
         Assert.Equal(["blank", "geometry", "separator", "orientation", "adjust"],

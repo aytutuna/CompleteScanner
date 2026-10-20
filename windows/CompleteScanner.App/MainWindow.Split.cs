@@ -8,7 +8,8 @@ using CompleteScanner.Core;
 namespace CompleteScanner.App;
 
 // Splitting a stack into documents (AppViewModel.Split.cs): the inspector's choice, the page
-// strip's gaps and dividers, naming a document, and saving or printing the separator sheet.
+// strip's gaps and dividers, naming a document, and saving or printing the separator sheet (Patch T,
+// or a QR code at barcode or QR sheets).
 public partial class MainWindow
 {
     /// <summary>The split choices (as the inspector lists them) and the sheets per document, 1 to 99.</summary>
@@ -44,6 +45,8 @@ public partial class MainWindow
                 SplitCountBox.ItemsSource = counts.Append(count).Order().ToList();
             }
             SplitCountBox.SelectedItem = count;
+            BarcodeStartsDocumentBox.IsChecked = s.Document.BarcodeStartsDocument;
+            if (QrSheetNameBox.Text != ViewModel.QrSheetName) QrSheetNameBox.Text = ViewModel.QrSheetName;
         }
         finally
         {
@@ -63,19 +66,38 @@ public partial class MainWindow
         SplitHint.Text = hint;
         SplitModeBox.ToolTip = hint;
         AutomationProperties.SetHelpText(SplitModeBox, hint);
+        // At barcode or QR sheets: the page with a code kept as its document's first page, or the
+        // sheet left out; then the name the QR separator sheet carries.
+        bool barcodes = collecting && s.Document.SplitMode == SplitMode.Barcode;
+        BarcodeOptions.Visibility = barcodes ? Visibility.Visible : Visibility.Collapsed;
+        BarcodeStartsDocumentBox.IsEnabled = !ViewModel.IsBusy;
+        string startsHint = BarcodeSeparators.StartsDocumentHint(s.Document.BarcodeStartsDocument, s.Document.SplitBarcodePrefix);
+        BarcodeStartsDocumentHint.Text = startsHint;
+        BarcodeStartsDocumentBox.ToolTip = startsHint;
+        AutomationProperties.SetHelpText(BarcodeStartsDocumentBox, startsHint);
+        bool qrSheets = barcodes && !s.Document.BarcodeStartsDocument;
+        QrSheetNameRow.Visibility = qrSheets ? Visibility.Visible : Visibility.Collapsed;
+        string nameHint = "The QR code holds this name and the document after the sheet is named by it ({label}). Leave it empty for a sheet that only splits.";
+        QrSheetNameBox.ToolTip = nameHint;
+        AutomationProperties.SetHelpText(QrSheetNameBox, nameHint);
         // The separator sheet: a PDF in the scans folder, to print on any printer; or printed at
         // once on the printer chosen for copies.
-        bool separators = collecting && s.Document.SplitMode == SplitMode.SeparatorSheet;
+        bool separators = (collecting && s.Document.SplitMode == SplitMode.SeparatorSheet) || qrSheets;
         var sheetPaper = SeparatorSheet.Paper(AppViewModel.RegionCode);
+        SaveSeparatorButton.Content = qrSheets ? "Save QR separator sheet (PDF)" : "Save separator sheet (PDF)";
+        PrintSeparatorButton.Content = qrSheets ? "Print QR separator sheet" : "Print separator sheet";
         SaveSeparatorButton.Visibility = separators ? Visibility.Visible : Visibility.Collapsed;
         SaveSeparatorButton.IsEnabled = !ViewModel.IsBusy;
-        string saveHint = $"Saves a Patch T separator sheet ({sheetPaper.Label()}) as a PDF in the scans folder. Print it at actual size (100%) on any printer.";
+        string saveHint = qrSheets
+            ? $"Saves a QR separator sheet ({sheetPaper.Label()}) carrying the name above as a PDF in the scans folder, to print on any printer."
+            : $"Saves a Patch T separator sheet ({sheetPaper.Label()}) as a PDF in the scans folder. Print it at actual size (100%) on any printer.";
         SaveSeparatorButton.ToolTip = saveHint;
         AutomationProperties.SetHelpText(SaveSeparatorButton, saveHint);
         PrintSeparatorButton.Visibility = separators ? Visibility.Visible : Visibility.Collapsed;
         PrintSeparatorButton.IsEnabled = ViewModel.HasPrinter && !ViewModel.IsBusy;
+        string sheetName = qrSheets ? "a QR separator sheet carrying the name above" : "a Patch T separator sheet";
         string printHint = ViewModel.HasPrinter
-            ? $"Prints a Patch T separator sheet at actual size on {ViewModel.CopyPrinterName ?? "the default printer"}, on the paper it has, with no print dialog. Print as many as you need."
+            ? $"Prints {sheetName} at actual size on {ViewModel.CopyPrinterName ?? "the default printer"}, on the paper it has, with no print dialog. Print as many as you need."
             : PrintText.NoPrinterReason + " Save the separator sheet as a PDF to print it elsewhere.";
         PrintSeparatorButton.ToolTip = printHint;
         AutomationProperties.SetHelpText(PrintSeparatorButton, printHint);
@@ -89,6 +111,21 @@ public partial class MainWindow
         ViewModel.SetSplitMode(mode);
         SyncSplitOptions();
         RefreshFromViewModel();
+    }
+
+    private void BarcodeStartsDocument_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_updatingUi || !IsLoaded) return;
+        ViewModel.SetBarcodeStartsDocument(BarcodeStartsDocumentBox.IsChecked == true);
+        SyncSplitOptions();
+        RefreshFromViewModel();
+    }
+
+    /// <summary>The name the next QR separator sheet carries, as typed.</summary>
+    private void QrSheetName_Changed(object sender, TextChangedEventArgs e)
+    {
+        if (_updatingUi || !IsLoaded) return;
+        ViewModel.QrSheetName = QrSheetNameBox.Text;
     }
 
     private void SplitCount_Changed(object sender, SelectionChangedEventArgs e)

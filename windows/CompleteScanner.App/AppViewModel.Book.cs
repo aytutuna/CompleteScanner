@@ -177,7 +177,7 @@ public sealed partial class AppViewModel
                 SheetIndex = clicked.SheetIndex,
             };
             var gutter = cut is { } c ? BookSplitter.Manual(c.Axis, c.Fraction, image.Width, image.Height) : null;
-            var processor = PageProcessor.ForScan(s, ScanArrangement.AsScanned, _orientation);
+            var processor = PageProcessor.ForScan(s, ScanArrangement.AsScanned, _orientation, _barcodes);
             var pages = await Task.Run(() => processor.ProcessSpread(spread, gutter, BookSplitOptions.Of(s), token).ToList(), token);
             string spoolDirectory = _spool.Directory;
             var spooled = await Task.Run(() => SpoolPages(pages, spoolDirectory).Select(p => new PageItem(p)).ToList());

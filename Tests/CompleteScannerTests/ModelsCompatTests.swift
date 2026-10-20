@@ -66,6 +66,8 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.document.autoRotate = true
     settings.document.splitFacingPages = true
     settings.document.softenSpineShadow = true
+    settings.document.barcodeStartsDocument = true
+    settings.document.splitBarcodePrefix = "DOC"
     settings.taskOptions.idCardPaper = .letter
     settings.taskOptions.idCardSaveSidesAsImages = true
     settings.taskOptions.copyCount = 3
@@ -129,8 +131,10 @@ private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
     .replacingOccurrences(
         of: "\"documentMultiPage\" : false",
         with: "\"document\" : {\n        \"autoCrop\" : true,\n        \"autoRotate\" : true,\n        \"autoStraighten\" : true,\n"
+            + "        \"barcodeStartsDocument\" : true,\n"
             + "        \"blankSensitivity\" : \"high\",\n        \"removeBlankPages\" : true,\n"
-            + "        \"softenSpineShadow\" : true,\n        \"splitFacingPages\" : true,\n"
+            + "        \"softenSpineShadow\" : true,\n        \"splitBarcodePrefix\" : \"DOC\",\n"
+            + "        \"splitFacingPages\" : true,\n"
             + "        \"splitMode\" : \"sheetCount\",\n        \"splitSheetCount\" : 3\n      },\n"
             + "      \"documentMultiPage\" : false")
     .replacingOccurrences(
@@ -726,9 +730,10 @@ final class ModelsCompatTests: XCTestCase {
     }
 
     func test_unknownOrCorruptSplit_fallsBackToOff_restIntact() throws {
-        // A mode of a newer version (barcodes), a wrong case, a number, a null: off; a corrupt count: 1.
+        // A mode of a newer version, a wrong case, a number, a null: off; a corrupt count: 1.
         for document in [
-            #""document": {"removeBlankPages": true, "splitMode": "barcode", "splitSheetCount": 4}"#,
+            #""document": {"removeBlankPages": true, "splitMode": "everyPage", "splitSheetCount": 4}"#,
+            #""document": {"removeBlankPages": true, "splitMode": "Barcode", "splitSheetCount": 4}"#,
             #""document": {"removeBlankPages": true, "splitMode": "SeparatorSheet", "splitSheetCount": 4}"#,
             #""document": {"removeBlankPages": true, "splitMode": 1, "splitSheetCount": 4}"#,
             #""document": {"removeBlankPages": true, "splitMode": null, "splitSheetCount": 4}"#,
@@ -760,20 +765,94 @@ final class ModelsCompatTests: XCTestCase {
             XCTAssertEqual(settings.document.splitMode, mode)
             XCTAssertEqual(settings.document.splitSheetCount, 7)
         }
-        let written = try [SplitMode.separatorSheet, .blankSheet, .sheetCount].map { mode -> String? in
+        let written = try [SplitMode.separatorSheet, .blankSheet, .sheetCount, .barcode].map { mode -> String? in
             var settings = ScanSettings()
             settings.document.splitMode = mode
             let document = try XCTUnwrap(jsonObject(encode(settings))["document"] as? [String: Any])
             return document["splitMode"] as? String
         }
-        XCTAssertEqual(written, ["separatorSheet", "blankSheet", "sheetCount"])
+        XCTAssertEqual(written, ["separatorSheet", "blankSheet", "sheetCount", "barcode"])
     }
 
     func test_splitLabelsAndHints() {
-        XCTAssertEqual(SplitMode.displayOrder.map(\.label), ["Off", "At separator sheets", "At blank sheets", "Every N sheets"])
+        XCTAssertEqual(SplitMode.displayOrder.map(\.label),
+                       ["Off", "At separator sheets", "At blank sheets", "Every N sheets", "At barcode or QR sheets"])
         for mode in SplitMode.displayOrder {
             XCTAssertFalse(mode.hint.trimmingCharacters(in: .whitespaces).isEmpty)
         }
+    }
+
+    // MARK: Barcode and QR separator sheets (CONTRACTS.md, rule 6)
+
+    func test_barcodeStartsDocument_isOffByDefault_andInFilesWithoutIt() throws {
+        XCTAssertFalse(ScanSettings().document.barcodeStartsDocument)
+        XCTAssertFalse(try decode([Preset].self, presetsJSONBeforePDFSize)[0].settings.document.barcodeStartsDocument)
+        // A "document" object written before it existed keeps its other settings, the barcode split too.
+        let older = try decode(ScanSettings.self, #"{"document": {"splitMode": "barcode", "softenSpineShadow": true}}"#)
+        XCTAssertEqual(older.document.splitMode, .barcode)
+        XCTAssertTrue(older.document.softenSpineShadow)
+        XCTAssertFalse(older.document.barcodeStartsDocument)
+        for value in ["null", #""yes""#, "1", "{}"] {
+            let settings = try decode(ScanSettings.self,
+                                      #"{"document": {"splitMode": "barcode", "barcodeStartsDocument": "# + value + #", "autoRotate": true}, "resolution": 150}"#)
+            XCTAssertFalse(settings.document.barcodeStartsDocument, value)
+            XCTAssertEqual(settings.document.splitMode, .barcode, value)
+            XCTAssertTrue(settings.document.autoRotate, value)
+            XCTAssertEqual(settings.resolution, 150)
+        }
+        XCTAssertTrue(try decode(ScanSettings.self, #"{"document": {"barcodeStartsDocument": true}}"#).document.barcodeStartsDocument)
+    }
+
+    func test_barcodeStartsDocument_roundTrips_andCopyIsIndependent() throws {
+        for starts in [false, true] {
+            var settings = ScanSettings()
+            settings.document.splitMode = .barcode
+            settings.document.barcodeStartsDocument = starts
+            let back = try JSONDecoder().decode(ScanSettings.self, from: encode(settings))
+            XCTAssertEqual(back.document.splitMode, .barcode)
+            XCTAssertEqual(back.document.barcodeStartsDocument, starts)
+            XCTAssertEqual(back.document, settings.document)
+        }
+        let original = nonDefaultSettings()
+        var copy = original
+        copy.document.barcodeStartsDocument = false
+        XCTAssertTrue(original.document.barcodeStartsDocument)
+        XCTAssertNotEqual(original.document, copy.document)
+    }
+
+    func test_splitBarcodePrefix_isCsSepByDefault_andInFilesWithoutIt() throws {
+        XCTAssertEqual(ScanSettings().document.splitBarcodePrefix, "CS-SEP")
+        XCTAssertEqual(try decode([Preset].self, presetsJSONBeforePDFSize)[0].settings.document.splitBarcodePrefix, "CS-SEP")
+        let older = try decode(ScanSettings.self, #"{"document": {"splitMode": "barcode", "barcodeStartsDocument": true}}"#)
+        XCTAssertEqual(older.document.splitMode, .barcode)
+        XCTAssertTrue(older.document.barcodeStartsDocument)
+        XCTAssertEqual(older.document.splitBarcodePrefix, "CS-SEP")
+        for value in ["null", "1", "true", "{}", "[]"] {
+            let settings = try decode(ScanSettings.self,
+                                      #"{"document": {"splitMode": "barcode", "splitBarcodePrefix": "# + value + #", "autoRotate": true}, "resolution": 150}"#)
+            XCTAssertEqual(settings.document.splitBarcodePrefix, "CS-SEP", value)
+            XCTAssertEqual(settings.document.splitMode, .barcode, value)
+            XCTAssertTrue(settings.document.autoRotate, value)
+            XCTAssertEqual(settings.resolution, 150)
+        }
+        // Any text is kept as written, an empty one too (every code makes a separator sheet).
+        XCTAssertEqual(try decode(ScanSettings.self, #"{"document": {"splitBarcodePrefix": " Doc: "}}"#).document.splitBarcodePrefix, " Doc: ")
+        XCTAssertEqual(try decode(ScanSettings.self, #"{"document": {"splitBarcodePrefix": ""}}"#).document.splitBarcodePrefix, "")
+    }
+
+    func test_splitBarcodePrefix_roundTrips_andCopyIsIndependent() throws {
+        for prefix in ["CS-SEP", "", "Fatura №"] {
+            var settings = ScanSettings()
+            settings.document.splitBarcodePrefix = prefix
+            let back = try JSONDecoder().decode(ScanSettings.self, from: encode(settings))
+            XCTAssertEqual(back.document.splitBarcodePrefix, prefix)
+            XCTAssertEqual(back.document, settings.document)
+        }
+        let original = nonDefaultSettings()
+        var copy = original
+        copy.document.splitBarcodePrefix = "OTHER"
+        XCTAssertEqual(original.document.splitBarcodePrefix, "DOC")
+        XCTAssertNotEqual(original.document, copy.document)
     }
 
     // MARK: Crop and straighten (CONTRACTS.md, rule 6)

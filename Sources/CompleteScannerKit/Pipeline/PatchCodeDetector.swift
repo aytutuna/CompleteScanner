@@ -301,8 +301,10 @@ public enum PatchCodeDetector {
         return GrayImage(width: w, height: h, pixels: pixels, dpi: d)
     }
 
-    private static func fillRect(_ pixels: inout [UInt8], _ w: Int, _ h: Int, _ x: Int, _ y: Int,
-                                 _ rw: Int, _ rh: Int, _ value: UInt8) {
+    /// Fills the rectangle at (`x`, `y`), `rw` × `rh` pixels, with `value`, clipped to the sheet. Also
+    /// used by the barcode sheets (`QrSeparatorSheet`, `Code39`).
+    static func fillRect(_ pixels: inout [UInt8], _ w: Int, _ h: Int, _ x: Int, _ y: Int,
+                         _ rw: Int, _ rh: Int, _ value: UInt8) {
         let y0 = max(0, y), y1 = min(h, y + rh)
         let x0 = max(0, x), x1 = min(w, x + rw)
         guard y0 < y1, x0 < x1 else { return }
@@ -313,7 +315,8 @@ public enum PatchCodeDetector {
 
     /// `text` in the sheet's 5 × 7 type, each dot `cell` pixels, a dot's space between letters,
     /// centred across the sheet with its top at `top`. Characters the type does not have are spaces.
-    private static func drawText(_ pixels: inout [UInt8], _ w: Int, _ h: Int, _ text: String, top: Int, cell: Int) {
+    /// Also used by the barcode sheets.
+    static func drawText(_ pixels: inout [UInt8], _ w: Int, _ h: Int, _ text: String, top: Int, cell: Int) {
         let characters = Array(text)
         let width = (characters.count * 6 - 1) * cell
         var x = (w - width) / 2
@@ -329,6 +332,9 @@ public enum PatchCodeDetector {
             x += 6 * cell
         }
     }
+
+    /// Whether the sheet's type has `c`.
+    static func hasGlyph(_ c: Character) -> Bool { glyphs[c] != nil }
 
     /// The sheet's type: 5 × 7 dots per character, rows top to bottom.
     private static let glyphs: [Character: String] = [
@@ -373,6 +379,16 @@ public enum PatchCodeDetector {
         ")": "01000001000001000010000100010001000",
         "%": "11000110010001000100010001001100011",
         "-": "00000000000000011111000000000000000",
+        "?": "01110100010000100010001000000000100",
+        ":": "00000011000110000000011000110000000",
+        "/": "00000000010001000100010001000000000",
+        "_": "00000000000000000000000000000011111",
+        "#": "01010010101111101010111110101001010",
+        "+": "00000001000010011111001000010000000",
+        ",": "00000000000000000000011000010001000",
+        "&": "01100100101010001000101011001001101",
+        "'": "01100001000100000000000000000000000",
+        "!": "00100001000010000100001000000000100",
     ]
 }
 

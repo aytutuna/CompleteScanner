@@ -421,6 +421,13 @@ public class DocumentSplitterTests
         var blankSheets = DocumentSplitter.Plan(pages, Options(SplitMode.BlankSheet));
         Assert.Equal("Blank separator sheet: a new document starts after it. It is not saved.",
                      DocumentSplitter.SeparatorNote(blankSheets, 2, pages[2]));
+        // Joined across the sheet: no document starts after it.
+        var joined = new List<ScannedPage>(pages);
+        joined[3] = pages[3].WithDocumentBreak(DocumentBreak.Join);
+        var joinedPlan = DocumentSplitter.Plan(joined, options);
+        Assert.Equal([[0, 3], [4]], Documents(joinedPlan));
+        Assert.Equal("Separator sheet (Patch 2): the pages after it are joined to the document before. It is not saved.",
+                     DocumentSplitter.SeparatorNote(joinedPlan, 1, joined[1]));
         // The strip's label.
         Assert.Equal("5 pages in queue, 3 documents, 1 separator page and 1 blank skipped", DocumentSplitter.QueueSummary(pages, options));
         Assert.Equal("5 pages in queue, 2 documents, 1 blank skipped",

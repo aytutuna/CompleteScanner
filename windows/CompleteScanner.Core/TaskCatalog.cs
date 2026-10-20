@@ -159,8 +159,10 @@ public static class TaskCatalog
     /// does the Copy task, whose PDF (when one is saved too) is a record of the paper copy. The
     /// Receipts task scans in grayscale (thermal print has no color) into Compact PDFs, named by
     /// the receipt's date. Only the Batch task splits the stack into documents (at separator
-    /// sheets, skipping blank pages); the others save one document. The sheets per document of
-    /// <see cref="SplitMode.SheetCount"/> are kept.
+    /// sheets, skipping blank pages); the others save one document; no task splits at barcode or QR
+    /// sheets. The sheets per document of <see cref="SplitMode.SheetCount"/>, whether a barcode starts a
+    /// document (<see cref="DocumentOptions.BarcodeStartsDocument"/>) and the separator codes' prefix
+    /// (<see cref="DocumentOptions.SplitBarcodePrefix"/>) are kept.
     /// </summary>
     public static ScanSettings Apply(ScanTask task, ScanSettings current)
     {
@@ -414,7 +416,8 @@ public static class TaskCatalog
     }
 
     /// <summary>
-    /// "Split at separator sheets", "Split at blank sheets", "Split every 3 sheets" for collected
+    /// "Split at separator sheets", "Split at blank sheets", "Split every 3 sheets", "Split at barcode
+    /// sheets" ("Split and named at barcodes" when a barcode starts its document) for collected
     /// document pages split into documents; null otherwise.
     /// </summary>
     private static string? SplitSummary(ScanSettings settings)
@@ -426,6 +429,7 @@ public static class TaskCatalog
             SplitMode.SeparatorSheet => "Split at separator sheets",
             SplitMode.BlankSheet => "Split at blank sheets",
             SplitMode.SheetCount => sheets == 1 ? "Split every sheet" : $"Split every {sheets} sheets",
+            SplitMode.Barcode => settings.Document.BarcodeStartsDocument ? "Split and named at barcodes" : "Split at barcode sheets",
             _ => null,
         };
     }

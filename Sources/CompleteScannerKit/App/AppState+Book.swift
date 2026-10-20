@@ -143,6 +143,7 @@ extension AppState {
         guard !isBusy, canEditSpread(id: id) else { return }
         let s = settings
         let scorer = orientationScorer
+        let barcodes = barcodeReader
         runExclusive { flag in
             // Turns and swaps clicked before must not land on pages about to be replaced.
             await self.pageEditChain?.value
@@ -164,7 +165,7 @@ extension AppState {
                 spread.side = side
                 spread.sheetIndex = sheetIndex
                 let gutter = cut.map { BookSplitter.manual($0.axis, fraction: $0.fraction, width: image.width, height: image.height) }
-                let processed = try PageProcessor.forScan(s, arrangement: .asScanned, scorer: scorer)
+                let processed = try PageProcessor.forScan(s, arrangement: .asScanned, scorer: scorer, barcodes: barcodes)
                     .processSpread(spread, cut: gutter, options: BookSplitOptions.of(s), shouldContinue: { !flag.isCancelled })
                 return Self.spoolPages(processed)
             }.value

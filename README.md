@@ -143,7 +143,16 @@ scanners** — including the Epson Perfection V39 II.
   prints one at once (a Patch T sheet, the standard patch code document scanners use; any patch
   code works, either way round, at a slant of a few degrees). Instead of separator sheets the stack
   can be split at empty sheets (with both sides scanned, only a sheet empty on both sides splits,
-  so the blank backs of one-sided pages do not) or every few sheets. Nothing is split behind your
+  so the blank backs of one-sided pages do not), every few sheets, or **at barcode or QR sheets**:
+  a sheet with a QR code, Code 128, Code 39 or Data Matrix code starting with `CS-SEP` is left out
+  and the rest of the code's text names the document after it (`{label}`); other codes, such as a
+  payment QR code on an invoice, are ignored. **Save QR separator sheet** and **Print QR separator
+  sheet** make such a sheet with the name you type, or with none for a sheet that only splits. With
+  **A barcode starts a new document and names it**, a page carrying its own code (an invoice, say)
+  is kept as the first page of a new document named after the code. Separator pages are not saved,
+  and saving clears them from the queue with the rest: keep a page in the strip if it was taken for
+  one by mistake. Codes are read with Vision on
+  the Mac (no library) and anywhere on the page, at a slant. Nothing is split behind your
   back: the page strip shows each document before saving, separator pages are marked and left
   out, one click on the gap between two pages starts a new document there or joins it to the one
   before, a separator page can be kept, and a document can be named (`{label}` in the file name).
@@ -192,7 +201,9 @@ scanners** — including the Epson Perfection V39 II.
   photo splitting and a document feeder with three two-sided sheets, which it scans one side or
   both; the second sheet's back is blank; for the ID card task a made-up sample card, which it
   turns over after each scan; for the Receipts task two made-up receipts with faded print and a
-  date each; for the Batch task a stack of seven sheets with two separator sheets in it) with no
+  date each; for the Batch task a stack of seven sheets with two separator sheets in it, patch-code
+  sheets or, split at barcode or QR sheets, Code 39 sheets saying "CS-SEP INVOICE 1002" and naming
+  the documents after them) with no
   hardware connected.
 
 ## Build & run

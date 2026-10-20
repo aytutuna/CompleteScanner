@@ -180,8 +180,9 @@ public enum TaskCatalog {
     /// indexed; neither does the Copy task, whose PDF (when one is saved too) is a record of the paper
     /// copy. The Receipts task scans in grayscale (thermal print has no color) into Compact PDFs, named
     /// by the receipt's date. Only the Batch task splits the stack into documents (at separator
-    /// sheets, skipping blank pages); the others save one document. The sheets per document of
-    /// `.sheetCount` are kept.
+    /// sheets, skipping blank pages); the others save one document; no task splits at barcode or QR
+    /// sheets. The sheets per document of `.sheetCount`, whether a barcode starts a document
+    /// (`barcodeStartsDocument`) and the separator codes' prefix (`splitBarcodePrefix`) are kept.
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings {
         var s = current
         s.source = .flatbed
@@ -384,7 +385,8 @@ public enum TaskCatalog {
         return settings.taskOptions.bookRightToLeft ? "Facing pages split, right to left" : "Facing pages split"
     }
 
-    /// "Split at separator sheets", "Split at blank sheets", "Split every 3 sheets" for collected
+    /// "Split at separator sheets", "Split at blank sheets", "Split every 3 sheets", "Split at barcode
+    /// sheets" ("Split and named at barcodes" when a barcode starts its document) for collected
     /// document pages split into documents; nil otherwise.
     private static func splitSummary(_ settings: ScanSettings) -> String? {
         guard settings.intent == .document, settings.documentMultiPage else { return nil }
@@ -393,6 +395,7 @@ public enum TaskCatalog {
         case .separatorSheet: return "Split at separator sheets"
         case .blankSheet: return "Split at blank sheets"
         case .sheetCount: return sheets == 1 ? "Split every sheet" : "Split every \(sheets) sheets"
+        case .barcode: return settings.document.barcodeStartsDocument ? "Split and named at barcodes" : "Split at barcode sheets"
         case .none: return nil
         }
     }

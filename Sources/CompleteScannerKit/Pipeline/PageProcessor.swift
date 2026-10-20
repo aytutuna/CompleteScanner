@@ -90,22 +90,60 @@ public struct SeparatorStep: PageStep {
     }
 }
 
+/// Reads the barcodes and QR codes on the page with `reader` (`BarcodeSeparators.readPage`) and records
+/// them, so the stack can be split at barcode or QR sheets and the documents named by them
+/// (`DocumentSplitter`). The pixels are not changed. A page the reader fails on stays unread
+/// (`ScannedPage.barcodes` nil). Runs after the separator check, before turning pages upright and the
+/// adjustments. Twin of C# `BarcodeStep`.
+public struct BarcodeStep: CancellablePageStep {
+    public let reader: any BarcodeReader
+    public var name: String { "barcode" }
+
+    public init(reader: any BarcodeReader) {
+        self.reader = reader
+    }
+
+    /// Reads the page with nothing to stop it (`ScanError.cancelled` cannot happen then).
+    public func apply(_ page: ScannedPage) -> ScannedPage {
+        (try? apply(page, shouldContinue: { true })) ?? page
+    }
+
+    public func apply(_ page: ScannedPage, shouldContinue: () -> Bool) throws -> ScannedPage {
+        guard shouldContinue() else { throw ScanError.cancelled }
+        do {
+            let found = try BarcodeSeparators.readPage(page, reader: reader)
+            return page.withBarcodes(found)
+        } catch ScanError.cancelled {
+            throw ScanError.cancelled
+        } catch {
+            // A reading that failed leaves the page as it was: no code is made up, none is lost.
+            return page
+        }
+    }
+}
+
 /// Turns the page upright when its text reads clearly better another way up
 /// (`OrientationDecision.check`, reading with `scorer`), recording the turn so one click undoes it
-/// (`ScannedPage.turnedUpright`). Blank pages and separator sheets are not read; a page the reading is
-/// not sure about, or that takes longer than `maxSeconds`, stays as it is. Runs after the separator
-/// check, before the adjustments, on the page as cropped and straightened. `clock` (seconds) is for
-/// tests. Twin of C# `OrientationStep`.
+/// (`ScannedPage.turnedUpright`). Blank pages and separator sheets are not read: patch-code sheets,
+/// and under `split` (the scan's document options) barcode or QR separator sheets
+/// (`BarcodeSeparators.isSeparatorPage`); a page the reading is not sure about, or that takes longer
+/// than `maxSeconds`, stays as it is. Runs after the separator and barcode checks, before the
+/// adjustments, on the page as cropped and straightened. `clock` (seconds) is for tests. Twin of C#
+/// `OrientationStep`.
 public struct OrientationStep: CancellablePageStep {
     public let scorer: any OrientationScorer
     public let maxSeconds: Double
+    /// The document options whose barcode or QR separator sheets are not read; nil: none are known.
+    public let split: DocumentOptions?
     private let clock: () -> Double
     public var name: String { "orientation" }
 
     public init(scorer: any OrientationScorer, maxSeconds: Double = OrientationDecision.maxSecondsPerPage,
-                clock: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime }) {
+                clock: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime },
+                split: DocumentOptions? = nil) {
         self.scorer = scorer
         self.maxSeconds = maxSeconds
+        self.split = split
         self.clock = clock
     }
 
@@ -116,6 +154,7 @@ public struct OrientationStep: CancellablePageStep {
 
     public func apply(_ page: ScannedPage, shouldContinue: () -> Bool) throws -> ScannedPage {
         if page.blank?.isBlank == true || page.patch != nil { return page }
+        if let split, BarcodeSeparators.isSeparatorPage(page, options: split) { return page }
         guard let pixels = RgbaImage(cgImage: page.image) else { return page }
         let check = try OrientationDecision.check(pixels, dpi: page.dpi, scorer: scorer, maxSeconds: maxSeconds,
                                                   clock: clock, shouldContinue: shouldContinue)
@@ -180,8 +219,8 @@ public struct ProcessedScan {
 /// pages are put in reading order with their sides (two-sided scans), each spread of an open book is
 /// cut into its two pages when facing pages are split (`book`), then every step runs on every page in
 /// order. The order of the steps is fixed: `forScan` builds them from the settings: blank check
-/// (document pages), crop and straighten, softening the spine's shadow, separator sheets, turning pages
-/// upright, then adjustments.
+/// (document pages), crop and straighten, softening the spine's shadow, separator sheets, barcodes,
+/// turning pages upright, then adjustments.
 /// Twin of C# `PageProcessor`.
 public struct PageProcessor {
     public let steps: [any PageStep]
@@ -202,12 +241,14 @@ public struct PageProcessor {
     /// document queue (whether or not blank pages are left out, so the page strip can flag them),
     /// crop and straighten when asked for those pages, softening the spine's shadow when asked for on split
     /// spreads (`softensSpineShadow`), the separator-sheet check for those pages
-    /// (whether or not the stack is split, so a split chosen later finds them), turning those pages
-    /// upright when asked for and `scorer` can read text, then the adjustments unless they change
-    /// nothing. Facing pages are split before the steps when asked for those pages
+    /// (whether or not the stack is split, so a split chosen later finds them), reading their barcodes
+    /// when the stack is split at barcode or QR sheets (`readsBarcodes`) and `barcodes` can read them,
+    /// turning those pages upright when asked for and `scorer` can read text, then the adjustments
+    /// unless they change nothing. Facing pages are split before the steps when asked for those pages
     /// (`splitsFacingPages`), so each page is checked, straightened and turned on its own.
     public static func forScan(_ settings: ScanSettings, arrangement: ScanArrangement = .asScanned,
-                               scorer: (any OrientationScorer)? = nil) -> PageProcessor {
+                               scorer: (any OrientationScorer)? = nil,
+                               barcodes: (any BarcodeReader)? = nil) -> PageProcessor {
         var steps: [any PageStep] = []
         if checksBlankPages(settings) {
             steps.append(BlankDetectionStep(options: BlankPageOptions(sensitivity: settings.document.blankSensitivity)))
@@ -221,8 +262,11 @@ public struct PageProcessor {
         if checksBlankPages(settings) {
             steps.append(SeparatorStep())
         }
+        if readsBarcodes(settings), let barcodes, barcodes.isAvailable {
+            steps.append(BarcodeStep(reader: barcodes))
+        }
         if turnsPagesUpright(settings), let scorer, scorer.isAvailable {
-            steps.append(OrientationStep(scorer: scorer))
+            steps.append(OrientationStep(scorer: scorer, split: settings.document))
         }
         if !(settings.adjustments.isIdentity && settings.colorMode == .color) {
             steps.append(AdjustmentStep(adjustments: settings.adjustments, colorMode: settings.colorMode))
@@ -243,6 +287,13 @@ public struct PageProcessor {
     /// scanned. Pages saved as soon as they are scanned are never changed unseen.
     public static func correctsGeometry(_ settings: ScanSettings) -> Bool {
         checksBlankPages(settings) && (settings.document.autoCrop || settings.document.autoStraighten)
+    }
+
+    /// Whether scans with these settings have their barcodes read: document pages collected in the
+    /// queue, split at barcode or QR sheets. Reading takes time, so other splits don't read them;
+    /// choosing this split reads the pages already queued (`AppState.readQueuedBarcodes`).
+    public static func readsBarcodes(_ settings: ScanSettings) -> Bool {
+        checksBlankPages(settings) && settings.document.splitMode == .barcode
     }
 
     /// Whether scans with these settings are turned upright: asked for, on document pages collected

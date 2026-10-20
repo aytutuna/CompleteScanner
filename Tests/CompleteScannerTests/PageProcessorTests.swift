@@ -212,6 +212,8 @@ final class PageProcessorTests: XCTestCase {
         let step = try XCTUnwrap(processor.steps[2] as? OrientationStep)
         XCTAssertTrue(step.scorer is StubScorer)
         XCTAssertEqual(step.maxSeconds, OrientationDecision.maxSecondsPerPage)
+        // It knows the split, so barcode or QR separator sheets are not read (`BarcodeSeparators.isSeparatorPage`).
+        XCTAssertEqual(step.split, s.document)
         s.document.autoStraighten = true
         s.adjustments.brightness = 0.25
         XCTAssertEqual(PageProcessor.forScan(s, scorer: scorer).steps.map(\.name),

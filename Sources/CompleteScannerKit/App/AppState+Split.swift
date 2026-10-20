@@ -1,9 +1,12 @@
 import CoreGraphics
 import Foundation
+import ImageIO
 
 /// Splitting a stack into separate documents: the plan the page strip shows (`DocumentSplitter`),
 /// splitting and joining by hand, naming a document, saving several files all or nothing
-/// (`SavePlan`), and printing the separator sheet. Twin of the Windows `AppViewModel.Split.cs`.
+/// (`SavePlan`), saving and printing the separator sheet (Patch T, or a QR code carrying a name at
+/// barcode or QR sheets) and reading the barcodes on the queued pages. Twin of the Windows
+/// `AppViewModel.Split.cs`.
 extension AppState {
     /// The documents the queue is saved as, and what saving does with each page, under the current settings.
     public var queuePlan: SplitPlan { DocumentSplitter.plan(scannedPages, options: settings.document) }
@@ -91,8 +94,13 @@ extension AppState {
                 scannedPages[pageIndex] = scannedPages[pageIndex].withDocumentLabel(wanted)
             }
         }
+        // A document named by a barcode keeps that name when the user's is removed.
+        let firstPage = document.pages[0]
+        let shown = cleaned ?? queuePlan.documents.first(where: { $0.pages.contains(firstPage) })?.label
         if let cleaned {
             statusMessage = "Document \(number) is named \u{201C}\(cleaned)\u{201D}: {label} in the file name."
+        } else if let shown {
+            statusMessage = "Document \(number) is named \u{201C}\(shown)\u{201D} by its barcode."
         } else {
             statusMessage = "Document \(number) has no name."
         }
@@ -105,6 +113,89 @@ extension AppState {
         if !scannedPages.isEmpty {
             statusMessage = DocumentSplitter.queueSummary(scannedPages, options: settings.document) + "."
         }
+    }
+
+    /// At barcode or QR sheets: a page with a code is kept and starts its document, named by the code
+    /// (on), or a sheet with a code is a separator sheet left out (off).
+    public func setBarcodeStartsDocument(_ on: Bool) {
+        guard settings.document.barcodeStartsDocument != on else { return }
+        settings.document.barcodeStartsDocument = on
+        if !scannedPages.isEmpty {
+            statusMessage = DocumentSplitter.queueSummary(scannedPages, options: settings.document) + "."
+        }
+    }
+
+    /// From `endOfWork`: the reading a scan or a busy moment put off.
+    func readQueuedBarcodesAfterWork() {
+        guard readBarcodesAfterWork, !isBusy else { return }
+        readBarcodesAfterWork = false
+        readQueuedBarcodes()
+    }
+
+    /// Split at barcode or QR sheets, the queued pages whose barcodes were never read (scanned under
+    /// another split, before this one was chosen, or left when a reading was stopped) are read now, each
+    /// on its full-resolution spool file (`BarcodeSeparators.readQueuedPage`), so small codes read as
+    /// they do during a scan; a page with no spool file is read on its preview. Pages a reading could
+    /// not settle (`barcodesUnsettled`) are left for the next time the split is chosen. Runs when the
+    /// split is chosen (`settings`' didSet), and after a scan or an operation that was running then
+    /// (`endOfWork`); Cancel keeps what was read and says how many pages were not. Names of documents
+    /// move as after any change of the plan. Nothing to do otherwise.
+    public func readQueuedBarcodes() {
+        guard PageProcessor.readsBarcodes(settings), barcodeReader.isAvailable else { return }
+        let unsettled = barcodesUnsettled
+        let unread = scannedPages.filter { $0.barcodes == nil && !unsettled.contains($0.id) }
+        guard !unread.isEmpty else { return }
+        guard !isBusy else {
+            readBarcodesAfterWork = true
+            return
+        }
+        let reader = barcodeReader
+        let total = unread.count
+        runExclusive { flag in
+            self.statusMessage = "Reading barcodes on \(total) queued page\(total == 1 ? "" : "s")\u{2026}"
+            let found: [(UUID, [BarcodeReading]?)] = await Task.detached(priority: .userInitiated) { () async -> [(UUID, [BarcodeReading]?)] in
+                var results: [(UUID, [BarcodeReading]?)] = []
+                for page in unread {
+                    if flag.isCancelled { break }
+                    // nil (not settled) when reading fails: no code is made up, none is lost.
+                    let barcodes: [BarcodeReading]? = try? BarcodeSeparators.readQueuedPage(
+                        page, spoolImage: Self.spoolImage(of: page), reader: reader)
+                    results.append((page.id, barcodes))
+                    let done = results.count
+                    await MainActor.run {
+                        if !flag.isCancelled {
+                            self.statusMessage = "Reading barcodes on queued pages: \(done) of \(total)\u{2026}"
+                        }
+                    }
+                }
+                return results
+            }.value
+            let before = self.scannedPages.map { PageFacts.of($0, options: self.settings.document) }
+            for (id, barcodes) in found {
+                guard let index = self.scannedPages.firstIndex(where: { $0.id == id }) else { continue }
+                if let barcodes {
+                    self.scannedPages[index] = self.scannedPages[index].withBarcodes(barcodes)
+                } else {
+                    self.barcodesUnsettled.insert(id)
+                }
+            }
+            self.carryDocumentLabels(from: before)
+            let summary = DocumentSplitter.queueSummary(self.scannedPages, options: self.settings.document) + "."
+            let left = total - found.count
+            if flag.isCancelled && left > 0 {
+                self.statusMessage = "Stopped reading barcodes: \(left) queued \(left == 1 ? "page was" : "pages were") not read, so codes on \(left == 1 ? "it" : "them") do not split the stack yet. They are read after the next scan, or when the split is chosen again. \(summary)"
+            } else {
+                self.statusMessage = summary
+            }
+        }
+    }
+
+    /// The full-resolution pixels of `page`'s spool file, as saved (before the user's turns); nil when
+    /// the page was never spooled or the file can't be read.
+    nonisolated static func spoolImage(of page: ScannedPage) -> CGImage? {
+        guard let url = page.fileURL,
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 
     /// The sheets per document for `.sheetCount` (1 to 999).
@@ -205,17 +296,21 @@ extension AppState {
     /// user lives (Letter or A4), to print at actual size on any printer, here or elsewhere: the
     /// saved bar opens it. Works with no printer installed.
     public func saveSeparatorSheet() {
+        let qr = Self.printsQrSheets(settings)
+        let name = qr ? BarcodeSeparators.label(qrSheetName) : nil
+        let code = qr ? qrEncoder.encode(QrSeparatorSheet.text(name, prefix: settings.document.splitBarcodePrefix)) : nil
         runExclusive { flag in
-            self.statusMessage = "Saving the separator sheet\u{2026}"
+            if qr && code == nil { throw NotSavedError("The name does not fit in a QR code. Use a shorter name.") }
+            self.statusMessage = qr ? "Saving the QR separator sheet\u{2026}" : "Saving the separator sheet\u{2026}"
             let sheetPaper = SeparatorSheet.paper(regionCode: Self.regionCode)
             let inches = PaperSizes.inches(sheetPaper) ?? CGSize(width: 8.5, height: 11)
             let folder = try self.destinationDirectory()
-            let url = NamingTemplate.uniqueURL(in: folder,
-                                               base: SeparatorSheet.fileBaseName(sheetPaper), fileExtension: "pdf")
+            let base = qr ? QrSeparatorSheet.fileBaseName(name, paper: sheetPaper) : SeparatorSheet.fileBaseName(sheetPaper)
+            let url = NamingTemplate.uniqueURL(in: folder, base: base, fileExtension: "pdf")
             let dpi = SeparatorSheet.dpi
             let document: Data? = await Task.detached(priority: .userInitiated) { () -> Data? in
-                let sheet = PatchCodeDetector.renderSheet(SeparatorSheet.code, widthInches: Double(inches.width),
-                                                          heightInches: Double(inches.height), dpi: dpi).toRgba()
+                let sheet = Self.renderSeparatorSheet(code: code, name: name, widthInches: Double(inches.width),
+                                                      heightInches: Double(inches.height))
                 guard let image = sheet.makeCGImage() else { return nil }
                 let paper = PrinterPaper.make(paper: inches, printable: nil)
                 let placement = PrintLayout.place(pixelWidth: sheet.width, pixelHeight: sheet.height, dpi: dpi,
@@ -232,8 +327,29 @@ extension AppState {
             }
             self.lastSavedURLs = [url]
             self.notePDFSize(of: url)
-            self.statusMessage = SeparatorSheet.savedMessage(url.lastPathComponent)
+            self.statusMessage = qr
+                ? QrSeparatorSheet.savedMessage(url.lastPathComponent, name: name)
+                : SeparatorSheet.savedMessage(url.lastPathComponent)
         }
+    }
+
+    /// The separator sheets saved and printed carry a QR code (with `qrSheetName`) rather than Patch T:
+    /// split at barcode or QR sheets, with a sheet with a code left out.
+    static func printsQrSheets(_ s: ScanSettings) -> Bool {
+        s.document.splitMode == .barcode && !s.document.barcodeStartsDocument
+    }
+
+    /// The separator sheet `widthInches` × `heightInches` at `SeparatorSheet.dpi` (the same as
+    /// `QrSeparatorSheet.dpi`): the QR sheet with `code` carrying `name` when there is a code,
+    /// otherwise Patch T.
+    nonisolated static func renderSeparatorSheet(code: QrModules?, name: String?, widthInches: Double,
+                                                 heightInches: Double) -> RgbaImage {
+        if let code {
+            return QrSeparatorSheet.render(code, name: name, widthInches: widthInches, heightInches: heightInches,
+                                           dpi: QrSeparatorSheet.dpi).toRgba()
+        }
+        return PatchCodeDetector.renderSheet(SeparatorSheet.code, widthInches: widthInches,
+                                             heightInches: heightInches, dpi: SeparatorSheet.dpi).toRgba()
     }
 
     /// Prints the separator sheet (Patch T) at real size on the printer chosen for copies, on the
@@ -241,13 +357,17 @@ extension AppState {
     /// document after the first.
     public func printSeparatorSheet() {
         let s = settings
+        let qr = Self.printsQrSheets(s)
+        let name = qr ? BarcodeSeparators.label(qrSheetName) : nil
+        let code = qr ? qrEncoder.encode(QrSeparatorSheet.text(name, prefix: settings.document.splitBarcodePrefix)) : nil
         runExclusive { flag in
+            if qr && code == nil { throw PrintError.failed("The name does not fit in a QR code. Use a shorter name.") }
             guard let setup = self.setupForPrinting(s, requestedPaper: nil) else { throw PrintError.noPrinter }
             let paper = setup.paper
             let dpi = SeparatorSheet.dpi
             let document: Data? = await Task.detached(priority: .userInitiated) { () -> Data? in
-                let sheet = PatchCodeDetector.renderSheet(SeparatorSheet.code, widthInches: Double(paper.paper.width),
-                                                          heightInches: Double(paper.paper.height), dpi: dpi).toRgba()
+                let sheet = Self.renderSeparatorSheet(code: code, name: name, widthInches: Double(paper.paper.width),
+                                                      heightInches: Double(paper.paper.height))
                 guard let image = sheet.makeCGImage() else { return nil }
                 let placement = PrintLayout.place(pixelWidth: sheet.width, pixelHeight: sheet.height, dpi: dpi,
                                                   on: paper, mode: .actualSize, align: .paperOrigin)
@@ -257,12 +377,15 @@ extension AppState {
             guard let document else { throw PrintError.failed("The separator sheet could not be drawn.") }
             if flag.isCancelled { throw ScanError.cancelled }
             self.statusMessage = "Printing the separator sheet on \(setup.printerName)\u{2026}"
-            let job = PrintJob(printerName: setup.printerName, jobName: "Separator sheet (Patch T)", paper: paper, copies: 1)
+            let job = PrintJob(printerName: setup.printerName, jobName: qr ? QrSeparatorSheet.jobName : "Separator sheet (Patch T)",
+                               paper: paper, copies: 1)
             guard try self.printService.print(document, job: job) else {
                 self.statusMessage = "Printing cancelled."
                 return
             }
-            self.statusMessage = "Sent the separator sheet to \(setup.printerName). Put one in front of each document after the first; print more copies as you need them."
+            self.statusMessage = qr
+                ? QrSeparatorSheet.printedMessage(setup.printerName, name: name)
+                : "Sent the separator sheet to \(setup.printerName). Put one in front of each document after the first; print more copies as you need them."
         }
     }
 }

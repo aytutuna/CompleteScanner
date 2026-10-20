@@ -395,6 +395,13 @@ final class DocumentSplitterTests: XCTestCase {
         let blankSheets = DocumentSplitter.plan(pages, options: options(.blankSheet))
         XCTAssertEqual(DocumentSplitter.separatorNote(blankSheets, 2, page: pages[2]),
                        "Blank separator sheet: a new document starts after it. It is not saved.")
+        // Joined across the sheet: no document starts after it.
+        var joined = pages
+        joined[3] = pages[3].withDocumentBreak(.join)
+        let joinedPlan = DocumentSplitter.plan(joined, options: o)
+        XCTAssertEqual(documents(joinedPlan), [[0, 3], [4]])
+        XCTAssertEqual(DocumentSplitter.separatorNote(joinedPlan, 1, page: joined[1]),
+                       "Separator sheet (Patch 2): the pages after it are joined to the document before. It is not saved.")
         // The strip's label.
         XCTAssertEqual(DocumentSplitter.queueSummary(pages, options: o), "5 pages in queue, 3 documents, 1 separator page and 1 blank skipped")
         XCTAssertEqual(DocumentSplitter.queueSummary(pages, options: options(.none, removeBlankPages: true)),

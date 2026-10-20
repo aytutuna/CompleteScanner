@@ -547,7 +547,8 @@ struct InspectorView: View {
     /// Split the stack into documents: the page strip shows where before saving, and one click on
     /// the gap between two pages splits or joins there. Pages collected in the queue only; with each
     /// scan saved at once, for copies and receipts, the choice is off and says why. Separator sheets
-    /// are printed on the printer chosen for copies. Twin of the Windows inspector's "Split into
+    /// are printed on the printer chosen for copies: Patch T, or at barcode or QR sheets a QR code
+    /// carrying the name typed above the buttons. Twin of the Windows inspector's "Split into
     /// documents".
     private var splitRow: some View {
         let isCopy = state.isCopyFlow
@@ -587,19 +588,42 @@ struct InspectorView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if collecting && mode == .separatorSheet {
+            if collecting && mode == .barcode {
+                // The page with a code kept as its document's first page, or the sheet left out.
+                Toggle("A barcode starts a new document and names it",
+                       isOn: Binding(get: { state.settings.document.barcodeStartsDocument },
+                                     set: { state.setBarcodeStartsDocument($0) }))
+                    .disabled(state.isBusy)
+                    .help(BarcodeSeparators.startsDocumentHint(state.settings.document.barcodeStartsDocument,
+                                                               prefix: state.settings.document.splitBarcodePrefix))
+                Text(BarcodeSeparators.startsDocumentHint(state.settings.document.barcodeStartsDocument,
+                                                          prefix: state.settings.document.splitBarcodePrefix))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            let qrSheets = collecting && mode == .barcode && !state.settings.document.barcodeStartsDocument
+            if qrSheets {
+                // The name the QR separator sheet carries; empty: a sheet that only splits.
+                TextField("Name on the QR sheet (optional)", text: $state.qrSheetName)
+                    .help("The QR code holds this name and the document after the sheet is named by it ({label}). Leave it empty for a sheet that only splits.")
+            }
+            if (collecting && mode == .separatorSheet) || qrSheets {
                 // A PDF in the scans folder, to print on any printer; or printed at once.
-                Button("Save Separator Sheet (PDF)") {
+                let paperLabel = SeparatorSheet.paper(regionCode: AppState.regionCode).label
+                Button(qrSheets ? "Save QR Separator Sheet (PDF)" : "Save Separator Sheet (PDF)") {
                     state.saveSeparatorSheet()
                 }
                 .disabled(state.isBusy)
-                .help("Saves a Patch T separator sheet (\(SeparatorSheet.paper(regionCode: AppState.regionCode).label)) as a PDF in the scans folder. Print it at actual size (100%) on any printer.")
-                Button("Print Separator Sheet\u{2026}") {
+                .help(qrSheets
+                      ? "Saves a QR separator sheet (\(paperLabel)) carrying the name above as a PDF in the scans folder, to print on any printer."
+                      : "Saves a Patch T separator sheet (\(paperLabel)) as a PDF in the scans folder. Print it at actual size (100%) on any printer.")
+                Button(qrSheets ? "Print QR Separator Sheet\u{2026}" : "Print Separator Sheet\u{2026}") {
                     state.printSeparatorSheet()
                 }
                 .disabled(!state.hasPrinter || state.isBusy)
                 .help(state.hasPrinter
-                      ? "Prints a Patch T separator sheet at actual size on \(state.copyPrinterName ?? "the default printer"), on the paper it has. Print as many as you need."
+                      ? "Prints \(qrSheets ? "a QR separator sheet carrying the name above" : "a Patch T separator sheet") at actual size on \(state.copyPrinterName ?? "the default printer"), on the paper it has. Print as many as you need."
                       : PrintText.noPrinterReason + " Save the separator sheet as a PDF to print it elsewhere.")
             }
         }

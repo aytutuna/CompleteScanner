@@ -68,6 +68,13 @@ public final class AppState: ObservableObject {
             syncTaskFlow()
             // A named document whose first page the settings now leave out keeps its name.
             if settings.document != oldValue.document { carryDocumentLabels(settingsBefore: oldValue.document) }
+            // Split at barcode or QR sheets just chosen (by hand or with a preset, or document pages
+            // collected again under it): the pages queued before are read too, those not settled
+            // before included (AppState+Split.swift). Other edits (a slider, the file name) start nothing.
+            if PageProcessor.readsBarcodes(settings) && !PageProcessor.readsBarcodes(oldValue) {
+                barcodesUnsettled.removeAll()
+                readQueuedBarcodes()
+            }
             scheduleSettingsSave()
             // ImageCaptureCore tells whether the feeder scans both sides only once it is used.
             if settings.source == .documentFeeder && oldValue.source != .documentFeeder { checkFeederDuplexSoon() }
@@ -160,6 +167,9 @@ public final class AppState: ObservableObject {
     @Published public private(set) var progress: ScanProgress?
     @Published public internal(set) var statusMessage = "Looking for scanners…"
     @Published public var errorMessage: String?
+    /// The name the next QR separator sheet carries (the inspector's field); empty for none. Not kept
+    /// in settings (AppState+Split.swift).
+    @Published public var qrSheetName = ""
     @Published public internal(set) var lastSavedURLs: [URL] = []
     /// Size of the PDF saved last in this session, in bytes; nil before the first one. Shown
     /// under the PDF size choice.
@@ -214,6 +224,17 @@ public final class AppState: ObservableObject {
     let printService: any PrintService
     /// Reads pages for "Rotate pages upright" (`OrientationStep`; a stand-in in tests).
     let orientationScorer: any OrientationScorer
+    /// Reads barcodes and QR codes on pages, when the stack is split at barcode or QR sheets
+    /// (`BarcodeStep`; a stand-in in tests).
+    let barcodeReader: any BarcodeReader
+    /// Makes the QR code of a QR separator sheet (a stand-in in tests).
+    let qrEncoder: any QrEncoder
+    /// Queued pages a reading could not settle (the reader failed on them, or only their preview could
+    /// be read and showed no code): not read again on their own, only when the split is chosen again
+    /// (AppState+Split.swift).
+    var barcodesUnsettled: Set<UUID> = []
+    /// A reading of the queued pages waits for the operation running now to end (`endOfWork`).
+    var readBarcodesAfterWork = false
     private var session: (any ScannerSession)?
     private var sessionDeviceID: String?
     private var userPickedDevice = false
@@ -250,7 +271,9 @@ public final class AppState: ObservableObject {
                 fileActions: (any FileActionService)? = nil,
                 troubleshooterService: (any TroubleshooterService)? = nil,
                 printService: (any PrintService)? = nil,
-                orientationScorer: (any OrientationScorer)? = nil) {
+                orientationScorer: (any OrientationScorer)? = nil,
+                barcodeReader: (any BarcodeReader)? = nil,
+                qrEncoder: (any QrEncoder)? = nil) {
         let saved = SettingsStore.load()
         self.isFirstRun = saved == nil
         // A task saved last time is still active: its banner comes back with the settings.
@@ -263,6 +286,8 @@ public final class AppState: ObservableObject {
         self.troubleshooterService = troubleshooterService ?? SystemTroubleshooterService()
         self.printService = printService ?? SystemPrintService()
         self.orientationScorer = orientationScorer ?? VisionOrientationScorer()
+        self.barcodeReader = barcodeReader ?? VisionBarcodeReader()
+        self.qrEncoder = qrEncoder ?? CoreImageQrEncoder()
         self.presets = presetStore.load()
         syncTaskFlow()
         // Clear page spill files left behind by a previous run.
@@ -363,9 +388,12 @@ public final class AppState: ObservableObject {
 
     /// Re-evaluate a deferred connection switch once nothing is in progress.
     func endOfWork() {
-        guard connectionSwitchDeferred, !autoSwitchMustWait else { return }
-        connectionSwitchDeferred = false
-        mergeDevices()
+        if connectionSwitchDeferred && !autoSwitchMustWait {
+            connectionSwitchDeferred = false
+            mergeDevices()
+        }
+        // Queued pages a scan or a busy moment left unread (AppState+Split.swift).
+        readQueuedBarcodesAfterWork()
     }
 
     /// The first real scanner (else the demo device), through its preferred connection.
@@ -663,8 +691,9 @@ public final class AppState: ObservableObject {
                 : manualSide == .front ? .turnedOverFronts
                 : .asScanned
             let scorer = self.orientationScorer
+            let barcodes = self.barcodeReader
             let cleaned: ProcessedScan = try await Task.detached(priority: .userInitiated) {
-                try PageProcessor.forScan(s, arrangement: arrangement, scorer: scorer)
+                try PageProcessor.forScan(s, arrangement: arrangement, scorer: scorer, barcodes: barcodes)
                     .process(scanned, shouldContinue: { !flag.isCancelled })
             }.value
             guard self.switchGeneration == generation else { return }
@@ -725,6 +754,8 @@ public final class AppState: ObservableObject {
                     // The spreads first: adding the pages drops the spreads no page is cut from.
                     self.spreadSources.merge(spreadSources) { _, new in new }
                     self.scannedPages.append(contentsOf: spooled)
+                    // Pages queued earlier and never read (a reading stopped) are read once the scan is done.
+                    if PageProcessor.readsBarcodes(self.settings) { self.readBarcodesAfterWork = true }
                     self.recordCaptures(spooled.map(\.id))
                     self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
                     let n = processed.count

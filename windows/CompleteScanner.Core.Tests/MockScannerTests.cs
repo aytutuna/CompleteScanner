@@ -416,6 +416,29 @@ public class MockScannerTests
     }
 
     [Fact]
+    public async Task TheBatchStack_AtBarcodeSheets_HasCode39SheetsNamingTheDocumentsAfterThem()
+    {
+        var (_, session) = await Open();
+        var settings = TaskCatalog.Apply(ScanTask.Batch, new ScanSettings());
+        settings.Document.SplitMode = SplitMode.Barcode;
+        settings.Resolution = Dpi;
+        var pages = await session.PerformScanAsync(settings, selection: null);
+        Assert.Equal(7, pages.Count);
+        Assert.Equal("CS-SEP INVOICE 1002", MockBedRenderer.BatchBarcodeText(2));
+        Assert.Equal("INVOICE 1002", BarcodeSeparators.CodeLabel(MockBedRenderer.BatchBarcodeText(2), settings.Document));
+        Assert.Equal(MockBedRenderer.RenderBarcodeSeparatorSheet(Dpi, "CS-SEP INVOICE 1002").Pixels, pages[2].Image.Pixels);
+        Assert.Equal(MockBedRenderer.RenderBarcodeSeparatorSheet(Dpi, "CS-SEP INVOICE 1003").Pixels, pages[4].Image.Pixels);
+        // No patch code on them, and the documents' sheets keep their numbers.
+        Assert.All(pages, p => Assert.Null(PatchCodeDetector.Detect(p.Image, p.Dpi)));
+        Assert.Equal([1, 2, 4, 6, 7], pages.Where((_, i) => i is not (2 or 4)).Select(p => SheetMarks(p.Image)));
+        // The patch-code split finds nothing on them.
+        var patchSplit = TaskCatalog.Apply(ScanTask.Batch, new ScanSettings());
+        patchSplit.Resolution = Dpi;
+        Assert.Equal([2, 4], (await session.PerformScanAsync(patchSplit, selection: null))
+            .Select((p, i) => (p, i)).Where(e => PatchCodeDetector.Detect(e.p.Image, e.p.Dpi) is not null).Select(e => e.i));
+    }
+
+    [Fact]
     public async Task OtherTasks_KeepTheUsualStack()
     {
         var (backend, session) = await Open();

@@ -252,8 +252,8 @@ public enum PageInclusion: String, Sendable {
 
 /// Where a stack of collected pages is split into separate documents (`DocumentOptions.splitMode`,
 /// `DocumentSplitter`). `.none` comes first: it is the default and the fallback for a mode a newer
-/// version adds (barcodes). Shown in `displayOrder`. Twin of C# `SplitMode` (`ModelLabels.Label` /
-/// `Hint`, `SplitModes.DisplayOrder`).
+/// version adds. New modes come after the existing ones. Shown in `displayOrder`. Twin of C#
+/// `SplitMode` (`ModelLabels.Label` / `Hint`, `SplitModes.DisplayOrder`).
 public enum SplitMode: String, Codable, CaseIterable, Identifiable, Sendable {
     /// The pages are saved as one document.
     case none
@@ -263,6 +263,11 @@ public enum SplitMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case blankSheet
     /// Every `DocumentOptions.splitSheetCount` sheets.
     case sheetCount
+    /// At each sheet with a barcode or QR code starting with `DocumentOptions.splitBarcodePrefix`
+    /// (`BarcodeSeparators`): the sheet is left out and the rest of the code's text names the document
+    /// after it; with `DocumentOptions.barcodeStartsDocument` a page with any code is kept and starts
+    /// its document, named by the code.
+    case barcode
 
     public var id: String { rawValue }
     public var label: String {
@@ -271,6 +276,7 @@ public enum SplitMode: String, Codable, CaseIterable, Identifiable, Sendable {
         case .separatorSheet: return "At separator sheets"
         case .blankSheet: return "At blank sheets"
         case .sheetCount: return "Every N sheets"
+        case .barcode: return "At barcode or QR sheets"
         }
     }
 
@@ -281,11 +287,12 @@ public enum SplitMode: String, Codable, CaseIterable, Identifiable, Sendable {
         case .separatorSheet: return "Put a separator sheet (Patch T) in front of each document after the first. It is found and left out, and a new document starts after it."
         case .blankSheet: return "Put an empty sheet between documents; it is left out. With both sides scanned, only a sheet blank on both sides splits."
         case .sheetCount: return "A new document starts every few sheets, for forms that all have the same number of sheets."
+        case .barcode: return "Put a QR separator sheet (print it below) in front of each document. It is found and left out, a new document starts after it, and the name on it names that document ({label}). Only codes starting with CS-SEP count, so codes printed on the documents are ignored."
         }
     }
 
     /// The modes as the inspector lists them.
-    public static let displayOrder: [SplitMode] = [.none, .separatorSheet, .blankSheet, .sheetCount]
+    public static let displayOrder: [SplitMode] = [.none, .separatorSheet, .blankSheet, .sheetCount, .barcode]
 }
 
 /// The user's say over whether a new document starts at a queued page (`ScannedPage.documentBreak`):
@@ -432,6 +439,17 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
     /// keeping the text dark and leaving pictures beside it as they are (`SpineShadow`); one click in the
     /// page strip shows a page as scanned. Off unless chosen (the Book or magazine task turns it on).
     public var softenSpineShadow: Bool = false
+    /// At barcode or QR sheets (`SplitMode.barcode`): a page with any code is kept, starts a new
+    /// document and names it after the code's text. Off: a sheet with a code starting with
+    /// `splitBarcodePrefix` is a separator sheet, left out, and the rest of the code's text names the
+    /// document after it; other codes are ignored. Off unless chosen.
+    public var barcodeStartsDocument: Bool = false
+    /// At barcode or QR sheets: the text a separator sheet's code starts with ("CS-SEP",
+    /// `BarcodeSeparators.defaultPrefix`; a–z matching A–Z, spaces around it ignored), which the QR
+    /// separator sheets the app prints carry, so codes printed on the documents themselves do not split
+    /// the stack. Empty: every code makes a separator sheet. Kept in settings files and presets (no
+    /// inspector field); files without it read the default.
+    public var splitBarcodePrefix: String = BarcodeSeparators.defaultPrefix
 
     public init() {}
 
@@ -446,6 +464,8 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
         case autoRotate
         case splitFacingPages
         case softenSpineShadow
+        case barcodeStartsDocument
+        case splitBarcodePrefix
     }
 }
 
@@ -463,6 +483,8 @@ extension DocumentOptions {
         autoRotate = container.decodeLenient(forKey: .autoRotate, default: autoRotate)
         splitFacingPages = container.decodeLenient(forKey: .splitFacingPages, default: splitFacingPages)
         softenSpineShadow = container.decodeLenient(forKey: .softenSpineShadow, default: softenSpineShadow)
+        barcodeStartsDocument = container.decodeLenient(forKey: .barcodeStartsDocument, default: barcodeStartsDocument)
+        splitBarcodePrefix = container.decodeLenient(forKey: .splitBarcodePrefix, default: splitBarcodePrefix)
     }
 }
 
@@ -686,6 +708,11 @@ public struct ScannedPage: Identifiable {
     /// The patch code found on the page (`PatchCodeDetector`), which makes it a separator sheet; nil
     /// when none was found or the page was not checked.
     public var patch: PatchCode?
+    /// The barcodes and QR codes read on the page (`BarcodeSeparators`), in reading order, with where
+    /// they are on the page as it was read; empty when none was found, nil when the page was not read
+    /// (barcodes are read only while the stack is split at barcode or QR sheets), or only its preview
+    /// could be and showed none (`BarcodeSeparators.readQueuedPage`).
+    public var barcodes: [BarcodeReading]?
     /// Whether the user starts a new document at this page, or joins it to the one before, whatever
     /// the split setting.
     public var documentBreak: DocumentBreak = .automatic
@@ -738,7 +765,7 @@ public struct ScannedPage: Identifiable {
 
     /// This page carrying what the scan recorded about `source`: its side and sheet, the
     /// blank-page check, the user's keep or skip, what crop and straighten did and which version is
-    /// shown, the patch code found on it, the user's document break and document name, the turn that
+    /// shown, the patch code and barcodes found on it, the user's document break and document name, the turn that
     /// made it upright, the spread it was cut from and what softening its spine's shadow did. Pixels, id,
     /// file, rotation and the other version stay this page's. Twin of C# `ScannedPage.CopyMeta`.
     public func copyMeta(from source: ScannedPage) -> ScannedPage {
@@ -750,6 +777,7 @@ public struct ScannedPage: Identifiable {
         page.geometry = source.geometry
         page.showsOriginal = source.showsOriginal
         page.patch = source.patch
+        page.barcodes = source.barcodes
         page.documentBreak = source.documentBreak
         page.documentLabel = source.documentLabel
         page.upright = source.upright
@@ -770,6 +798,7 @@ public struct ScannedPage: Identifiable {
         page.geometry = geometry
         page.showsOriginal = false
         page.patch = patch
+        page.barcodes = barcodes
         page.documentBreak = documentBreak
         page.documentLabel = documentLabel
         page.upright = upright
@@ -792,6 +821,7 @@ public struct ScannedPage: Identifiable {
         page.geometry = geometry
         page.showsOriginal = false
         page.patch = patch
+        page.barcodes = barcodes
         page.documentBreak = documentBreak
         page.documentLabel = documentLabel
         page.upright = upright
@@ -825,6 +855,7 @@ public struct ScannedPage: Identifiable {
         page.geometry = geometry
         page.showsOriginal = !showsOriginal
         page.patch = patch
+        page.barcodes = barcodes
         page.documentBreak = documentBreak
         page.documentLabel = documentLabel
         page.upright = upright
@@ -852,6 +883,13 @@ public struct ScannedPage: Identifiable {
     public func withPatch(_ patch: PatchCode?) -> ScannedPage {
         var page = self
         page.patch = patch
+        return page
+    }
+
+    /// This page with the barcodes read on it (nil: not read).
+    public func withBarcodes(_ barcodes: [BarcodeReading]?) -> ScannedPage {
+        var page = self
+        page.barcodes = barcodes
         return page
     }
 

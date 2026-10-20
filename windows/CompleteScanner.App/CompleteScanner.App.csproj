@@ -26,6 +26,10 @@
          The TWAIN Data Source Manager it loads (TWAINDSM.dll, LGPL) is never shipped with
          the app: scanner drivers install it. -->
     <PackageReference Include="NTwain" Version="[3.7.6]" />
+    <!-- Barcode and QR separator sheets (Services/ZXingBarcodeReader.cs, ZXingQrEncoder.cs).
+         Apache-2.0, no dependencies; the core package only, fed the page's gray pixels, so no
+         image-binding package is needed. Pinned to an exact version. -->
+    <PackageReference Include="ZXing.Net" Version="[0.16.11]" />
   </ItemGroup>
 
 </Project>

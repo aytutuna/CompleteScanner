@@ -355,6 +355,35 @@ final class OrientationTests: XCTestCase {
         XCTAssertEqual(step.apply(printed).upright, UprightTurn(quarterTurns: 2))
     }
 
+    func test_step_doesNotReadBarcodeSeparatorSheets_butTurnsPagesACodeStartsADocumentWith() {
+        let scorer = likeALetter()
+        var split = DocumentOptions()
+        split.splitMode = .barcode
+        let sheet = page(textRgba.rotatedQuarterTurns(2))
+            .withBarcodes([BarcodeReading(symbology: .qrCode, text: "CS-SEP Lease", bounds: CGRect(x: 10, y: 10, width: 20, height: 20))])
+        let skipped = OrientationStep(scorer: scorer, split: split).apply(sheet)
+        XCTAssertNil(skipped.upright)
+        XCTAssertTrue(skipped.image === sheet.image)
+        XCTAssertEqual(scorer.seen, [])
+        // Without the split's options, or under another split, the page is read.
+        XCTAssertEqual(OrientationStep(scorer: likeALetter()).apply(sheet).upright, UprightTurn(quarterTurns: 2))
+        var patchSplit = DocumentOptions()
+        patchSplit.splitMode = .separatorSheet
+        XCTAssertEqual(OrientationStep(scorer: likeALetter(), split: patchSplit).apply(sheet).upright, UprightTurn(quarterTurns: 2))
+        // A code of the page's own (no separator code) is read.
+        let invoice = page(textRgba.rotatedQuarterTurns(2))
+            .withBarcodes([BarcodeReading(symbology: .code128, text: "ORDER-4711", bounds: CGRect(x: 10, y: 10, width: 20, height: 2))])
+        XCTAssertEqual(OrientationStep(scorer: likeALetter(), split: split).apply(invoice).upright, UprightTurn(quarterTurns: 2))
+        // A barcode starting a document keeps the page: it is turned upright.
+        var starts = split
+        starts.barcodeStartsDocument = true
+        XCTAssertEqual(OrientationStep(scorer: likeALetter(), split: starts).apply(sheet).upright, UprightTurn(quarterTurns: 2))
+        // The step keeps the options it was given.
+        let step = OrientationStep(scorer: likeALetter(), split: split)
+        split.barcodeStartsDocument = true
+        XCTAssertEqual(step.split?.barcodeStartsDocument, false)
+    }
+
     func test_step_passesShouldContinueOn() {
         let step = OrientationStep(scorer: likeALetter())
         XCTAssertThrowsError(try step.apply(page(textRgba), shouldContinue: { false })) { error in

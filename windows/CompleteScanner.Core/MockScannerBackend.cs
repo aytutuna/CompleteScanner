@@ -10,7 +10,8 @@ namespace CompleteScanner.Core;
 /// (an obviously made-up design, no real document), which it turns over after every scan
 /// (<see cref="IdCardTurnedOver"/>); for the Receipts task it holds two made-up receipts
 /// (<see cref="MockBedRenderer.RenderReceiptBed"/>); for the Batch task its feeder holds a stack of
-/// documents with separator sheets between them (<see cref="BatchSeparatorSheets"/>); for the Book or
+/// documents with separator sheets between them (<see cref="BatchSeparatorSheets"/>: patch-code sheets,
+/// or barcode sheets when the stack is split at barcode or QR sheets); for the Book or
 /// magazine task its glass holds an open book, whose page it turns after every scan
 /// (<see cref="BookSpread"/>, <see cref="MockBedRenderer.RenderBookSpread"/>). Port of
 /// Sources/CompleteScannerKit/Backends/MockScannerBackend.swift.
@@ -81,7 +82,9 @@ public sealed class MockScannerBackend : IScannerBackend
     /// <summary>
     /// The sheets (counted from 0) of the Batch task's stack that are separator sheets, read when the
     /// scan starts: the Patch T sheet the app prints (<see cref="PatchCodeDetector.RenderSheet"/>) on
-    /// the front, blank paper on the back. Sheets 2 and 4 by default: documents of two, one and two sheets.
+    /// the front, blank paper on the back; split at barcode or QR sheets (<see cref="SplitMode.Barcode"/>),
+    /// a Code 39 sheet naming the document after it instead (<see cref="MockBedRenderer.BatchBarcodeText"/>).
+    /// Sheets 2 and 4 by default: documents of two, one and two sheets.
     /// </summary>
     public IReadOnlyCollection<int> BatchSeparatorSheets { get; set; } = [2, 4];
 
@@ -220,6 +223,7 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
         bool batch = settings.Task == ScanTask.Batch && settings.Intent == ScanIntent.Document;
         int sheets = batch ? backend.BatchSheetCount : backend.FeederSheetCount;
         var separators = batch ? backend.BatchSeparatorSheets.ToHashSet() : [];
+        bool barcodeSheets = batch && settings.Document.SplitMode == SplitMode.Barcode;
         int? jamsAfter = backend.FeederJamsAfter;
         bool twoSided = settings.Duplex == DuplexMode.Both && backend.FeederDuplex;
         bool turnedOver = backend.FeederStackTurnedOver;
@@ -255,7 +259,11 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
                 bool blank = side == PageSide.Back && (separator || blankBacks.Contains(sheet));
                 var image = await Task.Run(() =>
                 {
-                    var front = separator ? MockBedRenderer.RenderSeparatorSheet(dpi, sheetInches) : null;
+                    // The nth separator sheet of the stack starts document n + 1.
+                    int document = 2 + separators.Count(s => s < sheet);
+                    var front = !separator ? null
+                        : barcodeSheets ? MockBedRenderer.RenderBarcodeSeparatorSheet(dpi, MockBedRenderer.BatchBarcodeText(document), sheetInches)
+                        : MockBedRenderer.RenderSeparatorSheet(dpi, sheetInches);
                     if (blank) return MockBedRenderer.RenderBlankBack(dpi, settings.Intent, sheet, sheetInches, front);
                     return front ?? MockBedRenderer.RenderSheet(dpi, settings.Intent, sheet, side, sheetInches);
                 });
@@ -417,7 +425,30 @@ internal static class MockBedRenderer
     public static RgbaImage RenderSeparatorSheet(int dpi, SizeD? sheetInches = null)
     {
         var size = sheetInches ?? SheetInches;
-        var sheet = PatchCodeDetector.RenderSheet(PatchCode.PatchT, size.Width, size.Height, dpi);
+        return OnPaper(PatchCodeDetector.RenderSheet(PatchCode.PatchT, size.Width, size.Height, dpi));
+    }
+
+    /// <summary>
+    /// The Code 39 text of the demo's barcode separator sheet in front of document
+    /// <paramref name="document"/> (from 1): the separator prefix and a name, "CS-SEP INVOICE 1002"
+    /// for the second, which names it "INVOICE 1002".
+    /// </summary>
+    public static string BatchBarcodeText(int document) => $"{BarcodeSeparators.DefaultPrefix} INVOICE {1000 + document}";
+
+    /// <summary>
+    /// A barcode separator sheet as the demo feeder delivers it: <paramref name="text"/> in Code 39
+    /// (<see cref="Code39.RenderSheet"/>), <paramref name="sheetInches"/> in size (<see cref="SheetInches"/>
+    /// by default), on the same off-white paper as the patch-code sheet.
+    /// </summary>
+    public static RgbaImage RenderBarcodeSeparatorSheet(int dpi, string text, SizeD? sheetInches = null)
+    {
+        var size = sheetInches ?? SheetInches;
+        return OnPaper(Code39.RenderSheet(text, size.Width, size.Height, dpi));
+    }
+
+    /// <summary>A drawn sheet (black on white) as scanned: toner a little short of black, paper a little short of white.</summary>
+    private static RgbaImage OnPaper(GrayImage sheet)
+    {
         var pixels = new byte[sheet.Width * sheet.Height * 4];
         for (int i = 0; i < sheet.Pixels.Length; i++)
         {

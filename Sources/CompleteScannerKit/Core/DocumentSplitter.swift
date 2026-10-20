@@ -13,8 +13,9 @@ public enum PageRole: Sendable {
 }
 
 /// What the split looks at on a queued page: its sheet and side (two-sided scans), whether it looks
-/// blank at the chosen sensitivity, the patch code found on it, and the user's keep or skip,
-/// document break and document name. Twin of C# `PageFacts`.
+/// blank at the chosen sensitivity, the patch code found on it, the user's keep or skip, document
+/// break and document name, and the barcode or QR code that splits the stack at it (the first in
+/// reading order that does, `BarcodeSeparators.splittingCode`). Twin of C# `PageFacts`.
 public struct PageFacts: Equatable, Sendable {
     public var sheetIndex: Int?
     public var side: PageSide?
@@ -23,9 +24,11 @@ public struct PageFacts: Equatable, Sendable {
     public var inclusion: PageInclusion
     public var documentBreak: DocumentBreak
     public var label: String?
+    public var barcode: BarcodeReading?
 
     public init(sheetIndex: Int? = nil, side: PageSide? = nil, looksBlank: Bool = false, patch: PatchCode? = nil,
-                inclusion: PageInclusion = .automatic, documentBreak: DocumentBreak = .automatic, label: String? = nil) {
+                inclusion: PageInclusion = .automatic, documentBreak: DocumentBreak = .automatic, label: String? = nil,
+                barcode: BarcodeReading? = nil) {
         self.sheetIndex = sheetIndex
         self.side = side
         self.looksBlank = looksBlank
@@ -33,25 +36,28 @@ public struct PageFacts: Equatable, Sendable {
         self.inclusion = inclusion
         self.documentBreak = documentBreak
         self.label = label
+        self.barcode = barcode
     }
 
-    /// The facts of `page` under `options` (its blank-page sensitivity).
+    /// The facts of `page` under `options` (its blank-page sensitivity, the codes that split).
     public static func of(_ page: ScannedPage, options: DocumentOptions) -> PageFacts {
         PageFacts(sheetIndex: page.sheetIndex, side: page.side,
                   looksBlank: PageFilter.looksBlank(page, sensitivity: options.blankSensitivity),
                   patch: page.patch, inclusion: page.inclusion, documentBreak: page.documentBreak,
-                  label: page.documentLabel)
+                  label: page.documentLabel, barcode: BarcodeSeparators.splittingCode(page.barcodes, options: options))
     }
 }
 
 /// A queued page in the plan: what saving does with it, the sheet it is on (0 = the queue's first),
-/// its document (numbered from 1; nil for a page left out) and whether it is that document's first
-/// page. Twin of C# `PlannedPage`.
+/// its document (numbered from 1; nil for a page left out), whether it is that document's first page,
+/// and, on a side of a barcode or QR separator sheet, the code that makes the sheet one (read on either
+/// side). Twin of C# `PlannedPage`.
 public struct PlannedPage: Equatable, Sendable {
     public let role: PageRole
     public let sheet: Int
     public let document: Int?
     public let startsDocument: Bool
+    public let code: BarcodeReading?
 }
 
 /// A document saving writes: its number (from 1), its pages (queue indices, in order) and its name,
@@ -93,6 +99,13 @@ public struct SplitPlan: Equatable, Sendable {
 /// documents left with no page are dropped. Every N sheets: a new document starts at every Nth
 /// sheet, counting every sheet, blank ones too. A page the user keeps makes its sheet no separator;
 /// the user's split or join at a page wins over the setting.
+///
+/// At barcode or QR sheets: a sheet with a code starting with `DocumentOptions.splitBarcodePrefix` on
+/// either side is a separator, like a patch-code sheet, and the rest of the code's text names the
+/// document after it (the last such sheet before it, when several are in a row); other codes are
+/// ignored. With `DocumentOptions.barcodeStartsDocument` a sheet with any code is kept and starts a new
+/// document, named by the code (without the prefix, when it has it). The first code that counts on a
+/// sheet does (front first, then top to bottom). A name the user gives a document wins over its code's.
 public enum DocumentSplitter {
     /// The most sheets per document for `.sheetCount`.
     public static let maxSheetCount = 999
@@ -128,10 +141,16 @@ public enum DocumentSplitter {
         let mode = options.splitMode
         let perDocument = clampSheetCount(options.splitSheetCount)
 
-        // Which sheets are separators.
+        // Which sheets are separators, and the first code on each sheet that splits the stack.
         let sheetCount = facts.isEmpty ? 0 : sheets[sheets.count - 1] + 1
         var separator = [Bool](repeating: false, count: sheetCount)
-        if mode == .separatorSheet || mode == .blankSheet {
+        var barcode = [BarcodeReading?](repeating: nil, count: sheetCount)
+        if mode == .barcode {
+            for i in 0..<facts.count where barcode[sheets[i]] == nil {
+                if BarcodeSeparators.splits(facts[i].barcode, options: options) { barcode[sheets[i]] = facts[i].barcode }
+            }
+        }
+        if mode == .separatorSheet || mode == .blankSheet || mode == .barcode {
             var kept = [Bool](repeating: false, count: sheetCount)
             var patch = [Bool](repeating: false, count: sheetCount)
             var allBlank = [Bool](repeating: true, count: sheetCount)
@@ -142,23 +161,40 @@ public enum DocumentSplitter {
                 if !facts[i].looksBlank { allBlank[s] = false }
             }
             for s in 0..<sheetCount {
-                separator[s] = !kept[s] && (mode == .separatorSheet ? patch[s] : allBlank[s])
+                let marked: Bool
+                switch mode {
+                case .separatorSheet: marked = patch[s]
+                case .blankSheet: marked = allBlank[s]
+                default: marked = !options.barcodeStartsDocument && barcode[s] != nil
+                }
+                separator[s] = !kept[s] && marked
             }
         }
 
         var pages: [PlannedPage] = []
         var documentPages: [[Int]] = []
         var documentLabels: [String?] = []
+        var documentCodeLabels: [String?] = []
         var pending = false
+        // The name the next document takes from a code (nil whenever no document is pending).
+        var pendingLabel: String?
         var ordinal = 0
         for i in 0..<facts.count {
             let fact = facts[i]
             let sheet = sheets[i]
             let firstOfSheet = i == 0 || sheets[i - 1] != sheet
             if separator[sheet] {
-                pages.append(PlannedPage(role: .separator, sheet: sheet, document: nil, startsDocument: false))
+                pages.append(PlannedPage(role: .separator, sheet: sheet, document: nil, startsDocument: false,
+                                         code: barcode[sheet]))
+                if mode == .barcode && firstOfSheet {
+                    pendingLabel = BarcodeSeparators.codeLabel(barcode[sheet]?.text, options: options)
+                }
                 pending = true
                 continue
+            }
+            if mode == .barcode && options.barcodeStartsDocument && firstOfSheet, let code = barcode[sheet] {
+                pending = true
+                pendingLabel = BarcodeSeparators.codeLabel(code.text, options: options)
             }
             if mode == .sheetCount && firstOfSheet {
                 if ordinal > 0 && ordinal % perDocument == 0 { pending = true }
@@ -171,7 +207,7 @@ public enum DocumentSplitter {
             case .automatic: skipped = options.removeBlankPages && fact.looksBlank
             }
             if skipped {
-                pages.append(PlannedPage(role: .skipped, sheet: sheet, document: nil, startsDocument: false))
+                pages.append(PlannedPage(role: .skipped, sheet: sheet, document: nil, startsDocument: false, code: nil))
                 continue
             }
             let starts = documentPages.isEmpty
@@ -180,15 +216,18 @@ public enum DocumentSplitter {
             if starts {
                 documentPages.append([])
                 documentLabels.append(nil)
+                documentCodeLabels.append(pending ? pendingLabel : nil)
             }
             let last = documentPages.count - 1
             documentPages[last].append(i)
             if documentLabels[last] == nil, let label = cleaned(fact.label) { documentLabels[last] = label }
-            pages.append(PlannedPage(role: .content, sheet: sheet, document: documentPages.count, startsDocument: starts))
+            pages.append(PlannedPage(role: .content, sheet: sheet, document: documentPages.count, startsDocument: starts,
+                                     code: nil))
             pending = false
+            pendingLabel = nil
         }
         let documents = documentPages.indices.map {
-            PlannedDocument(number: $0 + 1, pages: documentPages[$0], label: documentLabels[$0])
+            PlannedDocument(number: $0 + 1, pages: documentPages[$0], label: documentLabels[$0] ?? documentCodeLabels[$0])
         }
         return SplitPlan(pages: pages, documents: documents)
     }
@@ -239,10 +278,19 @@ public enum DocumentSplitter {
             if now.pages[oldFirst].startsDocument { continue }
             // A split chosen since can leave its pages in several documents: the first takes the name.
             if !carried.insert(number).inserted { continue }
-            labels[first] = was.label
+            // The name the user gave it; a name from a code follows the code by itself.
+            labels[first] = userLabel(before, was)
             labels[oldFirst] = nil
         }
         return labels
+    }
+
+    /// The first name the user gave among `document`'s pages (as `plan` takes it).
+    private static func userLabel(_ facts: [PageFacts], _ document: PlannedDocument) -> String? {
+        for page in document.pages {
+            if let label = cleaned(facts[page].label) { return label }
+        }
+        return nil
     }
 
     /// Skip blank pages has no say: one-sided (`sides` is `.off`) at blank sheets, every blank page
@@ -333,11 +381,41 @@ public enum DocumentSplitter {
     }
 
     /// What a separator page is, for its help text and screen readers: "Separator sheet (Patch T): a
-    /// new document starts after it. It is not saved." (the code when one was found); nil for other pages.
+    /// new document starts after it. It is not saved." (the code when one was found); at barcode or QR
+    /// sheets the sheet's code (read on either side) and the name of the document that follows as the
+    /// plan names it (the last code sheet in a row names it, a name the user gives wins): "Separator
+    /// sheet (QR code “CS-SEP Lease”): a new document named “Lease” starts after it. It is not saved.";
+    /// when the user joined the page after the sheet to the document before: "Separator sheet (Patch
+    /// T): the pages after it are joined to the document before. It is not saved."; nil for other pages.
     public static func separatorNote(_ plan: SplitPlan, _ index: Int, page: ScannedPage) -> String? {
-        guard plan.pages[index].role == .separator else { return nil }
-        let what = page.patch.map { "Separator sheet (\($0.label))" } ?? "Blank separator sheet"
+        let planned = plan.pages[index]
+        guard planned.role == .separator else { return nil }
+        let what: String
+        if let reading = planned.code {
+            what = "Separator sheet (\(BarcodeSeparators.describe(reading)))"
+        } else if let code = page.patch {
+            what = "Separator sheet (\(code.label))"
+        } else {
+            what = "Blank separator sheet"
+        }
+        let next = nextSavedPage(plan, after: index)
+        if let next = next, !next.startsDocument {
+            return "\(what): the pages after it are joined to the document before. It is not saved."
+        }
+        if planned.code != nil, let number = next?.document, let name = plan.documents[number - 1].label {
+            return "\(what): a new document named \u{201C}\(name)\u{201D} starts after it. It is not saved."
+        }
         return "\(what): a new document starts after it. It is not saved."
+    }
+
+    /// The first page saved after `index`; nil when no page follows.
+    private static func nextSavedPage(_ plan: SplitPlan, after index: Int) -> PlannedPage? {
+        var i = index + 1
+        while i < plan.pages.count {
+            if plan.pages[i].document != nil { return plan.pages[i] }
+            i += 1
+        }
+        return nil
     }
 
     /// "9 pages in queue", "9 pages in queue, 3 documents, 2 separator pages skipped", "24 pages in

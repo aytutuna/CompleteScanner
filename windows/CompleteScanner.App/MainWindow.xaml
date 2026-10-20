@@ -989,6 +989,22 @@
                                                 </StackPanel>
                                                 <TextBlock x:Name="SplitHint" Style="{StaticResource CaptionText}"
                                                            TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                <!-- At barcode or QR sheets: the page with a code kept as its document's first page, or the sheet left out. -->
+                                                <StackPanel x:Name="BarcodeOptions" Margin="0,8,0,0">
+                                                    <CheckBox x:Name="BarcodeStartsDocumentBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                              Content="A barcode starts a new document and names it"
+                                                              Checked="BarcodeStartsDocument_Changed" Unchecked="BarcodeStartsDocument_Changed" />
+                                                    <TextBlock x:Name="BarcodeStartsDocumentHint" Style="{StaticResource CaptionText}"
+                                                               TextWrapping="Wrap" Margin="0,0,0,4" />
+                                                    <!-- The name the QR separator sheet carries; empty: a sheet that only splits. -->
+                                                    <StackPanel x:Name="QrSheetNameRow" Margin="0,4,0,0">
+                                                        <TextBlock Text="Name on the QR sheet (optional)" Style="{StaticResource FieldLabelText}" Margin="0,0,0,4" />
+                                                        <TextBox x:Name="QrSheetNameBox"
+                                                                 MaxLength="{x:Static core:DocumentSplitter.MaxLabelLength}"
+                                                                 AutomationProperties.Name="Name on the QR sheet"
+                                                                 TextChanged="QrSheetName_Changed" />
+                                                    </StackPanel>
+                                                </StackPanel>
                                                 <!-- The separator sheet: a PDF to print anywhere, or printed here. -->
                                                 <Button x:Name="SaveSeparatorButton" Style="{StaticResource SubtleButtonStyle}"
                                                         Content="Save separator sheet (PDF)" HorizontalAlignment="Left" Margin="-11,4,0,0"

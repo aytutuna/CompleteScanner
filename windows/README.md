@@ -39,7 +39,9 @@ UI per platform** architecture:
   (`ReceiptProcessing.cs`: finding several receipts on the glass, cleaning up faded thermal
   print, and reading the receipt's date from its text for the `{docdate}` file name), splitting a
   stack into documents (`DocumentSplitter.cs`; `PatchCode.cs`: separator sheets with patch codes,
-  read and drawn for printing; `SavePlan.cs`: several files saved all or nothing), and books and
+  read and drawn for printing; `Barcodes.cs`: barcode and QR separator sheets, the name a code gives
+  a document, the QR sheet drawn for printing and Code 39 for the demo, with the reading itself left
+  to the app; `SavePlan.cs`: several files saved all or nothing), and books and
   magazines (`BookSplitter.cs`: the gutter of an open book found on a spread, which is cut into
   its pages in reading order; `SpineShadow.cs`: the shadow along the spine softened on each page).
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
@@ -51,13 +53,15 @@ UI per platform** architecture:
   text layer and metadata. Neither Core nor the app references it.
 - **`CompleteScanner.App.Tests`** — checks of the app's own Windows code that need WPF but no
   window and no device: the print document is written to an XPS file and read back (paper size,
-  where each image lands, copies, grey, cancel). Nothing is sent to a printer.
+  where each image lands, copies, grey, cancel), and barcodes and QR codes are read with ZXing.Net
+  on synthetic scans. Nothing is sent to a printer.
 - **`CompleteScanner.App`** — the native Windows shell (WPF, .NET 10): main window with
   sidebar/inspector/preview-canvas/page-strip/photo-review, a view-model porting the macOS
   `AppState` orchestration, and Windows service implementations (WIA, eSCL and TWAIN
-  scanning, Windows.Media.Ocr, WPF imaging codecs). Its one package dependency is
-  [NTwain](https://github.com/soukoku/ntwain) 3.7.6 (MIT), pinned to that exact version, for
-  TWAIN.
+  scanning, Windows.Media.Ocr, WPF imaging codecs). Its package dependencies, each pinned to an
+  exact version, are [NTwain](https://github.com/soukoku/ntwain) 3.7.6 (MIT) for TWAIN and
+  [ZXing.Net](https://github.com/micjahn/ZXing.Net) 0.16.11 (Apache-2.0) for barcode and QR
+  separator sheets (see [Third-party notices](#third-party-notices)).
 
 The macOS app is unchanged and remains the reference implementation.
 
@@ -118,7 +122,9 @@ or, with **Both sides, turned by hand**, the side facing up: it turns its stack 
 fronts, as the user would, so the next scan delivers the backs, last sheet first. A paper size
 makes it deliver sheets of that size. For the **Batch of separate documents** task its feeder holds
 seven sheets instead, the third and fifth being separator sheets (the Patch T sheet the app prints,
-with a blank back), so the stack splits into documents of two, one and two sheets.
+with a blank back; split at barcode or QR sheets, a Code 39 sheet saying "CS-SEP INVOICE 1002"
+and "CS-SEP INVOICE 1003" instead, naming the document after it), so the stack splits into documents of two,
+one and two sheets.
 
 ### Two-sided scanning and paper size
 
@@ -855,9 +861,76 @@ which counts when read over at least 1.5 in on at least half the lines it spans.
 synthetic pages (`TestPages`, the same bytes in both test suites): all six codes across and down the
 page, at ±2.5° and ±3°, the separator sheet at 100 and 300 dpi, turned half and a quarter turn, and
 no code found on pages of text, a ruled table with a header band and striped rows, blank pages,
-photos and a sheet on a backdrop. Barcode and QR separators need a barcode library and come later.
+photos and a sheet on a backdrop.
 **To check on real hardware:** separator sheets printed on real printers (toner spread, a printer
 that shrinks the page), feeders that skew sheets more than 3°, and very dark or colored paper.
+
+#### Barcode and QR separator sheets
+
+**At barcode or QR sheets** splits the stack at separator sheets carrying a QR code, Code 128,
+Code 39 or Data Matrix code (other kinds are not looked for) whose text starts with `CS-SEP`, the
+separator prefix the app's QR sheets carry ("CS-SEP Lease 2026"): a sheet with such a code on either
+side is a separator, left out like a patch-code sheet, and the rest of the code's text names the
+document after it (`{label}`; when several such sheets are in a row the last one names it). Other
+codes are ignored, so a payment QR code or an order number printed on an invoice never makes its
+page a separator. The prefix is compared with a–z matching A–Z, after any spaces or byte-order mark
+the code starts with; it is the settings field `splitBarcodePrefix` (kept in settings files and
+presets, with no inspector field; an empty one makes every code a separator code). The text becomes
+a name as a typed one would: invisible format characters (byte-order marks, zero-width spaces,
+bidi overrides that would reorder a file name in Explorer) are dropped, control characters and runs
+of spaces become one space, the characters file names can't have (`/ \ : * ? " < > |`) a hyphen,
+and it is cut at 100 characters; a sheet whose code is the prefix alone only splits. A name typed in
+the page strip wins over the code's, and removing it brings the code's back. **A barcode starts a
+new document and names it** (shown with this split) keeps the pages with a code instead, any code:
+each starts a new document named after its code (without the prefix when it has it), for documents
+that carry their own code, such as invoices or forms; a click on the gap joins one back. The page
+strip shows all of this before saving, as for patch codes; a separator page's tooltip names the
+sheet's code, read on either side, and the document the plan starts after it ("Separator sheet (QR
+code “CS-SEP Lease”): a new document named “Lease” starts after it. It is not saved."; when two
+code sheets are in a row, both name the document the last one names; when the page after a
+separator is joined to the document before, the tooltip says so instead). Separator pages are not
+saved, and a successful save clears the queue and deletes the spool files of every page in it,
+separator pages included: a page wrongly taken for a separator has to be kept in the strip (Keep
+this page) before saving.
+
+**Save QR separator sheet (PDF)** and **Print QR separator sheet** (shown with this split, without
+the switch) make the sheet to print, with the name typed in **Name on the QR sheet** (or none):
+"SEPARATOR SHEET", the QR code of the prefix and the name ("CS-SEP Lease 2026"; 2.5 in at most, UTF-8 so names in any script read back, error
+correction level M), "THE NEXT DOCUMENT IS NAMED" and the name in the sheet's dot type (accents
+dropped; characters it does not have show as "?", while the code keeps the name exactly), and how to
+use it, saved as "Separator sheet (QR code, Lease 2026, Letter).pdf" or printed at real size on the
+printer chosen for copies. A QR code reads at any size and either way round, so the sheet need not
+be printed at 100 %.
+
+Barcodes are read only while this split is chosen (reading takes about 0.1–0.5 s a page; a page
+with no code is the slowest, since every pass runs on it). No task chooses this split; choosing it,
+by hand or with a preset, reads the pages already queued that were never read, each on its
+full-resolution spool file (`BarcodeSeparators.ReadQueuedPage`), not on the preview the queue keeps
+(about 145 dpi for a letter page and 114 for legal, too coarse for 1D codes of 0.010–0.013 in a
+bar), with the count read in the status bar and the progress bar. Other settings edits start no
+reading. A page with no spool file is read on its preview, and when that shows no code it is left
+unread rather than taken as one without. Cancel keeps what was read and says how many pages were
+not; those are read after the next scan or when the split is chosen again. A page the reader fails
+on is not read again until the split is chosen again. The reading (`ZXingBarcodeReader`, ZXing.Net in the
+app only, behind Core's `IBarcodeReader`) works on the page's gray copy at 200 dpi
+(`BarcodeSeparators.ReadingDpi`; a coarser scan as it is): the codes found on the image, then, when
+none was, on the image at half resolution (where the noise inside a large code's modules is averaged
+out; ZXing's local threshold otherwise breaks them up), then, when still none was, on likely Data
+Matrix spots one at a time (cells a quarter inch across about half dark, read in a 2 in window
+centred on each and again enlarged twice, since ZXing finds a Data Matrix code only around the middle
+of the image it is given). The first code in reading order (top to bottom, then left to right) is
+the page's. Checked by `CompleteScanner.App.Tests/BarcodeReaderTests.cs` on synthetic scans (codes
+drawn by ZXing at their printed size, scanned at 150, 200 and 300 dpi with noise and a ±3° slant):
+each kind, Data Matrix in every corner, several codes in reading order, no code on blank pages,
+pages of text or the patch-code sheet, the QR sheet with names in Latin, Turkish, Greek and Japanese
+read back exactly, also from a queued page's preview, small 1D codes (Code 39 at 0.010 in on letter
+and 0.012 in on legal, Code 128 at 0.010 in on legal) that a queued page's preview loses read from
+its spool file, the demo's Code 39 sheet at 100–300 dpi (its bars the same as ZXing's), and a stack split and
+named end to end through the clean-up stage, an order number on a document's page ignored. Long
+rectangular Data Matrix codes (which ZXing makes for short texts unless asked for square ones) are
+found less reliably than square ones.
+**To check on real hardware:** QR sheets printed and fed through real scanners, codes printed by
+other software, small 1D codes below 0.012 in a bar, and the Mac (Vision) with real scans.
 
 ### Book or magazine
 
@@ -1050,6 +1123,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | Troubleshooter (`Troubleshooter`, `SystemDiagnostics`, `TroubleshooterWindow`) | The checks are covered by `TroubleshooterTests` (same cases as macOS) and the Windows service and network values by `WindowsSystemStatusTests`. Checked by driving the view model with stand-in connections and a stand-in for Windows (the snapshot, the order of the checks, devices.txt, Refresh, Copy diagnostics and Settings refused, a busy scanner at connect and at scan, a connection that works clearing it, a cancelled scan not counting), by reading the real WIA service and network on Windows 11 (Running and Public, as `sc query` and `Get-NetConnectionProfile` report, from UI and thread-pool threads), by copying to the real clipboard with the user's clipboard saved and restored, by an address added by hand on loopback where nothing listens, by a discovered scanner (a stand-in service for a loopback scanner) that stays listed, selected and connected across a Refresh when Windows aborts either network watcher, and dropped only once the restarted watcher's first pass did not find it again, and by building the sidebar, error bar and troubleshooter window without showing them: the header button, the empty state's links, the error bar's Troubleshoot (and none on a file or photo error shown later), one card per check with its buttons and screen-reader names (each card a named group in the UI Automation tree), a Refresh while one runs ignored, rendered off screen in light and dark. **Not tried on screen:** opening Windows Settings and the real Add scanner dialog from it. **Unverified:** a stopped or disabled WIA service, a TWAIN install with 32-bit-only drivers, and a scanner that is really busy in another app |
 | Receipts (`ReceiptDetector`, `ReceiptEnhancer`, `ReceiptDateExtractor`, the review) | Covered by `ReceiptTests` (two receipts on a white lid found apart along their paper, cut around their print when the paper is as light as the lid, a 2 × 11 in receipt that is too long for a page but not for a receipt, prices far from the items, two receipts 0.15 in apart, one receipt per feeder sheet, nothing on the glass, a 300 dpi scan, the enhancer on fading paper, little print and a dark logo, the date rules and the 99-case date set, the texts) and the receipt cases of `ScanTaskTests`, `ModelsCompatTests`, `NamingTemplateTests` and `MockScannerTests` (same cases as macOS, on the same synthetic beds checked by checksum). Checked on harder synthetic beds (four receipts on a white lid, an open lid and with invisible paper, 12° tilts, receipts in a column 0.2 in apart, a receipt lying sideways, an 11 in receipt at the glass's edge: all found and held whole; two receipts 0.15 in apart with paper as light as the lid are not told apart), by driving the view model with the demo scanner and Windows OCR (both receipts found and cut along their paper, a gray Compact PDF each with a text layer named by its own date, one PDF for all named by the earliest, JPEG files, the text beside each PDF, today's date without OCR, OCR that fails, a save cancelled while reading, Fix crop, Discard) and by building the window without showing it: the Receipts card, the inspector's Receipts section and its switches, one PDF off for JPEG, the review's title and save button, rendered off screen in light and dark. **Unverified:** real thermal receipts on a real lid (see [Receipts](#receipts)) |
 | Batch of separate documents (`PatchCodeDetector`, `DocumentSplitter`, `SavePlan`, the strip's gaps) | Covered by `PatchCodeTests` (all six codes across and down the page, ±2.5° and ±3°, the separator sheet at 100 and 300 dpi and turned, its bar widths, no code on text, a ruled table, blank pages, photos), `DocumentSplitterTests` (every mode, the two-sided blank-sheet rule, separators in a row, empty documents, every N sheets with an odd last sheet and skipped sheets, splits and joins by hand and their undo, keeping a separator page, names, also across a change of the settings, the strip's texts) and `SavePlanTests` (the documents, the texts, all or nothing on success, failure and cancel), and the split cases of `ModelsCompatTests`, `ScanTaskTests`, `PageProcessorTests`, `NamingTemplateTests` and `MockScannerTests` (same cases as macOS). Checked by driving the view model with the demo scanner's batch stack and stand-ins for OCR, the file actions and the printers (the task's settings and card, three PDFs of 2, 1 and 2 pages named with their number, the separators left out, the queue and its spool files cleared; joining, splitting and undoing by hand, keeping a separator page, naming a document from any of its pages, turning and moving pages; a save whose third file cannot be written and one cancelled during the second document leaving no file and the queue intact, then saved again with the text beside each PDF; three text files; both sides with blank backs skipped and separator backs left out; at blank sheets; every 2 sheets; no split ending the task; the separator sheet printed on Letter and A4 stand-in printers (and on the printer's paper when the scan asks for Legal), read back as Patch T, and refused without a printer, then saved as a PDF without one, a page of the usual paper read back as Patch T, and saved again under the next free name; a named first page skipped and kept again with the name following it, and left out and saved again by a change of what counts as blank, of Skip blank pages and of the split, a 300-character name cut to 100; the PDFs' size, the text files beside them and "no text was found" in the status; the last PDF size put back after a failed or cancelled save; another task unchanged) and by building the window without showing it: the card, the Split into documents choice and its hint, Print separator sheet, Sheets per document, the strip's badges, gaps and bars, a click on a gap joining two documents, the save button and label, the name box's 100-character limit, Save separator sheet (PDF) and its hint, Skip blank pages greyed out with the reason at blank sheets one-sided and back with both sides, the choice greyed out when each scan is saved at once, rendered off screen in light and dark. **Not tried on screen:** the name box (a popup window) and the page menu. **Unverified:** printed separator sheets scanned by real feeders (see [Batch of separate documents](#batch-of-separate-documents)) |
+| Barcode and QR separator sheets (`Barcodes.cs`, `BarcodeStep`, `ZXingBarcodeReader`, `ZXingQrEncoder`) | Covered by `BarcodeTests` (the four kinds, reading order and repeats, bounds back in the page's and a spooled page's pixels, a queued page read on its spool file turned like the page and left unread when only its preview shows nothing, the separator prefix and the codes it ignores, the name a code's text gives with format characters dropped, the step and when it runs, every rule of the split at barcode or QR sheets one- and two-sided, keeping, names typed winning, the strip's texts naming the document the plan starts, the QR sheet and the demo's Code 39 sheet pinned by checksum; same cases as macOS), `OrientationTests` (barcode or QR separator sheets not turned upright) and the barcode cases of `ModelsCompatTests` and `MockScannerTests`, and in the app's tests by `BarcodeReaderTests` (ZXing.Net on synthetic scans at 150, 200 and 300 dpi with noise and a ±3° slant: every kind, Data Matrix anywhere, several codes, no false codes, QR sheets in four scripts, a queued page's preview, small 1D codes a preview loses read from the spool file, an end-to-end stack with an order number ignored). Checked by driving the view model with the demo scanner's stack of Code 39 sheets (split and named, saved as "Document INVOICE 1002 … 2.pdf"; queued pages read when the split is chosen later, from their previews; a barcode starting a document; a typed name winning and removed; a separator page kept) and stand-in printers (the QR sheet saved as a PDF and printed on Letter and A4, each read back exactly, a Turkish name included; Patch T with the switch on), and by building the window without showing it: the choice, the switch and its hint, the name box, the QR buttons, the strip, rendered off screen in light and dark. **Unverified:** printed QR sheets fed through real scanners, codes printed by other software, Vision on a Mac (CI runs `VisionBarcodeTests`) |
 | eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — see [Network scanners](#network-scanners-escl) below for discovery, adding by address and HTTPS. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the paper size's region, clamped to the feeder (the feeder's own sheet size for Automatic, at most 17 in tall); two-sided feeder jobs send `<scan:Duplex>true</scan:Duplex>` and use the two-sided feeder's capabilities (`AdfDuplexInputCaps`) when the device lists them, and a device that lists no two-sided feeding scans one side and says so; black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. The protocol client (`EsclClient`, `EsclScannerSession`) is covered by `EsclClientTests` through a stub HTTP handler. Checked against local fake eSCL servers (plain and HTTPS), not a real device |
 
 Known divergences from the macOS app (all documented in the source):
@@ -1272,6 +1346,19 @@ row's **via** menu chooses between them.
   and TLS versions, link-local IPv6 connections, and how long Windows keeps listing a
   scanner that was switched off (a service unregistered on this PC was still reported 30 s
   later; connecting to such a scanner fails with the usual message).
+
+## Third-party notices
+
+The app (not Core, not the Mac app) includes these packages, unchanged, each under its own license:
+
+- **ZXing.Net** 0.16.11 — by Michael Jahn, a port of ZXing ("Zebra Crossing") by the ZXing
+  authors. Licensed under the Apache License, Version 2.0
+  (<https://www.apache.org/licenses/LICENSE-2.0>); the package ships no NOTICE file.
+  <https://github.com/micjahn/ZXing.Net>
+- **NTwain** 3.7.6 — by Eugene Wang. Licensed under the MIT License.
+  <https://github.com/soukoku/ntwain>
+
+The tests also use PdfPig 0.1.16 (Apache-2.0), which is never shipped.
 
 ## Settings files
 

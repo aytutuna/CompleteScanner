@@ -115,8 +115,8 @@ public enum PageInclusion
 /// <summary>
 /// Where a stack of collected pages is split into separate documents
 /// (<see cref="DocumentOptions.SplitMode"/>, <see cref="DocumentSplitter"/>). <see cref="None"/>
-/// comes first: it is the default and the fallback for a mode a newer version adds (barcodes).
-/// Shown in <see cref="SplitModes.DisplayOrder"/>.
+/// comes first: it is the default and the fallback for a mode a newer version adds. New modes come
+/// after the existing ones. Shown in <see cref="SplitModes.DisplayOrder"/>.
 /// </summary>
 public enum SplitMode
 {
@@ -128,6 +128,13 @@ public enum SplitMode
     BlankSheet,
     /// <summary>Every <see cref="DocumentOptions.SplitSheetCount"/> sheets.</summary>
     SheetCount,
+    /// <summary>
+    /// At each sheet with a barcode or QR code starting with <see cref="DocumentOptions.SplitBarcodePrefix"/>
+    /// (<see cref="BarcodeSeparators"/>): the sheet is left out and the rest of the code's text names
+    /// the document after it; with <see cref="DocumentOptions.BarcodeStartsDocument"/> a page with any
+    /// code is kept and starts its document, named by the code.
+    /// </summary>
+    Barcode,
 }
 
 /// <summary>
@@ -273,6 +280,7 @@ public static class ModelLabels
         SplitMode.SeparatorSheet => "At separator sheets",
         SplitMode.BlankSheet => "At blank sheets",
         SplitMode.SheetCount => "Every N sheets",
+        SplitMode.Barcode => "At barcode or QR sheets",
         _ => mode.ToString(),
     };
 
@@ -283,6 +291,7 @@ public static class ModelLabels
         SplitMode.SeparatorSheet => "Put a separator sheet (Patch T) in front of each document after the first. It is found and left out, and a new document starts after it.",
         SplitMode.BlankSheet => "Put an empty sheet between documents; it is left out. With both sides scanned, only a sheet blank on both sides splits.",
         SplitMode.SheetCount => "A new document starts every few sheets, for forms that all have the same number of sheets.",
+        SplitMode.Barcode => "Put a QR separator sheet (print it below) in front of each document. It is found and left out, a new document starts after it, and the name on it names that document ({label}). Only codes starting with CS-SEP count, so codes printed on the documents are ignored.",
         _ => "",
     };
 
@@ -523,17 +532,35 @@ public sealed class DocumentOptions : IEquatable<DocumentOptions>
     /// </summary>
     public bool SoftenSpineShadow { get; set; } = false;
 
+    /// <summary>
+    /// At barcode or QR sheets (<see cref="SplitMode.Barcode"/>): a page with any code is kept, starts a
+    /// new document and names it after the code's text. Off: a sheet with a code starting with
+    /// <see cref="SplitBarcodePrefix"/> is a separator sheet, left out, and the rest of the code's text
+    /// names the document after it; other codes are ignored. Off unless chosen. Written after the earlier keys.
+    /// </summary>
+    public bool BarcodeStartsDocument { get; set; } = false;
+
+    /// <summary>
+    /// At barcode or QR sheets: the text a separator sheet's code starts with ("CS-SEP",
+    /// <see cref="BarcodeSeparators.DefaultPrefix"/>; a–z matching A–Z, spaces around it ignored), which
+    /// the QR separator sheets the app prints carry, so codes printed on the documents themselves do not
+    /// split the stack. Empty: every code makes a separator sheet. Kept in settings files and presets
+    /// (no inspector field); files without it read the default. Written after the earlier keys.
+    /// </summary>
+    public string SplitBarcodePrefix { get; set; } = BarcodeSeparators.DefaultPrefix;
+
     public DocumentOptions Clone() => (DocumentOptions)MemberwiseClone();
 
     public bool Equals(DocumentOptions? other) =>
         other is not null && RemoveBlankPages == other.RemoveBlankPages && BlankSensitivity == other.BlankSensitivity
         && AutoCrop == other.AutoCrop && AutoStraighten == other.AutoStraighten
         && SplitMode == other.SplitMode && SplitSheetCount == other.SplitSheetCount && AutoRotate == other.AutoRotate
-        && SplitFacingPages == other.SplitFacingPages && SoftenSpineShadow == other.SoftenSpineShadow;
+        && SplitFacingPages == other.SplitFacingPages && SoftenSpineShadow == other.SoftenSpineShadow
+        && BarcodeStartsDocument == other.BarcodeStartsDocument && SplitBarcodePrefix == other.SplitBarcodePrefix;
     public override bool Equals(object? obj) => Equals(obj as DocumentOptions);
     public override int GetHashCode() =>
         HashCode.Combine(RemoveBlankPages, BlankSensitivity, AutoCrop, AutoStraighten, SplitMode, SplitSheetCount, AutoRotate,
-                         HashCode.Combine(SplitFacingPages, SoftenSpineShadow));
+                         HashCode.Combine(SplitFacingPages, SoftenSpineShadow, BarcodeStartsDocument, SplitBarcodePrefix));
 }
 
 /// <summary>
@@ -624,7 +651,7 @@ public static class SplitModes
 {
     /// <summary>The modes as the inspector lists them.</summary>
     public static IReadOnlyList<SplitMode> DisplayOrder { get; } =
-        [SplitMode.None, SplitMode.SeparatorSheet, SplitMode.BlankSheet, SplitMode.SheetCount];
+        [SplitMode.None, SplitMode.SeparatorSheet, SplitMode.BlankSheet, SplitMode.SheetCount, SplitMode.Barcode];
 }
 
 public sealed class ScanSettings
@@ -796,6 +823,14 @@ public sealed class ScannedPage
     /// </summary>
     public PatchCode? Patch { get; init; }
 
+    /// <summary>
+    /// The barcodes and QR codes read on the page (<see cref="BarcodeSeparators"/>), in reading order,
+    /// with where they are on the page as it was read; empty when none was found, null when the page
+    /// was not read (barcodes are read only while the stack is split at barcode or QR sheets), or only
+    /// its preview could be and showed none (<see cref="BarcodeSeparators.ReadQueuedPage"/>).
+    /// </summary>
+    public IReadOnlyList<BarcodeReading>? Barcodes { get; init; }
+
     /// <summary>Whether the user starts a new document at this page, or joins it to the one before, whatever the split setting.</summary>
     public DocumentBreak DocumentBreak { get; init; } = DocumentBreak.Automatic;
 
@@ -857,7 +892,7 @@ public sealed class ScannedPage
     /// <summary>
     /// This page carrying what the scan recorded about <paramref name="source"/>: its side and
     /// sheet, the blank-page check, the user's keep or skip, what crop and straighten did and
-    /// which version is shown, the patch code found on it, the user's document break and
+    /// which version is shown, the patch code and barcodes found on it, the user's document break and
     /// document name, the turn that made it upright, the spread it was cut from and what softening
     /// its spine's shadow did. Pixels, id, file, rotation and the other version stay this page's.
     /// </summary>
@@ -872,6 +907,7 @@ public sealed class ScannedPage
             Geometry = source.Geometry,
             ShowsOriginal = source.ShowsOriginal,
             Patch = source.Patch,
+            Barcodes = source.Barcodes,
             DocumentBreak = source.DocumentBreak,
             DocumentLabel = source.DocumentLabel,
             Upright = source.Upright,
@@ -892,6 +928,7 @@ public sealed class ScannedPage
             Geometry = Geometry,
             ShowsOriginal = ShowsOriginal,
             Patch = Patch,
+            Barcodes = Barcodes,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
@@ -912,6 +949,7 @@ public sealed class ScannedPage
             Geometry = Geometry,
             ShowsOriginal = ShowsOriginal,
             Patch = Patch,
+            Barcodes = Barcodes,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
@@ -932,6 +970,7 @@ public sealed class ScannedPage
             Geometry = Geometry,
             ShowsOriginal = ShowsOriginal,
             Patch = Patch,
+            Barcodes = Barcodes,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
@@ -952,6 +991,28 @@ public sealed class ScannedPage
             Geometry = Geometry,
             ShowsOriginal = ShowsOriginal,
             Patch = patch,
+            Barcodes = Barcodes,
+            DocumentBreak = DocumentBreak,
+            DocumentLabel = DocumentLabel,
+            Upright = Upright,
+            Spread = Spread,
+            SpineShadow = SpineShadow,
+            Alternate = Alternate,
+        };
+
+    /// <summary>This page with the barcodes read on it (null: not read).</summary>
+    public ScannedPage WithBarcodes(IReadOnlyList<BarcodeReading>? barcodes) =>
+        new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = Side,
+            SheetIndex = SheetIndex,
+            Blank = Blank,
+            Inclusion = Inclusion,
+            Geometry = Geometry,
+            ShowsOriginal = ShowsOriginal,
+            Patch = Patch,
+            Barcodes = barcodes,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
@@ -972,6 +1033,7 @@ public sealed class ScannedPage
             Geometry = Geometry,
             ShowsOriginal = ShowsOriginal,
             Patch = Patch,
+            Barcodes = Barcodes,
             DocumentBreak = documentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
@@ -992,6 +1054,7 @@ public sealed class ScannedPage
             Geometry = Geometry,
             ShowsOriginal = ShowsOriginal,
             Patch = Patch,
+            Barcodes = Barcodes,
             DocumentBreak = DocumentBreak,
             DocumentLabel = documentLabel,
             Upright = Upright,
@@ -1015,6 +1078,7 @@ public sealed class ScannedPage
             Geometry = geometry,
             ShowsOriginal = false,
             Patch = Patch,
+            Barcodes = Barcodes,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
@@ -1039,6 +1103,7 @@ public sealed class ScannedPage
             Geometry = Geometry,
             ShowsOriginal = false,
             Patch = Patch,
+            Barcodes = Barcodes,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
@@ -1059,6 +1124,7 @@ public sealed class ScannedPage
             Geometry = Geometry,
             ShowsOriginal = ShowsOriginal,
             Patch = Patch,
+            Barcodes = Barcodes,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = upright,
@@ -1079,6 +1145,7 @@ public sealed class ScannedPage
             Geometry = Geometry,
             ShowsOriginal = ShowsOriginal,
             Patch = Patch,
+            Barcodes = Barcodes,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
@@ -1139,6 +1206,7 @@ public sealed class ScannedPage
             Geometry = Geometry,
             ShowsOriginal = ShowsOriginal,
             Patch = Patch,
+            Barcodes = Barcodes,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
@@ -1167,6 +1235,7 @@ public sealed class ScannedPage
             Geometry = Geometry,
             ShowsOriginal = !ShowsOriginal,
             Patch = Patch,
+            Barcodes = Barcodes,
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,

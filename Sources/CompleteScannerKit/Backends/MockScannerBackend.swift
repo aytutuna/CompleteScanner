@@ -11,7 +11,8 @@ import Foundation
 /// obviously made-up design, no real document), which it turns over after every scan
 /// (`idCardTurnedOver`); for the Receipts task it holds two made-up receipts
 /// (`demoReceiptPlaces`); for the Batch task its feeder holds a stack of documents with separator
-/// sheets between them (`batchSeparatorSheets`); for the Book or magazine task its glass holds an open
+/// sheets between them (`batchSeparatorSheets`: patch-code sheets, or barcode sheets when the stack is
+/// split at barcode or QR sheets); for the Book or magazine task its glass holds an open
 /// book, whose page it turns after every scan (`bookSpread`). Twin of C# `MockScannerBackend`.
 public final class MockScannerBackend: ScannerBackend {
 
@@ -65,8 +66,23 @@ public final class MockScannerBackend: ScannerBackend {
 
     /// The sheets (counted from 0) of the Batch task's stack that are separator sheets, read when the
     /// scan starts: the Patch T sheet the app prints (`PatchCodeDetector.renderSheet`) on the front,
-    /// blank paper on the back. Sheets 2 and 4 by default: documents of two, one and two sheets.
+    /// blank paper on the back; split at barcode or QR sheets (`SplitMode.barcode`), a Code 39 sheet
+    /// naming the document after it instead (`batchBarcodeText`). Sheets 2 and 4 by default: documents
+    /// of two, one and two sheets.
     public var batchSeparatorSheets: Set<Int> = [2, 4]
+
+    /// The Code 39 text of the demo's barcode separator sheet in front of document `document` (from 1):
+    /// the separator prefix and a name, "CS-SEP INVOICE 1002" for the second, which names it
+    /// "INVOICE 1002". Twin of C# `MockBedRenderer.BatchBarcodeText`.
+    nonisolated static func batchBarcodeText(_ document: Int) -> String {
+        "\(BarcodeSeparators.defaultPrefix) INVOICE \(1000 + document)"
+    }
+
+    /// A barcode separator sheet as the demo feeder delivers it (`Code39.renderSheet`), for checks.
+    /// Twin of C# `MockBedRenderer.RenderBarcodeSeparatorSheet`.
+    nonisolated static func renderBarcodeSeparatorSheet(dpi: Int, text: String, sheetInches: CGSize? = nil) -> CGImage? {
+        MockBedRenderer.renderBarcodeSeparatorSheet(dpi: dpi, text: text, sheetInches: sheetInches)
+    }
 
     /// The sample ID card on the glass lies with its back up: a scan for the ID card task shows its
     /// back. The demo turns the card over by itself after every such scan, as the user is asked to,
@@ -217,6 +233,7 @@ private final class MockScannerSession: ScannerSession {
             ? (backend?.batchSheetCount ?? MockScannerBackend.defaultBatchSheetCount)
             : (backend?.feederSheetCount ?? MockScannerBackend.defaultFeederSheetCount)
         let separators: Set<Int> = batch ? (backend?.batchSeparatorSheets ?? [2, 4]) : []
+        let barcodeSheets = batch && settings.document.splitMode == .barcode
         let jamsAfter = backend?.feederJamsAfter
         let twoSided = settings.duplex == .both && (backend?.feederDuplex ?? true)
         let turnedOver = backend?.feederStackTurnedOver ?? false
@@ -244,7 +261,17 @@ private final class MockScannerSession: ScannerSession {
             for side in sides {
                 let separator = separators.contains(sheet)
                 let blank = side == .back && (separator || blankBacks.contains(sheet))
-                let front = separator ? MockBedRenderer.renderSeparatorSheet(dpi: dpi, sheetInches: sheetInches) : nil
+                // The nth separator sheet of the stack starts document n + 1.
+                let document = 2 + separators.filter { $0 < sheet }.count
+                let front: CGImage?
+                if !separator {
+                    front = nil
+                } else if barcodeSheets {
+                    front = MockBedRenderer.renderBarcodeSeparatorSheet(dpi: dpi, text: MockScannerBackend.batchBarcodeText(document),
+                                                                        sheetInches: sheetInches)
+                } else {
+                    front = MockBedRenderer.renderSeparatorSheet(dpi: dpi, sheetInches: sheetInches)
+                }
                 let rendered: CGImage?
                 if blank {
                     rendered = MockBedRenderer.renderBlankBack(dpi: dpi, intent: settings.intent, sheetIndex: sheet,
@@ -426,8 +453,21 @@ private enum MockBedRenderer {
     /// off-white paper. Drawn pixel by pixel, the same as the C# demo.
     static func renderSeparatorSheet(dpi: Int, sheetInches size: CGSize? = nil) -> CGImage? {
         let inches = size ?? sheetInches
-        let sheet = PatchCodeDetector.renderSheet(.patchT, widthInches: Double(inches.width),
-                                                  heightInches: Double(inches.height), dpi: dpi)
+        return onPaper(PatchCodeDetector.renderSheet(.patchT, widthInches: Double(inches.width),
+                                                     heightInches: Double(inches.height), dpi: dpi))
+    }
+
+    /// A barcode separator sheet as the demo feeder delivers it: `text` in Code 39 (`Code39.renderSheet`),
+    /// `sheetInches` in size (`sheetInches` by default), on the same off-white paper as the patch-code
+    /// sheet. Drawn pixel by pixel, the same as the C# demo.
+    static func renderBarcodeSeparatorSheet(dpi: Int, text: String, sheetInches size: CGSize? = nil) -> CGImage? {
+        let inches = size ?? sheetInches
+        return onPaper(Code39.renderSheet(text, widthInches: Double(inches.width),
+                                          heightInches: Double(inches.height), dpi: dpi))
+    }
+
+    /// A drawn sheet (black on white) as scanned: toner a little short of black, paper a little short of white.
+    private static func onPaper(_ sheet: GrayImage) -> CGImage? {
         var pixels = [UInt8](repeating: 255, count: sheet.width * sheet.height * 4)
         for i in 0..<sheet.pixels.count {
             // Toner a little short of black, paper a little short of white.

@@ -335,7 +335,12 @@ public static class PatchCodeDetector
         return new GrayImage(w, h, pixels, dpi);
     }
 
-    private static void FillRect(byte[] pixels, int w, int h, int x, int y, int rw, int rh, byte value)
+    /// <summary>
+    /// Fills the rectangle at (<paramref name="x"/>, <paramref name="y"/>), <paramref name="rw"/> ×
+    /// <paramref name="rh"/> pixels, with <paramref name="value"/>, clipped to the sheet. Also used by
+    /// the barcode sheets (<see cref="QrSeparatorSheet"/>, <see cref="Code39"/>).
+    /// </summary>
+    internal static void FillRect(byte[] pixels, int w, int h, int x, int y, int rw, int rh, byte value)
     {
         for (int py = Math.Max(0, y); py < Math.Min(h, y + rh); py++)
         {
@@ -346,9 +351,9 @@ public static class PatchCodeDetector
     /// <summary>
     /// <paramref name="text"/> in the sheet's 5 × 7 type, each dot <paramref name="cell"/> pixels,
     /// a dot's space between letters, centred across the sheet with its top at <paramref name="top"/>.
-    /// Characters the type does not have are spaces.
+    /// Characters the type does not have are spaces. Also used by the barcode sheets.
     /// </summary>
-    private static void DrawText(byte[] pixels, int w, int h, string text, int top, int cell)
+    internal static void DrawText(byte[] pixels, int w, int h, string text, int top, int cell)
     {
         int width = (text.Length * 6 - 1) * cell;
         int x = (w - width) / 2;
@@ -367,6 +372,9 @@ public static class PatchCodeDetector
             x += 6 * cell;
         }
     }
+
+    /// <summary>Whether the sheet's type has <paramref name="c"/>.</summary>
+    internal static bool HasGlyph(char c) => Glyphs.ContainsKey(c);
 
     /// <summary>The sheet's type: 5 × 7 dots per character, rows top to bottom.</summary>
     private static readonly Dictionary<char, string> Glyphs = new()
@@ -412,6 +420,16 @@ public static class PatchCodeDetector
         [')'] = "01000001000001000010000100010001000",
         ['%'] = "11000110010001000100010001001100011",
         ['-'] = "00000000000000011111000000000000000",
+        ['?'] = "01110100010000100010001000000000100",
+        [':'] = "00000011000110000000011000110000000",
+        ['/'] = "00000000010001000100010001000000000",
+        ['_'] = "00000000000000000000000000000011111",
+        ['#'] = "01010010101111101010111110101001010",
+        ['+'] = "00000001000010011111001000010000000",
+        [','] = "00000000000000000000011000010001000",
+        ['&'] = "01100100101010001000101011001001101",
+        ['\''] = "01100001000100000000000000000000000",
+        ['!'] = "00100001000010000100001000000000100",
     };
 }
 

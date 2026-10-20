@@ -529,6 +529,10 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     private readonly IOcrService _ocrService;
     /// <summary>Reads pages for "Rotate pages upright" (<see cref="OrientationStep"/>).</summary>
     private readonly IOrientationScorer _orientation;
+    /// <summary>Reads barcodes and QR codes on pages, when the stack is split at barcode or QR sheets.</summary>
+    private readonly IBarcodeReader _barcodes;
+    /// <summary>Makes the QR code of a QR separator sheet.</summary>
+    private readonly IQrEncoder _qrEncoder;
     /// <summary>Opens, shows, shares and copies saved files through Windows (a stand-in in tests).</summary>
     private readonly IFileActions _fileActions;
     private readonly Dispatcher _dispatcher;
@@ -612,7 +616,9 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                         IFileActions? fileActions = null,
                         ISystemDiagnostics? systemDiagnostics = null,
                         IPrintService? printService = null,
-                        IOrientationScorer? orientationScorer = null)
+                        IOrientationScorer? orientationScorer = null,
+                        IBarcodeReader? barcodeReader = null,
+                        IQrEncoder? qrEncoder = null)
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
         var saved = SettingsStore.Load();
@@ -620,6 +626,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         // A task saved last time is still active: its banner comes back with the settings.
         Settings = saved ?? new ScanSettings();
         _labelsCarriedUnder = Settings.Document.Clone();
+        _readsBarcodes = PageProcessor.ReadsBarcodes(Settings);
         SyncTaskFlow();
         _backends = backends ?? [new Scanning.WiaScannerBackend(),
                                  new Scanning.EsclScannerBackend(),
@@ -638,6 +645,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         _system = systemDiagnostics ?? new WindowsSystemDiagnostics();
         _print = printService ?? new WindowsPrintService();
         _orientation = orientationScorer ?? new WindowsOrientationScorer();
+        _barcodes = barcodeReader ?? new ZXingBarcodeReader();
+        _qrEncoder = qrEncoder ?? new ZXingQrEncoder();
         foreach (var preset in _presetStore.Load()) Presets.Add(preset);
         _renderTimer = new DispatcherTimer(DispatcherPriority.Normal, _dispatcher) { Interval = CanvasRenderDebounce };
         _renderTimer.Tick += (_, _) =>
@@ -688,6 +697,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         SyncTaskFlow();
         // A named document whose first page the settings now leave out keeps its name.
         CarryDocumentLabelsAcrossSettings();
+        // Split at barcode or QR sheets just chosen: the pages queued before are read too.
+        BarcodeSettingsEdited();
         // The page strip's badges follow the blank-page settings.
         SyncPageOptions();
         // The Copies section shows the paper the printer is asked for.
@@ -794,9 +805,13 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// <summary>Re-evaluate a deferred automatic device switch once nothing is in progress.</summary>
     private void EndOfWork()
     {
-        if (!_autoSwitchDeferred || AutoSwitchMustWait) return;
-        _autoSwitchDeferred = false;
-        MergeDevices();
+        if (_autoSwitchDeferred && !AutoSwitchMustWait)
+        {
+            _autoSwitchDeferred = false;
+            MergeDevices();
+        }
+        // Queued pages a scan or a busy moment left unread (AppViewModel.Split.cs).
+        ReadQueuedBarcodesAfterWork();
     }
 
     /// <summary>
@@ -1308,7 +1323,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                 : manualSide == PageSide.Back ? ScanArrangement.TurnedOverBacks
                 : manualSide == PageSide.Front ? ScanArrangement.TurnedOverFronts
                 : ScanArrangement.AsScanned;
-            var processor = PageProcessor.ForScan(s, arrangement, _orientation);
+            var processor = PageProcessor.ForScan(s, arrangement, _orientation, _barcodes);
             var cleaned = await Task.Run(() => processor.Process(scanned, token), token);
             if (_switchGeneration != generation) return;
             token.ThrowIfCancellationRequested();
@@ -1358,6 +1373,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                         }
                         foreach (var (spreadId, source) in spreadSources) _spreads[spreadId] = source;
                         foreach (var item in spooled) ScannedPages.Add(item);
+                        // Pages queued earlier and never read (a reading stopped) are read once the scan is done.
+                        if (PageProcessor.ReadsBarcodes(Settings)) _readBarcodesAfterWork = true;
                         RecordCaptures(spooled.Select(item => item.Page.Id));
                         SetLastScan(rawPreview);
                         int n = processed.Count;
@@ -2076,8 +2093,11 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     {
         var adapted = SettingsAdapter.Adapt(preset.Settings, Capabilities);
         Settings = adapted.Settings;
+        bool wasBusy = IsBusy;
         SettingsEdited();
-        StatusMessage = WithNotes($"Applied preset “{preset.Name}”.", adapted.Notes);
+        string applied = WithNotes($"Applied preset “{preset.Name}”.", adapted.Notes);
+        // A reading of the queued pages the preset started (split at barcode or QR sheets) says so.
+        StatusMessage = !wasBusy && IsBusy ? $"{applied} {StatusMessage}" : applied;
         NotifyAll();
     }
 

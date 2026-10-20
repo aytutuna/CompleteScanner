@@ -17,24 +17,28 @@ public enum PageRole
 
 /// <summary>
 /// What the split looks at on a queued page: its sheet and side (two-sided scans), whether it
-/// looks blank at the chosen sensitivity, the patch code found on it, and the user's keep or skip,
-/// document break and document name.
+/// looks blank at the chosen sensitivity, the patch code found on it, the user's keep or skip,
+/// document break and document name, and the barcode or QR code that splits the stack at it (the
+/// first in reading order that does, <see cref="BarcodeSeparators.SplittingCode"/>).
 /// </summary>
 public sealed record PageFacts(int? SheetIndex = null, PageSide? Side = null, bool LooksBlank = false,
                                PatchCode? Patch = null, PageInclusion Inclusion = PageInclusion.Automatic,
-                               DocumentBreak Break = DocumentBreak.Automatic, string? Label = null)
+                               DocumentBreak Break = DocumentBreak.Automatic, string? Label = null,
+                               BarcodeReading? Barcode = null)
 {
-    /// <summary>The facts of <paramref name="page"/> under <paramref name="options"/> (its blank-page sensitivity).</summary>
+    /// <summary>The facts of <paramref name="page"/> under <paramref name="options"/> (its blank-page sensitivity, the codes that split).</summary>
     public static PageFacts Of(ScannedPage page, DocumentOptions options) =>
         new(page.SheetIndex, page.Side, PageFilter.LooksBlank(page, options.BlankSensitivity), page.Patch,
-            page.Inclusion, page.DocumentBreak, page.DocumentLabel);
+            page.Inclusion, page.DocumentBreak, page.DocumentLabel, BarcodeSeparators.SplittingCode(page.Barcodes, options));
 }
 
 /// <summary>
 /// A queued page in the plan: what saving does with it, the sheet it is on (0 = the queue's first),
-/// its document (numbered from 1; null for a page left out) and whether it is that document's first page.
+/// its document (numbered from 1; null for a page left out), whether it is that document's first page,
+/// and, on a side of a barcode or QR separator sheet, the code that makes the sheet one (read on
+/// either side).
 /// </summary>
-public sealed record PlannedPage(PageRole Role, int Sheet, int? Document, bool StartsDocument);
+public sealed record PlannedPage(PageRole Role, int Sheet, int? Document, bool StartsDocument, BarcodeReading? Code = null);
 
 /// <summary>A document saving writes: its number (from 1), its pages (queue indices, in order) and its name, if any.</summary>
 public sealed record PlannedDocument(int Number, IReadOnlyList<int> Pages, string? Label);
@@ -71,6 +75,14 @@ public sealed record SplitPlan(IReadOnlyList<PlannedPage> Pages, IReadOnlyList<P
 /// documents left with no page are dropped. Every N sheets: a new document starts at every Nth
 /// sheet, counting every sheet, blank ones too. A page the user keeps makes its sheet no
 /// separator; the user's split or join at a page wins over the setting.
+///
+/// At barcode or QR sheets: a sheet with a code starting with <see cref="DocumentOptions.SplitBarcodePrefix"/>
+/// on either side is a separator, like a patch-code sheet, and the rest of the code's text names the
+/// document after it (the last such sheet before it, when several are in a row); other codes are
+/// ignored. With <see cref="DocumentOptions.BarcodeStartsDocument"/> a sheet with any code is kept and
+/// starts a new document, named by the code (without the prefix, when it has it). The first code that
+/// counts on a sheet does (front first, then top to bottom). A name the user gives a document wins
+/// over its code's.
 /// </summary>
 public static class DocumentSplitter
 {
@@ -109,10 +121,18 @@ public static class DocumentSplitter
         var mode = options.SplitMode;
         int perDocument = ClampSheetCount(options.SplitSheetCount);
 
-        // Which sheets are separators.
+        // Which sheets are separators, and the first code on each sheet that splits the stack.
         int sheetCount = facts.Count == 0 ? 0 : sheets[^1] + 1;
         var separator = new bool[sheetCount];
-        if (mode is SplitMode.SeparatorSheet or SplitMode.BlankSheet)
+        var barcode = new BarcodeReading?[sheetCount];
+        if (mode == SplitMode.Barcode)
+        {
+            for (int i = 0; i < facts.Count; i++)
+            {
+                if (BarcodeSeparators.Splits(facts[i].Barcode, options)) barcode[sheets[i]] ??= facts[i].Barcode;
+            }
+        }
+        if (mode is SplitMode.SeparatorSheet or SplitMode.BlankSheet or SplitMode.Barcode)
         {
             var kept = new bool[sheetCount];
             var patch = new bool[sheetCount];
@@ -126,13 +146,21 @@ public static class DocumentSplitter
             }
             for (int s = 0; s < sheetCount; s++)
             {
-                separator[s] = !kept[s] && (mode == SplitMode.SeparatorSheet ? patch[s] : allBlank[s]);
+                bool marked = mode switch
+                {
+                    SplitMode.SeparatorSheet => patch[s],
+                    SplitMode.BlankSheet => allBlank[s],
+                    _ => !options.BarcodeStartsDocument && barcode[s] is not null,
+                };
+                separator[s] = !kept[s] && marked;
             }
         }
 
         var pages = new PlannedPage[facts.Count];
-        var documents = new List<(List<int> Pages, string? Label)>();
+        var documents = new List<(List<int> Pages, string? Label, string? CodeLabel)>();
         bool pending = false;
+        // The name the next document takes from a code (null whenever no document is pending).
+        string? pendingLabel = null;
         int ordinal = 0;
         for (int i = 0; i < facts.Count; i++)
         {
@@ -141,9 +169,15 @@ public static class DocumentSplitter
             bool firstOfSheet = i == 0 || sheets[i - 1] != sheet;
             if (separator[sheet])
             {
-                pages[i] = new PlannedPage(PageRole.Separator, sheet, null, false);
+                pages[i] = new PlannedPage(PageRole.Separator, sheet, null, false, barcode[sheet]);
+                if (mode == SplitMode.Barcode && firstOfSheet) pendingLabel = BarcodeSeparators.CodeLabel(barcode[sheet]?.Text, options);
                 pending = true;
                 continue;
+            }
+            if (mode == SplitMode.Barcode && options.BarcodeStartsDocument && firstOfSheet && barcode[sheet] is { } code)
+            {
+                pending = true;
+                pendingLabel = BarcodeSeparators.CodeLabel(code.Text, options);
             }
             if (mode == SplitMode.SheetCount && firstOfSheet)
             {
@@ -164,14 +198,15 @@ public static class DocumentSplitter
             bool starts = documents.Count == 0
                           || fact.Break == DocumentBreak.Split
                           || (pending && fact.Break != DocumentBreak.Join);
-            if (starts) documents.Add(([], null));
+            if (starts) documents.Add(([], null, pending ? pendingLabel : null));
             var current = documents[^1];
             current.Pages.Add(i);
-            if (current.Label is null && Cleaned(fact.Label) is { } label) documents[^1] = (current.Pages, label);
+            if (current.Label is null && Cleaned(fact.Label) is { } label) documents[^1] = (current.Pages, label, current.CodeLabel);
             pages[i] = new PlannedPage(PageRole.Content, sheet, documents.Count, starts);
             pending = false;
+            pendingLabel = null;
         }
-        var planned = documents.Select((d, n) => new PlannedDocument(n + 1, d.Pages, d.Label)).ToList();
+        var planned = documents.Select((d, n) => new PlannedDocument(n + 1, d.Pages, d.Label ?? d.CodeLabel)).ToList();
         return new SplitPlan(pages, planned);
     }
 
@@ -239,10 +274,21 @@ public static class DocumentSplitter
             if (now.Pages[oldFirst].StartsDocument) continue;
             // A split chosen since can leave its pages in several documents: the first takes the name.
             if (!carried.Add(number)) continue;
-            labels[first] = was.Label;
+            // The name the user gave it; a name from a code follows the code by itself.
+            labels[first] = UserLabel(before, was);
             labels[oldFirst] = null;
         }
         return labels;
+    }
+
+    /// <summary>The first name the user gave among <paramref name="document"/>'s pages (as <see cref="Plan(IReadOnlyList{PageFacts}, DocumentOptions)"/> takes it).</summary>
+    private static string? UserLabel(IReadOnlyList<PageFacts> facts, PlannedDocument document)
+    {
+        foreach (int page in document.Pages)
+        {
+            if (Cleaned(facts[page].Label) is { } label) return label;
+        }
+        return null;
     }
 
     /// <summary>
@@ -344,13 +390,36 @@ public static class DocumentSplitter
 
     /// <summary>
     /// What a separator page is, for its tooltip and screen readers: "Separator sheet (Patch T): a new
-    /// document starts after it. It is not saved." (the code when one was found); null for other pages.
+    /// document starts after it. It is not saved." (the code when one was found); at barcode or QR
+    /// sheets the sheet's code (read on either side) and the name of the document that follows as the
+    /// plan names it (the last code sheet in a row names it, a name the user gives wins): "Separator
+    /// sheet (QR code “CS-SEP Lease”): a new document named “Lease” starts after it. It is not saved.";
+    /// when the user joined the page after the sheet to the document before: "Separator sheet (Patch
+    /// T): the pages after it are joined to the document before. It is not saved."; null for other pages.
     /// </summary>
     public static string? SeparatorNote(SplitPlan plan, int index, ScannedPage page)
     {
-        if (plan.Pages[index].Role != PageRole.Separator) return null;
-        string what = page.Patch is { } code ? $"Separator sheet ({code.Label()})" : "Blank separator sheet";
+        var planned = plan.Pages[index];
+        if (planned.Role != PageRole.Separator) return null;
+        string what = planned.Code is { } reading ? $"Separator sheet ({BarcodeSeparators.Describe(reading)})"
+                    : page.Patch is { } code ? $"Separator sheet ({code.Label()})"
+                    : "Blank separator sheet";
+        var next = NextSavedPage(plan, index);
+        if (next is { StartsDocument: false })
+            return $"{what}: the pages after it are joined to the document before. It is not saved.";
+        if (planned.Code is not null && next is { Document: { } number } && plan.Documents[number - 1].Label is { } name)
+            return $"{what}: a new document named “{name}” starts after it. It is not saved.";
         return $"{what}: a new document starts after it. It is not saved.";
+    }
+
+    /// <summary>The first page saved after <paramref name="index"/>; null when no page follows.</summary>
+    private static PlannedPage? NextSavedPage(SplitPlan plan, int index)
+    {
+        for (int i = index + 1; i < plan.Pages.Count; i++)
+        {
+            if (plan.Pages[i].Document is not null) return plan.Pages[i];
+        }
+        return null;
     }
 
     /// <summary>

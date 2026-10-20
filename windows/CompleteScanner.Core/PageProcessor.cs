@@ -91,19 +91,54 @@ public sealed class SeparatorStep : IPageStep
 }
 
 /// <summary>
+/// Reads the barcodes and QR codes on the page with <paramref name="reader"/>
+/// (<see cref="BarcodeSeparators.ReadPage"/>) and records them, so the stack can be split at barcode or QR
+/// sheets and the documents named by them (<see cref="DocumentSplitter"/>). The pixels are not
+/// changed. A page the reader fails on stays unread (<see cref="ScannedPage.Barcodes"/> null). Runs
+/// after the separator check, before turning pages upright and the adjustments.
+/// </summary>
+public sealed class BarcodeStep(IBarcodeReader reader) : ICancellablePageStep
+{
+    public IBarcodeReader Reader { get; } = reader;
+    public string Name => "barcode";
+
+    public ScannedPage Apply(ScannedPage page) => Apply(page, CancellationToken.None);
+
+    public ScannedPage Apply(ScannedPage page, CancellationToken token)
+    {
+        try
+        {
+            return page.WithBarcodes(BarcodeSeparators.ReadPage(page, Reader, token));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // A reading that failed leaves the page as it was: no code is made up, none is lost.
+            return page;
+        }
+    }
+}
+
+/// <summary>
 /// Turns the page upright when its text reads clearly better another way up
 /// (<see cref="OrientationDecision.Check"/>, reading with <paramref name="scorer"/>), recording the
 /// turn so one click undoes it (<see cref="ScannedPage.TurnedUpright"/>). Blank pages and separator
-/// sheets are not read; a page the reading is not sure about, or that takes longer than
-/// <paramref name="maxSeconds"/>, stays as it is. Runs after the separator check, before the
-/// adjustments, on the page as cropped and straightened. <paramref name="clock"/> (seconds) is for
-/// tests.
+/// sheets are not read: patch-code sheets, and under <paramref name="split"/> (the scan's document
+/// options) barcode or QR separator sheets (<see cref="BarcodeSeparators.IsSeparatorPage"/>); a page
+/// the reading is not sure about, or that takes longer than <paramref name="maxSeconds"/>, stays as it
+/// is. Runs after the separator and barcode checks, before the adjustments, on the page as cropped and
+/// straightened. <paramref name="clock"/> (seconds) is for tests.
 /// </summary>
 public sealed class OrientationStep(IOrientationScorer scorer, double maxSeconds = OrientationDecision.MaxSecondsPerPage,
-                                    Func<double>? clock = null) : ICancellablePageStep
+                                    Func<double>? clock = null, DocumentOptions? split = null) : ICancellablePageStep
 {
     public IOrientationScorer Scorer { get; } = scorer;
     public double MaxSeconds { get; } = maxSeconds;
+    /// <summary>The document options whose barcode or QR separator sheets are not read; null: none are known.</summary>
+    public DocumentOptions? Split { get; } = split?.Clone();
     public string Name => "orientation";
 
     public ScannedPage Apply(ScannedPage page) => Apply(page, CancellationToken.None);
@@ -111,6 +146,7 @@ public sealed class OrientationStep(IOrientationScorer scorer, double maxSeconds
     public ScannedPage Apply(ScannedPage page, CancellationToken token)
     {
         if (page.Blank?.IsBlank == true || page.Patch is not null) return page;
+        if (Split is { } options && BarcodeSeparators.IsSeparatorPage(page, options)) return page;
         var check = OrientationDecision.Check(page.Image, page.Dpi, Scorer, token, MaxSeconds, clock);
         return check.Verdict == OrientationVerdict.Turned ? page.TurnedUpright(check.QuarterTurns) : page;
     }
@@ -177,7 +213,7 @@ public sealed record ProcessedScan(IReadOnlyList<ScannedPage> Arranged, IReadOnl
 /// is cut into its two pages when facing pages are split (<paramref name="book"/>), then every step
 /// runs on every page in order. The order of the steps is fixed: <see cref="ForScan"/> builds them
 /// from the settings: blank check (document pages), crop and straighten, softening the spine's shadow,
-/// separator sheets, turning pages upright, then adjustments.
+/// separator sheets, barcodes, turning pages upright, then adjustments.
 /// </summary>
 public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
                                   ScanArrangement arrangement = ScanArrangement.AsScanned,
@@ -196,13 +232,15 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// strip can flag them), crop and straighten when asked for those pages, softening the spine's
     /// shadow when asked for on split spreads (<see cref="SoftensSpineShadow"/>), the separator-sheet
     /// check for those pages (whether or not the stack is split, so a split chosen later finds
-    /// them), turning those pages upright when asked for and <paramref name="scorer"/> can read text,
-    /// then the adjustments unless they change nothing. Facing pages are split before the steps when
+    /// them), reading their barcodes when the stack is split at barcode or QR sheets
+    /// (<see cref="ReadsBarcodes"/>) and <paramref name="barcodes"/> can read them, turning those pages
+    /// upright when asked for and <paramref name="scorer"/> can read text, then the adjustments unless
+    /// they change nothing. Facing pages are split before the steps when
     /// asked for those pages (<see cref="SplitsFacingPages"/>), so each page is checked, straightened
     /// and turned on its own.
     /// </summary>
     public static PageProcessor ForScan(ScanSettings settings, ScanArrangement arrangement = ScanArrangement.AsScanned,
-                                        IOrientationScorer? scorer = null)
+                                        IOrientationScorer? scorer = null, IBarcodeReader? barcodes = null)
     {
         var steps = new List<IPageStep>();
         if (ChecksBlankPages(settings))
@@ -221,9 +259,13 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
         {
             steps.Add(new SeparatorStep());
         }
+        if (ReadsBarcodes(settings) && barcodes is { IsAvailable: true })
+        {
+            steps.Add(new BarcodeStep(barcodes));
+        }
         if (TurnsPagesUpright(settings) && scorer is { IsAvailable: true })
         {
-            steps.Add(new OrientationStep(scorer));
+            steps.Add(new OrientationStep(scorer, split: settings.Document));
         }
         if (!(settings.Adjustments.IsIdentity && settings.ColorMode == ColorMode.Color))
         {
@@ -248,6 +290,14 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// </summary>
     public static bool CorrectsGeometry(ScanSettings settings) =>
         ChecksBlankPages(settings) && (settings.Document.AutoCrop || settings.Document.AutoStraighten);
+
+    /// <summary>
+    /// Whether scans with these settings have their barcodes read: document pages collected in the
+    /// queue, split at barcode or QR sheets. Reading takes time, so other splits don't read them;
+    /// choosing this split reads the pages already queued (the app does that).
+    /// </summary>
+    public static bool ReadsBarcodes(ScanSettings settings) =>
+        ChecksBlankPages(settings) && settings.Document.SplitMode == SplitMode.Barcode;
 
     /// <summary>
     /// Whether scans with these settings are turned upright: asked for, on document pages collected

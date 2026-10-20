@@ -438,6 +438,33 @@ final class MockScannerTests: XCTestCase {
     }
 
     @MainActor
+    func test_theBatchStack_atBarcodeSheets_hasCode39SheetsNamingTheDocumentsAfterThem() async throws {
+        let (_, session) = try await open()
+        var settings = TaskCatalog.apply(.batch, to: ScanSettings())
+        settings.document.splitMode = .barcode
+        settings.resolution = mockDPI
+        let pages = try await session.performScan(settings: settings, selection: nil)
+        XCTAssertEqual(pages.count, 7)
+        XCTAssertEqual(MockScannerBackend.batchBarcodeText(2), "CS-SEP INVOICE 1002")
+        XCTAssertEqual(BarcodeSeparators.codeLabel(MockScannerBackend.batchBarcodeText(2), options: settings.document), "INVOICE 1002")
+        let second = try XCTUnwrap(MockScannerBackend.renderBarcodeSeparatorSheet(dpi: mockDPI, text: "CS-SEP INVOICE 1002"))
+        let third = try XCTUnwrap(MockScannerBackend.renderBarcodeSeparatorSheet(dpi: mockDPI, text: "CS-SEP INVOICE 1003"))
+        XCTAssertEqual(rgbaPixels(pages[2].image), rgbaPixels(second))
+        XCTAssertEqual(rgbaPixels(pages[4].image), rgbaPixels(third))
+        // No patch code on them, and the documents' sheets keep their numbers.
+        for page in pages {
+            XCTAssertNil(PatchCodeDetector.detect(page.image, dpi: page.dpi))
+        }
+        XCTAssertEqual([0, 1, 3, 5, 6].map { sheetMarks(pages[$0].image) }, [1, 2, 4, 6, 7])
+        // The patch-code split finds nothing on them.
+        var patchSplit = TaskCatalog.apply(.batch, to: ScanSettings())
+        patchSplit.resolution = mockDPI
+        let patchPages = try await session.performScan(settings: patchSplit, selection: nil)
+        XCTAssertEqual(patchPages.indices.filter { PatchCodeDetector.detect(patchPages[$0].image, dpi: patchPages[$0].dpi) != nil },
+                       [2, 4])
+    }
+
+    @MainActor
     func test_otherTasks_keepTheUsualStack() async throws {
         let (backend, session) = try await open()
         backend.batchSheetCount = 2

@@ -74,6 +74,8 @@ internal static class CompatFixtures
         settings.Document.AutoRotate = true;
         settings.Document.SplitFacingPages = true;
         settings.Document.SoftenSpineShadow = true;
+        settings.Document.BarcodeStartsDocument = true;
+        settings.Document.SplitBarcodePrefix = "DOC";
         settings.TaskOptions.IdCardPaper = IdCardPaper.Letter;
         settings.TaskOptions.IdCardSaveSidesAsImages = true;
         settings.TaskOptions.CopyCount = 3;
@@ -145,7 +147,7 @@ internal static class CompatFixtures
         + "      \"document\": {\n        \"removeBlankPages\": true,\n        \"blankSensitivity\": \"high\",\n"
         + "        \"autoCrop\": true,\n        \"autoStraighten\": true,\n        \"splitMode\": \"sheetCount\",\n"
         + "        \"splitSheetCount\": 3,\n        \"autoRotate\": true,\n        \"splitFacingPages\": true,\n"
-        + "        \"softenSpineShadow\": true\n      },\n"
+        + "        \"softenSpineShadow\": true,\n        \"barcodeStartsDocument\": true,\n        \"splitBarcodePrefix\": \"DOC\"\n      },\n"
         + "      \"taskOptions\": {\n        \"idCardPaper\": \"letter\",\n        \"idCardSaveSidesAsImages\": true,\n"
         + "        \"copyCount\": 3,\n        \"copyFitToPage\": true,\n        \"copyPrinterName\": \"Office printer\",\n"
         + "        \"copyAlsoSavePdf\": true,\n        \"receiptNameByDate\": false,\n        \"receiptCombine\": true,\n"
@@ -834,10 +836,11 @@ public class ModelsCompatTests
     [Fact]
     public void UnknownOrCorruptSplit_FallsBackToOff_RestIntact()
     {
-        // A mode of a newer version (barcodes), a wrong case, a number, a null: off; a corrupt count: 1.
+        // A mode of a newer version, a wrong case, a number, a null: off; a corrupt count: 1.
         foreach (string document in new[]
                  {
-                     """ "document": {"removeBlankPages": true, "splitMode": "barcode", "splitSheetCount": 4} """,
+                     """ "document": {"removeBlankPages": true, "splitMode": "everyPage", "splitSheetCount": 4} """,
+                     """ "document": {"removeBlankPages": true, "splitMode": "Barcode", "splitSheetCount": 4} """,
                      """ "document": {"removeBlankPages": true, "splitMode": "SeparatorSheet", "splitSheetCount": 4} """,
                      """ "document": {"removeBlankPages": true, "splitMode": 1, "splitSheetCount": 4} """,
                      """ "document": {"removeBlankPages": true, "splitMode": null, "splitSheetCount": 4} """,
@@ -868,8 +871,8 @@ public class ModelsCompatTests
             clone.Document.SplitSheetCount = 2;
             Assert.Equal((mode, 7), (settings.Document.SplitMode, settings.Document.SplitSheetCount));
         }
-        Assert.Equal(["separatorSheet", "blankSheet", "sheetCount"],
-                     new[] { SplitMode.SeparatorSheet, SplitMode.BlankSheet, SplitMode.SheetCount }.Select(mode =>
+        Assert.Equal(["separatorSheet", "blankSheet", "sheetCount", "barcode"],
+                     new[] { SplitMode.SeparatorSheet, SplitMode.BlankSheet, SplitMode.SheetCount, SplitMode.Barcode }.Select(mode =>
                      {
                          var settings = new ScanSettings();
                          settings.Document.SplitMode = mode;
@@ -881,8 +884,85 @@ public class ModelsCompatTests
     [Fact]
     public void SplitLabelsAndHints()
     {
-        Assert.Equal(["Off", "At separator sheets", "At blank sheets", "Every N sheets"], SplitModes.DisplayOrder.Select(m => m.Label()));
+        Assert.Equal(["Off", "At separator sheets", "At blank sheets", "Every N sheets", "At barcode or QR sheets"],
+                     SplitModes.DisplayOrder.Select(m => m.Label()));
         Assert.All(SplitModes.DisplayOrder, mode => Assert.False(string.IsNullOrWhiteSpace(mode.Hint())));
+    }
+
+    // MARK: - Barcode and QR separator sheets (CONTRACTS.md, rule 6)
+
+    [Fact]
+    public void BarcodeStartsDocument_IsOffByDefault_AndInFilesWithoutIt()
+    {
+        Assert.False(new ScanSettings().Document.BarcodeStartsDocument);
+        Assert.False(Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize)[0].Settings.Document.BarcodeStartsDocument);
+        // A "document" object written before it existed keeps its other settings, the barcode split too.
+        var older = Decode<ScanSettings>("""{"document": {"splitMode": "barcode", "softenSpineShadow": true}}""");
+        Assert.Equal((SplitMode.Barcode, true, false),
+                     (older.Document.SplitMode, older.Document.SoftenSpineShadow, older.Document.BarcodeStartsDocument));
+        foreach (string value in new[] { "null", "\"yes\"", "1", "{}" })
+        {
+            var settings = Decode<ScanSettings>($$"""{"document": {"splitMode": "barcode", "barcodeStartsDocument": {{value}}, "autoRotate": true}, "resolution": 150}""");
+            Assert.False(settings.Document.BarcodeStartsDocument);
+            Assert.Equal((SplitMode.Barcode, true, 150), (settings.Document.SplitMode, settings.Document.AutoRotate, settings.Resolution));
+        }
+        Assert.True(Decode<ScanSettings>("""{"document": {"barcodeStartsDocument": true}}""").Document.BarcodeStartsDocument);
+    }
+
+    [Fact]
+    public void BarcodeStartsDocument_RoundTrips_AndCloneIsIndependent()
+    {
+        foreach (bool starts in new[] { false, true })
+        {
+            var settings = new ScanSettings();
+            settings.Document.SplitMode = SplitMode.Barcode;
+            settings.Document.BarcodeStartsDocument = starts;
+            var back = Decode<ScanSettings>(CompatFixtures.Encode(settings));
+            Assert.Equal((SplitMode.Barcode, starts), (back.Document.SplitMode, back.Document.BarcodeStartsDocument));
+            Assert.Equal(settings.Document, back.Document);
+        }
+        var original = CompatFixtures.NonDefaultSettings();
+        var clone = original.Clone();
+        clone.Document.BarcodeStartsDocument = false;
+        Assert.True(original.Document.BarcodeStartsDocument);
+        Assert.NotEqual(original.Document, clone.Document);
+    }
+
+    [Fact]
+    public void SplitBarcodePrefix_IsCsSepByDefault_AndInFilesWithoutIt()
+    {
+        Assert.Equal("CS-SEP", new ScanSettings().Document.SplitBarcodePrefix);
+        Assert.Equal("CS-SEP", Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize)[0].Settings.Document.SplitBarcodePrefix);
+        var older = Decode<ScanSettings>("""{"document": {"splitMode": "barcode", "barcodeStartsDocument": true}}""");
+        Assert.Equal((SplitMode.Barcode, true, "CS-SEP"),
+                     (older.Document.SplitMode, older.Document.BarcodeStartsDocument, older.Document.SplitBarcodePrefix));
+        foreach (string value in new[] { "null", "1", "true", "{}", "[]" })
+        {
+            var settings = Decode<ScanSettings>($$"""{"document": {"splitMode": "barcode", "splitBarcodePrefix": {{value}}, "autoRotate": true}, "resolution": 150}""");
+            Assert.Equal("CS-SEP", settings.Document.SplitBarcodePrefix);
+            Assert.Equal((SplitMode.Barcode, true, 150), (settings.Document.SplitMode, settings.Document.AutoRotate, settings.Resolution));
+        }
+        // Any text is kept as written, an empty one too (every code makes a separator sheet).
+        Assert.Equal(" Doc: ", Decode<ScanSettings>("""{"document": {"splitBarcodePrefix": " Doc: "}}""").Document.SplitBarcodePrefix);
+        Assert.Equal("", Decode<ScanSettings>("""{"document": {"splitBarcodePrefix": ""}}""").Document.SplitBarcodePrefix);
+    }
+
+    [Fact]
+    public void SplitBarcodePrefix_RoundTrips_AndCloneIsIndependent()
+    {
+        foreach (string prefix in new[] { "CS-SEP", "", "Fatura №" })
+        {
+            var settings = new ScanSettings();
+            settings.Document.SplitBarcodePrefix = prefix;
+            var back = Decode<ScanSettings>(CompatFixtures.Encode(settings));
+            Assert.Equal(prefix, back.Document.SplitBarcodePrefix);
+            Assert.Equal(settings.Document, back.Document);
+        }
+        var original = CompatFixtures.NonDefaultSettings();
+        var clone = original.Clone();
+        clone.Document.SplitBarcodePrefix = "OTHER";
+        Assert.Equal("DOC", original.Document.SplitBarcodePrefix);
+        Assert.NotEqual(original.Document, clone.Document);
     }
 
     // MARK: - Crop and straighten (CONTRACTS.md, rule 6)
