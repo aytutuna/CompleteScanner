@@ -11,13 +11,17 @@ import Foundation
 /// obviously made-up design, no real document), which it turns over after every scan
 /// (`idCardTurnedOver`); for the Receipts task it holds two made-up receipts
 /// (`demoReceiptPlaces`); for the Batch task its feeder holds a stack of documents with separator
-/// sheets between them (`batchSeparatorSheets`). Twin of C# `MockScannerBackend`.
+/// sheets between them (`batchSeparatorSheets`); for the Book or magazine task its glass holds an open
+/// book, whose page it turns after every scan (`bookSpread`). Twin of C# `MockScannerBackend`.
 public final class MockScannerBackend: ScannerBackend {
 
     /// Where the demo receipts lie on the glass (centre and size in inches, tilt in degrees), for checks.
     static var demoReceiptPlaces: [(centerInches: CGPoint, sizeInches: CGSize, angleDegrees: Double)] {
         MockBedRenderer.receiptPlaces
     }
+
+    /// The demo book's spine: this share of the scan's width from its left edge, for checks.
+    static var demoBookGutterFraction: Double { MockBedRenderer.bookGutterFraction }
 
     /// Sheets the demo feeder holds unless `feederSheetCount` is changed.
     public static let defaultFeederSheetCount = 3
@@ -68,6 +72,11 @@ public final class MockScannerBackend: ScannerBackend {
     /// back. The demo turns the card over by itself after every such scan, as the user is asked to,
     /// so scans alternate front, back, front… A preview shows the side facing down without turning it.
     public var idCardTurnedOver: Bool = false
+
+    /// The spread the open book on the glass is at (0 = the first): a scan for the Book or magazine task
+    /// shows it, and the demo turns the page by itself after every such scan, as the user is asked to. A
+    /// preview shows the spread without turning the page.
+    public var bookSpread: Int = 0
 
     public init() {}
 
@@ -131,6 +140,8 @@ private final class MockScannerSession: ScannerSession {
             rendered = MockBedRenderer.renderIdCardBed(dpi: 100, side: (backend?.idCardTurnedOver ?? false) ? .back : .front)
         case .receipt?:
             rendered = MockBedRenderer.renderReceiptBed(dpi: 100)
+        case .book?:
+            rendered = MockBedRenderer.renderBookSpread(dpi: 100, spreadIndex: backend?.bookSpread ?? 0)
         default:
             rendered = MockBedRenderer.renderBed(dpi: 100, intent: settings.intent)
         }
@@ -156,15 +167,21 @@ private final class MockScannerSession: ScannerSession {
         // The ID card task scans the sample card, then turns it over as the user would.
         let idCard = settings.task == .idCard
         let cardSide: PageSide = (backend?.idCardTurnedOver ?? false) ? .back : .front
+        // The Book or magazine task scans the open book, then turns its page.
+        let book = settings.task == .book
+        let spread = backend?.bookSpread ?? 0
         let rendered = idCard
             ? MockBedRenderer.renderIdCardBed(dpi: dpi, side: cardSide)
             : settings.task == .receipt
             ? MockBedRenderer.renderReceiptBed(dpi: dpi)
+            : book
+            ? MockBedRenderer.renderBookSpread(dpi: dpi, spreadIndex: spread)
             : MockBedRenderer.renderBed(dpi: dpi, intent: settings.intent)
         guard var image = rendered else {
             throw ScanError.scanFailed("Could not render the demo scan.")
         }
         if idCard { backend?.idCardTurnedOver = cardSide == .front }
+        if book { backend?.bookSpread = spread + 1 }
         try await sleepCheckingCancellation(seconds: 0.25)
 
         progressHandler?(ScanProgress(fraction: 0.9, message: "Transferring…"))
@@ -420,6 +437,101 @@ private enum MockBedRenderer {
             pixels[i * 4 + 2] = value
         }
         return RgbaImage(width: sheet.width, height: sheet.height, pixels: pixels).makeCGImage()
+    }
+
+    // MARK: Book
+
+    /// Where the open demo book lies on the glass, in inches from its top-left corner.
+    static let bookInches = CGRect(x: 0.25, y: 0.5, width: 8.0, height: 6.0)
+    /// The demo book's spine: this share of the scan's width from its left edge.
+    static let bookGutterFraction = 0.52
+    /// The spine's shadow darkens the pages by this share at its middle…
+    static let bookShadowDepth = 0.25
+    /// …fading like a bell curve with this spread (σ), in inches.
+    static let bookShadowSigmaInches = 0.1
+
+    /// The glass with a made-up open book on it at `spreadIndex` (0 = the first spread): two pages side
+    /// by side (`bookInches`) meeting at the spine at `bookGutterFraction` of the width, each with
+    /// text-shaped lines and, near its bottom outer corner, page-number marks (`spreadIndex % 5 + 1`
+    /// squares) so spreads can be told apart; the spine's shadow (`bookShadowDepth` deep, σ =
+    /// `bookShadowSigmaInches`) darkens the pages around it. Drawn pixel by pixel, as the C# demo draws it.
+    static func renderBookSpread(dpi: Int, spreadIndex: Int) -> CGImage? {
+        let scale = Double(dpi)
+        let width = Int(8.5 * scale), height = Int(11.7 * scale)
+        guard width > 0, height > 0 else { return nil }
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        // Near-white bed with a very subtle vertical gradient (0.97 → 0.945 gray), as the C# demo.
+        for y in 0..<height {
+            let t = Double(y) / Double(max(1, height - 1))
+            let v = UInt8(((0.97 + (0.945 - 0.97) * t) * 255).rounded(.toNearestOrEven))
+            for x in 0..<width {
+                let i = (y * width + x) * 4
+                pixels[i] = v
+                pixels[i + 1] = v
+                pixels[i + 2] = v
+            }
+        }
+        // A rectangle in pixels, as the C# demo's FillRect: from the floor of its corner to the ceiling of its far edge.
+        func fill(_ x: Double, _ y: Double, _ w: Double, _ h: Double, _ r: UInt8, _ g: UInt8, _ b: UInt8) {
+            let x0 = max(0, Int(x)), y0 = max(0, Int(y))
+            let x1 = min(width, Int((x + w).rounded(.up))), y1 = min(height, Int((y + h).rounded(.up)))
+            guard x0 < x1, y0 < y1 else { return }
+            for py in y0..<y1 {
+                for px in x0..<x1 {
+                    let i = (py * width + px) * 4
+                    pixels[i] = r
+                    pixels[i + 1] = g
+                    pixels[i + 2] = b
+                    pixels[i + 3] = 255
+                }
+            }
+        }
+
+        let bookX = Double(bookInches.minX) * scale, bookY = Double(bookInches.minY) * scale
+        let bookW = Double(bookInches.width) * scale, bookH = Double(bookInches.height) * scale
+        let gutter = bookGutterFraction * Double(width)
+        fill(bookX, bookY, bookW, bookH, 252, 251, 247)
+
+        // The lines of each page: text bars of varied length, 0.2 in apart.
+        let lineTenths = [33, 34, 32, 34, 21, 0, 34, 33, 34, 31, 34, 17, 0, 34, 32, 33, 34, 30, 34, 26, 0, 33, 34, 28]
+        let barHeight = 0.05 * scale, pitch = 0.2 * scale
+        let inner = 0.45 * scale, outer = 0.5 * scale
+        for side in 0..<2 {
+            let pageLeft = side == 0 ? bookX + outer : gutter + inner
+            let pageRight = side == 0 ? gutter - inner : bookX + bookW - outer
+            let textWidth = pageRight - pageLeft
+            var y = bookY + 0.6 * scale
+            for line in 0..<lineTenths.count {
+                let tenths = lineTenths[(line + 5 * side + 3 * spreadIndex) % lineTenths.count]
+                if tenths > 0 { fill(pageLeft, y, textWidth * Double(tenths) / 34.0, barHeight, 60, 60, 64) }
+                y += pitch
+            }
+            // Page-number marks near the page's bottom outer corner.
+            let markSide = 0.12 * scale, markPitch = 0.2 * scale
+            let markY = bookY + bookH - 0.45 * scale
+            for mark in 0..<max(0, spreadIndex % 5 + 1) {
+                let x = side == 0 ? pageLeft + Double(mark) * markPitch : pageRight - markSide - Double(mark) * markPitch
+                fill(x, markY, markSide, markSide, 60, 60, 64)
+            }
+        }
+
+        // The spine's shadow, over the book only.
+        let sigma = bookShadowSigmaInches * scale
+        let x0 = max(0, Int((gutter - 4 * sigma).rounded(.down))), x1 = min(width, Int((gutter + 4 * sigma).rounded(.up)))
+        let y0 = max(0, Int(bookY)), y1 = min(height, Int((bookY + bookH).rounded(.up)))
+        if x0 < x1 && y0 < y1 {
+            for x in x0..<x1 {
+                let d = Double(x) + 0.5 - gutter
+                let keep = 1 - bookShadowDepth * exp(-d * d / (2 * sigma * sigma))
+                for y in y0..<y1 {
+                    let i = (y * width + x) * 4
+                    for c in 0..<3 {
+                        pixels[i + c] = UInt8((Double(pixels[i + c]) * keep).rounded(.toNearestOrEven))
+                    }
+                }
+            }
+        }
+        return RgbaImage(width: width, height: height, pixels: pixels).makeCGImage()
     }
 
     // MARK: Receipts

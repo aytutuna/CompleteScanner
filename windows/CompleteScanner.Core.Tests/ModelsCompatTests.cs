@@ -69,6 +69,7 @@ internal static class CompatFixtures
         settings.Document.SplitMode = SplitMode.SheetCount;
         settings.Document.SplitSheetCount = 3;
         settings.Document.AutoRotate = true;
+        settings.Document.SplitFacingPages = true;
         settings.TaskOptions.IdCardPaper = IdCardPaper.Letter;
         settings.TaskOptions.IdCardSaveSidesAsImages = true;
         settings.TaskOptions.CopyCount = 3;
@@ -77,6 +78,8 @@ internal static class CompatFixtures
         settings.TaskOptions.CopyAlsoSavePdf = true;
         settings.TaskOptions.ReceiptNameByDate = false;
         settings.TaskOptions.ReceiptCombine = true;
+        settings.TaskOptions.BookRightToLeft = true;
+        settings.TaskOptions.BookRotationQuarterTurns = 1;
         return settings;
     }
 
@@ -137,10 +140,11 @@ internal static class CompatFixtures
         + "      \"duplex\": \"manual\",\n      \"backBinding\": \"shortEdge\",\n      \"paperSize\": \"a4\",\n"
         + "      \"document\": {\n        \"removeBlankPages\": true,\n        \"blankSensitivity\": \"high\",\n"
         + "        \"autoCrop\": true,\n        \"autoStraighten\": true,\n        \"splitMode\": \"sheetCount\",\n"
-        + "        \"splitSheetCount\": 3,\n        \"autoRotate\": true\n      },\n"
+        + "        \"splitSheetCount\": 3,\n        \"autoRotate\": true,\n        \"splitFacingPages\": true\n      },\n"
         + "      \"taskOptions\": {\n        \"idCardPaper\": \"letter\",\n        \"idCardSaveSidesAsImages\": true,\n"
         + "        \"copyCount\": 3,\n        \"copyFitToPage\": true,\n        \"copyPrinterName\": \"Office printer\",\n"
-        + "        \"copyAlsoSavePdf\": true,\n        \"receiptNameByDate\": false,\n        \"receiptCombine\": true\n      }\n");
+        + "        \"copyAlsoSavePdf\": true,\n        \"receiptNameByDate\": false,\n        \"receiptCombine\": true,\n"
+        + "        \"bookRightToLeft\": true,\n        \"bookRotationQuarterTurns\": 1\n      }\n");
 
     /// <summary>Field-by-field equality, including the legacy OCR languages.</summary>
     public static void AssertSettingsEqual(ScanSettings expected, ScanSettings actual)
@@ -907,7 +911,7 @@ public class ModelsCompatTests
                 using var written = JsonDocument.Parse(json);
                 // No printer chosen: the key is left out, as Swift leaves out a nil.
                 Assert.Equal(["idCardPaper", "idCardSaveSidesAsImages", "copyCount", "copyFitToPage", "copyAlsoSavePdf",
-                              "receiptNameByDate", "receiptCombine"],
+                              "receiptNameByDate", "receiptCombine", "bookRightToLeft", "bookRotationQuarterTurns"],
                              written.RootElement.GetProperty("taskOptions").EnumerateObject().Select(p => p.Name));
                 Assert.Equal(settings.TaskOptions, Decode<ScanSettings>(json).TaskOptions);
             }
@@ -966,6 +970,74 @@ public class ModelsCompatTests
         var clone = settings.Clone();
         clone.TaskOptions.ReceiptCombine = false;
         Assert.True(settings.TaskOptions.ReceiptCombine);
+    }
+
+    // MARK: - Book or magazine (CONTRACTS.md, rule 6)
+
+    [Fact]
+    public void BookOptions_AreOffByDefault_AndInFilesWithoutThem()
+    {
+        var settings = new ScanSettings();
+        Assert.Equal((false, false, 0), (settings.Document.SplitFacingPages, settings.TaskOptions.BookRightToLeft,
+                                         settings.TaskOptions.BookRotationQuarterTurns));
+        var presets = Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize);
+        Assert.False(presets[0].Settings.Document.SplitFacingPages);
+        // Objects written before they existed keep their other settings.
+        var older = Decode<ScanSettings>("""
+            {"document": {"autoStraighten": true, "autoRotate": true}, "taskOptions": {"copyCount": 2, "receiptCombine": true}}
+            """);
+        Assert.Equal((true, true, false), (older.Document.AutoStraighten, older.Document.AutoRotate, older.Document.SplitFacingPages));
+        Assert.Equal((2, true, false, 0), (older.TaskOptions.CopyCount, older.TaskOptions.ReceiptCombine,
+                                           older.TaskOptions.BookRightToLeft, older.TaskOptions.BookRotationQuarterTurns));
+    }
+
+    [Fact]
+    public void CorruptBookOptions_FallBackOneByOne_RestIntact()
+    {
+        var settings = Decode<ScanSettings>("""
+            {"resolution": 150, "document": {"autoRotate": true, "splitFacingPages": "yes"},
+             "taskOptions": {"copyCount": 2, "bookRightToLeft": 1, "bookRotationQuarterTurns": "left"}, "pdfSearchable": false}
+            """);
+        Assert.Equal((150, false), (settings.Resolution, settings.PdfSearchable));
+        Assert.Equal((true, false), (settings.Document.AutoRotate, settings.Document.SplitFacingPages));
+        Assert.Equal((2, false, 0), (settings.TaskOptions.CopyCount, settings.TaskOptions.BookRightToLeft,
+                                     settings.TaskOptions.BookRotationQuarterTurns));
+        var nulls = Decode<ScanSettings>("""
+            {"document": {"splitFacingPages": null}, "taskOptions": {"bookRightToLeft": true, "bookRotationQuarterTurns": null}}
+            """);
+        Assert.Equal((false, true, 0), (nulls.Document.SplitFacingPages, nulls.TaskOptions.BookRightToLeft,
+                                        nulls.TaskOptions.BookRotationQuarterTurns));
+        // A turn out of range is kept as written and read through BookSplitter.NormalizedTurns.
+        var turns = Decode<ScanSettings>("""{"taskOptions": {"bookRotationQuarterTurns": 7}}""").TaskOptions;
+        Assert.Equal((7, 3), (turns.BookRotationQuarterTurns, BookSplitOptions.Of(new ScanSettings { TaskOptions = turns }).RotationQuarterTurns));
+    }
+
+    [Fact]
+    public void BookOptions_RoundTrip_AndCloneIsIndependent()
+    {
+        foreach (bool split in new[] { false, true })
+        {
+            foreach (int turns in new[] { 0, 1, 2, 3 })
+            {
+                var settings = new ScanSettings();
+                settings.Document.SplitFacingPages = split;
+                settings.TaskOptions.BookRightToLeft = !split;
+                settings.TaskOptions.BookRotationQuarterTurns = turns;
+                var back = Decode<ScanSettings>(CompatFixtures.Encode(settings));
+                Assert.Equal(settings.Document, back.Document);
+                Assert.Equal(settings.TaskOptions, back.TaskOptions);
+            }
+        }
+        var original = CompatFixtures.NonDefaultSettings();
+        var clone = original.Clone();
+        clone.Document.SplitFacingPages = false;
+        clone.TaskOptions.BookRightToLeft = false;
+        clone.TaskOptions.BookRotationQuarterTurns = 0;
+        Assert.Equal((true, true, 1), (original.Document.SplitFacingPages, original.TaskOptions.BookRightToLeft,
+                                       original.TaskOptions.BookRotationQuarterTurns));
+        Assert.NotEqual(original.Document, clone.Document);
+        Assert.NotEqual(original.TaskOptions, clone.TaskOptions);
+        Assert.NotEqual(original.TaskOptions.GetHashCode(), clone.TaskOptions.GetHashCode());
     }
 
     [Fact]

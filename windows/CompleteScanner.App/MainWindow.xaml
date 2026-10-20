@@ -424,6 +424,7 @@
                                                 <Grid Width="116" Height="128">
                                                     <!-- The page's text, read with OCR, on the clipboard. -->
                                                     <!-- Split or join the documents at the page, and name its document. -->
+                                                    <!-- A page of a book: split its spread (again), or join its two pages. -->
                                                     <Grid.ContextMenu>
                                                         <ContextMenu>
                                                             <MenuItem Header="Copy text" Click="PageCopyText_Click" Tag="{Binding Page.Id}" />
@@ -434,10 +435,17 @@
                                                             <MenuItem Header="Name this document…"
                                                                       Visibility="{Binding CanNameDocument, Converter={StaticResource BoolToVisibility}}"
                                                                       Click="PageName_Click" Tag="{Binding Page.Id}" />
+                                                            <Separator Visibility="{Binding HasSplitSpread, Converter={StaticResource BoolToVisibility}}" />
+                                                            <MenuItem Header="{Binding SplitSpreadLabel}"
+                                                                      Visibility="{Binding HasSplitSpread, Converter={StaticResource BoolToVisibility}}"
+                                                                      Click="PageSplitSpread_Click" Tag="{Binding Page.Id}" />
+                                                            <MenuItem Header="{Binding JoinSpreadLabel}"
+                                                                      Visibility="{Binding HasJoinSpread, Converter={StaticResource BoolToVisibility}}"
+                                                                      Click="PageJoinSpread_Click" Tag="{Binding Page.Id}" />
                                                         </ContextMenu>
                                                     </Grid.ContextMenu>
                                                     <Border x:Name="Card" Style="{StaticResource CardStyle}" Padding="6"
-                                                            ToolTip="{Binding SideLabel}">
+                                                            ToolTip="{Binding SideToolTip}">
                                                         <Image x:Name="Thumb" Source="{Binding Thumbnail}" MaxHeight="112" MaxWidth="104"
                                                                Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                RenderOptions.BitmapScalingMode="HighQuality" />
@@ -495,7 +503,7 @@
                                                                 <TextBlock Text="{Binding DividerTitle}" Style="{StaticResource AccentTagText}"
                                                                            TextTrimming="CharacterEllipsis" MaxWidth="96" />
                                                             </Border>
-                                                            <!-- Which side of which sheet, for two-sided stacks. -->
+                                                            <!-- Which side of which sheet, for two-sided stacks; which spread, for books. -->
                                                             <Border x:Name="SideBadge" HorizontalAlignment="Left" VerticalAlignment="Top"
                                                                     Padding="5,0,5,1" CornerRadius="4" IsHitTestVisible="False"
                                                                     Background="{DynamicResource SolidBackgroundFillColorQuarternaryBrush}"
@@ -915,6 +923,26 @@
                                                           Checked="AutoRotate_Changed" Unchecked="AutoRotate_Changed" />
                                                 <TextBlock x:Name="AutoRotateHint" Style="{StaticResource CaptionText}"
                                                            TextWrapping="Wrap" Margin="0,0,0,4" />
+                                                <!-- Books and magazines: each spread is cut at the spine into its two pages;
+                                                     a page's menu joins them again or moves the cut. -->
+                                                <CheckBox x:Name="SplitFacingPagesBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,8,0,0"
+                                                          Content="Split facing pages" ToolTipService.ShowOnDisabled="True"
+                                                          Checked="SplitFacingPages_Changed" Unchecked="SplitFacingPages_Changed" />
+                                                <TextBlock x:Name="SplitFacingPagesHint" Style="{StaticResource CaptionText}"
+                                                           TextWrapping="Wrap" Margin="0,0,0,4" />
+                                                <StackPanel x:Name="BookOptions" Margin="0,4,0,0">
+                                                    <CheckBox x:Name="BookRightToLeftBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                              Content="Reads right to left"
+                                                              ToolTip="Arabic, Hebrew, manga: the right page of each spread comes first."
+                                                              AutomationProperties.HelpText="Arabic, Hebrew, manga: the right page of each spread comes first."
+                                                              Checked="BookRightToLeft_Changed" Unchecked="BookRightToLeft_Changed" />
+                                                    <TextBlock Text="Turn the pages" Style="{StaticResource FieldLabelText}" Margin="0,8,0,4" />
+                                                    <ComboBox x:Name="BookRotationBox" HorizontalAlignment="Stretch"
+                                                              AutomationProperties.Name="Turn the pages"
+                                                              AutomationProperties.HelpText="For a book lying sideways or upside down on the glass, from the next spread on."
+                                                              ToolTip="For a book lying sideways or upside down on the glass, from the next spread on."
+                                                              SelectionChanged="BookRotation_Changed" />
+                                                </StackPanel>
                                                 <!-- Split the stack into documents: the page strip shows where before
                                                      saving, and one click on the gap between two pages splits or joins. -->
                                                 <TextBlock Text="Split into documents" Style="{StaticResource FieldLabelText}" Margin="0,8,0,4" />

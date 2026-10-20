@@ -427,4 +427,36 @@ public class MockScannerTests
         batch.Resolution = Dpi;
         Assert.Equal(2, (await session.PerformScanAsync(batch, selection: null)).Count);
     }
+
+    // MARK: - Book or magazine
+
+    [Fact]
+    public async Task TheDemoBook_TurnsItsPageAfterEveryScan_AndSplitsAtItsSpine()
+    {
+        var (backend, session) = await Open();
+        Assert.Equal(0, backend.BookSpread);
+        var settings = TaskCatalog.Apply(ScanTask.Book, new ScanSettings());
+        settings.Resolution = 150;
+        // A preview shows the spread without turning the page.
+        var preview = await session.PerformOverviewScanAsync(settings);
+        Assert.Equal((int)(11.7 * 100), preview.Height);
+        Assert.Equal(0, backend.BookSpread);
+        var first = Assert.Single(await session.PerformScanAsync(settings, selection: null));
+        Assert.Equal(1, backend.BookSpread);
+        var second = Assert.Single(await session.PerformScanAsync(settings, selection: null));
+        Assert.Equal(2, backend.BookSpread);
+        Assert.NotEqual(first.Image.Pixels, second.Image.Pixels);
+        // Through the page processor: two pages each, cut at the spine, the left page first.
+        var processed = PageProcessor.ForScan(settings).Process([first, second]);
+        Assert.Equal(4, processed.Pages.Count);
+        double spine = MockBedRenderer.BookGutterFraction * first.Image.Width;
+        Assert.InRange(processed.Pages[0].Image.Width, spine - 0.05 * 150, spine + 0.05 * 150);
+        Assert.Equal(first.Image.Width, processed.Pages[0].Image.Width + processed.Pages[1].Image.Width);
+        Assert.Equal([0, 1, 0, 1], processed.Pages.Select(p => p.Spread!.Part!.Value));
+        Assert.Equal([first.Id, first.Id, second.Id, second.Id], processed.Pages.Select(p => p.SpreadId!.Value));
+        // Other scans leave the book where it is.
+        var document = Assert.Single(await session.PerformScanAsync(new ScanSettings { Resolution = Dpi }, selection: null));
+        Assert.Equal(2, backend.BookSpread);
+        Assert.Null(BookSplitter.FindGutter(document.Image, Dpi));
+    }
 }

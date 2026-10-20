@@ -485,15 +485,25 @@ public sealed class DocumentOptions : IEquatable<DocumentOptions>
     /// </summary>
     public bool AutoRotate { get; set; } = false;
 
+    /// <summary>
+    /// Each scan of an open book or magazine is cut at the spine into its two facing pages, put in
+    /// reading order (<see cref="BookSplitter"/>); a spread whose spine is not clear stays whole. The
+    /// page strip joins the pages again or moves the cut. Off unless chosen (the Book or magazine task
+    /// turns it on). Written after the earlier keys.
+    /// </summary>
+    public bool SplitFacingPages { get; set; } = false;
+
     public DocumentOptions Clone() => (DocumentOptions)MemberwiseClone();
 
     public bool Equals(DocumentOptions? other) =>
         other is not null && RemoveBlankPages == other.RemoveBlankPages && BlankSensitivity == other.BlankSensitivity
         && AutoCrop == other.AutoCrop && AutoStraighten == other.AutoStraighten
-        && SplitMode == other.SplitMode && SplitSheetCount == other.SplitSheetCount && AutoRotate == other.AutoRotate;
+        && SplitMode == other.SplitMode && SplitSheetCount == other.SplitSheetCount && AutoRotate == other.AutoRotate
+        && SplitFacingPages == other.SplitFacingPages;
     public override bool Equals(object? obj) => Equals(obj as DocumentOptions);
     public override int GetHashCode() =>
-        HashCode.Combine(RemoveBlankPages, BlankSensitivity, AutoCrop, AutoStraighten, SplitMode, SplitSheetCount, AutoRotate);
+        HashCode.Combine(RemoveBlankPages, BlankSensitivity, AutoCrop, AutoStraighten, SplitMode, SplitSheetCount, AutoRotate,
+                         SplitFacingPages);
 }
 
 /// <summary>
@@ -535,17 +545,42 @@ public sealed class TaskOptions : IEquatable<TaskOptions>
     /// <summary>The Receipts task saves all the receipts of a scan as one PDF, a page each. Off: a file per receipt.</summary>
     public bool ReceiptCombine { get; set; } = false;
 
+    /// <summary>
+    /// The book reads from right to left (Arabic, Hebrew, manga): the right page of each spread comes
+    /// first. Off: left to right.
+    /// </summary>
+    public bool BookRightToLeft { get; set; } = false;
+
+    /// <summary>
+    /// Quarter turns clockwise every page of a book is turned, for a book lying sideways or upside down
+    /// on the glass; read through <see cref="BookSplitter.NormalizedTurns"/> (0 to 3). None unless chosen.
+    /// </summary>
+    public int BookRotationQuarterTurns { get; set; } = 0;
+
     public TaskOptions Clone() => (TaskOptions)MemberwiseClone();
 
     public bool Equals(TaskOptions? other) =>
         other is not null && IdCardPaper == other.IdCardPaper && IdCardSaveSidesAsImages == other.IdCardSaveSidesAsImages
         && CopyCount == other.CopyCount && CopyFitToPage == other.CopyFitToPage
         && CopyPrinterName == other.CopyPrinterName && CopyAlsoSavePdf == other.CopyAlsoSavePdf
-        && ReceiptNameByDate == other.ReceiptNameByDate && ReceiptCombine == other.ReceiptCombine;
+        && ReceiptNameByDate == other.ReceiptNameByDate && ReceiptCombine == other.ReceiptCombine
+        && BookRightToLeft == other.BookRightToLeft && BookRotationQuarterTurns == other.BookRotationQuarterTurns;
     public override bool Equals(object? obj) => Equals(obj as TaskOptions);
-    public override int GetHashCode() =>
-        HashCode.Combine(IdCardPaper, IdCardSaveSidesAsImages, CopyCount, CopyFitToPage, CopyPrinterName, CopyAlsoSavePdf,
-                         ReceiptNameByDate, ReceiptCombine);
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(IdCardPaper);
+        hash.Add(IdCardSaveSidesAsImages);
+        hash.Add(CopyCount);
+        hash.Add(CopyFitToPage);
+        hash.Add(CopyPrinterName);
+        hash.Add(CopyAlsoSavePdf);
+        hash.Add(ReceiptNameByDate);
+        hash.Add(ReceiptCombine);
+        hash.Add(BookRightToLeft);
+        hash.Add(BookRotationQuarterTurns);
+        return hash.ToHashCode();
+    }
 }
 
 public static class BlankSensitivities
@@ -743,6 +778,15 @@ public sealed class ScannedPage
     /// </summary>
     public UprightTurn? Upright { get; init; }
 
+    /// <summary>
+    /// The spread of an open book this page was cut from, and which part of it the page is
+    /// (<see cref="BookSplitter"/>); null for a page not scanned as part of a spread. In memory only.
+    /// </summary>
+    public SpreadPart? Spread { get; init; }
+
+    /// <summary>The spread this page was cut from (<see cref="Spread"/>); null for other pages.</summary>
+    public Guid? SpreadId => Spread?.SpreadId;
+
     public ScannedPage(RgbaImage image, int dpi, ColorMode colorMode, Guid? id = null,
                        DateTime? createdAt = null, string? filePath = null, SizeD? fullPixelSize = null)
     {
@@ -775,8 +819,8 @@ public sealed class ScannedPage
     /// This page carrying what the scan recorded about <paramref name="source"/>: its side and
     /// sheet, the blank-page check, the user's keep or skip, what crop and straighten did and
     /// which version is shown, the patch code found on it, the user's document break and
-    /// document name, and the turn that made it upright. Pixels, id, file, rotation and the other
-    /// version stay this page's.
+    /// document name, the turn that made it upright and the spread it was cut from. Pixels, id, file,
+    /// rotation and the other version stay this page's.
     /// </summary>
     public ScannedPage CopyMeta(ScannedPage source) =>
         new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
@@ -792,6 +836,7 @@ public sealed class ScannedPage
             DocumentBreak = source.DocumentBreak,
             DocumentLabel = source.DocumentLabel,
             Upright = source.Upright,
+            Spread = source.Spread,
             Alternate = Alternate,
         };
 
@@ -810,6 +855,7 @@ public sealed class ScannedPage
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
+            Spread = Spread,
             Alternate = Alternate,
         };
 
@@ -828,6 +874,7 @@ public sealed class ScannedPage
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
+            Spread = Spread,
             Alternate = Alternate,
         };
 
@@ -846,6 +893,7 @@ public sealed class ScannedPage
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
+            Spread = Spread,
             Alternate = Alternate,
         };
 
@@ -864,6 +912,7 @@ public sealed class ScannedPage
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
+            Spread = Spread,
             Alternate = Alternate,
         };
 
@@ -882,6 +931,7 @@ public sealed class ScannedPage
             DocumentBreak = documentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
+            Spread = Spread,
             Alternate = Alternate,
         };
 
@@ -900,6 +950,7 @@ public sealed class ScannedPage
             DocumentBreak = DocumentBreak,
             DocumentLabel = documentLabel,
             Upright = Upright,
+            Spread = Spread,
             Alternate = Alternate,
         };
 
@@ -921,6 +972,7 @@ public sealed class ScannedPage
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
+            Spread = Spread,
             Alternate = new PageVersion(Image, FilePath, FullPixelSize),
         };
 
@@ -939,6 +991,26 @@ public sealed class ScannedPage
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = upright,
+            Spread = Spread,
+            Alternate = Alternate,
+        };
+
+    /// <summary>This page as a part of a spread (null: not cut from one); the pixels are not changed.</summary>
+    public ScannedPage WithSpread(SpreadPart? spread) =>
+        new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = Side,
+            SheetIndex = SheetIndex,
+            Blank = Blank,
+            Inclusion = Inclusion,
+            Geometry = Geometry,
+            ShowsOriginal = ShowsOriginal,
+            Patch = Patch,
+            DocumentBreak = DocumentBreak,
+            DocumentLabel = DocumentLabel,
+            Upright = Upright,
+            Spread = spread,
             Alternate = Alternate,
         };
 
@@ -997,6 +1069,7 @@ public sealed class ScannedPage
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
+            Spread = Spread,
             Alternate = alternate,
         };
 
@@ -1023,6 +1096,7 @@ public sealed class ScannedPage
             DocumentBreak = DocumentBreak,
             DocumentLabel = DocumentLabel,
             Upright = Upright,
+            Spread = Spread,
             Alternate = new PageVersion(FilePath is null ? Image : null, FilePath, FullPixelSize),
         };
     }

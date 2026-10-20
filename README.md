@@ -122,6 +122,18 @@ scanners** — including the Epson Perfection V39 II.
   before, a separator page can be kept, and a document can be named (`{label}` in the file name).
   **Save 3 PDFs** writes them all or nothing: a save that fails or is cancelled leaves no file
   and keeps the pages. Word and text files are split the same way.
+- **Book or magazine**: scan an open book two pages at a time. Lay it face down with the spine
+  in the middle of the glass, press it gently flat and press **Scan spread**, then turn the page
+  and scan the next spread. Each spread is cut at the spine into its two pages, found by the spine's
+  shadow or, on a book pressed flat, by the blank inner margins, and the pages go into the PDF in
+  reading order: left then right, or right then left for Arabic, Hebrew or manga (**Reads right to
+  left**). A book lying sideways on the glass is handled too: its pages are turned upright by reading
+  their text, or by **Turn the pages**, and put in order the way they lie once turned. Each page is
+  straightened on its own and blank pages are flagged. When the spine is not clear (a picture across
+  it, a centered title page with no shadow) the spread stays one page, marked "not split"; a page's
+  right-click menu splits a spread by hand (drag the cut to the spine), moves the cut, or joins the
+  two pages again. **Split facing pages** works for any collected document scan of one side of each
+  sheet, not only the task; pages scanned on both sides are kept as scanned.
 - **"Why isn't my scanner listed?"**: a troubleshooter, from the **?** button next to
   **Scanners**, the empty scanner list and an error about a scanner. It checks, in plain
   language, whether macOS is looking for scanners and what the last failure was (a scanner that

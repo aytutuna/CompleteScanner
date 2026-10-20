@@ -402,6 +402,10 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
     /// Each page that is upside down or sideways is turned upright when its text makes that clear
     /// (`OrientationDecision`). One click in the page strip undoes the turn.
     public var autoRotate: Bool = false
+    /// Each scan of an open book or magazine is cut at the spine into its two facing pages, put in
+    /// reading order (`BookSplitter`); a spread whose spine is not clear stays whole. The page strip
+    /// joins the pages again or moves the cut. Off unless chosen (the Book or magazine task turns it on).
+    public var splitFacingPages: Bool = false
 
     public init() {}
 
@@ -414,6 +418,7 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
         case splitMode
         case splitSheetCount
         case autoRotate
+        case splitFacingPages
     }
 }
 
@@ -429,6 +434,7 @@ extension DocumentOptions {
         splitMode = container.decodeLenient(forKey: .splitMode, default: splitMode)
         splitSheetCount = container.decodeLenient(forKey: .splitSheetCount, default: splitSheetCount)
         autoRotate = container.decodeLenient(forKey: .autoRotate, default: autoRotate)
+        splitFacingPages = container.decodeLenient(forKey: .splitFacingPages, default: splitFacingPages)
     }
 }
 
@@ -456,6 +462,12 @@ public struct TaskOptions: Codable, Equatable, Sendable {
     public var receiptNameByDate: Bool = true
     /// The Receipts task saves all the receipts of a scan as one PDF, a page each. Off: a file per receipt.
     public var receiptCombine: Bool = false
+    /// The book reads from right to left (Arabic, Hebrew, manga): the right page of each spread comes
+    /// first. Off: left to right.
+    public var bookRightToLeft: Bool = false
+    /// Quarter turns clockwise every page of a book is turned, for a book lying sideways or upside down
+    /// on the glass; read through `BookSplitter.normalizedTurns` (0 to 3). None unless chosen.
+    public var bookRotationQuarterTurns: Int = 0
 
     public init() {}
 
@@ -469,6 +481,8 @@ public struct TaskOptions: Codable, Equatable, Sendable {
         case copyAlsoSavePdf
         case receiptNameByDate
         case receiptCombine
+        case bookRightToLeft
+        case bookRotationQuarterTurns
     }
 }
 
@@ -485,6 +499,8 @@ extension TaskOptions {
         copyAlsoSavePdf = container.decodeLenient(forKey: .copyAlsoSavePdf, default: copyAlsoSavePdf)
         receiptNameByDate = container.decodeLenient(forKey: .receiptNameByDate, default: receiptNameByDate)
         receiptCombine = container.decodeLenient(forKey: .receiptCombine, default: receiptCombine)
+        bookRightToLeft = container.decodeLenient(forKey: .bookRightToLeft, default: bookRightToLeft)
+        bookRotationQuarterTurns = container.decodeLenient(forKey: .bookRotationQuarterTurns, default: bookRotationQuarterTurns)
     }
 }
 
@@ -651,6 +667,12 @@ public struct ScannedPage: Identifiable {
     /// What turning pages upright did to the page (`OrientationDecision`): the turn it was given, and
     /// whether the user turned it back; nil when it was not turned.
     public var upright: UprightTurn?
+    /// The spread of an open book this page was cut from, and which part of it the page is
+    /// (`BookSplitter`); nil for a page not scanned as part of a spread. In memory only.
+    public var spread: SpreadPart?
+
+    /// The spread this page was cut from (`spread`); nil for other pages.
+    public var spreadID: UUID? { spread?.spreadID }
 
     /// The page was cropped or straightened and the other version is at hand: one click swaps them.
     public var canSwapVersions: Bool { geometry != nil && alternate != nil }
@@ -683,9 +705,9 @@ public struct ScannedPage: Identifiable {
 
     /// This page carrying what the scan recorded about `source`: its side and sheet, the
     /// blank-page check, the user's keep or skip, what crop and straighten did and which version is
-    /// shown, the patch code found on it, the user's document break and document name, and the turn
-    /// that made it upright. Pixels, id, file, rotation and the other version stay this page's. Twin
-    /// of C# `ScannedPage.CopyMeta`.
+    /// shown, the patch code found on it, the user's document break and document name, the turn that
+    /// made it upright and the spread it was cut from. Pixels, id, file, rotation and the other version
+    /// stay this page's. Twin of C# `ScannedPage.CopyMeta`.
     public func copyMeta(from source: ScannedPage) -> ScannedPage {
         var page = self
         page.side = source.side
@@ -698,6 +720,7 @@ public struct ScannedPage: Identifiable {
         page.documentBreak = source.documentBreak
         page.documentLabel = source.documentLabel
         page.upright = source.upright
+        page.spread = source.spread
         return page
     }
 
@@ -716,6 +739,7 @@ public struct ScannedPage: Identifiable {
         page.documentBreak = documentBreak
         page.documentLabel = documentLabel
         page.upright = upright
+        page.spread = spread
         page.alternate = PageVersion(image: image, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }
@@ -747,6 +771,7 @@ public struct ScannedPage: Identifiable {
         page.documentBreak = documentBreak
         page.documentLabel = documentLabel
         page.upright = upright
+        page.spread = spread
         page.alternate = PageVersion(image: fileURL == nil ? image : nil, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }
@@ -798,6 +823,13 @@ public struct ScannedPage: Identifiable {
     public func withUpright(_ upright: UprightTurn?) -> ScannedPage {
         var page = self
         page.upright = upright
+        return page
+    }
+
+    /// This page as a part of a spread (nil: not cut from one); the pixels are not changed.
+    public func withSpread(_ spread: SpreadPart?) -> ScannedPage {
+        var page = self
+        page.spread = spread
         return page
     }
 

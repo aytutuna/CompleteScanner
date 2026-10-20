@@ -19,6 +19,7 @@ public static class TaskIcons
         "word" => "",
         "receipt" => "",
         "batch" => "",
+        "book" => "",
         _ => "",
     };
 

@@ -451,4 +451,43 @@ final class MockScannerTests: XCTestCase {
         let batchPages = try await session.performScan(settings: batch, selection: nil)
         XCTAssertEqual(batchPages.count, 2)
     }
+
+    // MARK: - Book or magazine
+
+    @MainActor
+    func test_theDemoBook_turnsItsPageAfterEveryScan_andSplitsAtItsSpine() async throws {
+        let (backend, session) = try await open()
+        XCTAssertEqual(backend.bookSpread, 0)
+        var settings = TaskCatalog.apply(.book, to: ScanSettings())
+        settings.resolution = 150
+        // A preview shows the spread without turning the page.
+        let preview = try await session.performOverviewScan(settings: settings)
+        XCTAssertEqual(preview.height, Int(11.7 * 100.0))
+        XCTAssertEqual(backend.bookSpread, 0)
+        let firstPages = try await session.performScan(settings: settings, selection: nil)
+        let first = try XCTUnwrap(firstPages.first)
+        XCTAssertEqual(backend.bookSpread, 1)
+        let secondPages = try await session.performScan(settings: settings, selection: nil)
+        let second = try XCTUnwrap(secondPages.first)
+        XCTAssertEqual(backend.bookSpread, 2)
+        XCTAssertNotEqual(rgbaPixels(first.image), rgbaPixels(second.image))
+        // The spine is found where the demo book has it, by its shadow.
+        let spine = MockScannerBackend.demoBookGutterFraction * Double(first.image.width)
+        let gutter = try XCTUnwrap(BookSplitter.findGutter(first.image, dpi: 150))
+        XCTAssertEqual(gutter.axis, .vertical)
+        XCTAssertEqual(gutter.kind, .shadow)
+        XCTAssertEqual(Double(gutter.position), spine, accuracy: 0.05 * 150)
+        // Through the page processor: two pages each, cut at the spine, the left page first.
+        let processed = try PageProcessor.forScan(settings).process([first, second])
+        XCTAssertEqual(processed.pages.count, 4)
+        XCTAssertEqual(Double(processed.pages[0].image.width), spine, accuracy: 0.05 * 150)
+        XCTAssertEqual(processed.pages[0].image.width + processed.pages[1].image.width, first.image.width)
+        XCTAssertEqual(processed.pages.map { $0.spread?.part }, [0, 1, 0, 1])
+        XCTAssertEqual(processed.pages.compactMap(\.spreadID), [first.id, first.id, second.id, second.id])
+        // Other scans leave the book where it is.
+        var plain = ScanSettings()
+        plain.resolution = mockDPI
+        _ = try await session.performScan(settings: plain, selection: nil)
+        XCTAssertEqual(backend.bookSpread, 2)
+    }
 }

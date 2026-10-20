@@ -506,6 +506,7 @@ struct InspectorView: View {
             blankPagesRow
             geometryRow
             autoRotateRow
+            bookRow
             splitRow
         }
     }
@@ -651,6 +652,37 @@ struct InspectorView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Split facing pages: each scan of an open book becomes its two pages, on pages collected in the
+    /// queue only, where a page's menu joins them again or moves the cut, scanned one side of each sheet;
+    /// otherwise the switch is off and says why. The reading order and the book's rotation show while spreads are split. Twin of the
+    /// Windows inspector's "Split facing pages".
+    private var bookRow: some View {
+        let collecting = state.settings.documentMultiPage && !state.isCopyFlow && !state.isReceiptFlow
+            && BookPages.scansOneSide(state.settings)
+        let hint = BookPages.hint(state.settings)
+        return VStack(alignment: .leading, spacing: 6) {
+            Toggle("Split facing pages", isOn: $state.settings.document.splitFacingPages)
+                .disabled(!collecting)
+                .help(hint)
+            Text(hint)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if collecting && state.settings.document.splitFacingPages {
+                Toggle("Reads right to left", isOn: $state.settings.taskOptions.bookRightToLeft)
+                    .help("Arabic, Hebrew, manga: the right page of each spread comes first.")
+                Picker("Turn the pages", selection: Binding(
+                    get: { BookSplitter.normalizedTurns(state.settings.taskOptions.bookRotationQuarterTurns) },
+                    set: { state.settings.taskOptions.bookRotationQuarterTurns = $0 })) {
+                    ForEach(BookPages.rotationChoices, id: \.self) { turns in
+                        Text(BookPages.rotationLabel(turns)).tag(turns)
+                    }
+                }
+                .help("For a book lying sideways or upside down on the glass, from the next spread on.")
+            }
         }
     }
 

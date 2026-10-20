@@ -61,6 +61,7 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.document.splitMode = .sheetCount
     settings.document.splitSheetCount = 3
     settings.document.autoRotate = true
+    settings.document.splitFacingPages = true
     settings.taskOptions.idCardPaper = .letter
     settings.taskOptions.idCardSaveSidesAsImages = true
     settings.taskOptions.copyCount = 3
@@ -69,6 +70,8 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.taskOptions.copyAlsoSavePdf = true
     settings.taskOptions.receiptNameByDate = false
     settings.taskOptions.receiptCombine = true
+    settings.taskOptions.bookRightToLeft = true
+    settings.taskOptions.bookRotationQuarterTurns = 1
     return settings
 }
 
@@ -123,6 +126,7 @@ private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
         of: "\"documentMultiPage\" : false",
         with: "\"document\" : {\n        \"autoCrop\" : true,\n        \"autoRotate\" : true,\n        \"autoStraighten\" : true,\n"
             + "        \"blankSensitivity\" : \"high\",\n        \"removeBlankPages\" : true,\n"
+            + "        \"splitFacingPages\" : true,\n"
             + "        \"splitMode\" : \"sheetCount\",\n        \"splitSheetCount\" : 3\n      },\n"
             + "      \"documentMultiPage\" : false")
     .replacingOccurrences(
@@ -136,6 +140,7 @@ private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
                           with: "\"duplex\" : \"manual\",\n      \"format\" : \"tiff\"")
     .replacingOccurrences(of: "\"source\" : \"documentFeeder\"",
                           with: "\"source\" : \"documentFeeder\",\n      \"taskOptions\" : {\n"
+                              + "        \"bookRightToLeft\" : true,\n        \"bookRotationQuarterTurns\" : 1,\n"
                               + "        \"copyAlsoSavePdf\" : true,\n        \"copyCount\" : 3,\n        \"copyFitToPage\" : true,\n"
                               + "        \"copyPrinterName\" : \"Office printer\",\n        \"idCardPaper\" : \"letter\",\n"
                               + "        \"idCardSaveSidesAsImages\" : true,\n        \"receiptCombine\" : true,\n"
@@ -782,7 +787,8 @@ final class ModelsCompatTests: XCTestCase {
                 let written = try XCTUnwrap(try jsonObject(data)["taskOptions"] as? [String: Any])
                 // No printer chosen: the key is left out (C# leaves out a null too).
                 XCTAssertEqual(Set(written.keys), ["idCardPaper", "idCardSaveSidesAsImages", "copyCount", "copyFitToPage",
-                                                   "copyAlsoSavePdf", "receiptNameByDate", "receiptCombine"])
+                                                   "copyAlsoSavePdf", "receiptNameByDate", "receiptCombine",
+                                                   "bookRightToLeft", "bookRotationQuarterTurns"])
                 XCTAssertEqual(written["idCardPaper"] as? String, paper.rawValue)
                 XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: data).taskOptions, settings.taskOptions)
             }
@@ -846,6 +852,76 @@ final class ModelsCompatTests: XCTestCase {
         copy.taskOptions.receiptCombine = false
         XCTAssertFalse(copy.taskOptions.receiptCombine)
         XCTAssertTrue(settings.taskOptions.receiptCombine)
+    }
+
+    // MARK: Book or magazine (CONTRACTS.md, rule 6)
+
+    func test_bookOptions_areOffByDefault_andInFilesWithoutThem() throws {
+        let settings = ScanSettings()
+        XCTAssertFalse(settings.document.splitFacingPages)
+        XCTAssertFalse(settings.taskOptions.bookRightToLeft)
+        XCTAssertEqual(settings.taskOptions.bookRotationQuarterTurns, 0)
+        let presets = try decode([Preset].self, presetsJSONBeforePDFSize)
+        XCTAssertFalse(presets[0].settings.document.splitFacingPages)
+        // Objects written before they existed keep their other settings.
+        let older = try decode(ScanSettings.self, """
+            {"document": {"autoStraighten": true, "autoRotate": true}, "taskOptions": {"copyCount": 2, "receiptCombine": true}}
+            """)
+        XCTAssertTrue(older.document.autoStraighten)
+        XCTAssertTrue(older.document.autoRotate)
+        XCTAssertFalse(older.document.splitFacingPages)
+        XCTAssertEqual(older.taskOptions.copyCount, 2)
+        XCTAssertTrue(older.taskOptions.receiptCombine)
+        XCTAssertFalse(older.taskOptions.bookRightToLeft)
+        XCTAssertEqual(older.taskOptions.bookRotationQuarterTurns, 0)
+    }
+
+    func test_corruptBookOptions_fallBackOneByOne_restIntact() throws {
+        let settings = try decode(ScanSettings.self, """
+            {"resolution": 150, "document": {"autoRotate": true, "splitFacingPages": "yes"},
+             "taskOptions": {"copyCount": 2, "bookRightToLeft": 1, "bookRotationQuarterTurns": "left"}, "pdfSearchable": false}
+            """)
+        XCTAssertEqual(settings.resolution, 150)
+        XCTAssertFalse(settings.pdfSearchable)
+        XCTAssertTrue(settings.document.autoRotate)
+        XCTAssertFalse(settings.document.splitFacingPages)
+        XCTAssertEqual(settings.taskOptions.copyCount, 2)
+        XCTAssertFalse(settings.taskOptions.bookRightToLeft)
+        XCTAssertEqual(settings.taskOptions.bookRotationQuarterTurns, 0)
+        let nulls = try decode(ScanSettings.self, """
+            {"document": {"splitFacingPages": null}, "taskOptions": {"bookRightToLeft": true, "bookRotationQuarterTurns": null}}
+            """)
+        XCTAssertFalse(nulls.document.splitFacingPages)
+        XCTAssertTrue(nulls.taskOptions.bookRightToLeft)
+        XCTAssertEqual(nulls.taskOptions.bookRotationQuarterTurns, 0)
+        // A turn out of range is kept as written and read through BookSplitter.normalizedTurns.
+        let turns = try decode(ScanSettings.self, #"{"taskOptions": {"bookRotationQuarterTurns": 7}}"#)
+        XCTAssertEqual(turns.taskOptions.bookRotationQuarterTurns, 7)
+        XCTAssertEqual(BookSplitOptions.of(turns).rotationQuarterTurns, 3)
+    }
+
+    func test_bookOptions_roundTrip_andCopyIsIndependent() throws {
+        for split in [false, true] {
+            for turns in [0, 1, 2, 3] {
+                var settings = ScanSettings()
+                settings.document.splitFacingPages = split
+                settings.taskOptions.bookRightToLeft = !split
+                settings.taskOptions.bookRotationQuarterTurns = turns
+                let back = try JSONDecoder().decode(ScanSettings.self, from: encode(settings))
+                XCTAssertEqual(back.document, settings.document)
+                XCTAssertEqual(back.taskOptions, settings.taskOptions)
+            }
+        }
+        let original = nonDefaultSettings()
+        var copy = original
+        copy.document.splitFacingPages = false
+        copy.taskOptions.bookRightToLeft = false
+        copy.taskOptions.bookRotationQuarterTurns = 0
+        XCTAssertTrue(original.document.splitFacingPages)
+        XCTAssertTrue(original.taskOptions.bookRightToLeft)
+        XCTAssertEqual(original.taskOptions.bookRotationQuarterTurns, 1)
+        XCTAssertNotEqual(original.document, copy.document)
+        XCTAssertNotEqual(original.taskOptions, copy.taskOptions)
     }
 
     func test_corruptReceiptOptions_fallBackOneByOne_restIntact() throws {

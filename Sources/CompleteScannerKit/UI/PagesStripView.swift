@@ -7,12 +7,16 @@ import SwiftUI
 /// pages on they are dimmed and left out when saving, and one click on Keep (or Skip) changes
 /// that for the page (`PageFilter`). When the queue is split into documents (`DocumentSplitter`)
 /// separator pages are flagged and dimmed, each document's first page is titled, and the gap before
-/// a page splits or joins there with one click; a page's menu also names its document.
+/// a page splits or joins there with one click; a page's menu also names its document. A page cut from
+/// a spread of a book says which spread it is, and its menu splits the spread again (the split sheet,
+/// `SpreadSplitView`) or joins its two pages.
 struct PagesStripView: View {
     @EnvironmentObject var state: AppState
     /// The page whose document is being named (the name alert), and the name typed.
     @State private var namingPage: UUID?
     @State private var nameDraft = ""
+    /// The spread being split by hand (the split sheet).
+    @State private var editingSpread: SpreadEditorSource?
 
     var body: some View {
         let options = state.settings.document
@@ -22,6 +26,8 @@ struct PagesStripView: View {
         let saveCount = savePlan.pageCount
         let saveTitle = savePlan.saveTitle(state.settings.format)
         let saveHelp: String = saveCount == 0 && !state.scannedPages.isEmpty ? PageFilter.nothingToSaveMessage : ""
+        // Worked out once per refresh, in one pass over the queue.
+        let bookLabels = BookPages.labels(state.scannedPages)
         HStack(spacing: 12) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -38,6 +44,8 @@ struct PagesStripView: View {
                                 pageNumber: index + 1,
                                 options: options,
                                 split: PageSplitInfo(plan: plan, index: index, page: page, options: options),
+                                book: PageBookInfo(page: page, label: bookLabels[index],
+                                                   editable: state.canEditSpread(of: page)),
                                 canMoveLeft: index > 0,
                                 canMoveRight: index < state.scannedPages.count - 1,
                                 onRemove: { state.removePage(id: page.id) },
@@ -51,7 +59,11 @@ struct PagesStripView: View {
                                 onName: {
                                     nameDraft = state.documentLabel(of: page.id)
                                     namingPage = page.id
-                                })
+                                },
+                                onSplitSpread: {
+                                    Task { editingSpread = await state.spreadEditor(for: page.id) }
+                                },
+                                onJoinSpread: { state.joinSpread(id: page.id) })
                         }
                     }
                 }
@@ -96,6 +108,38 @@ struct PagesStripView: View {
         } message: {
             Text("Used for {label} in the file name.")
         }
+        .sheet(item: $editingSpread) { source in
+            SpreadSplitView(source: source) { choice in
+                switch choice {
+                case .split(let axis, let fraction):
+                    state.splitSpread(id: source.pageID, axis: axis, fraction: fraction)
+                case .keepWhole:
+                    state.joinSpread(id: source.pageID)
+                }
+            }
+        }
+    }
+}
+
+/// What the strip says about a page cut from a spread of a book. Twin of the Windows `PageBookView`.
+fileprivate struct PageBookInfo {
+    /// "Spread 2 · page 1", "Spread 2 · not split"; nil for other pages.
+    let label: String?
+    /// The label's help: what can be done with a spread kept whole.
+    let help: String?
+    /// The spread was kept whole: the caption says so.
+    let isWhole: Bool
+    /// The page menu's "Split this spread…" or "Change the split…"; nil when the spread is not at hand.
+    let splitLabel: String?
+    /// The page menu's "Join the two pages"; nil for a whole spread, or when the spread is not at hand.
+    let joinLabel: String?
+
+    init(page: ScannedPage, label bookLabel: BookPageLabel?, editable: Bool) {
+        label = bookLabel?.label
+        help = bookLabel?.help
+        isWhole = page.spread?.isWhole == true
+        splitLabel = editable ? BookPages.splitActionLabel(page) : nil
+        joinLabel = editable ? BookPages.joinActionLabel(page) : nil
     }
 }
 
@@ -162,6 +206,8 @@ fileprivate struct PageThumbnailCell: View {
     let options: DocumentOptions
     /// Its place in the split plan: badge, separator, document title.
     let split: PageSplitInfo
+    /// Its spread, for a page of a book.
+    let book: PageBookInfo
     let canMoveLeft: Bool
     let canMoveRight: Bool
     let onRemove: () -> Void
@@ -179,6 +225,10 @@ fileprivate struct PageThumbnailCell: View {
     let onBreak: () -> Void
     /// Name the page's document (the strip's name alert).
     let onName: () -> Void
+    /// Split the page's spread again, or split a spread kept whole (the split sheet).
+    let onSplitSpread: () -> Void
+    /// Join the two pages of the page's spread (`AppState.joinSpread`).
+    let onJoinSpread: () -> Void
 
     @State private var thumbnail: CGImage?
     @State private var hovering = false
@@ -213,7 +263,7 @@ fileprivate struct PageThumbnailCell: View {
                     Text(caption)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .help(DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? "")
+                        .help(DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? book.help ?? "")
                 }
                 geometryToggle
                 uprightToggle
@@ -232,6 +282,15 @@ fileprivate struct PageThumbnailCell: View {
             if split.canNameDocument {
                 Button("Name This Document\u{2026}", action: onName)
             }
+            if book.splitLabel != nil || book.joinLabel != nil {
+                Divider()
+            }
+            if let label = book.splitLabel {
+                Button(label, action: onSplitSpread)
+            }
+            if let label = book.joinLabel {
+                Button(label, action: onJoinSpread)
+            }
         }
         // Re-render when the page is rotated, shown as scanned or turned back (the cell keeps its
         // identity, so a plain run-once task would show stale pixels).
@@ -247,9 +306,12 @@ fileprivate struct PageThumbnailCell: View {
         return page.rotationQuarterTurns * 2 + original + undone
     }
 
-    /// "Page 3", or "Page 3 · back" for a page of a two-sided stack.
+    /// "Page 3", "Page 3 · back" for a page of a two-sided stack, or "Page 3 · not split" for a spread
+    /// of a book kept whole.
     private var caption: String {
-        guard let side = page.side else { return "Page \(pageNumber)" }
+        guard let side = page.side else {
+            return book.isWhole ? "Page \(pageNumber) \u{00B7} not split" : "Page \(pageNumber)"
+        }
         return "Page \(pageNumber) \u{00B7} \(side == .front ? "front" : "back")"
     }
 
@@ -258,7 +320,7 @@ fileprivate struct PageThumbnailCell: View {
     private var accessibilityName: String {
         var name = "Page \(pageNumber)"
         if let title = split.dividerTitle { name = "\(title), \(name)" }
-        if let label = DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) {
+        if let label = DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? book.label {
             name += ", \(label)"
         }
         if let note = split.separatorNote {

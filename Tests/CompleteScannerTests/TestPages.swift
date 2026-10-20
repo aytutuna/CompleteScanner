@@ -535,6 +535,178 @@ enum TestPages {
         return RgbaImage(width: w, height: h, pixels: rgba)
     }
 
+    // MARK: - Book spreads
+
+    /// A gray canvas of any size, for the spreads (the pages above are `width` × `height`): paper
+    /// with noise, text blocks and the spine's shadow drawn on it.
+    final class Canvas {
+        let canvasWidth: Int
+        let canvasHeight: Int
+        var p: [UInt8]
+
+        /// `paper` with scanner noise from `seed`.
+        init(_ width: Int, _ height: Int, paper: Int, seed: UInt32) {
+            canvasWidth = width
+            canvasHeight = height
+            p = [UInt8](repeating: 0, count: width * height)
+            let rng = Rng(seed)
+            for i in 0..<p.count { p[i] = TestPages.clamp(paper + rng.noise()) }
+        }
+
+        func fillRect(_ x: Int, _ y: Int, _ w: Int, _ h: Int, _ value: UInt8) {
+            let y0 = max(0, y), y1 = min(canvasHeight, y + h)
+            let x0 = max(0, x), x1 = min(canvasWidth, x + w)
+            guard y0 < y1, x0 < x1 else { return }
+            for py in y0..<y1 {
+                for px in x0..<x1 { p[py * canvasWidth + px] = value }
+            }
+        }
+
+        /// `lines` lines of glyphs (as `textLine`: words of 2–8 glyphs, 5 × 9 px in 7 px cells) from
+        /// (x, y), each up to `maxWidth` wide, every `pitch` px.
+        func textBlock(_ x: Int, _ y: Int, maxWidth: Int, lines: Int, pitch: Int, ink: UInt8, _ rng: Rng) {
+            let picks = [0b00111, 0b01011, 0b01101, 0b01110, 0b10011, 0b10101, 0b10110, 0b11001, 0b11010, 0b11100]
+            for line in 0..<lines {
+                var cx = x
+                let ly = y + line * pitch
+                while true {
+                    let glyphs = 2 + rng.below(7)
+                    if cx + glyphs * 7 > x + maxWidth { break }
+                    for _ in 0..<glyphs {
+                        let bits = picks[rng.below(10)]
+                        if bits & 1 != 0 { fillRect(cx, ly, 1, 9, ink) }
+                        if bits & 2 != 0 { fillRect(cx + 4, ly, 1, 9, ink) }
+                        if bits & 4 != 0 { fillRect(cx, ly, 5, 1, ink) }
+                        if bits & 8 != 0 { fillRect(cx, ly + 4, 5, 1, ink) }
+                        if bits & 16 != 0 { fillRect(cx, ly + 8, 5, 1, ink) }
+                        cx += 7
+                    }
+                    cx += 7
+                }
+            }
+        }
+
+        /// The spine's shadow on the columns around `x0`: each darkened by `depthPerMille`‰ × (r² − d²) / r²
+        /// at d columns from it (|d| < r).
+        func shadowColumns(_ x0: Int, r: Int, depthPerMille: Int) {
+            let from = max(0, x0 - r + 1), to = min(canvasWidth, x0 + r)
+            guard from < to else { return }
+            for x in from..<to {
+                let d = x - x0
+                let k = depthPerMille * (r * r - d * d) / (r * r)
+                for y in 0..<canvasHeight {
+                    let i = y * canvasWidth + x
+                    p[i] = UInt8(Int(p[i]) * (1000 - k) / 1000)
+                }
+            }
+        }
+
+        /// A crease across the page: the rows around `y0` darkened as `shadowColumns` darkens columns.
+        func shadowRows(_ y0: Int, r: Int, depthPerMille: Int) {
+            let from = max(0, y0 - r + 1), to = min(canvasHeight, y0 + r)
+            guard from < to else { return }
+            for y in from..<to {
+                let d = y - y0
+                let k = depthPerMille * (r * r - d * d) / (r * r)
+                for x in 0..<canvasWidth {
+                    let i = y * canvasWidth + x
+                    p[i] = UInt8(Int(p[i]) * (1000 - k) / 1000)
+                }
+            }
+        }
+
+        func gray() -> GrayImage {
+            GrayImage(width: canvasWidth, height: canvasHeight, pixels: p)
+        }
+    }
+
+    /// An 11 × 8.5 in spread at 100 dpi (1100 × 850 unless given): two pages of text, 33 lines every
+    /// 0.2 in from y = 90, each page's text from its outer margin to its inner one (`innerMargin` px
+    /// either side of the spine at `gutterX`), with the spine's shadow (`Canvas.shadowColumns`) when
+    /// `shadowDepth` is above 0. Either page can be blank.
+    static func spread(_ gutterX: Int, innerMargin: Int, outerMargin: Int, shadowDepth: Int, shadowRadius: Int,
+                       seed: UInt32, width spreadWidth: Int = 1100, height spreadHeight: Int = 850,
+                       blankLeft: Bool = false, blankRight: Bool = false) -> GrayImage {
+        let c = Canvas(spreadWidth, spreadHeight, paper: 245, seed: seed)
+        let rng = Rng(seed ^ 0x5A5A_5A5A)
+        let lines = (spreadHeight - 180) / 20
+        if !blankLeft {
+            c.textBlock(outerMargin, 90, maxWidth: gutterX - innerMargin - outerMargin, lines: lines, pitch: 20, ink: 40, rng)
+        }
+        if !blankRight {
+            c.textBlock(gutterX + innerMargin, 90, maxWidth: spreadWidth - outerMargin - gutterX - innerMargin,
+                        lines: lines, pitch: 20, ink: 40, rng)
+        }
+        if shadowDepth > 0 { c.shadowColumns(gutterX, r: shadowRadius, depthPerMille: shadowDepth) }
+        return c.gray()
+    }
+
+    /// A spread with the spine's shadow (25 % deep) at 0.52 of the width and narrow (0.2 in) inner margins.
+    static func shadowSpread() -> GrayImage {
+        spread(572, innerMargin: 20, outerMargin: 80, shadowDepth: 250, shadowRadius: 17, seed: 0xB00C_0001)
+    }
+
+    /// A spread with no shadow, its pages' text 0.6 in either side of the spine at the middle.
+    static func marginSpread() -> GrayImage {
+        spread(550, innerMargin: 60, outerMargin: 80, shadowDepth: 0, shadowRadius: 0, seed: 0xB00C_0002)
+    }
+
+    /// The spread of `shadowSpread`'s kind with a blank left page.
+    static func blankFacingSpread() -> GrayImage {
+        spread(550, innerMargin: 40, outerMargin: 80, shadowDepth: 250, shadowRadius: 17, seed: 0xB00C_0003, blankLeft: true)
+    }
+
+    /// A single letter page: 45 lines of text 6.5 in long across the middle.
+    static func singlePageAcross() -> GrayImage {
+        let c = Canvas(850, 1100, paper: 245, seed: 0xB00C_0004)
+        c.textBlock(100, 100, maxWidth: 650, lines: 45, pitch: 20, ink: 40, Rng(0xB00C_0005))
+        return c.gray()
+    }
+
+    /// A single letter page in two columns 0.3 in apart.
+    static func twoColumnPage() -> GrayImage {
+        let c = Canvas(850, 1100, paper: 245, seed: 0xB00C_0006)
+        c.textBlock(80, 100, maxWidth: 330, lines: 45, pitch: 20, ink: 40, Rng(0xB00C_0007))
+        c.textBlock(440, 100, maxWidth: 330, lines: 45, pitch: 20, ink: 40, Rng(0xB00C_0008))
+        return c.gray()
+    }
+
+    /// A single letter page with a 1 in gap between two sections, across the middle.
+    static func sectionGapPage() -> GrayImage {
+        let c = Canvas(850, 1100, paper: 245, seed: 0xB00C_0009)
+        c.textBlock(100, 100, maxWidth: 650, lines: 20, pitch: 20, ink: 40, Rng(0xB00C_000A))
+        c.textBlock(100, 600, maxWidth: 650, lines: 22, pitch: 20, ink: 40, Rng(0xB00C_000B))
+        return c.gray()
+    }
+
+    /// A letter folded in three: `singlePageAcross`'s text with two creases between its lines.
+    static func foldedLetter() -> GrayImage {
+        let c = Canvas(850, 1100, paper: 245, seed: 0xB00C_0004)
+        c.textBlock(100, 100, maxWidth: 650, lines: 45, pitch: 20, ink: 40, Rng(0xB00C_0005))
+        c.shadowRows(354, r: 10, depthPerMille: 120)
+        c.shadowRows(734, r: 10, depthPerMille: 120)
+        return c.gray()
+    }
+
+    /// A spread whose left page holds a short centered title (2.5 in wide) and whose right page is text, the
+    /// spine at 550 of 1100, with the spine's shadow when `shadowDepth` is above 0.
+    static func titleFacingText(_ shadowDepth: Int) -> GrayImage {
+        let c = Canvas(1100, 850, paper: 245, seed: 0xB00C_000F)
+        let rng = Rng(0xB00C_0010)
+        c.textBlock(150, 250, maxWidth: 250, lines: 6, pitch: 20, ink: 40, rng)
+        c.textBlock(590, 90, maxWidth: 430, lines: 33, pitch: 20, ink: 40, rng)
+        if shadowDepth > 0 { c.shadowColumns(550, r: 17, depthPerMille: shadowDepth) }
+        return c.gray()
+    }
+
+    /// A single page lying on the right half of the glass: its left edge a dark line at x = 420 of 1100.
+    static func pageBesideEmptyGlass() -> GrayImage {
+        let c = Canvas(1100, 850, paper: 250, seed: 0xB00C_000C)
+        c.fillRect(420, 0, 3, 850, 150)
+        c.textBlock(500, 90, maxWidth: 520, lines: 34, pitch: 20, ink: 40, Rng(0xB00C_000D))
+        return c.gray()
+    }
+
     /// FNV-1a of the pixels: one number per page, the same on both platforms.
     static func checksum(_ page: GrayImage) -> UInt32 {
         var hash: UInt32 = 2_166_136_261

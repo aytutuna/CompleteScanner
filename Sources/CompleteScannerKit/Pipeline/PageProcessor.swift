@@ -139,27 +139,39 @@ public struct ProcessedScan {
     /// The pages in reading order with their sides marked and the backs turned upright, otherwise
     /// as scanned (for the preview and the history).
     public let arranged: [ScannedPage]
-    /// The same pages after every step, with the facts the steps found.
+    /// The same pages after every step, with the facts the steps found; with facing pages split, the
+    /// pages cut from each spread (`ScannedPage.spread`, whose id is the spread's in `arranged`).
     public let pages: [ScannedPage]
 
     /// Pages the blank-page check found blank at the sensitivity it ran with.
     public var blankCount: Int { pages.filter { $0.blank?.isBlank == true }.count }
+
+    /// The spreads in `arranged` that pages were cut from (or kept whole as), in scan order.
+    public var spreads: [ScannedPage] {
+        let ids = Set(pages.compactMap(\.spreadID))
+        return arranged.filter { ids.contains($0.id) }
+    }
 }
 
 /// The clean-up stage between the scanner and the page queue, the same for every scanner: the
-/// pages are put in reading order with their sides (two-sided scans), then every step runs on
-/// every page in order. The order of the steps is fixed: `forScan` builds them from the settings:
-/// blank check (document pages), crop and straighten, separator sheets, turning pages upright, then
-/// adjustments. Twin of C# `PageProcessor`.
+/// pages are put in reading order with their sides (two-sided scans), each spread of an open book is
+/// cut into its two pages when facing pages are split (`book`), then every step runs on every page in
+/// order. The order of the steps is fixed: `forScan` builds them from the settings: blank check
+/// (document pages), crop and straighten, separator sheets, turning pages upright, then adjustments.
+/// Twin of C# `PageProcessor`.
 public struct PageProcessor {
     public let steps: [any PageStep]
     public let arrangement: ScanArrangement
     public let binding: DuplexBinding
+    /// How the pages of each spread are turned and ordered; nil when spreads are not split.
+    public let book: BookSplitOptions?
 
-    public init(steps: [any PageStep], arrangement: ScanArrangement = .asScanned, binding: DuplexBinding = .longEdge) {
+    public init(steps: [any PageStep], arrangement: ScanArrangement = .asScanned, binding: DuplexBinding = .longEdge,
+                book: BookSplitOptions? = nil) {
         self.steps = steps
         self.arrangement = arrangement
         self.binding = binding
+        self.book = book
     }
 
     /// The steps for a scan made with `settings`: the blank-page check for pages collected in the
@@ -167,7 +179,8 @@ public struct PageProcessor {
     /// crop and straighten when asked for those pages, the separator-sheet check for those pages
     /// (whether or not the stack is split, so a split chosen later finds them), turning those pages
     /// upright when asked for and `scorer` can read text, then the adjustments unless they change
-    /// nothing.
+    /// nothing. Facing pages are split before the steps when asked for those pages
+    /// (`splitsFacingPages`), so each page is checked, straightened and turned on its own.
     public static func forScan(_ settings: ScanSettings, arrangement: ScanArrangement = .asScanned,
                                scorer: (any OrientationScorer)? = nil) -> PageProcessor {
         var steps: [any PageStep] = []
@@ -186,7 +199,8 @@ public struct PageProcessor {
         if !(settings.adjustments.isIdentity && settings.colorMode == .color) {
             steps.append(AdjustmentStep(adjustments: settings.adjustments, colorMode: settings.colorMode))
         }
-        return PageProcessor(steps: steps, arrangement: arrangement, binding: settings.backBinding)
+        return PageProcessor(steps: steps, arrangement: arrangement, binding: settings.backBinding,
+                             book: splitsFacingPages(settings) ? BookSplitOptions.of(settings) : nil)
     }
 
     /// Whether scans with these settings get the blank-page check: document pages collected in the
@@ -210,8 +224,17 @@ public struct PageProcessor {
         checksBlankPages(settings) && settings.document.autoRotate
     }
 
-    /// Arranges the pages, then runs every step on every page. `shouldContinue` is asked before
-    /// each page and each step, and handed to the steps that can stop part way
+    /// Whether scans with these settings have their facing pages split: asked for, on document pages
+    /// collected in the queue, where the page strip shows the pages and one click joins them again,
+    /// scanned one side of each sheet (`BookPages.scansOneSide`). Pages saved as soon as they are
+    /// scanned are never cut unseen, and pages scanned on both sides keep their sheet and side.
+    public static func splitsFacingPages(_ settings: ScanSettings) -> Bool {
+        checksBlankPages(settings) && settings.document.splitFacingPages && BookPages.scansOneSide(settings)
+    }
+
+    /// Arranges the pages, splits each spread when facing pages are split (where its gutter is found,
+    /// `BookSplitter.findGutter`; whole otherwise), then runs every step on every page. `shouldContinue`
+    /// is asked before each page and each step, and handed to the steps that can stop part way
     /// (`CancellablePageStep`); when it says no, `ScanError.cancelled` is thrown.
     public func process(_ scanned: [ScannedPage], shouldContinue: () -> Bool = { true }) throws -> ProcessedScan {
         guard shouldContinue() else { throw ScanError.cancelled }
@@ -226,18 +249,59 @@ public struct PageProcessor {
         pages.reserveCapacity(arranged.count)
         for page in arranged {
             guard shouldContinue() else { throw ScanError.cancelled }
-            var current = page
-            for step in steps {
-                guard shouldContinue() else { throw ScanError.cancelled }
-                if let cancellable = step as? any CancellablePageStep {
-                    current = try cancellable.apply(current, shouldContinue: shouldContinue)
-                } else {
-                    current = step.apply(current)
-                }
+            if let book {
+                let gutter = BookSplitter.findGutter(page.image, dpi: page.dpi)
+                let spreadPages = try processSpread(page, cut: gutter, options: book, shouldContinue: shouldContinue)
+                pages.append(contentsOf: spreadPages)
+                continue
             }
+            let current = try runSteps(page, shouldContinue: shouldContinue)
             pages.append(current)
         }
         return ProcessedScan(arranged: arranged, pages: pages)
+    }
+
+    /// The pages of one spread after every step: `spread` (as scanned) cut at `cut`, or kept whole when
+    /// it is nil, each page turned as `options` say, then put in reading order: by where they lie once
+    /// turned by the book's rotation and the turn reading their text gave them
+    /// (`BookSplitter.totalTurns`). Each page records the spread (`SpreadPart`, with the spread's id),
+    /// keeps the side and sheet the spread was given (`side`, `sheetIndex`) and gets an id of its own.
+    /// Used for every scan when facing pages are split, and to join or split a spread again. Twin of C#
+    /// `PageProcessor.ProcessSpread`.
+    public func processSpread(_ spread: ScannedPage, cut: GutterResult?, options: BookSplitOptions,
+                              shouldContinue: () -> Bool = { true }) throws -> [ScannedPage] {
+        guard shouldContinue() else { throw ScanError.cancelled }
+        let turns = BookSplitter.normalizedTurns(options.rotationQuarterTurns)
+        func part(_ image: CGImage, _ index: Int?, _ gutter: GutterResult?) -> ScannedPage {
+            var page = ScannedPage(image: ImagePipeline.rotate(image, quarterTurns: turns), dpi: spread.dpi,
+                                   colorMode: spread.colorMode, createdAt: spread.createdAt)
+            page.side = spread.side
+            page.sheetIndex = spread.sheetIndex
+            page.spread = SpreadPart(spreadID: spread.id, part: index, gutter: index == nil ? nil : gutter)
+            return page
+        }
+        guard let cut, let halves = BookSplitter.halves(spread.image, gutter: cut) else {
+            let whole = try runSteps(part(spread.image, nil, nil), shouldContinue: shouldContinue)
+            return [whole]
+        }
+        let a = try runSteps(part(halves.first, 0, cut), shouldContinue: shouldContinue)
+        let b = try runSteps(part(halves.second, 1, cut), shouldContinue: shouldContinue)
+        let total = BookSplitter.totalTurns(turns, a.upright, b.upright)
+        return BookSplitter.firstPartLeads(cut.axis, quarterTurns: total, rightToLeft: options.rightToLeft) ? [a, b] : [b, a]
+    }
+
+    /// Every step on `page`, in order.
+    private func runSteps(_ page: ScannedPage, shouldContinue: () -> Bool) throws -> ScannedPage {
+        var current = page
+        for step in steps {
+            guard shouldContinue() else { throw ScanError.cancelled }
+            if let cancellable = step as? any CancellablePageStep {
+                current = try cancellable.apply(current, shouldContinue: shouldContinue)
+            } else {
+                current = step.apply(current)
+            }
+        }
+        return current
     }
 }
 

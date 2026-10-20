@@ -5,8 +5,9 @@ import Foundation
 import ImageIO
 
 /// Where document pages are spilled to disk while they wait in the queue,
-/// so a long high-dpi batch doesn't hold gigabytes of pixels in memory.
-private let pageSpoolDirectory: URL = FileManager.default.temporaryDirectory
+/// so a long high-dpi batch doesn't hold gigabytes of pixels in memory (and the spreads book pages
+/// were cut from, AppState+Book.swift).
+let pageSpoolDirectory: URL = FileManager.default.temporaryDirectory
     .appendingPathComponent("CompleteScanner-pages", isDirectory: true)
 
 /// Cooperative cancellation for the busy phases hardware cancel can't reach:
@@ -93,7 +94,13 @@ public final class AppState: ObservableObject {
     /// Normalized (0...1) crop rect within the flatbed, origin top-left. nil = full bed.
     @Published public var selectionRect: CGRect?
 
-    @Published public internal(set) var scannedPages: [ScannedPage] = []
+    /// The page queue. Spreads no page is cut from any more are dropped whenever it changes
+    /// (`pruneSpreads`, AppState+Book.swift).
+    @Published public internal(set) var scannedPages: [ScannedPage] = [] {
+        didSet { pruneSpreads() }
+    }
+    /// The spreads the book pages in the queue were cut from, by spread id (AppState+Book.swift).
+    var spreadSources: [UUID: SpreadSource] = [:]
     @Published public var detectedPhotos: [DetectedPhoto] = []
     @Published public var showPhotoReview = false
     /// The review holds receipts rather than photos: it is titled and saved as receipts (AppState+Receipts.swift).
@@ -229,8 +236,9 @@ public final class AppState: ObservableObject {
     /// session selects one unit at a time.
     private var feederDuplexCheck: Task<Void, Never>?
     /// The last page swap (or the turn clicked behind one) queued; nil when none is under way.
-    /// Swaps and turns run in click order, and a save waits for them (`enqueuePageEdit`).
-    private var pageEditChain: Task<Void, Never>?
+    /// Swaps and turns run in click order, and a save waits for them (`enqueuePageEdit`), and so
+    /// does joining or splitting a spread (AppState+Book.swift).
+    var pageEditChain: Task<Void, Never>?
     private var pageEditCount = 0
 
     /// Image shown in the preview canvas.
@@ -700,14 +708,22 @@ public final class AppState: ObservableObject {
             switch TaskCatalog.flow(of: s) {
             case .documentQueue:
                 if s.documentMultiPage {
-                    // Spill full-resolution pages to disk; keep only previews in the queue.
+                    // Spill full-resolution pages to disk; keep only previews in the queue. The
+                    // spreads book pages were cut from are kept too, to join or split them again.
+                    let spreads = cleaned.spreads
                     let spooled = await Task.detached(priority: .userInitiated) {
                         Self.spoolPages(processed)
                     }.value
+                    let spreadSources = await Task.detached(priority: .userInitiated) {
+                        Self.spoolSpreads(spreads)
+                    }.value
                     guard self.switchGeneration == generation else {
                         self.deleteSpoolFiles(of: spooled)
+                        Self.deleteSpreadFiles(Array(spreadSources.values))
                         return
                     }
+                    // The spreads first: adding the pages drops the spreads no page is cut from.
+                    self.spreadSources.merge(spreadSources) { _, new in new }
                     self.scannedPages.append(contentsOf: spooled)
                     self.recordCaptures(spooled.map(\.id))
                     self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
@@ -1526,7 +1542,7 @@ public final class AppState: ObservableObject {
     /// that carry only a preview in memory. A page whose spill fails is kept
     /// fully in memory instead. The page as scanned, kept by crop and straighten, gets a spool
     /// file of its own (and keeps its pixels in memory when that fails), so one click can show it.
-    private nonisolated static func spoolPages(_ pages: [ScannedPage]) -> [ScannedPage] {
+    nonisolated static func spoolPages(_ pages: [ScannedPage]) -> [ScannedPage] {
         try? FileManager.default.createDirectory(at: pageSpoolDirectory, withIntermediateDirectories: true)
         return pages.map { page in
             let url = pageSpoolDirectory.appendingPathComponent("\(page.id.uuidString).tiff")
@@ -1553,7 +1569,7 @@ public final class AppState: ObservableObject {
         }
     }
 
-    private nonisolated static func makePreview(_ image: CGImage, maxSide: Int) -> CGImage? {
+    nonisolated static func makePreview(_ image: CGImage, maxSide: Int) -> CGImage? {
         let w = image.width, h = image.height
         let longSide = max(w, h)
         guard longSide > maxSide else { return image }

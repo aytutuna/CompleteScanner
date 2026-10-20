@@ -129,27 +129,44 @@ public enum ScanArrangement
 
 /// <summary>The pages of one scan after processing.</summary>
 /// <param name="Arranged">The pages in reading order with their sides marked and the backs turned upright, otherwise as scanned (for the preview and the history).</param>
-/// <param name="Pages">The same pages after every step, with the facts the steps found.</param>
+/// <param name="Pages">
+/// The same pages after every step, with the facts the steps found; with facing pages split, the pages
+/// cut from each spread (<see cref="ScannedPage.Spread"/>, whose id is the spread's in <see cref="Arranged"/>).
+/// </param>
 public sealed record ProcessedScan(IReadOnlyList<ScannedPage> Arranged, IReadOnlyList<ScannedPage> Pages)
 {
     /// <summary>Pages the blank-page check found blank at the sensitivity it ran with.</summary>
     public int BlankCount => Pages.Count(p => p.Blank?.IsBlank == true);
+
+    /// <summary>The spreads in <see cref="Arranged"/> that pages were cut from (or kept whole as), in scan order.</summary>
+    public IReadOnlyList<ScannedPage> Spreads
+    {
+        get
+        {
+            var ids = Pages.Select(p => p.SpreadId).OfType<Guid>().ToHashSet();
+            return Arranged.Where(p => ids.Contains(p.Id)).ToList();
+        }
+    }
 }
 
 /// <summary>
 /// The clean-up stage between the scanner and the page queue, the same for every scanner: the
-/// pages are put in reading order with their sides (two-sided scans), then every step runs on
-/// every page in order. The order of the steps is fixed: <see cref="ForScan"/> builds them from
-/// the settings: blank check (document pages), crop and straighten, separator sheets, turning
+/// pages are put in reading order with their sides (two-sided scans), each spread of an open book
+/// is cut into its two pages when facing pages are split (<paramref name="book"/>), then every step
+/// runs on every page in order. The order of the steps is fixed: <see cref="ForScan"/> builds them
+/// from the settings: blank check (document pages), crop and straighten, separator sheets, turning
 /// pages upright, then adjustments.
 /// </summary>
 public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
                                   ScanArrangement arrangement = ScanArrangement.AsScanned,
-                                  DuplexBinding binding = DuplexBinding.LongEdge)
+                                  DuplexBinding binding = DuplexBinding.LongEdge,
+                                  BookSplitOptions? book = null)
 {
     public IReadOnlyList<IPageStep> Steps { get; } = steps;
     public ScanArrangement Arrangement { get; } = arrangement;
     public DuplexBinding Binding { get; } = binding;
+    /// <summary>How the pages of each spread are turned and ordered; null when spreads are not split.</summary>
+    public BookSplitOptions? Book { get; } = book;
 
     /// <summary>
     /// The steps for a scan made with <paramref name="settings"/>: the blank-page check for pages
@@ -157,7 +174,9 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// strip can flag them), crop and straighten when asked for those pages, the separator-sheet
     /// check for those pages (whether or not the stack is split, so a split chosen later finds
     /// them), turning those pages upright when asked for and <paramref name="scorer"/> can read text,
-    /// then the adjustments unless they change nothing.
+    /// then the adjustments unless they change nothing. Facing pages are split before the steps when
+    /// asked for those pages (<see cref="SplitsFacingPages"/>), so each page is checked, straightened
+    /// and turned on its own.
     /// </summary>
     public static PageProcessor ForScan(ScanSettings settings, ScanArrangement arrangement = ScanArrangement.AsScanned,
                                         IOrientationScorer? scorer = null)
@@ -183,7 +202,8 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
         {
             steps.Add(new AdjustmentStep(settings.Adjustments, settings.ColorMode));
         }
-        return new PageProcessor(steps, arrangement, settings.BackBinding);
+        return new PageProcessor(steps, arrangement, settings.BackBinding,
+                                 SplitsFacingPages(settings) ? BookSplitOptions.Of(settings) : null);
     }
 
     /// <summary>
@@ -211,9 +231,19 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
         ChecksBlankPages(settings) && settings.Document.AutoRotate;
 
     /// <summary>
-    /// Arranges the pages, then runs every step on every page. <paramref name="token"/> is checked
-    /// before each page and each step, and handed to the steps that can stop part way
-    /// (<see cref="ICancellablePageStep"/>).
+    /// Whether scans with these settings have their facing pages split: asked for, on document pages
+    /// collected in the queue, where the page strip shows the pages and one click joins them again,
+    /// scanned one side of each sheet (<see cref="BookPages.ScansOneSide"/>). Pages saved as soon as
+    /// they are scanned are never cut unseen, and pages scanned on both sides keep their sheet and side.
+    /// </summary>
+    public static bool SplitsFacingPages(ScanSettings settings) =>
+        ChecksBlankPages(settings) && settings.Document.SplitFacingPages && BookPages.ScansOneSide(settings);
+
+    /// <summary>
+    /// Arranges the pages, splits each spread when facing pages are split (where its gutter is found,
+    /// <see cref="BookSplitter.FindGutter(RgbaImage, int)"/>; whole otherwise), then runs every step on
+    /// every page. <paramref name="token"/> is checked before each page and each step, and handed to the
+    /// steps that can stop part way (<see cref="ICancellablePageStep"/>).
     /// </summary>
     public ProcessedScan Process(IReadOnlyList<ScannedPage> scanned, CancellationToken token = default)
     {
@@ -229,15 +259,56 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
         foreach (var page in arranged)
         {
             token.ThrowIfCancellationRequested();
-            var current = page;
-            foreach (var step in Steps)
+            if (Book is { } book)
             {
-                token.ThrowIfCancellationRequested();
-                current = step is ICancellablePageStep cancellable ? cancellable.Apply(current, token) : step.Apply(current);
+                pages.AddRange(ProcessSpread(page, BookSplitter.FindGutter(page.Image, page.Dpi), book, token));
+                continue;
             }
-            pages.Add(current);
+            pages.Add(RunSteps(page, token));
         }
         return new ProcessedScan(arranged, pages);
+    }
+
+    /// <summary>
+    /// The pages of one spread after every step: <paramref name="spread"/> (as scanned) cut at
+    /// <paramref name="cut"/>, or kept whole when it is null, each page turned as
+    /// <paramref name="options"/> say, then put in reading order: by where they lie once turned by the
+    /// book's rotation and the turn reading their text gave them (<see cref="BookSplitter.TotalTurns"/>).
+    /// Each page records the spread (<see cref="SpreadPart"/>, with the spread's id), keeps the side and
+    /// sheet the spread was given (<see cref="ScannedPage.Side"/>, <see cref="ScannedPage.SheetIndex"/>)
+    /// and gets an id of its own. Used for every scan when facing pages are split, and to join or split
+    /// a spread again.
+    /// </summary>
+    public IReadOnlyList<ScannedPage> ProcessSpread(ScannedPage spread, GutterResult? cut, BookSplitOptions options,
+                                                    CancellationToken token = default)
+    {
+        token.ThrowIfCancellationRequested();
+        int turns = BookSplitter.NormalizedTurns(options.RotationQuarterTurns);
+        ScannedPage Part(RgbaImage image, int? part) =>
+            new ScannedPage(image.RotatedQuarterTurns(turns), spread.Dpi, spread.ColorMode, createdAt: spread.CreatedAt)
+            {
+                Side = spread.Side,
+                SheetIndex = spread.SheetIndex,
+                Spread = new SpreadPart(spread.Id, part, part is null ? null : cut),
+            };
+        if (cut is null) return [RunSteps(Part(spread.Image, null), token)];
+        var (first, second) = BookSplitter.Halves(spread.Image, cut);
+        var a = RunSteps(Part(first, 0), token);
+        var b = RunSteps(Part(second, 1), token);
+        int total = BookSplitter.TotalTurns(turns, a.Upright, b.Upright);
+        return BookSplitter.FirstPartLeads(cut.Axis, total, options.RightToLeft) ? [a, b] : [b, a];
+    }
+
+    /// <summary>Every step on <paramref name="page"/>, in order.</summary>
+    private ScannedPage RunSteps(ScannedPage page, CancellationToken token)
+    {
+        var current = page;
+        foreach (var step in Steps)
+        {
+            token.ThrowIfCancellationRequested();
+            current = step is ICancellablePageStep cancellable ? cancellable.Apply(current, token) : step.Apply(current);
+        }
+        return current;
     }
 }
 

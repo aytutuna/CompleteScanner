@@ -22,8 +22,9 @@ extension AppState {
         }
         let notSeparators = added.filter { !separatorIDs.contains($0.id) }
         let separatorsAdded = added.count - notSeparators.count
-        return PageFilter.scanNote(notSeparators, options: options) + PageCorrections.scanNote(added)
-            + PageTurns.scanNote(added) + DocumentSplitter.scanNote(plan, separatorsAdded: separatorsAdded)
+        return BookPages.scanNote(added) + PageFilter.scanNote(notSeparators, options: options)
+            + PageCorrections.scanNote(added) + PageTurns.scanNote(added)
+            + DocumentSplitter.scanNote(plan, separatorsAdded: separatorsAdded)
     }
 
     /// One click on the gap before a queued page: a new document starts there, or the page joins

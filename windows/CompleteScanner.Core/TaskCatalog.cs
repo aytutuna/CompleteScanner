@@ -23,7 +23,7 @@ public enum TaskFlowKind
 /// <summary>A task card: what it is called, how it looks and how its scans are handled.</summary>
 /// <param name="IconKey">
 /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-/// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch".
+/// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book".
 /// </param>
 /// <param name="Intent">The scan mode the task uses.</param>
 /// <param name="RequiredSource">The source the task cannot work without; null when any source does.</param>
@@ -117,6 +117,12 @@ public static class TaskCatalog
             [new TaskStep("scan", "Scan the stack",
                           "Put a separator sheet in front of each document after the first, load the stack in the feeder and scan. Check where the stack is split, then save.",
                           "Scan stack", Repeats: true)]),
+        new(ScanTask.Book, "Book or magazine",
+            "Scan an open book two pages at a time; each spread is split into its pages, in reading order.",
+            "book", TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.Flatbed, "Book",
+            [new TaskStep("scan", "Scan each spread",
+                          "Open the book face down with the spine in the middle of the glass and press it gently flat, then scan. Turn the page and scan the next spread; each one becomes two pages.",
+                          "Scan spread", Repeats: true)]),
     ];
 
     /// <summary>Every task, in start-screen order.</summary>
@@ -129,14 +135,17 @@ public static class TaskCatalog
     /// resolution, color, format, JPEG quality, PDF size, the after-save action, the text beside a
     /// PDF (off: only the Scan to Word task saves text), the photo and
     /// document switches, searchable PDF, adjustments, two-sided scanning, skipping blank pages,
-    /// crop and straighten, turning pages upright,
+    /// crop and straighten, turning pages upright, splitting facing pages,
     /// file name and the task itself. The destination folder, the photo detection tuning, the
     /// legacy OCR languages, the paper size, the edge backs are turned on, how much counts as
     /// blank and the choices of each task (<see cref="ScanSettings.TaskOptions"/>) are kept: they
     /// describe the user's paper and how they want a task done, not the task. <paramref name="current"/> is
     /// not changed. The two-sided task asks for <see cref="DuplexMode.Both"/>, skips blank
     /// pages (the empty backs of one-sided sheets), straightens pages the feeder pulled in at a
-    /// slant and turns upright the sheets put in the wrong way round; no task crops yet; <see cref="SettingsAdapter"/> turns
+    /// slant and turns upright the sheets put in the wrong way round; the Book or magazine task splits
+    /// each spread into its facing pages, straightens each page and turns upright a book lying
+    /// sideways (its reading order and turn, in <see cref="ScanSettings.TaskOptions"/>, are kept); no
+    /// task crops yet; <see cref="SettingsAdapter"/> turns
     /// <see cref="DuplexMode.Both"/> into turning over by hand on a feeder that scans one side.
     /// The ID card task makes no searchable PDF: the numbers on an ID are better not indexed; neither
     /// does the Copy task, whose PDF (when one is saved too) is a record of the paper copy. The
@@ -162,9 +171,10 @@ public static class TaskCatalog
         s.Duplex = DuplexMode.Off;
         s.Document.RemoveBlankPages = task is ScanTask.TwoSided or ScanTask.Batch;
         s.Document.AutoCrop = false;
-        s.Document.AutoStraighten = task == ScanTask.TwoSided;
-        s.Document.AutoRotate = task == ScanTask.TwoSided;
+        s.Document.AutoStraighten = task is ScanTask.TwoSided or ScanTask.Book;
+        s.Document.AutoRotate = task is ScanTask.TwoSided or ScanTask.Book;
         s.Document.SplitMode = task == ScanTask.Batch ? SplitMode.SeparatorSheet : SplitMode.None;
+        s.Document.SplitFacingPages = task == ScanTask.Book;
         switch (task)
         {
             case ScanTask.Document:
@@ -250,6 +260,12 @@ public static class TaskCatalog
                 s.Format = OutputFormat.Pdf;
                 s.NamingTemplate = "Document {label} {date} {counter}";
                 break;
+            case ScanTask.Book:
+                s.Intent = ScanIntent.Document;
+                s.Resolution = 300;
+                s.Format = OutputFormat.Pdf;
+                s.NamingTemplate = "{task} {date} {counter}";
+                break;
         }
         s.TaskId = task.RawValue();
         return s;
@@ -267,6 +283,7 @@ public static class TaskCatalog
             return settings.Adjustments.RestoreFadedColors ? ScanTask.PhotoRestore : ScanTask.Photos;
         }
         if (settings.Document.SplitMode != SplitMode.None && settings.DocumentMultiPage) return ScanTask.Batch;
+        if (settings.Document.SplitFacingPages && settings.DocumentMultiPage) return ScanTask.Book;
         if (settings.Source == ScanSource.DocumentFeeder)
         {
             return settings.Duplex == DuplexMode.Off ? ScanTask.Feeder : ScanTask.TwoSided;
@@ -305,8 +322,9 @@ public static class TaskCatalog
     /// <summary>
     /// The settings still do what the task is for: the same scan mode, and the task's
     /// required source; for the two-sided task, both sides; for Scan to Word, a Word document; for
-    /// the Batch task, a split. Changing the mode by hand (or choosing one side, another format or
-    /// no split), or a scanner without that source, ends the task.
+    /// the Batch task, a split; for the Book or magazine task, splitting facing pages. Changing the
+    /// mode by hand (or choosing one side, another format or no split), or a scanner without that
+    /// source, ends the task.
     /// </summary>
     public static bool Fits(ScanTask task, ScanSettings settings)
     {
@@ -315,7 +333,8 @@ public static class TaskCatalog
                && (definition.RequiredSource is not { } source || settings.Source == source)
                && (task != ScanTask.TwoSided || settings.Duplex != DuplexMode.Off)
                && (task != ScanTask.Word || settings.Format == OutputFormat.Word)
-               && (task != ScanTask.Batch || settings.Document.SplitMode != SplitMode.None);
+               && (task != ScanTask.Batch || settings.Document.SplitMode != SplitMode.None)
+               && (task != ScanTask.Book || settings.Document.SplitFacingPages);
     }
 
     /// <summary>
@@ -338,8 +357,9 @@ public static class TaskCatalog
     /// <summary>
     /// One line describing the settings, e.g. "300 dpi · Color · PDF". A PDF size other than
     /// the default Standard is named ("300 dpi · Color · Compact PDF"), and so is two-sided
-    /// feeder scanning ("… · Both sides", "… · Both sides, turned by hand"), and splitting into
-    /// documents ("… · Split at separator sheets"), so the line stays
+    /// feeder scanning ("… · Both sides", "… · Both sides, turned by hand"), splitting into
+    /// documents ("… · Split at separator sheets") and facing pages ("… · Facing pages split",
+    /// "… · Facing pages split, right to left"), so the line stays
     /// short enough for cards and the preset list. A copy says how it prints instead of a format:
     /// "300 dpi · Color · Actual size", "300 dpi · Grayscale · Fit to page · 3 copies".
     /// </summary>
@@ -358,7 +378,19 @@ public static class TaskCatalog
         var sides = DocumentSides.Effective(settings, null);
         string twoSided = sides == DuplexMode.Off ? "" : $" · {sides.Label()}";
         string split = SplitSummary(settings) is { } text ? $" · {text}" : "";
-        return $"{settings.Resolution} dpi · {settings.ColorMode.Label()} · {format}{twoSided}{split}";
+        string book = BookSummary(settings) is { } pages ? $" · {pages}" : "";
+        return $"{settings.Resolution} dpi · {settings.ColorMode.Label()} · {format}{twoSided}{split}{book}";
+    }
+
+    /// <summary>
+    /// "Facing pages split" (", right to left") for collected document pages whose spreads are split
+    /// (one side of each sheet, <see cref="BookPages.ScansOneSide"/>); null otherwise.
+    /// </summary>
+    private static string? BookSummary(ScanSettings settings)
+    {
+        if (settings.Intent != ScanIntent.Document || !settings.DocumentMultiPage || !settings.Document.SplitFacingPages
+            || !BookPages.ScansOneSide(settings)) return null;
+        return settings.TaskOptions.BookRightToLeft ? "Facing pages split, right to left" : "Facing pages split";
     }
 
     /// <summary>

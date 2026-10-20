@@ -10,7 +10,9 @@ namespace CompleteScanner.Core;
 /// (an obviously made-up design, no real document), which it turns over after every scan
 /// (<see cref="IdCardTurnedOver"/>); for the Receipts task it holds two made-up receipts
 /// (<see cref="MockBedRenderer.RenderReceiptBed"/>); for the Batch task its feeder holds a stack of
-/// documents with separator sheets between them (<see cref="BatchSeparatorSheets"/>). Port of
+/// documents with separator sheets between them (<see cref="BatchSeparatorSheets"/>); for the Book or
+/// magazine task its glass holds an open book, whose page it turns after every scan
+/// (<see cref="BookSpread"/>, <see cref="MockBedRenderer.RenderBookSpread"/>). Port of
 /// Sources/CompleteScannerKit/Backends/MockScannerBackend.swift.
 ///
 /// Divergence from the macOS mock: the demo document page renders text-shaped bars rather
@@ -90,6 +92,13 @@ public sealed class MockScannerBackend : IScannerBackend
     /// </summary>
     public bool IdCardTurnedOver { get; set; }
 
+    /// <summary>
+    /// The spread the open book on the glass is at (0 = the first): a scan for the Book or magazine
+    /// task shows it, and the demo turns the page by itself after every such scan, as the user is asked
+    /// to. A preview shows the spread without turning the page.
+    /// </summary>
+    public int BookSpread { get; set; }
+
     public void StartBrowsing()
     {
         if (_devices.Count > 0) return;
@@ -143,6 +152,7 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
         {
             ScanTask.IdCard => MockBedRenderer.RenderIdCardBed(100, backend.IdCardTurnedOver ? PageSide.Back : PageSide.Front),
             ScanTask.Receipt => MockBedRenderer.RenderReceiptBed(100),
+            ScanTask.Book => MockBedRenderer.RenderBookSpread(100, backend.BookSpread),
             _ => MockBedRenderer.RenderBed(100, settings.Intent),
         });
     }
@@ -163,10 +173,15 @@ internal sealed class MockScannerSession(ScannerInfo info, MockScannerBackend ba
         bool idCard = settings.Task == ScanTask.IdCard;
         var cardSide = backend.IdCardTurnedOver ? PageSide.Back : PageSide.Front;
         bool receipts = settings.Task == ScanTask.Receipt;
+        // The Book or magazine task scans the open book, then turns its page.
+        bool book = settings.Task == ScanTask.Book;
+        int spread = backend.BookSpread;
         var image = await Task.Run(() => idCard ? MockBedRenderer.RenderIdCardBed(dpi, cardSide)
             : receipts ? MockBedRenderer.RenderReceiptBed(dpi)
+            : book ? MockBedRenderer.RenderBookSpread(dpi, spread)
             : MockBedRenderer.RenderBed(dpi, settings.Intent));
         if (idCard) backend.IdCardTurnedOver = cardSide == PageSide.Front;
+        if (book) backend.BookSpread = spread + 1;
         await SleepCheckingCancellation(0.25);
 
         ProgressHandler?.Invoke(new ScanProgress(0.9, "Transferring…"));
@@ -706,6 +721,83 @@ internal static class MockBedRenderer
                 .ToArray();
             return points.Zip(points.Skip(1), (a, b) => (a.X, a.Y, b.X, b.Y));
         }).ToArray());
+
+    // MARK: Book
+
+    /// <summary>Where the open demo book lies on the glass, in inches from its top-left corner.</summary>
+    public static readonly RectD BookInches = new(0.25, 0.5, 8.0, 6.0);
+    /// <summary>The demo book's spine: this share of the scan's width from its left edge.</summary>
+    public const double BookGutterFraction = 0.52;
+    /// <summary>The spine's shadow darkens the pages by this share at its middle…</summary>
+    public const double BookShadowDepth = 0.25;
+    /// <summary>…fading like a bell curve with this spread (σ), in inches.</summary>
+    public const double BookShadowSigmaInches = 0.1;
+
+    /// <summary>
+    /// The glass with a made-up open book on it at <paramref name="spreadIndex"/> (0 = the first
+    /// spread): two pages side by side (<see cref="BookInches"/>) meeting at the spine at
+    /// <see cref="BookGutterFraction"/> of the width, each with text-shaped lines and, near its bottom
+    /// outer corner, page-number marks (<paramref name="spreadIndex"/> % 5 + 1 squares) so spreads can
+    /// be told apart; the spine's shadow (<see cref="BookShadowDepth"/> deep, σ =
+    /// <see cref="BookShadowSigmaInches"/>) darkens the pages around it.
+    /// </summary>
+    public static RgbaImage RenderBookSpread(int dpi, int spreadIndex)
+    {
+        double scale = dpi;
+        int width = (int)(BedInches.Width * scale);
+        int height = (int)(BedInches.Height * scale);
+        var image = RgbaImage.Filled(width, height, 245, 245, 245);
+        DrawBedBackground(image);
+
+        double bookX = BookInches.X * scale, bookY = BookInches.Y * scale;
+        double bookW = BookInches.Width * scale, bookH = BookInches.Height * scale;
+        double gutter = BookGutterFraction * width;
+        FillRect(image, bookX, bookY, bookW, bookH, 252, 251, 247);
+
+        // The lines of each page: text bars of varied length, 0.2 in apart.
+        int[] lineTenths = [33, 34, 32, 34, 21, 0, 34, 33, 34, 31, 34, 17, 0, 34, 32, 33, 34, 30, 34, 26, 0, 33, 34, 28];
+        double barHeight = 0.05 * scale, pitch = 0.2 * scale;
+        double inner = 0.45 * scale, outer = 0.5 * scale;
+        for (int side = 0; side < 2; side++)
+        {
+            double pageLeft = side == 0 ? bookX + outer : gutter + inner;
+            double pageRight = side == 0 ? gutter - inner : bookX + bookW - outer;
+            double textWidth = pageRight - pageLeft;
+            double y = bookY + 0.6 * scale;
+            for (int line = 0; line < lineTenths.Length; line++)
+            {
+                int tenths = lineTenths[(line + 5 * side + 3 * spreadIndex) % lineTenths.Length];
+                if (tenths > 0) FillRect(image, pageLeft, y, textWidth * tenths / 34.0, barHeight, 60, 60, 64);
+                y += pitch;
+            }
+            // Page-number marks near the page's bottom outer corner.
+            double markSide = 0.12 * scale, markPitch = 0.2 * scale;
+            double markY = bookY + bookH - 0.45 * scale;
+            for (int mark = 0; mark <= spreadIndex % 5; mark++)
+            {
+                double x = side == 0 ? pageLeft + mark * markPitch : pageRight - markSide - mark * markPitch;
+                FillRect(image, x, markY, markSide, markSide, 60, 60, 64);
+            }
+        }
+
+        // The spine's shadow, over the book only.
+        double sigma = BookShadowSigmaInches * scale;
+        int x0 = Math.Max(0, (int)Math.Floor(gutter - 4 * sigma)), x1 = Math.Min(width, (int)Math.Ceiling(gutter + 4 * sigma));
+        int y0 = Math.Max(0, (int)bookY), y1 = Math.Min(height, (int)Math.Ceiling(bookY + bookH));
+        for (int x = x0; x < x1; x++)
+        {
+            double d = x + 0.5 - gutter;
+            double keep = 1 - BookShadowDepth * Math.Exp(-d * d / (2 * sigma * sigma));
+            for (int y = y0; y < y1; y++)
+            {
+                int i = (y * width + x) * 4;
+                image.Pixels[i] = (byte)Math.Round(image.Pixels[i] * keep);
+                image.Pixels[i + 1] = (byte)Math.Round(image.Pixels[i + 1] * keep);
+                image.Pixels[i + 2] = (byte)Math.Round(image.Pixels[i + 2] * keep);
+            }
+        }
+        return image;
+    }
 
     // MARK: Background
 

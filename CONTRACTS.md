@@ -17,6 +17,7 @@ Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Pipeline/PageProcessor.swift`, `BlankPageDetector.swift`, `RgbaImage.swift`, `GrayImage.swift`, `BackgroundMap.swift`, `MaskOps.swift` — the page clean-up stage every scanned page goes through, blank-page detection, and the image toolkit the page analyses share (see below).
 - `Sources/CompleteScannerKit/Pipeline/DocumentGeometry.swift` — crop to the page and straighten it: the sheet's edges on the scanner's background, the skew of the text lines, and what is done to the page (see below).
 - `Sources/CompleteScannerKit/Pipeline/Orientation.swift` (+ `VisionOrientationScorer` in `Output/OCRService.swift`) — rotate pages upright: which way up a page reads by text recognition, the turn and its one-click undo (see below).
+- `Sources/CompleteScannerKit/Pipeline/BookSplitter.swift`, `App/AppState+Book.swift`, `UI/SpreadSplitView.swift` — books and magazines: the gutter of an open book found on a spread, the spread cut into its pages in reading order, joined or split again by hand (see below).
 - `Sources/CompleteScannerKit/Pipeline/IdCard.swift`, `App/AppState+IdCard.swift`, `UI/IdCardReviewView.swift` — the ID card task: both sides of a card found on the glass and laid out on one page at real size (see below).
 - `Sources/CompleteScannerKit/Output/PrintLayout.swift`, `App/PrintController.swift`, `App/AppState+Copy.swift` — copy and print: the Copy task, printing the ID card's page and the ruler test page, at real size (see below).
 - `Sources/CompleteScannerKit/Output/OCRText.swift`, `TextExport.swift`, `DocxWriter.swift`, `ZipStore.swift` — text output: OCR lines in reading order and paragraphs, the text file, the Word document and its zip package, Copy Text (see below).
@@ -184,7 +185,7 @@ Twin of `windows/CompleteScanner.Core/DeviceMerge.cs` (`HardwareId`, `Connection
 // wants a task done, kept when a task is picked (see Pipeline/IdCard.swift).
 
 public enum ScanTask: String, CaseIterable, Identifiable, Sendable {
-    case document, feeder, photos, photoRestore, quickScan, email, twoSided, idCard, copy, word, receipt, batch   // add new tasks after these
+    case document, feeder, photos, photoRestore, quickScan, email, twoSided, idCard, copy, word, receipt, batch, book   // add new tasks after these
     public static func tryParse(_ rawValue: String?) -> ScanTask?
 }
 
@@ -193,7 +194,7 @@ public enum TaskFlowKind: String, Sendable { case documentQueue, photoSplit, idC
 public struct TaskDefinition: Equatable, Sendable {
     public let task: ScanTask
     public let title: String, subtitle: String
-    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch"
+    public let iconKey: String          // "document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book"
     public let flow: TaskFlowKind
     public let intent: ScanIntent
     public let requiredSource: ScanSource?
@@ -220,16 +221,21 @@ public enum TaskCatalog {
     /// `.batch` (feeder, 300 dpi PDF, "Document {label} {date} {counter}") is the only task that
     /// splits (`document.splitMode = .separatorSheet`, the others `.none`) and turns
     /// `removeBlankPages` on with `.twoSided`; every task keeps `document.splitSheetCount`.
+    /// `.book` (flatbed, 300 dpi color PDF, searchable, "{task} {date} {counter}") is the only task
+    /// that splits facing pages (`document.splitFacingPages`), and turns `autoStraighten` and
+    /// `autoRotate` on with `.twoSided`; every task keeps `taskOptions.bookRightToLeft` and
+    /// `bookRotationQuarterTurns`.
     public static func apply(_ task: ScanTask, to current: ScanSettings) -> ScanSettings
     /// The stored task, else the task the settings look like (display and file names only): a
     /// Word document is `.word` (from the feeder, `.feeder`); a scan saved at once as an image is
-    /// `.quickScan`; collected document pages with a split are `.batch`.
+    /// `.quickScan`; collected document pages with a split are `.batch`, with facing pages split `.book`.
     public static func infer(_ settings: ScanSettings) -> ScanTask
     /// `.copy` also needs a printer: `hasPrinter` false gives `PrintText.noPrinterReason` ("No printer is installed.").
     public static func availability(of task: ScanTask, capabilities: ScannerCapabilities?,
                                     hasPrinter: Bool = true) -> TaskAvailability
     /// Same scan mode and, when the task has one, the required source; `.twoSided` also needs
-    /// `duplex != .off`, `.word` a Word document, `.batch` a split (`document.splitMode != .none`).
+    /// `duplex != .off`, `.word` a Word document, `.batch` a split (`document.splitMode != .none`),
+    /// `.book` facing pages split (`document.splitFacingPages`; it requires the flatbed).
     public static func fits(_ task: ScanTask, _ settings: ScanSettings) -> Bool
     /// The steps the scan screen guides: `DocumentSides.manualSteps` whenever the settings turn
     /// a stack over by hand (`DocumentSides.usesManualSteps`), otherwise the fitting task's steps;
@@ -240,7 +246,8 @@ public enum TaskCatalog {
     /// "300 dpi · Color · PDF"; a PDF size other than `.standard` is named: "300 dpi · Color · Compact PDF";
     /// two-sided feeder scanning too: "… · Both sides", "… · Both sides, turned by hand"; a copy
     /// (flow `.copy`) says how it prints: "300 dpi · Color · Actual size", "… · Fit to page · 3 copies";
-    /// collected document pages that are split say so: "… · Split at separator sheets", "… · Split every 3 sheets"
+    /// collected document pages that are split say so: "… · Split at separator sheets", "… · Split every 3 sheets",
+    /// and so do their facing pages: "… · Facing pages split", "… · Facing pages split, right to left"
     public static func summary(_ settings: ScanSettings) -> String
 }
 
@@ -452,6 +459,10 @@ Twins of `windows/CompleteScanner.Core/RgbaImage.cs`, `GrayImage.cs` (`GrayImage
 //   public func turnedUpright(_ quarterTurns: Int) -> ScannedPage   // pixels (and the alternate's in memory) turned clockwise, the turn recorded;
 //                                                                    // the rotation grows only when a spool file holds the unturned page; 0 turns: unchanged
 //   public func withUprightToggled() -> ScannedPage                 // undo, or make again, through the page's rotation like a turn by hand; not turned: unchanged
+// For books it gains `spread: SpreadPart?` (nil: not cut from a spread; in memory only, see
+// Pipeline/BookSplitter.swift below) and `spreadID: UUID?` (`spread?.spreadID`); copyMeta(from:),
+// withGeometry and withVersionsSwapped keep it:
+//   public func withSpread(_ spread: SpreadPart?) -> ScannedPage
 public enum BlankSensitivity: String, Codable, CaseIterable, Identifiable, Sendable {
     case medium, low, high                         // first case = default and fallback
     public var label: String                       // "Low", "Medium", "High"
@@ -467,6 +478,7 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
     public var splitMode: SplitMode = .none         // "splitMode" (see Core/DocumentSplitter.swift below)
     public var splitSheetCount: Int = 1             // "splitSheetCount"; read through DocumentSplitter.clampSheetCount
     public var autoRotate: Bool = false             // "autoRotate" (see Pipeline/Orientation.swift below)
+    public var splitFacingPages: Bool = false       // "splitFacingPages" (see Pipeline/BookSplitter.swift below)
 }
 
 public struct BlankPageOptions: Equatable, Sendable {
@@ -500,13 +512,19 @@ public struct OrientationStep: CancellablePageStep {        // "orientation": Or
 }   // blank pages (blank?.isBlank) and separator sheets (patch != nil) are not read
 public struct AdjustmentStep: PageStep { public let adjustments: AdjustmentSettings; public let colorMode: ColorMode }   // "adjust" (the alternate's pixels too)
 public enum ScanArrangement: Sendable { case asScanned, twoSided, turnedOverFronts, turnedOverBacks }
-public struct ProcessedScan { public let arranged: [ScannedPage]; public let pages: [ScannedPage]; public var blankCount: Int }
+public struct ProcessedScan {
+    public let arranged: [ScannedPage]; public let pages: [ScannedPage]; public var blankCount: Int
+    public var spreads: [ScannedPage]        // the arranged pages that pages were cut from (or kept whole as)
+}
 public struct PageProcessor {
     public let steps: [any PageStep]; public let arrangement: ScanArrangement; public let binding: DuplexBinding
-    public init(steps: [any PageStep], arrangement: ScanArrangement = .asScanned, binding: DuplexBinding = .longEdge)
+    public let book: BookSplitOptions?        // nil: spreads are not split
+    public init(steps: [any PageStep], arrangement: ScanArrangement = .asScanned, binding: DuplexBinding = .longEdge,
+                book: BookSplitOptions? = nil)
     /// Blank check (when `checksBlankPages`), crop and straighten (when `correctsGeometry`), the
     /// separator-sheet check (when `checksBlankPages`, whatever the split), turning pages upright (when
-    /// `turnsPagesUpright` and `scorer?.isAvailable`), then adjustments (unless they change nothing).
+    /// `turnsPagesUpright` and `scorer?.isAvailable`), then adjustments (unless they change nothing);
+    /// `book` = `BookSplitOptions.of(settings)` when `splitsFacingPages`.
     public static func forScan(_ settings: ScanSettings, arrangement: ScanArrangement = .asScanned,
                                scorer: (any OrientationScorer)? = nil) -> PageProcessor
     /// Document queue flow and documentMultiPage: pages saved at once are never checked.
@@ -515,10 +533,17 @@ public struct PageProcessor {
     public static func correctsGeometry(_ settings: ScanSettings) -> Bool
     /// checksBlankPages and autoRotate: pages saved at once are never turned unseen.
     public static func turnsPagesUpright(_ settings: ScanSettings) -> Bool
+    /// checksBlankPages and splitFacingPages: pages saved at once are never cut unseen.
+    public static func splitsFacingPages(_ settings: ScanSettings) -> Bool
     /// Arranges (DocumentSides.arrangeTwoSided / markManual), then every step on every page in
     /// order; throws ScanError.cancelled when `shouldContinue` says no (asked before each page and
     /// step, and handed to a CancellablePageStep).
     public func process(_ scanned: [ScannedPage], shouldContinue: () -> Bool = { true }) throws -> ProcessedScan
+    /// One spread cut at `cut` (nil: kept whole), each page turned by options.rotationQuarterTurns, every
+    /// step run, then put in reading order (see Pipeline/BookSplitter.swift below). With `book`, `process`
+    /// calls it for every arranged page with `BookSplitter.findGutter`.
+    public func processSpread(_ spread: ScannedPage, cut: GutterResult?, options: BookSplitOptions,
+                              shouldContinue: () -> Bool = { true }) throws -> [ScannedPage]
 }
 public enum PageFilter {
     public static let nothingToSaveMessage: String
@@ -653,6 +678,85 @@ public enum PageTurns {
 ```
 Twin of `windows/CompleteScanner.Core/Orientation.cs` (`OrientationScore.Of` / `WordScore` / `ReadsClearly`, `IOrientationScorer`, `OrientationVerdict`, `CandidateScore`, `OrientationCheck`, `OrientationDecision`, `UprightTurn`, `PageTurns`), `OrientationStep` and `ICancellablePageStep` in `PageProcessor.cs`, `DocumentOptions.AutoRotate` and `ScannedPage.Upright` / `WithUpright` / `TurnedUpright` / `WithUprightToggled` in `Models.cs`; the scorers are `WindowsOrientationScorer` (`windows/CompleteScanner.App/Services/WindowsOrientationScorer.cs`: the recognizer of the user's languages, else the first installed, one recognizer only) and `VisionOrientationScorer`. `OrientationTests` are the same cases on both sides, on `TestPages.textPage` with a dark square in its top left corner, read by a stand-in scorer that tells the way up by that corner and answers like real OCR (well upright, words that are not words upside down, next to nothing sideways), and the rotate cases of `PageProcessorTests`, `ModelsCompatTests` and `ScanTaskTests` match. The rules: a page's lines of text (`DocumentGeometry.estimateTextLayout` on its gray copy) choose the ways up worth reading; each is read once on a copy at most 1600 px long, turned in Core (`rotatedQuarterTurns`), the likeliest first; a reading that is clear is taken at once when it is the page as it is (an upright page costs one reading) or, once the page was read the opposite way up (180° from it), has twice the letters in words of every way read before it (so a sideways page is always read both quarter turns); otherwise every way worth reading is read and the most letters in words win with at least 20 and twice as many as any other way; no new reading starts after 3 s, a failed reading leaves the page, blank pages (as checked) and separator sheets are never read. `OrientationStep` runs after the separator check and before the adjustments, on pages collected in the queue only (`turnsPagesUpright`), and only when the scorer can read; `TaskCatalog.apply` turns `autoRotate` on for `.twoSided` only. A turned page's pixels, and its alternate's, are turned before it is spooled (the spool files hold the page upright, its rotation stays 0); undoing goes through the rotation (`withUprightToggled`) whenever either version has a spool file (pixels in memory turn at once and ignore the rotation when saved), so the spool files are never rewritten and a turn by hand adds to it. The Windows turn button's glyph (U+E72C, the twin of `arrow.clockwise`) differs from the hover bar's rotate (U+E7AD). `AppState` takes an optional `orientationScorer:` (default `VisionOrientationScorer()`), passes it to `forScan` in `performScan`, adds `PageTurns.scanNote` to the status after a scan (`queueScanNote`) and `unavailableNote` when pages were to be turned and the scorer cannot read, and offers `canTurnPagesUpright` and `togglePageUpright(id:)` (behind a swap still reading its file, like a turn by hand; the status gives `toggleNote`). Windows has the same in `AppViewModel` (`orientationScorer` constructor parameter, `CanTurnPagesUpright`, `TogglePageUpright`, `PageItem.UprightCaption` / `UprightToggleLabel` / `UprightToolTip`), the inspector's **Rotate pages upright** switch and its hint, and the page's turn button in `MainWindow.xaml`. The Mac shows the switch under Straighten pages (`InspectorView.autoRotateRow`) and the turn button under the page beside the swap button (`PagesStripView`).
 
+### Pipeline/BookSplitter.swift (+ DocumentOptions, TaskOptions, ScannedPage in Core/Models.swift), App/AppState+Book.swift, UI/SpreadSplitView.swift
+
+```swift
+// DocumentOptions gains `splitFacingPages: Bool` (false; "splitFacingPages"); TaskOptions gains
+// `bookRightToLeft: Bool` (false) and `bookRotationQuarterTurns: Int` (0; read through
+// BookSplitter.normalizedTurns), kept when a task is picked.
+public enum GutterAxis: Sendable { case vertical, horizontal }   // up and down the scan (pages side by side) / across it (stacked)
+public enum GutterKind: Sendable { case shadow, margin, manual }
+public struct GutterResult: Equatable, Sendable {
+    public var axis: GutterAxis; public var position: Int   // scan pixels from the left (top) edge; 1 ... length − 1
+    public var confidence: Double; public var kind: GutterKind
+    public func fraction(width: Int, height: Int) -> Double
+}
+public struct SpreadPart: Equatable, Sendable {        // ScannedPage.spread; never saved
+    public var spreadID: UUID                           // the id of the page as scanned
+    public var part: Int?                               // 0 left/top, 1 right/bottom as on the scan; nil: the whole spread
+    public var gutter: GutterResult?                    // nil when whole
+    public var isWhole: Bool { get }
+}
+public struct BookSplitOptions: Equatable, Sendable {
+    public var rotationQuarterTurns: Int; public var rightToLeft: Bool
+    public init(rotationQuarterTurns: Int = 0, rightToLeft: Bool = false)
+    public static func of(_ settings: ScanSettings) -> BookSplitOptions
+}
+public struct GutterCandidate: Equatable, Sendable { public var axis: GutterAxis; public var center: Double; public var confidence: Double; public var kind: GutterKind }
+public struct GutterProfile: Equatable, Sendable { public var axis: GutterAxis; public var brightness: [Double]; public var ink: [Double]; public var length: Int }
+public enum BookSplitter {
+    // analysisMaxSide 1000, bandFraction 0.1, smoothInches 0.05 (minSmoothPixels 3), search 0.25…0.75,
+    // inkStep 24, paperLevelPercentile 0.9, minShadowDepth 0.08, minShadowWidthInches 0.08,
+    // maxShadowWidthFraction 0.12, textLevelPercentile 0.8, shadowInkFraction 0.5,
+    // shadowSymmetryFraction 0.12, oneSidedShadowDepth 0.15, marginInkFraction 0.25,
+    // marginBlankFraction 0.1, minMarginInches 0.6, marginSymmetryFraction 0.25,
+    // marginPaperFraction 0.97, sideInches 1.5, minSideInk 0.25, bottomFraction 0.1,
+    // lineCheckBandInches 0.3, longSideBonus 1.25
+    public static func findGutter(_ image: RgbaImage, dpi: Int) -> GutterResult?
+    public static func findGutter(_ image: CGImage, dpi: Int) -> GutterResult?   // read in bands (GrayImage(cgImage:))
+    public static func analysisImage(_ image: RgbaImage, dpi: Int) -> GrayImage
+    public static func findGutter(_ gray: GrayImage) -> GutterCandidate?
+    public static func candidates(_ gray: GrayImage) -> [GutterCandidate]
+    public static func runsAlongText(_ gray: GrayImage, _ candidate: GutterCandidate) -> Bool
+    public static func profile(_ gray: GrayImage, axis: GutterAxis) -> GutterProfile
+    public static func smoothWidth(_ dpi: Double) -> Int
+    public static func smoothed(_ values: [Double], box: Int) -> [Double]
+    public static func findShadow(_ profile: GutterProfile, dpi: Double) -> GutterCandidate?
+    public static func findMargin(_ profile: GutterProfile, dpi: Double) -> GutterCandidate?
+    public static func atScale(_ candidate: GutterCandidate, width: Int, height: Int, scale: Double) -> GutterResult
+    public static func manual(_ axis: GutterAxis, fraction: Double, width: Int, height: Int) -> GutterResult
+    public static func halves(_ image: RgbaImage, gutter: GutterResult) -> (first: RgbaImage, second: RgbaImage)?   // C# throws instead of nil
+    public static func halves(_ image: CGImage, gutter: GutterResult) -> (first: CGImage, second: CGImage)?
+    public static func split(_ image: RgbaImage, gutter: GutterResult, rotationQuarterTurns: Int, rightToLeft: Bool) -> [RgbaImage]
+    public static func firstPartLeads(_ axis: GutterAxis, quarterTurns: Int, rightToLeft: Bool) -> Bool
+    public static func totalTurns(_ rotationQuarterTurns: Int, _ first: UprightTurn?, _ second: UprightTurn?) -> Int
+    public static func normalizedTurns(_ quarterTurns: Int) -> Int
+}
+public struct BookPageLabel: Equatable, Sendable { public let label: String; public let help: String; public init(label: String, help: String) }
+public enum BookPages {
+    public static func scansOneSide(_ settings: ScanSettings) -> Bool          // DocumentSides.effective(settings, capabilities: nil) == .off
+    public static func labels(_ pages: [ScannedPage]) -> [BookPageLabel?]       // every page's label and help, in one pass
+    public static func label(_ pages: [ScannedPage], _ index: Int) -> String?   // "Spread 2 · page 1", "Spread 2 · not split"
+    public static func help(_ pages: [ScannedPage], _ index: Int) -> String?    // a whole spread: "…: the spread is one page. Right-click it to split it into two pages."
+    public static func replacementPages(_ queued: [ScannedPage], fresh: [ScannedPage]) -> [ScannedPage]   // C# ReplacementPages(queued, fresh)
+    public static func splitActionLabel(_ page: ScannedPage) -> String?         // "Split this spread…", "Change the split…"
+    public static func joinActionLabel(_ page: ScannedPage) -> String?          // "Join the two pages"
+    public static func scanNote(_ added: [ScannedPage]) -> String               // " 1 spread split into pages. The spine of 1 spread was not found: …"
+    public static func splitNote(spreadNumber: Int, split: Bool) -> String      // "Spread 2 is split into two pages." / "… is one page again."
+    public static let rotationChoices: [Int]                                    // [0, 1, 2, 3]
+    public static func rotationLabel(_ quarterTurns: Int) -> String             // "As scanned", "90° clockwise", "180°", "90° counterclockwise"
+    public static func hint(_ settings: ScanSettings) -> String                 // two-sided: "Only for one side of each sheet: pages scanned on both sides are kept as scanned."
+}
+// App/AppState+Book.swift: struct SpreadSource (the spread's spool file or pixels, dpi, color mode,
+// date, size); public struct SpreadEditorSource: Identifiable (pageID, preview, axis, fraction, isSplit,
+// spreadNumber); AppState: spreadSources (stored in AppState.swift), spoolSpreads(_:), loadSpread(_:),
+// pruneSpreads() (run by scannedPages' didSet), spreadNumber(_:), canEditSpread(id:),
+// canEditSpread(of:) (the strip's per-cell check, no queue lookup), spreadEditor(for:) async, splitSpread(id:axis:fraction:), joinSpread(id:).
+// UI/SpreadSplitView.swift: struct SpreadSplitView (source, onDone: (SpreadSplitChoice) -> Void);
+// enum SpreadSplitChoice { case split(axis:fraction:), keepWhole }.
+```
+Twin of `windows/CompleteScanner.Core/BookSplitter.cs` (`GutterAxis`, `GutterKind`, `GutterResult`, `SpreadPart`, `BookSplitOptions`, `GutterCandidate`, `BookSplitter` with `GutterProfile` nested, `BookPages`), `BookSplitOptions` / `ProcessSpread` / `SplitsFacingPages` / `ProcessedScan.Spreads` in `PageProcessor.cs`, `DocumentOptions.SplitFacingPages`, `TaskOptions.BookRightToLeft` / `BookRotationQuarterTurns`, `ScannedPage.Spread` / `SpreadId` / `WithSpread` in `Models.cs`; `BookSplitterTests` are the same cases on both sides, on the same synthetic spreads (`TestPages.spread`, `shadowSpread`, `marginSpread`, `blankFacingSpread`, `singlePageAcross`, `twoColumnPage`, `sectionGapPage`, `pageBesideEmptyGlass`, `foldedLetter`, `titleFacingText`, drawn in integers, checked by checksum), and the book cases of `PageProcessorTests`, `ModelsCompatTests`, `ScanTaskTests` and `MockScannerTests` match (the C# demo-book check is in `BookSplitterTests`, the Swift one in `MockScannerTests`, since the Swift renderer is private). The rules: the gutter is looked for on a gray copy at 100 dpi (at most 1000 px long), from two profiles along each axis over the middle 80 % of the other: the mean gray and the share of neighbouring pairs across the axis that differ by more than 24 levels (ink edges), both smoothed over 0.05 in; between 0.25 and 0.75 of the axis. A shadow is a darkest point with nothing darker within 6 % of the axis, at least 8 % darker than the paper beside it (the lower of the brightest points within that reach on each side, capped by the window's 90th percentile), at least 0.08 in wide where it darkens the paper by 4 % and at most 12 % of the axis wide at half its own depth, with at most half the text level (the 80th percentile of the ink profile) at its bottom and text within 1.5 in on at least one side; with text on both sides its centre (the middle of its bottom, within 10 % of its depth) is within 12 % of the axis of the middle of the spread's text, with text on one side only it is at least 15 % deep. Without a shadow, a margin is the longest run with less than a tenth of the text level, at least 0.6 in long, bright as paper, its middle in the window and within a quarter of its length of the middle of the spread's text, with text within 1.5 in on both sides. A candidate is dropped when the text runs along it (`DocumentGeometry.estimateTextLayout` with 0.3 in either side of it blanked to paper; the shadow is tried first, then the margin); of the two axes the higher confidence wins, the one cutting the longer side counting 1.25 times. The cut is the candidate's centre scaled back to the scan, kept a pixel from either end. `processSpread` cuts with `halves` (CGImage cropping on the Mac), turns each part by the book's rotation, runs the steps on each (so each page is checked, straightened and turned upright on its own), then orders the two by where the first part lies once turned by the book's rotation plus the turn reading their text agreed on (`totalTurns`): left before right (right before left reading right to left), top before bottom. Every page records its `SpreadPart` (the spread's id, its part, the cut) and gets an id of its own; a spread with no clear gutter becomes one page with `part` nil. `PageProcessor.forScan` splits facing pages on document pages collected in the queue only, scanned one side of each sheet (`splitsFacingPages`, `BookPages.scansOneSide`: two-sided scans, by the feeder or by hand, keep their pages as scanned, and the inspector's switch is greyed out with `BookPages.hint` saying why; `TaskCatalog.summary` names the split only then); each page cut from a spread keeps the spread's `side` and `sheetIndex`; `TaskCatalog.apply` turns `splitFacingPages` on for `.book` only. `AppState.performScan` spools the spreads that pages were cut from (`<spreadID>-spread.tiff`, Windows `-spread.png`; kept in memory when the file cannot be written) beside the pages, and the status adds `BookPages.scanNote` (`queueScanNote`); a spread is dropped with its last page (`pruneSpreads`, run whenever the queue changes; Windows from `SyncPageOptions`). `joinSpread(id:)` and `splitSpread(id:axis:fraction:)` (Windows `JoinSpread` / `SplitSpread`) run exclusively after the page edits queued before them, read the spread back, run `processSpread` with the current settings (nil cut, or `BookSplitter.manual`), spool the new pages and put them in place of the spread's pages in one change of the queue, as `BookPages.replacementPages` picks them (a split moved: each new page replaces the queued page of the same part, with its document break, document name and inclusion, and a part removed from the queue stays out; a join or a first split: every new page, the first with the first queued page's break and the first name among them, each with the inclusion they share, else automatic); the status gives `splitNote` plus the blank, crop and turn notes. The strip labels book pages with `BookPages.labels` (one pass over the queue per refresh; `BookPages.label` / `help` for one page), and their menu offers `splitActionLabel` (the split sheet, `SpreadSplitView`; Windows `SpreadSplitWindow`, with the arrow keys too) and `joinActionLabel`; the inspector's **Split facing pages** switch shows **Reads right to left** and **Turn the pages** while it is on. The demo scanner's Book task glass holds a made-up open book (`MockScannerBackend.bookSpread`, C# `BookSpread`: two pages side by side, the spine at 0.52 of the width with a bell-curve shadow 25 % deep, σ 0.1 in; the page turns after every scan, not after a preview; `demoBookGutterFraction`).
+
 ### Pipeline/IdCard.swift (+ TaskOptions in Core/Models.swift), App/AppState+IdCard.swift
 
 ```swift
@@ -666,6 +770,8 @@ public struct TaskOptions: Codable, Equatable, Sendable {
     public var copyAlsoSavePdf: Bool = false                  // "copyAlsoSavePdf"
     public var receiptNameByDate: Bool = true                 // "receiptNameByDate"; true also for files without it
     public var receiptCombine: Bool = false                   // "receiptCombine"
+    public var bookRightToLeft: Bool = false                  // "bookRightToLeft" (see Pipeline/BookSplitter.swift)
+    public var bookRotationQuarterTurns: Int = 0              // "bookRotationQuarterTurns"; read through BookSplitter.normalizedTurns
 }
 public enum IdCardPaper: String, Codable, CaseIterable, Identifiable, Sendable {
     case auto, a4, letter                                     // first case = default and fallback
@@ -1324,5 +1430,5 @@ One demo device, `ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: 
 - `UI/PagesStripView.swift` — `struct PagesStripView: View`: page-queue thumbnails + Save PDF (or Save Word / Save Text: `format.saveTitle(pageCount:)`; "Save 3 PDFs (7 pages)" for a split queue: `SavePlan.saveTitle`) / Clear; the queue summary is `DocumentSplitter.queueSummary`; while `DocumentSplitter.showsBreaks`, a gap before each page (`breakLabel`, a bar where a document starts) calling `state.toggleDocumentBreak(id:)`; the first page of each document titled (`dividerTitle`) in place of its caption; separator pages badged "Separator" (help: `separatorNote`), dimmed, with Keep; each page's context menu adds its split or join (`breakLabel`) and Name This Document… (an alert with a text field, `state.setDocumentLabel(id:label:)`, prefilled with `documentLabel(of:)`); Copy Text in each page's context menu (`state.copyPageText(id:)`); the queue summary, each flagged page's badge and its Keep or Skip button (always shown), left-out pages dimmed, Save PDF counting the pages it writes; under a cropped or straightened page, its swap button (always shown: `PageCorrections.toggleLabel`, help = caption and label) calling `state.togglePageGeometry(id:)`.
 - `UI/PhotoReviewView.swift` — `struct PhotoReviewView: View`: detected-photo grid sheet with the "After saving" choice; Save via `state.saveReviewedPhotos()`, cancel via `state.cancelPhotoReview()`; titled `state.reviewTitle` and saved with `state.reviewSaveTitle` ("Found 2 receipts", "Save as One PDF" for receipts).
 - `UI/IdCardReviewView.swift` — `struct IdCardReviewView: View`: the ID card's sheet (`state.showIdCardReview`, presented from the detail in `ContentView`): each side with turn, Fix crop (the crop editor) and Scan again, a missing back with Scan the Back, Swap Front and Back, the page picture with its caption and the not-at-real-size warning, and Paper, Save as (PDF or an image format: `format.pageFormat`; a text format chosen in the inspector shows and saves as PDF), "Also save each side as an image", Print…, Discard and Save.
-- `UI/TaskStartView.swift` — `struct TaskStartView: View` (`onOpenScanner: () -> Void`): the start screen's task cards (`state.taskCards`) and preset cards; also `enum TaskSymbols` (icon key → SF Symbol; "receipt" → `receipt`, "batch" → `square.stack.3d.down.right`).
+- `UI/TaskStartView.swift` — `struct TaskStartView: View` (`onOpenScanner: () -> Void`): the start screen's task cards (`state.taskCards`) and preset cards; also `enum TaskSymbols` (icon key → SF Symbol; "receipt" → `receipt`, "batch" → `square.stack.3d.down.right`, "book" → `book`).
 - `UI/TaskBannerView.swift` — `struct TaskBannerView: View` (`definition: TaskDefinition?`, `onChangeTask: () -> Void`): the active task, or turning a stack over by hand without one (`definition` nil), above the preview, with Change Task and a leave-task button (without a task: scan one side only); fronts scanned without moving on (the feeder stopped early), Done with Fronts; while the backs are due, Keep Fronts Only, before any back is scanned Scan More Fronts, and on a count mismatch also Combine Anyway and Scan Back Sides Again; the back of an ID card (`state.canSkipStep`) offers "Skip back side" (`state.skipStep()`); the leave-task button goes through `state.leaveIdCard(then:)`.

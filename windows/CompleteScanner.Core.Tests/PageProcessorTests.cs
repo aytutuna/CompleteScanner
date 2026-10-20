@@ -564,4 +564,232 @@ public class PageProcessorTests
         Assert.Equal(PageInclusion.Automatic, Page(BlankImage).Inclusion);
         Assert.Null(Page(BlankImage).Blank);
     }
+
+    // MARK: - Facing pages
+
+    /// <summary>The spread of TestPages.ShadowSpread as a 100 dpi scan: its spine at x = 572 of 1100.</summary>
+    private static readonly RgbaImage SpreadImage = TestPages.ShadowSpread().ToRgba();
+
+    /// <summary>A w × h scan whose left part (x below w / 2) is red and right part blue, top half bright and bottom dim.</summary>
+    private static RgbaImage TwoTone(int w, int h)
+    {
+        var p = new byte[w * h * 4];
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                int i = (y * w + x) * 4;
+                byte level = (byte)(y < h / 2 ? 250 : 120);
+                p[i] = x < w / 2 ? level : (byte)0;
+                p[i + 2] = x < w / 2 ? (byte)0 : level;
+                p[i + 3] = 255;
+            }
+        }
+        return new RgbaImage(w, h, p);
+    }
+
+    [Fact]
+    public void ForScan_SplitsFacingPages_OnlyOnCollectedDocumentPages()
+    {
+        var s = new ScanSettings();
+        Assert.False(PageProcessor.SplitsFacingPages(s));
+        Assert.Null(PageProcessor.ForScan(s).Book);
+        s.Document.SplitFacingPages = true;
+        s.TaskOptions.BookRightToLeft = true;
+        s.TaskOptions.BookRotationQuarterTurns = -1;
+        Assert.True(PageProcessor.SplitsFacingPages(s));
+        Assert.Equal(new BookSplitOptions(3, true), PageProcessor.ForScan(s).Book);
+        // The steps are the usual ones: the split comes before them.
+        Assert.Equal(["blank", "separator"], PageProcessor.ForScan(s).Steps.Select(step => step.Name));
+        Assert.NotNull(PageProcessor.ForScan(TaskCatalog.Apply(ScanTask.Book, new ScanSettings())).Book);
+        // Pages saved at once, photos, copies and receipts are never cut unseen.
+        foreach (var other in new[]
+                 {
+                     new ScanSettings { DocumentMultiPage = false },
+                     new ScanSettings { Intent = ScanIntent.Photo },
+                     TaskCatalog.Apply(ScanTask.Copy, new ScanSettings()),
+                     TaskCatalog.Apply(ScanTask.Receipt, new ScanSettings()),
+                 })
+        {
+            other.Document.SplitFacingPages = true;
+            Assert.False(PageProcessor.SplitsFacingPages(other));
+            Assert.Null(PageProcessor.ForScan(other).Book);
+        }
+        // Pages scanned on both sides keep their sheet and side: by a feeder that scans both, or turned by hand.
+        foreach (var duplex in new[] { DuplexMode.Both, DuplexMode.Manual })
+        {
+            var twoSided = new ScanSettings { Source = ScanSource.DocumentFeeder, Duplex = duplex };
+            twoSided.Document.SplitFacingPages = true;
+            Assert.False(PageProcessor.SplitsFacingPages(twoSided));
+            Assert.Null(PageProcessor.ForScan(twoSided).Book);
+        }
+        // One side of each sheet from the feeder is split.
+        var oneSided = new ScanSettings { Source = ScanSource.DocumentFeeder, Duplex = DuplexMode.Off };
+        oneSided.Document.SplitFacingPages = true;
+        Assert.True(PageProcessor.SplitsFacingPages(oneSided));
+        // The flatbed scans one side, whatever the feeder's choice.
+        var flatbed = new ScanSettings { Source = ScanSource.Flatbed, Duplex = DuplexMode.Both };
+        flatbed.Document.SplitFacingPages = true;
+        Assert.True(PageProcessor.SplitsFacingPages(flatbed));
+    }
+
+    [Fact]
+    public void Process_SpreadsGivenASide_KeepTheirSheetAndSide()
+    {
+        // A front and its back, each a spread: every page cut from them keeps the side and sheet arranging gave it.
+        var book = new BookSplitOptions();
+        var result = new PageProcessor([], ScanArrangement.TwoSided, book: book).Process([Page(SpreadImage), Page(SpreadImage)]);
+        Assert.Equal(4, result.Pages.Count);
+        Assert.All(result.Pages, p => Assert.False(p.Spread!.IsWhole));
+        Assert.Equal(new[] { (PageSide.Front, 0), (PageSide.Front, 0), (PageSide.Back, 0), (PageSide.Back, 0) },
+                     result.Pages.Select(p => (p.Side!.Value, p.SheetIndex!.Value)));
+        // A spread kept whole too.
+        var single = TestPages.SinglePageAcross().ToRgba();
+        var whole = new PageProcessor([], ScanArrangement.TwoSided, book: book).Process([Page(single), Page(single)]).Pages;
+        Assert.All(whole, p => Assert.True(p.Spread!.IsWhole));
+        Assert.Equal(new[] { (PageSide.Front, 0), (PageSide.Back, 0) }, whole.Select(p => (p.Side!.Value, p.SheetIndex!.Value)));
+        // Turned over by hand, and a spread split again by hand.
+        var backs = new PageProcessor([], ScanArrangement.TurnedOverBacks, book: book).Process([Page(SpreadImage)]).Pages;
+        Assert.All(backs, p => Assert.Equal(PageSide.Back, p.Side));
+        var cut = BookSplitter.Manual(GutterAxis.Vertical, 0.3, 200, 100);
+        var again = new PageProcessor([]).ProcessSpread(Page(TwoTone(200, 100)).WithSide(PageSide.Back, 3), cut, book);
+        Assert.Equal(2, again.Count);
+        Assert.All(again, p => Assert.Equal((PageSide.Back, 3), (p.Side!.Value, p.SheetIndex!.Value)));
+        // A spread scanned one side has none.
+        Assert.All(new PageProcessor([], book: book).Process([Page(SpreadImage)]).Pages,
+                   p => Assert.Equal(((PageSide?)null, (int?)null), (p.Side, p.SheetIndex)));
+    }
+
+    [Fact]
+    public void Process_ASpread_BecomesItsTwoPages_InReadingOrder()
+    {
+        var spread = Page(SpreadImage);
+        var result = new PageProcessor([], book: new BookSplitOptions()).Process([spread]);
+        Assert.Equal([spread.Id], result.Arranged.Select(p => p.Id));
+        Assert.Equal([spread.Id], result.Spreads.Select(p => p.Id));
+        Assert.Equal(2, result.Pages.Count);
+        var (left, right) = (result.Pages[0], result.Pages[1]);
+        // Cut at the spine, together exactly the spread, each at the scan's resolution.
+        Assert.InRange(left.Image.Width, 567, 577);
+        Assert.Equal(1100, left.Image.Width + right.Image.Width);
+        Assert.All(result.Pages, p => Assert.Equal((850, 100, ColorMode.Color), (p.Image.Height, p.Dpi, p.ColorMode)));
+        Assert.Equal(spread.CreatedAt, left.CreatedAt);
+        // Each page records its spread and part, and has an id of its own.
+        Assert.Equal((spread.Id, 0, GutterKind.Shadow), (left.SpreadId, left.Spread!.Part, left.Spread.Gutter!.Kind));
+        Assert.Equal((spread.Id, 1), (right.SpreadId, right.Spread!.Part));
+        Assert.Equal(left.Spread.Gutter, right.Spread.Gutter);
+        Assert.Equal(3, new[] { spread.Id, left.Id, right.Id }.Distinct().Count());
+        // Right to left, the right page comes first.
+        var rtl = new PageProcessor([], book: new BookSplitOptions(0, RightToLeft: true)).Process([spread]).Pages;
+        Assert.Equal([1, 0], rtl.Select(p => p.Spread!.Part!.Value));
+    }
+
+    [Fact]
+    public void Process_ASpreadWithoutAClearSpine_StaysWhole()
+    {
+        var single = Page(TestPages.SinglePageAcross().ToRgba());
+        var result = new PageProcessor([], book: new BookSplitOptions()).Process([single]);
+        var page = Assert.Single(result.Pages);
+        Assert.True(page.Spread!.IsWhole);
+        Assert.Equal((single.Id, (GutterResult?)null), (page.SpreadId, page.Spread.Gutter));
+        Assert.NotEqual(single.Id, page.Id);
+        Assert.Equal((850, 1100), (page.Image.Width, page.Image.Height));
+        Assert.Equal([single.Id], result.Spreads.Select(p => p.Id));
+        // Without the split, the page goes through as it is.
+        var plain = new PageProcessor([]).Process([single]);
+        Assert.Equal(single.Id, Assert.Single(plain.Pages).Id);
+        Assert.Null(plain.Pages[0].Spread);
+        Assert.Empty(plain.Spreads);
+    }
+
+    [Fact]
+    public void Process_TheStepsRunOnEachPage_OfEverySpread()
+    {
+        var log = new List<string>();
+        var spreads = new[] { Page(SpreadImage), Page(SpreadImage) };
+        var result = new PageProcessor([new RecordingStep("one", log)], book: new BookSplitOptions()).Process(spreads);
+        Assert.Equal(4, result.Pages.Count);
+        Assert.Equal(result.Pages.Select(p => $"one:{p.Id}"), log);
+        Assert.Equal([spreads[0].Id, spreads[0].Id, spreads[1].Id, spreads[1].Id], result.Pages.Select(p => p.SpreadId!.Value));
+        // A blank facing page is flagged like any blank page.
+        var blankFacing = PageProcessor.ForScan(TaskCatalog.Apply(ScanTask.Book, new ScanSettings()))
+            .Process([Page(TestPages.BlankFacingSpread().ToRgba())]).Pages;
+        Assert.Equal([true, false], blankFacing.Select(p => p.Blank?.IsBlank == true));
+    }
+
+    [Fact]
+    public void ProcessSpread_CutsWhereAsked_OrKeepsTheSpreadWhole()
+    {
+        var spread = Page(TwoTone(200, 100));
+        var processor = new PageProcessor([], book: new BookSplitOptions());
+        var cut = BookSplitter.Manual(GutterAxis.Vertical, 0.3, 200, 100);
+        var pages = processor.ProcessSpread(spread, cut, new BookSplitOptions());
+        Assert.Equal([60, 140], pages.Select(p => p.Image.Width));
+        Assert.All(pages, p => Assert.Equal(GutterKind.Manual, p.Spread!.Gutter!.Kind));
+        var whole = Assert.Single(processor.ProcessSpread(spread, null, new BookSplitOptions()));
+        Assert.True(whole.Spread!.IsWhole);
+        Assert.Equal((200, 100), (whole.Image.Width, whole.Image.Height));
+        // The book's rotation turns the whole spread too.
+        var turned = Assert.Single(processor.ProcessSpread(spread, null, new BookSplitOptions(1)));
+        Assert.Equal((100, 200), (turned.Image.Width, turned.Image.Height));
+    }
+
+    /// <summary>A step that turns every page upright by a quarter clockwise, as reading its text would.</summary>
+    private sealed class TurnStep(int quarterTurns) : IPageStep
+    {
+        public string Name => "orientation";
+        public ScannedPage Apply(ScannedPage page) => page.TurnedUpright(quarterTurns);
+    }
+
+    [Fact]
+    public void ProcessSpread_PagesTurnedByReadingTheirText_AreOrderedAsTheyLieTurned()
+    {
+        // A book lying sideways: its pages one above the other, red on top, blue below.
+        var stacked = Page(TwoTone(200, 100).RotatedQuarterTurns(1));
+        var cut = BookSplitter.Manual(GutterAxis.Horizontal, 0.5, 100, 200);
+        // Reading turns each page a quarter counterclockwise: the top page lies on the left, and leads.
+        var counter = new PageProcessor([new TurnStep(3)]).ProcessSpread(stacked, cut, new BookSplitOptions());
+        Assert.Equal([0, 1], counter.Select(p => p.Spread!.Part!.Value));
+        Assert.All(counter, p => Assert.Equal(new UprightTurn(3), p.Upright));
+        // Clockwise, the top page lies on the right: the bottom one leads, unless the book reads right to left.
+        var clockwise = new PageProcessor([new TurnStep(1)]).ProcessSpread(stacked, cut, new BookSplitOptions());
+        Assert.Equal([1, 0], clockwise.Select(p => p.Spread!.Part!.Value));
+        Assert.Equal([0, 1], new PageProcessor([new TurnStep(1)]).ProcessSpread(stacked, cut, new BookSplitOptions(0, true))
+                                 .Select(p => p.Spread!.Part!.Value));
+        // The book's rotation counts the same way: turned clockwise by setting, then not read.
+        var bySetting = new PageProcessor([]).ProcessSpread(stacked, cut, new BookSplitOptions(1));
+        Assert.Equal([1, 0], bySetting.Select(p => p.Spread!.Part!.Value));
+        Assert.All(bySetting, p => Assert.Equal((100, 100), (p.Image.Width, p.Image.Height)));
+    }
+
+    [Fact]
+    public void Spread_SurvivesRebuildingThePage()
+    {
+        var part = new SpreadPart(Guid.NewGuid(), 1, BookSplitter.Manual(GutterAxis.Vertical, 0.5, 10, 10));
+        var page = Page(BlankImage).WithSpread(part);
+        foreach (var rebuilt in new[]
+                 {
+                     page.WithImage(RgbaImage.Filled(3, 3, 0, 0, 0)),
+                     page.RotatedClockwise(),
+                     page.WithSide(PageSide.Front, 0),
+                     page.WithBlank(null),
+                     page.WithInclusion(PageInclusion.Skip),
+                     page.WithPatch(null),
+                     page.WithDocumentBreak(DocumentBreak.Split),
+                     page.WithDocumentLabel("Chapter 1"),
+                     page.WithUpright(new UprightTurn(2)),
+                     page.TurnedUpright(2),
+                     page.WithAlternate(null),
+                     page.WithGeometry(RgbaImage.Filled(3, 3, 0, 0, 0), new PageGeometry(false, 1.5, GeometryBasis.TextLines)),
+                     Page(TextImage).CopyMeta(page),
+                 })
+        {
+            Assert.Equal(part, rebuilt.Spread);
+            Assert.Equal(part.SpreadId, rebuilt.SpreadId);
+        }
+        var corrected = page.WithGeometry(RgbaImage.Filled(3, 3, 0, 0, 0), new PageGeometry(false, 1.5, GeometryBasis.TextLines));
+        Assert.Equal(part, corrected.WithVersionsSwapped(BlankImage).Spread);
+        Assert.Null(page.WithSpread(null).Spread);
+        Assert.Null(Page(BlankImage).SpreadId);
+    }
 }

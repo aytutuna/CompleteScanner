@@ -576,6 +576,187 @@ internal static class TestPages
         return new RgbaImage(w, h, rgba);
     }
 
+    // MARK: - Book spreads
+
+    /// <summary>
+    /// A gray canvas of any size, for the spreads (the pages above are <see cref="Width"/> ×
+    /// <see cref="Height"/>): paper with noise, text blocks and the spine's shadow drawn on it.
+    /// </summary>
+    public sealed class Canvas
+    {
+        public int CanvasWidth { get; }
+        public int CanvasHeight { get; }
+        public byte[] P { get; }
+
+        /// <summary><paramref name="paper"/> with scanner noise from <paramref name="seed"/>.</summary>
+        public Canvas(int width, int height, int paper, uint seed)
+        {
+            CanvasWidth = width;
+            CanvasHeight = height;
+            P = new byte[width * height];
+            var rng = new Rng(seed);
+            for (int i = 0; i < P.Length; i++) P[i] = Clamp(paper + rng.Noise());
+        }
+
+        public void FillRect(int x, int y, int w, int h, byte value)
+        {
+            for (int py = Math.Max(0, y); py < Math.Min(CanvasHeight, y + h); py++)
+            {
+                for (int px = Math.Max(0, x); px < Math.Min(CanvasWidth, x + w); px++) P[py * CanvasWidth + px] = value;
+            }
+        }
+
+        /// <summary>
+        /// <paramref name="lines"/> lines of glyphs (as <see cref="TextLine"/>: words of 2–8 glyphs, 5 × 9 px
+        /// in 7 px cells) from (x, y), each up to <paramref name="maxWidth"/> wide, every <paramref name="pitch"/> px.
+        /// </summary>
+        public void TextBlock(int x, int y, int maxWidth, int lines, int pitch, byte ink, Rng rng)
+        {
+            int[] picks = [0b00111, 0b01011, 0b01101, 0b01110, 0b10011, 0b10101, 0b10110, 0b11001, 0b11010, 0b11100];
+            for (int line = 0; line < lines; line++)
+            {
+                int cx = x, ly = y + line * pitch;
+                while (true)
+                {
+                    int glyphs = 2 + rng.Below(7);
+                    if (cx + glyphs * 7 > x + maxWidth) break;
+                    for (int g = 0; g < glyphs; g++)
+                    {
+                        int bits = picks[rng.Below(10)];
+                        if ((bits & 1) != 0) FillRect(cx, ly, 1, 9, ink);
+                        if ((bits & 2) != 0) FillRect(cx + 4, ly, 1, 9, ink);
+                        if ((bits & 4) != 0) FillRect(cx, ly, 5, 1, ink);
+                        if ((bits & 8) != 0) FillRect(cx, ly + 4, 5, 1, ink);
+                        if ((bits & 16) != 0) FillRect(cx, ly + 8, 5, 1, ink);
+                        cx += 7;
+                    }
+                    cx += 7;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The spine's shadow on the columns around <paramref name="x0"/>: each darkened by
+        /// <paramref name="depthPerMille"/>‰ × (r² − d²) / r² at d columns from it (|d| &lt; r).
+        /// </summary>
+        public void ShadowColumns(int x0, int r, int depthPerMille)
+        {
+            for (int x = Math.Max(0, x0 - r + 1); x < Math.Min(CanvasWidth, x0 + r); x++)
+            {
+                int d = x - x0;
+                int k = depthPerMille * (r * r - d * d) / (r * r);
+                for (int y = 0; y < CanvasHeight; y++)
+                {
+                    int i = y * CanvasWidth + x;
+                    P[i] = (byte)(P[i] * (1000 - k) / 1000);
+                }
+            }
+        }
+
+        /// <summary>A crease across the page: the rows around <paramref name="y0"/> darkened as <see cref="ShadowColumns"/> darkens columns.</summary>
+        public void ShadowRows(int y0, int r, int depthPerMille)
+        {
+            for (int y = Math.Max(0, y0 - r + 1); y < Math.Min(CanvasHeight, y0 + r); y++)
+            {
+                int d = y - y0;
+                int k = depthPerMille * (r * r - d * d) / (r * r);
+                for (int x = 0; x < CanvasWidth; x++)
+                {
+                    int i = y * CanvasWidth + x;
+                    P[i] = (byte)(P[i] * (1000 - k) / 1000);
+                }
+            }
+        }
+
+        public GrayImage Gray() => new(CanvasWidth, CanvasHeight, (byte[])P.Clone());
+    }
+
+    /// <summary>
+    /// An 11 × 8.5 in spread at 100 dpi (1100 × 850 unless given): two pages of text, 33 lines every
+    /// 0.2 in from y = 90, each page's text from its outer margin to its inner one (<paramref name="innerMargin"/>
+    /// px either side of the spine at <paramref name="gutterX"/>), with the spine's shadow
+    /// (<see cref="Canvas.ShadowColumns"/>) when <paramref name="shadowDepth"/> is above 0. Either page can be blank.
+    /// </summary>
+    public static GrayImage Spread(int gutterX, int innerMargin, int outerMargin, int shadowDepth, int shadowRadius, uint seed,
+                                   int width = 1100, int height = 850, bool blankLeft = false, bool blankRight = false)
+    {
+        var c = new Canvas(width, height, 245, seed);
+        var rng = new Rng(seed ^ 0x5A5A5A5A);
+        int lines = (height - 180) / 20;
+        if (!blankLeft) c.TextBlock(outerMargin, 90, gutterX - innerMargin - outerMargin, lines, 20, 40, rng);
+        if (!blankRight) c.TextBlock(gutterX + innerMargin, 90, width - outerMargin - gutterX - innerMargin, lines, 20, 40, rng);
+        if (shadowDepth > 0) c.ShadowColumns(gutterX, shadowRadius, shadowDepth);
+        return c.Gray();
+    }
+
+    /// <summary>A spread with the spine's shadow (25 % deep) at 0.52 of the width and narrow (0.2 in) inner margins.</summary>
+    public static GrayImage ShadowSpread() => Spread(572, 20, 80, 250, 17, 0xB00C0001);
+
+    /// <summary>A spread with no shadow, its pages' text 0.6 in either side of the spine at the middle.</summary>
+    public static GrayImage MarginSpread() => Spread(550, 60, 80, 0, 0, 0xB00C0002);
+
+    /// <summary>The spread of <see cref="ShadowSpread"/>'s kind with a blank left page.</summary>
+    public static GrayImage BlankFacingSpread() => Spread(550, 40, 80, 250, 17, 0xB00C0003, blankLeft: true);
+
+    /// <summary>A single letter page: 45 lines of text 6.5 in long across the middle.</summary>
+    public static GrayImage SinglePageAcross()
+    {
+        var c = new Canvas(850, 1100, 245, 0xB00C0004);
+        c.TextBlock(100, 100, 650, 45, 20, 40, new Rng(0xB00C0005));
+        return c.Gray();
+    }
+
+    /// <summary>A single letter page in two columns 0.3 in apart.</summary>
+    public static GrayImage TwoColumnPage()
+    {
+        var c = new Canvas(850, 1100, 245, 0xB00C0006);
+        c.TextBlock(80, 100, 330, 45, 20, 40, new Rng(0xB00C0007));
+        c.TextBlock(440, 100, 330, 45, 20, 40, new Rng(0xB00C0008));
+        return c.Gray();
+    }
+
+    /// <summary>A single letter page with a 1 in gap between two sections, across the middle.</summary>
+    public static GrayImage SectionGapPage()
+    {
+        var c = new Canvas(850, 1100, 245, 0xB00C0009);
+        c.TextBlock(100, 100, 650, 20, 20, 40, new Rng(0xB00C000A));
+        c.TextBlock(100, 600, 650, 22, 20, 40, new Rng(0xB00C000B));
+        return c.Gray();
+    }
+
+    /// <summary>A letter folded in three: <see cref="SinglePageAcross"/>'s text with two creases between its lines.</summary>
+    public static GrayImage FoldedLetter()
+    {
+        var c = new Canvas(850, 1100, 245, 0xB00C0004);
+        c.TextBlock(100, 100, 650, 45, 20, 40, new Rng(0xB00C0005));
+        c.ShadowRows(354, 10, 120);
+        c.ShadowRows(734, 10, 120);
+        return c.Gray();
+    }
+
+    /// <summary>
+    /// A spread whose left page holds a short centered title (2.5 in wide) and whose right page is text, the
+    /// spine at 550 of 1100, with the spine's shadow when <paramref name="shadowDepth"/> is above 0.
+    /// </summary>
+    public static GrayImage TitleFacingText(int shadowDepth)
+    {
+        var c = new Canvas(1100, 850, 245, 0xB00C000F);
+        var rng = new Rng(0xB00C0010);
+        c.TextBlock(150, 250, 250, 6, 20, 40, rng);
+        c.TextBlock(590, 90, 430, 33, 20, 40, rng);
+        if (shadowDepth > 0) c.ShadowColumns(550, 17, shadowDepth);
+        return c.Gray();
+    }
+
+    /// <summary>A single page lying on the right half of the glass: its left edge a dark line at x = 420 of 1100.</summary>
+    public static GrayImage PageBesideEmptyGlass()
+    {
+        var c = new Canvas(1100, 850, 250, 0xB00C000C);
+        c.FillRect(420, 0, 3, 850, 150);
+        c.TextBlock(500, 90, 520, 34, 20, 40, new Rng(0xB00C000D));
+        return c.Gray();
+    }
+
     /// <summary>FNV-1a of the pixels: one number per page, the same on both platforms.</summary>
     public static uint Checksum(GrayImage page)
     {

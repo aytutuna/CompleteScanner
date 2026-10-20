@@ -22,7 +22,7 @@ public struct TaskDefinition: Equatable, Sendable {
     public let title: String
     public let subtitle: String
     /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-    /// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch".
+    /// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book".
     public let iconKey: String
     public let flow: TaskFlowKind
     /// The scan mode the task uses.
@@ -147,6 +147,14 @@ public enum TaskCatalog {
             steps: [TaskStep(id: "scan", title: "Scan the stack",
                              prompt: "Put a separator sheet in front of each document after the first, load the stack in the feeder and scan. Check where the stack is split, then save.",
                              primaryActionLabel: "Scan stack", repeats: true)]),
+        TaskDefinition(
+            task: .book, title: "Book or magazine",
+            subtitle: "Scan an open book two pages at a time; each spread is split into its pages, in reading order.",
+            iconKey: "book", flow: .documentQueue, intent: .document, requiredSource: .flatbed,
+            fileLabel: "Book",
+            steps: [TaskStep(id: "scan", title: "Scan each spread",
+                             prompt: "Open the book face down with the spine in the middle of the glass and press it gently flat, then scan. Turn the page and scan the next spread; each one becomes two pages.",
+                             primaryActionLabel: "Scan spread", repeats: true)]),
     ]
 
     public static func definition(_ task: ScanTask) -> TaskDefinition {
@@ -158,12 +166,14 @@ public enum TaskCatalog {
     /// format, JPEG quality, PDF size, the after-save action, the text beside a PDF (off: only the
     /// Scan to Word task saves text), the photo and document switches,
     /// searchable PDF, adjustments, two-sided scanning, skipping blank pages, crop and straighten,
-    /// turning pages upright, file name and the task itself. The destination folder, the photo detection tuning, the
+    /// turning pages upright, splitting facing pages, file name and the task itself. The destination folder, the photo detection tuning, the
     /// legacy OCR languages, the paper size, the edge backs are turned on, how much counts as blank
     /// and the choices of each task (`taskOptions`) are kept: they describe the user's paper and how
     /// they want a task done, not the task. The two-sided task asks for `.both`, skips blank pages
     /// (the empty backs of one-sided sheets), straightens pages the feeder pulled in at a slant and
-    /// turns upright the sheets put in the wrong way round; no task crops yet; `SettingsAdapter` turns `.both` into turning over by hand on a feeder that
+    /// turns upright the sheets put in the wrong way round; the Book or magazine task splits each spread
+    /// into its facing pages, straightens each page and turns upright a book lying sideways (its reading
+    /// order and turn, in `taskOptions`, are kept); no task crops yet; `SettingsAdapter` turns `.both` into turning over by hand on a feeder that
     /// scans one side. The ID card task makes no searchable PDF: the numbers on an ID are better not
     /// indexed; neither does the Copy task, whose PDF (when one is saved too) is a record of the paper
     /// copy. The Receipts task scans in grayscale (thermal print has no color) into Compact PDFs, named
@@ -186,9 +196,10 @@ public enum TaskCatalog {
         s.duplex = .off
         s.document.removeBlankPages = task == .twoSided || task == .batch
         s.document.autoCrop = false
-        s.document.autoStraighten = task == .twoSided
-        s.document.autoRotate = task == .twoSided
+        s.document.autoStraighten = task == .twoSided || task == .book
+        s.document.autoRotate = task == .twoSided || task == .book
         s.document.splitMode = task == .batch ? .separatorSheet : SplitMode.none
+        s.document.splitFacingPages = task == .book
         switch task {
         case .document:
             s.intent = .document
@@ -261,6 +272,11 @@ public enum TaskCatalog {
             s.resolution = 300
             s.format = .pdf
             s.namingTemplate = "Document {label} {date} {counter}"
+        case .book:
+            s.intent = .document
+            s.resolution = 300
+            s.format = .pdf
+            s.namingTemplate = "{task} {date} {counter}"
         }
         s.taskId = task.rawValue
         return s
@@ -274,6 +290,7 @@ public enum TaskCatalog {
             return settings.adjustments.restoreFadedColors ? .photoRestore : .photos
         }
         if settings.document.splitMode != SplitMode.none && settings.documentMultiPage { return .batch }
+        if settings.document.splitFacingPages && settings.documentMultiPage { return .book }
         if settings.source == .documentFeeder { return settings.duplex == .off ? .feeder : .twoSided }
         if settings.format == .word { return .word }
         if !settings.documentMultiPage && settings.format.isImageFormat { return .quickScan }
@@ -301,14 +318,15 @@ public enum TaskCatalog {
 
     /// The settings still do what the task is for: the same scan mode, and the task's required
     /// source; for the two-sided task, both sides; for Scan to Word, a Word document; for the Batch
-    /// task, a split. Changing the mode by hand (or choosing one side, another format or no split),
-    /// or a scanner without that source, ends the task.
+    /// task, a split; for the Book or magazine task, splitting facing pages. Changing the mode by hand
+    /// (or choosing one side, another format or no split), or a scanner without that source, ends the task.
     public static func fits(_ task: ScanTask, _ settings: ScanSettings) -> Bool {
         let taskDefinition = TaskCatalog.definition(task)
         guard settings.intent == taskDefinition.intent else { return false }
         if task == .twoSided && settings.duplex == .off { return false }
         if task == .word && settings.format != .word { return false }
         if task == .batch && settings.document.splitMode == SplitMode.none { return false }
+        if task == .book && !settings.document.splitFacingPages { return false }
         if let source = taskDefinition.requiredSource { return settings.source == source }
         return true
     }
@@ -331,8 +349,9 @@ public enum TaskCatalog {
 
     /// One line describing the settings, e.g. "300 dpi · Color · PDF". A PDF size other than the
     /// default `.standard` is named ("300 dpi · Color · Compact PDF"), and so is two-sided feeder
-    /// scanning ("… · Both sides", "… · Both sides, turned by hand"), and splitting into documents
-    /// ("… · Split at separator sheets"), so the line stays short
+    /// scanning ("… · Both sides", "… · Both sides, turned by hand"), splitting into documents
+    /// ("… · Split at separator sheets") and facing pages ("… · Facing pages split", "… · Facing pages
+    /// split, right to left"), so the line stays short
     /// enough for cards and the preset list. A copy says how it prints instead of a format:
     /// "300 dpi · Color · Actual size", "300 dpi · Grayscale · Fit to page · 3 copies".
     public static func summary(_ settings: ScanSettings) -> String {
@@ -349,7 +368,16 @@ public enum TaskCatalog {
         let sides = DocumentSides.effective(settings, capabilities: nil)
         let twoSided = sides == .off ? "" : " \u{00B7} \(sides.label)"
         let split = splitSummary(settings).map { " \u{00B7} \($0)" } ?? ""
-        return "\(settings.resolution) dpi \u{00B7} \(settings.colorMode.label) \u{00B7} \(format)\(twoSided)\(split)"
+        let book = bookSummary(settings).map { " \u{00B7} \($0)" } ?? ""
+        return "\(settings.resolution) dpi \u{00B7} \(settings.colorMode.label) \u{00B7} \(format)\(twoSided)\(split)\(book)"
+    }
+
+    /// "Facing pages split" (", right to left") for collected document pages whose spreads are split
+    /// (one side of each sheet, `BookPages.scansOneSide`); nil otherwise.
+    private static func bookSummary(_ settings: ScanSettings) -> String? {
+        guard settings.intent == .document, settings.documentMultiPage, settings.document.splitFacingPages,
+              BookPages.scansOneSide(settings) else { return nil }
+        return settings.taskOptions.bookRightToLeft ? "Facing pages split, right to left" : "Facing pages split"
     }
 
     /// "Split at separator sheets", "Split at blank sheets", "Split every 3 sheets" for collected

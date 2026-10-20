@@ -18,6 +18,7 @@ enum TaskSymbols {
         case "word": return "doc.richtext"
         case "receipt": return "receipt"
         case "batch": return "square.stack.3d.down.right"
+        case "book": return "book"
         default: return "scanner"
         }
     }

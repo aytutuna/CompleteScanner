@@ -55,6 +55,7 @@ public partial class MainWindow : Window
         BuildPdfSizeSegments();
         BuildBlankSensitivitySegments();
         BuildSplitChoices();
+        BuildBookChoices();
         AfterSaveBox.ItemsSource = AfterSaveItems();
         ReviewAfterSaveBox.ItemsSource = AfterSaveItems();
         foreach (var binding in Enum.GetValues<DuplexBinding>())
@@ -314,6 +315,7 @@ public partial class MainWindow : Window
         SyncCopyOptions();
         SyncReceiptOptions();
         SyncSplitOptions();
+        SyncBookOptions();
         StartView.Refresh();
         // As on macOS, the settings (and presets, which replace them) are frozen while an
         // operation runs: it works from a snapshot, and edits made meanwhile would not apply.

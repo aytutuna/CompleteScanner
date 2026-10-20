@@ -86,8 +86,38 @@ public sealed class PageItem : INotifyPropertyChanged
         }
     }
 
-    /// <summary>"Sheet 2 · back" for a page of a two-sided stack; null for other pages.</summary>
-    public string? SideLabel => DocumentSides.SideLabel(Page.Side, Page.SheetIndex);
+    private PageBookView? _book;
+
+    /// <summary>
+    /// What the strip says about a page cut from a spread of a book (its spread, and its split and join
+    /// actions); the view model keeps it current. Null for other pages.
+    /// </summary>
+    public PageBookView? Book
+    {
+        get => _book;
+        set
+        {
+            if (Equals(_book, value)) return;
+            _book = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+        }
+    }
+
+    /// <summary>"Sheet 2 · back" for a page of a two-sided stack, "Spread 2 · page 1" for a page of a book; null for other pages.</summary>
+    public string? SideLabel => DocumentSides.SideLabel(Page.Side, Page.SheetIndex) ?? _book?.Label;
+
+    /// <summary>The side badge's tooltip: the label, or what can be done with a spread kept whole.</summary>
+    public string? SideToolTip => DocumentSides.SideLabel(Page.Side, Page.SheetIndex) ?? _book?.Help;
+
+    /// <summary>The page menu's "Split this spread…" or "Change the split…"; null when the page has none.</summary>
+    public string? SplitSpreadLabel => _book?.SplitLabel;
+
+    /// <summary>The page menu's "Join the two pages"; null when the page has none.</summary>
+    public string? JoinSpreadLabel => _book?.JoinLabel;
+
+    public bool HasSplitSpread => SplitSpreadLabel is not null;
+
+    public bool HasJoinSpread => JoinSpreadLabel is not null;
 
     /// <summary>
     /// "Separator", "Blank, skipped", "Skipped", "Looks blank", or null
@@ -626,11 +656,16 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
     }
 
-    /// <summary>The page strip shows every page under the current blank-page and split settings.</summary>
+    /// <summary>
+    /// The page strip shows every page under the current blank-page and split settings, and the spread of
+    /// each book page; spreads no page is cut from any more are dropped.
+    /// </summary>
     private void SyncPageOptions()
     {
         foreach (var item in ScannedPages) item.Options = Settings.Document;
         SyncPagePlan();
+        PruneSpreads();
+        SyncBookLabels();
     }
 
     /// <summary>Call after mutating Settings from the UI: debounced persist + live preview refresh.</summary>
@@ -1295,16 +1330,21 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                 case TaskFlowKind.DocumentQueue:
                     if (s.DocumentMultiPage)
                     {
-                        // Spill full-resolution pages to disk; keep only previews in the queue.
+                        // Spill full-resolution pages to disk; keep only previews in the queue. The
+                        // spreads book pages were cut from are kept too, to join or split them again.
                         string spoolDirectory = _spool.Directory;
-                        var spooled = await Task.Run(() =>
-                            SpoolPages(processed, spoolDirectory).Select(p => new PageItem(p)).ToList());
+                        var spreads = cleaned.Spreads;
+                        var (spooled, spreadSources) = await Task.Run(() =>
+                            (SpoolPages(processed, spoolDirectory).Select(p => new PageItem(p)).ToList(),
+                             SpoolSpreads(spreads, spoolDirectory)));
                         if (_switchGeneration != generation || token.IsCancellationRequested)
                         {
                             DeleteSpoolFiles(spooled.Select(p => p.Page));
+                            DeleteSpreadFiles(spreadSources.Values);
                             if (_switchGeneration != generation) return;
                             token.ThrowIfCancellationRequested();
                         }
+                        foreach (var (spreadId, source) in spreadSources) _spreads[spreadId] = source;
                         foreach (var item in spooled) ScannedPages.Add(item);
                         RecordCaptures(spooled.Select(item => item.Page.Id));
                         SetLastScan(rawPreview);

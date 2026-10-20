@@ -10,7 +10,7 @@ public class ScanTaskTests
     [Fact]
     public void RawValues_AreTheStoredNames()
     {
-        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch"],
+        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book"],
                      ScanTasks.All.Select(t => t.RawValue()));
     }
 
@@ -31,9 +31,9 @@ public class ScanTaskTests
         Assert.Equal(ScanTasks.All, TaskCatalog.All.Select(d => d.Task));
         Assert.Equal(["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
                       "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word", "Receipts",
-                      "Batch of separate documents"],
+                      "Batch of separate documents", "Book or magazine"],
                      TaskCatalog.All.Select(d => d.Title));
-        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch"],
+        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book"],
                      TaskCatalog.All.Select(d => d.IconKey));
         foreach (var definition in TaskCatalog.All)
         {
@@ -70,6 +70,7 @@ public class ScanTaskTests
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, null),
                 (TaskFlowKind.ReceiptSplit, ScanIntent.Document, null),
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.DocumentFeeder),
+                (TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.Flatbed),
             ],
             TaskCatalog.All.Select(d => (d.Flow, d.Intent, d.RequiredSource)));
     }
@@ -108,6 +109,8 @@ public class ScanTaskTests
         s.TaskOptions.CopyAlsoSavePdf = true;
         s.TaskOptions.ReceiptNameByDate = false;
         s.TaskOptions.ReceiptCombine = true;
+        s.TaskOptions.BookRightToLeft = true;
+        s.TaskOptions.BookRotationQuarterTurns = 3;
         return s;
     }
 
@@ -136,6 +139,7 @@ public class ScanTaskTests
             Assert.Equal((4, true, "Office", true), (s.TaskOptions.CopyCount, s.TaskOptions.CopyFitToPage,
                                                      s.TaskOptions.CopyPrinterName, s.TaskOptions.CopyAlsoSavePdf));
             Assert.Equal((false, true), (s.TaskOptions.ReceiptNameByDate, s.TaskOptions.ReceiptCombine));
+            Assert.Equal((true, 3), (s.TaskOptions.BookRightToLeft, s.TaskOptions.BookRotationQuarterTurns));
             Assert.NotSame(current.TaskOptions, s.TaskOptions);
             Assert.Equal(TaskCatalog.Definition(task).Intent, s.Intent);
             Assert.True(TaskCatalog.Fits(task, s));
@@ -168,6 +172,7 @@ public class ScanTaskTests
                 (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Word, true, "Scan {date} {counter}", false, false, PdfSizePreset.Standard, SplitMode.None),
                 (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Receipt {docdate} {counter}", false, false, PdfSizePreset.Compact, SplitMode.None),
                 (ScanIntent.Document, ScanSource.DocumentFeeder, 300, OutputFormat.Pdf, true, "Document {label} {date} {counter}", false, false, PdfSizePreset.Standard, SplitMode.SeparatorSheet),
+                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "{task} {date} {counter}", false, false, PdfSizePreset.Standard, SplitMode.None),
             ],
             rows);
     }
@@ -202,7 +207,7 @@ public class ScanTaskTests
     }
 
     [Fact]
-    public void Apply_OnlyTheTwoSidedTaskStraightens_NoTaskCrops()
+    public void Apply_OnlyTheTwoSidedAndBookTasksStraighten_NoTaskCrops()
     {
         var current = Customized();
         current.Document.AutoCrop = true;
@@ -211,20 +216,20 @@ public class ScanTaskTests
         {
             var s = TaskCatalog.Apply(task, current);
             Assert.False(s.Document.AutoCrop);
-            Assert.Equal(task == ScanTask.TwoSided, s.Document.AutoStraighten);
+            Assert.Equal(task is ScanTask.TwoSided or ScanTask.Book, s.Document.AutoStraighten);
         }
         Assert.True(current.Document.AutoCrop);
         Assert.True(TaskCatalog.Apply(ScanTask.TwoSided, new ScanSettings()).Document.AutoStraighten);
     }
 
     [Fact]
-    public void Apply_OnlyTheTwoSidedTaskTurnsPagesUpright()
+    public void Apply_OnlyTheTwoSidedAndBookTasksTurnPagesUpright()
     {
         var current = Customized();
         current.Document.AutoRotate = true;
         foreach (var task in ScanTasks.All)
         {
-            Assert.Equal(task == ScanTask.TwoSided, TaskCatalog.Apply(task, current).Document.AutoRotate);
+            Assert.Equal(task is ScanTask.TwoSided or ScanTask.Book, TaskCatalog.Apply(task, current).Document.AutoRotate);
         }
         Assert.True(current.Document.AutoRotate);
         Assert.True(TaskCatalog.Apply(ScanTask.TwoSided, new ScanSettings()).Document.AutoRotate);
@@ -477,14 +482,14 @@ public class ScanTaskTests
     public void Availability_FeederOnlyScanner_NoQuickScanOrIdCard()
     {
         var caps = new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder], SupportsOverview = false };
-        foreach (var task in new[] { ScanTask.QuickScan, ScanTask.IdCard })
+        foreach (var task in new[] { ScanTask.QuickScan, ScanTask.IdCard, ScanTask.Book })
         {
             var availability = TaskCatalog.Availability(task, caps);
             Assert.False(availability.IsAvailable);
             Assert.Equal("This scanner has no flatbed.", availability.Reason);
         }
         // Documents and photos fall back to the feeder (SettingsAdapter).
-        Assert.All(ScanTasks.All.Where(t => t is not (ScanTask.QuickScan or ScanTask.IdCard)),
+        Assert.All(ScanTasks.All.Where(t => t is not (ScanTask.QuickScan or ScanTask.IdCard or ScanTask.Book)),
                    task => Assert.True(TaskCatalog.Availability(task, caps).IsAvailable));
     }
 
@@ -592,7 +597,7 @@ public class ScanTaskTests
     [Fact]
     public void FileLabels()
     {
-        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy", "Document", "Receipt", "Document"],
+        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy", "Document", "Receipt", "Document", "Book"],
                      TaskCatalog.All.Select(d => d.FileLabel));
     }
 
@@ -704,6 +709,72 @@ public class ScanTaskTests
         untagged.Source = ScanSource.Flatbed;
         Assert.Equal(ScanTask.Batch, TaskCatalog.Infer(untagged));
         untagged.Document.SplitMode = SplitMode.None;
+        Assert.Equal(ScanTask.Document, TaskCatalog.Infer(untagged));
+    }
+
+    [Fact]
+    public void Book_SplitsFacingPagesOnTheGlass_AndEndsWithoutTheSplit()
+    {
+        var definition = TaskCatalog.Definition(ScanTask.Book);
+        Assert.Equal(("Scan spread", "book", "Book"), (definition.Steps[0].PrimaryActionLabel, definition.IconKey, definition.FileLabel));
+        var s = TaskCatalog.Apply(ScanTask.Book, new ScanSettings());
+        Assert.Equal((ScanIntent.Document, ScanSource.Flatbed, OutputFormat.Pdf, 300, ColorMode.Color, DuplexMode.Off),
+                     (s.Intent, s.Source, s.Format, s.Resolution, s.ColorMode, s.Duplex));
+        Assert.True(s.DocumentMultiPage && s.PdfSearchable);
+        // Each page is straightened and turned upright on its own; nothing is cropped or skipped.
+        Assert.Equal((true, true, true, false, false, SplitMode.None),
+                     (s.Document.SplitFacingPages, s.Document.AutoStraighten, s.Document.AutoRotate, s.Document.AutoCrop,
+                      s.Document.RemoveBlankPages, s.Document.SplitMode));
+        // Left to right and not turned, unless chosen.
+        Assert.Equal((false, 0), (s.TaskOptions.BookRightToLeft, s.TaskOptions.BookRotationQuarterTurns));
+        Assert.Equal(TaskFlowKind.DocumentQueue, TaskCatalog.FlowOf(s));
+        Assert.Equal(definition.Steps, TaskCatalog.GuidedSteps(s, null));
+        Assert.Equal("300 dpi · Color · PDF · Facing pages split", TaskCatalog.Summary(s));
+        s.TaskOptions.BookRightToLeft = true;
+        Assert.Equal("300 dpi · Color · PDF · Facing pages split, right to left", TaskCatalog.Summary(s));
+        // Two-sided feeder scans keep their pages as scanned: the line does not promise a split.
+        var bothSides = s.Clone();
+        bothSides.Source = ScanSource.DocumentFeeder;
+        bothSides.Duplex = DuplexMode.Both;
+        Assert.Equal("300 dpi · Color · PDF · Both sides", TaskCatalog.Summary(bothSides));
+        Assert.True(TaskCatalog.Fits(ScanTask.Book, s));
+        // Another format or color keeps the task; the feeder or no split ends it.
+        s.ColorMode = ColorMode.Grayscale;
+        s.Format = OutputFormat.Word;
+        Assert.True(TaskCatalog.Fits(ScanTask.Book, s));
+        s.Source = ScanSource.DocumentFeeder;
+        Assert.False(TaskCatalog.Fits(ScanTask.Book, s));
+        s.Source = ScanSource.Flatbed;
+        s.Document.SplitFacingPages = false;
+        Assert.False(TaskCatalog.Fits(ScanTask.Book, s));
+        Assert.Equal("This scanner has no flatbed.",
+                     TaskCatalog.Availability(ScanTask.Book, new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder] }).Reason);
+        // Saved at once, nothing is split: the summary says nothing of it.
+        var once = TaskCatalog.Apply(ScanTask.Book, new ScanSettings());
+        once.DocumentMultiPage = false;
+        Assert.Equal("300 dpi · Color · PDF", TaskCatalog.Summary(once));
+    }
+
+    [Fact]
+    public void Apply_OnlyTheBookTaskSplitsFacingPages_ItsReadingOrderAndTurnAreKept()
+    {
+        var current = Customized();
+        current.Document.SplitFacingPages = true;
+        foreach (var task in ScanTasks.All)
+        {
+            var s = TaskCatalog.Apply(task, current);
+            Assert.Equal(task == ScanTask.Book, s.Document.SplitFacingPages);
+            Assert.Equal((true, 3), (s.TaskOptions.BookRightToLeft, s.TaskOptions.BookRotationQuarterTurns));
+        }
+        Assert.True(current.Document.SplitFacingPages);
+        // Without a stored task, split spreads look like a book; split documents still like a batch.
+        var untagged = TaskCatalog.Apply(ScanTask.Book, new ScanSettings());
+        untagged.TaskId = null;
+        Assert.Equal(ScanTask.Book, TaskCatalog.Infer(untagged));
+        untagged.Document.SplitMode = SplitMode.BlankSheet;
+        Assert.Equal(ScanTask.Batch, TaskCatalog.Infer(untagged));
+        untagged.Document.SplitMode = SplitMode.None;
+        untagged.DocumentMultiPage = false;
         Assert.Equal(ScanTask.Document, TaskCatalog.Infer(untagged));
     }
 }

@@ -61,6 +61,34 @@ private final class RecordingStep: PageStep {
     }
 }
 
+/// The spread of TestPages.shadowSpread as a 100 dpi scan: its spine at x = 572 of 1100.
+private let spreadImage: CGImage = TestPages.shadowSpread().toRgba().makeCGImage()!
+
+/// A w × h scan whose left part (x below w / 2) is red and right part blue, top half bright and bottom dim.
+private func twoTone(_ w: Int, _ h: Int) -> RgbaImage {
+    var p = [UInt8](repeating: 0, count: w * h * 4)
+    for y in 0..<h {
+        for x in 0..<w {
+            let i = (y * w + x) * 4
+            let level: UInt8 = y < h / 2 ? 250 : 120
+            p[i] = x < w / 2 ? level : 0
+            p[i + 2] = x < w / 2 ? 0 : level
+            p[i + 3] = 255
+        }
+    }
+    return RgbaImage(width: w, height: h, pixels: p)
+}
+
+/// A step that turns every page upright by `quarterTurns` clockwise, as reading its text would.
+private struct TurnStep: PageStep {
+    let quarterTurns: Int
+    var name: String { "orientation" }
+
+    func apply(_ page: ScannedPage) -> ScannedPage {
+        page.turnedUpright(quarterTurns)
+    }
+}
+
 /// A step that prints a bar across the page.
 private struct BarStep: PageStep {
     var name: String { "bar" }
@@ -555,5 +583,220 @@ final class PageProcessorTests: XCTestCase {
         XCTAssertEqual(original.sheetIndex, 2)
         XCTAssertEqual(page(blankImage).inclusion, .automatic)
         XCTAssertNil(page(blankImage).blank)
+    }
+
+    // MARK: Facing pages
+
+    func test_forScan_splitsFacingPages_onlyOnCollectedDocumentPages() throws {
+        var s = ScanSettings()
+        XCTAssertFalse(PageProcessor.splitsFacingPages(s))
+        XCTAssertNil(PageProcessor.forScan(s).book)
+        s.document.splitFacingPages = true
+        s.taskOptions.bookRightToLeft = true
+        s.taskOptions.bookRotationQuarterTurns = -1
+        XCTAssertTrue(PageProcessor.splitsFacingPages(s))
+        XCTAssertEqual(PageProcessor.forScan(s).book, BookSplitOptions(rotationQuarterTurns: 3, rightToLeft: true))
+        // The steps are the usual ones: the split comes before them.
+        XCTAssertEqual(PageProcessor.forScan(s).steps.map(\.name), ["blank", "separator"])
+        XCTAssertNotNil(PageProcessor.forScan(TaskCatalog.apply(.book, to: ScanSettings())).book)
+        // Pages saved at once, photos, copies and receipts are never cut unseen.
+        var once = ScanSettings()
+        once.documentMultiPage = false
+        var photos = ScanSettings()
+        photos.intent = .photo
+        for var other in [once, photos, TaskCatalog.apply(.copy, to: ScanSettings()), TaskCatalog.apply(.receipt, to: ScanSettings())] {
+            other.document.splitFacingPages = true
+            XCTAssertFalse(PageProcessor.splitsFacingPages(other))
+            XCTAssertNil(PageProcessor.forScan(other).book)
+        }
+        // Pages scanned on both sides keep their sheet and side: by a feeder that scans both, or turned by hand.
+        for duplex in [DuplexMode.both, DuplexMode.manual] {
+            var twoSided = ScanSettings()
+            twoSided.source = .documentFeeder
+            twoSided.duplex = duplex
+            twoSided.document.splitFacingPages = true
+            XCTAssertFalse(PageProcessor.splitsFacingPages(twoSided))
+            XCTAssertNil(PageProcessor.forScan(twoSided).book)
+        }
+        // One side of each sheet from the feeder is split.
+        var oneSided = ScanSettings()
+        oneSided.source = .documentFeeder
+        oneSided.duplex = .off
+        oneSided.document.splitFacingPages = true
+        XCTAssertTrue(PageProcessor.splitsFacingPages(oneSided))
+        // The flatbed scans one side, whatever the feeder's choice.
+        var flatbed = ScanSettings()
+        flatbed.source = .flatbed
+        flatbed.duplex = .both
+        flatbed.document.splitFacingPages = true
+        XCTAssertTrue(PageProcessor.splitsFacingPages(flatbed))
+    }
+
+    func test_process_spreadsGivenASide_keepTheirSheetAndSide() throws {
+        // A front and its back, each a spread: every page cut from them keeps the side and sheet arranging gave it.
+        let book = BookSplitOptions()
+        let result = try PageProcessor(steps: [], arrangement: .twoSided, book: book)
+            .process([page(spreadImage), page(spreadImage)])
+        XCTAssertEqual(result.pages.count, 4)
+        XCTAssertEqual(result.pages.map { $0.spread?.isWhole }, [false, false, false, false])
+        XCTAssertEqual(result.pages.map(\.side), [.front, .front, .back, .back])
+        XCTAssertEqual(result.pages.map(\.sheetIndex), [0, 0, 0, 0])
+        // A spread kept whole too.
+        let single = TestPages.singlePageAcross().toRgba().makeCGImage()!
+        let whole = try PageProcessor(steps: [], arrangement: .twoSided, book: book)
+            .process([page(single), page(single)]).pages
+        XCTAssertEqual(whole.map { $0.spread?.isWhole }, [true, true])
+        XCTAssertEqual(whole.map(\.side), [.front, .back])
+        XCTAssertEqual(whole.map(\.sheetIndex), [0, 0])
+        // Turned over by hand, and a spread split again by hand.
+        let backs = try PageProcessor(steps: [], arrangement: .turnedOverBacks, book: book).process([page(spreadImage)]).pages
+        XCTAssertFalse(backs.isEmpty)
+        for back in backs {
+            XCTAssertEqual(back.side, .back)
+        }
+        let cut = BookSplitter.manual(.vertical, fraction: 0.3, width: 200, height: 100)
+        let again = try PageProcessor(steps: [])
+            .processSpread(page(twoTone(200, 100).makeCGImage()!).withSide(.back, sheetIndex: 3), cut: cut, options: book)
+        XCTAssertEqual(again.count, 2)
+        XCTAssertEqual(again.map(\.side), [.back, .back])
+        XCTAssertEqual(again.map(\.sheetIndex), [3, 3])
+        // A spread scanned one side has none.
+        let plain = try PageProcessor(steps: [], book: book).process([page(spreadImage)]).pages
+        XCTAssertEqual(plain.map(\.side), [nil, nil])
+        XCTAssertEqual(plain.map(\.sheetIndex), [nil, nil])
+    }
+
+    func test_process_aSpread_becomesItsTwoPages_inReadingOrder() throws {
+        let spread = page(spreadImage)
+        let result = try PageProcessor(steps: [], book: BookSplitOptions()).process([spread])
+        XCTAssertEqual(result.arranged.map(\.id), [spread.id])
+        XCTAssertEqual(result.spreads.map(\.id), [spread.id])
+        XCTAssertEqual(result.pages.count, 2)
+        let left = result.pages[0], right = result.pages[1]
+        // Cut at the spine, together exactly the spread, each at the scan's resolution.
+        XCTAssertTrue((567...577).contains(left.image.width), "\(left.image.width)")
+        XCTAssertEqual(left.image.width + right.image.width, 1100)
+        for page in result.pages {
+            XCTAssertEqual(page.image.height, 850)
+            XCTAssertEqual(page.dpi, 100)
+            XCTAssertEqual(page.colorMode, .color)
+        }
+        XCTAssertEqual(left.createdAt, spread.createdAt)
+        // Each page records its spread and part, and has an id of its own.
+        XCTAssertEqual(left.spreadID, spread.id)
+        XCTAssertEqual(left.spread?.part, 0)
+        XCTAssertEqual(left.spread?.gutter?.kind, .shadow)
+        XCTAssertEqual(right.spreadID, spread.id)
+        XCTAssertEqual(right.spread?.part, 1)
+        XCTAssertEqual(left.spread?.gutter, right.spread?.gutter)
+        XCTAssertEqual(Set([spread.id, left.id, right.id]).count, 3)
+        // Right to left, the right page comes first.
+        let rtl = try PageProcessor(steps: [], book: BookSplitOptions(rotationQuarterTurns: 0, rightToLeft: true))
+            .process([spread]).pages
+        XCTAssertEqual(rtl.map { $0.spread?.part }, [1, 0])
+    }
+
+    func test_process_aSpreadWithoutAClearSpine_staysWhole() throws {
+        let single = page(TestPages.singlePageAcross().toRgba().makeCGImage()!)
+        let result = try PageProcessor(steps: [], book: BookSplitOptions()).process([single])
+        XCTAssertEqual(result.pages.count, 1)
+        let whole = result.pages[0]
+        XCTAssertEqual(whole.spread?.isWhole, true)
+        XCTAssertEqual(whole.spreadID, single.id)
+        XCTAssertNil(whole.spread?.gutter)
+        XCTAssertNotEqual(whole.id, single.id)
+        XCTAssertEqual(whole.image.width, 850)
+        XCTAssertEqual(whole.image.height, 1100)
+        XCTAssertEqual(result.spreads.map(\.id), [single.id])
+        // Without the split, the page goes through as it is.
+        let plain = try PageProcessor(steps: []).process([single])
+        XCTAssertEqual(plain.pages.map(\.id), [single.id])
+        XCTAssertNil(plain.pages[0].spread)
+        XCTAssertTrue(plain.spreads.isEmpty)
+    }
+
+    func test_process_theStepsRunOnEachPage_ofEverySpread() throws {
+        var log: [String] = []
+        let spreads = [page(spreadImage), page(spreadImage)]
+        let result = try PageProcessor(steps: [RecordingStep("one", log: { log.append($0) })], book: BookSplitOptions())
+            .process(spreads)
+        XCTAssertEqual(result.pages.count, 4)
+        XCTAssertEqual(log, result.pages.map { "one:\($0.id)" })
+        XCTAssertEqual(result.pages.compactMap(\.spreadID), [spreads[0].id, spreads[0].id, spreads[1].id, spreads[1].id])
+        // A blank facing page is flagged like any blank page.
+        let blankFacing = try PageProcessor.forScan(TaskCatalog.apply(.book, to: ScanSettings()))
+            .process([page(TestPages.blankFacingSpread().toRgba().makeCGImage()!)]).pages
+        XCTAssertEqual(blankFacing.map { $0.blank?.isBlank == true }, [true, false])
+    }
+
+    func test_processSpread_cutsWhereAsked_orKeepsTheSpreadWhole() throws {
+        let spread = page(twoTone(200, 100).makeCGImage()!)
+        let processor = PageProcessor(steps: [], book: BookSplitOptions())
+        let cut = BookSplitter.manual(.vertical, fraction: 0.3, width: 200, height: 100)
+        let pages = try processor.processSpread(spread, cut: cut, options: BookSplitOptions())
+        XCTAssertEqual(pages.map(\.image.width), [60, 140])
+        for page in pages {
+            XCTAssertEqual(page.spread?.gutter?.kind, .manual)
+        }
+        let whole = try processor.processSpread(spread, cut: nil, options: BookSplitOptions())
+        XCTAssertEqual(whole.count, 1)
+        XCTAssertEqual(whole[0].spread?.isWhole, true)
+        XCTAssertEqual([whole[0].image.width, whole[0].image.height], [200, 100])
+        // The book's rotation turns the whole spread too.
+        let turned = try processor.processSpread(spread, cut: nil, options: BookSplitOptions(rotationQuarterTurns: 1))
+        XCTAssertEqual([turned[0].image.width, turned[0].image.height], [100, 200])
+    }
+
+    func test_processSpread_pagesTurnedByReadingTheirText_areOrderedAsTheyLieTurned() throws {
+        // A book lying sideways: its pages one above the other, red on top, blue below.
+        let stacked = page(twoTone(200, 100).rotatedQuarterTurns(1).makeCGImage()!)
+        let cut = BookSplitter.manual(.horizontal, fraction: 0.5, width: 100, height: 200)
+        // Reading turns each page a quarter counterclockwise: the top page lies on the left, and leads.
+        let counter = try PageProcessor(steps: [TurnStep(quarterTurns: 3)])
+            .processSpread(stacked, cut: cut, options: BookSplitOptions())
+        XCTAssertEqual(counter.map { $0.spread?.part }, [0, 1])
+        for page in counter {
+            XCTAssertEqual(page.upright, UprightTurn(quarterTurns: 3))
+        }
+        // Clockwise, the top page lies on the right: the bottom one leads, unless the book reads right to left.
+        let clockwise = try PageProcessor(steps: [TurnStep(quarterTurns: 1)])
+            .processSpread(stacked, cut: cut, options: BookSplitOptions())
+        XCTAssertEqual(clockwise.map { $0.spread?.part }, [1, 0])
+        let rightToLeft = try PageProcessor(steps: [TurnStep(quarterTurns: 1)])
+            .processSpread(stacked, cut: cut, options: BookSplitOptions(rotationQuarterTurns: 0, rightToLeft: true))
+        XCTAssertEqual(rightToLeft.map { $0.spread?.part }, [0, 1])
+        // The book's rotation counts the same way: turned clockwise by setting, then not read.
+        let bySetting = try PageProcessor(steps: []).processSpread(stacked, cut: cut, options: BookSplitOptions(rotationQuarterTurns: 1))
+        XCTAssertEqual(bySetting.map { $0.spread?.part }, [1, 0])
+        for page in bySetting {
+            XCTAssertEqual([page.image.width, page.image.height], [100, 100])
+        }
+    }
+
+    func test_spread_survivesRebuildingThePage() {
+        let spreadPart = SpreadPart(spreadID: UUID(), part: 1, gutter: BookSplitter.manual(.vertical, fraction: 0.5, width: 10, height: 10))
+        let original = page(blankImage).withSpread(spreadPart)
+        let geometry = PageGeometry(cropped: false, angleDegrees: 1.5, basis: .textLines)
+        let rebuilt = [
+            original.withImage(solid(3, 3, 0)),
+            original.withSide(.front, sheetIndex: 0),
+            original.withBlank(nil),
+            original.withInclusion(.skip),
+            original.withPatch(nil),
+            original.withDocumentBreak(.split),
+            original.withDocumentLabel("Chapter 1"),
+            original.withUpright(UprightTurn(quarterTurns: 2)),
+            original.turnedUpright(2),
+            original.withAlternate(nil),
+            original.withGeometry(solid(3, 3, 0), geometry: geometry),
+            original.withGeometry(solid(3, 3, 0), geometry: geometry).withVersionsSwapped(blankImage),
+            page(textImage).copyMeta(from: original),
+        ]
+        for page in rebuilt {
+            XCTAssertEqual(page.spread, spreadPart)
+            XCTAssertEqual(page.spreadID, spreadPart.spreadID)
+        }
+        XCTAssertNil(original.withSpread(nil).spread)
+        XCTAssertNil(page(blankImage).spreadID)
     }
 }

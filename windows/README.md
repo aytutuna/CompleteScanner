@@ -32,9 +32,11 @@ UI per platform** architecture:
   `TextExport.cs`, `DocxWriter.cs` and `ZipStore.cs`: the text file, the Word document and its
   zip package, written by hand so both platforms write the same bytes), receipts
   (`ReceiptProcessing.cs`: finding several receipts on the glass, cleaning up faded thermal
-  print, and reading the receipt's date from its text for the `{docdate}` file name), and splitting a
+  print, and reading the receipt's date from its text for the `{docdate}` file name), splitting a
   stack into documents (`DocumentSplitter.cs`; `PatchCode.cs`: separator sheets with patch codes,
-  read and drawn for printing; `SavePlan.cs`: several files saved all or nothing).
+  read and drawn for printing; `SavePlan.cs`: several files saved all or nothing), and books and
+  magazines (`BookSplitter.cs`: the gutter of an open book found on a spread, which is cut into
+  its pages in reading order).
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
   xUnit with the same fixtures, geometry, and tolerances. **This is the contract that keeps
   the Swift and C# cores behaviorally identical** — change an algorithm on one side, port
@@ -644,6 +646,78 @@ no code found on pages of text, a ruled table with a header band and striped row
 photos and a sheet on a backdrop. Barcode and QR separators need a barcode library and come later.
 **To check on real hardware:** separator sheets printed on real printers (toner spread, a printer
 that shrinks the page), feeders that skew sheets more than 3°, and very dark or colored paper.
+
+### Book or magazine
+
+**Split facing pages** (the inspector's **Output** section, under Rotate pages upright) cuts each
+scan of an open book or magazine at the spine into its two pages. The **Book or magazine** task
+(flatbed only; greyed out on a scanner without one) sets it up: 300 dpi, color, searchable PDF,
+each page straightened and turned upright on its own, named `{task} {date} {counter}` ("Book
+2026-10-19 3.pdf"), and the banner asks for one spread at a time ("Open the book face down with the
+spine in the middle of the glass and press it gently flat, then scan. Turn the page and scan the
+next spread; each one becomes two pages."; the button says **Scan spread**). Color is the default
+because the Standard PDF size already stores pages that are really gray in gray, and magazines keep
+their color. The switch works for any collected document scan of one side of each sheet; with each
+scan saved at once, for copies, for receipts and for two-sided feeder scans (whose pages are paired
+by sheet and side) it is greyed out and says why. While it is on, **Reads right to left**
+(Arabic, Hebrew, manga: the right page first) and **Turn the pages** (as scanned, 90° clockwise,
+180°, 90° counterclockwise, for a book lying sideways or upside down) show beneath it; both are kept
+when a task is picked, and apply from the next spread on.
+
+The split runs in the page clean-up stage (`PageProcessor`), before the other steps, so each page is
+checked for being blank, straightened and turned upright on its own. The two pages are put in
+reading order by where they lie once turned: by the book's rotation plus the turn reading their text
+gave them when the two pages agree (or when only one was read): left before right, right before left
+reading right to left, top before bottom. Each page in the strip is labelled with its spread
+("Spread 2 · page 1"); a spread whose spine was not found stays one page, "Spread 2 · not split",
+and the status after the scan says so ("The spine of 1 spread was not found: it was added as one
+page (right-click it to split it)."). A page's right-click menu has **Split this spread…** (for a
+spread kept whole) or **Change the split…**, which opens a dialog with the spread as scanned and the
+cut drawn across it: click or drag on the spread, or use the slider or the arrow keys, choose
+**Side by side** or **One above the other**, then **Split**; **Keep as one page** and the menu's
+**Join the two pages** make the spread one page again. Joining or splitting again starts from the
+spread as scanned, kept in the page spool (`<id>-spread.png`) until its last page is removed, saved or
+cleared, and runs the clean-up again with the current settings. A split moved keeps what was decided
+about each page (its document break, document name, and keep or skip) and leaves out a page that was
+removed from the queue; a join, or a first split, gives the first new page the break of the spread's
+first page and the first name among its pages, and every new page the keep or skip they shared.
+
+How the spine is found (`BookSplitter`), on a gray copy at 100 dpi, at most 1000 pixels long: along
+each axis, over the middle 80 % of the other, two profiles, the mean gray and the share of
+neighbouring pixels across the axis that differ by an ink edge (text), smoothed over 0.05 in, are
+searched between a quarter and three quarters of the axis. **The spine's shadow** is a darkest point
+at least 8 % darker than the paper beside it, at least 0.08 in wide (where it darkens the paper by
+4 %; a thin dark line of page edges in it does not count against it) and at most 12 % of the axis
+wide at half its own depth, with no text at its bottom and text within 1.5 in beside it; with text
+on both sides it must lie near the middle of the spread's text (the pages of a book mirror each
+other, a dark picture or a crease inside one page does not), and beside a blank page it must be at
+least 15 % deep. **Without a shadow**, the blank run between the two pages' text counts when it is
+at least 0.6 in long (two inner margins, wider than the gap between the columns of one page), bright
+as paper, in the middle of the spread's text, with text on both sides. A gutter the text runs along
+(a section gap, a letter's fold) is not a spine: which way the text runs is judged with the band
+around the candidate blanked out, so the spine's own dark line does not fool it. The cut is the
+middle of the shadow's bottom, or of the blank run, scaled back to the scan; anything unclear leaves
+the spread whole.
+
+Checked here (`BookSplitterTests`, and an evaluation run): on a real public-domain spread, the inside
+of a ribbon-bound 1917 Thanksgiving menu (National Archives 285093956, Truman Library), the fold was
+found at all four turns, 0.02 in and 0.01 in from where it is; nine real public-domain single pages
+(letters by Clara Barton, Annie Oakley, Wilbur Wright and Cleveland Abbe, two menus, the menu's cover,
+a 1973 photograph), each turned four ways, were never split (0 of 36). Spreads made of two of those
+real pages, each cut out of its scan and joined with a spine shadow, were split in 11 of 12, all
+within 0.09 in; joined without a shadow (pages whose margins do not mirror each other) all 12 stayed
+whole. On 240 synthetic books (pages of text, the book anywhere on the glass, 30 % of them lying
+sideways, shadows from none to 70 % deep, inner margins 0.15 to 0.8 in, some with a blank page),
+207 were split, every one within 0.08 in of the spine (mean 0.013 in, 95 % within 0.05 in): all 141
+with a shadow of 20 % or more, 20 of 25 with a fainter one, 44 of 45 with inner margins of 0.6 in or
+more and no shadow; the rest (tight margins without a shadow, a blank page without one) stayed
+whole. 160 synthetic single pages (one or two columns, section gaps, pictures, letters folded in
+three) were never split. The demo book is cut at its spine to the pixel. Finding the spine takes
+about 50 ms at 100 dpi and 120 to 240 ms on a 300 dpi spread. Curved pages near the spine are not
+flattened, and the spine's shadow is not lightened (later).
+**To check on real hardware:** real books pressed on real glass (thick spines lifted off the glass,
+a gutter that runs at a slant, curved lines near the spine), magazines with pictures across the
+spread, and a book lying sideways with **Rotate pages upright** reading its text.
 
 ### Why isn't my scanner listed?
 

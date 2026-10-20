@@ -35,6 +35,8 @@ private func customized() -> ScanSettings {
     s.taskOptions.copyAlsoSavePdf = true
     s.taskOptions.receiptNameByDate = false
     s.taskOptions.receiptCombine = true
+    s.taskOptions.bookRightToLeft = true
+    s.taskOptions.bookRotationQuarterTurns = 3
     return s
 }
 
@@ -43,7 +45,7 @@ final class ScanTaskTests: XCTestCase {
     func test_rawValues_areTheStoredNames() {
         XCTAssertEqual(ScanTask.allCases.map(\.rawValue),
                        ["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word",
-                        "receipt", "batch"])
+                        "receipt", "batch", "book"])
     }
 
     func test_tryParse_isExact() {
@@ -62,10 +64,10 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertEqual(TaskCatalog.all.map(\.title),
                        ["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
                         "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word", "Receipts",
-                        "Batch of separate documents"])
+                        "Batch of separate documents", "Book or magazine"])
         XCTAssertEqual(TaskCatalog.all.map(\.iconKey),
                        ["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word",
-                        "receipt", "batch"])
+                        "receipt", "batch", "book"])
         for definition in TaskCatalog.all {
             XCTAssertEqual(TaskCatalog.definition(definition.task), definition)
             XCTAssertFalse(definition.subtitle.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -86,12 +88,13 @@ final class ScanTaskTests: XCTestCase {
     func test_definitions_flowIntentAndRequiredSource() {
         XCTAssertEqual(TaskCatalog.all.map(\.flow),
                        [.documentQueue, .documentQueue, .photoSplit, .photoSplit, .documentQueue, .documentQueue,
-                        .documentQueue, .idCard, .copy, .documentQueue, .receiptSplit, .documentQueue])
+                        .documentQueue, .idCard, .copy, .documentQueue, .receiptSplit, .documentQueue, .documentQueue])
         XCTAssertEqual(TaskCatalog.all.map(\.intent),
                        [.document, .document, .photo, .photo, .document, .document, .document, .document, .document,
-                        .document, .document, .document])
+                        .document, .document, .document, .document])
         XCTAssertEqual(TaskCatalog.all.map(\.requiredSource),
-                       [nil, .documentFeeder, nil, nil, .flatbed, nil, .documentFeeder, .flatbed, nil, nil, nil, .documentFeeder])
+                       [nil, .documentFeeder, nil, nil, .flatbed, nil, .documentFeeder, .flatbed, nil, nil, nil, .documentFeeder,
+                        .flatbed])
     }
 
     func test_apply_keepsDestinationAndDetectionTuning_andLeavesTheInputAlone() {
@@ -118,6 +121,8 @@ final class ScanTaskTests: XCTestCase {
             XCTAssertTrue(s.taskOptions.copyAlsoSavePdf, task.rawValue)
             XCTAssertFalse(s.taskOptions.receiptNameByDate, task.rawValue)
             XCTAssertTrue(s.taskOptions.receiptCombine, task.rawValue)
+            XCTAssertTrue(s.taskOptions.bookRightToLeft, task.rawValue)
+            XCTAssertEqual(s.taskOptions.bookRotationQuarterTurns, 3, task.rawValue)
             XCTAssertEqual(s.intent, TaskCatalog.definition(task).intent)
             XCTAssertTrue(TaskCatalog.fits(task, s))
             XCTAssertEqual(TaskCatalog.infer(s), task)
@@ -146,6 +151,7 @@ final class ScanTaskTests: XCTestCase {
             "document flatbed 300 word true Scan {date} {counter} false false standard none",
             "document flatbed 300 pdf true Receipt {docdate} {counter} false false compact none",
             "document documentFeeder 300 pdf true Document {label} {date} {counter} false false standard separatorSheet",
+            "document flatbed 300 pdf true {task} {date} {counter} false false standard none",
         ])
     }
 
@@ -179,7 +185,7 @@ final class ScanTaskTests: XCTestCase {
         for task in ScanTask.allCases {
             let s = TaskCatalog.apply(task, to: current)
             XCTAssertFalse(s.document.autoCrop, task.rawValue)
-            XCTAssertEqual(s.document.autoStraighten, task == .twoSided, task.rawValue)
+            XCTAssertEqual(s.document.autoStraighten, task == .twoSided || task == .book, task.rawValue)
         }
         XCTAssertTrue(current.document.autoCrop)
         XCTAssertTrue(TaskCatalog.apply(.twoSided, to: ScanSettings()).document.autoStraighten)
@@ -189,7 +195,7 @@ final class ScanTaskTests: XCTestCase {
         var current = customized()
         current.document.autoRotate = true
         for task in ScanTask.allCases {
-            XCTAssertEqual(TaskCatalog.apply(task, to: current).document.autoRotate, task == .twoSided, task.rawValue)
+            XCTAssertEqual(TaskCatalog.apply(task, to: current).document.autoRotate, task == .twoSided || task == .book, task.rawValue)
         }
         XCTAssertTrue(current.document.autoRotate)
         XCTAssertTrue(TaskCatalog.apply(.twoSided, to: ScanSettings()).document.autoRotate)
@@ -441,13 +447,13 @@ final class ScanTaskTests: XCTestCase {
 
     func test_availability_feederOnlyScanner_noQuickScanOrIdCard() {
         let caps = ScannerCapabilities(sources: [.documentFeeder], supportsOverview: false)
-        for task in [ScanTask.quickScan, .idCard] {
+        for task in [ScanTask.quickScan, .idCard, .book] {
             let availability = TaskCatalog.availability(of: task, capabilities: caps)
             XCTAssertFalse(availability.isAvailable)
             XCTAssertEqual(availability.reason, "This scanner has no flatbed.")
         }
         // Documents and photos fall back to the feeder (SettingsAdapter).
-        for task in ScanTask.allCases where task != .quickScan && task != .idCard {
+        for task in ScanTask.allCases where task != .quickScan && task != .idCard && task != .book {
             XCTAssertTrue(TaskCatalog.availability(of: task, capabilities: caps).isAvailable, task.rawValue)
         }
     }
@@ -564,7 +570,7 @@ final class ScanTaskTests: XCTestCase {
     func test_fileLabels() {
         XCTAssertEqual(TaskCatalog.all.map(\.fileLabel),
                        ["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy",
-                        "Document", "Receipt", "Document"])
+                        "Document", "Receipt", "Document", "Book"])
     }
 
     func test_word_savesTheTextAsAWordDocument_andEndsWithAnotherFormat() {
@@ -674,6 +680,78 @@ final class ScanTaskTests: XCTestCase {
         untagged.source = .flatbed
         XCTAssertEqual(TaskCatalog.infer(untagged), .batch)
         untagged.document.splitMode = .none
+        XCTAssertEqual(TaskCatalog.infer(untagged), .document)
+    }
+
+    func test_book_splitsFacingPagesOnTheGlass_andEndsWithoutTheSplit() {
+        let definition = TaskCatalog.definition(.book)
+        XCTAssertEqual(definition.steps[0].primaryActionLabel, "Scan spread")
+        XCTAssertEqual(definition.iconKey, "book")
+        XCTAssertEqual(definition.fileLabel, "Book")
+        var s = TaskCatalog.apply(.book, to: ScanSettings())
+        XCTAssertEqual(s.intent, .document)
+        XCTAssertEqual(s.source, .flatbed)
+        XCTAssertEqual(s.format, .pdf)
+        XCTAssertEqual(s.resolution, 300)
+        XCTAssertEqual(s.colorMode, .color)
+        XCTAssertEqual(s.duplex, .off)
+        XCTAssertTrue(s.documentMultiPage && s.pdfSearchable)
+        // Each page is straightened and turned upright on its own; nothing is cropped or skipped.
+        XCTAssertTrue(s.document.splitFacingPages)
+        XCTAssertTrue(s.document.autoStraighten)
+        XCTAssertTrue(s.document.autoRotate)
+        XCTAssertFalse(s.document.autoCrop)
+        XCTAssertFalse(s.document.removeBlankPages)
+        XCTAssertEqual(s.document.splitMode, SplitMode.none)
+        // Left to right and not turned, unless chosen.
+        XCTAssertFalse(s.taskOptions.bookRightToLeft)
+        XCTAssertEqual(s.taskOptions.bookRotationQuarterTurns, 0)
+        XCTAssertEqual(TaskCatalog.flow(of: s), .documentQueue)
+        XCTAssertEqual(TaskCatalog.guidedSteps(s, capabilities: nil), definition.steps)
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi \u{00B7} Color \u{00B7} PDF \u{00B7} Facing pages split")
+        s.taskOptions.bookRightToLeft = true
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi \u{00B7} Color \u{00B7} PDF \u{00B7} Facing pages split, right to left")
+        // Two-sided feeder scans keep their pages as scanned: the line does not promise a split.
+        var bothSides = s
+        bothSides.source = .documentFeeder
+        bothSides.duplex = .both
+        XCTAssertEqual(TaskCatalog.summary(bothSides), "300 dpi \u{00B7} Color \u{00B7} PDF \u{00B7} Both sides")
+        XCTAssertTrue(TaskCatalog.fits(.book, s))
+        // Another format or color keeps the task; the feeder or no split ends it.
+        s.colorMode = .grayscale
+        s.format = .word
+        XCTAssertTrue(TaskCatalog.fits(.book, s))
+        s.source = .documentFeeder
+        XCTAssertFalse(TaskCatalog.fits(.book, s))
+        s.source = .flatbed
+        s.document.splitFacingPages = false
+        XCTAssertFalse(TaskCatalog.fits(.book, s))
+        XCTAssertEqual(TaskCatalog.availability(of: .book, capabilities: ScannerCapabilities(sources: [.documentFeeder])).reason,
+                       "This scanner has no flatbed.")
+        // Saved at once, nothing is split: the summary says nothing of it.
+        var once = TaskCatalog.apply(.book, to: ScanSettings())
+        once.documentMultiPage = false
+        XCTAssertEqual(TaskCatalog.summary(once), "300 dpi \u{00B7} Color \u{00B7} PDF")
+    }
+
+    func test_apply_onlyTheBookTaskSplitsFacingPages_itsReadingOrderAndTurnAreKept() {
+        var current = customized()
+        current.document.splitFacingPages = true
+        for task in ScanTask.allCases {
+            let s = TaskCatalog.apply(task, to: current)
+            XCTAssertEqual(s.document.splitFacingPages, task == .book, task.rawValue)
+            XCTAssertTrue(s.taskOptions.bookRightToLeft, task.rawValue)
+            XCTAssertEqual(s.taskOptions.bookRotationQuarterTurns, 3, task.rawValue)
+        }
+        XCTAssertTrue(current.document.splitFacingPages)
+        // Without a stored task, split spreads look like a book; split documents still like a batch.
+        var untagged = TaskCatalog.apply(.book, to: ScanSettings())
+        untagged.taskId = nil
+        XCTAssertEqual(TaskCatalog.infer(untagged), .book)
+        untagged.document.splitMode = .blankSheet
+        XCTAssertEqual(TaskCatalog.infer(untagged), .batch)
+        untagged.document.splitMode = .none
+        untagged.documentMultiPage = false
         XCTAssertEqual(TaskCatalog.infer(untagged), .document)
     }
 }
