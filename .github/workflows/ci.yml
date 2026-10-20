@@ -109,7 +109,11 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode_16.4.app
       - name: Toolchain
         run: swift --version
+      # The app as developers build it (debug).
       - name: Build
         run: swift build
+      # The tests run optimized: the image, PDF and OCR code they drive takes many times longer in
+      # a debug build (over 40 minutes). -enable-testing keeps @testable imports working in it, and
+      # --parallel runs the test classes in several processes at once.
       - name: Test
-        run: swift test
+        run: swift test -c release -Xswiftc -enable-testing --parallel
