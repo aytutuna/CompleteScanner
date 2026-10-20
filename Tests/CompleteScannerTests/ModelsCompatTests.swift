@@ -1462,8 +1462,7 @@ final class PresetStoreFileTests: XCTestCase {
 
     func test_trailingCommasAreFoundOutsideStringsOnly() {
         XCTAssertTrue(StoreFiles.hasTrailingComma(Array("[1,]".utf8)))
-        XCTAssertTrue(StoreFiles.hasTrailingComma(Array("{\"a\":1 ,
- }".utf8)))
+        XCTAssertTrue(StoreFiles.hasTrailingComma(Array("{\"a\":1 ,\n }".utf8)))
         XCTAssertFalse(StoreFiles.hasTrailingComma(Array("{\"a,]\":\"\\\",}\"}".utf8)))
         XCTAssertFalse(StoreFiles.hasTrailingComma(Array("[1,2]".utf8)))
     }
