@@ -1,18 +1,20 @@
 using System.Text;
 using CompleteScanner.Core;
+using UglyToad.PdfPig;
 using Xunit;
 
 namespace CompleteScanner.Core.Tests;
 
 // Windows-side structural tests for the hand-rolled PDF writer (the macOS app delegates to
-// CGContext's PDF engine, so most of these have no Swift counterpart; MakePdfTwoPages ports
-// OutputTests.test_makePDFTwoPages). They validate document structure, not pixel
-// rendering — open the output in a viewer for a visual check.
+// CGContext's PDF engine until the port of this writer, so most of these have no Swift counterpart
+// yet; MakePdfTwoPages ports OutputTests.test_makePDFTwoPages). They validate document structure
+// and, through PdfPig (a test-only package), what a PDF reader gets out of the file: pages, the
+// text layer in any script. Not pixel rendering — open the output in a viewer for a visual check.
 
 public class PdfBuilderTests
 {
     /// <summary>A tiny valid baseline JPEG (1x1 white) for structure tests.</summary>
-    private static readonly byte[] TinyJpeg =
+    internal static readonly byte[] TinyJpeg =
     [
         0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
         0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43,
@@ -86,8 +88,9 @@ public class PdfBuilderTests
         byte[] pdf = PdfBuilder.Make([Page(lines)]);
         string text = Encoding.Latin1.GetString(pdf);
         Assert.Contains("3 Tr", text);                  // invisible text rendering mode
-        Assert.Contains("(hello world) Tj", text);
-        Assert.Contains("/BaseFont /Helvetica", text);
+        Assert.Contains("<00680065006C006C006F00200077006F0072006C0064> Tj", text); // UTF-16 code units
+        Assert.Contains("/Subtype /Type0 /BaseFont /GlyphLessFont /Encoding /Identity-H", text);
+        Assert.DoesNotContain("Helvetica", text);
     }
 
     [Fact]
@@ -97,10 +100,14 @@ public class PdfBuilderTests
         string text = Encoding.Latin1.GetString(pdf);
         Assert.DoesNotContain("3 Tr", text);
         Assert.DoesNotContain("BT", text.Split("stream")[^1]); // no stray text operators
+        // No page has text: the font is left out altogether.
+        Assert.DoesNotContain("/Font", text);
+        Assert.Contains("1 0 obj\n<</Type /Catalog /Pages 2 0 R>>", text);
+        Assert.Contains("3 0 obj\n<</Type /Page /Parent 2 0 R", text);
     }
 
     [Fact]
-    public void ParenthesesInTextAreEscaped()
+    public void TextNeedsNoEscaping_ItIsWrittenAsHex()
     {
         var lines = new List<OcrLine>
         {
@@ -108,7 +115,9 @@ public class PdfBuilderTests
         };
         byte[] pdf = PdfBuilder.Make([Page(lines)]);
         string text = Encoding.Latin1.GetString(pdf);
-        Assert.Contains(@"(a\(b\)c\\d) Tj", text);
+        Assert.Contains("<00610028006200290063005C0064> Tj", text);
+        using var document = PdfDocument.Open(pdf);
+        Assert.Equal("a(b)c\\d", document.GetPage(1).Text);
     }
 
     [Fact]

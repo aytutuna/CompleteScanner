@@ -430,13 +430,20 @@ public sealed class OutputOptions : IEquatable<OutputOptions>
     /// </summary>
     public bool AlsoSaveText { get; set; } = false;
 
+    /// <summary>
+    /// Saved PDFs are PDF/A-2b, made for keeping (<see cref="PdfWriteOptions.For"/>). A PDF/A file
+    /// cannot have a password, so the password option (M20) and this one exclude each other.
+    /// Settings without it get false.
+    /// </summary>
+    public bool Archival { get; set; } = false;
+
     public OutputOptions Clone() => (OutputOptions)MemberwiseClone();
 
     public bool Equals(OutputOptions? other) =>
         other is not null && PdfSize == other.PdfSize && AfterSave == other.AfterSave
-        && AlsoSaveText == other.AlsoSaveText;
+        && AlsoSaveText == other.AlsoSaveText && Archival == other.Archival;
     public override bool Equals(object? obj) => Equals(obj as OutputOptions);
-    public override int GetHashCode() => HashCode.Combine(PdfSize, AfterSave, AlsoSaveText);
+    public override int GetHashCode() => HashCode.Combine(PdfSize, AfterSave, AlsoSaveText, Archival);
 }
 
 /// <summary>

@@ -3,14 +3,16 @@ using Xunit;
 
 namespace CompleteScanner.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/ScanTaskTests.swift: the same cases.
+// Mirrored by Tests/CompleteScannerTests/ScanTaskTests.swift: the same cases, except for the Archive
+// document task, which only Windows has until the Mac's PDF writer port (CONTRACTS.md): the Swift
+// lists end at "book", and Archive_IsABestSizeSearchablePdfA_AndEndsWithAPlainPdf has no twin.
 
 public class ScanTaskTests
 {
     [Fact]
     public void RawValues_AreTheStoredNames()
     {
-        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book"],
+        Assert.Equal(["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book", "archive"],
                      ScanTasks.All.Select(t => t.RawValue()));
     }
 
@@ -31,9 +33,9 @@ public class ScanTaskTests
         Assert.Equal(ScanTasks.All, TaskCatalog.All.Select(d => d.Task));
         Assert.Equal(["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
                       "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word", "Receipts",
-                      "Batch of separate documents", "Book or magazine"],
+                      "Batch of separate documents", "Book or magazine", "Archive document"],
                      TaskCatalog.All.Select(d => d.Title));
-        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book"],
+        Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book", "archive"],
                      TaskCatalog.All.Select(d => d.IconKey));
         foreach (var definition in TaskCatalog.All)
         {
@@ -71,6 +73,7 @@ public class ScanTaskTests
                 (TaskFlowKind.ReceiptSplit, ScanIntent.Document, null),
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.DocumentFeeder),
                 (TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.Flatbed),
+                (TaskFlowKind.DocumentQueue, ScanIntent.Document, null),
             ],
             TaskCatalog.All.Select(d => (d.Flow, d.Intent, d.RequiredSource)));
     }
@@ -173,6 +176,7 @@ public class ScanTaskTests
                 (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Receipt {docdate} {counter}", false, false, PdfSizePreset.Compact, SplitMode.None),
                 (ScanIntent.Document, ScanSource.DocumentFeeder, 300, OutputFormat.Pdf, true, "Document {label} {date} {counter}", false, false, PdfSizePreset.Standard, SplitMode.SeparatorSheet),
                 (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "{task} {date} {counter}", false, false, PdfSizePreset.Standard, SplitMode.None),
+                (ScanIntent.Document, ScanSource.Flatbed, 300, OutputFormat.Pdf, true, "Scan {date} {counter}", false, false, PdfSizePreset.Best, SplitMode.None),
             ],
             rows);
     }
@@ -597,7 +601,7 @@ public class ScanTaskTests
     [Fact]
     public void FileLabels()
     {
-        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy", "Document", "Receipt", "Document", "Book"],
+        Assert.Equal(["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy", "Document", "Receipt", "Document", "Book", "Document"],
                      TaskCatalog.All.Select(d => d.FileLabel));
     }
 
@@ -644,6 +648,51 @@ public class ScanTaskTests
         s.Intent = ScanIntent.Photo;
         Assert.False(TaskCatalog.Fits(ScanTask.Receipt, s));
         Assert.True(TaskCatalog.Availability(ScanTask.Receipt, new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder] }).IsAvailable);
+    }
+
+    [Fact]
+    public void Apply_OnlyTheArchiveTaskMakesArchivalPdfs()
+    {
+        var current = Customized();
+        current.Output.Archival = true;
+        foreach (var task in ScanTasks.All)
+        {
+            Assert.Equal(task == ScanTask.Archive, TaskCatalog.Apply(task, current).Output.Archival);
+        }
+        Assert.True(current.Output.Archival);
+        current.Output.Archival = false;
+        Assert.True(TaskCatalog.Apply(ScanTask.Archive, current).Output.Archival);
+    }
+
+    [Fact]
+    public void Archive_IsABestSizeSearchablePdfA_AndEndsWithAPlainPdf()
+    {
+        var definition = TaskCatalog.Definition(ScanTask.Archive);
+        Assert.Equal(("Archive document", "Scan page", "archive", "Document"),
+                     (definition.Title, definition.Steps[0].PrimaryActionLabel, definition.IconKey, definition.FileLabel));
+        var s = TaskCatalog.Apply(ScanTask.Archive, new ScanSettings());
+        Assert.Equal((ScanIntent.Document, ScanSource.Flatbed, OutputFormat.Pdf, 300, ColorMode.Color, PdfSizePreset.Best),
+                     (s.Intent, s.Source, s.Format, s.Resolution, s.ColorMode, s.Output.PdfSize));
+        Assert.True(s.PdfSearchable && s.DocumentMultiPage && s.Output.Archival);
+        Assert.Equal(PdfConformance.PdfA2b, PdfWriteOptions.For(s.Output, "Scan").Conformance);
+        Assert.Equal(TaskFlowKind.DocumentQueue, TaskCatalog.FlowOf(s));
+        Assert.Equal("300 dpi · Color · Best PDF", TaskCatalog.Summary(s));
+        Assert.True(TaskCatalog.Fits(ScanTask.Archive, s));
+        // Any source and size will do; a plain PDF or another format ends the task.
+        s.Source = ScanSource.DocumentFeeder;
+        s.Output.PdfSize = PdfSizePreset.Compact;
+        Assert.True(TaskCatalog.Fits(ScanTask.Archive, s));
+        s.Format = OutputFormat.Word;
+        Assert.False(TaskCatalog.Fits(ScanTask.Archive, s));
+        s.Format = OutputFormat.Pdf;
+        s.Output.Archival = false;
+        Assert.False(TaskCatalog.Fits(ScanTask.Archive, s));
+        Assert.Equal(TaskAvailability.Available,
+                     TaskCatalog.Availability(ScanTask.Archive, new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder] }));
+        // Without a stored task an archival PDF is still a plain document.
+        var untagged = TaskCatalog.Apply(ScanTask.Archive, new ScanSettings());
+        untagged.TaskId = null;
+        Assert.Equal(ScanTask.Document, TaskCatalog.Infer(untagged));
     }
 
     [Fact]

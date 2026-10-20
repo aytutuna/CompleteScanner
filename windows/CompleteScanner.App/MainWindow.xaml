@@ -878,6 +878,11 @@
                                                 <TextBlock x:Name="LastPdfSizeText" Style="{StaticResource CaptionText}"
                                                            TextWrapping="NoWrap" Margin="0,2,0,0"
                                                            Typography.NumeralAlignment="Tabular" Visibility="Collapsed" />
+                                                <!-- PDF/A-2b for keeping; label and hint from PdfA in Core. A PDF/A file
+                                                     cannot have a password, so a password option must turn this off. -->
+                                                <CheckBox x:Name="ArchivalBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                          Margin="0,8,0,0" ToolTipService.ShowOnDisabled="True"
+                                                          Checked="Setting_Changed" Unchecked="Setting_Changed" />
                                             </StackPanel>
                                             <StackPanel x:Name="DocumentOptions" Margin="0,8,0,0">
                                                 <CheckBox x:Name="MultiPageBox" Style="{StaticResource ToggleSwitchStyle}"

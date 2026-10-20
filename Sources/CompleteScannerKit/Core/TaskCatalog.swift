@@ -164,7 +164,8 @@ public enum TaskCatalog {
 
     /// `current` with the task's settings laid over it: mode, source, resolution, color,
     /// format, JPEG quality, PDF size, the after-save action, the text beside a PDF (off: only the
-    /// Scan to Word task saves text), the photo and document switches,
+    /// Scan to Word task saves text), archival PDF (off: Windows' Archive document task is the only
+    /// one that turns it on, and the Mac has no such task until its PDF writer port), the photo and document switches,
     /// searchable PDF, adjustments, two-sided scanning, skipping blank pages, crop and straighten,
     /// turning pages upright, splitting facing pages, file name and the task itself. The destination folder, the photo detection tuning, the
     /// legacy OCR languages, the paper size, the edge backs are turned on, how much counts as blank
@@ -193,6 +194,7 @@ public enum TaskCatalog {
         s.output.pdfSize = .standard
         s.output.afterSave = AfterSaveAction.none
         s.output.alsoSaveText = false
+        s.output.archival = false
         s.duplex = .off
         s.document.removeBlankPages = task == .twoSided || task == .batch
         s.document.autoCrop = false

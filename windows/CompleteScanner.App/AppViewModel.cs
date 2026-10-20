@@ -3070,7 +3070,10 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
 
         StatusMessage = "Writing PDF…";
         NotifyAll();
-        string written = await Task.Run(() => PdfBuilder.WriteNewFile(inputs, path, progress: null, token), token);
+        // PDF/A when the archival option is on, titled with the file's name (WriteNewFile
+        // retitles the file when it has to take another free name).
+        var options = PdfWriteOptions.For(s.Output, Path.GetFileNameWithoutExtension(path));
+        string written = await Task.Run(() => PdfBuilder.WriteNewFile(inputs, path, progress: null, token, options), token);
         try { LastPdfBytes = new FileInfo(written).Length; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { LastPdfBytes = null; }
         return written;

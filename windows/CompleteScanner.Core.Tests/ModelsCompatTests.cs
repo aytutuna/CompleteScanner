@@ -59,6 +59,7 @@ internal static class CompatFixtures
         settings.Output.PdfSize = PdfSizePreset.Compact;
         settings.Output.AfterSave = AfterSaveAction.Share;
         settings.Output.AlsoSaveText = true;
+        settings.Output.Archival = true;
         settings.Duplex = DuplexMode.Manual;
         settings.BackBinding = DuplexBinding.ShortEdge;
         settings.PaperSize = PaperSize.A4;
@@ -136,7 +137,7 @@ internal static class CompatFixtures
     public static readonly string CurrentFormatPresetsJson = PresetsJsonBeforePdfSize.ReplaceLineEndings("\n").Replace(
         "        \"blackWhiteThreshold\": 0.375\n      }\n",
         "        \"blackWhiteThreshold\": 0.375\n      },\n      \"output\": {\n        \"pdfSize\": \"compact\",\n        \"afterSave\": \"share\",\n"
-        + "        \"alsoSaveText\": true\n      },\n"
+        + "        \"alsoSaveText\": true,\n        \"archival\": true\n      },\n"
         + "      \"duplex\": \"manual\",\n      \"backBinding\": \"shortEdge\",\n      \"paperSize\": \"a4\",\n"
         + "      \"document\": {\n        \"removeBlankPages\": true,\n        \"blankSensitivity\": \"high\",\n"
         + "        \"autoCrop\": true,\n        \"autoStraighten\": true,\n        \"splitMode\": \"sheetCount\",\n"
@@ -451,6 +452,7 @@ public class ModelsCompatTests
         expected.Output.PdfSize = PdfSizePreset.Standard;
         expected.Output.AfterSave = AfterSaveAction.None;
         expected.Output.AlsoSaveText = false;
+        expected.Output.Archival = false;
         expected.Duplex = DuplexMode.Off;
         expected.BackBinding = DuplexBinding.LongEdge;
         expected.PaperSize = PaperSize.Auto;
@@ -486,7 +488,7 @@ public class ModelsCompatTests
             settings.Output.PdfSize = size;
             string json = CompatFixtures.Encode(settings);
             using var written = JsonDocument.Parse(json);
-            Assert.Equal(["pdfSize", "afterSave", "alsoSaveText"], written.RootElement.GetProperty("output").EnumerateObject().Select(p => p.Name));
+            Assert.Equal(["pdfSize", "afterSave", "alsoSaveText", "archival"], written.RootElement.GetProperty("output").EnumerateObject().Select(p => p.Name));
             Assert.Equal(size, Decode<ScanSettings>(json).Output.PdfSize);
         }
     }
@@ -542,6 +544,52 @@ public class ModelsCompatTests
         clone.Output.AlsoSaveText = false;
         Assert.True(settings.Output.AlsoSaveText);
         Assert.NotEqual(settings.Output, clone.Output);
+    }
+
+    // MARK: - Archival PDF (CONTRACTS.md, rule 6)
+
+    [Fact]
+    public void Archival_OffByDefault_AndInFilesWithoutIt()
+    {
+        Assert.False(new ScanSettings().Output.Archival);
+        Assert.False(Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize)[0].Settings.Output.Archival);
+        Assert.False(Decode<ScanSettings>("""{"output": {"pdfSize": "compact", "alsoSaveText": true}}""").Output.Archival);
+        foreach (string value in new[] { "\"yes\"", "1", "null", "{}", "[]" })
+        {
+            var settings = Decode<ScanSettings>($$"""{"output": {"pdfSize": "best", "archival": {{value}}, "alsoSaveText": true}, "resolution": 150}""");
+            Assert.False(settings.Output.Archival);
+            Assert.Equal(PdfSizePreset.Best, settings.Output.PdfSize);
+            Assert.True(settings.Output.AlsoSaveText);
+            Assert.Equal(150, settings.Resolution);
+        }
+        Assert.True(Decode<ScanSettings>("""{"output": {"archival": true}}""").Output.Archival);
+    }
+
+    [Fact]
+    public void Clone_CopiesArchival()
+    {
+        var settings = new ScanSettings();
+        settings.Output.Archival = true;
+        var clone = settings.Clone();
+        Assert.True(clone.Output.Archival);
+        clone.Output.Archival = false;
+        Assert.True(settings.Output.Archival);
+        Assert.NotEqual(settings.Output, clone.Output);
+    }
+
+    [Fact]
+    public void ArchiveTaskSettings_RoundTrip_AsTheMacReadsThem()
+    {
+        // What Windows writes for the Archive document task; the Mac keeps the task id it does not
+        // know (the task id is text) and the archival flag, so the file comes back unchanged.
+        const string json = """{"resolution": 300, "taskId": "archive", "output": {"pdfSize": "best", "archival": true}}""";
+        var settings = Decode<ScanSettings>(json);
+        Assert.Equal(ScanTask.Archive, settings.Task);
+        Assert.True(settings.Output.Archival);
+        Assert.Equal(PdfSizePreset.Best, settings.Output.PdfSize);
+        using var written = JsonDocument.Parse(CompatFixtures.Encode(settings));
+        Assert.Equal("archive", written.RootElement.GetProperty("taskId").GetString());
+        Assert.True(written.RootElement.GetProperty("output").GetProperty("archival").GetBoolean());
     }
 
     // MARK: - Two-sided scanning and paper size (CONTRACTS.md, rule 6)

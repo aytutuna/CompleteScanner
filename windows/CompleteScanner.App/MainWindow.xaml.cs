@@ -53,6 +53,9 @@ public partial class MainWindow : Window
         ColorModeBox.ItemsSource = Enum.GetValues<ColorMode>().Select(m => m.Label());
         FormatBox.ItemsSource = OutputFormats.Offered(ViewModel.Settings.Intent).Select(f => f.Label()).ToList();
         BuildPdfSizeSegments();
+        ArchivalBox.Content = PdfA.OptionLabel;
+        ArchivalBox.ToolTip = PdfA.OptionHint;
+        AutomationProperties.SetHelpText(ArchivalBox, PdfA.OptionHint);
         BuildBlankSensitivitySegments();
         BuildSplitChoices();
         BuildBookChoices();
@@ -1190,6 +1193,7 @@ public partial class MainWindow : Window
             MultiPageBox.IsChecked = s.DocumentMultiPage;
             SearchableBox.IsChecked = s.PdfSearchable;
             AlsoSaveTextBox.IsChecked = s.Output.AlsoSaveText;
+            ArchivalBox.IsChecked = s.Output.Archival;
             AutoSplitBox.IsChecked = s.PhotoAutoSplit;
             DeskewBox.IsChecked = s.PhotoAutoDeskew;
             AutoEnhanceBox.IsChecked = s.Adjustments.AutoEnhance;
@@ -1245,6 +1249,7 @@ public partial class MainWindow : Window
         s.DocumentMultiPage = MultiPageBox.IsChecked == true;
         s.PdfSearchable = SearchableBox.IsChecked == true;
         s.Output.AlsoSaveText = AlsoSaveTextBox.IsChecked == true;
+        s.Output.Archival = ArchivalBox.IsChecked == true;
         if (PdfSizeSegments.Children.OfType<RadioButton>().FirstOrDefault(b => b.IsChecked == true) is { Tag: PdfSizePreset size })
         {
             s.Output.PdfSize = size;

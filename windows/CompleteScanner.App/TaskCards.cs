@@ -20,6 +20,7 @@ public static class TaskIcons
         "receipt" => "",
         "batch" => "",
         "book" => "",
+        "archive" => "",
         _ => "",
     };
 

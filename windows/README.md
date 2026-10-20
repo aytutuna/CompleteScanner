@@ -6,7 +6,9 @@ UI per platform** architecture:
 - **`CompleteScanner.Core`** — a platform-neutral .NET 10 class library with **zero
   dependencies**: photo detection (thresholding → morphology → connected components →
   convex hull → rotating calipers), the image adjustment pipeline, naming templates,
-  presets/settings persistence, a dependency-free searchable-PDF writer, the scanner
+  presets/settings persistence, a dependency-free searchable-PDF writer (`PdfBuilder.cs` over
+  `PdfObjectWriter.cs`, with a Unicode text layer in an embedded font built from code,
+  `GlyphlessFont.cs`, and PDF/A-2b output, `PdfA.cs`), the scanner
   backend contract, scanner problems with their user-facing text (`Troubleshooting.cs`), the
   "Why isn't my scanner listed?" checks (`Troubleshooter.cs`), and the hardware-free demo
   scanner. It is a type-for-type port of the
@@ -40,7 +42,10 @@ UI per platform** architecture:
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
   xUnit with the same fixtures, geometry, and tolerances. **This is the contract that keeps
   the Swift and C# cores behaviorally identical** — change an algorithm on one side, port
-  the change, and both suites must stay green.
+  the change, and both suites must stay green. Its one package beyond the test framework is
+  [PdfPig](https://github.com/UglyToad/PdfPig) 0.1.16 (Apache-2.0), pinned to that exact
+  version and used by the tests only: it opens the PDFs the writer makes to check their pages,
+  text layer and metadata. Neither Core nor the app references it.
 - **`CompleteScanner.App.Tests`** — checks of the app's own Windows code that need WPF but no
   window and no device: the print document is written to an XPS file and read back (paper size,
   where each image lands, copies, grey, cancel). Nothing is sent to a printer.
@@ -68,8 +73,8 @@ The main window has four tabs, like the macOS app:
 
 - **Start** — "What are you scanning?": one card per task (Document to PDF, Multi-page from
   feeder, Photos, Old photo restoration, Quick scan, Email a document, Two-sided document, ID card,
-  Copy, Scan to Word, Receipts, Batch of separate documents) and the user's own presets, each badged
-  with its task. Picking a card sets everything up for that task, keeps the save folder, fits
+  Copy, Scan to Word, Receipts, Batch of separate documents, Book or magazine, Archive document) and
+  the user's own presets, each badged with its task. Picking a card sets everything up for that task, keeps the save folder, fits
   the settings to the connected scanner and opens **Scan**; a card the scanner cannot do (the
   feeder task on a flatbed-only scanner) is greyed out with the reason. On **Scan** a banner
   names the active task and says what to do; **Change task** goes back to Start and the close
@@ -419,6 +424,33 @@ pencil notes, 2550 × 3510 px), both saved as 300 dpi one-page PDFs through the 
 Both real pages have color, so they stay color; the last row shows a color scan of a page
 without color being stored gray. Black & white pages are still JPEGs; CCITT G4 (a later
 step) would make them far smaller.
+
+### Archival PDF (PDF/A) and the text layer
+
+**Archival PDF (PDF/A)**, under the PDF size in the inspector's Output section, saves every PDF
+as PDF/A-2b, the ISO format for keeping documents: the file carries its own color profile (sRGB),
+its fonts and its description (title, dates, producer) in XMP metadata that matches the
+document information, and an identifier. It works with every PDF size and every PDF the app
+saves (collected pages, split documents, receipts, the ID card's page, a copy's PDF). The
+**Archive document** task sets it up: 300 dpi color, Best size, searchable, PDF/A. Turning the
+switch off, or choosing another format, ends the task; picking any other task turns it off.
+PDF/A files cannot have a password, so the password option (a later step) will turn this one
+off and the other way round.
+
+The invisible text layer of a searchable PDF now uses a tiny font embedded in the file, built
+from code (`GlyphlessFont`): one empty glyph, half an em wide, for every character. Text in any
+script can be selected, searched and copied: Turkish (ç, ğ, ı, İ, ö, ş, ü), Greek, Cyrillic,
+Arabic, Hebrew, Chinese, Japanese, Devanagari and characters beyond the Basic Multilingual
+Plane, where earlier versions wrote "?" for anything outside Latin-1. Each line's text fills
+the box OCR found for it, so a selection covers the printed words. The color profile is
+sRGB-v2-magic from [Compact-ICC-Profiles](https://github.com/saucecontrol/Compact-ICC-Profiles)
+by Clinton Ingram (CC0 1.0, 736 bytes), stored in `PdfA.cs`.
+
+Checked here: the structure, the XMP and Info dates, and the text layer read back through PdfPig
+(`PdfATests`, `GlyphlessFontTests`); the saved files opened by Windows' own PDF reader
+(`Windows.Data.Pdf`), the font read by DirectWrite (two glyphs, half an em, installable). Not
+checked here: veraPDF and qpdf are not installed on this PC, so the files have not been through
+a PDF/A validator yet; run `verapdf --flavour 2b` on a saved file where it is available.
 
 ### Share, email, open with, copy
 
@@ -778,6 +810,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | Blank pages (`BlankPageDetector`, `PageProcessor`, `PageFilter`, image toolkit) | Covered by `BlankPageDetectorTests`, `PageProcessorTests`, `GrayImageTests`, `RgbaImageTests`, `MaskOpsTests` and the blank-page cases of `ModelsCompatTests`, `ScanTaskTests` and `MockScannerTests` (same cases as macOS; `MaskOpsTests` also pins PhotoDetector's regions on the demo bed to the last bit, unchanged by moving the mask code out of it). Checked on public-domain scans of letters, menus and photos (none taken for blank, at any level, with or without their dark surroundings) and on blank backs made from them (all found blank), and by driving the view model with the demo scanner (flagging, Skip blank pages turned on and off with pages queued, Keep and Skip per page, rotating a flagged page, saving 5 of 6 pages, nothing to save, pages saved at once keeping every page, the two-sided task, turning over by hand) and by building the window without showing it: the switch, the levels, the badges, Keep and Skip, the strip label, Save PDF's count, rendered off screen in light and dark. **Unverified:** blank backs from real scanners (see [Blank pages](#blank-pages)) |
 | Copy and print (`PrintLayout`, `PrintService`, the Copies section) | The layout is covered by `PrintLayoutTests` (real size on A4 and Letter, a whole glass cut off on A4, printer margins, a selection centred, turning only when that cuts off less, fit with and without turning, never enlarged, units, printer paper, copies, the ruler page by pixel, the texts) and the copy cases of `ScanTaskTests`, `ModelsCompatTests`, `PaperSizeTests` and `IdCardTests` (same cases as macOS); the print document by `CompleteScanner.App.Tests` (written to XPS and read back: the page is the paper, each image at its place in 1/96 in, turned pages turned in their pixels, fitted pages placed smaller, copies the printer does not make repeated, every page its own picture, grey images, cancel). Checked by reading the real print system on Windows 11 without printing (the printers, the default printer's Letter paper and printable area, A4 and Letter asked of Microsoft Print to PDF, an unknown printer; the default printer and its ticket compared before and after: unchanged), by driving the view model with the demo scanner and a stand-in printer service that records the jobs (a copy from the corner at real size, the printer's paper area of the glass scanned, A4 asked and scanned, a selection centred, 3 copies on a printer that makes 2 at most, fit to page, grey, also a PDF, the feeder's stack, another printer, a printer gone, a refused job and Cancel while printing, no printer; the ID card printed on Letter at real size with the review kept, A4 on a Letter-only printer, margins reaching the card; Automatic paper following the default printer; the ruler page), with every recorded job's document written to XPS by the app's own code and its geometry read back, and by building the window without showing it: the Copy card, the Copies section and its controls, no printer, the review's Print button, rendered off screen in light and dark. **Not done:** printing to a real printer, including Microsoft Print to PDF (its file name cannot be set without its save dialog). **Unverified:** real printer margins and offsets, measured with the ruler page |
 | Text output (`OcrText`, `TextExport`, `DocxWriter`, `ZipStore`, Copy Text) | Covered by `OcrTextTests`, `TextExportTests` (with `OutputFormatsTests`), `DocxWriterTests` (with `ZipStoreTests`: CRC-32 known values, exact zip bytes, the package opened with `ZipArchive`, its parts, content types and relationship checked) and the text cases of `ModelsCompatTests`, `ScanTaskTests` and `SaveActionsTests` (same cases as macOS; both platforms pin the same CRC-32 of the sample text file and Word document). Checked by driving the view model with the demo scanner, the public-domain letter scan and Windows OCR (a PDF and its text file with one OCR pass per page, no OCR when neither is asked for, a taken name kept, Scan to Word with the letter, Text and Word saved at once, Copy Text into a stand-in clipboard, a blank page, a PC without an OCR language), and by building the window without showing it: the format lists for documents and photos, Also save text, the Save Word button, the Scan to Word card, the page menu's Copy text, rendered off screen in light and dark. **Not tried:** opening the documents in Word or LibreOffice (neither is installed here), and the real clipboard |
+| Archival PDF and the Unicode text layer (`PdfObjectWriter`, `GlyphlessFont`, `GlyphlessCodes`, `PdfA`) | Covered by `PdfATests`, `GlyphlessFontTests`, the text-layer cases of `PdfBuilderTests` and the archival cases of `ModelsCompatTests`, `ScanTaskTests` and `SaveActionsTests` (the settings cases are the same as macOS; the writer's have no Swift twin until the Mac's PDF writer port): object numbering, the catalog, output intent, Info and XMP that agree, the trailer's identifier, no encryption, golden bytes, the font's tables and checksums, the CIDToGIDMap inflated, and the text layer read back through PdfPig in Turkish, Greek, Cyrillic, Arabic, Hebrew, Japanese, Chinese, Devanagari and beyond the BMP. Checked by driving the view model with the demo scanner and a stand-in OCR (the Archive document task's PDF/A file, the switch on the Document task, a plain PDF with the Unicode text layer; every file opened by `Windows.Data.Pdf`), with DirectWrite reading the font, and by building the window without showing it: the Archive document card, the switch and its hint, the task ending when it is turned off, rendered off screen in light and dark. **Not run:** veraPDF and qpdf (not installed here) |
 | Share, email, open with, copy (`SaveActions`, `FileActions`, `ShareService`) | The choices are covered by `SaveActionsTests` and the after-save cases of `ModelsCompatTests` (same cases as macOS). Checked by driving the view model's real save paths with a stand-in for Windows (each after-save action after a PDF, a file saved at once and a photo batch; the Email task sharing; no share window; a refused action; a moved file; a cancelled save running nothing), by building the real clipboard data and share package without placing them anywhere, and by building the window without showing it: the bar, its buttons and menu, the narrow layout, the "After saving" choices, the Saved tab's buttons and menus, rendered off screen in light and dark. **Not tried on screen:** the share window, the Open with dialog and the clipboard themselves (checks must not send, open or overwrite anything), and Mail or Outlook as share targets |
 | Troubleshooter (`Troubleshooter`, `SystemDiagnostics`, `TroubleshooterWindow`) | The checks are covered by `TroubleshooterTests` (same cases as macOS) and the Windows service and network values by `WindowsSystemStatusTests`. Checked by driving the view model with stand-in connections and a stand-in for Windows (the snapshot, the order of the checks, devices.txt, Refresh, Copy diagnostics and Settings refused, a busy scanner at connect and at scan, a connection that works clearing it, a cancelled scan not counting), by reading the real WIA service and network on Windows 11 (Running and Public, as `sc query` and `Get-NetConnectionProfile` report, from UI and thread-pool threads), by copying to the real clipboard with the user's clipboard saved and restored, by an address added by hand on loopback where nothing listens, by a discovered scanner (a stand-in service for a loopback scanner) that stays listed, selected and connected across a Refresh when Windows aborts either network watcher, and dropped only once the restarted watcher's first pass did not find it again, and by building the sidebar, error bar and troubleshooter window without showing them: the header button, the empty state's links, the error bar's Troubleshoot (and none on a file or photo error shown later), one card per check with its buttons and screen-reader names (each card a named group in the UI Automation tree), a Refresh while one runs ignored, rendered off screen in light and dark. **Not tried on screen:** opening Windows Settings and the real Add scanner dialog from it. **Unverified:** a stopped or disabled WIA service, a TWAIN install with 32-bit-only drivers, and a scanner that is really busy in another app |
 | Receipts (`ReceiptDetector`, `ReceiptEnhancer`, `ReceiptDateExtractor`, the review) | Covered by `ReceiptTests` (two receipts on a white lid found apart along their paper, cut around their print when the paper is as light as the lid, a 2 × 11 in receipt that is too long for a page but not for a receipt, prices far from the items, two receipts 0.15 in apart, one receipt per feeder sheet, nothing on the glass, a 300 dpi scan, the enhancer on fading paper, little print and a dark logo, the date rules and the 99-case date set, the texts) and the receipt cases of `ScanTaskTests`, `ModelsCompatTests`, `NamingTemplateTests` and `MockScannerTests` (same cases as macOS, on the same synthetic beds checked by checksum). Checked on harder synthetic beds (four receipts on a white lid, an open lid and with invisible paper, 12° tilts, receipts in a column 0.2 in apart, a receipt lying sideways, an 11 in receipt at the glass's edge: all found and held whole; two receipts 0.15 in apart with paper as light as the lid are not told apart), by driving the view model with the demo scanner and Windows OCR (both receipts found and cut along their paper, a gray Compact PDF each with a text layer named by its own date, one PDF for all named by the earliest, JPEG files, the text beside each PDF, today's date without OCR, OCR that fails, a save cancelled while reading, Fix crop, Discard) and by building the window without showing it: the Receipts card, the inspector's Receipts section and its switches, one PDF off for JPEG, the review's title and save button, rendered off screen in light and dark. **Unverified:** real thermal receipts on a real lid (see [Receipts](#receipts)) |
@@ -809,8 +842,10 @@ Known divergences from the macOS app (all documented in the source):
 - Only Windows offers a connection chooser: the Mac merges its USB, Bonjour and shared
   entries for one scanner by ranking alone (USB first) and has no preferences file to keep a
   choice in.
-- The PDF text layer emits WinAnsi text; characters outside Latin-1 degrade to `?` in the
-  invisible layer only.
+- The PDF writer is Windows' own until the Mac's port of it (M19): Windows writes the text
+  layer in an embedded glyphless font as Unicode codes and offers PDF/A (the Archival switch and
+  the Archive document task); the Mac draws its text layer with CoreText and has neither yet. The
+  setting is stored on both, so settings files stay the same.
 - Filename sanitization strips the full Windows-reserved character set, not just `/` and `:`.
 - WIA hot-plug is detected by polling, since WIA device events are not wired up (macOS gets
   add/remove callbacks from ICDeviceBrowser instead). The list is re-read every 10 s, backing off
@@ -996,8 +1031,9 @@ window), next to the network scanners added by address (`escl-hosts.json`) and t
 trusted certificates (`escl-trust.json`). The scan settings and presets remember the task
 they were set up for as text (`"taskId": "document"`), left out when there is none, so a task
 added by a newer version is kept by an older one. They also hold an `"output"` object with the
-PDF size and the after-save action (`"output": {"pdfSize": "standard", "afterSave": "none"}`); a
-file without them, or with a value this version does not know, reads as Standard and Do nothing.
+PDF size, the after-save action, the text beside a PDF and PDF/A (`"output": {"pdfSize":
+"standard", "afterSave": "none", "alsoSaveText": false, "archival": false}`); a file without them,
+or with a value this version does not know, reads as Standard, Do nothing, no text file and a plain PDF.
 Two-sided scanning and the paper size are top-level keys (`"duplex": "off"`, `"backBinding":
 "longEdge"`, `"paperSize": "auto"`); a file without them, or with a value this version does not
 know, scans one side on the whole area. Blank pages are in a `"document"` object

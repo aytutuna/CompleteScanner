@@ -21,15 +21,16 @@ public sealed record PdfPageInput(byte[] JpegData, int PixelWidth, int PixelHeig
                                   IReadOnlyList<OcrLine>? OcrLines);
 
 /// <summary>
-/// Minimal, dependency-free PDF 1.4 writer for scanned pages, ported from
-/// Sources/CompleteScannerKit/Output/PDFBuilder.swift (which uses CGContext's PDF engine).
+/// Minimal, dependency-free PDF writer for scanned pages (the macOS app draws its PDFs with
+/// CGContext's PDF engine in Sources/CompleteScannerKit/Output/PDFBuilder.swift until the port
+/// of this writer). It writes PDF 1.4, or PDF/A-2b (<see cref="PdfWriteOptions"/>) for keeping.
 ///
 /// Each page carries one full-page JPEG XObject (/DeviceRGB, or /DeviceGray for a
-/// one-component JPEG); when OCR lines are provided they are drawn
-/// with text rendering mode 3 (invisible) in Helvetica, horizontally scaled (Tz) so each
-/// line's selectable text spans the same width as the printed words — the same trick the
-/// macOS version performs with CoreText. Text is emitted in WinAnsi encoding; characters
-/// outside it degrade to '?' in the invisible layer (the visible page is unaffected).
+/// one-component JPEG); when OCR lines are provided they are drawn with text rendering mode 3
+/// (invisible) in the embedded <see cref="GlyphlessFont"/>, horizontally scaled (Tz) so each
+/// line's selectable text spans the same width as the printed words. The text is written as
+/// UTF-16 code units, so every script survives: selecting, searching and copying give back
+/// the recognized text as it was read.
 /// </summary>
 public static class PdfBuilder
 {
@@ -77,12 +78,12 @@ public static class PdfBuilder
         return new PreparedPage(page.Image, page.Image.Width, page.Image.Height);
     }
 
-    /// <summary>Build the PDF in memory.</summary>
+    /// <summary>Build the PDF in memory (<paramref name="options"/>: see <see cref="Write"/>).</summary>
     public static byte[] Make(IReadOnlyList<PdfPageInput> pages, Action<string>? progress = null,
-                              CancellationToken cancellationToken = default)
+                              CancellationToken cancellationToken = default, PdfWriteOptions? options = null)
     {
         using var stream = new MemoryStream();
-        Write(pages, stream, progress, cancellationToken);
+        Write(pages, stream, progress, cancellationToken, options);
         return stream.ToArray();
     }
 
@@ -96,8 +97,9 @@ public static class PdfBuilder
     /// </summary>
     public static void WriteFile(IReadOnlyList<PdfPageInput> pages, string path,
                                  Action<string>? progress = null,
-                                 CancellationToken cancellationToken = default) =>
-        WriteThroughTempFile(pages, path, progress, cancellationToken, tmp =>
+                                 CancellationToken cancellationToken = default,
+                                 PdfWriteOptions? options = null) =>
+        WriteThroughTempFile(pages, path, progress, cancellationToken, options, tmp =>
         {
             File.Move(tmp, path, overwrite: true);
             return path;
@@ -108,16 +110,38 @@ public static class PdfBuilder
     /// <paramref name="path"/> is taken by the time the PDF is finished (another writer may
     /// have claimed the name while it was being built), the next free " 2", " 3", … name is
     /// used (see <see cref="NamingTemplate.MoveToFreePath"/>). Returns the path written.
+    /// When <paramref name="options"/> title the document with the requested file's name
+    /// (its name without the extension) and the file ends up under another name, the file is
+    /// rewritten in place titled with the name it got, so the title always names the file; if
+    /// that rewrite fails, the file keeps the requested title (it is complete and valid).
     /// </summary>
     public static string WriteNewFile(IReadOnlyList<PdfPageInput> pages, string path,
                                       Action<string>? progress = null,
-                                      CancellationToken cancellationToken = default) =>
-        WriteThroughTempFile(pages, path, progress, cancellationToken,
-                             tmp => NamingTemplate.MoveToFreePath(tmp, path));
+                                      CancellationToken cancellationToken = default,
+                                      PdfWriteOptions? options = null)
+    {
+        string written = WriteThroughTempFile(pages, path, progress, cancellationToken, options,
+                                              tmp => NamingTemplate.MoveToFreePath(tmp, path));
+        string requestedName = Path.GetFileNameWithoutExtension(path);
+        string writtenName = Path.GetFileNameWithoutExtension(written);
+        if (options?.Title is { } title && title == requestedName && writtenName != requestedName)
+        {
+            // The file is already saved: the retitling is not cancelled half-way, and a failure
+            // leaves the saved file as it is.
+            try
+            {
+                WriteFile(pages, written, progress: null, CancellationToken.None,
+                          options with { Title = writtenName });
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        }
+        return written;
+    }
 
     private static string WriteThroughTempFile(IReadOnlyList<PdfPageInput> pages, string path,
                                                Action<string>? progress,
                                                CancellationToken cancellationToken,
+                                               PdfWriteOptions? options,
                                                Func<string, string> moveIntoPlace)
     {
         string directory = Path.GetDirectoryName(Path.GetFullPath(path))!;
@@ -127,7 +151,7 @@ public static class PdfBuilder
             using (var stream = File.Create(tmp))
             {
                 SetHidden(tmp, true);
-                Write(pages, stream, progress, cancellationToken);
+                Write(pages, stream, progress, cancellationToken, options);
             }
             // Clear Hidden first: the move carries the source's attributes to the destination.
             SetHidden(tmp, false);
@@ -168,46 +192,61 @@ public static class PdfBuilder
     /// <paramref name="cancellationToken"/> is polled before each page; cancellation aborts
     /// with <see cref="ScanException"/> (<see cref="ScanErrorKind.Cancelled"/>), leaving
     /// <paramref name="output"/> holding an incomplete document (use <see cref="WriteFile"/>
-    /// for an all-or-nothing file).
+    /// for an all-or-nothing file). <paramref name="options"/> (null: a plain PDF) choose
+    /// PDF/A-2b and carry its title, date and file identifier.
+    /// <para>
+    /// Objects are numbered in a fixed order: 1 Catalog, 2 Pages; when any page has text, the six
+    /// objects of the text layer's font (Type0 font, CIDFont, FontDescriptor, FontFile2,
+    /// CIDToGIDMap, ToUnicode); for PDF/A, the Info dictionary, the XMP Metadata and the sRGB
+    /// profile; then Page, Image and Contents for each page.
+    /// </para>
     /// </summary>
     public static void Write(IReadOnlyList<PdfPageInput> pages, Stream output, Action<string>? progress = null,
-                             CancellationToken cancellationToken = default)
+                             CancellationToken cancellationToken = default, PdfWriteOptions? options = null)
     {
-        var w = new CountingWriter(output);
-        var offsets = new List<long>(); // offsets[i] = byte offset of object i+1
+        options ??= PdfWriteOptions.Standard;
+        bool archival = options.IsArchival;
+        bool hasText = pages.Any(p => p.OcrLines is { Count: > 0 });
+        // The text layer's character codes: characters beyond the BMP get theirs from every line.
+        var codes = GlyphlessCodes.For(pages.SelectMany(p => p.OcrLines ?? []).Select(l => l.Text ?? ""));
+        var w = new PdfObjectWriter(output);
+        w.WriteHeader(archival ? "1.7" : "1.4");
 
-        w.WriteAscii("%PDF-1.4\n");
-        w.WriteBytes([(byte)'%', 0xE2, 0xE3, 0xCF, 0xD3, (byte)'\n']); // binary marker
-
-        // Object layout: 1 Catalog, 2 Pages, 3 Font, then per page i: Page, Image, Contents.
-        int ObjPage(int i) => 4 + i * 3;
-        int ObjImage(int i) => 5 + i * 3;
-        int ObjContents(int i) => 6 + i * 3;
-
-        void BeginObj(int number)
-        {
-            while (offsets.Count < number) offsets.Add(0);
-            offsets[number - 1] = w.Position;
-            w.WriteAscii($"{number} 0 obj\n");
-        }
+        int next = 3;
+        int fontObject = hasText ? next : 0;
+        if (hasText) next += 6;
+        int infoObject = archival ? next : 0, metadataObject = infoObject + 1, profileObject = infoObject + 2;
+        if (archival) next += 3;
+        int firstPageObject = next;
+        int ObjPage(int i) => firstPageObject + i * 3;
+        int ObjImage(int i) => firstPageObject + 1 + i * 3;
+        int ObjContents(int i) => firstPageObject + 2 + i * 3;
 
         // 1: Catalog
-        BeginObj(1);
-        w.WriteAscii("<</Type /Catalog /Pages 2 0 R>>\nendobj\n");
+        w.WriteObject(1, archival
+            ? $"<</Type /Catalog /Pages 2 0 R /Metadata {metadataObject} 0 R /OutputIntents {PdfA.OutputIntents(profileObject)}>>"
+            : "<</Type /Catalog /Pages 2 0 R>>");
 
         // 2: Pages
-        BeginObj(2);
         var kids = new StringBuilder();
         for (int i = 0; i < pages.Count; i++)
         {
             if (i > 0) kids.Append(' ');
             kids.Append(ObjPage(i)).Append(" 0 R");
         }
-        w.WriteAscii($"<</Type /Pages /Kids [{kids}] /Count {pages.Count}>>\nendobj\n");
+        w.WriteObject(2, $"<</Type /Pages /Kids [{kids}] /Count {pages.Count}>>");
 
-        // 3: Font (standard-14 Helvetica: no embedding needed)
-        BeginObj(3);
-        w.WriteAscii("<</Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding>>\nendobj\n");
+        if (hasText) WriteTextFont(w, fontObject, codes);
+
+        if (archival)
+        {
+            var date = options.CreationDate ?? DateTimeOffset.Now;
+            date = date.AddTicks(-(date.Ticks % TimeSpan.TicksPerSecond)); // whole seconds, as both dates are written
+            string? title = options.Title is { } t ? PdfA.CleanTitle(t) : null;
+            w.WriteObject(infoObject, PdfA.InfoDictionary(title, date));
+            w.WriteStream(metadataObject, "/Type /Metadata /Subtype /XML", PdfA.Xmp(title, date));
+            w.WriteStream(profileObject, "/N 3", PdfA.SrgbProfile);
+        }
 
         for (int i = 0; i < pages.Count; i++)
         {
@@ -218,11 +257,13 @@ public static class PdfBuilder
             double dpi = Math.Max(page.Dpi, 1);
             double widthPts = page.PixelWidth / dpi * 72.0;
             double heightPts = page.PixelHeight / dpi * 72.0;
+            bool pageHasText = page.OcrLines is { Count: > 0 };
 
-            BeginObj(ObjPage(i));
-            w.WriteAscii($"<</Type /Page /Parent 2 0 R /MediaBox [0 0 {F(widthPts)} {F(heightPts)}] " +
-                         $"/Resources <</XObject <</Im{i} {ObjImage(i)} 0 R>> /Font <</F1 3 0 R>>>> " +
-                         $"/Contents {ObjContents(i)} 0 R>>\nendobj\n");
+            string fontResource = pageHasText ? $" /Font <</F1 {fontObject} 0 R>>" : "";
+            w.WriteObject(ObjPage(i),
+                $"<</Type /Page /Parent 2 0 R /MediaBox [0 0 {F(widthPts)} {F(heightPts)}] " +
+                $"/Resources <</XObject <</Im{i} {ObjImage(i)} 0 R>>{fontResource}>> " +
+                $"/Contents {ObjContents(i)} 0 R>>");
 
             // The XObject must declare the JPEG's own dimensions, which differ from the page's
             // pixel size when only a preview was available; the content stream's cm scales
@@ -236,30 +277,49 @@ public static class PdfBuilder
                 components = 3;
             }
             string colorSpace = components == 1 ? "/DeviceGray" : "/DeviceRGB";
-            BeginObj(ObjImage(i));
-            w.WriteAscii($"<</Type /XObject /Subtype /Image /Width {imageWidth} " +
-                         $"/Height {imageHeight} /ColorSpace {colorSpace} /BitsPerComponent 8 " +
-                         $"/Filter /DCTDecode /Length {page.JpegData.Length}>>\nstream\n");
-            w.WriteBytes(page.JpegData);
-            w.WriteAscii("\nendstream\nendobj\n");
+            w.WriteStream(ObjImage(i),
+                $"/Type /XObject /Subtype /Image /Width {imageWidth} /Height {imageHeight} " +
+                $"/ColorSpace {colorSpace} /BitsPerComponent 8 /Filter /DCTDecode", page.JpegData);
 
-            byte[] content = BuildContentStream(i, widthPts, heightPts, page.OcrLines);
-            BeginObj(ObjContents(i));
-            w.WriteAscii($"<</Length {content.Length}>>\nstream\n");
-            w.WriteBytes(content);
-            w.WriteAscii("\nendstream\nendobj\n");
+            w.WriteStream(ObjContents(i), "", BuildContentStream(i, widthPts, heightPts, page.OcrLines, codes));
         }
 
-        // xref + trailer
-        long xrefStart = w.Position;
-        w.WriteAscii($"xref\n0 {offsets.Count + 1}\n");
-        w.WriteAscii("0000000000 65535 f \n");
-        foreach (long offset in offsets)
+        string trailer = "/Root 1 0 R";
+        if (archival)
         {
-            w.WriteAscii(offset.ToString("D10", CultureInfo.InvariantCulture) + " 00000 n \n");
+            byte[] id = options.DocumentId is { Length: 16 } given ? given : Guid.NewGuid().ToByteArray();
+            string hex = Convert.ToHexString(id);
+            trailer += $" /Info {infoObject} 0 R /ID [<{hex}> <{hex}>]";
         }
-        w.WriteAscii($"trailer\n<</Size {offsets.Count + 1} /Root 1 0 R>>\nstartxref\n{xrefStart}\n%%EOF\n");
-        output.Flush();
+        w.Finish(trailer);
+    }
+
+    /// <summary>
+    /// The text layer's font, objects <paramref name="first"/> to first + 5: a Type0 font with
+    /// Identity-H encoding (two-byte codes, see <see cref="GlyphlessCodes"/>) over a CIDFontType2
+    /// whose every glyph is <see cref="GlyphlessFont"/>'s empty, half-em-wide glyph 1, embedded,
+    /// with a ToUnicode map giving each code back as its character (<paramref name="codes"/>).
+    /// </summary>
+    private static void WriteTextFont(PdfObjectWriter w, int first, GlyphlessCodes codes)
+    {
+        int cidFont = first + 1, descriptor = first + 2, program = first + 3, cidToGid = first + 4, toUnicode = first + 5;
+        string name = GlyphlessFont.FontName;
+        w.WriteObject(first,
+            $"<</Type /Font /Subtype /Type0 /BaseFont /{name} /Encoding /Identity-H " +
+            $"/DescendantFonts [{cidFont} 0 R] /ToUnicode {toUnicode} 0 R>>");
+        w.WriteObject(cidFont,
+            $"<</Type /Font /Subtype /CIDFontType2 /BaseFont /{name} " +
+            "/CIDSystemInfo <</Registry (Adobe) /Ordering (Identity) /Supplement 0>> " +
+            $"/FontDescriptor {descriptor} 0 R /DW {GlyphlessFont.GlyphWidth} /CIDToGIDMap {cidToGid} 0 R>>");
+        w.WriteObject(descriptor,
+            $"<</Type /FontDescriptor /FontName /{name} /Flags 5 " +
+            $"/FontBBox [0 0 {GlyphlessFont.GlyphWidth} {GlyphlessFont.UnitsPerEm}] /ItalicAngle 0 " +
+            $"/Ascent {GlyphlessFont.UnitsPerEm} /Descent 0 /CapHeight {GlyphlessFont.UnitsPerEm} /StemV 80 " +
+            $"/FontFile2 {program} 0 R>>");
+        byte[] font = GlyphlessFont.Program;
+        w.WriteStream(program, $"/Length1 {font.Length}", font);
+        w.WriteStream(cidToGid, "/Filter /FlateDecode", GlyphlessFont.CidToGidMap);
+        w.WriteStream(toUnicode, "", Encoding.ASCII.GetBytes(codes.ToUnicodeCMap()));
     }
 
     // MARK: - JPEG header
@@ -322,7 +382,7 @@ public static class PdfBuilder
     // MARK: - Content stream
 
     private static byte[] BuildContentStream(int pageIndex, double widthPts, double heightPts,
-                                             IReadOnlyList<OcrLine>? lines)
+                                             IReadOnlyList<OcrLine>? lines, GlyphlessCodes codes)
     {
         var sb = new StringBuilder();
         // Draw the page image across the full media box.
@@ -336,94 +396,40 @@ public static class PdfBuilder
             sb.Append("BT\n3 Tr\n");
             foreach (var line in lines)
             {
-                if (string.IsNullOrEmpty(line.Text)) continue;
-                var box = line.BoundingBox.Standardized;
-                double x = box.MinX * widthPts;
-                double y = box.MinY * heightPts;
-                double targetWidth = box.Width * widthPts;
-                double boxHeightPts = box.Height * heightPts;
-
-                double fontSize = boxHeightPts * 0.85;
-                if (fontSize <= 0 || targetWidth <= 0) continue;
-
-                double measuredWidth = HelveticaWidth(line.Text) / 1000.0 * fontSize;
-                if (measuredWidth <= 0) continue;
-                double scaleX = Math.Clamp(targetWidth / measuredWidth, 0.2, 5.0);
-
-                // Baseline sits a little above the box bottom so descenders line up
-                // (Helvetica's descender is 207/1000 of the em).
-                double baselineY = y + 0.207 * fontSize;
-
-                sb.Append($"/F1 {F(fontSize)} Tf\n");
-                sb.Append($"{F(scaleX * 100)} Tz\n");
-                sb.Append($"1 0 0 1 {F(x)} {F(baselineY)} Tm\n");
-                sb.Append('(').Append(EscapePdfText(line.Text)).Append(") Tj\n");
+                if (TextLayerLine(line, codes, widthPts, heightPts) is not { } placed) continue;
+                sb.Append($"/F1 {F(placed.FontSize)} Tf\n");
+                sb.Append($"{F(placed.HorizontalScale * 100)} Tz\n");
+                sb.Append($"1 0 0 1 {F(placed.X)} {F(placed.Baseline)} Tm\n");
+                sb.Append(codes.HexString(line.Text)).Append(" Tj\n");
             }
             sb.Append("ET\n");
         }
 
-        // Latin-1 keeps 128–255 as single bytes for WinAnsi (close enough for invisible text).
-        return Encoding.Latin1.GetBytes(sb.ToString());
+        // Pure ASCII: the text is written as hex.
+        return Encoding.ASCII.GetBytes(sb.ToString());
     }
 
-    private static string EscapePdfText(string text)
+    /// <summary>
+    /// Where one OCR line's invisible text goes, in points: the font size is the box's height and
+    /// the baseline its bottom edge (the glyphless font's ascent is a full em and its descent
+    /// none, so a selection covers the box), stretched across the box's width by the horizontal
+    /// scale (Tz / 100, clamped to 0.2–5).
+    /// </summary>
+    internal readonly record struct PlacedLine(double FontSize, double HorizontalScale, double X, double Baseline);
+
+    /// <summary>The placement of <paramref name="line"/> on a page of the given size; null for an empty line or box.</summary>
+    internal static PlacedLine? TextLayerLine(OcrLine line, GlyphlessCodes codes, double widthPts, double heightPts)
     {
-        var sb = new StringBuilder(text.Length);
-        foreach (char c in text)
-        {
-            switch (c)
-            {
-                case '\\': sb.Append("\\\\"); break;
-                case '(': sb.Append("\\("); break;
-                case ')': sb.Append("\\)"); break;
-                case '\r': sb.Append("\\r"); break;
-                case '\n': sb.Append("\\n"); break;
-                default: sb.Append(c <= 255 ? c : '?'); break;
-            }
-        }
-        return sb.ToString();
+        if (string.IsNullOrEmpty(line.Text)) return null;
+        var box = line.BoundingBox.Standardized;
+        double targetWidth = box.Width * widthPts;
+        double fontSize = box.Height * heightPts;
+        if (fontSize <= 0 || targetWidth <= 0) return null;
+        double measuredWidth = GlyphlessFont.TextWidth(codes.Codes(line.Text).Count, fontSize);
+        double scale = Math.Clamp(targetWidth / measuredWidth, 0.2, 5.0);
+        return new PlacedLine(fontSize, scale, box.MinX * widthPts, box.MinY * heightPts);
     }
 
     /// <summary>Culture-invariant number formatting — PDF syntax requires '.' decimals.</summary>
     private static string F(double value) => value.ToString("0.####", CultureInfo.InvariantCulture);
-
-    // MARK: - Helvetica metrics (AFM widths, 1000-unit em)
-
-    /// <summary>Sum of Helvetica AFM widths for the string, in 1000-unit em space.</summary>
-    private static double HelveticaWidth(string text)
-    {
-        double total = 0;
-        foreach (char c in text)
-        {
-            total += c >= 32 && c < 32 + HelveticaWidths.Length ? HelveticaWidths[c - 32] : 556;
-        }
-        return total;
-    }
-
-    /// <summary>Standard Helvetica AFM widths for ASCII 32..126.</summary>
-    private static readonly short[] HelveticaWidths =
-    [
-        278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, // sp..'/'
-        556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556, // 0..'?'
-        1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, // @..O
-        667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, // P.._
-        333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, // `..o
-        556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,      // p..~
-    ];
-
-    // MARK: - Counting writer
-
-    /// <summary>Wraps the output stream and tracks the byte position for the xref table.</summary>
-    private sealed class CountingWriter(Stream stream)
-    {
-        public long Position { get; private set; }
-
-        public void WriteBytes(byte[] bytes)
-        {
-            stream.Write(bytes, 0, bytes.Length);
-            Position += bytes.Length;
-        }
-
-        public void WriteAscii(string text) => WriteBytes(Encoding.ASCII.GetBytes(text));
-    }
 }

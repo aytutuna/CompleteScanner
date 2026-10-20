@@ -356,6 +356,10 @@ public struct OutputOptions: Codable, Equatable, Sendable {
     /// A saved PDF gets a text file beside it with the same name (`TextExport`): the recognized
     /// text of its pages, read once for both. Settings without it get false.
     public var alsoSaveText: Bool = false
+    /// Saved PDFs are PDF/A-2b, made for keeping. Stored so settings files stay the same on both
+    /// platforms; only the Windows PDF writer acts on it until the Mac's PDF writer port (M19, see
+    /// CONTRACTS.md). Settings without it get false.
+    public var archival: Bool = false
 
     public init() {}
 
@@ -364,6 +368,7 @@ public struct OutputOptions: Codable, Equatable, Sendable {
         case pdfSize
         case afterSave
         case alsoSaveText
+        case archival
     }
 }
 
@@ -375,6 +380,7 @@ extension OutputOptions {
         pdfSize = container.decodeLenient(forKey: .pdfSize, default: pdfSize)
         afterSave = container.decodeLenient(forKey: .afterSave, default: afterSave)
         alsoSaveText = container.decodeLenient(forKey: .alsoSaveText, default: alsoSaveText)
+        archival = container.decodeLenient(forKey: .archival, default: archival)
     }
 }
 

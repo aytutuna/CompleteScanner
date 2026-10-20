@@ -29,7 +29,7 @@ Already written (READ THESE FIRST, code against them exactly):
 ## Global rules
 
 1. Write ONLY the files assigned to you. Never edit shared files.
-2. Platform parity and CI. The Windows app under `windows/` is a sibling of this package. Every change to shared core logic (models, settings, naming, pipeline, output, persistence) lands on both platforms in the same change, with mirrored tests: `Tests/CompleteScannerTests` here and `windows/CompleteScanner.Core.Tests` there, same cases. Both suites must be green in CI (`.github/workflows/ci.yml`: `swift build` + `swift test` on macOS, `dotnet test windows/CompleteScanner.sln` on Windows) before a change counts as done. The one exception is the protocol logic of connections only Windows has — WIA, eSCL and TWAIN (`windows/CompleteScanner.Core/WiaErrors.cs`, `Escl/`, `Twain/`), and the Windows service and network values the troubleshooter reads (`WindowsSystemStatus.cs`): macOS reaches the same scanners through ImageCaptureCore, so that logic and its tests have no Swift twin (see `windows/README.md`). What those connections report to the app (`ScannerInfo`, `ScannerCapabilities`, `ScannerProblem`, `ScanStop`) stays shared.
+2. Platform parity and CI. The Windows app under `windows/` is a sibling of this package. Every change to shared core logic (models, settings, naming, pipeline, output, persistence) lands on both platforms in the same change, with mirrored tests: `Tests/CompleteScannerTests` here and `windows/CompleteScanner.Core.Tests` there, same cases. Both suites must be green in CI (`.github/workflows/ci.yml`: `swift build` + `swift test` on macOS, `dotnet test windows/CompleteScanner.sln` on Windows) before a change counts as done. The one exception is the protocol logic of connections only Windows has — WIA, eSCL and TWAIN (`windows/CompleteScanner.Core/WiaErrors.cs`, `Escl/`, `Twain/`), and the Windows service and network values the troubleshooter reads (`WindowsSystemStatus.cs`): macOS reaches the same scanners through ImageCaptureCore, so that logic and its tests have no Swift twin (see `windows/README.md`). What those connections report to the app (`ScannerInfo`, `ScannerCapabilities`, `ScannerProblem`, `ScanStop`) stays shared. One exception is temporary: M19's PDF writer pieces (`PdfObjectWriter.cs`, `GlyphlessFont.cs`, `PdfA.cs`), the Archive document task and their tests exist only on Windows until the Mac's port of the C# PDF writer, which waits for macOS CI to compile the existing Swift (see "PDF/A-2b and the Unicode text layer" below); the settings field they read is shared now.
 3. Any helper function, extension, or type not listed in this document must be `private` or `fileprivate` in your file to avoid cross-file collisions.
 4. Coordinate conventions:
    - Image/region coordinates: pixels, origin TOP-LEFT, x right, y down (see DetectedPhotoRegion doc comment; positive angle = clockwise on screen).
@@ -215,7 +215,8 @@ public enum TaskCatalog {
     /// tuning, the legacy OCR languages, the paper size, the back binding and `taskOptions`; sets
     /// `taskId`. Only `.twoSided` sets `duplex` (`.both`); the others set `.off`. Only `.idCard`
     /// (the numbers on an ID are better not indexed) and `.copy` (a copy is for paper) turn
-    /// `pdfSearchable` off. Every task turns `output.alsoSaveText` off; `.word` (Scan to Word)
+    /// `pdfSearchable` off. Every task turns `output.alsoSaveText` and `output.archival` off (on
+    /// Windows all but its Archive document task, see M19 below); `.word` (Scan to Word)
     /// saves a Word document (`format = .word`, 300 dpi, collected pages); `.receipt` scans in
     /// grayscale (the only task that does) into Compact PDFs named "Receipt {docdate} {counter}";
     /// `.batch` (feeder, 300 dpi PDF, "Document {label} {date} {counter}") is the only task that
@@ -274,7 +275,7 @@ public struct TaskFlow: Equatable, Sendable {      // a pure state machine; unkn
     public mutating func reset()
 }
 ```
-Twins of `windows/CompleteScanner.Core/ScanTask.cs`, `TaskCatalog.cs` and `TaskFlow.cs` (C# names in PascalCase; `TaskCatalog.FlowOf` for `flow(of:)`, `ScanTasks.TryParse` / `RawValue`); `ScanTaskTests` and `TaskFlowTests` are the same cases on both sides. Task cards exist only for features that are built; later features add a `ScanTask` case, a catalog entry and their steps. `AppState` (`App/AppState+Tasks.swift`) keeps the task in `settings.taskId`, so it is saved and restored with the settings: `startTask(_:)`, `exitTask()`, `skipStep()` (the current step when it is skippable), `taskCards`, `activeTask`, `taskFlow`, `primaryActionLabel`, `isFirstRun`. Its `settings` didSet ends a task the settings no longer fit. The banner offers Skip for a skippable step ("Skip back side").
+Twins of `windows/CompleteScanner.Core/ScanTask.cs`, `TaskCatalog.cs` and `TaskFlow.cs` (C# names in PascalCase; `TaskCatalog.FlowOf` for `flow(of:)`, `ScanTasks.TryParse` / `RawValue`); `ScanTaskTests` and `TaskFlowTests` are the same cases on both sides, except for Windows' `ScanTask.Archive` (M19), which has no Swift case until the Mac's PDF writer port: the C# lists end with it, and `Archive_IsABestSizeSearchablePdfA_AndEndsWithAPlainPdf` and `Apply_OnlyTheArchiveTaskMakesArchivalPdfs` stand against Swift's `test_apply_turnsArchivalOff`. A settings file with `"taskId": "archive"` reads on the Mac as no task and is written back unchanged. Task cards exist only for features that are built; later features add a `ScanTask` case, a catalog entry and their steps. `AppState` (`App/AppState+Tasks.swift`) keeps the task in `settings.taskId`, so it is saved and restored with the settings: `startTask(_:)`, `exitTask()`, `skipStep()` (the current step when it is skippable), `taskCards`, `activeTask`, `taskFlow`, `primaryActionLabel`, `isFirstRun`. Its `settings` didSet ends a task the settings no longer fit. The banner offers Skip for a skippable step ("Skip back side").
 
 ### Core/SettingsAdapter.swift
 
@@ -1008,6 +1009,66 @@ public enum PDFBuilder {
 }
 ```
 The `searchable:` overloads are kept for existing callers (OCR on every page when searchable). The app saves through the `textLayer:` overload so OCR reads each page once per save, for the text layer and for the text file beside the PDF (`output.alsoSaveText`). Windows has no twin of these overloads: its view model reads the pages with OCR and hands `PdfBuilder` the lines in `PdfPageInput`.
+
+### PDF/A-2b and the Unicode text layer (M19: Windows now, the Mac with its PDF writer port)
+
+The Mac side of M19 arrives with the Swift port of the C# PDF writer (`Output/PDFWriter.swift`),
+which waits until macOS CI has compiled the existing Swift. Until then only the settings field
+below exists here, decoded and written like every other field, so settings files stay the same on
+both platforms; the Mac's `PDFBuilder` keeps drawing its text layer with CoreText and ignores it.
+
+```swift
+// OutputOptions gains `archival: Bool` ("archival" in the "output" object; false by default and for
+// files written before it existed; a wrong-typed value reads as false). TaskCatalog.apply turns it
+// off for every task: the Mac has no Archive document task yet.
+```
+The C# side, which the Swift port must mirror name for name and byte for byte:
+```csharp
+public enum PdfConformance { Standard, PdfA2b }          // first member = default
+public sealed record PdfWriteOptions {                     // PdfWriteOptions.Standard = a plain PDF
+    PdfConformance Conformance; string? Title; DateTimeOffset? CreationDate /* null: now */;
+    byte[]? DocumentId /* 16 bytes; null: random */; bool IsArchival;
+    static PdfWriteOptions For(OutputOptions output, string? title);   // archival from the setting
+}
+public sealed class PdfObjectWriter {                      // header, numbered objects, streams, classic xref
+    PdfObjectWriter(Stream); long Position; void WriteHeader(string version);
+    void BeginObject(int n); void EndObject(); void WriteObject(int n, string value);
+    void WriteStream(int n, string entries, ReadOnlySpan<byte> data);  // "<<entries /Length n>>", Length last
+    void Finish(string trailerEntries);                    // throws on a gap or a repeated number
+}
+public static class GlyphlessFont {                        // the text layer's font, built from code
+    const string FontName = "GlyphLessFont"; const int UnitsPerEm = 1000, GlyphWidth = 500, CodeCount = 0x10000;
+    static byte[] Program;        // TrueType, 636 bytes, SHA-256 103B87CF…C391 (GlyphlessFontTests pins it)
+    static byte[] CidToGidMap;    // zlib by hand (fixed Huffman, no library), 837 bytes, SHA-256 2B554AAC…E17E
+    static byte[] Build();  static double TextWidth(int codeCount, double fontSize);   // codes × 0.5 × size
+}
+public sealed class GlyphlessCodes {                       // one document's character codes
+    const int FirstSupplementaryCode = 0xD800, SupplementaryCapacity = 0x800, ReplacementCode = 0xFFFD;
+    static GlyphlessCodes For(IEnumerable<string> texts); IReadOnlyList<int> Supplementary;
+    List<int> Codes(string text); string HexString(string text); string ToUnicodeCMap();
+}
+public static class PdfA {
+    const string Producer = "CompleteScanner", OutputConditionIdentifier = "sRGB IEC61966-2.1";
+    const string OptionLabel = "Archival PDF (PDF/A)", OptionHint, CannotProtectNote = "PDF/A can't be password-protected.";
+    static readonly byte[] SrgbProfile;     // sRGB-v2-magic.icc, Compact-ICC-Profiles, CC0 1.0, 736 bytes, SHA-256 AF4EFE28…05F4
+    static string PdfDate(DateTimeOffset);  // "D:20261019213005+03'00'"
+    static string XmpDate(DateTimeOffset);  // "2026-10-19T21:30:05+03:00"
+    static string TextString(string);       // "(ASCII)" with \ ( ) escaped, else "<FEFF…>" UTF-16BE
+    static string CleanTitle(string);       // drops control characters, U+FFFE/FFFF, lone surrogates
+    static string InfoDictionary(string? title, DateTimeOffset date);
+    static byte[] Xmp(string? title, DateTimeOffset date);   // UTF-8, no BOM, xpacket header without bytes/encoding
+    static string OutputIntents(int profileObject);
+}
+// PdfBuilder.Make / Write / WriteFile / WriteNewFile gain a last optional `PdfWriteOptions? options`.
+```
+- **Object numbers, fixed order:** 1 Catalog, 2 Pages; when any page has text, 3–8 the font (Type0, CIDFontType2, FontDescriptor, FontFile2, CIDToGIDMap, ToUnicode); for PDF/A, the Info dictionary, the XMP Metadata and the ICC profile; then Page, Image and Contents per page. A document without text has no font objects and no `/Font` resource.
+- **Plain PDFs** stay `%PDF-1.4` with no Info, Metadata, OutputIntents or `/ID`; only their text layer changed (below).
+- **PDF/A-2b:** `%PDF-1.7` and the binary comment line; the catalog's `/Metadata` (unfiltered XMP: `pdfaid:part 2`, `pdfaid:conformance B`, `dc:format`, `dc:title` x-default, `xmp:CreateDate` = `ModifyDate` = `MetadataDate`, `xmp:CreatorTool`, `pdf:Producer`) and `/OutputIntents` (`/GTS_PDFA1`, the sRGB profile with `/N 3`); an Info dictionary that says exactly the same (`/Title`, `/Producer`, `/Creator`, `/CreationDate`, `/ModDate`, whole seconds with the local offset); `/ID [<id> <id>]` in the trailer; no encryption, no `/Interpolate`, no LZW. The title is the file name without its extension: when `WriteNewFile` is given that title and another writer takes the name while the PDF is being built, the file goes to the next free " 2", " 3", … name and is rewritten in place titled with that name (a failed rewrite leaves the complete file with the requested title); any other title is kept as given. The JPEG pages (`/DeviceRGB`, `/DeviceGray`) are covered by the output intent.
+- **The text layer (every PDF):** the embedded `GlyphLessFont` replaces Helvetica/WinAnsi, so no character turns into "?" any more. Type0 with `/Encoding /Identity-H` over a CIDFontType2 with `/DW 500` and a `/CIDToGIDMap` that sends every code to glyph 1 (never .notdef); FontDescriptor `/Flags 5 /FontBBox [0 0 500 1000] /Ascent 1000 /Descent 0 /CapHeight 1000 /StemV 80`. A BMP character is its UTF-16 code unit; each character beyond the BMP gets a code from D800 in order of first use (2048 at most, the rest and lone surrogates U+FFFD), and the ToUnicode map gives it back as its pair (`bfchar`), next to 248 identity ranges `<XX00> <XXFF> <XX00>` that skip D8–DF, in blocks of at most 100. Each line: `/F1 <box height> Tf`, `Tz` = box width ÷ (codes × 0.5 × size) × 100 clamped to 20–500, `1 0 0 1 <box left> <box bottom> Tm`, the codes as a hex string, `Tj`, all in `3 Tr`. The font size is the box's height and the baseline its bottom edge, so a selection covers the box.
+- **Golden bytes** (`PdfATests`): a dated, identified one-page Letter PDF/A with a Turkish line is 11496 bytes, SHA-256 `6A264EF6…AA33`; the same line as a plain two-page PDF is 9865 bytes, SHA-256 `BC4C14E0…A779` (full values in the tests). The Swift port must produce the same bytes.
+- **Not with a password:** PDF/A forbids encryption. When the password option (M20) arrives, it and the archival option exclude each other: turning one on turns the other off and greys it out with `PdfA.CannotProtectNote`, and `PdfBuilder` refuses options asking for both.
+- **Windows UI:** "Archival PDF (PDF/A)" under the PDF size in Output (shown for PDF output, hint `PdfA.OptionHint`); the **Archive document** task (`ScanTask.Archive`, raw value "archive", icon "archive", after `Book`): flatbed or feeder, 300 dpi color PDF at the Best size, searchable, archival, "Scan {date} {counter}", file label "Document". It fits while the format is PDF and archival is on; every other task turns archival off. Every PDF the app saves (queue, split documents, receipts, the ID card's page, a copy's PDF) follows the setting; the separator sheet does not.
+- **Checks:** `PdfATests` and `GlyphlessFontTests` (structure, XMP dates equal Info dates, the text layer read back in Turkish, Greek, Cyrillic, Arabic, Hebrew, Japanese, Chinese with an Extension B ideograph, Devanagari and emoji through PdfPig, a test-only package; the font's checksums and tables; the map inflated with `ZLibStream`). veraPDF and qpdf are developer checks to run where they are installed; neither ships.
 
 ### Output/OCRText.swift, TextExport.swift, DocxWriter.swift, ZipStore.swift (+ OutputFormat, OutputOptions in Core/Models.swift)
 

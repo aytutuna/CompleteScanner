@@ -2,7 +2,8 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/ScanTaskTests.cs: the same cases.
+// Mirrors windows/CompleteScanner.Core.Tests/ScanTaskTests.cs: the same cases, except for the Archive
+// document task, which only Windows has until this platform's PDF writer port (CONTRACTS.md).
 
 private func customized() -> ScanSettings {
     var s = ScanSettings()
@@ -619,6 +620,17 @@ final class ScanTaskTests: XCTestCase {
         s.intent = .photo
         XCTAssertFalse(TaskCatalog.fits(.receipt, s))
         XCTAssertTrue(TaskCatalog.availability(of: .receipt, capabilities: ScannerCapabilities(sources: [.documentFeeder])).isAvailable)
+    }
+
+    /// Twin of `Apply_OnlyTheArchiveTaskMakesArchivalPdfs`: the Mac has no Archive document task yet,
+    /// so every task turns the archival option off.
+    func test_apply_turnsArchivalOff() {
+        var current = customized()
+        current.output.archival = true
+        for task in ScanTask.allCases {
+            XCTAssertFalse(TaskCatalog.apply(task, to: current).output.archival, task.rawValue)
+        }
+        XCTAssertTrue(current.output.archival)
     }
 
     func test_apply_turnsTheTextBesideAPDFOff() {

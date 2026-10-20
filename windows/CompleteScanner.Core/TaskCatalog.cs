@@ -23,7 +23,8 @@ public enum TaskFlowKind
 /// <summary>A task card: what it is called, how it looks and how its scans are handled.</summary>
 /// <param name="IconKey">
 /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-/// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book".
+/// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book",
+/// "archive".
 /// </param>
 /// <param name="Intent">The scan mode the task uses.</param>
 /// <param name="RequiredSource">The source the task cannot work without; null when any source does.</param>
@@ -123,6 +124,12 @@ public static class TaskCatalog
             [new TaskStep("scan", "Scan each spread",
                           "Open the book face down with the spine in the middle of the glass and press it gently flat, then scan. Turn the page and scan the next spread; each one becomes two pages.",
                           "Scan spread", Repeats: true)]),
+        new(ScanTask.Archive, "Archive document",
+            "Scan pages into a searchable PDF/A file, made to be kept for years.",
+            "archive", TaskFlowKind.DocumentQueue, ScanIntent.Document, null, "Document",
+            [new TaskStep("scan", "Scan each page",
+                          "Place a page face down on the glass and scan it. Repeat for every page, then save: the PDF is kept at its best quality, as PDF/A for long-term keeping.",
+                          "Scan page", Repeats: true)]),
     ];
 
     /// <summary>Every task, in start-screen order.</summary>
@@ -133,7 +140,8 @@ public static class TaskCatalog
     /// <summary>
     /// <paramref name="current"/> with the task's settings laid over it: mode, source,
     /// resolution, color, format, JPEG quality, PDF size, the after-save action, the text beside a
-    /// PDF (off: only the Scan to Word task saves text), the photo and
+    /// PDF (off: only the Scan to Word task saves text), archival PDF (only the Archive document
+    /// task, at the Best size), the photo and
     /// document switches, searchable PDF, adjustments, two-sided scanning, skipping blank pages,
     /// crop and straighten, turning pages upright, splitting facing pages,
     /// file name and the task itself. The destination folder, the photo detection tuning, the
@@ -168,6 +176,7 @@ public static class TaskCatalog
         s.Output.PdfSize = PdfSizePreset.Standard;
         s.Output.AfterSave = AfterSaveAction.None;
         s.Output.AlsoSaveText = false;
+        s.Output.Archival = task == ScanTask.Archive;
         s.Duplex = DuplexMode.Off;
         s.Document.RemoveBlankPages = task is ScanTask.TwoSided or ScanTask.Batch;
         s.Document.AutoCrop = false;
@@ -266,6 +275,13 @@ public static class TaskCatalog
                 s.Format = OutputFormat.Pdf;
                 s.NamingTemplate = "{task} {date} {counter}";
                 break;
+            case ScanTask.Archive:
+                s.Intent = ScanIntent.Document;
+                s.Resolution = 300;
+                s.Format = OutputFormat.Pdf;
+                s.Output.PdfSize = PdfSizePreset.Best;
+                s.NamingTemplate = "Scan {date} {counter}";
+                break;
         }
         s.TaskId = task.RawValue();
         return s;
@@ -322,9 +338,9 @@ public static class TaskCatalog
     /// <summary>
     /// The settings still do what the task is for: the same scan mode, and the task's
     /// required source; for the two-sided task, both sides; for Scan to Word, a Word document; for
-    /// the Batch task, a split; for the Book or magazine task, splitting facing pages. Changing the
-    /// mode by hand (or choosing one side, another format or no split), or a scanner without that
-    /// source, ends the task.
+    /// the Batch task, a split; for the Book or magazine task, splitting facing pages; for the Archive
+    /// document task, an archival PDF. Changing the mode by hand (or choosing one side, another
+    /// format, no split or a plain PDF), or a scanner without that source, ends the task.
     /// </summary>
     public static bool Fits(ScanTask task, ScanSettings settings)
     {
@@ -334,7 +350,8 @@ public static class TaskCatalog
                && (task != ScanTask.TwoSided || settings.Duplex != DuplexMode.Off)
                && (task != ScanTask.Word || settings.Format == OutputFormat.Word)
                && (task != ScanTask.Batch || settings.Document.SplitMode != SplitMode.None)
-               && (task != ScanTask.Book || settings.Document.SplitFacingPages);
+               && (task != ScanTask.Book || settings.Document.SplitFacingPages)
+               && (task != ScanTask.Archive || (settings.Output.Archival && settings.Format == OutputFormat.Pdf));
     }
 
     /// <summary>

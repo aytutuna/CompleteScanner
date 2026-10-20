@@ -44,6 +44,12 @@ scanners** — including the Epson Perfection V39 II.
   PDF writer as a JPEG-backed image, which stores it unchanged; that the files come out as
   small as on Windows still has to be confirmed on a Mac. Black & white pages are gray JPEGs
   for now (no CCITT G4 yet).
+- **Archival PDF (PDF/A)** (Windows for now): a switch under the PDF size, and an **Archive
+  document** task, save PDF/A-2b files for long-term keeping, with their color profile, fonts and
+  description inside. On Windows the invisible text layer is now written in a small font
+  embedded in the file, so text in any script (Turkish, Greek, Cyrillic, Arabic, Chinese, …)
+  can be selected and searched. The Mac gets both with the port of the Windows PDF writer;
+  until then it keeps its CoreText text layer, and the setting is kept in its settings file.
 - **Share, email, open with, copy**: after a save, and on every file in the Saved tab, open the
   file, open it with another app, show it in Finder, share it (Mail, Messages, AirDrop, …), start
   a Mail message with it attached, or copy it (an image also as a picture). **After saving** can
