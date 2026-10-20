@@ -62,6 +62,7 @@ public partial class MainWindow : Window
         PdfExclusionNote.Text = PdfA.CannotProtectNote;
         // A protected PDF's password is asked for at save time, over this window.
         ViewModel.AskPdfPassword = () => PdfPasswordWindow.Ask(this);
+        SetUpAddToPdf();
         BuildBlankSensitivitySegments();
         BuildSplitChoices();
         BuildBookChoices();
@@ -305,6 +306,8 @@ public partial class MainWindow : Window
         SavePdfButton.ToolTip = pageCount > 0 && saveCount == 0 ? PageFilter.NothingToSaveMessage : SavePdfButton.Content;
         ToolTipService.SetShowOnDisabled(SavePdfButton, true);
         SavePdfButton.IsEnabled = saveCount > 0 && !ViewModel.IsBusy;
+        AddToPdfButton.IsEnabled = saveCount > 0 && !ViewModel.IsBusy;
+        AddToPdfButton.ToolTip = pageCount > 0 && saveCount == 0 ? PageFilter.NothingToSaveMessage : PdfAppender.ButtonLabel;
         LastPdfSizeText.Text = ViewModel.LastPdfSizeText;
         LastPdfSizeText.Visibility = ViewModel.LastPdfSizeText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         ClearButton.IsEnabled = pageCount > 0 && !ViewModel.IsBusy;

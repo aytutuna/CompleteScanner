@@ -270,36 +270,7 @@ public static class PdfBuilder
         {
             if (cancellationToken.IsCancellationRequested) throw ScanException.Cancelled();
             progress?.Invoke($"Writing page {i + 1} of {pages.Count}…");
-            var page = pages[i];
-            // PDF media box in points: pixels / dpi × 72.
-            double dpi = Math.Max(page.Dpi, 1);
-            double widthPts = page.PixelWidth / dpi * 72.0;
-            double heightPts = page.PixelHeight / dpi * 72.0;
-            bool pageHasText = page.OcrLines is { Count: > 0 };
-
-            string fontResource = pageHasText ? $" /Font <</F1 {fontObject} 0 R>>" : "";
-            w.WriteObject(ObjPage(i),
-                $"<</Type /Page /Parent 2 0 R /MediaBox [0 0 {F(widthPts)} {F(heightPts)}] " +
-                $"/Resources <</XObject <</Im{i} {ObjImage(i)} 0 R>>{fontResource}>> " +
-                $"/Contents {ObjContents(i)} 0 R>>");
-
-            // The XObject must declare the JPEG's own dimensions, which differ from the page's
-            // pixel size when only a preview was available; the content stream's cm scales
-            // the unit-square image onto the full media box either way.
-            // A gray JPEG (one component) must be declared /DeviceGray; anything unreadable
-            // keeps the earlier assumption of an RGB image the size of the page.
-            if (!TryReadJpegHeader(page.JpegData, out int imageWidth, out int imageHeight, out int components))
-            {
-                imageWidth = page.PixelWidth;
-                imageHeight = page.PixelHeight;
-                components = 3;
-            }
-            string colorSpace = components == 1 ? "/DeviceGray" : "/DeviceRGB";
-            w.WriteStream(ObjImage(i),
-                $"/Type /XObject /Subtype /Image /Width {imageWidth} /Height {imageHeight} " +
-                $"/ColorSpace {colorSpace} /BitsPerComponent 8 /Filter /DCTDecode", page.JpegData);
-
-            w.WriteStream(ObjContents(i), "", BuildContentStream(i, widthPts, heightPts, page.OcrLines, codes));
+            WritePage(w, ObjPage(i), ObjImage(i), ObjContents(i), "2 0 R", i, pages[i], fontObject, codes, "");
         }
 
         string trailer = "/Root 1 0 R";
@@ -321,12 +292,52 @@ public static class PdfBuilder
     }
 
     /// <summary>
+    /// One page's three objects: the page (child of <paramref name="parent"/>, its image named
+    /// "Im{index}", the font <paramref name="fontObject"/> as /F1 when it has text, then
+    /// <paramref name="extraEntries"/> at the end of its dictionary), the image XObject and the
+    /// content stream. Shared by <see cref="Write"/> and <see cref="PdfAppender"/>.
+    /// </summary>
+    internal static void WritePage(PdfObjectWriter w, int pageObject, int imageObject, int contentsObject, string parent,
+                                   int index, PdfPageInput page, int fontObject, GlyphlessCodes codes, string extraEntries)
+    {
+        // PDF media box in points: pixels / dpi × 72.
+        double dpi = Math.Max(page.Dpi, 1);
+        double widthPts = page.PixelWidth / dpi * 72.0;
+        double heightPts = page.PixelHeight / dpi * 72.0;
+        bool pageHasText = page.OcrLines is { Count: > 0 };
+
+        string fontResource = pageHasText ? $" /Font <</F1 {fontObject} 0 R>>" : "";
+        w.WriteObject(pageObject,
+            $"<</Type /Page /Parent {parent} /MediaBox [0 0 {F(widthPts)} {F(heightPts)}] " +
+            $"/Resources <</XObject <</Im{index} {imageObject} 0 R>>{fontResource}>> " +
+            $"/Contents {contentsObject} 0 R{extraEntries}>>");
+
+        // The XObject must declare the JPEG's own dimensions, which differ from the page's
+        // pixel size when only a preview was available; the content stream's cm scales
+        // the unit-square image onto the full media box either way.
+        // A gray JPEG (one component) must be declared /DeviceGray; anything unreadable
+        // keeps the earlier assumption of an RGB image the size of the page.
+        if (!TryReadJpegHeader(page.JpegData, out int imageWidth, out int imageHeight, out int components))
+        {
+            imageWidth = page.PixelWidth;
+            imageHeight = page.PixelHeight;
+            components = 3;
+        }
+        string colorSpace = components == 1 ? "/DeviceGray" : "/DeviceRGB";
+        w.WriteStream(imageObject,
+            $"/Type /XObject /Subtype /Image /Width {imageWidth} /Height {imageHeight} " +
+            $"/ColorSpace {colorSpace} /BitsPerComponent 8 /Filter /DCTDecode", page.JpegData);
+
+        w.WriteStream(contentsObject, "", BuildContentStream(index, widthPts, heightPts, page.OcrLines, codes));
+    }
+
+    /// <summary>
     /// The text layer's font, objects <paramref name="first"/> to first + 5: a Type0 font with
     /// Identity-H encoding (two-byte codes, see <see cref="GlyphlessCodes"/>) over a CIDFontType2
     /// whose every glyph is <see cref="GlyphlessFont"/>'s empty, half-em-wide glyph 1, embedded,
     /// with a ToUnicode map giving each code back as its character (<paramref name="codes"/>).
     /// </summary>
-    private static void WriteTextFont(PdfObjectWriter w, int first, GlyphlessCodes codes)
+    internal static void WriteTextFont(PdfObjectWriter w, int first, GlyphlessCodes codes)
     {
         int cidFont = first + 1, descriptor = first + 2, program = first + 3, cidToGid = first + 4, toUnicode = first + 5;
         string name = GlyphlessFont.FontName;
@@ -457,5 +468,5 @@ public static class PdfBuilder
     }
 
     /// <summary>Culture-invariant number formatting — PDF syntax requires '.' decimals.</summary>
-    private static string F(double value) => value.ToString("0.####", CultureInfo.InvariantCulture);
+    internal static string F(double value) => value.ToString("0.####", CultureInfo.InvariantCulture);
 }

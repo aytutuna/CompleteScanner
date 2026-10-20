@@ -1031,11 +1031,17 @@
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="4" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="4" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <Button x:Name="SavePdfButton" Style="{StaticResource AccentIconTextButtonStyle}"
                                                 local:Icon.Glyph="&#xEA90;" Content="Save PDF" ToolTip="Save PDF" MinHeight="36"
                                                 Click="SavePdf_Click" />
-                                        <Button Grid.Column="2" x:Name="ClearButton" Style="{StaticResource IconButtonStyle}"
+                                        <!-- Add the pages to the end of a PDF the user picks (PdfAppender). -->
+                                        <Button Grid.Column="2" x:Name="AddToPdfButton" Style="{StaticResource IconButtonStyle}"
+                                                Content="&#xE8E5;" Width="36" Height="36"
+                                                Click="AddToPdf_Click" />
+                                        <Button Grid.Column="4" x:Name="ClearButton" Style="{StaticResource IconButtonStyle}"
                                                 Content="&#xE74D;" Width="36" Height="36"
                                                 ToolTip="Remove every page from the queue"
                                                 AutomationProperties.Name="Clear"

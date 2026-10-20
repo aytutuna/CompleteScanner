@@ -9,7 +9,9 @@ UI per platform** architecture:
   presets/settings persistence, a dependency-free searchable-PDF writer (`PdfBuilder.cs` over
   `PdfObjectWriter.cs`, with a Unicode text layer in an embedded font built from code,
   `GlyphlessFont.cs`, PDF/A-2b output, `PdfA.cs`, and AES-256 password protection,
-  `PdfEncryption.cs`, with `System.Security.Cryptography` only), the scanner
+  `PdfEncryption.cs`, with `System.Security.Cryptography` only; and a reader of existing PDFs,
+  `PdfReaderLite.cs` over `PdfSyntax.cs`, that `PdfAppender.cs` uses to add pages to them as an
+  incremental update), the scanner
   backend contract, scanner problems with their user-facing text (`Troubleshooting.cs`), the
   "Why isn't my scanner listed?" checks (`Troubleshooter.cs`), and the hardware-free demo
   scanner. It is a type-for-type port of the
@@ -501,6 +503,78 @@ password anyway. PDF apps that support revision 6 (Adobe Acrobat and Reader, the
 into Edge, Chrome and Firefox) should open them; none was tried here, as checks must not open
 other apps. Not run here: qpdf (not installed).
 
+### Add pages to an existing PDF
+
+**Add to existing PDF…**, the button with the file icon between Save and Clear under the queue,
+picks a PDF (the picker opens in the save folder) and adds the queued pages to its end; so does
+**Add the scanned pages to this PDF** in a PDF's menu in the Saved tab. The pages are the ones
+the queue would save (pages skipped by hand, blank pages and separator sheets stay out; a split
+queue goes in as one run, in order), stored as the PDF size and the text layer settings say. The
+file then shows in the bar after a save, with its new page count and size ("Added 2 pages to
+Contract.pdf (now 11 pages, 1.4 MB)"), and the after-save action runs. The target is chosen
+each time and never stored.
+
+The pages are added as an **incremental update**: the file's bytes stay exactly as they were,
+and after them come the new pages (with their own copy of the text layer's font), the page
+tree's root again with the new pages added, and a cross-reference section of the same kind as
+the file's newest one, pointing back at it. `PdfReaderLite` reads what is needed for that:
+classic tables and cross-reference streams (Flate with PNG predictors), files already updated
+by other apps, hybrid files (as Microsoft Word writes them), objects inside object streams, page
+trees of any shape. The new pages say their own size, resources and rotation, so nothing the
+file's page tree passes down to its pages (a rotation, a crop box) changes them.
+
+Nothing is changed in place: the original and the update are written to a hidden temporary
+file in the same folder, which is read back (the original's bytes unchanged at its start, the
+update pointing at the original's last section, every page there) before it takes the file's
+place with Windows' ReplaceFile, which keeps what belongs to the file rather than to its bytes:
+its creation time, its permissions, its alternate data streams (such as the Zone.Identifier mark
+of a file downloaded from the internet, so it still opens in Protected View) and EFS encryption.
+Other hard links to the file are not kept: they still show the old content, without the new
+pages. The original is moved aside under a backup name (`.{guid}.pdf.bak`, with the original's
+own attributes) for that moment and removed after (hidden and left when it cannot be removed).
+If the updated file then cannot take the name, the original is moved back; should that fail too,
+it is left unchanged under the backup name, and the refusal names that file so it can be renamed
+back. Where the file system has no ReplaceFile, one rename over the file keeps only its creation
+time and attributes. The file is held open meanwhile, so no other app can change it half-way. Refused,
+with the pages left in the queue (what is wrong with the file itself is found before any OCR
+runs): a **password-protected** file ("Save
+them as a new PDF instead"), a **damaged** one (cross-reference data or objects that do not hold
+up, also ones read only when asked for such as the form or the output intent; a page tree whose
+root is a page; object numbers past PDF's limit of 8,388,607: the reader never repairs or
+guesses), one with bytes before its header, a compression it cannot undo or no object numbers
+left for the new pages, a **read-only** file or one in a folder that takes no new files, a file
+**open in another app** ("Close it there, then add the pages again"), and a disk too full for the
+updated file. Every refusal is a sentence for the user, never the reader's own detail. A
+**signed** file is asked about first (the signature stays, but PDF apps show that the file
+changed after signing), a **certified** one too, with a stronger warning (no certification
+allows adding pages, so PDF apps show the certification as no longer valid), and so is a
+**PDF/A** file whose level
+the new pages may not keep: PDF/A-1b, -2b, -2u, -3b and -3u files with an RGB output intent stay
+PDF/A (the new pages carry an embedded font and JPEG images the intent covers, and the update
+keeps the file identifier, metadata and document information), the others are asked about. The
+password and archival switches are for new files: the file decides, so a file without a password
+gets pages without one, and the status says so when the switch is on.
+
+The Mac will add pages with PDFKit, which rewrites the whole file instead of updating it (see
+the known divergences from the macOS app under [Status](#status--whats-verified-vs-what-needs-scanner-hardware)).
+
+**Not done yet** (from the M21 spec): the Mac's half (`PDFAppender.swift` with PDFKit, which
+builds on the existing `PDFBuilder.swift` and does not wait for the PDF writer's port); the start
+screen's "Add pages to a PDF" task; the picker showing the chosen file's first page; and the
+"Save as new PDF / Add to existing PDF…" split button (an icon button next to Save stands in for
+it).
+
+Checked here: `PdfReaderLiteTests` and `PdfAppenderTests` (hand-made fixtures for each
+cross-reference layout, page-tree shape and refusal, and our own plain, PDF/A and
+password-protected files), every result read back by PdfPig with its lenient parsing off; files
+made by other apps (Skia, Figma, a Word file with object streams and a hybrid cross-reference,
+and pdf.js's encrypted test files, which are refused) given pages and then read by PdfPig and
+rendered by Windows' own PDF reader (`Windows.Data.Pdf`); and the view model driven with the
+demo scanner (adding to a saved PDF, the refusals, a signed file's question, the password switch
+on a PDF/A file, skipped pages and the after-save action) with the window and the Saved tab built
+off screen. CI runs veraPDF on a PDF/A file with pages added twice. Not run here: qpdf (not
+installed).
+
 ### Share, email, open with, copy
 
 After every save a green bar above the window names what was saved (the PDF's size too) and
@@ -860,6 +934,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | Copy and print (`PrintLayout`, `PrintService`, the Copies section) | The layout is covered by `PrintLayoutTests` (real size on A4 and Letter, a whole glass cut off on A4, printer margins, a selection centred, turning only when that cuts off less, fit with and without turning, never enlarged, units, printer paper, copies, the ruler page by pixel, the texts) and the copy cases of `ScanTaskTests`, `ModelsCompatTests`, `PaperSizeTests` and `IdCardTests` (same cases as macOS); the print document by `CompleteScanner.App.Tests` (written to XPS and read back: the page is the paper, each image at its place in 1/96 in, turned pages turned in their pixels, fitted pages placed smaller, copies the printer does not make repeated, every page its own picture, grey images, cancel). Checked by reading the real print system on Windows 11 without printing (the printers, the default printer's Letter paper and printable area, A4 and Letter asked of Microsoft Print to PDF, an unknown printer; the default printer and its ticket compared before and after: unchanged), by driving the view model with the demo scanner and a stand-in printer service that records the jobs (a copy from the corner at real size, the printer's paper area of the glass scanned, A4 asked and scanned, a selection centred, 3 copies on a printer that makes 2 at most, fit to page, grey, also a PDF, the feeder's stack, another printer, a printer gone, a refused job and Cancel while printing, no printer; the ID card printed on Letter at real size with the review kept, A4 on a Letter-only printer, margins reaching the card; Automatic paper following the default printer; the ruler page), with every recorded job's document written to XPS by the app's own code and its geometry read back, and by building the window without showing it: the Copy card, the Copies section and its controls, no printer, the review's Print button, rendered off screen in light and dark. **Not done:** printing to a real printer, including Microsoft Print to PDF (its file name cannot be set without its save dialog). **Unverified:** real printer margins and offsets, measured with the ruler page |
 | Text output (`OcrText`, `TextExport`, `DocxWriter`, `ZipStore`, Copy Text) | Covered by `OcrTextTests`, `TextExportTests` (with `OutputFormatsTests`), `DocxWriterTests` (with `ZipStoreTests`: CRC-32 known values, exact zip bytes, the package opened with `ZipArchive`, its parts, content types and relationship checked) and the text cases of `ModelsCompatTests`, `ScanTaskTests` and `SaveActionsTests` (same cases as macOS; both platforms pin the same CRC-32 of the sample text file and Word document). Checked by driving the view model with the demo scanner, the public-domain letter scan and Windows OCR (a PDF and its text file with one OCR pass per page, no OCR when neither is asked for, a taken name kept, Scan to Word with the letter, Text and Word saved at once, Copy Text into a stand-in clipboard, a blank page, a PC without an OCR language), and by building the window without showing it: the format lists for documents and photos, Also save text, the Save Word button, the Scan to Word card, the page menu's Copy text, rendered off screen in light and dark. **Not tried:** opening the documents in Word or LibreOffice (neither is installed here), and the real clipboard |
 | Password-protected PDFs (`PdfEncryption`, `PdfProtection`, `PdfPasswordWindow`) | Covered by `PdfEncryptionTests` (algorithm 2.B, /UE and /OE known answers from pdf.js's PDF 2.0 cases; SASLprep; /Perms; the values for fixed random bytes, also computed by a separate implementation; AES-256-CBC with its IV and padding; the /Encrypt dictionary; the file's numbering, catalog and trailer; streams and strings decrypting back; PdfPig opening the file with the password only; permissions; one key per file; PDF/A refused; golden bytes; the password strength and problems) and the password cases of `ModelsCompatTests`, `ScanTaskTests` and `SaveActionsTests` (the settings cases are the same as macOS; the writer's have no Swift twin until the Mac's PDF writer port). Checked by driving the view model with the demo scanner and a stand-in for the dialog (asked once per save, a split stack of three with one password and three keys, Cancel and no one to ask saving nothing, saving as scanned keeping the page, the Archive document task turning it off, no password in settings, presets, `devices.txt` or the spool), every saved file opened by PdfPig with the password and refused without it, and by building the window and the dialog without showing them: the switch, the two switches greying each other out with the note, the dialog's strength hint, mismatch message, permissions and Save, rendered off screen in light and dark. **Not opened by `Windows.Data.Pdf`:** it opens no revision 6 file (reference files made by qpdf fail the same way). **Not run:** qpdf (not installed here) |
+| Add pages to an existing PDF (`PdfReaderLite`, `PdfAppender`, the button and the Saved tab's menu) | Covered by `PdfReaderLiteTests` and `PdfAppenderTests` (no Swift twin: the Mac will use PDFKit): the syntax, Flate and its predictors, classic tables, cross-reference streams, object streams, files already updated, hybrid files, nested and indirect page trees, inherited attributes, generations, names and strings written back, the update's bytes, PDF/A kept or asked about, signed and certified files, and every refusal (encrypted, damaged, objects read when asked for, a page as the tree's root, object numbers past the limit, unsupported, read-only, a folder that takes no new files, open elsewhere, missing, cancelled) leaving the file as it was with a message for the user; the replaced file keeping its permissions and its Zone.Identifier stream; every result read by PdfPig with lenient parsing off. Checked on files made by Skia, Figma and Microsoft Word (hybrid, object streams) and pdf.js's encrypted test files, read back by PdfPig and rendered by `Windows.Data.Pdf`, and by driving the view model and the window off screen with the demo scanner. veraPDF runs in CI on a PDF/A file with pages added. **Not run here:** qpdf (not installed) |
 | Archival PDF and the Unicode text layer (`PdfObjectWriter`, `GlyphlessFont`, `GlyphlessCodes`, `PdfA`) | Covered by `PdfATests`, `GlyphlessFontTests`, the text-layer cases of `PdfBuilderTests` and the archival cases of `ModelsCompatTests`, `ScanTaskTests` and `SaveActionsTests` (the settings cases are the same as macOS; the writer's have no Swift twin until the Mac's PDF writer port): object numbering, the catalog, output intent, Info and XMP that agree, the trailer's identifier, no encryption, golden bytes, the font's tables and checksums, the CIDToGIDMap inflated, and the text layer read back through PdfPig in Turkish, Greek, Cyrillic, Arabic, Hebrew, Japanese, Chinese, Devanagari and beyond the BMP. Checked by driving the view model with the demo scanner and a stand-in OCR (the Archive document task's PDF/A file, the switch on the Document task, a plain PDF with the Unicode text layer; every file opened by `Windows.Data.Pdf`), with DirectWrite reading the font, and by building the window without showing it: the Archive document card, the switch and its hint, the task ending when it is turned off, rendered off screen in light and dark. veraPDF runs in CI on the PDF/A files a test writes. **Not run here:** veraPDF and qpdf (not installed) |
 | Share, email, open with, copy (`SaveActions`, `FileActions`, `ShareService`) | The choices are covered by `SaveActionsTests` and the after-save cases of `ModelsCompatTests` (same cases as macOS). Checked by driving the view model's real save paths with a stand-in for Windows (each after-save action after a PDF, a file saved at once and a photo batch; the Email task sharing; no share window; a refused action; a moved file; a cancelled save running nothing), by building the real clipboard data and share package without placing them anywhere, and by building the window without showing it: the bar, its buttons and menu, the narrow layout, the "After saving" choices, the Saved tab's buttons and menus, rendered off screen in light and dark. **Not tried on screen:** the share window, the Open with dialog and the clipboard themselves (checks must not send, open or overwrite anything), and Mail or Outlook as share targets |
 | Troubleshooter (`Troubleshooter`, `SystemDiagnostics`, `TroubleshooterWindow`) | The checks are covered by `TroubleshooterTests` (same cases as macOS) and the Windows service and network values by `WindowsSystemStatusTests`. Checked by driving the view model with stand-in connections and a stand-in for Windows (the snapshot, the order of the checks, devices.txt, Refresh, Copy diagnostics and Settings refused, a busy scanner at connect and at scan, a connection that works clearing it, a cancelled scan not counting), by reading the real WIA service and network on Windows 11 (Running and Public, as `sc query` and `Get-NetConnectionProfile` report, from UI and thread-pool threads), by copying to the real clipboard with the user's clipboard saved and restored, by an address added by hand on loopback where nothing listens, by a discovered scanner (a stand-in service for a loopback scanner) that stays listed, selected and connected across a Refresh when Windows aborts either network watcher, and dropped only once the restarted watcher's first pass did not find it again, and by building the sidebar, error bar and troubleshooter window without showing them: the header button, the empty state's links, the error bar's Troubleshoot (and none on a file or photo error shown later), one card per check with its buttons and screen-reader names (each card a named group in the UI Automation tree), a Refresh while one runs ignored, rendered off screen in light and dark. **Not tried on screen:** opening Windows Settings and the real Add scanner dialog from it. **Unverified:** a stopped or disabled WIA service, a TWAIN install with 32-bit-only drivers, and a scanner that is really busy in another app |
@@ -897,6 +972,10 @@ Known divergences from the macOS app (all documented in the source):
   the Archive document task) and password-protected PDFs (AES-256); the Mac draws its text layer
   with CoreText and has none of these yet. Both settings are stored on both, so settings files
   stay the same.
+- Adding pages to an existing PDF: Windows writes an incremental update with its own reader
+  (`PdfReaderLite`, `PdfAppender`), leaving the file's bytes as they were; the Mac will use
+  PDFKit (not built yet), which rewrites the whole file (and can add to a password-protected file once its
+  password is given, which Windows refuses). Nothing about it is stored on either.
 - Filename sanitization strips the full Windows-reserved character set, not just `/` and `:`.
 - WIA hot-plug is detected by polling, since WIA device events are not wired up (macOS gets
   add/remove callbacks from ICDeviceBrowser instead). The list is re-read every 10 s, backing off

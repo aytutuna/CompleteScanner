@@ -399,7 +399,7 @@ public partial class SavedFilesView : UserControl
         }
     }
 
-    /// <summary>Every action on one saved file, then Rotate for image files.</summary>
+    /// <summary>Every action on one saved file, then Rotate for image files or Add the scanned pages for a PDF.</summary>
     internal ContextMenu BuildFileMenu(SavedFileItem item)
     {
         List<MenuItem> extra = [];
@@ -409,6 +409,15 @@ public partial class SavedFilesView : UserControl
                                              () => RotateItem(item));
             rotate.IsEnabled = item.CanRotate;
             extra.Add(rotate);
+        }
+        // A PDF takes the pages waiting in the queue at its end (offered while there are pages to
+        // save and nothing else runs).
+        if (item.File.IsPdf && _viewModel is { } viewModel)
+        {
+            var add = FileActionMenu.Item(PdfAppender.SavedMenuLabel, "\uE8E5", PdfAppender.SavedMenuHint,
+                                          () => _ = viewModel.AppendToPdf(item.File.Path));
+            add.IsEnabled = viewModel.CanAppendPages;
+            extra.Add(add);
         }
         return FileActionMenu.Build(SaveActions.Offered(1), 1, action => Run(action, item), extra);
     }

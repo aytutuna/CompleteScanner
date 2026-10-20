@@ -56,6 +56,12 @@ scanners** — including the Epson Perfection V39 II.
   disallowed, which PDF apps honor as a request, not a lock. A PDF/A file can't have a password,
   so the two switches exclude each other. The Mac gets it with the port of the Windows PDF
   writer; until then it keeps the switch in its settings file and writes no protected PDFs.
+- **Add pages to an existing PDF** (Windows for now): **Add to existing PDF…** under the queue,
+  or a PDF's menu in the Saved tab, adds the scanned pages to the end of a PDF you pick, such as
+  a signature page for a contract. The file's existing bytes are kept as they are (the pages are
+  added as an incremental update), and the file is replaced only once the new one has been
+  written and checked. Password-protected and damaged files are refused; signed files and PDF/A
+  files that may not stay PDF/A are asked about first. The Mac will add pages with PDFKit.
 - **Share, email, open with, copy**: after a save, and on every file in the Saved tab, open the
   file, open it with another app, show it in Finder, share it (Mail, Messages, AirDrop, …), start
   a Mail message with it attached, or copy it (an image also as a picture). **After saving** can

@@ -3042,6 +3042,31 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     {
         // A protected PDF's password is asked for before any page is read or written.
         var protection = ProtectionFor(s);
+        var inputs = await PdfPageInputs(pages, s, token, text, knownLines);
+
+        StatusMessage = "Writing PDF…";
+        NotifyAll();
+        // Protected with the password when that option is on, else PDF/A when the archival option
+        // is; titled with the file's name (WriteNewFile retitles the file when it has to take
+        // another free name).
+        var options = PdfWriteOptions.For(s.Output, Path.GetFileNameWithoutExtension(path), protection);
+        string written = await Task.Run(() => PdfBuilder.WriteNewFile(inputs, path, progress: null, token, options), token);
+        LastPdfProtected = options.IsProtected;
+        try { LastPdfBytes = new FileInfo(written).Length; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { LastPdfBytes = null; }
+        return written;
+    }
+
+    /// <summary>
+    /// The pages as a PDF stores them (<see cref="WritePdfAtomically"/>, and pages added to an
+    /// existing PDF): each one read at full resolution with its rotation, read by OCR when the
+    /// text layer or <paramref name="text"/> asks for it (unless <paramref name="knownLines"/> were
+    /// read beforehand), and JPEG-encoded as the PDF size plans it.
+    /// </summary>
+    private async Task<List<PdfPageInput>> PdfPageInputs(List<ScannedPage> pages, ScanSettings s, CancellationToken token,
+                                                         PdfText? text = null,
+                                                         IReadOnlyList<IReadOnlyList<OcrLine>?>? knownLines = null)
+    {
         var inputs = new List<PdfPageInput>();
         for (int i = 0; i < pages.Count; i++)
         {
@@ -3089,18 +3114,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             inputs.Add(new PdfPageInput(jpeg, prepared.PixelWidth, prepared.PixelHeight, page.Dpi,
                                         s.PdfSearchable ? lines : null));
         }
-
-        StatusMessage = "Writing PDF…";
-        NotifyAll();
-        // Protected with the password when that option is on, else PDF/A when the archival option
-        // is; titled with the file's name (WriteNewFile retitles the file when it has to take
-        // another free name).
-        var options = PdfWriteOptions.For(s.Output, Path.GetFileNameWithoutExtension(path), protection);
-        string written = await Task.Run(() => PdfBuilder.WriteNewFile(inputs, path, progress: null, token, options), token);
-        LastPdfProtected = options.IsProtected;
-        try { LastPdfBytes = new FileInfo(written).Length; }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { LastPdfBytes = null; }
-        return written;
+        return inputs;
     }
 
     /// <summary>
