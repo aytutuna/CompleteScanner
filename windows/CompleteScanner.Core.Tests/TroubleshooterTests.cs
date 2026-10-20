@@ -212,12 +212,38 @@ public class TroubleshooterTests
     {
         var one = Check(Troubleshooter.Diagnose(TroubledWindows()), "twain32");
         Assert.Equal("A TWAIN driver works only with 32-bit apps", one.Title);
-        Assert.Equal("\"acme.ds\" is installed only for 32-bit apps, and CompleteScanner can use only 64-bit drivers. "
-                     + "Install the maker's 64-bit (x64) driver. Many scanners also work through Windows Image "
-                     + "Acquisition (WIA) once the maker's full driver package is installed.", one.Detail);
+        Assert.Equal("\"acme.ds\" is installed only for 32-bit apps. CompleteScanner reaches such drivers through its "
+                     + "32-bit TWAIN helper, which has not listed it yet. A 64-bit (x64) driver from the maker, where there "
+                     + "is one, works without the helper. Many scanners also work through Windows Image Acquisition (WIA) "
+                     + "once the maker's full driver package is installed.", one.Detail);
         var two = Check(Troubleshooter.Diagnose(HealthyWindows() with { ThirtyTwoBitOnlyDrivers = ["Acme/acme.ds", "beta.ds"] }), "twain32");
         Assert.Equal((CheckStatus.Problem, "2 TWAIN drivers work only with 32-bit apps"), (two.Status, two.Title));
-        Assert.StartsWith("\"acme.ds\", \"beta.ds\" are installed only for 32-bit apps,", two.Detail);
+        Assert.StartsWith("\"acme.ds\", \"beta.ds\" are installed only for 32-bit apps. CompleteScanner reaches such drivers "
+                          + "through its 32-bit TWAIN helper, which has not listed them yet. ", two.Detail);
+    }
+
+    [Fact]
+    public void ThirtyTwoBitDrivers_SayWhyTheHelperDoesNotReachThem()
+    {
+        var snapshot = TroubledWindows() with
+        {
+            ThirtyTwoBitHelperProblem = " It cannot run: it needs the .NET 10 Desktop Runtime for 32-bit programs (x86), "
+                                        + "which is not installed. Install it, then restart CompleteScanner ",
+        };
+        var check = Check(Troubleshooter.Diagnose(snapshot), "twain32");
+        Assert.Equal((CheckStatus.Problem, "A TWAIN driver works only with 32-bit apps"), (check.Status, check.Title));
+        Assert.Equal("\"acme.ds\" is installed only for 32-bit apps. CompleteScanner reaches such drivers through its "
+                     + "32-bit TWAIN helper. It cannot run: it needs the .NET 10 Desktop Runtime for 32-bit programs (x86), "
+                     + "which is not installed. Install it, then restart CompleteScanner. A 64-bit (x64) driver from the "
+                     + "maker, where there is one, works without the helper. Many scanners also work through Windows Image "
+                     + "Acquisition (WIA) once the maker's full driver package is installed.", check.Detail);
+        Assert.Empty(check.Actions);
+        // A blank reason is no reason.
+        Assert.Equal(Check(Troubleshooter.Diagnose(TroubledWindows()), "twain32"),
+                     Check(Troubleshooter.Diagnose(TroubledWindows() with { ThirtyTwoBitHelperProblem = "  " }), "twain32"));
+        // Without 32-bit-only drivers, or on the Mac, there is nothing to say.
+        Assert.DoesNotContain("twain32", Ids(Troubleshooter.Diagnose(HealthyWindows() with { ThirtyTwoBitHelperProblem = "It failed." })));
+        Assert.DoesNotContain("twain32", Ids(Troubleshooter.Diagnose(snapshot with { Platform = TroubleshootPlatform.Mac })));
     }
 
     [Fact]

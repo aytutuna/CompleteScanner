@@ -17,9 +17,26 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
+      # The 32-bit TWAIN helper (windows/CompleteScanner.TwainHelper, x86) runs on the 32-bit .NET
+      # runtime, which its tests start for real. Installed with Microsoft's dotnet-install script
+      # into the default x86 location, where the helper's host looks, unless the image has it.
+      - name: Install the 32-bit .NET Desktop Runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path ${env:ProgramFiles(x86)} 'dotnet'
+          if (-not (Test-Path (Join-Path $root 'shared\Microsoft.WindowsDesktop.App\10.*'))) {
+            $script = Join-Path $env:RUNNER_TEMP 'dotnet-install.ps1'
+            Invoke-WebRequest 'https://dot.net/v1/dotnet-install.ps1' -OutFile $script
+            & $script -Channel 10.0 -Runtime dotnet -Architecture x86 -InstallDir $root -NoPath
+            & $script -Channel 10.0 -Runtime windowsdesktop -Architecture x86 -InstallDir $root -NoPath
+          }
+          Get-ChildItem (Join-Path $root 'shared\Microsoft.WindowsDesktop.App') | Select-Object -ExpandProperty Name
       - name: Test
         run: dotnet test windows/CompleteScanner.sln -c Release
         env:
+          # The helper's tests must run here, never be skipped for a missing runtime.
+          COMPLETESCANNER_REQUIRE_TWAIN_HELPER: '1'
           # PdfATests.Archival_ValidationSamples keeps the PDF/A files it writes here, for veraPDF.
           COMPLETESCANNER_PDFA_SAMPLES: ${{ runner.temp }}\pdfa-samples
       # veraPDF, the PDF/A validator (MPL-2.0 / GPL-3.0), checks those files. It is downloaded here

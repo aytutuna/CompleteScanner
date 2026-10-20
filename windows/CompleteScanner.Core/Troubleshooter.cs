@@ -130,6 +130,11 @@ public sealed record DiscoverySnapshot
     public int TwainDriverCount { get; init; }
     /// <summary>TWAIN driver files installed only for 32-bit apps (paths or file names).</summary>
     public IReadOnlyList<string> ThirtyTwoBitOnlyDrivers { get; init; } = [];
+    /// <summary>
+    /// Why the 32-bit TWAIN helper (Windows) does not reach <see cref="ThirtyTwoBitOnlyDrivers"/>,
+    /// as sentences about the helper ("It …") with what to do; null when not known. Never set on the Mac.
+    /// </summary>
+    public string? ThirtyTwoBitHelperProblem { get; init; }
     public DiscoveryStatus Discovery { get; init; }
     /// <summary>Why the search is unavailable, as the system put it; null otherwise.</summary>
     public string? DiscoveryDetail { get; init; }
@@ -188,7 +193,10 @@ public static class Troubleshooter
         if (NetworkCheck(snapshot) is { } network) checks.Add(network);
         if (windows && WiaServiceCheck(snapshot.WiaService) is { } wia) checks.Add(wia);
         if (windows && TwainCheck(snapshot) is { } twain) checks.Add(twain);
-        if (windows && snapshot.ThirtyTwoBitOnlyDrivers.Count > 0) checks.Add(ThirtyTwoBitCheck(snapshot.ThirtyTwoBitOnlyDrivers));
+        if (windows && snapshot.ThirtyTwoBitOnlyDrivers.Count > 0)
+        {
+            checks.Add(ThirtyTwoBitCheck(snapshot.ThirtyTwoBitOnlyDrivers, snapshot.ThirtyTwoBitHelperProblem));
+        }
         if (DiscoveryCheck(snapshot) is { } discovery) checks.Add(discovery);
         if (windows)
         {
@@ -422,16 +430,22 @@ public static class Troubleshooter
         _ => null,
     };
 
-    private static TroubleshootCheck ThirtyTwoBitCheck(IReadOnlyList<string> drivers)
+    /// <summary>Drivers the 32-bit helper does not reach, with why when the app knows (<paramref name="helperProblem"/>).</summary>
+    private static TroubleshootCheck ThirtyTwoBitCheck(IReadOnlyList<string> drivers, string? helperProblem)
     {
         var names = drivers.Select(path => $"\"{path[(path.LastIndexOfAny(['/', '\\']) + 1)..]}\"").ToList();
         bool one = names.Count == 1;
+        bool known = !string.IsNullOrWhiteSpace(helperProblem);
+        string reach = $"{string.Join(", ", names)} {(one ? "is" : "are")} installed only for 32-bit apps. CompleteScanner "
+                       + "reaches such drivers through its 32-bit TWAIN helper"
+                       + (known ? "." : $", which has not listed {(one ? "it" : "them")} yet.");
         return new TroubleshootCheck(
             "twain32", CheckStatus.Problem,
             one ? "A TWAIN driver works only with 32-bit apps" : $"{names.Count} TWAIN drivers work only with 32-bit apps",
-            $"{string.Join(", ", names)} {(one ? "is" : "are")} installed only for 32-bit apps, and CompleteScanner can "
-            + "use only 64-bit drivers. Install the maker's 64-bit (x64) driver. Many scanners also work through "
-            + "Windows Image Acquisition (WIA) once the maker's full driver package is installed.",
+            JoinSentences(known ? JoinSentences(reach, helperProblem!.Trim()) : reach,
+                          "A 64-bit (x64) driver from the maker, where there is one, works without the helper. Many "
+                          + "scanners also work through Windows Image Acquisition (WIA) once the maker's full driver "
+                          + "package is installed."),
             []);
     }
 

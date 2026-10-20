@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The 32-bit TWAIN helper: a small x86 process the 64-bit app starts on demand to load scanner
+       drivers installed only for 32-bit programs (C:\Windows\twain_32). It speaks the protocol in
+       CompleteScanner.Core/Twain/TwainHelperProtocol.cs over a named pipe the app creates. It uses
+       the same TWAIN code as the app (Scanning/Twain/NTwainDriver.cs and NTwainSessionHost.cs are
+       compiled in from the app's folder) against the 32-bit Data Source Manager the drivers
+       installed (TWAINDSM.dll in SysWOW64, or Windows' own twain_32.dll), which is never shipped.
+       The app's build copies its output next to CompleteScanner.exe. Console subsystem, started
+       without a window, so a missing runtime is reported on its error output, not in a dialog. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <PlatformTarget>x86</PlatformTarget>
+    <SelfContained>false</SelfContained>
+    <RootNamespace>CompleteScanner.TwainHelper</RootNamespace>
+    <AssemblyName>CompleteScanner.TwainHelper</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\CompleteScanner.App\Scanning\Twain\NTwainDriver.cs" Link="Shared\NTwainDriver.cs" />
+    <Compile Include="..\CompleteScanner.App\Scanning\Twain\NTwainSessionHost.cs" Link="Shared\NTwainSessionHost.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CompleteScanner.Core\CompleteScanner.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The same pinned version as the app (MIT, no dependencies). -->
+    <PackageReference Include="NTwain" Version="[3.7.6]" />
+  </ItemGroup>
+
+</Project>

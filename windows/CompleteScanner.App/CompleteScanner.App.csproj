@@ -19,7 +19,33 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CompleteScanner.Core\CompleteScanner.Core.csproj" />
+    <!-- The 32-bit TWAIN helper (x86): built with the app, not referenced as an assembly; its files
+         are copied next to CompleteScanner.exe by the target below. -->
+    <ProjectReference Include="..\CompleteScanner.TwainHelper\CompleteScanner.TwainHelper.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CompleteScanner.App.Tests" />
+  </ItemGroup>
+
+  <!-- Puts the helper's own files (its exe, assembly, runtime and dependency manifests) next to the
+       app's, wherever the helper was built (artifacts output included). Its other files, the Core
+       library and NTwain, are the app's own. As copy-to-output items they also reach projects that
+       reference the app (its tests). -->
+  <Target Name="AddTwainHelperFiles" BeforeTargets="AssignTargetPaths">
+    <MSBuild Projects="..\CompleteScanner.TwainHelper\CompleteScanner.TwainHelper.csproj" Targets="GetTargetPath">
+      <Output TaskParameter="TargetOutputs" ItemName="_TwainHelperTarget" />
+    </MSBuild>
+    <PropertyGroup>
+      <_TwainHelperDir>@(_TwainHelperTarget->'%(RootDir)%(Directory)')</_TwainHelperDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_TwainHelperFile Include="$(_TwainHelperDir)CompleteScanner.TwainHelper.exe;$(_TwainHelperDir)CompleteScanner.TwainHelper.dll;$(_TwainHelperDir)CompleteScanner.TwainHelper.runtimeconfig.json;$(_TwainHelperDir)CompleteScanner.TwainHelper.deps.json" />
+      <None Include="@(_TwainHelperFile)" CopyToOutputDirectory="PreserveNewest" Visible="false"
+            Link="%(_TwainHelperFile.Filename)%(_TwainHelperFile.Extension)" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <!-- TWAIN (Scanning/Twain). MIT licensed, no dependencies; pinned to an exact version.

@@ -177,13 +177,43 @@ final class TroubleshooterTests: XCTestCase {
     func test_thirtyTwoBitDrivers_areNamedByFile() {
         let one = check(Troubleshooter.diagnose(troubledWindows()), "twain32")
         XCTAssertEqual(one.title, "A TWAIN driver works only with 32-bit apps")
-        XCTAssertEqual(one.detail, "\"acme.ds\" is installed only for 32-bit apps, and CompleteScanner can use only 64-bit drivers. "
-                       + "Install the maker's 64-bit (x64) driver. Many scanners also work through Windows Image "
-                       + "Acquisition (WIA) once the maker's full driver package is installed.")
+        let oneDetail = [
+            "\"acme.ds\" is installed only for 32-bit apps. CompleteScanner reaches such drivers through its ",
+            "32-bit TWAIN helper, which has not listed it yet. A 64-bit (x64) driver from the maker, where there ",
+            "is one, works without the helper. Many scanners also work through Windows Image Acquisition (WIA) ",
+            "once the maker's full driver package is installed.",
+        ].joined()
+        XCTAssertEqual(one.detail, oneDetail)
         let two = check(Troubleshooter.diagnose(changed(healthyWindows()) { $0.thirtyTwoBitOnlyDrivers = ["Acme/acme.ds", "beta.ds"] }), "twain32")
         XCTAssertEqual(two.status, .problem)
         XCTAssertEqual(two.title, "2 TWAIN drivers work only with 32-bit apps")
-        XCTAssertTrue(two.detail.hasPrefix("\"acme.ds\", \"beta.ds\" are installed only for 32-bit apps,"))
+        XCTAssertTrue(two.detail.hasPrefix("\"acme.ds\", \"beta.ds\" are installed only for 32-bit apps. CompleteScanner reaches such drivers "
+                                           + "through its 32-bit TWAIN helper, which has not listed them yet. "))
+    }
+
+    func test_thirtyTwoBitDrivers_sayWhyTheHelperDoesNotReachThem() {
+        let snapshot = changed(troubledWindows()) {
+            $0.thirtyTwoBitHelperProblem = " It cannot run: it needs the .NET 10 Desktop Runtime for 32-bit programs (x86), "
+                + "which is not installed. Install it, then restart CompleteScanner "
+        }
+        let found = check(Troubleshooter.diagnose(snapshot), "twain32")
+        XCTAssertEqual(found.status, .problem)
+        XCTAssertEqual(found.title, "A TWAIN driver works only with 32-bit apps")
+        let expected = [
+            "\"acme.ds\" is installed only for 32-bit apps. CompleteScanner reaches such drivers through its ",
+            "32-bit TWAIN helper. It cannot run: it needs the .NET 10 Desktop Runtime for 32-bit programs (x86), ",
+            "which is not installed. Install it, then restart CompleteScanner. A 64-bit (x64) driver from the ",
+            "maker, where there is one, works without the helper. Many scanners also work through Windows Image ",
+            "Acquisition (WIA) once the maker's full driver package is installed.",
+        ].joined()
+        XCTAssertEqual(found.detail, expected)
+        XCTAssertEqual(found.actions, [])
+        // A blank reason is no reason.
+        XCTAssertEqual(check(Troubleshooter.diagnose(troubledWindows()), "twain32"),
+                       check(Troubleshooter.diagnose(changed(troubledWindows()) { $0.thirtyTwoBitHelperProblem = "  " }), "twain32"))
+        // Without 32-bit-only drivers, or on the Mac, there is nothing to say.
+        XCTAssertFalse(ids(Troubleshooter.diagnose(changed(healthyWindows()) { $0.thirtyTwoBitHelperProblem = "It failed." })).contains("twain32"))
+        XCTAssertFalse(ids(Troubleshooter.diagnose(changed(snapshot) { $0.platform = .mac })).contains("twain32"))
     }
 
     func test_networkSearchOnWindows() {

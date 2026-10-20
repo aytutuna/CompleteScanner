@@ -136,6 +136,9 @@ public struct DiscoverySnapshot: Equatable, Sendable {
     public var twainDriverCount: Int
     /// TWAIN driver files installed only for 32-bit apps (paths or file names).
     public var thirtyTwoBitOnlyDrivers: [String]
+    /// Why the 32-bit TWAIN helper (Windows) does not reach `thirtyTwoBitOnlyDrivers`, as
+    /// sentences about the helper ("It …") with what to do; nil when not known. Never set on the Mac.
+    public var thirtyTwoBitHelperProblem: String?
     public var discovery: DiscoveryStatus
     /// Why the search is unavailable, as the system put it; nil otherwise.
     public var discoveryDetail: String?
@@ -147,7 +150,8 @@ public struct DiscoverySnapshot: Equatable, Sendable {
     public init(platform: TroubleshootPlatform = .windows, devices: [ScannerInfo] = [],
                 network: NetworkStatus = .unknown, wiaService: ServiceStatus = .unknown,
                 twain: TwainStatus = .unknown, twainDriverCount: Int = 0,
-                thirtyTwoBitOnlyDrivers: [String] = [], discovery: DiscoveryStatus = .unknown,
+                thirtyTwoBitOnlyDrivers: [String] = [], thirtyTwoBitHelperProblem: String? = nil,
+                discovery: DiscoveryStatus = .unknown,
                 discoveryDetail: String? = nil, discoveredCount: Int = 0,
                 manualHosts: [ManualHostStatus] = [], lastFailure: ScannerFailure? = nil) {
         self.platform = platform
@@ -157,6 +161,7 @@ public struct DiscoverySnapshot: Equatable, Sendable {
         self.twain = twain
         self.twainDriverCount = twainDriverCount
         self.thirtyTwoBitOnlyDrivers = thirtyTwoBitOnlyDrivers
+        self.thirtyTwoBitHelperProblem = thirtyTwoBitHelperProblem
         self.discovery = discovery
         self.discoveryDetail = discoveryDetail
         self.discoveredCount = discoveredCount
@@ -214,7 +219,7 @@ public enum Troubleshooter {
         if windows, let wia = wiaServiceCheck(snapshot.wiaService) { checks.append(wia) }
         if windows, let twain = twainCheck(snapshot) { checks.append(twain) }
         if windows, !snapshot.thirtyTwoBitOnlyDrivers.isEmpty {
-            checks.append(thirtyTwoBitCheck(snapshot.thirtyTwoBitOnlyDrivers))
+            checks.append(thirtyTwoBitCheck(snapshot.thirtyTwoBitOnlyDrivers, helperProblem: snapshot.thirtyTwoBitHelperProblem))
         }
         if let discovery = discoveryCheck(snapshot) { checks.append(discovery) }
         if windows {
@@ -443,7 +448,8 @@ public enum Troubleshooter {
         }
     }
 
-    private static func thirtyTwoBitCheck(_ drivers: [String]) -> TroubleshootCheck {
+    /// Drivers the 32-bit helper does not reach, with why when the app knows (`helperProblem`).
+    private static func thirtyTwoBitCheck(_ drivers: [String], helperProblem: String?) -> TroubleshootCheck {
         let names = drivers.map { path -> String in
             let name: String
             if let separator = path.lastIndex(where: { $0 == "/" || $0 == "\\" }) {
@@ -454,10 +460,17 @@ public enum Troubleshooter {
             return "\"\(name)\""
         }
         let one = names.count == 1
+        let problem = (helperProblem ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let known = !problem.isEmpty
+        var reach = names.joined(separator: ", ") + (one ? " is" : " are")
+        reach += " installed only for 32-bit apps. CompleteScanner reaches such drivers through its 32-bit TWAIN helper"
+        let pronoun = one ? "it" : "them"
+        reach += known ? "." : ", which has not listed \(pronoun) yet."
         return TroubleshootCheck(
             id: "twain32", status: .problem,
             title: one ? "A TWAIN driver works only with 32-bit apps" : "\(names.count) TWAIN drivers work only with 32-bit apps",
-            detail: names.joined(separator: ", ") + (one ? " is" : " are") + " installed only for 32-bit apps, and CompleteScanner can use only 64-bit drivers. Install the maker's 64-bit (x64) driver. Many scanners also work through Windows Image Acquisition (WIA) once the maker's full driver package is installed.",
+            detail: joinSentences(known ? joinSentences(reach, problem) : reach,
+                                  "A 64-bit (x64) driver from the maker, where there is one, works without the helper. Many scanners also work through Windows Image Acquisition (WIA) once the maker's full driver package is installed."),
             actions: [])
     }
 

@@ -23,7 +23,9 @@ UI per platform** architecture:
   status parser, the HTTP client and session, DNS-SD TXT records and address parsing, and
   certificate pinning for HTTPS), and the TWAIN scan logic (`Twain/`: the acquisition state machine behind an
   `ITwainTransport` interface, memory-strip and bitmap conversion, the paper-size table and
-  the condition-code mapping), and the Windows service and network-category values the
+  the condition-code mapping, and the protocol of the 32-bit TWAIN helper: its messages and
+  their encoding, `TwainHelperProtocol.cs`, the helper's end, `TwainHelperServer.cs`, and the
+  app's end with a transport that forwards each TWAIN call to it, `TwainHelperClient.cs`), and the Windows service and network-category values the
   troubleshooter reads (`WindowsSystemStatus.cs`). Device merging (`DeviceMerge.cs`: one row per physical
   scanner, whichever backends list it) is shared with macOS. So is the page clean-up stage
   (`PageProcessor.cs`: the steps every scanned page goes through before it is queued) and the
@@ -53,8 +55,12 @@ UI per platform** architecture:
   text layer and metadata. Neither Core nor the app references it.
 - **`CompleteScanner.App.Tests`** — checks of the app's own Windows code that need WPF but no
   window and no device: the print document is written to an XPS file and read back (paper size,
-  where each image lands, copies, grey, cancel), and barcodes and QR codes are read with ZXing.Net
-  on synthetic scans. Nothing is sent to a printer.
+  where each image lands, copies, grey, cancel), barcodes and QR codes are read with ZXing.Net
+  on synthetic scans, and the 32-bit TWAIN helper is started for real and scans its stand-in
+  scanners (`TwainHelperTests`). Nothing is sent to a printer.
+- **`CompleteScanner.TwainHelper`** — the 32-bit TWAIN helper (x86, .NET 10): a small console
+  program without a window that the app starts when a scanner driver is installed only for
+  32-bit programs (see [TWAIN](#twain)). The app's build copies it next to `CompleteScanner.exe`.
 - **`CompleteScanner.App`** — the native Windows shell (WPF, .NET 10): main window with
   sidebar/inspector/preview-canvas/page-strip/photo-review, a view-model porting the macOS
   `AppState` orchestration, and Windows service implementations (WIA, eSCL and TWAIN
@@ -68,7 +74,10 @@ The macOS app is unchanged and remains the reference implementation.
 ## Build & run (Windows 10 19041+ / Windows 11)
 
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), or Visual
-Studio 2026 (18.0+), the first Visual Studio release that supports .NET 10.
+Studio 2026 (18.0+), the first Visual Studio release that supports .NET 10. The 32-bit TWAIN
+helper also needs the 32-bit (x86) .NET 10 Desktop Runtime to run; without it the app works as
+before, the helper reports that it cannot start, and its tests are skipped (CI installs it and
+requires them, `COMPLETESCANNER_REQUIRE_TWAIN_HELPER=1`).
 
 ```powershell
 cd windows
@@ -1071,7 +1080,11 @@ means in plain language and the buttons that help:
 - **The Windows scanner service**: Windows Image Acquisition (`stisvc`) running, starting, stopped,
   disabled or missing, read with `QueryServiceStatus` and `QueryServiceConfig` (read-only access).
 - **TWAIN**: installed with how many drivers, not installed (a warning while no scanner is listed,
-  a tip otherwise), or would not start; and drivers installed only for 32-bit apps, named by file.
+  a tip otherwise), or would not start; and drivers installed only for 32-bit apps, named by file,
+  while the 32-bit helper reaches none of them, with why and what to do (the 32-bit .NET runtime
+  missing, the helper missing, no 32-bit Data Source Manager, or one that lists no usable driver).
+  Once the helper reaches a driver, they are listed and count as TWAIN drivers, and none is named
+  any more: which file a source came from is not known.
 - **The automatic network search** (DNS-SD) and how many scanners it found, and each address
   added by hand that does not answer, with why.
 - **Tips** that always apply: a USB scanner needs its maker's driver and a direct cable
@@ -1108,6 +1121,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | Black & white as CCITT G4 (`CcittG4Encoder`, `Bilevel`, `BilevelTiff`, `PdfCcittImage`) | Covered by `CcittG4EncoderTests` (the code tables against T.4, known answers for all-white and all-black pages, pass, horizontal and every vertical mode, runs past 2560, no rows, single pixels and one-pixel lines; every run length of both colors, odd widths and 20000-pixel rows decoded back by PdfPig's CCITT filter; golden bytes for a checkerboard, seeded noise and the blank-page tests' text page; the threshold), `BilevelOutputTests` in Core (the image dictionary and its data, JPEG and G4 pages with a text layer, PDF/A, a protected file opened with its password, a page added to a PDF, all decoded by PdfPig; one- and three-page TIFFs field by field, golden bytes) and in the App tests (WIC decodes one- and three-page TIFFs pixel for pixel; WIC's own G4 encoder gives the same bytes, strip by strip, for every page and every run length; saving a black & white TIFF writes G4 and others stay LZW; turning one in the Saved tab keeps it G4; Windows.Data.Pdf renders plain, PDF/A and added G4 pages pixel for pixel, read at three times their size), and the G4 cases of `PdfImageEncodingTests` (same cases as macOS). Checked by driving the view model's real save path with the two public-domain scans in black & white at every size, at 300 and 600 dpi, as PDF/A, with a password, added to an existing PDF and as TIFF: the image is the planned 1-bit G4 image, PdfPig decodes exactly the stored pixels, Windows.Data.Pdf renders it as it renders the same pixels in a quality-100 gray JPEG (it resamples large page images whatever their encoding), WIC decodes the TIFFs exactly; sizes in [PDF size](#pdf-size). **Not run:** veraPDF on a black & white PDF/A file here (CI validates the new `pdfa-black-and-white.pdf` sample) and qpdf (neither is installed here). **The Mac** stores black & white pages as gray JPEGs and writes LZW TIFFs until its port of the PDF writer |
 | One row per scanner (`DeviceMerge`, connection chooser) | Matching rules, ranking and the saved choice are covered by `DeviceMergeTests` (same table as macOS) and were checked by driving the view model with fake WIA and TWAIN backends: one row, WIA preferred, a later-appearing better connection taken over once the running scan ends, the user's choice saved and used at the next start, a choice made during a scan applied after it. A saved choice is keyed by the eSCL UUID or the model name, whichever the current set of connections yields, so it lapses when that set changes (see above). **Unverified with real drivers:** the names real WIA, eSCL and TWAIN drivers report; `devices.txt` collects them |
 | TWAIN backend (`Scanning/Twain`) | **Experimental, untested against hardware** — see [TWAIN](#twain) below. The scan logic in Core (negotiation choices, the acquisition state machine, strip and bitmap conversion, paper sizes, error mapping, 32-bit driver detection) is covered by `TwainScanLoopTests`, `TwainRasterTests` and `TwainScanRequestsTests` through a fake transport. Driving the view model with the real session class over a scripted transport checked flatbed, feeder, preview, empty feeder, a jam after two sheets (pages kept, reason shown), cancel while the driver is silent (returns at once, the source is reset and disabled in the background), switching away (the source is closed without waiting), the driver-window switch and its saved choice (kept when connecting finds the scanner off), a driver stuck while enabling (reported after the start limit, the next scan refused at once, the late scan stopped when the driver answers), and that a scanner only TWAIN lists is never opened unless the user picks it. On a PC without a TWAIN Data Source Manager the backend lists nothing and `devices.txt` says why; the app starts normally. **Unverified:** real drivers, NTwain's message loop with them, the TWAIN Working Group sample source (not installed here) |
+| 32-bit TWAIN helper (`CompleteScanner.TwainHelper`, `Scanning/Twain/Twain32ScannerBackend.cs`, `TwainHelperProcess.cs`) | **Experimental, untested against hardware.** The protocol is covered by `TwainHelperProtocolTests` (every message both ways, resolution lists of every shape up to the widest range a driver can report, malformed and random input, errors) and `TwainHelperSessionTests` (the app's end against the helper's end over an in-memory pipe with the scan loop on top: scans with chunked strips and bitmaps, scanner problems, cancel, a crash, a hang, a 50 to 9600 dpi range in 1 dpi steps). `TwainHelperTests` start the real x86 helper with its stand-in scanners: listing (the WIA bridge left out), a feeder scan and a preview end to end, a native transfer with progress, a jam, an offline and a busy scanner, cancel, a crash and a hang (each reported, the next scan starting a new helper), the helper exiting by itself when the pipe closes, the pipe's access list, a missing helper (reported with its fix, not tried again on its own), a failed listing and a helper too slow to start (both tried again), a Data Source Manager that lists only the WIA bridge (the 32-bit drivers stay a troubleshooter problem, with why) and a PC without 32-bit-only drivers (no helper started). Driving the view model with the helper and a stand-in WIA connection to the same scanner checked one row with both connections (WIA preferred, "TWAIN (32-bit driver)" in the chooser), TWAIN-only rows captioned "TWAIN (32-bit driver)" and never picked on their own, a feeder scan of 3 pages through the helper, `devices.txt` and the helper ending with the app; killing the app's process ended the helper within a fraction of a second. **Unverified:** real 32-bit drivers and Data Source Managers (this PC has none), driver windows shown by the helper process |
 | Two-sided scanning and paper size (`DocumentSides`, `PaperSize`) | Covered by `DocumentSidesTests`, `PaperSizeTests` and the sides cases of `ModelsCompatTests`, `ScanTaskTests`, `SettingsAdapterTests` and `MockScannerTests` (same cases as macOS), plus the backend requests in `EsclTests`, `TwainScanRequestsTests` and `WiaErrorsTests`. Checked by driving the view model with the demo scanner (both sides in one pass on the long and the short edge, a jam keeping one sheet's two sides, turning over by hand with matching counts, a mismatch, scanning the backs again, combining anyway, keeping the fronts, a jam during the fronts (the steps stay at the fronts, the rest of them scanned as fronts, Done with fronts), a stack scanned in parts (Scan more fronts), a scanner whose capabilities could not be read on connect asked for both sides by a one-sided feeder (pages kept one-sided, capabilities read after the scan), earlier pages keeping their place, the two-sided task on two-sided and one-sided feeders, paper sizes on the feeder and the glass, the saved PDFs' page counts) and by building the window without showing it: the Sides, Flip on and Paper size choices with their greyed-out items and reasons, the banner's two steps, Scan more fronts, Done with fronts and the mismatch choices, the side badges and the screen reader names in the page strip and the Two-sided document card, rendered off screen in light and dark. **Unverified:** real drivers (see [Two-sided scanning and paper size](#two-sided-scanning-and-paper-size)) |
 | Crop and straighten (`DocumentGeometry`, `GeometryStep`, `PageCorrections`) | Covered by `DocumentGeometryTests`, the crop and straighten cases of `PageProcessorTests`, `ModelsCompatTests`, `ScanTaskTests` and `MaskOpsTests` (same cases as macOS, on the same synthetic pages checked by checksum). Checked on public-domain scans laid at known angles on a lid and a dark backdrop, on archive scans as they were captured, and by driving the view model with those scans (scan, the strip's captions, both versions spooled, show as scanned and back, turning a page, saving whichever version is shown, removing and clearing pages, the switches off and pages saved at once, the two-sided task) and by building the window without showing it: the switches and their hint, the swap button and its glyphs, rendered off screen. **Unverified:** real lids, feeder backings and thin paper (see [Crop and straighten](#crop-and-straighten)) |
 | Rotate pages upright (`OrientationDecision`, `OrientationStep`, `PageTurns`, `WindowsOrientationScorer`) | Covered by `OrientationTests` and the rotate cases of `PageProcessorTests`, `ModelsCompatTests` and `ScanTaskTests` (same cases as macOS, on the same synthetic page read by a stand-in scorer). Checked with Windows OCR on public-domain letters and menus turned every way and on photos (see [Rotate pages upright](#rotate-pages-upright)), by driving the view model with those scans (scan, the strip's captions, the spool files and what a save writes, undo and redo, two quick clicks, a turn by hand before and after, Keep and Skip, saving, the switch off, pages saved at once, no OCR language, the two-sided task) and by building the window without showing it: the switch and its hint, the turn button beside the side badge and the swap button, screen-reader names, rendered off screen in light and dark. **Unverified:** Vision on the Mac (CI runs the stand-in only), real feeders |
@@ -1138,11 +1152,13 @@ Known divergences from the macOS app (all documented in the source):
 - WIA, eSCL and TWAIN exist only here, so their logic in Core (`WiaErrors.cs`, `Escl/`,
   `Twain/`) and its tests (`WiaErrorsTests`, `EsclTests`, `EsclRetryTests`,
   `EsclClientTests`, `EsclDiscoveryTests`, `EsclTrustTests`, `TwainScanLoopTests`,
-  `TwainRasterTests`, `TwainScanRequestsTests`) have no Swift counterparts: the Mac reaches
+  `TwainRasterTests`, `TwainScanRequestsTests`, `TwainHelperProtocolTests`,
+  `TwainHelperSessionTests`) have no Swift counterparts, nor has the 32-bit TWAIN helper: the Mac reaches
   the same scanners through ImageCaptureCore, whose Bonjour browsing also finds network
   scanners. The scanner problems they report (`ScannerProblem`) are shared with macOS.
 - The troubleshooter's checks (`Troubleshooter`) are shared, but each app fills in what it can
-  read. Windows reads the WIA service, the network category, TWAIN and the addresses added by
+  read. Windows reads the WIA service, the network category, TWAIN (with why its 32-bit helper
+  does not reach a driver, `ThirtyTwoBitHelperProblem`) and the addresses added by
   hand (`WindowsSystemStatus.cs` and its `WindowsSystemStatusTests` have no Swift twin); the Mac
   reads only whether ImageCaptureCore is browsing, since macOS offers no API for its scanner
   drivers, sharing or the Local Network permission, so those are tips there. The Mac links to
@@ -1252,10 +1268,43 @@ same scanners through ImageCaptureCore.
   again). A listing that fails (the Data Source Manager would
   not open, or a driver held it up past 60 s) is tried again after 30 s, 1, 2 and then every
   5 minutes, and a listing that finishes late is still used.
-- **64-bit only.** The app can load only 64-bit drivers (`C:\Windows\twain_64`). Drivers
-  installed only for 32-bit programs (`C:\Windows\twain_32`) are listed in `devices.txt` as
-  "32-bit only" and cannot be used yet; the troubleshooter names them and suggests the maker's
-  64-bit driver.
+- **32-bit drivers.** The app itself loads 64-bit drivers (`C:\Windows\twain_64`). A driver
+  installed only for 32-bit programs (a `C:\Windows\twain_32` data source with no 64-bit
+  counterpart, the Windows WIA bridge `wiatwain.ds` aside) is reached through a small 32-bit
+  helper, `CompleteScanner.TwainHelper.exe`, next to `CompleteScanner.exe`:
+  - It is started only when such a driver is installed, once per app session, and loads the
+    32-bit Data Source Manager the drivers installed (`TWAINDSM.dll` in `SysWOW64`, or the
+    `twain_32.dll` Windows has always had); it ships none. The same scan logic runs in the app
+    as for 64-bit drivers; each TWAIN call goes to the helper (`RemoteTwainTransport`), and the
+    pages come back in chunks.
+  - Its sources are listed as TWAIN connections named "… (32-bit driver)" and captioned
+    "TWAIN (32-bit driver)", leaving out those a 64-bit driver also offers and the WIA bridge
+    ("WIA-…"). A scanner WIA or a 64-bit driver also reaches is one row; the 32-bit driver is
+    then the last choice in its **via** menu and is used only when chosen.
+  - The two talk over a named pipe with a random name that only the current user may open and
+    that refuses network clients, created by the app for the one process it started (checked
+    when the helper connects). Nothing listens on the network.
+  - A helper that crashes ends the scan in progress with "stopped unexpectedly"; one that does
+    not answer in time (the same limits as above), or whose driver will not stop scanning, is stopped
+    and the scan says so. Unlike a driver stuck in the app itself, this never blocks later scans: the
+    next scan or connection starts a new helper and opens the scanner again. Cancel works as above.
+  - It ends with the app: it is in a job that Windows closes when the app exits or crashes, it
+    watches the app's process, and it exits when the pipe closes.
+  - It needs the 32-bit (x86) .NET 10 Desktop Runtime. Without it, or if the helper is missing,
+    the 32-bit drivers are not listed, `devices.txt` says why ("TWAIN 32-bit helper: failed (…)"),
+    and the troubleshooter still names them, with the fix (install the x86 runtime, reinstall
+    CompleteScanner). It names them too while the helper's Data Source Manager is missing or
+    lists no usable driver ("reached no usable driver" in `devices.txt`; that helper is stopped
+    again). A driver window the helper opens belongs to the helper process, so it may appear behind
+    the app's window.
+  - A listing that fails for a reason that may pass (the helper slow to start, its Data Source
+    Manager would not open, a driver holding it up) is tried again after 30 s, 1, 2 and then every
+    5 minutes, and one that finishes after its time limit (the helper's own limits for starting,
+    the handshake and the listing, plus 10 s) is still used. One that cannot pass on its own (no
+    x86 runtime, the helper missing) waits for the troubleshooter's **Refresh**.
+  - A source's resolutions cross the pipe as runs (first value, step, count), so a driver that
+    reports a fine range such as 50 to 9600 dpi in 1 dpi steps offers the same resolutions as it
+    would in-process.
 - **Installed, not connected.** TWAIN lists installed drivers, so a scanner that is off still
   has a row (captioned "TWAIN driver" when no other connection reaches it). Connecting then
   says the scanner is offline. The app therefore never picks such a row on its own (at start,
@@ -1299,7 +1348,9 @@ same scanners through ImageCaptureCore.
   feeder and empty-feeder behaviour, cancel during a long transfer, drivers that show their
   own message boxes while opening or enabling, the driver window (and whether it opens in
   front without an owner), native transfers of large scans, and the TWAIN Working Group's sample
-  data source (installing it needs administrator rights).
+  data source (installing it needs administrator rights). For the 32-bit helper: a real
+  32-bit-only driver with `TWAINDSM.dll` and with the old `twain_32.dll`, its window, and a
+  driver that crashes or hangs the helper.
 
 ## Network scanners (eSCL)
 
@@ -1349,7 +1400,8 @@ row's **via** menu chooses between them.
 
 ## Third-party notices
 
-The app (not Core, not the Mac app) includes these packages, unchanged, each under its own license:
+The app and its 32-bit TWAIN helper (not Core, not the Mac app) include these packages, unchanged,
+each under its own license (the helper uses NTwain only):
 
 - **ZXing.Net** 0.16.11 — by Michael Jahn, a port of ZXing ("Zebra Crossing") by the ZXing
   authors. Licensed under the Apache License, Version 2.0

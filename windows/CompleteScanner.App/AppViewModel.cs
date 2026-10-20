@@ -284,8 +284,10 @@ public sealed class DeviceRow(ScannerInfo info, DeviceGroup group, string? chose
     public string Caption =>
         IsDemo ? "Demo (no hardware)"
         : HasConnectionChoice ? $"via {ConnectionLabel}"
-        // TWAIN lists installed drivers, so a scanner reached only that way is named for its driver.
-        : Info.Backend == "twain" ? "TWAIN driver"
+        // TWAIN lists installed drivers, so a scanner reached only that way is named for its driver
+        // (a 32-bit one says so here too: a long name cuts off its "(32-bit driver)").
+        : Info.Backend == TwainHelperSources.Backend ? "TWAIN (32-bit driver)"
+        : AppViewModel.IsTwain(Info) ? "TWAIN driver"
         : ConnectionLabel;
     public string ConnectionChooserName => $"Connection for {Name}: {ConnectionLabel}";
 
@@ -628,11 +630,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         _labelsCarriedUnder = Settings.Document.Clone();
         _readsBarcodes = PageProcessor.ReadsBarcodes(Settings);
         SyncTaskFlow();
-        _backends = backends ?? [new Scanning.WiaScannerBackend(),
-                                 new Scanning.EsclScannerBackend(),
-                                 new Scanning.Twain.TwainScannerBackend(),
-                                 // The demo's second sheet has a blank back, to show blank pages being flagged.
-                                 new MockScannerBackend { FeederBlankBackSheets = [1] }];
+        _backends = backends ?? DefaultBackends();
         _presetStore = new PresetStore();
         var preferences = AppPreferencesStore.Load();
         // A null value can only come from a hand-edited file; it means no choice.
@@ -664,11 +662,34 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// </summary>
     public Task CurrentOperation => _currentOperation;
 
-    /// <summary>On app exit: flush settings and remove this process's page spill files.</summary>
+    private static IReadOnlyList<IScannerBackend> DefaultBackends()
+    {
+        var twain = new Scanning.Twain.TwainScannerBackend();
+        return [new Scanning.WiaScannerBackend(),
+                new Scanning.EsclScannerBackend(),
+                twain,
+                // Drivers installed only for 32-bit programs, through the 32-bit helper.
+                new Scanning.Twain.Twain32ScannerBackend(twain),
+                // The demo's second sheet has a blank back, to show blank pages being flagged.
+                new MockScannerBackend { FeederBlankBackSheets = [1] }];
+    }
+
+    /// <summary>On app exit: flush settings, remove this process's page spill files and end the 32-bit TWAIN helper.</summary>
     public void Shutdown()
     {
         FlushSettings();
         _spool.Dispose();
+        foreach (var backend in _backends.OfType<IDisposable>())
+        {
+            try
+            {
+                backend.Dispose();
+            }
+            catch (Exception e)
+            {
+                System.Diagnostics.Trace.TraceWarning($"Closing a scanner connection failed: {e.Message}");
+            }
+        }
     }
 
     private void NotifyAll()
@@ -825,7 +846,10 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         (DeviceGroups.FirstOrDefault(g => !g.Primary.IsDemo && !TwainOnly(g) && !_certificateRefused.Contains(g.Primary.Id))
          ?? DeviceGroups.FirstOrDefault(g => g.Primary.IsDemo))?.Primary.Id;
 
-    private static bool TwainOnly(DeviceGroup group) => group.Members.All(m => m.Backend == "twain");
+    private static bool TwainOnly(DeviceGroup group) => group.Members.All(m => IsTwain(m));
+
+    /// <summary>A TWAIN connection, in this process (64-bit drivers) or through the 32-bit helper.</summary>
+    internal static bool IsTwain(ScannerInfo device) => device.Backend is "twain" or TwainHelperSources.Backend;
 
     /// <summary>
     /// The scanner the selected device belongs to: the group listing it, or, when that entry

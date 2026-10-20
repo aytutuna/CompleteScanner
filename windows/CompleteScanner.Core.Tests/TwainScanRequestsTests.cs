@@ -435,7 +435,7 @@ public class TwainScanRequestsTests
     public void Report_SaysWhetherTwainWorksAndListsTheDrivers()
     {
         Assert.Equal(
-            "TWAIN: not installed (no TWAINDSM.dll)\n  32-bit only (cannot be used by this 64-bit app) \"Old\\Scanner.ds\"\n",
+            "TWAIN: not installed (no TWAINDSM.dll)\n  32-bit only (needs the 32-bit helper) \"Old\\Scanner.ds\"\n",
             TwainDiagnostics.Report(TwainAvailability.NoDataSourceManager, [], [@"Old\Scanner.ds"]));
         Assert.Equal("TWAIN: available\n  source \"Canon DR-C225\"\n",
                      TwainDiagnostics.Report(TwainAvailability.Available, ["Canon DR-C225"], []));

@@ -1,7 +1,5 @@
 using System.IO;
 using CompleteScanner.Core;
-using NTwain;
-using NTwain.Data;
 using TwainException = CompleteScanner.Core.TwainException;
 
 namespace CompleteScanner.App.Scanning.Twain;
@@ -9,8 +7,9 @@ namespace CompleteScanner.App.Scanning.Twain;
 /// <summary>
 /// Scanners whose drivers speak TWAIN, through NTwain on a thread of their own
 /// (<see cref="TwainThread"/>), so a driver that hangs never blocks the UI.
-/// 64-bit only: this process can load only 64-bit data sources (C:\Windows\twain_64);
-/// drivers installed only in 32-bit form are listed in the diagnostics file instead.
+/// 64-bit: this process can load only 64-bit data sources (C:\Windows\twain_64); drivers
+/// installed only in 32-bit form are reached through the 32-bit helper instead
+/// (<see cref="Twain32ScannerBackend"/>).
 ///
 /// TWAIN lists installed drivers, not connected scanners: a scanner that is off or unplugged
 /// is still listed, and connecting to it reports it offline (CAP_DEVICEONLINE); the app
@@ -40,8 +39,6 @@ public sealed class TwainScannerBackend : IScannerBackend, IBackendDiagnostics, 
     private static readonly TimeSpan[] RetryDelays =
         [TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(5)];
 
-    private const string DataSourceManagerFile = "TWAINDSM.dll";
-
     public event Action? DevicesChanged;
 
     private readonly List<ScannerInfo> _devices = [];
@@ -49,9 +46,7 @@ public sealed class TwainScannerBackend : IScannerBackend, IBackendDiagnostics, 
 
     private readonly Lazy<TwainThread> _thread = new(() => new TwainThread());
     /// <summary>The process-wide TWAIN session; only touched on the TWAIN thread.</summary>
-    private TwainSession? _session;
-    /// <summary>The driver of the source opened last; TWAIN thread only.</summary>
-    private NTwainDriver? _lastDriver;
+    private readonly NTwainSessionHost _host = new();
     private SynchronizationContext? _context;
     /// <summary>Bumped by every Start/StopBrowsing; results of an older enumeration are dropped.</summary>
     private int _generation;
@@ -186,9 +181,9 @@ public sealed class TwainScannerBackend : IScannerBackend, IBackendDiagnostics, 
     private (TwainAvailability, List<ScannerInfo>, List<string>) EnumerateOnTwainThread()
     {
         var thirtyTwoBitOnly = ThirtyTwoBitOnlySources();
-        var availability = EnsureSession();
+        var availability = _host.EnsureSession();
         if (availability != TwainAvailability.Available) return (availability, [], thirtyTwoBitOnly);
-        var sources = _session!.GetSources()
+        var sources = _host.Sources()
             .Where(source => !string.IsNullOrWhiteSpace(source.Name))
             .Select(source => new ScannerInfo($"twain:{source.Name}", source.Name.Trim(), "TWAIN", Backend: "twain",
                                               Model: WiaScannerBackend.ModelOf(source.Manufacturer, source.Name)))
@@ -197,38 +192,8 @@ public sealed class TwainScannerBackend : IScannerBackend, IBackendDiagnostics, 
         return (availability, sources, thirtyTwoBitOnly);
     }
 
-    /// <summary>Opens the data source manager once per process. TWAIN thread only.</summary>
-    private TwainAvailability EnsureSession()
-    {
-        if (_session is { IsDsmOpen: true }) return TwainAvailability.Available;
-        try
-        {
-            // Only the copy scanner drivers install system-wide; the app never ships one.
-            if (!PlatformInfo.Current.DsmExists
-                || !File.Exists(Path.Combine(Environment.SystemDirectory, DataSourceManagerFile)))
-            {
-                return TwainAvailability.NoDataSourceManager;
-            }
-            var version = typeof(TwainScannerBackend).Assembly.GetName().Version ?? new Version(1, 0);
-            // StopOnTransferError stays off: with it on, NTwain 3.7 resets the pending transfers
-            // after every finished one (TWRC_XFERDONE), ending feeder batches after one sheet.
-            _session ??= new TwainSession(TWIdentity.Create(DataGroups.Image, version, "CompleteScanner",
-                                                            "CompleteScanner", "CompleteScanner", "CompleteScanner"));
-            return _session.Open() == ReturnCode.Success ? TwainAvailability.Available : TwainAvailability.Failed;
-        }
-        catch (Exception e) when (e is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)
-        {
-            return TwainAvailability.NoDataSourceManager;
-        }
-        catch (Exception e)
-        {
-            System.Diagnostics.Trace.TraceWarning($"TWAIN: the data source manager would not open: {e.Message}");
-            return TwainAvailability.Failed;
-        }
-    }
-
-    /// <summary>Drivers installed only for 32-bit programs (diagnostics only).</summary>
-    private static List<string> ThirtyTwoBitOnlySources()
+    /// <summary>Drivers installed only for 32-bit programs (C:\Windows\twain_32 files without a twain_64 counterpart).</summary>
+    internal static List<string> ThirtyTwoBitOnlySources()
     {
         try
         {
@@ -259,62 +224,8 @@ public sealed class TwainScannerBackend : IScannerBackend, IBackendDiagnostics, 
         }
         string name = deviceId["twain:".Length..];
         // A source that opens after the time limit has nobody to use it: close it at once.
-        var driver = await Worker.RunAsync(() => OpenOnTwainThread(name), OpenTimeout, whenAbandoned: late => late.Close());
+        var driver = await Worker.RunAsync(() => _host.Open(name), OpenTimeout, whenAbandoned: late => late.Close());
         return new TwainScannerSession(info, Worker, driver, driver.Close);
-    }
-
-    private NTwainDriver OpenOnTwainThread(string name)
-    {
-        var availability = EnsureSession();
-        if (availability == TwainAvailability.NoDataSourceManager)
-        {
-            throw ScanException.DeviceUnavailable(TwainDiagnostics.NoDataSourceManagerMessage);
-        }
-        if (availability != TwainAvailability.Available)
-        {
-            throw ScanException.SessionFailed("The TWAIN Data Source Manager would not open.");
-        }
-        var session = _session!;
-        // The previous source's driver stops listening even if its session never got to close
-        // it: NTwain hands out one shared object per source, so a forgotten driver would
-        // otherwise also receive every image of the next session that opens the same scanner.
-        _lastDriver?.Dispose();
-        _lastDriver = null;
-        // One source at a time: close one a previous session could not close (its driver was stuck).
-        if (session.State >= 4 && session.CurrentSource is { } previous)
-        {
-            try
-            {
-                if (session.State > 4) session.ForceStepDown(4);
-                previous.Close();
-            }
-            catch (Exception e)
-            {
-                System.Diagnostics.Trace.TraceWarning($"TWAIN: could not close the previous source: {e.Message}");
-            }
-        }
-        var source = session.GetSources().FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.Ordinal))
-            ?? throw ScanException.DeviceUnavailable($"The TWAIN driver \"{name}\" is no longer installed.");
-        var rc = source.Open();
-        if (rc != ReturnCode.Success)
-        {
-            int condition;
-            try
-            {
-                condition = (int)session.GetStatus().ConditionCode;
-            }
-            catch
-            {
-                condition = TwainConditionCodes.Bummer;
-            }
-            if (TwainErrors.ProblemFor((int)rc, condition) is { } problem)
-            {
-                throw ScanException.ForProblem(problem, $"TWAIN {TwainErrors.ConditionName(condition)}");
-            }
-            throw ScanException.SessionFailed($"the TWAIN driver could not open the scanner ({TwainErrors.ConditionName(condition)}).");
-        }
-        _lastDriver = new NTwainDriver(session, source);
-        return _lastDriver;
     }
 }
 
