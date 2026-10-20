@@ -101,6 +101,30 @@ final class PhotoFileReaderTests: XCTestCase {
         }
     }
 
+    func testAJpegTooLargeIsTurnedDownFromItsHeader() throws {
+        // A real JPEG whose start-of-frame is changed to claim 20000 × 10000 pixels.
+        var bytes = [UInt8](makeFile(.jpeg, sizes: [(40, 30)]))
+        let sof = try XCTUnwrap((2..<bytes.count - 9).first { bytes[$0] == 0xFF && bytes[$0 + 1] == 0xC0 })
+        bytes.replaceSubrange(sof + 5..<sof + 9, with: [0x27, 0x10, 0x4E, 0x20])
+        XCTAssertEqual(PhotoFileReader.headerPixelSize(Data(bytes))?.width, 20000)
+        XCTAssertEqual(PhotoFileReader.headerPixelSize(Data(bytes))?.height, 10000)
+        XCTAssertThrowsError(try PhotoFileReader.decode(Data(bytes), fileName: "huge.jpg")) { error in
+            XCTAssertEqual((error as? PhotoUnreadableError)?.message,
+                           PhotoImport.unreadableMessage("huge.jpg", detail: PhotoImport.tooLargeDetail))
+        }
+    }
+
+    func testTheHeaderSizeIsThatOfThePicture() {
+        for type in [UTType.png, .jpeg] {
+            let size = PhotoFileReader.headerPixelSize(makeFile(type, sizes: [(40, 30)]))
+            XCTAssertEqual(size?.width, 40, type.identifier)
+            XCTAssertEqual(size?.height, 30, type.identifier)
+        }
+        XCTAssertNil(PhotoFileReader.headerPixelSize(makeFile(.tiff, sizes: [(40, 30)])))
+        XCTAssertNil(PhotoFileReader.headerPixelSize(Data([0xFF, 0xD8, 0xFF])))
+        XCTAssertNil(PhotoFileReader.headerPixelSize(Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0])))
+    }
+
     func testEveryPageOfATiffIsReadInTurn() throws {
         let data = makeFile(.tiff, sizes: [(40, 30), (50, 20), (24, 36)])
         let first = try PhotoFileReader.decode(data, fileName: "fax.tif")

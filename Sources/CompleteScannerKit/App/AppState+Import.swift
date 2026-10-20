@@ -105,6 +105,11 @@ enum PhotoFileReader {
     /// pages the file holds. The size is read from the file's header before any pixel is decoded, so a
     /// photo of more than `PhotoImport.maxPhotoPixels` is turned down before its pixels take memory.
     static func decode(_ data: Data, fileName: String, page: Int = 1) throws -> PhotoFile {
+        // ImageIO reports no size for a PNG or JPEG that claims more pixels than it holds (it does not
+        // take the image at all), where WIC on Windows reports what the header says: read the header here.
+        if let claimed = headerPixelSize(data), tooLarge(width: claimed.width, height: claimed.height) {
+            throw PhotoUnreadableError(message: PhotoImport.unreadableMessage(fileName, detail: PhotoImport.tooLargeDetail))
+        }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(source) > 0 else {
             throw PhotoUnreadableError(message: PhotoImport.unreadableMessage(fileName, detail: PhotoImport.unreadableDetail))
         }
@@ -117,9 +122,7 @@ enum PhotoFileReader {
         let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
         let width = (properties?[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue ?? 0
         let height = (properties?[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue ?? 0
-        // A damaged header may claim sizes whose product does not fit an Int: too large all the same.
-        let pixels = width.multipliedReportingOverflow(by: height)
-        if pixels.overflow || pixels.partialValue > PhotoImport.maxPhotoPixels {
+        if tooLarge(width: width, height: height) {
             throw PhotoUnreadableError(message: PhotoImport.unreadableMessage(shown, detail: PhotoImport.tooLargeDetail))
         }
         // The tag ImageIO reports for JPEG, HEIF and TIFF alike; the image itself comes unturned.
@@ -129,6 +132,46 @@ enum PhotoFileReader {
         }
         return PhotoFile(stored: stored, orientation: PhotoOrientation.fromExif(tag), fileName: fileName,
                          page: page, pageCount: pageCount)
+    }
+
+    /// More than `PhotoImport.maxPhotoPixels`; a damaged header may claim sizes whose product does not
+    /// fit an Int, which is too large all the same.
+    static func tooLarge(width: Int, height: Int) -> Bool {
+        let pixels = width.multipliedReportingOverflow(by: height)
+        return pixels.overflow || pixels.partialValue > PhotoImport.maxPhotoPixels
+    }
+
+    /// The pixel size a PNG (its IHDR) or JPEG (its first start-of-frame) header claims, read from the
+    /// bytes alone; nil for other files and for headers cut short.
+    static func headerPixelSize(_ data: Data) -> (width: Int, height: Int)? {
+        let b = [UInt8](data.prefix(1 << 20))
+        func be16(_ at: Int) -> Int { (Int(b[at]) << 8) | Int(b[at + 1]) }
+        func be32(_ at: Int) -> Int { (be16(at) << 16) | be16(at + 2) }
+        let pngSignature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        if b.starts(with: pngSignature) {
+            // Signature, then the IHDR chunk: length, "IHDR", width, height.
+            guard b.count >= 24, Array(b[12..<16]) == Array("IHDR".utf8) else { return nil }
+            return (be32(16), be32(20))
+        }
+        guard b.count >= 4, b[0] == 0xFF, b[1] == 0xD8 else { return nil }
+        var at = 2
+        while at + 4 <= b.count {
+            guard b[at] == 0xFF else { return nil }
+            let marker = b[at + 1]
+            if marker == 0xFF { at += 1; continue } // fill byte
+            // Markers without a length: TEM, RST0-7, SOI.
+            if marker == 0x01 || (0xD0...0xD8).contains(marker) { at += 2; continue }
+            if marker == 0xD9 || marker == 0xDA { return nil } // end of image, start of scan: no frame header first
+            let length = be16(at + 2)
+            guard length >= 2 else { return nil }
+            // SOF0-15, but DHT (C4), JPG (C8) and DAC (CC): length, precision, height, width.
+            if (0xC0...0xCF).contains(marker) && marker != 0xC4 && marker != 0xC8 && marker != 0xCC {
+                guard at + 9 <= b.count else { return nil }
+                return (be16(at + 7), be16(at + 5))
+            }
+            at += 2 + length
+        }
+        return nil
     }
 }
 

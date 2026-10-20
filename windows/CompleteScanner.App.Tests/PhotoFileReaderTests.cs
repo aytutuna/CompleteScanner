@@ -163,6 +163,22 @@ public class PhotoFileReaderTests : IDisposable
     }
 
     [Fact]
+    public void AJpegTooLargeIsTurnedDownFromItsHeader()
+    {
+        // A real JPEG whose start-of-frame is changed to claim 20000 × 10000 pixels.
+        byte[] bytes = File.ReadAllBytes(Jpeg("small.jpg", 40, 30, null));
+        int sof = Enumerable.Range(2, bytes.Length - 11).First(i => bytes[i] == 0xFF && bytes[i + 1] == 0xC0);
+        bytes[sof + 5] = 0x27;
+        bytes[sof + 6] = 0x10;
+        bytes[sof + 7] = 0x4E;
+        bytes[sof + 8] = 0x20;
+        string path = Path.Combine(_folder, "huge.jpg");
+        File.WriteAllBytes(path, bytes);
+        var error = Assert.Throws<PhotoUnreadableException>(() => PhotoFileReader.Read(path));
+        Assert.Equal(PhotoImport.UnreadableMessage("huge.jpg", PhotoImport.TooLargeDetail), error.Message);
+    }
+
+    [Fact]
     public void EveryPageOfATiffIsReadInTurn()
     {
         var tiff = new TiffBitmapEncoder();
