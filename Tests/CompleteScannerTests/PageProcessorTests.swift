@@ -290,11 +290,13 @@ final class PageProcessorTests: XCTestCase {
     }
 
     func test_process_checksThePageAsScanned_beforeTheAdjustments() throws {
-        // The result is that of the page as scanned, not of the adjusted pixels.
+        // The result is that of the page as scanned, not of the adjusted pixels. The adjustments
+        // turn the paper black on both platforms (Core Image adjusts in linear light, the C# twin
+        // in sRGB values, so milder ones can leave a thresholded text page looking the same).
         var s = ScanSettings()
         s.colorMode = .blackWhite
-        s.adjustments.brightness = -0.5
-        s.adjustments.contrast = 3
+        s.adjustments.brightness = -1
+        s.adjustments.blackWhiteThreshold = 0.7
         let result = try PageProcessor.forScan(s).process([page(textImage)])
         XCTAssertEqual(result.pages[0].blank, BlankPageDetector.analyze(textRgba, dpi: 100))
         XCTAssertEqual(result.pages[0].colorMode, .blackWhite)

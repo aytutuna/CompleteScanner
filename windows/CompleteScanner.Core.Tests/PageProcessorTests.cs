@@ -218,10 +218,12 @@ public class PageProcessorTests
     [Fact]
     public void Process_ChecksThePageAsScanned_BeforeTheAdjustments()
     {
-        // The result is that of the page as scanned, not of the adjusted pixels.
+        // The result is that of the page as scanned, not of the adjusted pixels. The adjustments
+        // turn the paper black on both platforms (Core Image adjusts in linear light, this pipeline
+        // in sRGB values, so milder ones can leave a thresholded text page looking the same).
         var s = new ScanSettings { ColorMode = ColorMode.BlackWhite };
-        s.Adjustments.Brightness = -0.5;
-        s.Adjustments.Contrast = 3;
+        s.Adjustments.Brightness = -1;
+        s.Adjustments.BlackWhiteThreshold = 0.7;
         var scanned = Page(TextImage);
         var result = PageProcessor.ForScan(s).Process([scanned]);
         Assert.Equal(BlankPageDetector.Analyze(TextImage, 100), result.Pages[0].Blank);
