@@ -20,7 +20,7 @@ private func shifted(_ q: Quad, _ dx: Double, _ dy: Double) -> Quad {
 private typealias Step = (quad: Quad?, confidence: Double)
 
 /// Feeds frames from `start` on; returns the indices of frames that fired.
-private func run(_ stability: inout CaptureStability, _ start: Int, _ frames: [Step],
+private func feedFrames(_ stability: inout CaptureStability, _ start: Int, _ frames: [Step],
                  _ log: inout [CaptureDecision]) -> [Int] {
     var fired: [Int] = []
     var i = start
@@ -35,9 +35,9 @@ private func run(_ stability: inout CaptureStability, _ start: Int, _ frames: [S
     return fired
 }
 
-private func run(_ stability: inout CaptureStability, _ start: Int, _ frames: [Step]) -> [Int] {
+private func feedFrames(_ stability: inout CaptureStability, _ start: Int, _ frames: [Step]) -> [Int] {
     var log: [CaptureDecision] = []
-    return run(&stability, start, frames, &log)
+    return feedFrames(&stability, start, frames, &log)
 }
 
 /// The page held with a tremor of ±1 px (0.1 % of the diagonal), `count` frames.
@@ -53,7 +53,7 @@ final class CaptureStabilityTests: XCTestCase {
     func testFiresOnceWhenThePageHoldsStillLongEnough() {
         var stability = CaptureStability()
         var log: [CaptureDecision] = []
-        let fired = run(&stability, 0, held(page, 60), &log)
+        let fired = feedFrames(&stability, 0, held(page, 60), &log)
         // Steadying starts on frame 1 (33 ms); 600 ms later is frame 20 (660 ms).
         XCTAssertEqual(fired, [20])
         XCTAssertEqual(stability.state, .captured)
@@ -67,52 +67,52 @@ final class CaptureStabilityTests: XCTestCase {
         var stability = CaptureStability()
         // 20 px per frame (1.6 % of the diagonal) for 3 s.
         let frames: [Step] = (0..<90).map { i in (shifted(page, Double(20 * (i % 10)), 0), 0.9) }
-        XCTAssertEqual(run(&stability, 0, frames), [])
+        XCTAssertEqual(feedFrames(&stability, 0, frames), [])
         XCTAssertEqual(stability.state, .moving)
     }
 
     func testNeverFiresWhenTheDetectionIsUnsure() {
         var stability = CaptureStability()
-        XCTAssertEqual(run(&stability, 0, held(page, 60, 0.55)), [])
+        XCTAssertEqual(feedFrames(&stability, 0, held(page, 60, 0.55)), [])
         XCTAssertEqual(stability.state, .moving)
-        XCTAssertEqual(run(&stability, 60, held(page, 60, 0.3)), [])
+        XCTAssertEqual(feedFrames(&stability, 60, held(page, 60, 0.3)), [])
         XCTAssertEqual(stability.state, .noPage)
     }
 
     func testAConfidenceDipAboveTheStayLevelKeepsSteadying() {
         var stability = CaptureStability()
         let frames = held(page, 8) + held(page, 8, 0.5) + held(page, 30)
-        XCTAssertEqual(run(&stability, 0, frames), [20])
+        XCTAssertEqual(feedFrames(&stability, 0, frames), [20])
     }
 
     func testAConfidenceDropBelowTheStayLevelStartsOver() {
         var stability = CaptureStability()
         let frames = held(page, 8) + held(page, 1, 0.4) + held(page, 40)
         // Frame 8 drops out of steadying; frame 9 holds still against it: steady from 9, fires at frame 28.
-        XCTAssertEqual(run(&stability, 0, frames), [28])
+        XCTAssertEqual(feedFrames(&stability, 0, frames), [28])
     }
 
     func testSmallDriftIsToleratedButAJumpStartsOver() {
         var drift = CaptureStability()
         // Drifting 1 px per frame: after 20 frames the page is 20 px (1.6 %) from where it was, within the 2.5 % to stay.
         let slow: [Step] = (0..<40).map { i in (shifted(page, Double(i), 0), 0.9) }
-        XCTAssertEqual(run(&drift, 0, slow), [20])
+        XCTAssertEqual(feedFrames(&drift, 0, slow), [20])
 
         var jump = CaptureStability()
         // A jump of 35 px (2.8 %) from where holding started on frame 10 starts over: steady from 11, fires at frame 30.
         let frames = held(page, 10) + held(shifted(page, 35, 0), 40)
-        XCTAssertEqual(run(&jump, 0, frames), [30])
+        XCTAssertEqual(feedFrames(&jump, 0, frames), [30])
     }
 
     func testAShortDropoutIsBridgedAndALongOneStartsOver() {
         var bridged = CaptureStability()
         // Five frames missing (165 ms) are waited for, but the time from frame 7 to 13 does not
         // count: steady from 1 to 7 (198 ms) and from 13 on, 600 ms are reached at frame 26.
-        XCTAssertEqual(run(&bridged, 0, held(page, 8) + missing(5) + held(page, 30)), [26])
+        XCTAssertEqual(feedFrames(&bridged, 0, held(page, 8) + missing(5) + held(page, 30)), [26])
 
         var lost = CaptureStability()
         // Ten frames missing (330 ms): the page is new again from frame 18; steady from 19, fires at 38.
-        XCTAssertEqual(run(&lost, 0, held(page, 8) + missing(10) + held(page, 40)), [38])
+        XCTAssertEqual(feedFrames(&lost, 0, held(page, 8) + missing(10) + held(page, 40)), [38])
     }
 
     func testTheTimeThePageIsMissingDoesNotCountAsHoldingStill() {
@@ -120,7 +120,7 @@ final class CaptureStabilityTests: XCTestCase {
         var log: [CaptureDecision] = []
         // Steady from frame 1 (33 ms), last seen at frame 13 (429 ms), a hand over it until frame 20
         // (660 ms, 231 ms later): 396 ms were held still, 204 more are needed after it comes back.
-        XCTAssertEqual(run(&stability, 0, held(page, 14) + missing(6) + held(page, 30), &log), [27])
+        XCTAssertEqual(feedFrames(&stability, 0, held(page, 14) + missing(6) + held(page, 30), &log), [27])
         for i in 14..<20 {
             XCTAssertEqual(log[i].state, .steadying)
             XCTAssertEqual(log[i].progress, log[13].progress)
@@ -144,7 +144,7 @@ final class CaptureStabilityTests: XCTestCase {
                 frames.append(step)
             }
         }
-        XCTAssertEqual(run(&stability, 0, frames), [20])
+        XCTAssertEqual(feedFrames(&stability, 0, frames), [20])
         XCTAssertEqual(stability.state, .captured)
     }
 
@@ -165,7 +165,7 @@ final class CaptureStabilityTests: XCTestCase {
         XCTAssertLessThan(CaptureStability.movement(a, b), 3)
         var stability = CaptureStability()
         let frames: [Step] = (0..<61).map { i in (quad: i % 2 == 0 ? a : b, confidence: 0.9) }
-        XCTAssertEqual(run(&stability, 0, frames), [20])
+        XCTAssertEqual(feedFrames(&stability, 0, frames), [20])
     }
 
     func testAPauseBetweenFramesDoesNotTakeTheSamePageAgain() {
@@ -185,26 +185,26 @@ final class CaptureStabilityTests: XCTestCase {
 
     func testTheSamePageIsNotTakenTwice() {
         var stability = CaptureStability()
-        XCTAssertEqual(run(&stability, 0, held(page, 120)), [20])
+        XCTAssertEqual(feedFrames(&stability, 0, held(page, 120)), [20])
         XCTAssertEqual(stability.state, .captured)
     }
 
     func testTheNextPageIsTakenAfterThePageLeavesOrMoves() {
         var removed = CaptureStability()
         // Captured at 20; gone from 30 to 39; back at 40, steady from 41, fires at 60.
-        XCTAssertEqual(run(&removed, 0, held(page, 30) + missing(10) + held(page, 40)), [20, 60])
+        XCTAssertEqual(feedFrames(&removed, 0, held(page, 30) + missing(10) + held(page, 40)), [20, 60])
 
         var moved = CaptureStability()
         // The next page laid 200 px (16 %) aside: re-armed at 30, steady from 31, fires at 50.
-        XCTAssertEqual(run(&moved, 0, held(page, 30) + held(shifted(page, 200, 0), 40)), [20, 50])
+        XCTAssertEqual(feedFrames(&moved, 0, held(page, 30) + held(shifted(page, 200, 0), 40)), [20, 50])
     }
 
     func testResetArmsTheShutterAgain() {
         var stability = CaptureStability()
-        XCTAssertEqual(run(&stability, 0, held(page, 30)), [20])
+        XCTAssertEqual(feedFrames(&stability, 0, held(page, 30)), [20])
         stability.reset()
         XCTAssertEqual(stability.state, .noPage)
         // After a reset the next frame is a page seen again: steady from 31, fires at 50.
-        XCTAssertEqual(run(&stability, 30, held(page, 30)), [50])
+        XCTAssertEqual(feedFrames(&stability, 30, held(page, 30)), [50])
     }
 }
