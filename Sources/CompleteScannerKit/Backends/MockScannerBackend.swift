@@ -128,8 +128,10 @@ private final class MockScannerSession: ScannerSession {
     private(set) var lastScanDuplex: Bool?
 
     private var cancelRequested = false
-    /// Source of the feeder's settings, read at the start of each feeder scan.
-    private weak var backend: MockScannerBackend?
+    /// Source of the feeder's settings, read at the start of each feeder scan, and of where the
+    /// sample card and book are. Held strongly, as the C# twin does: the demo's state lives on in a
+    /// session whose backend is no longer referenced elsewhere (the backend holds no session).
+    private let backend: MockScannerBackend
 
     private static let bedSizeInches = CGSize(width: 8.5, height: 11.7)
 
@@ -144,7 +146,7 @@ private final class MockScannerSession: ScannerSession {
                             flatbedSizeInches: Self.bedSizeInches,
                             supportsOverview: true,
                             feederSizeInches: MockBedRenderer.feederMaxInches,
-                            supportsDuplex: backend?.feederDuplex ?? true)
+                            supportsDuplex: backend.feederDuplex)
     }
 
     func performOverviewScan(settings: ScanSettings) async throws -> CGImage {
@@ -153,11 +155,11 @@ private final class MockScannerSession: ScannerSession {
         let rendered: CGImage?
         switch settings.task {
         case .idCard?:
-            rendered = MockBedRenderer.renderIdCardBed(dpi: 100, side: (backend?.idCardTurnedOver ?? false) ? .back : .front)
+            rendered = MockBedRenderer.renderIdCardBed(dpi: 100, side: backend.idCardTurnedOver ? .back : .front)
         case .receipt?:
             rendered = MockBedRenderer.renderReceiptBed(dpi: 100)
         case .book?:
-            rendered = MockBedRenderer.renderBookSpread(dpi: 100, spreadIndex: backend?.bookSpread ?? 0)
+            rendered = MockBedRenderer.renderBookSpread(dpi: 100, spreadIndex: backend.bookSpread)
         default:
             rendered = MockBedRenderer.renderBed(dpi: 100, intent: settings.intent)
         }
@@ -182,10 +184,10 @@ private final class MockScannerSession: ScannerSession {
         progressHandler?(ScanProgress(fraction: 0.6, message: "Scanning…"))
         // The ID card task scans the sample card, then turns it over as the user would.
         let idCard = settings.task == .idCard
-        let cardSide: PageSide = (backend?.idCardTurnedOver ?? false) ? .back : .front
+        let cardSide: PageSide = backend.idCardTurnedOver ? .back : .front
         // The Book or magazine task scans the open book, then turns its page.
         let book = settings.task == .book
-        let spread = backend?.bookSpread ?? 0
+        let spread = backend.bookSpread
         let rendered = idCard
             ? MockBedRenderer.renderIdCardBed(dpi: dpi, side: cardSide)
             : settings.task == .receipt
@@ -196,8 +198,8 @@ private final class MockScannerSession: ScannerSession {
         guard var image = rendered else {
             throw ScanError.scanFailed("Could not render the demo scan.")
         }
-        if idCard { backend?.idCardTurnedOver = cardSide == .front }
-        if book { backend?.bookSpread = spread + 1 }
+        if idCard { backend.idCardTurnedOver = cardSide == .front }
+        if book { backend.bookSpread = spread + 1 }
         try await sleepCheckingCancellation(seconds: 0.25)
 
         progressHandler?(ScanProgress(fraction: 0.9, message: "Transferring…"))
@@ -230,14 +232,14 @@ private final class MockScannerSession: ScannerSession {
         // The Batch task's stack: documents with separator sheets between them.
         let batch = settings.task == .batch && settings.intent == .document
         let sheets = batch
-            ? (backend?.batchSheetCount ?? MockScannerBackend.defaultBatchSheetCount)
-            : (backend?.feederSheetCount ?? MockScannerBackend.defaultFeederSheetCount)
-        let separators: Set<Int> = batch ? (backend?.batchSeparatorSheets ?? [2, 4]) : []
+            ? backend.batchSheetCount
+            : backend.feederSheetCount
+        let separators: Set<Int> = batch ? backend.batchSeparatorSheets : []
         let barcodeSheets = batch && settings.document.splitMode == .barcode
-        let jamsAfter = backend?.feederJamsAfter
-        let twoSided = settings.duplex == .both && (backend?.feederDuplex ?? true)
-        let turnedOver = backend?.feederStackTurnedOver ?? false
-        let blankBacks = backend?.feederBlankBackSheets ?? []
+        let jamsAfter = backend.feederJamsAfter
+        let twoSided = settings.duplex == .both && backend.feederDuplex
+        let turnedOver = backend.feederStackTurnedOver
+        let blankBacks = backend.feederBlankBackSheets
         let region = PaperSizes.feederRegionInches(settings.paperSize, max: MockBedRenderer.feederMaxInches)
         let sheetInches = settings.paperSize == .auto ? MockBedRenderer.sheetInches : region.size
         progressHandler?(ScanProgress(fraction: 0.1, message: "Warming up…"))
@@ -292,7 +294,7 @@ private final class MockScannerSession: ScannerSession {
         // The user turns the stack over between the two scans of turning over by hand, and loads
         // it the right way up for any other scan; after a jam the rest of the same side comes next.
         if lastScanStop == nil {
-            backend?.feederStackTurnedOver = settings.duplex == .manual && !twoSided && !turnedOver
+            backend.feederStackTurnedOver = settings.duplex == .manual && !twoSided && !turnedOver
         }
         return pages
     }
