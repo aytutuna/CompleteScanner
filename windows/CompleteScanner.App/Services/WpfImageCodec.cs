@@ -249,6 +249,39 @@ public static class WpfImageCodec
         return stream.ToArray();
     }
 
+    /// <summary>
+    /// A 1-bit PNG of <paramref name="image"/> thresholded as black &amp; white pages are for G4
+    /// (<see cref="Bilevel.Pack(RgbaImage)"/>): lossless and small for text.
+    /// </summary>
+    public static byte[] EncodeBilevelPng(RgbaImage image, int dpi)
+    {
+        // Bilevel's rows (MSB first, 0 = black) are WPF's BlackWhite layout as they are.
+        var bitmap = BitmapSource.Create(image.Width, image.Height, dpi, dpi, PixelFormats.BlackWhite, null,
+                                         Bilevel.Pack(image), Bilevel.Stride(image.Width));
+        bitmap.Freeze();
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+        return stream.ToArray();
+    }
+
+    /// <summary>
+    /// A page's picture for a Word document (<see cref="DocxWriter"/>), stored as the PDF size
+    /// stores the page in a PDF (<see cref="PdfImageEncoding.Plan(ColorMode, int, PdfSizePreset, RgbaImage)"/>):
+    /// downsampled to the planned resolution, a color or gray JPEG at the planned quality, or a
+    /// 1-bit PNG for a black &amp; white page. <paramref name="imageDpi"/> is the resolution of the
+    /// pixels at hand (<see cref="PdfImageEncoding.EffectiveDpi"/>).
+    /// </summary>
+    public static DocxPicture EncodeDocxPicture(RgbaImage image, int imageDpi, ColorMode mode, PdfSizePreset size)
+    {
+        var plan = PdfImageEncoding.Plan(mode, imageDpi, size, image);
+        var pixels = PdfImageEncoding.Downsample(image, imageDpi, plan);
+        return DocxWriter.PictureFormat(plan) == DocxPictureFormat.Png
+            ? new DocxPicture(EncodeBilevelPng(pixels, plan.TargetDpi), DocxPictureFormat.Png)
+            : new DocxPicture(EncodeJpeg(pixels, plan.TargetDpi, plan.Quality, plan.IsGray), DocxPictureFormat.Jpeg);
+    }
+
     /// <summary>An RgbaImage as an 8-bit gray BitmapSource carrying real DPI metadata.</summary>
     private static BitmapSource GrayWithDpi(RgbaImage image, int dpi)
     {

@@ -333,6 +333,9 @@ struct InspectorView: View {
             if shownFormat == .pdf {
                 pdfSizeRow
             }
+            if shownFormat == .word {
+                wordPicturesRow
+            }
             afterSavePicker
             LabeledContent("Destination") {
                 HStack(spacing: 6) {
@@ -393,6 +396,36 @@ struct InspectorView: View {
                     .font(.caption)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// Word documents only: each page's picture before its text (`OutputOptions.wordPageImages`),
+    /// stored at the size picked under the switch, which is the PDF size setting. Twin of the
+    /// Windows inspector's "Include page images" and its "Page image size".
+    private var wordPicturesRow: some View {
+        let on = state.settings.output.wordPageImages
+        return VStack(alignment: .leading, spacing: 6) {
+            Toggle(DocxWriter.pageImagesLabel, isOn: $state.settings.output.wordPageImages)
+                .help(DocxWriter.pageImagesHint(on: on))
+            Text(DocxWriter.pageImagesHint(on: on))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if on {
+                Text("Page image size")
+                Picker("Page image size", selection: $state.settings.output.pdfSize) {
+                    ForEach(PDFSizePreset.displayOrder) { size in
+                        Text(size.label).tag(size)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .help(state.settings.output.pdfSize.hint)
+                Text(state.settings.output.pdfSize.hint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

@@ -201,7 +201,7 @@ public sealed partial class AppViewModel
                     string path = OutputPath(s, format.FileExtension(), plan.FileIndex(document), label: document.Label);
                     if (format.IsTextFormat())
                     {
-                        var (written, hasText) = await WriteTextDocument(pages, format, path, token);
+                        var (written, hasText) = await WriteTextDocument(pages, format, path, s, token);
                         files.Add(written);
                         saved.Add(written);
                         if (!hasText) noText.Add(Path.GetFileName(written));

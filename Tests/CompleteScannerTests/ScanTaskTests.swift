@@ -650,6 +650,18 @@ final class ScanTaskTests: XCTestCase {
         }
     }
 
+    /// Twin of `Apply_KeepsThePageImagesChoice`.
+    func test_apply_keepsThePageImagesChoice() {
+        // On unless the user turned it off; Scan to Word starts with it on for a new user.
+        XCTAssertTrue(TaskCatalog.apply(.word, to: ScanSettings()).output.wordPageImages)
+        var current = customized()
+        current.output.wordPageImages = false
+        for task in ScanTask.allCases {
+            XCTAssertFalse(TaskCatalog.apply(task, to: current).output.wordPageImages, task.rawValue)
+        }
+        XCTAssertFalse(current.output.wordPageImages)
+    }
+
     func test_apply_turnsTheTextBesideAPDFOff() {
         var current = customized()
         current.output.alsoSaveText = true

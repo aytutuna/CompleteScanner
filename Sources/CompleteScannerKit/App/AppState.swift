@@ -894,8 +894,10 @@ public final class AppState: ObservableObject {
             if format.isTextFormat {
                 self.statusMessage = "Reading the text of the pages…"
                 let url = try self.outputURL(fileExtension: format.fileExtension, label: document.label)
+                let pageImages: PDFSizePreset? = s.output.wordPageImages ? s.output.pdfSize : nil
                 let hasText = try await Task.detached(priority: .userInitiated) {
                     try Self.writeTextDocument(pages: pages, format: format, to: url,
+                                               pageImages: pageImages,
                                                shouldContinue: { !flag.isCancelled }) { [weak self] msg in
                         Task { @MainActor in self?.statusMessage = msg }
                     }
@@ -945,8 +947,10 @@ public final class AppState: ObservableObject {
             let hasText: Bool
             do {
                 let target = try outputURL(fileExtension: s.format.fileExtension)
+                let pageImages: PDFSizePreset? = s.output.wordPageImages ? s.output.pdfSize : nil
                 hasText = try await Task.detached(priority: .userInitiated) {
                     try Self.writeTextDocument(pages: pages, format: s.format, to: target,
+                                               pageImages: pageImages,
                                                shouldContinue: { !flag.isCancelled }) { [weak self] msg in
                         Task { @MainActor in self?.statusMessage = msg }
                     }
@@ -1670,11 +1674,17 @@ public final class AppState: ObservableObject {
 
     /// Reads the text of every page with OCR, on full-resolution pixels with the page's rotation,
     /// and writes it as a Word document or a text file (`format`). A page whose text cannot be read
-    /// fails the save, saying why. Returns whether any text was found.
+    /// fails the save, saying why. A Word document shows each page's picture before its text when
+    /// `pageImages` gives the size to store them at (`OutputOptions.wordPageImages`, stored as
+    /// `pdfSize` stores a PDF page). A Word document past `DocxWriter.maxPackageBytes` fails the
+    /// save with `DocxWriter.tooLargeMessage`. Returns whether any text was found.
     nonisolated static func writeTextDocument(pages: [ScannedPage], format: OutputFormat, to url: URL,
+                                                          pageImages: PDFSizePreset? = nil,
                                                           shouldContinue: () -> Bool,
                                                           progress: (String) -> Void) throws -> Bool {
         var ocrPages: [OCRPage] = []
+        var pictures: [DocxPicture?] = []
+        var pictureBytes = 0
         for (index, page) in pages.enumerated() {
             if !shouldContinue() { throw ScanError.cancelled }
             progress("Reading the text of page \(index + 1) of \(pages.count)…")
@@ -1682,10 +1692,30 @@ public final class AppState: ObservableObject {
             let lines = try recognizeForText(prepared.image)
             ocrPages.append(OCRPage.of(lines, pixelWidth: prepared.pixelWidth,
                                        pixelHeight: prepared.pixelHeight, dpi: page.dpi))
+            if format == .word, let size = pageImages {
+                // OCR above has read the full pixels; the picture is stored as the PDF size plans it.
+                let imageDPI = PDFImageEncoding.effectiveDPI(imageWidth: prepared.image.width,
+                                                             pagePixelWidth: prepared.pixelWidth, pageDPI: page.dpi)
+                let picture = DocxWriter.picture(of: prepared.image, imageDPI: imageDPI, mode: page.colorMode,
+                                                 size: size)
+                pictures.append(picture)
+                // Stop as soon as the pictures alone are past the limit, not after reading every page.
+                pictureBytes += picture?.data.count ?? 0
+                if pictureBytes > DocxWriter.maxPackageBytes { throw ScanError.exportFailed(DocxWriter.tooLargeMessage) }
+            }
         }
         if !shouldContinue() { throw ScanError.cancelled }
         progress(format == .word ? "Writing the Word document…" : "Writing the text file…")
-        let data = format == .word ? DocxWriter.make(ocrPages) : TextExport.encode(ocrPages)
+        let data: Data
+        if format == .word {
+            // A package past the limit is refused here: `ZipStore.make` would stop the app past 4 GB.
+            if DocxWriter.packageSize(ocrPages, pictures: pictures) > DocxWriter.maxPackageBytes {
+                throw ScanError.exportFailed(DocxWriter.tooLargeMessage)
+            }
+            data = DocxWriter.make(ocrPages, pictures: pictures)
+        } else {
+            data = TextExport.encode(ocrPages)
+        }
         do {
             try data.write(to: url, options: .atomic)
         } catch {

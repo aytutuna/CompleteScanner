@@ -1312,22 +1312,53 @@ public enum TextExport {
     public static func copiedMessage(pageNumber: Int, hasText: Bool) -> String
 }
 public struct TextOutputError: LocalizedError, Equatable { public init(_ message: String) }   // not a ScanError
+// OutputOptions gains `wordPageImages: Bool` ("wordPageImages" in the "output" object; true by default
+// and for files written before it existed; kept when a task is picked): a Word document shows each
+// page's picture before its text, stored as `pdfSize` stores a PDF page.
+public enum DocxPictureFormat: Equatable, Sendable { case jpeg, png }
+public struct DocxPicture: Equatable, Sendable { public let data: Data; public let format: DocxPictureFormat }
 public enum DocxWriter {
     public static let twipsPerInch = 1440, minPageTwips = 144, maxPageTwips = 31680
-    public static let contentTypesXML: String, relationshipsXML: String
-    public static func make(_ pages: [OCRPage]) -> Data                // [Content_Types].xml, _rels/.rels, word/document.xml
-    public static func documentXML(_ pages: [OCRPage]) -> String       // a w:p per paragraph, pageBreakBefore per page, w:tab, w:br
+    public static let emuPerPoint = 12700, emuPerTwip = 635
+    public static let contentTypesXML: String, relationshipsXML: String, imageRelationshipType: String
+    public static let pageImagesLabel: String                          // "Include page images"
+    public static func pageImagesHint(on: Bool) -> String
+    /// [Content_Types].xml, _rels/.rels, word/document.xml; with pictures then
+    /// word/_rels/document.xml.rels and word/media/image1.jpeg (or .png) and on, in page order.
+    public static func make(_ pages: [OCRPage], pictures: [DocxPicture?] = []) -> Data
+    /// The length of `make`'s output, without writing it. A save refuses a Word document past
+    /// `maxPackageBytes` (2,000,000,000, both platforms) with `ScanError.exportFailed(tooLargeMessage)`
+    /// (Windows: an IOException with that message), checked as the pictures add up and before `make`.
+    public static func packageSize(_ pages: [OCRPage], pictures: [DocxPicture?] = []) -> Int
+    public static let maxPackageBytes = 2_000_000_000
+    public static let tooLargeMessage: String   // "The Word document would be larger than 2 GB, too large to write. …"
+    /// A w:p per paragraph, pageBreakBefore per page, w:tab, w:br; a page with a picture starts
+    /// with it (see below) and its text follows without a break of its own.
+    public static func documentXML(_ pages: [OCRPage], pictures: [DocxPicture?] = []) -> String
     public static func pageSizeTwips(_ page: OCRPage?) -> (width: Int, height: Int)   // page 1 × 20, clamped; Letter without a page
     public static func marginTwips(width: Int, height: Int) -> Int    // min(1440, shorter side / 8)
     public static func escapeXML(_ text: String) -> String
+    public static func packageContentTypesXML(_ pictures: [DocxPicture]) -> String     // + Default jpeg / png when used
+    public static func documentRelationshipsXML(_ pictures: [DocxPicture]) -> String   // rId1… → media/image1.jpeg…
+    public static func mediaName(_ number: Int, format: DocxPictureFormat) -> String   // "image1.jpeg"
+    public static func pictureExtension(_ format: DocxPictureFormat) -> String; pictureContentType(_:) -> String
+    public static func pictureFormat(_ plan: PDFImagePlan) -> DocxPictureFormat        // bilevel → png, else jpeg
+    /// The page's real size (points × 12700 EMU) or, when larger, shrunk with its shape kept to fit
+    /// inside the paper's margins (integer EMU, rounded down); no size → the space inside the margins.
+    public static func pictureSizeEMU(_ page: OCRPage, paperWidthTwips: Int, paperHeightTwips: Int) -> (width: Int, height: Int)
+    // Mac only: the picture of a page (color/gray: encodedPage's JPEG; black & white: downsampled to
+    // its plan, luma < 128 black, a 1-bit gray PNG through ImageIO). Nil leaves the page without one.
+    public static func picture(of image: CGImage, imageDPI: Int, mode: ColorMode, size: PDFSizePreset) -> DocxPicture?
 }
 public struct ZipStoreEntry { public let name: String; public let data: Data }
 public enum ZipStore {
     public static func crc32<Bytes: Sequence>(_ data: Bytes) -> UInt32 where Bytes.Element == UInt8
     public static func make(_ entries: [ZipStoreEntry]) -> Data       // stored, 1980-01-01, in order, no zip64
+    public static func packageSize(_ entries: [ZipStoreEntry]) -> Int // make(entries).count, without writing (C#: long)
 }
 ```
-Twins of `windows/CompleteScanner.Core/OcrText.cs` (`OcrPage.Of`, `OcrParagraph`, `OcrText`), `TextExport.cs`, `DocxWriter.cs`, `ZipStore.cs` and `OutputFormats` in `Models.cs` (`IsImageFormat`, `IsTextFormat`, `Offered`, `ImageFormatOrJpeg`, `QueueFormat`, `PageFormat`, `SavesPdf`, `SaveTitle`); `OCRTextTests`, `TextExportTests` (with `OutputFormatsTests`), `DocxWriterTests` (with `ZipStoreTests`) are the same cases on both sides, and both pin the same CRC-32 and length of the sample text file and Word document, so the two platforms write the same bytes. `TextExport.WriteNewFile` (a hidden temporary file moved to a free name) is Windows only; the Mac writes with `Data.write`. `AppState` saves the collected pages as `settings.format.queueFormat` (`savePDF()`: a Word document or text file, else a PDF and, with `alsoSaveText`, its text beside it), a scan saved at once as Text or Word too, reads each page with OCR once per save (`PDFTextLayer`), and offers `copyPageText(id:)` (Copy Text in a queued page's menu: the page's `OCRText.pageText` on the pasteboard). A page whose text cannot be read fails a Text or Word save with `TextOutputError(TextExport.recognitionFailed(…))`; for the text beside a PDF the PDF is kept and `errorMessage` is `TextExport.sidecarFailed(…)`. A scan saved at once as Text or Word whose text cannot be read, whose file cannot be written, or whose save is cancelled, is put in the queue instead of being lost (`statusMessage` is `TextExport.keptInQueue(…)`, with `textUnreadable` true only when the error is a `TextOutputError` from OCR, so a file error is not told to wait for the text; on Windows the OCR error is a private `InvalidOperationException` subclass in `AppViewModel`). `FileActionService` gains `copyText(_:)` (Windows: `IFileActions.CopyText`, with "\r\n" line breaks). Windows: `AppViewModel.SavePdf` / `CopyPageText`, the inspector's "Also save text (.txt)" and format list, the page strip's menu.
+Twins of `windows/CompleteScanner.Core/OcrText.cs` (`OcrPage.Of`, `OcrParagraph`, `OcrText`), `TextExport.cs`, `DocxWriter.cs` (with `DocxPictureFormat`, `DocxPicture`), `ZipStore.cs` and `OutputFormats` in `Models.cs` (`IsImageFormat`, `IsTextFormat`, `Offered`, `ImageFormatOrJpeg`, `QueueFormat`, `PageFormat`, `SavesPdf`, `SaveTitle`); `OCRTextTests`, `TextExportTests` (with `OutputFormatsTests`), `DocxWriterTests` (with `ZipStoreTests` and `DocxWriterPictureTests`) are the same cases on both sides, and both pin the same CRC-32 and length of the sample text file and Word document, with and without page pictures (the same 16 × 12 JPEG and PNG fixtures, as hex, in both suites), so the two platforms write the same bytes.
+**Page pictures in a Word document (M22b).** With `output.wordPageImages` on, every page of a Word save gets its picture before its text: a paragraph of its own (`w:pageBreakBefore` from the second page on, `w:spacing` before and after 0, centred) holding one inline DrawingML picture (`wp:inline` with `wp:extent`, `wp:docPr` id n, name "Page p", descr "Page p as scanned", `a:graphic` / `pic:pic` with `a:blip r:embed="rIdn"` and the same `a:ext`), the root declaring `r`, `wp`, `a` and `pic` only then. One layout for every page, chosen so that it reads the same in Word, LibreOffice, Pages and Google Docs and survives editing: the picture is inline (it flows with the text, no anchors or text boxes), at the page's real size, or shrunk to fit inside the margins of the document's paper (the first page's size) with its shape kept, so a full page fills its own sheet and its editable text starts on the next. The picture is stored as the PDF size stores the page (`PDFImageEncoding.plan`: the size's resolution limit and JPEG quality, gray JPEG for gray pages), except that a black & white page, G4 in a PDF, is a lossless 1-bit gray PNG (Windows: `Bilevel.Pack` → WIC; the Mac: the same threshold → ImageIO); the inspector shows the size picker as "Page image size" for Word with pictures on. The writer takes encoded bytes, so its output is the same on both platforms; the encoders are each platform's own (`WpfImageCodec.EncodeDocxPicture`, `DocxWriter.picture(of:...)`), checked by decoding with WIC (`CompleteScanner.App.Tests/DocxPictureTests.cs`) and ImageIO (`DocxPictureTests` in `DocxWriterTests.swift`). Windows: a picture that cannot be encoded fails the save (the pages stay queued); the Mac leaves that page without its picture. `TextExport.WriteNewFile` (a hidden temporary file moved to a free name) is Windows only; the Mac writes with `Data.write`. `AppState` saves the collected pages as `settings.format.queueFormat` (`savePDF()`: a Word document or text file, else a PDF and, with `alsoSaveText`, its text beside it), a scan saved at once as Text or Word too, reads each page with OCR once per save (`PDFTextLayer`), and offers `copyPageText(id:)` (Copy Text in a queued page's menu: the page's `OCRText.pageText` on the pasteboard). A page whose text cannot be read fails a Text or Word save with `TextOutputError(TextExport.recognitionFailed(…))`; for the text beside a PDF the PDF is kept and `errorMessage` is `TextExport.sidecarFailed(…)`. A scan saved at once as Text or Word whose text cannot be read, whose file cannot be written, or whose save is cancelled, is put in the queue instead of being lost (`statusMessage` is `TextExport.keptInQueue(…)`, with `textUnreadable` true only when the error is a `TextOutputError` from OCR, so a file error is not told to wait for the text; on Windows the OCR error is a private `InvalidOperationException` subclass in `AppViewModel`). `FileActionService` gains `copyText(_:)` (Windows: `IFileActions.CopyText`, with "\r\n" line breaks). Windows: `AppViewModel.SavePdf` / `CopyPageText`, the inspector's "Also save text (.txt)" and format list, the page strip's menu.
 
 ### Output/PDFImageEncoding.swift, Pipeline/ColorAnalysis.swift (+ ScanSettings in Core/Models.swift)
 

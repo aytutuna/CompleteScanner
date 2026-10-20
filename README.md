@@ -21,8 +21,12 @@ scanners** — including the Epson Perfection V39 II.
   queued page's menu puts its text on the clipboard. The lines OCR finds are put in reading order
   (columns, tables of dishes and prices, a letterhead beside the text) and split into paragraphs;
   OCR reads each page once per save. The files are written without any library: a minimal Word
-  package (text only, the first page's paper size) that both platforms write byte for byte the
-  same, and UTF-8 text with a blank line between paragraphs. When no OCR language is installed
+  package (the first page's paper size) that both platforms write byte for byte the same, and
+  UTF-8 text with a blank line between paragraphs. **Include page images** (on by default) puts
+  each page's picture, fitted to the paper, before its editable text, so the text can be checked
+  against the page; the pictures are stored as the PDF size stores pages (JPEG, or a lossless
+  1-bit PNG for black & white), and turning it off gives a text-only document. A Word document
+  that would pass 2 GB is refused with a message and the pages stay queued. When no OCR language is installed
   (Windows) the save says so and names the setting.
 - **Photo batch mode**: lay several photos on the glass, press Scan once. The app detects
   each photo, measures its tilt, deskews and crops each one, and shows a review grid —

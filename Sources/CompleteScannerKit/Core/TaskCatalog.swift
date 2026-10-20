@@ -168,7 +168,7 @@ public enum TaskCatalog {
     /// one that turns it on, and the Mac has no such task until its PDF writer port), the photo and document switches,
     /// searchable PDF, adjustments, two-sided scanning, skipping blank pages, crop and straighten,
     /// turning pages upright, splitting facing pages, file name and the task itself. The password
-    /// option (`output.protect`), the destination folder, the photo detection tuning, the
+    /// option (`output.protect`), the page pictures of a Word document (`output.wordPageImages`), the destination folder, the photo detection tuning, the
     /// legacy OCR languages, the paper size, the edge backs are turned on, how much counts as blank
     /// and the choices of each task (`taskOptions`) are kept: they describe the user's paper and how
     /// they want a task done, not the task. The two-sided task asks for `.both`, skips blank pages

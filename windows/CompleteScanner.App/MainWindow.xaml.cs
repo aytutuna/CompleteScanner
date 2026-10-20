@@ -60,6 +60,7 @@ public partial class MainWindow : Window
         ProtectBox.ToolTip = PdfProtection.OptionHint;
         AutomationProperties.SetHelpText(ProtectBox, PdfProtection.OptionHint);
         PdfExclusionNote.Text = PdfA.CannotProtectNote;
+        WordPageImagesBox.Content = DocxWriter.PageImagesLabel;
         // A protected PDF's password is asked for at save time, over this window.
         ViewModel.AskPdfPassword = () => PdfPasswordWindow.Ask(this);
         SetUpAddToPdf();
@@ -1202,6 +1203,7 @@ public partial class MainWindow : Window
             MultiPageBox.IsChecked = s.DocumentMultiPage;
             SearchableBox.IsChecked = s.PdfSearchable;
             AlsoSaveTextBox.IsChecked = s.Output.AlsoSaveText;
+            WordPageImagesBox.IsChecked = s.Output.WordPageImages;
             // The two exclude each other; a settings file with both on gets the password.
             ProtectBox.IsChecked = s.Output.Protect;
             ArchivalBox.IsChecked = s.Output.Archival && !s.Output.Protect;
@@ -1260,6 +1262,7 @@ public partial class MainWindow : Window
         s.DocumentMultiPage = MultiPageBox.IsChecked == true;
         s.PdfSearchable = SearchableBox.IsChecked == true;
         s.Output.AlsoSaveText = AlsoSaveTextBox.IsChecked == true;
+        s.Output.WordPageImages = WordPageImagesBox.IsChecked == true;
         s.Output.Protect = ProtectBox.IsChecked == true;
         s.Output.Archival = ArchivalBox.IsChecked == true && !s.Output.Protect;
         if (PdfSizeSegments.Children.OfType<RadioButton>().FirstOrDefault(b => b.IsChecked == true) is { Tag: PdfSizePreset size })
@@ -1506,9 +1509,10 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// The size choice is shown for PDF output only, with the chosen size's hint under it. The text
-    /// beside a PDF can be asked for whenever a save of document pages writes a PDF: the ID card's
-    /// and a copy's PDFs are saved without it, so there the switch is off and says why.
+    /// The size choice is shown for PDF output, with the chosen size's hint under it, and for the
+    /// page pictures of a Word document (the switch above it), which are stored at that size. The
+    /// text beside a PDF can be asked for whenever a save of document pages writes a PDF: the ID
+    /// card's and a copy's PDFs are saved without it, so there the switch is off and says why.
     /// </summary>
     private void SyncPdfSizeOptions()
     {
@@ -1517,8 +1521,16 @@ public partial class MainWindow : Window
         bool receipts = flow == TaskFlowKind.ReceiptSplit;
         // Receipts are saved as a PDF or an image: a Word or text format left from before saves PDFs.
         var shownFormat = receipts ? OutputFormats.PageFormat(s.Format) : s.Format;
-        PdfSizeOptions.Visibility = s.Intent == ScanIntent.Document && shownFormat == OutputFormat.Pdf
-            ? Visibility.Visible : Visibility.Collapsed;
+        bool documents = s.Intent == ScanIntent.Document;
+        bool word = documents && shownFormat == OutputFormat.Word;
+        bool pdf = documents && shownFormat == OutputFormat.Pdf;
+        WordOptions.Visibility = word ? Visibility.Visible : Visibility.Collapsed;
+        WordPageImagesHint.Text = DocxWriter.PageImagesHint(s.Output.WordPageImages);
+        AutomationProperties.SetHelpText(WordPageImagesBox, WordPageImagesHint.Text);
+        PdfSizeOptions.Visibility = pdf || (word && s.Output.WordPageImages) ? Visibility.Visible : Visibility.Collapsed;
+        PdfOnlyOptions.Visibility = pdf ? Visibility.Visible : Visibility.Collapsed;
+        PdfSizeLabel.Text = pdf ? "PDF size" : "Page image size";
+        AutomationProperties.SetName(PdfSizeTrack, PdfSizeLabel.Text);
         PdfSizeHint.Text = s.Output.PdfSize.Hint();
         MultiPageBox.Content = $"Collect pages, then {OutputFormats.SaveTitle(shownFormat)}";
         bool savesPdf = receipts ? OutputFormats.PageFormat(s.Format) == OutputFormat.Pdf : OutputFormats.SavesPdf(s.Format, s.DocumentMultiPage);

@@ -347,8 +347,9 @@ extension AdjustmentSettings {
 }
 
 /// Settings for the saved files themselves, kept together as `ScanSettings.output` (the "output"
-/// object in settings files): the PDF size, the after-save action and the text file beside a PDF.
-/// Later output features add their fields here. Twin of C# `OutputOptions`.
+/// object in settings files): the PDF size, the after-save action, the text file beside a PDF and
+/// the page pictures of a Word document. Later output features add their fields here. Twin of C#
+/// `OutputOptions`.
 public struct OutputOptions: Codable, Equatable, Sendable {
     /// How small saved PDFs are made. Settings without it get `.standard`.
     public var pdfSize: PDFSizePreset = .standard
@@ -367,6 +368,10 @@ public struct OutputOptions: Codable, Equatable, Sendable {
     /// the Windows PDF writer acts on it until the Mac's PDF writer port (M20, see CONTRACTS.md).
     /// Settings without it get false.
     public var protect: Bool = false
+    /// A Word document shows each page as scanned, fitted to the paper, before the page's text
+    /// (`DocxWriter`), stored as `pdfSize` stores a PDF page. On by default, also for settings
+    /// without it; picking a task keeps it, as the user's choice.
+    public var wordPageImages: Bool = true
 
     public init() {}
 
@@ -377,6 +382,7 @@ public struct OutputOptions: Codable, Equatable, Sendable {
         case alsoSaveText
         case archival
         case protect
+        case wordPageImages
     }
 }
 
@@ -390,6 +396,7 @@ extension OutputOptions {
         alsoSaveText = container.decodeLenient(forKey: .alsoSaveText, default: alsoSaveText)
         archival = container.decodeLenient(forKey: .archival, default: archival)
         protect = container.decodeLenient(forKey: .protect, default: protect)
+        wordPageImages = container.decodeLenient(forKey: .wordPageImages, default: wordPageImages)
     }
 }
 

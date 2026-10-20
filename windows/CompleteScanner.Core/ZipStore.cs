@@ -27,6 +27,21 @@ public static class ZipStore
         return crc ^ 0xFFFFFFFF;
     }
 
+    /// <summary>
+    /// The size in bytes of the package <see cref="Make"/> writes for <paramref name="entries"/>,
+    /// worked out without writing it: a caller checks a large package against its limit first.
+    /// </summary>
+    public static long PackageSize(IReadOnlyList<ZipStoreEntry> entries)
+    {
+        long size = EndRecordSize;
+        foreach (var entry in entries)
+        {
+            long name = Encoding.UTF8.GetByteCount(entry.Name);
+            size += LocalHeaderSize + name + entry.Data.LongLength + CentralRecordSize + name;
+        }
+        return size;
+    }
+
     /// <summary>The zip package holding <paramref name="entries"/>, in that order.</summary>
     public static byte[] Make(IReadOnlyList<ZipStoreEntry> entries)
     {
@@ -107,6 +122,8 @@ public static class ZipStore
     private const ushort DosTime = 0;
     /// <summary>1980-01-01, the earliest date a zip can hold: the same bytes on every save.</summary>
     private const ushort DosDate = (0 << 9) | (1 << 5) | 1;
+    /// <summary>The fixed part of a local file header, a central directory record and the end record.</summary>
+    private const int LocalHeaderSize = 30, CentralRecordSize = 46, EndRecordSize = 22;
 
     private static readonly uint[] Table = MakeTable();
 

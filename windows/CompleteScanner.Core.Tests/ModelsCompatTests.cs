@@ -61,6 +61,7 @@ internal static class CompatFixtures
         settings.Output.AlsoSaveText = true;
         settings.Output.Archival = true;
         settings.Output.Protect = true;
+        settings.Output.WordPageImages = false;
         settings.Duplex = DuplexMode.Manual;
         settings.BackBinding = DuplexBinding.ShortEdge;
         settings.PaperSize = PaperSize.A4;
@@ -138,7 +139,7 @@ internal static class CompatFixtures
     public static readonly string CurrentFormatPresetsJson = PresetsJsonBeforePdfSize.ReplaceLineEndings("\n").Replace(
         "        \"blackWhiteThreshold\": 0.375\n      }\n",
         "        \"blackWhiteThreshold\": 0.375\n      },\n      \"output\": {\n        \"pdfSize\": \"compact\",\n        \"afterSave\": \"share\",\n"
-        + "        \"alsoSaveText\": true,\n        \"archival\": true,\n        \"protect\": true\n      },\n"
+        + "        \"alsoSaveText\": true,\n        \"archival\": true,\n        \"protect\": true,\n        \"wordPageImages\": false\n      },\n"
         + "      \"duplex\": \"manual\",\n      \"backBinding\": \"shortEdge\",\n      \"paperSize\": \"a4\",\n"
         + "      \"document\": {\n        \"removeBlankPages\": true,\n        \"blankSensitivity\": \"high\",\n"
         + "        \"autoCrop\": true,\n        \"autoStraighten\": true,\n        \"splitMode\": \"sheetCount\",\n"
@@ -455,6 +456,7 @@ public class ModelsCompatTests
         expected.Output.AlsoSaveText = false;
         expected.Output.Archival = false;
         expected.Output.Protect = false;
+        expected.Output.WordPageImages = true;
         expected.Duplex = DuplexMode.Off;
         expected.BackBinding = DuplexBinding.LongEdge;
         expected.PaperSize = PaperSize.Auto;
@@ -490,7 +492,7 @@ public class ModelsCompatTests
             settings.Output.PdfSize = size;
             string json = CompatFixtures.Encode(settings);
             using var written = JsonDocument.Parse(json);
-            Assert.Equal(["pdfSize", "afterSave", "alsoSaveText", "archival", "protect"], written.RootElement.GetProperty("output").EnumerateObject().Select(p => p.Name));
+            Assert.Equal(["pdfSize", "afterSave", "alsoSaveText", "archival", "protect", "wordPageImages"], written.RootElement.GetProperty("output").EnumerateObject().Select(p => p.Name));
             Assert.Equal(size, Decode<ScanSettings>(json).Output.PdfSize);
         }
     }
@@ -592,6 +594,37 @@ public class ModelsCompatTests
         using var written = JsonDocument.Parse(CompatFixtures.Encode(settings));
         Assert.Equal("archive", written.RootElement.GetProperty("taskId").GetString());
         Assert.True(written.RootElement.GetProperty("output").GetProperty("archival").GetBoolean());
+    }
+
+    // MARK: - Page pictures in Word documents (CONTRACTS.md, rule 6)
+
+    [Fact]
+    public void WordPageImages_OnByDefault_AndInFilesWithoutIt()
+    {
+        Assert.True(new ScanSettings().Output.WordPageImages);
+        Assert.True(Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize)[0].Settings.Output.WordPageImages);
+        Assert.True(Decode<ScanSettings>("""{"output": {"pdfSize": "compact", "alsoSaveText": true}}""").Output.WordPageImages);
+        foreach (string value in new[] { "\"no\"", "0", "null", "{}", "[]" })
+        {
+            var settings = Decode<ScanSettings>($$"""{"output": {"pdfSize": "best", "wordPageImages": {{value}}, "alsoSaveText": true}, "resolution": 150}""");
+            Assert.True(settings.Output.WordPageImages);
+            Assert.Equal(PdfSizePreset.Best, settings.Output.PdfSize);
+            Assert.True(settings.Output.AlsoSaveText);
+            Assert.Equal(150, settings.Resolution);
+        }
+        Assert.False(Decode<ScanSettings>("""{"output": {"wordPageImages": false}}""").Output.WordPageImages);
+    }
+
+    [Fact]
+    public void Clone_CopiesWordPageImages()
+    {
+        var settings = new ScanSettings();
+        settings.Output.WordPageImages = false;
+        var clone = settings.Clone();
+        Assert.False(clone.Output.WordPageImages);
+        clone.Output.WordPageImages = true;
+        Assert.False(settings.Output.WordPageImages);
+        Assert.NotEqual(settings.Output, clone.Output);
     }
 
     // MARK: - Password-protected PDFs (CONTRACTS.md, rule 6)

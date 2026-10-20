@@ -136,8 +136,10 @@ extension AppState {
                 let url = try self.outputURL(fileExtension: format.fileExtension, index: plan.fileIndex(document),
                                              label: document.label)
                 if format.isTextFormat {
+                    let pageImages: PDFSizePreset? = s.output.wordPageImages ? s.output.pdfSize : nil
                     let hasText = try await Task.detached(priority: .userInitiated) {
                         try Self.writeTextDocument(pages: pages, format: format, to: url,
+                                                   pageImages: pageImages,
                                                    shouldContinue: { !flag.isCancelled }) { [weak self] msg in
                             Task { @MainActor in self?.statusMessage = msg }
                         }

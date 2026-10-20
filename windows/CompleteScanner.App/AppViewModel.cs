@@ -1541,7 +1541,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             {
                 StatusMessage = "Reading the text of the pages…";
                 NotifyAll();
-                var (written, hasText) = await WriteTextDocument(pages, format, OutputPath(s, format.FileExtension(), label: document.Label), token);
+                var (written, hasText) = await WriteTextDocument(pages, format, OutputPath(s, format.FileExtension(), label: document.Label), s, token);
                 MarkSaved([written]);
                 DeleteSpoolFiles(queued);
                 ScannedPages.Clear();
@@ -1582,7 +1582,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             bool hasText;
             try
             {
-                (written, hasText) = await WriteTextDocument(pages, s.Format, OutputPath(s, s.Format.FileExtension()), token);
+                (written, hasText) = await WriteTextDocument(pages, s.Format, OutputPath(s, s.Format.FileExtension()), s, token);
             }
             catch (Exception e)
             {
@@ -3175,12 +3175,19 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// and writes it as a Word document or a text file (<paramref name="format"/>) under a hidden
     /// temporary name moved into place without replacing a file. A page whose text cannot be read
     /// fails the save, saying why (a missing OCR language names the setting to add one).
+    /// A Word document shows each page's picture before its text when <see cref="OutputOptions.WordPageImages"/>
+    /// is on, stored as <see cref="OutputOptions.PdfSize"/> stores a PDF page. A Word document
+    /// past <see cref="DocxWriter.MaxPackageBytes"/> fails the save with <see cref="DocxWriter.TooLargeMessage"/>.
     /// Returns the path written and whether any text was found.
     /// </summary>
     private async Task<(string Path, bool HasText)> WriteTextDocument(List<ScannedPage> pages, OutputFormat format,
-                                                                     string path, CancellationToken token)
+                                                                     string path, ScanSettings s, CancellationToken token)
     {
+        bool withPictures = format == OutputFormat.Word && s.Output.WordPageImages;
+        var size = s.Output.PdfSize;
         var ocrPages = new List<OcrPage>();
+        var pictures = new List<DocxPicture?>();
+        long pictureBytes = 0;
         for (int i = 0; i < pages.Count; i++)
         {
             token.ThrowIfCancellationRequested();
@@ -3190,10 +3197,26 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             NotifyAll();
             ocrPages.Add(OcrPage.Of(await RecognizeForText(prepared.Image, token),
                                     prepared.PixelWidth, prepared.PixelHeight, page.Dpi));
+            if (withPictures)
+            {
+                // OCR above has read the full pixels; the picture is stored as the PDF size plans it.
+                var picture = await Task.Run(() => WpfImageCodec.EncodeDocxPicture(
+                    prepared.Image, PdfImageEncoding.EffectiveDpi(prepared.Image.Width, prepared.PixelWidth, page.Dpi),
+                    page.ColorMode, size), token);
+                pictures.Add(picture);
+                // Stop as soon as the pictures alone are past the limit, not after reading every page.
+                pictureBytes += picture?.Data.LongLength ?? 0;
+                if (pictureBytes > DocxWriter.MaxPackageBytes) throw new IOException(DocxWriter.TooLargeMessage);
+            }
         }
         StatusMessage = format == OutputFormat.Word ? "Writing the Word document…" : "Writing the text file…";
         NotifyAll();
-        byte[] bytes = await Task.Run(() => format == OutputFormat.Word ? DocxWriter.Make(ocrPages) : TextExport.Encode(ocrPages), token);
+        byte[] bytes = await Task.Run(() =>
+        {
+            if (format != OutputFormat.Word) return TextExport.Encode(ocrPages);
+            if (DocxWriter.PackageSize(ocrPages, pictures) > DocxWriter.MaxPackageBytes) throw new IOException(DocxWriter.TooLargeMessage);
+            return DocxWriter.Make(ocrPages, pictures);
+        }, token);
         string written = await Task.Run(() => TextExport.WriteNewFile(bytes, path), token);
         return (written, TextExport.HasText(ocrPages));
     }

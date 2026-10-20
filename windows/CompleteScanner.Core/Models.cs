@@ -410,8 +410,8 @@ public sealed class AdjustmentSettings : IEquatable<AdjustmentSettings>
 
 /// <summary>
 /// Settings for the saved files themselves, kept together as <see cref="ScanSettings.Output"/>
-/// (the "output" object in settings files): the PDF size, the after-save action and the text
-/// file beside a PDF. Later output features add their fields here.
+/// (the "output" object in settings files): the PDF size, the after-save action, the text
+/// file beside a PDF and the page pictures of a Word document. Later output features add their fields here.
 /// </summary>
 public sealed class OutputOptions : IEquatable<OutputOptions>
 {
@@ -444,13 +444,21 @@ public sealed class OutputOptions : IEquatable<OutputOptions>
     /// </summary>
     public bool Protect { get; set; } = false;
 
+    /// <summary>
+    /// A Word document shows each page as scanned, fitted to the paper, before the page's text
+    /// (<see cref="DocxWriter"/>), stored as <see cref="PdfSize"/> stores a PDF page. On by default,
+    /// also for settings without it; picking a task keeps it, as the user's choice.
+    /// </summary>
+    public bool WordPageImages { get; set; } = true;
+
     public OutputOptions Clone() => (OutputOptions)MemberwiseClone();
 
     public bool Equals(OutputOptions? other) =>
         other is not null && PdfSize == other.PdfSize && AfterSave == other.AfterSave
-        && AlsoSaveText == other.AlsoSaveText && Archival == other.Archival && Protect == other.Protect;
+        && AlsoSaveText == other.AlsoSaveText && Archival == other.Archival && Protect == other.Protect
+        && WordPageImages == other.WordPageImages;
     public override bool Equals(object? obj) => Equals(obj as OutputOptions);
-    public override int GetHashCode() => HashCode.Combine(PdfSize, AfterSave, AlsoSaveText, Archival, Protect);
+    public override int GetHashCode() => HashCode.Combine(PdfSize, AfterSave, AlsoSaveText, Archival, Protect, WordPageImages);
 }
 
 /// <summary>

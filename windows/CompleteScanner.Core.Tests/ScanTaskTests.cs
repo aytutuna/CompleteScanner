@@ -681,6 +681,17 @@ public class ScanTaskTests
     }
 
     [Fact]
+    public void Apply_KeepsThePageImagesChoice()
+    {
+        // On unless the user turned it off; Scan to Word starts with it on for a new user.
+        Assert.True(TaskCatalog.Apply(ScanTask.Word, new ScanSettings()).Output.WordPageImages);
+        var current = Customized();
+        current.Output.WordPageImages = false;
+        Assert.All(ScanTasks.All, task => Assert.False(TaskCatalog.Apply(task, current).Output.WordPageImages));
+        Assert.False(current.Output.WordPageImages);
+    }
+
+    [Fact]
     public void Archive_IsABestSizeSearchablePdfA_AndEndsWithAPlainPdf()
     {
         var definition = TaskCatalog.Definition(ScanTask.Archive);

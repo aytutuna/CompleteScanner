@@ -27,6 +27,18 @@ public enum ZipStore {
         return crc ^ 0xFFFF_FFFF
     }
 
+    /// The size in bytes of the package `make` writes for `entries`, worked out without writing it:
+    /// a caller checks a large package against its limit first (`make` stops the app on a package
+    /// past 4 GB).
+    public static func packageSize(_ entries: [ZipStoreEntry]) -> Int {
+        var size = endRecordSize
+        for entry in entries {
+            let name = entry.name.utf8.count
+            size += localHeaderSize + name + entry.data.count + centralRecordSize + name
+        }
+        return size
+    }
+
     /// The zip package holding `entries`, in that order.
     public static func make(_ entries: [ZipStoreEntry]) -> Data {
         precondition(entries.count <= Int(UInt16.max), "Too many entries for a zip without zip64.")
@@ -101,6 +113,10 @@ public enum ZipStore {
     private static let dosTime: UInt16 = 0
     /// 1980-01-01, the earliest date a zip can hold: the same bytes on every save.
     private static let dosDate: UInt16 = (0 << 9) | (1 << 5) | 1
+    /// The fixed part of a local file header, a central directory record and the end record.
+    private static let localHeaderSize = 30
+    private static let centralRecordSize = 46
+    private static let endRecordSize = 22
 
     private static let table: [UInt32] = (0..<256).map { n -> UInt32 in
         var c = UInt32(n)
