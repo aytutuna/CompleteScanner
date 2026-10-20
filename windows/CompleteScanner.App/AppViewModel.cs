@@ -103,11 +103,15 @@ public sealed class PageItem : INotifyPropertyChanged
         }
     }
 
-    /// <summary>"Sheet 2 · back" for a page of a two-sided stack, "Spread 2 · page 1" for a page of a book; null for other pages.</summary>
-    public string? SideLabel => DocumentSides.SideLabel(Page.Side, Page.SheetIndex) ?? _book?.Label;
+    /// <summary>
+    /// "Sheet 2 · back" for a page of a two-sided stack, "Spread 2 · page 1" for a page of a book, "Photo"
+    /// for a page imported from a photo; null for other pages.
+    /// </summary>
+    public string? SideLabel => DocumentSides.SideLabel(Page.Side, Page.SheetIndex) ?? _book?.Label ?? PhotoImport.SourceLabel(Page);
 
-    /// <summary>The side badge's tooltip: the label, or what can be done with a spread kept whole.</summary>
-    public string? SideToolTip => DocumentSides.SideLabel(Page.Side, Page.SheetIndex) ?? _book?.Help;
+    /// <summary>The side badge's tooltip: the label, what can be done with a spread kept whole, or where a photo's page came from.</summary>
+    public string? SideToolTip => DocumentSides.SideLabel(Page.Side, Page.SheetIndex) ?? _book?.Help
+                                  ?? (Page.Source == PageSource.Photo ? PhotoImport.LabelHelp : null);
 
     /// <summary>The page menu's "Split this spread…" or "Change the split…"; null when the page has none.</summary>
     public string? SplitSpreadLabel => _book?.SplitLabel;

@@ -64,6 +64,7 @@ public partial class MainWindow : Window
         // A protected PDF's password is asked for at save time, over this window.
         ViewModel.AskPdfPassword = () => PdfPasswordWindow.Ask(this);
         SetUpAddToPdf();
+        SetUpImport();
         BuildBlankSensitivitySegments();
         BuildSplitChoices();
         BuildBookChoices();
@@ -329,6 +330,7 @@ public partial class MainWindow : Window
         SyncReceiptOptions();
         SyncSplitOptions();
         SyncBookOptions();
+        SyncImportOptions();
         StartView.Refresh();
         // As on macOS, the settings (and presets, which replace them) are frozen while an
         // operation runs: it works from a snapshot, and edits made meanwhile would not apply.

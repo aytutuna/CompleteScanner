@@ -48,6 +48,9 @@ public enum GeometryBasis: Sendable {
     case pageEdges
     /// The lines of text on the page.
     case textLines
+    /// The page's four corners in a photo of it (`PhotoImport`): the page was cut out and its
+    /// perspective corrected (`PerspectiveCorrector`).
+    case perspective
 }
 
 /// How a page is changed (`GeometryPlan`).
@@ -79,8 +82,10 @@ public struct PageGeometry: Equatable, Sendable {
     /// The page was turned.
     public var straightened: Bool { angleDegrees != 0 }
 
-    /// "Cropped and straightened 2.4°", "Straightened 1.5°" or "Cropped".
+    /// "Cropped and straightened 2.4°", "Straightened 1.5°" or "Cropped"; "Corrected from photo" for a
+    /// page taken from a photo.
     public var caption: String {
+        if basis == .perspective { return PhotoImport.correctedCaption }
         let angle = DocumentGeometry.angleText(angleDegrees)
         if cropped && straightened { return "Cropped and straightened \(angle)" }
         return straightened ? "Straightened \(angle)" : "Cropped"

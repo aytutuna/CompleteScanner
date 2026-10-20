@@ -47,7 +47,11 @@ UI per platform** architecture:
   a document, the QR sheet drawn for printing and Code 39 for the demo, with the reading itself left
   to the app; `SavePlan.cs`: several files saved all or nothing), and books and
   magazines (`BookSplitter.cs`: the gutter of an open book found on a spread, which is cut into
-  its pages in reading order; `SpineShadow.cs`: the shadow along the spine softened on each page).
+  its pages in reading order; `SpineShadow.cs`: the shadow along the spine softened on each page),
+  and photos of documents (`PhotoDocumentDetector.cs`: a page's four corners found in a camera
+  photo; `PerspectiveCorrector.cs` over `Quad.cs` and `Homography.cs`: the page made upright with
+  its perspective corrected; `CaptureStability.cs`: when a held-still page should be taken;
+  `PhotoImport.cs`: importing photos of documents as pages).
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
   xUnit with the same fixtures, geometry, and tolerances. **This is the contract that keeps
   the Swift and C# cores behaviorally identical** — change an algorithm on one side, port
@@ -59,8 +63,10 @@ UI per platform** architecture:
   window and no device: the print document is written to an XPS file and read back (paper size,
   where each image lands, copies, grey, cancel), barcodes and QR codes are read with ZXing.Net
   on synthetic scans, the 32-bit TWAIN helper is started for real and scans its stand-in
-  scanners (`TwainHelperTests`), and the Windows Scan device watcher runs in the unpackaged test
-  process (`WinRtScannerTests`). Nothing is sent to a printer.
+  scanners (`TwainHelperTests`), the Windows Scan device watcher runs in the unpackaged test
+  process (`WinRtScannerTests`), and photo files are read with WIC as an import reads them (the
+  orientation tag, a HEIC photo Windows cannot decode, the file only read; `PhotoFileReaderTests`).
+  Nothing is sent to a printer.
 - **`CompleteScanner.TwainHelper`** — the 32-bit TWAIN helper (x86, .NET 10): a small console
   program without a window that the app starts when a scanner driver is installed only for
   32-bit programs (see [TWAIN](#twain)). The app's build copies it next to `CompleteScanner.exe`.
@@ -260,6 +266,54 @@ their paper or left alone (a card with a tassel); beds with two or three photos 
 and a bed with one photo card at -4° was cut out at -4.004°.
 **To check on real hardware:** shadows from real lids (often on two sides only), feeder scans
 with a black or grey backing, and very thin or translucent paper.
+
+### Photos of documents
+
+No scanner at hand: a phone photo of a page becomes a page of the queue. **Import photos of
+documents…** (the button under **Preview** and **Scan**, and a link on the empty stage) picks one
+or more JPEG, PNG, HEIC, TIFF, BMP or WebP files; photos dragged from Explorer onto the window are
+taken too, as a copy (other files dragged over the window get the no-drop pointer; photos dropped in
+Photos mode are answered with why they are not imported). Each page of a TIFF of several pages (a
+fax, a scan) becomes a page; a photo of more than 150 megapixels is turned down from its header,
+before its pixels are decoded, and the other photos go on. It is offered wherever the queue
+collects pages (Document mode and the document tasks, also with **Collect pages** off, where the
+pages then wait in the queue); not in Photos mode or the ID card, copy and receipt tasks, nor while
+a stack is turned over by hand.
+
+Each photo is read once into memory and never changed, moved or locked: the spool gets the page and
+the photo as the app made them, never the file itself. The photo is turned upright by its
+orientation tag (EXIF 274: all eight values, mirrored ones included), the page's corners are found
+(`PhotoDocumentDetector`) and the page is cut out along them with its perspective corrected
+(`PerspectiveCorrector`). When the page is not found clearly (confidence under 0.7, cut off by the
+photo's edge, two pages, or nothing found) the **corner editor** opens with the best guess and says
+why: drag each corner onto a corner of the page (a magnifier shows the photo around the corner
+being moved; keys 1 to 4 select a corner, the arrow keys move it, Shift takes bigger steps); a
+corner stays on the photo and the outline stays a page that can be cut out. **Use these corners**,
+**Use whole photo** or **Skip this photo** (Esc). Every page then goes through the clean-up stage
+like a scan, except crop and straighten (blank-page check, separator sheets, barcodes when the stack
+is split at them, turning upright, the adjustments and color mode), and is added to the queue at
+once, so **Cancel** keeps the pages already added. Its resolution is the one its shape gives when it
+matches a paper size (A4, Letter, Legal, ID-1 within 3 %: the page then saves at that size), else
+200 dpi. The strip labels the page **Photo**, and its swap button shows it **as photographed** (the
+whole photo, saved that way at the page's resolution) and back. Photos that cannot be read are
+listed in one message at the end; the others are imported. A HEIC photo needs Microsoft's free
+**HEIF Image Extensions** (and **HEVC Video Extensions** for most iPhone photos) from the Microsoft
+Store; without them the message says so.
+
+Checked here on composited 12 MP phone photos of public-domain documents (the photo-detection
+evaluation's renderer: a letter on wood, the same photo stored sideways with orientation 6 and as a
+HEIC written by Windows' own encoder, a letter on fabric the detector is unsure of, a menu on a
+white table, an empty table, a damaged JPEG, a fake HEIC and a text file), through the view model:
+the letter was cut out at Letter size (219 dpi) with every corner within 0.02 % of the photo's
+diagonal, identically from the sideways photo; the unsure letter, the menu and the empty table went
+to the corner editor; the PDF's pages came out at Letter size, and the page shown as photographed at
+the photo's size at the page's resolution; the photo files stayed byte for byte as they were. Each
+photo takes about 1 s to read and search at 12 MP. Not yet: moving the corners of a page already in
+the queue (remove it and import the photo again), and color profiles (a Display P3 photo is read as
+sRGB).
+**To check on real hardware:** real phone photos (HEIC from an iPhone, whose turn WIC may report
+differently from a JPEG's; 48–50 MP photos), drags from the Photos app and from a phone's folder,
+and the corner editor with a touch screen or pen.
 
 ### Rotate pages upright
 
@@ -1129,6 +1183,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | 32-bit TWAIN helper (`CompleteScanner.TwainHelper`, `Scanning/Twain/Twain32ScannerBackend.cs`, `TwainHelperProcess.cs`) | **Experimental, untested against hardware.** The protocol is covered by `TwainHelperProtocolTests` (every message both ways, resolution lists of every shape up to the widest range a driver can report, malformed and random input, errors) and `TwainHelperSessionTests` (the app's end against the helper's end over an in-memory pipe with the scan loop on top: scans with chunked strips and bitmaps, scanner problems, cancel, a crash, a hang, a 50 to 9600 dpi range in 1 dpi steps). `TwainHelperTests` start the real x86 helper with its stand-in scanners: listing (the WIA bridge left out), a feeder scan and a preview end to end, a native transfer with progress, a jam, an offline and a busy scanner, cancel, a crash and a hang (each reported, the next scan starting a new helper), the helper exiting by itself when the pipe closes, the pipe's access list, a missing helper (reported with its fix, not tried again on its own), a failed listing and a helper too slow to start (both tried again), a Data Source Manager that lists only the WIA bridge (the 32-bit drivers stay a troubleshooter problem, with why) and a PC without 32-bit-only drivers (no helper started). Driving the view model with the helper and a stand-in WIA connection to the same scanner checked one row with both connections (WIA preferred, "TWAIN (32-bit driver)" in the chooser), TWAIN-only rows captioned "TWAIN (32-bit driver)" and never picked on their own, a feeder scan of 3 pages through the helper, `devices.txt` and the helper ending with the app; killing the app's process ended the helper within a fraction of a second. **Unverified:** real 32-bit drivers and Data Source Managers (this PC has none), driver windows shown by the helper process |
 | Two-sided scanning and paper size (`DocumentSides`, `PaperSize`) | Covered by `DocumentSidesTests`, `PaperSizeTests` and the sides cases of `ModelsCompatTests`, `ScanTaskTests`, `SettingsAdapterTests` and `MockScannerTests` (same cases as macOS), plus the backend requests in `EsclTests`, `TwainScanRequestsTests` and `WiaErrorsTests`. Checked by driving the view model with the demo scanner (both sides in one pass on the long and the short edge, a jam keeping one sheet's two sides, turning over by hand with matching counts, a mismatch, scanning the backs again, combining anyway, keeping the fronts, a jam during the fronts (the steps stay at the fronts, the rest of them scanned as fronts, Done with fronts), a stack scanned in parts (Scan more fronts), a scanner whose capabilities could not be read on connect asked for both sides by a one-sided feeder (pages kept one-sided, capabilities read after the scan), earlier pages keeping their place, the two-sided task on two-sided and one-sided feeders, paper sizes on the feeder and the glass, the saved PDFs' page counts) and by building the window without showing it: the Sides, Flip on and Paper size choices with their greyed-out items and reasons, the banner's two steps, Scan more fronts, Done with fronts and the mismatch choices, the side badges and the screen reader names in the page strip and the Two-sided document card, rendered off screen in light and dark. **Unverified:** real drivers (see [Two-sided scanning and paper size](#two-sided-scanning-and-paper-size)) |
 | Crop and straighten (`DocumentGeometry`, `GeometryStep`, `PageCorrections`) | Covered by `DocumentGeometryTests`, the crop and straighten cases of `PageProcessorTests`, `ModelsCompatTests`, `ScanTaskTests` and `MaskOpsTests` (same cases as macOS, on the same synthetic pages checked by checksum). Checked on public-domain scans laid at known angles on a lid and a dark backdrop, on archive scans as they were captured, and by driving the view model with those scans (scan, the strip's captions, both versions spooled, show as scanned and back, turning a page, saving whichever version is shown, removing and clearing pages, the switches off and pages saved at once, the two-sided task) and by building the window without showing it: the switches and their hint, the swap button and its glyphs, rendered off screen. **Unverified:** real lids, feeder backings and thin paper (see [Crop and straighten](#crop-and-straighten)) |
+| Photos of documents (`PhotoDocumentDetector`, `PerspectiveCorrector`, `PhotoImport`, `PhotoFileReader`, `PhotoCornersWindow`) | The rules (orientation tags, when to ask, the resolution, the corner editor's limits, the page and its photo, the words) are covered by `PhotoImportTests` (same cases as macOS) and the detector and corrector by `PhotoDocumentDetectorTests`, `PerspectiveCorrectorTests` and `HomographyTests`; reading with WIC by `PhotoFileReaderTests`. The import, the drop, the corner editor (light and dark, rendered off screen) and the saved PDF were checked through the view model on composited photos (see [Photos of documents](#photos-of-documents)); real phone photos are still to check |
 | Rotate pages upright (`OrientationDecision`, `OrientationStep`, `PageTurns`, `WindowsOrientationScorer`) | Covered by `OrientationTests` and the rotate cases of `PageProcessorTests`, `ModelsCompatTests` and `ScanTaskTests` (same cases as macOS, on the same synthetic page read by a stand-in scorer). Checked with Windows OCR on public-domain letters and menus turned every way and on photos (see [Rotate pages upright](#rotate-pages-upright)), by driving the view model with those scans (scan, the strip's captions, the spool files and what a save writes, undo and redo, two quick clicks, a turn by hand before and after, Keep and Skip, saving, the switch off, pages saved at once, no OCR language, the two-sided task) and by building the window without showing it: the switch and its hint, the turn button beside the side badge and the swap button, screen-reader names, rendered off screen in light and dark. **Unverified:** Vision on the Mac (CI runs the stand-in only), real feeders |
 | ID card (`IdCard`, the review) | Covered by `IdCardTests` (paper, steps, layout on Letter and A4, scaled to fit, the composed page in pixels and as a 612 × 792 pt PDF page, the detector on a synthetic bed with a card turned 7° among other objects, the back taking the front's place, moved to another resolution and refused for another part of the glass, the page at most 600 dpi, Skip only for the card's back) and the ID card cases of `ScanTaskTests`, `ModelsCompatTests`, `TaskFlowTests` and `MockScannerTests` (same cases as macOS). Checked by driving the view model with the demo scanner's sample card (front, back, the review, turning and swapping the sides, fixing a crop, Letter and A4, saving a PDF at 612 × 792 pt with no text layer, a PNG page at 300 dpi with the front as an image, skipping the back, scanning a side again, discarding, leaving the task, picking a task again) and with a white-on-white back (at the front's resolution, at twice it, and with another selection), a scanner going away with the review open and between the sides (no switch until the card is saved, discarded or the task left), a page saved from a 1200 dpi scan (A4 at 600 dpi, the side at 1200), the stage cleared on leaving with no side held, checking that nothing goes to the history or the page spool and that the stage is cleared, and by building the window without showing it: the task card, the banner's steps and Skip back side (and no Skip for the backs of a stack turned over by hand), Mode and Source locked while a side is held, Leave the task and picking a task asking first (Cancel keeps the card, Discard drops it), the review with both sides, the front only, the not-at-real-size warning, the paper and format pickers, rendered off screen in light and dark. **Unverified:** real cards on real lids (see [ID card](#id-card)), printing at real size |
 | Blank pages (`BlankPageDetector`, `PageProcessor`, `PageFilter`, image toolkit) | Covered by `BlankPageDetectorTests`, `PageProcessorTests`, `GrayImageTests`, `RgbaImageTests`, `MaskOpsTests` and the blank-page cases of `ModelsCompatTests`, `ScanTaskTests` and `MockScannerTests` (same cases as macOS; `MaskOpsTests` also pins PhotoDetector's regions on the demo bed to the last bit, unchanged by moving the mask code out of it). Checked on public-domain scans of letters, menus and photos (none taken for blank, at any level, with or without their dark surroundings) and on blank backs made from them (all found blank), and by driving the view model with the demo scanner (flagging, Skip blank pages turned on and off with pages queued, Keep and Skip per page, rotating a flagged page, saving 5 of 6 pages, nothing to save, pages saved at once keeping every page, the two-sided task, turning over by hand) and by building the window without showing it: the switch, the levels, the badges, Keep and Skip, the strip label, Save PDF's count, rendered off screen in light and dark. **Unverified:** blank backs from real scanners (see [Blank pages](#blank-pages)) |

@@ -100,6 +100,15 @@ scanners** — including the Epson Perfection V39 II.
   unclear is left as scanned, a crop never cuts into the sheet, and turning a page never cuts off
   anything in its corners. A changed page has a small arrow in the page strip that shows it as
   scanned, and back. The Two-sided document task straightens pages.
+- **Photos of documents**: no scanner needed. **Import photos of documents…** (or drop photo files
+  on the window) adds phone photos of pages (JPEG, PNG, HEIC, TIFF, BMP, WebP) to the page queue:
+  each photo is turned upright by its orientation tag, the page's four corners are found, and the
+  page is cut out with its perspective corrected and cleaned up like a scan. When the page is not
+  found clearly, a corner editor (with a magnifier) asks you to place the corners, or to use the
+  whole photo, or to skip it. The page gets the resolution of the paper size its shape matches (A4,
+  Letter, Legal, ID-1), else 200 dpi, is labelled **Photo** in the page strip, and one click shows
+  it as photographed. The photo files themselves are only read, never changed or moved. On Windows,
+  HEIC photos need Microsoft's free HEIF Image Extensions.
 - **Rotate pages upright**: a page put in upside down or sideways is turned the right way up by
   reading its text (Vision on the Mac, Windows OCR on Windows). Only a page whose text reads clearly
   better one way is turned; blank pages, separator sheets, photos and pages the reading is unsure

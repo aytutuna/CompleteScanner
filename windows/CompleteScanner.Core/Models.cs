@@ -113,6 +113,16 @@ public enum PageInclusion
 }
 
 /// <summary>
+/// Where a queued page came from (<see cref="ScannedPage.Source"/>): a scanner, or a photo of a
+/// document imported from a file (<see cref="PhotoImport"/>). Not stored in settings files.
+/// </summary>
+public enum PageSource
+{
+    Scanner,
+    Photo,
+}
+
+/// <summary>
 /// Where a stack of collected pages is split into separate documents
 /// (<see cref="DocumentOptions.SplitMode"/>, <see cref="DocumentSplitter"/>). <see cref="None"/>
 /// comes first: it is the default and the fallback for a mode a newer version adds. New modes come
@@ -861,6 +871,12 @@ public sealed class ScannedPage
     /// </summary>
     public SpineShadowResult? SpineShadow { get; init; }
 
+    /// <summary>
+    /// Where the page came from: a scanner, or a photo imported from a file (<see cref="PhotoImport"/>),
+    /// which the page strip labels "Photo". In memory only.
+    /// </summary>
+    public PageSource Source { get; init; } = PageSource.Scanner;
+
     public ScannedPage(RgbaImage image, int dpi, ColorMode colorMode, Guid? id = null,
                        DateTime? createdAt = null, string? filePath = null, SizeD? fullPixelSize = null)
     {
@@ -893,8 +909,9 @@ public sealed class ScannedPage
     /// This page carrying what the scan recorded about <paramref name="source"/>: its side and
     /// sheet, the blank-page check, the user's keep or skip, what crop and straighten did and
     /// which version is shown, the patch code and barcodes found on it, the user's document break and
-    /// document name, the turn that made it upright, the spread it was cut from and what softening
-    /// its spine's shadow did. Pixels, id, file, rotation and the other version stay this page's.
+    /// document name, the turn that made it upright, the spread it was cut from, what softening
+    /// its spine's shadow did and where it came from (<see cref="Source"/>). Pixels, id, file, rotation
+    /// and the other version stay this page's.
     /// </summary>
     public ScannedPage CopyMeta(ScannedPage source) =>
         new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
@@ -913,6 +930,7 @@ public sealed class ScannedPage
             Upright = source.Upright,
             Spread = source.Spread,
             SpineShadow = source.SpineShadow,
+            Source = source.Source,
             Alternate = Alternate,
         };
 
@@ -934,6 +952,7 @@ public sealed class ScannedPage
             Upright = Upright,
             Spread = Spread,
             SpineShadow = SpineShadow,
+            Source = Source,
             Alternate = Alternate,
         };
 
@@ -955,6 +974,7 @@ public sealed class ScannedPage
             Upright = Upright,
             Spread = Spread,
             SpineShadow = SpineShadow,
+            Source = Source,
             Alternate = Alternate,
         };
 
@@ -976,6 +996,7 @@ public sealed class ScannedPage
             Upright = Upright,
             Spread = Spread,
             SpineShadow = SpineShadow,
+            Source = Source,
             Alternate = Alternate,
         };
 
@@ -997,6 +1018,7 @@ public sealed class ScannedPage
             Upright = Upright,
             Spread = Spread,
             SpineShadow = SpineShadow,
+            Source = Source,
             Alternate = Alternate,
         };
 
@@ -1018,6 +1040,7 @@ public sealed class ScannedPage
             Upright = Upright,
             Spread = Spread,
             SpineShadow = SpineShadow,
+            Source = Source,
             Alternate = Alternate,
         };
 
@@ -1039,6 +1062,7 @@ public sealed class ScannedPage
             Upright = Upright,
             Spread = Spread,
             SpineShadow = SpineShadow,
+            Source = Source,
             Alternate = Alternate,
         };
 
@@ -1060,6 +1084,7 @@ public sealed class ScannedPage
             Upright = Upright,
             Spread = Spread,
             SpineShadow = SpineShadow,
+            Source = Source,
             Alternate = Alternate,
         };
 
@@ -1084,6 +1109,7 @@ public sealed class ScannedPage
             Upright = Upright,
             Spread = Spread,
             SpineShadow = SpineShadow,
+            Source = Source,
             Alternate = new PageVersion(Image, FilePath, FullPixelSize),
         };
 
@@ -1109,6 +1135,7 @@ public sealed class ScannedPage
             Upright = Upright,
             Spread = Spread,
             SpineShadow = result,
+            Source = Source,
             Alternate = Alternate ?? new PageVersion(Image, FilePath, FullPixelSize),
         };
 
@@ -1130,6 +1157,7 @@ public sealed class ScannedPage
             Upright = upright,
             Spread = Spread,
             SpineShadow = SpineShadow,
+            Source = Source,
             Alternate = Alternate,
         };
 
@@ -1151,6 +1179,7 @@ public sealed class ScannedPage
             Upright = Upright,
             Spread = spread,
             SpineShadow = SpineShadow,
+            Source = Source,
             Alternate = Alternate,
         };
 
@@ -1212,6 +1241,7 @@ public sealed class ScannedPage
             Upright = Upright,
             Spread = Spread,
             SpineShadow = SpineShadow,
+            Source = Source,
             Alternate = alternate,
         };
 
@@ -1241,6 +1271,7 @@ public sealed class ScannedPage
             Upright = Upright,
             Spread = Spread,
             SpineShadow = SpineShadow,
+            Source = Source,
             Alternate = new PageVersion(FilePath is null ? Image : null, FilePath, FullPixelSize),
         };
     }

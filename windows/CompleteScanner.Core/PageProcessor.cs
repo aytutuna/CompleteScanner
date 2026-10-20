@@ -276,6 +276,38 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     }
 
     /// <summary>
+    /// The steps for pages made from imported photos of documents (<see cref="PhotoImport"/>), which
+    /// always go to the queue: the blank-page check, the separator-sheet check, reading barcodes when
+    /// the stack is split at barcode or QR sheets and <paramref name="barcodes"/> can read them, turning
+    /// pages upright when asked for and <paramref name="scorer"/> can read text, then the adjustments
+    /// unless they change nothing. Crop and straighten, the spine's shadow and splitting facing pages
+    /// are left out: the page was cut out of the photo along its corners already, and the photo as it
+    /// was is the page's other version.
+    /// </summary>
+    public static PageProcessor ForPhotoImport(ScanSettings settings, IOrientationScorer? scorer = null,
+                                               IBarcodeReader? barcodes = null)
+    {
+        var steps = new List<IPageStep>
+        {
+            new BlankDetectionStep(new BlankPageOptions { Sensitivity = settings.Document.BlankSensitivity }),
+            new SeparatorStep(),
+        };
+        if (settings.Document.SplitMode == SplitMode.Barcode && barcodes is { IsAvailable: true })
+        {
+            steps.Add(new BarcodeStep(barcodes));
+        }
+        if (settings.Document.AutoRotate && scorer is { IsAvailable: true })
+        {
+            steps.Add(new OrientationStep(scorer, split: settings.Document));
+        }
+        if (!(settings.Adjustments.IsIdentity && settings.ColorMode == ColorMode.Color))
+        {
+            steps.Add(new AdjustmentStep(settings.Adjustments, settings.ColorMode));
+        }
+        return new PageProcessor(steps);
+    }
+
+    /// <summary>
     /// Whether scans with these settings get the blank-page check: document pages collected in
     /// the queue, where a flagged page can be seen and kept before saving. Pages saved as soon as
     /// they are scanned are never checked, so none is ever left out unseen.
@@ -497,12 +529,13 @@ public static class PageCorrections
     /// <summary>
     /// "Cropped and straightened 2.4°", "Straightened 1.5°" or "Cropped" for a changed page shown
     /// changed, followed by ", spine shadow softened" ("Spine shadow softened" alone) when the shadow was
-    /// softened; "As scanned" when the user went back to the page as scanned; null for other pages.
+    /// softened; "As scanned" when the user went back to the page as scanned; "Corrected from photo"
+    /// and "As photographed" for a page taken from a photo; null for other pages.
     /// </summary>
     public static string? Caption(ScannedPage page)
     {
         if (page.Geometry is null && page.SpineShadow is null) return null;
-        if (page.ShowsOriginal) return "As scanned";
+        if (page.ShowsOriginal) return FromPhoto(page) ? PhotoImport.OriginalCaption : "As scanned";
         if (page.Geometry is not { } geometry) return "Spine shadow softened";
         return page.SpineShadow is null ? geometry.Caption : $"{geometry.Caption}, spine shadow softened";
     }
@@ -510,12 +543,13 @@ public static class PageCorrections
     /// <summary>
     /// What one click on the page's swap button does: "Show as scanned", or back: "Show cropped
     /// and straightened", "Show straightened", "Show cropped", "Show with the spine shadow softened",
-    /// "Show straightened, with the spine shadow softened"; null when the page cannot swap.
+    /// "Show straightened, with the spine shadow softened"; "Show as photographed" and "Show corrected"
+    /// for a page taken from a photo; null when the page cannot swap.
     /// </summary>
     public static string? ToggleLabel(ScannedPage page)
     {
         if (!page.CanSwapVersions) return null;
-        if (!page.ShowsOriginal) return "Show as scanned";
+        if (!page.ShowsOriginal) return FromPhoto(page) ? "Show as photographed" : "Show as scanned";
         if (page.Geometry is not { } geometry) return "Show with the spine shadow softened";
         return page.SpineShadow is null ? $"Show {Done(geometry)}" : $"Show {Done(geometry)}, with the spine shadow softened";
     }
@@ -523,13 +557,17 @@ public static class PageCorrections
     /// <summary>
     /// The status after a page's versions were swapped: "Page 3 is shown as scanned. It is saved that
     /// way.", "Page 3 is cropped and straightened again.", "Page 3 is shown with the spine shadow
-    /// softened again." or "Page 3 is straightened again, with the spine shadow softened."
+    /// softened again." or "Page 3 is straightened again, with the spine shadow softened."; for a page
+    /// taken from a photo "Page 3 is shown as photographed. It is saved that way." or "Page 3 is
+    /// corrected again."
     /// </summary>
     public static string SwapNote(ScannedPage page, int number)
     {
         if (page.ShowsOriginal || (page.Geometry is null && page.SpineShadow is null))
         {
-            return $"Page {number} is shown as scanned. It is saved that way.";
+            return FromPhoto(page)
+                ? $"Page {number} is shown as photographed. It is saved that way."
+                : $"Page {number} is shown as scanned. It is saved that way.";
         }
         if (page.Geometry is not { } geometry) return $"Page {number} is shown with the spine shadow softened again.";
         return page.SpineShadow is null
@@ -541,11 +579,14 @@ public static class PageCorrections
     /// The status after a scan's pages were queued, when crop and straighten changed some: " 2
     /// straightened." or " 3 cropped or straightened."; then, when the spine's shadow was softened on
     /// some, " Spine shadow softened on 2 pages." (leading space; empty when nothing was changed).
+    /// Pages taken from photos are left out: the import's own status tells about them
+    /// (<see cref="PhotoImport.AddedMessage"/>).
     /// </summary>
     public static string ScanNote(IEnumerable<ScannedPage> added)
     {
         var pages = added.ToList();
-        var changed = pages.Where(p => p.Geometry is not null && !p.ShowsOriginal).Select(p => Done(p.Geometry!)).ToList();
+        var changed = pages.Where(p => p.Geometry is { Basis: not GeometryBasis.Perspective } && !p.ShowsOriginal)
+            .Select(p => Done(p.Geometry!)).ToList();
         string note = "";
         if (changed.Count > 0)
         {
@@ -557,9 +598,13 @@ public static class PageCorrections
         return note;
     }
 
-    /// <summary>"cropped and straightened", "straightened" or "cropped".</summary>
+    /// <summary>The page was taken from a photo along its corners: its other version is the photo.</summary>
+    private static bool FromPhoto(ScannedPage page) => page.Geometry?.Basis == GeometryBasis.Perspective;
+
+    /// <summary>"cropped and straightened", "straightened" or "cropped"; "corrected" for a page taken from a photo.</summary>
     private static string Done(PageGeometry geometry) =>
-        geometry.Cropped && geometry.Straightened ? "cropped and straightened"
+        geometry.Basis == GeometryBasis.Perspective ? "corrected"
+        : geometry.Cropped && geometry.Straightened ? "cropped and straightened"
         : geometry.Straightened ? "straightened"
         : "cropped";
 }

@@ -153,6 +153,11 @@ public final class AppState: ObservableObject {
     @Published public var pendingIdCardLeave: IdCardLeave?
     /// Bumped for every new picture of the ID card's page; a late one is dropped.
     var idCardPreviewRevision = 0
+    /// The photo whose corners the user is asked to place while an import waits (the corner editor's
+    /// sheet, `PhotoCornersEditorView`); nil otherwise (AppState+Import.swift).
+    @Published public internal(set) var cornerReview: PhotoCornersRequest?
+    /// Resumes the import waiting for the corner editor's answer (`answerCorners`).
+    var cornerReviewContinuation: CheckedContinuation<PhotoCornersAnswer, Never>?
 
     /// The installed printers' names, as last read (`refreshPrinters()`, AppState+Copy.swift).
     @Published public internal(set) var printerNames: [String] = []
@@ -891,6 +896,8 @@ public final class AppState: ObservableObject {
         // (processing, OCR, PDF build, exports) — either may be the one running.
         session?.cancelScan()
         currentCancelFlag?.cancel()
+        // An import waiting for the corner editor's answer goes on, sees the flag and stops (the sheet closes).
+        answerCorners(.skip)
     }
 
     // MARK: Saving

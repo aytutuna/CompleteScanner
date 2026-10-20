@@ -275,6 +275,31 @@ public struct PageProcessor {
                              book: splitsFacingPages(settings) ? BookSplitOptions.of(settings) : nil)
     }
 
+    /// The steps for pages made from imported photos of documents (`PhotoImport`), which always go to
+    /// the queue: the blank-page check, the separator-sheet check, reading barcodes when the stack is
+    /// split at barcode or QR sheets and `barcodes` can read them, turning pages upright when asked for
+    /// and `scorer` can read text, then the adjustments unless they change nothing. Crop and
+    /// straighten, the spine's shadow and splitting facing pages are left out: the page was cut out of
+    /// the photo along its corners already, and the photo as it was is the page's other version. Twin
+    /// of C# `PageProcessor.ForPhotoImport`.
+    public static func forPhotoImport(_ settings: ScanSettings, scorer: (any OrientationScorer)? = nil,
+                                      barcodes: (any BarcodeReader)? = nil) -> PageProcessor {
+        var steps: [any PageStep] = [
+            BlankDetectionStep(options: BlankPageOptions(sensitivity: settings.document.blankSensitivity)),
+            SeparatorStep(),
+        ]
+        if settings.document.splitMode == .barcode, let barcodes, barcodes.isAvailable {
+            steps.append(BarcodeStep(reader: barcodes))
+        }
+        if settings.document.autoRotate, let scorer, scorer.isAvailable {
+            steps.append(OrientationStep(scorer: scorer, split: settings.document))
+        }
+        if !(settings.adjustments.isIdentity && settings.colorMode == .color) {
+            steps.append(AdjustmentStep(adjustments: settings.adjustments, colorMode: settings.colorMode))
+        }
+        return PageProcessor(steps: steps)
+    }
+
     /// Whether scans with these settings get the blank-page check: document pages collected in the
     /// queue, where a flagged page can be seen and kept before saving. Pages saved as soon as they
     /// are scanned are never checked, so none is ever left out unseen.
@@ -475,30 +500,35 @@ public enum PageFilter {
 public enum PageCorrections {
     /// "Cropped and straightened 2.4°", "Straightened 1.5°" or "Cropped" for a changed page shown
     /// changed, followed by ", spine shadow softened" ("Spine shadow softened" alone) when the shadow was
-    /// softened; "As scanned" when the user went back to the page as scanned; nil for other pages.
+    /// softened; "As scanned" when the user went back to the page as scanned; "Corrected from photo"
+    /// and "As photographed" for a page taken from a photo; nil for other pages.
     public static func caption(_ page: ScannedPage) -> String? {
         if page.geometry == nil && page.spineShadow == nil { return nil }
-        if page.showsOriginal { return "As scanned" }
+        if page.showsOriginal { return fromPhoto(page) ? PhotoImport.originalCaption : "As scanned" }
         guard let geometry = page.geometry else { return "Spine shadow softened" }
         return page.spineShadow == nil ? geometry.caption : "\(geometry.caption), spine shadow softened"
     }
 
     /// What one click on the page's swap button does: "Show as scanned", or back: "Show cropped and
     /// straightened", "Show straightened", "Show cropped", "Show with the spine shadow softened", "Show
-    /// straightened, with the spine shadow softened"; nil when the page cannot swap.
+    /// straightened, with the spine shadow softened"; "Show as photographed" and "Show corrected" for a
+    /// page taken from a photo; nil when the page cannot swap.
     public static func toggleLabel(_ page: ScannedPage) -> String? {
         guard page.canSwapVersions else { return nil }
-        if !page.showsOriginal { return "Show as scanned" }
+        if !page.showsOriginal { return fromPhoto(page) ? "Show as photographed" : "Show as scanned" }
         guard let geometry = page.geometry else { return "Show with the spine shadow softened" }
         return page.spineShadow == nil ? "Show \(done(geometry))" : "Show \(done(geometry)), with the spine shadow softened"
     }
 
     /// The status after a page's versions were swapped: "Page 3 is shown as scanned. It is saved that
     /// way.", "Page 3 is cropped and straightened again.", "Page 3 is shown with the spine shadow softened
-    /// again." or "Page 3 is straightened again, with the spine shadow softened."
+    /// again." or "Page 3 is straightened again, with the spine shadow softened."; for a page taken from
+    /// a photo "Page 3 is shown as photographed. It is saved that way." or "Page 3 is corrected again."
     public static func swapNote(_ page: ScannedPage, number: Int) -> String {
         if page.showsOriginal || (page.geometry == nil && page.spineShadow == nil) {
-            return "Page \(number) is shown as scanned. It is saved that way."
+            return fromPhoto(page)
+                ? "Page \(number) is shown as photographed. It is saved that way."
+                : "Page \(number) is shown as scanned. It is saved that way."
         }
         guard let geometry = page.geometry else { return "Page \(number) is shown with the spine shadow softened again." }
         return page.spineShadow == nil
@@ -509,9 +539,11 @@ public enum PageCorrections {
     /// The status after a scan's pages were queued, when crop and straighten changed some: " 2
     /// straightened." or " 3 cropped or straightened."; then, when the spine's shadow was softened on
     /// some, " Spine shadow softened on 2 pages." (leading space; empty when nothing was changed).
+    /// Pages taken from photos are left out: the import's own status tells about them
+    /// (`PhotoImport.addedMessage`).
     public static func scanNote(_ added: [ScannedPage]) -> String {
         let changed = added.compactMap { page -> String? in
-            guard let geometry = page.geometry, !page.showsOriginal else { return nil }
+            guard let geometry = page.geometry, geometry.basis != .perspective, !page.showsOriginal else { return nil }
             return done(geometry)
         }
         var note = ""
@@ -524,9 +556,13 @@ public enum PageCorrections {
         return note
     }
 
-    /// "cropped and straightened", "straightened" or "cropped".
+    /// The page was taken from a photo along its corners: its other version is the photo.
+    private static func fromPhoto(_ page: ScannedPage) -> Bool { page.geometry?.basis == .perspective }
+
+    /// "cropped and straightened", "straightened" or "cropped"; "corrected" for a page taken from a photo.
     private static func done(_ geometry: PageGeometry) -> String {
-        geometry.cropped && geometry.straightened ? "cropped and straightened"
+        geometry.basis == .perspective ? "corrected"
+            : geometry.cropped && geometry.straightened ? "cropped and straightened"
             : geometry.straightened ? "straightened"
             : "cropped"
     }

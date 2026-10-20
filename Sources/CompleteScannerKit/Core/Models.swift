@@ -250,6 +250,13 @@ public enum PageInclusion: String, Sendable {
     case skip
 }
 
+/// Where a queued page came from (`ScannedPage.source`): a scanner, or a photo of a document imported
+/// from a file (`PhotoImport`). Not stored in settings files. Twin of C# `PageSource`.
+public enum PageSource: String, Sendable {
+    case scanner
+    case photo
+}
+
 /// Where a stack of collected pages is split into separate documents (`DocumentOptions.splitMode`,
 /// `DocumentSplitter`). `.none` comes first: it is the default and the fallback for a mode a newer
 /// version adds. New modes come after the existing ones. Shown in `displayOrder`. Twin of C#
@@ -730,6 +737,10 @@ public struct ScannedPage: Identifiable {
     /// not cut from a spread, or no shadow found). In memory only.
     public var spineShadow: SpineShadowResult?
 
+    /// Where the page came from: a scanner, or a photo imported from a file (`PhotoImport`), which the
+    /// page strip labels "Photo". In memory only.
+    public var source: PageSource = .scanner
+
     /// The spread this page was cut from (`spread`); nil for other pages.
     public var spreadID: UUID? { spread?.spreadID }
 
@@ -766,8 +777,9 @@ public struct ScannedPage: Identifiable {
     /// This page carrying what the scan recorded about `source`: its side and sheet, the
     /// blank-page check, the user's keep or skip, what crop and straighten did and which version is
     /// shown, the patch code and barcodes found on it, the user's document break and document name, the turn that
-    /// made it upright, the spread it was cut from and what softening its spine's shadow did. Pixels, id,
-    /// file, rotation and the other version stay this page's. Twin of C# `ScannedPage.CopyMeta`.
+    /// made it upright, the spread it was cut from, what softening its spine's shadow did and where it came
+    /// from (`source`). Pixels, id, file, rotation and the other version stay this page's. Twin of C#
+    /// `ScannedPage.CopyMeta`.
     public func copyMeta(from source: ScannedPage) -> ScannedPage {
         var page = self
         page.side = source.side
@@ -783,6 +795,7 @@ public struct ScannedPage: Identifiable {
         page.upright = source.upright
         page.spread = source.spread
         page.spineShadow = source.spineShadow
+        page.source = source.source
         return page
     }
 
@@ -804,6 +817,7 @@ public struct ScannedPage: Identifiable {
         page.upright = upright
         page.spread = spread
         page.spineShadow = spineShadow
+        page.source = source
         page.alternate = PageVersion(image: image, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }
@@ -827,6 +841,7 @@ public struct ScannedPage: Identifiable {
         page.upright = upright
         page.spread = spread
         page.spineShadow = result
+        page.source = source
         page.alternate = alternate ?? PageVersion(image: image, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }
@@ -861,6 +876,7 @@ public struct ScannedPage: Identifiable {
         page.upright = upright
         page.spread = spread
         page.spineShadow = spineShadow
+        page.source = source
         page.alternate = PageVersion(image: fileURL == nil ? image : nil, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }

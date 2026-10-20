@@ -263,7 +263,8 @@ fileprivate struct PageThumbnailCell: View {
                     Text(caption)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .help(DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? book.help ?? "")
+                        .help(DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? book.help
+                              ?? (page.source == .photo ? PhotoImport.labelHelp : ""))
                 }
                 geometryToggle
                 uprightToggle
@@ -306,11 +307,12 @@ fileprivate struct PageThumbnailCell: View {
         return page.rotationQuarterTurns * 2 + original + undone
     }
 
-    /// "Page 3", "Page 3 · back" for a page of a two-sided stack, or "Page 3 · not split" for a spread
-    /// of a book kept whole.
+    /// "Page 3", "Page 3 · back" for a page of a two-sided stack, "Page 3 · not split" for a spread
+    /// of a book kept whole, or "Page 3 · photo" for a page imported from a photo.
     private var caption: String {
         guard let side = page.side else {
-            return book.isWhole ? "Page \(pageNumber) \u{00B7} not split" : "Page \(pageNumber)"
+            if book.isWhole { return "Page \(pageNumber) \u{00B7} not split" }
+            return page.source == .photo ? "Page \(pageNumber) \u{00B7} photo" : "Page \(pageNumber)"
         }
         return "Page \(pageNumber) \u{00B7} \(side == .front ? "front" : "back")"
     }
@@ -320,7 +322,8 @@ fileprivate struct PageThumbnailCell: View {
     private var accessibilityName: String {
         var name = "Page \(pageNumber)"
         if let title = split.dividerTitle { name = "\(title), \(name)" }
-        if let label = DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? book.label {
+        if let label = DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? book.label
+            ?? PhotoImport.sourceLabel(page) {
             name += ", \(label)"
         }
         if let note = split.separatorNote {

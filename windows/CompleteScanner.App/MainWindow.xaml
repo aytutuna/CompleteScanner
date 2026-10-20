@@ -7,7 +7,9 @@
         Width="1200" Height="800" MinWidth="700" MinHeight="560"
         WindowStartupLocation="CenterScreen"
         Icon="{x:Static local:AppIcon.Image}"
-        FontFamily="{StaticResource TextFontFamily}">
+        FontFamily="{StaticResource TextFontFamily}"
+        AllowDrop="True" PreviewDragEnter="Window_PreviewDragOver" PreviewDragOver="Window_PreviewDragOver"
+        PreviewDrop="Window_PreviewDrop">
     <Window.Resources>
         <Style x:Key="SectionExpanderStyle" TargetType="Expander" BasedOn="{StaticResource {x:Type Expander}}">
             <Setter Property="IsExpanded" Value="True" />
@@ -376,6 +378,14 @@
                                         <TextBlock x:Name="CanvasHintTip" Style="{StaticResource CaptionText}" TextAlignment="Center"
                                                    TextWrapping="Wrap" Margin="0,12,0,0"
                                                    Text="After a preview, drag over it to scan just that area." />
+                                        <!-- No scanner needed: photos of documents become pages too (PhotoImport). -->
+                                        <StackPanel x:Name="CanvasImport" Margin="0,16,0,0" HorizontalAlignment="Center">
+                                            <Button x:Name="CanvasImportButton" Style="{StaticResource SubtleButtonStyle}"
+                                                    local:Icon.Glyph="&#xEB9F;" HorizontalAlignment="Center"
+                                                    Click="ImportPhotos_Click" />
+                                            <TextBlock x:Name="CanvasDropHint" Style="{StaticResource CaptionText}" TextAlignment="Center"
+                                                       TextWrapping="Wrap" Margin="0,2,0,0" />
+                                        </StackPanel>
                                     </StackPanel>
                                 </Grid>
                             </Border>
@@ -1060,6 +1070,11 @@
                                                 local:Icon.Glyph="&#xE8FE;" Content="Scan" MinHeight="36"
                                                 Click="Scan_Click" />
                                     </Grid>
+                                    <!-- Pages from photos of documents, no scanner needed (PhotoImport): a row of its
+                                         own under Preview and Scan, as on the Mac, so Scan and Save keep their width. -->
+                                    <Button x:Name="ImportPhotosButton" Style="{StaticResource IconTextButtonStyle}"
+                                            local:Icon.Glyph="&#xEB9F;" HorizontalAlignment="Stretch" MinHeight="36"
+                                            Margin="0,8,0,0" Click="ImportPhotos_Click" />
                                     <Grid x:Name="QueueButtons" Margin="0,8,0,0">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />

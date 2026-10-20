@@ -24,6 +24,8 @@ Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Output/OCRText.swift`, `TextExport.swift`, `DocxWriter.swift`, `ZipStore.swift` — text output: OCR lines in reading order and paragraphs, the text file, the Word document and its zip package, Copy Text (see below).
 - `Sources/CompleteScannerKit/Pipeline/ReceiptProcessing.swift`, `App/AppState+Receipts.swift` — the Receipts task: several receipts found on the glass, cleaned up for faded thermal print, and named by the date read from their text (see below).
 - `Sources/CompleteScannerKit/Core/DocumentSplitter.swift`, `Core/SavePlan.swift`, `Pipeline/PatchCodeDetector.swift`, `App/AppState+Split.swift` — splitting a stack into separate documents: separator sheets with patch codes, blank sheets, every N sheets, splitting and joining by hand in the page strip, the {label} token, and saving several files all or nothing (see below).
+- `Sources/CompleteScannerKit/Pipeline/Quad.swift`, `Homography.swift`, `PerspectiveCorrector.swift`, `PhotoDocumentDetector.swift`, `CaptureStability.swift` — photos of documents: a page's four corners found in a camera photo, the page made upright with its perspective corrected, and when a held-still page should be taken (see below).
+- `Sources/CompleteScannerKit/Pipeline/PhotoImport.swift`, `App/AppState+Import.swift`, `UI/PhotoCornersEditorView.swift` — importing photos of documents as pages of the queue, with the corner editor for a page not found clearly (see below).
 - `Sources/CompleteScannerKit/Pipeline/Barcodes.swift`, `Output/BarcodeServices.swift` — barcode and QR separator sheets: reading the codes on a page (Vision), the document name a code's text gives, the QR separator sheet to print (Core Image draws its code) and Code 39 for the demo scanner (see below).
 - `Sources/CompleteScannerKit/App/AppState.swift` — the `@MainActor ObservableObject` all UI binds to; its task members are in `App/AppState+Tasks.swift`.
 - `Sources/CompleteScannerKit/App/ContentView.swift`, `CompleteScannerApp.swift`.
@@ -475,6 +477,9 @@ Twins of `windows/CompleteScanner.Core/RgbaImage.cs`, `GrayImage.cs` (`GrayImage
 // withVersionsSwapped keep it, and canSwapVersions is (geometry != nil || spineShadow != nil) && alternate != nil:
 //   public func withSpineShadow(_ softened: CGImage, result: SpineShadowResult) -> ScannedPage   // the alternate stays the page
 //                                                                 // as scanned when there is one, else the page as it was becomes it
+// For photos of documents it gains `source: PageSource` (.scanner; in memory only, see
+// Pipeline/PhotoImport.swift below); copyMeta(from:) and every with… copy it:
+//   public enum PageSource: String, Sendable { case scanner, photo }   // not persisted
 public enum BlankSensitivity: String, Codable, CaseIterable, Identifiable, Sendable {
     case medium, low, high                         // first case = default and fallback
     public var label: String                       // "Low", "Medium", "High"
@@ -563,6 +568,12 @@ public struct PageProcessor {
     public static func splitsFacingPages(_ settings: ScanSettings) -> Bool
     /// splitsFacingPages and softenSpineShadow.
     public static func softensSpineShadow(_ settings: ScanSettings) -> Bool
+    /// Pages made from imported photos (always queued): the blank check, the separator-sheet check, reading
+    /// barcodes (splitMode == .barcode and `barcodes?.isAvailable`), turning upright (autoRotate and
+    /// `scorer?.isAvailable`), then adjustments (unless they change nothing); never crop and straighten, the
+    /// spine's shadow or splitting facing pages (the page was cut out along its corners already).
+    public static func forPhotoImport(_ settings: ScanSettings, scorer: (any OrientationScorer)? = nil,
+                                      barcodes: (any BarcodeReader)? = nil) -> PageProcessor
     /// Arranges (DocumentSides.arrangeTwoSided / markManual), then every step on every page in
     /// order; throws ScanError.cancelled when `shouldContinue` says no (asked before each page and
     /// step, and handed to a CancellablePageStep).
@@ -584,7 +595,10 @@ public enum PageFilter {
     public static func queueSummary(_ pages: [ScannedPage], options: DocumentOptions) -> String  // "24 pages in queue, 5 blank skipped"
     public static func scanNote(_ added: [ScannedPage], options: DocumentOptions) -> String     // " 2 look blank and will be skipped."
 }
-public enum PageCorrections {
+public enum PageCorrections {                                           // a page taken from a photo (geometry.basis == .perspective):
+                                                                        // "Corrected from photo" / "As photographed", "Show as photographed" /
+                                                                        // "Show corrected", "Page 3 is shown as photographed. It is saved that
+                                                                        // way." / "Page 3 is corrected again."; scanNote leaves such pages out
     public static func caption(_ page: ScannedPage) -> String?          // "Cropped and straightened 2.4°", "As scanned", nil;
                                                                         // softened: "Spine shadow softened", "Straightened 1.5°, spine shadow softened"
     public static func toggleLabel(_ page: ScannedPage) -> String?      // "Show as scanned", "Show straightened", nil when it cannot swap;
@@ -605,7 +619,8 @@ public struct TextLayout: Equatable, Sendable {
     public var isConfident: Bool                   // axis known, inkPoints >= minInkPoints, confidence >= minConfidence
     public static let nothing: TextLayout
 }
-public enum GeometryBasis: Sendable { case pageEdges, textLines }
+public enum GeometryBasis: Sendable { case pageEdges, textLines, perspective }   // perspective: cut out of a photo along
+                                                                                   // its corners (PhotoImport); caption "Corrected from photo"
 public enum GeometryAction: Sendable { case cropStraightened, cropBox, rotate }
 public struct PageGeometry: Equatable, Sendable {  // not persisted
     public let cropped: Bool; public let angleDegrees: Double; public let basis: GeometryBasis
@@ -1009,6 +1024,158 @@ public enum PhotoDetector {
     static func sortedRowMajor(_ regions: [DetectedPhotoRegion]) -> [DetectedPhotoRegion]
 }
 ```
+
+### Pipeline/Quad.swift, Homography.swift, PerspectiveCorrector.swift, PhotoDocumentDetector.swift, CaptureStability.swift (photos of documents)
+
+```swift
+public struct Quad: Equatable, Sendable {                  // four corners in continuous image pixels, clockwise on screen
+    public var topLeft: CGPoint, topRight: CGPoint, bottomRight: CGPoint, bottomLeft: CGPoint
+    public init(topLeft: CGPoint, topRight: CGPoint, bottomRight: CGPoint, bottomLeft: CGPoint)
+    public subscript(index: Int) -> CGPoint                // mod 4: 0 top-left, 1 top-right, 2 bottom-right, 3 bottom-left
+    public var corners: [CGPoint]; public var signedArea: Double; public var area: Double
+    public var isConvex: Bool; public var centroid: CGPoint
+    public func edgeLength(_ index: Int) -> Double         // 0 top, 1 right, 2 bottom, 3 left
+    public func scaled(_ sx: Double, _ sy: Double) -> Quad
+    public func maxCornerDistance(_ other: Quad) -> Double
+    public func meanCornerDistance(_ other: Quad) -> Double
+    public func isInside(width: Double, height: Double, margin: Double = 0) -> Bool
+    public func contains(_ point: CGPoint, tolerance: Double = 0) -> Bool
+    public static func fromCorners(_ corners: [CGPoint]) -> Quad   // any 4-point cycle, either way round, named as below
+    static func distance(_ a: CGPoint, _ b: CGPoint) -> Double     // internal
+}
+public struct Homography: Equatable, Sendable {             // row-major 3×3: (x, y) → ((m00·x + m01·y + m02) / w, (m10·x + m11·y + m12) / w),
+    public init(_ m00: Double, _ m01: Double, _ m02: Double,  //   w = m20·x + m21·y + m22
+                _ m10: Double, _ m11: Double, _ m12: Double, _ m20: Double, _ m21: Double, _ m22: Double)
+    public static let identity: Homography
+    public func map(_ p: CGPoint) -> CGPoint; public func weight(_ p: CGPoint) -> Double
+    public var determinant: Double; public func inverse() -> Homography?          // nil when singular
+    public static func multiply(_ a: Homography, _ b: Homography) -> Homography    // b first
+    public static func squareToQuad(_ quad: Quad) -> Homography?                   // Heckbert's closed form
+    public static func rectToQuad(width: Double, height: Double, quad: Quad) -> Homography?
+    public static func quadToRect(_ quad: Quad, width: Double, height: Double) -> Homography?
+    public static func fromCorrespondences(_ from: [CGPoint], _ to: [CGPoint]) -> Homography?   // 8×8 elimination, partial pivoting, m22 = 1
+}
+public struct AspectEstimate: Equatable, Sendable { public var widthOverHeight: Double; public var focalLength: Double?; public var longOverShort: Double }
+public struct PaperMatch: Equatable, Sendable { public var size: PaperSize; public var longOverShort: Double }
+public enum Supersampling: Sendable { case auto, off, on }
+public struct PerspectiveOptions: Equatable, Sendable {
+    public var outputWidth: Int?, outputHeight: Int?       // both or neither; else from the quad
+    public var maxLongSide = 0                              // 0: no limit of the caller's own
+    public var paperAspectTolerance = 0.03, snapToPaper = true, supersample: Supersampling = .auto
+    public var fillR: UInt8 = 255, fillG: UInt8 = 255, fillB: UInt8 = 255
+    public static let `default`: PerspectiveOptions
+}
+public struct PerspectivePlan: Equatable, Sendable {
+    public var width: Int, height: Int; public var outputToSource: Homography; public var widthOverHeight: Double
+    public var paper: PaperMatch?; public var dpi: Double?  // dpi: output long side / paper long side, when a paper matched
+    public var supersampled: Bool
+}
+public struct PerspectiveCorrection: Sendable { public let image: RgbaImage; public let plan: PerspectivePlan }
+public enum PerspectiveCorrector {
+    // paperAspectTolerance 0.03, nominalDPI 200, minFocalDiagonals 0.3, maxFocalDiagonals 4, supersampleAbove 1.25,
+    // maxPhotoDiagonals 2, maxOutputSide 23170, matchedSizes [.a4, .letter, .legal, .idCard] (A4 stands for every √2 size)
+    public static func estimateAspect(_ quad: Quad, imageWidth: Double, imageHeight: Double) -> AspectEstimate
+    public static func matchPaper(_ longOverShort: Double, tolerance: Double = paperAspectTolerance) -> PaperMatch?
+    public static func plan(_ quad: Quad, imageWidth: Int, imageHeight: Int, options: PerspectiveOptions = .default) -> PerspectivePlan?
+    public static func warp(_ image: RgbaImage, plan: PerspectivePlan, options: PerspectiveOptions = .default) -> RgbaImage
+    public static func correct(_ image: RgbaImage, quad: Quad, options: PerspectiveOptions = .default) -> PerspectiveCorrection?
+}
+public enum PhotoDocumentRejection: Sendable { case none, nothingFound, cutOff, ambiguous, lowConfidence }
+public struct PhotoDocumentOptions: Equatable, Sendable {
+    public var analysisLongSide = 1000, minAreaShare = 0.05, acceptScore = 0.55, minSideScore = 0.35, paperAspectTolerance = 0.03
+    public static let `default`: PhotoDocumentOptions
+}
+public struct PhotoDocumentDetection: Equatable, Sendable {
+    public var quad: Quad?; public var confidence: Double; public var rejection: PhotoDocumentRejection
+    public var candidate: Quad?                             // the best outline seen when none was taken (cut off, ambiguous, unclear)
+    public var aspect: AspectEstimate?; public var paper: PaperMatch?
+    public var found: Bool; public static let nothing: PhotoDocumentDetection
+}
+public enum PhotoDocumentDetector {
+    public static func detect(_ image: RgbaImage, hint: Quad? = nil, options: PhotoDocumentOptions = .default) -> PhotoDocumentDetection
+    // internal, for tests and tuning: explain(_:hint:options:) (the scored pool), otsu, fitLine, simplify,
+    // largestQuad, cornerDistance, separated (C# also ScoreOf)
+}
+public enum CaptureState: Sendable { case noPage, moving, steadying, captured }
+public struct CaptureObservation: Equatable, Sendable {
+    public var quad: Quad?; public var confidence: Double; public var timestampMs: Double; public var frameWidth: Int; public var frameHeight: Int
+}
+public struct CaptureDecision: Equatable, Sendable { public var state: CaptureState; public var shouldCapture: Bool; public var progress: Double }
+public struct CaptureStabilityOptions: Equatable, Sendable {   // each defaults to its CaptureStability constant
+    public var steadyMs, enterMovement, stayMovement, enterConfidence, stayConfidence, maxGapMs, newPageMovement: Double
+    public static let `default`: CaptureStabilityOptions
+}
+public struct CaptureStability: Sendable {
+    // steadyMs 600, enterMovement 0.01, stayMovement 0.025 (shares of the frame's diagonal, largest corner movement),
+    // enterConfidence 0.6, stayConfidence 0.45, maxGapMs 250, newPageMovement 0.15
+    public init(options: CaptureStabilityOptions = .default)
+    public private(set) var state: CaptureState
+    public mutating func update(_ frame: CaptureObservation) -> CaptureDecision
+    public mutating func reset()
+    public static func movement(_ a: Quad, _ b: Quad) -> Double   // largest corner distance, least over the 4 cyclic pairings
+}
+```
+Twins of `windows/CompleteScanner.Core/Quad.cs` (`readonly record struct Quad(TopLeft, TopRight, BottomRight, BottomLeft)` of `PointD`, indexer, `Corners`, `SignedArea`, `Area`, `IsConvex`, `Centroid`, `EdgeLength`, `Scaled`, `MaxCornerDistance`, `MeanCornerDistance`, `IsInside`, `Contains`, `FromCorners`), `Homography.cs` (`record struct Homography(M00…M22)`), `PerspectiveCorrector.cs`, `PhotoDocumentDetector.cs` and `CaptureStability.cs` (a sealed class there), members in PascalCase. They import only Foundation and CoreGraphics (no AppKit, Vision or Accelerate), so they belong to the platform-neutral part of `CompleteScannerKit`. Coordinates (extending rule 4): quads are in continuous image pixels of the image passed in (top-left origin, y down; pixel (i, j) covers [i, i + 1) × [j, j + 1), its center is (i + 0.5, j + 0.5), as `RgbaImage.extractRotated` reads regions); the corners run clockwise on screen (positive shoelace sum with y down) and are named by where they are in the image, not by which way the text reads: the top edge is the edge whose midpoint has the smallest y (the smaller midpoint x on a tie), `topLeft` is its first corner (`Quad.fromCorners`); which way up the page reads is decided later by the orientation step. Near the turn where two edges' midpoints are equally high (a W × H sheet turned by atan(H / W): about 54.7° for portrait A4) a fraction of a degree renames every corner, so anything that compares quads across frames compares them from every starting corner (`CaptureStability.movement`, `PhotoDocumentDetector.cornerDistance`), never corner by corner. Vision's normalized corners (origin bottom-left) convert as x·W, (1 − y)·H, then `Quad.fromCorners`. The detector analyses a copy of at most `analysisLongSide` px (the toolkit's box filter) and answers in the photo's pixels; it finds straight edges with a Hough transform (a cos/sin table built from two literals, no libm trigonometry) and region outlines, scores each edge against the table's texture, the contrast across it, an edge running on past its corners and the edges' polarity, refines the best to sub-pixel accuracy, and answers `cutOff` (a corner more than 1 analysis px outside the frame, or an edge within 2 px of the frame's border along its length), `ambiguous` (two separate sheets of about the same size), `lowConfidence` (with `candidate`, when the best scores at least 0.25) or `nothingFound` rather than a wild outline; a page is taken at a score of at least `acceptScore` with every edge at least `minSideScore`; `hint` (the previous frame's quad) is refined as an outline of its own and favours outlines near it. The warp samples bilinearly at pixel centers (at H(o + 0.5) − 0.5), 2 × 2 at quarter offsets when the page is made smaller by more than 1.25 (`supersample` `.auto`), rounds halves to even, blends toward the fill color outside the photo, and gives the same bytes on both platforms; the output's long side is the longer edge of each opposite pair, cut to `maxLongSide`, `maxPhotoDiagonals` of the photo's diagonal and `maxOutputSide` (so W × H × 4 always fits one array), its shape the matched paper size (A4, Letter, Legal, ID-1 within 3 %), else the camera's view of the quad (Zhang and He, principal point at the photo's center), else the mean of the opposite edges' ratio; `plan` returns nil for a non-convex quad, a photo without pixels or a given size beyond `maxOutputSide`, and `warp` refuses a hand-made plan beyond it (C# `ArgumentException`, Swift `precondition`). `CaptureStability` (twin, though the iOS plan listed it as Swift only): it enters steadying when no corner moved more than `enterMovement` since the previous frame and the confidence is at least `enterConfidence`, stays while every corner is within `stayMovement` of the anchor and the confidence at least `stayConfidence`, bridges frames without a page that come within `maxGapMs` of the last sighting (the time missing never counts as holding still), starts over after a longer pause, fires once when steady for `steadyMs`, and stays captured until the page has gone (a frame without it more than `maxGapMs` after the last sighting), moved by `newPageMovement` from the captured quad, or `reset()`. Determinism: integer arithmetic for blur, Sobel and masks; doubles only with + − × ÷ and square roots in the same order on both sides; rounding `floor(x + 0.5)` or explicit half-even; every sort totally ordered. `HomographyTests`, `PhotoDocumentDetectorTests`, `PerspectiveCorrectorTests` and `CaptureStabilityTests` are the same cases on both sides, on the same synthetic photos (`PhotoScenes`, byte-identical, checked by FNV-1a checksum: e.g. `WoodScene` 0x5D456758, `CutOffScene` 0xB990DDDA); `PerspectiveCorrectorTests` pins the corrected bytes (`RoundTripScene` forced to 210 × 297, 2 × 2 sampled 0x9866E633, single-sampled 0xC4BDFAD2; `WoodScene` along its exact quad: 235 × 333, A4, 0x0A7E6D3A). Corner accuracy on the fixtures: every corner within 1 % of the diagonal. The detector's corners are not pinned across platforms yet (to be added once macOS CI compiles the Swift twin). Nothing here stores a setting.
+
+### Pipeline/PhotoImport.swift, App/AppState+Import.swift, UI/PhotoCornersEditorView.swift (importing photos of documents)
+
+```swift
+public struct PhotoOrientation: Equatable, Sendable {      // the orientation tag (EXIF/TIFF 274, kCGImagePropertyOrientation):
+    public var quarterTurns: Int; public var mirrored: Bool //   mirrored left to right first, then turned clockwise
+    public init(quarterTurns: Int, mirrored: Bool)
+    public static let upright: PhotoOrientation; public var isUpright: Bool
+    public static func fromExif(_ value: Int) -> PhotoOrientation   // 1 upright, 2 mirrored, 3 (2 turns), 4 (2, mirrored), 5 (3, mirrored),
+}                                                                    // 6 (1), 7 (1, mirrored), 8 (3); anything else upright
+public enum PhotoImportAction: Sendable { case correct, review }
+public enum PhotoReviewReason: Sendable { case none, unsure, cutOff, twoPages, nothingFound }
+public struct PhotoImportPlan: Equatable, Sendable {
+    public var action: PhotoImportAction; public var corners: Quad; public var reason: PhotoReviewReason
+    public var detection: PhotoDocumentDetection
+}
+public enum PhotoCornersChoice: Sendable { case useCorners, wholePhoto, skip }
+public enum PhotoImport {
+    // sureConfidence 0.7, nominalDPI 200, minDPI 50, maxDPI 1200, startInset 0.1, minEdgePixels 16, maxPhotoPixels 150_000_000,
+    // fileExtensions [jpg jpeg jpe png heic heif hif tif tiff bmp webp], heifExtensions [heic heif hif]; the words: buttonLabel
+    // "Import photos of documents…", buttonHint, pickerTitle, dropHint, label "Photo", labelHelp, correctedCaption "Corrected
+    // from photo", originalCaption "As photographed", editorTitle, editorHelp, useCornersLabel, wholePhotoLabel, skipLabel,
+    // notOfferedMessage, noPhotosMessage, unreadableDetail, tooLargeDetail, missingDetail
+    public static func isPhotoFile(_ path: String) -> Bool; public static func isHeif(_ path: String) -> Bool
+    public static func photoFiles(_ paths: [String]) -> [String]    // the photos, in order, each once (letter case aside)
+    public static func isOffered(_ settings: ScanSettings) -> Bool  // TaskCatalog.flow(of:) == .documentQueue
+    public static func oriented(_ stored: RgbaImage, orientation: PhotoOrientation) -> RgbaImage
+    public static func plan(_ photo: RgbaImage) -> PhotoImportPlan  // detect, then:
+    public static func plan(_ detection: PhotoDocumentDetection, width: Int, height: Int) -> PhotoImportPlan
+    public static func wholePhoto(width: Int, height: Int) -> Quad
+    public static func startCorners(width: Int, height: Int) -> Quad
+    public static func clampedToPhoto(_ quad: Quad, width: Int, height: Int) -> Quad
+    public static func canUseCorners(_ quad: Quad) -> Bool          // convex, clockwise, every edge ≥ minEdgePixels
+    public static func movedCorner(_ quad: Quad, index: Int, to: CGPoint, width: Int, height: Int) -> Quad
+    public static func pageDPI(_ dpi: Double?) -> Int               // floor(dpi + 0.5) within minDPI…maxDPI; nominalDPI when unknown
+    public static func wholePhotoDPI(width: Int, height: Int) -> Int
+    public static func correctedPage(_ photo: RgbaImage, corners: Quad, createdAt: Date = Date()) -> ScannedPage?
+    public static func wholePhotoPage(_ photo: RgbaImage, createdAt: Date = Date()) -> ScannedPage?   // C#: never null
+    public static func sourceLabel(_ page: ScannedPage) -> String?  // "Photo" for a page from a photo
+    public static func reasonText(_ reason: PhotoReviewReason) -> String
+    public static func counter(_ number: Int, of count: Int, fileName: String) -> String       // "Photo 2 of 5: IMG_0042.jpg"
+    public static func progressMessage(_ number: Int, of count: Int) -> String                // "Importing photo 2 of 5…"
+    public static func progressMessage(_ number: Int, of count: Int, page: Int, pageCount: Int) -> String  // "Importing photo 2 of 5, page 3 of 7…"
+    public static func pageName(_ fileName: String, page: Int, pageCount: Int) -> String       // "fax.tif, page 2 of 5"; the name alone for one page
+    public static func addedMessage(added: Int, skipped: Int, failed: Int, queueCount: Int, saveTitle: String) -> String
+    public static func cancelledMessage(added: Int, queueCount: Int) -> String
+    public static func unreadableMessage(_ fileName: String, detail: String) -> String
+    public static func heifUnavailableMessage(_ fileName: String) -> String   // Windows only shows it; same words on both
+}
+// App/AppState+Import.swift (twin of windows/CompleteScanner.App/AppViewModel.Import.cs):
+public struct PhotoCornersRequest: Identifiable { public let photo: RgbaImage; public let plan: PhotoImportPlan; public let fileName: String; public let number: Int; public let count: Int }
+public struct PhotoCornersAnswer: Sendable { public var choice: PhotoCornersChoice; public var corners: Quad?; public static let skip: PhotoCornersAnswer }
+extension AppState {
+    public var canImportPhotos: Bool                    // isOffered, not busy, no review open, not turning a stack over by hand
+    public func chooseAndImportPhotos()                 // NSOpenPanel, several files, starting in Pictures
+    public func importPhotos(_ urls: [URL])
+    public func answerCorners(_ answer: PhotoCornersAnswer)   // the corner editor's answer; `cornerReview` (stored in AppState.swift) is the sheet's item
+}
+```
+Twin of `windows/CompleteScanner.Core/PhotoImport.cs` (`PhotoOrientation.FromExif`, `PhotoImportAction`, `PhotoReviewReason`, `PhotoImportPlan`, `PhotoCornersChoice`, `PhotoImport` with the same members in PascalCase, `Dpi` for `DPI`), `PageProcessor.ForPhotoImport`, `PageSource` / `ScannedPage.Source` and `GeometryBasis.Perspective`; `PhotoImportTests` are the same cases on both sides, on `PhotoScenes`. A photo is imported into the page queue wherever the queue collects pages (`isOffered`: the document flow, whatever `documentMultiPage` says; not photos, ID card, copy or receipts), with no scanner needed: Import photos of documents… (Windows: a button under Preview and Scan and a link on the empty stage; the Mac: a button under Preview and Scan), or photo files dropped on the window (Windows: anywhere on the main window; a file drag shows the copy pointer only when it carries photos the window takes, and the no-drop pointer otherwise, the drop is answered as a copy; photos dropped while the settings do not import them, with nothing running, are answered with `notOfferedMessage`; drags of anything but files are left to the controls) or the scanner view (the Mac). Each photo is read once into memory and never written, moved or locked; its size is read from its header before any pixel is decoded, so a photo of more than `maxPhotoPixels` (or one whose pixels do not fit in memory) is listed with `tooLargeDetail` and the others go on; each page of a TIFF of several pages is imported in turn as a photo of its own (how many is read from the file's header, `PhotoFileReader.pageCount`, so a page that cannot be read is listed and the pages after it still go on), named `pageName` in the editor and the errors, with `progressMessage(_:of:page:pageCount:)` (other files give their main picture) (Windows: WIC through `windows/CompleteScanner.App/Services/PhotoFileReader.cs`, checked by `CompleteScanner.App.Tests/PhotoFileReaderTests.cs`; HEIC needs the HEIF Image Extensions, and HEVC Video Extensions for most iPhone photos, from the Microsoft Store, and a HEIC file Windows cannot decode is reported with `heifUnavailableMessage`; the Mac: ImageIO in `AppState+Import.swift`, which reads HEIC itself; neither applies color profiles beyond what `RgbaImage(cgImage:)` does on the Mac), turned upright by its orientation tag (`oriented`), searched for the page (`plan`): a page found with a confidence of at least `sureConfidence` that `PerspectiveCorrector.plan` accepts is cut out at once (`correctedPage`); otherwise the corner editor opens (Windows `PhotoCornersWindow`, modal; the Mac `PhotoCornersEditorView`, a sheet on the detail's tab bar so it opens whichever tab is shown, `cornerReview`; Cancel answers a waiting editor with Skip and stops the import) with `reasonText` and the plan's corners (the page found, else the outline seen kept within the photo, else `startCorners`): each corner is dragged on its own and kept within the photo and on a convex outline (`movedCorner`), a magnifier shows the photo around the corner being moved, keys 1–4 select a corner and the arrow keys move it (Shift: ten steps); Use these corners, Use whole photo (`wholePhotoPage`) or Skip this photo (also closing it). A page from a photo is a color page (`source == .photo`, labelled "Photo" in the strip) at `pageDPI(plan.dpi)` (the matched paper size's resolution, else 200), whose geometry is `PageGeometry(cropped: true, angleDegrees: 0, basis: .perspective)` and whose `alternate` is the upright photo, so the existing swap shows it "As photographed" and saves it that way at the page's resolution; a whole photo has no alternate and takes `wholePhotoDPI`. Each page goes through `PageProcessor.forPhotoImport` and `spoolPages` (the photo is spooled as `<id>-other`), is added to the queue at once and recorded with the task's step; Cancel keeps the pages added before it (`cancelledMessage`). Files that are no photo are left out (`photoFiles`; none at all: `noPhotosMessage`); a photo that cannot be read is listed in one error at the end (`unreadableMessage`) while the others are imported; the status is `addedMessage` plus the queue's notes (`PageCorrections.scanNote` leaves photo pages out). It stores no setting. Moving the corners of a page already in the queue again is not offered yet.
 
 ### Pipeline/ImagePipeline.swift
 

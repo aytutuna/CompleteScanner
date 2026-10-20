@@ -39,6 +39,11 @@ public enum GeometryBasis
     PageEdges,
     /// <summary>The lines of text on the page.</summary>
     TextLines,
+    /// <summary>
+    /// The page's four corners in a photo of it (<see cref="PhotoImport"/>): the page was cut out and
+    /// its perspective corrected (<see cref="PerspectiveCorrector"/>).
+    /// </summary>
+    Perspective,
 }
 
 /// <summary>How a page is changed (<see cref="GeometryPlan"/>).</summary>
@@ -64,11 +69,12 @@ public sealed record PageGeometry(bool Cropped, double AngleDegrees, GeometryBas
     /// <summary>The page was turned.</summary>
     public bool Straightened => AngleDegrees != 0;
 
-    /// <summary>"Cropped and straightened 2.4°", "Straightened 1.5°" or "Cropped".</summary>
+    /// <summary>"Cropped and straightened 2.4°", "Straightened 1.5°" or "Cropped"; "Corrected from photo" for a page taken from a photo.</summary>
     public string Caption
     {
         get
         {
+            if (Basis == GeometryBasis.Perspective) return PhotoImport.CorrectedCaption;
             string angle = DocumentGeometry.AngleText(AngleDegrees);
             if (Cropped && Straightened) return $"Cropped and straightened {angle}";
             return Straightened ? $"Straightened {angle}" : "Cropped";

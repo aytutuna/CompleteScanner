@@ -49,6 +49,14 @@ struct ContentView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(.bar)
+                // The corner editor of an imported photo whose page was not found clearly; closing it skips
+                // the photo. On the tab bar, which every tab shows, so it opens whichever tab is selected
+                // (the import waits for its answer).
+                .sheet(item: Binding(get: { state.cornerReview },
+                                     set: { if $0 == nil { state.answerCorners(.skip) } })) { request in
+                    PhotoCornersEditorView(request: request)
+                        .environmentObject(state)
+                }
                 Divider()
                 switch detailTab {
                 case .start:
@@ -124,6 +132,13 @@ struct ContentView: View {
             }
             Divider()
             StatusBarView()
+        }
+        // Photos of documents dropped on the scanner view become pages (AppState+Import.swift); other
+        // drops are refused.
+        .dropDestination(for: URL.self) { urls, _ in
+            guard state.canImportPhotos, !PhotoImport.photoFiles(urls.map(\.path)).isEmpty else { return false }
+            state.importPhotos(urls)
+            return true
         }
         .inspector(isPresented: $showInspector) {
             InspectorView()

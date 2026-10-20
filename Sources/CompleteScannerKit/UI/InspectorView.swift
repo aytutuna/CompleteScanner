@@ -968,6 +968,18 @@ struct InspectorView: View {
                 .disabled(state.isBusy)
             }
             .controlSize(.large)
+            // Photos of documents become pages of the queue too, with no scanner (AppState+Import.swift).
+            if PhotoImport.isOffered(state.settings) {
+                Button {
+                    state.chooseAndImportPhotos()
+                } label: {
+                    Label(PhotoImport.buttonLabel, systemImage: "photo.on.rectangle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(!state.canImportPhotos)
+                .help(PhotoImport.buttonHint)
+            }
         }
         .padding(12)
         .background(.bar)
