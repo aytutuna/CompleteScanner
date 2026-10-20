@@ -1021,11 +1021,14 @@ public struct DetectedPhotoRegion: Identifiable, Equatable {
 
     /// Corners in source-image pixel coordinates (top-left origin), order: TL, TR, BR, BL of the local frame.
     public var corners: [CGPoint] {
-        let a = angleDegrees * .pi / 180
-        let (c, s) = (cos(a), sin(a))
-        let (hw, hh) = (size.width / 2, size.height / 2)
-        return [CGPoint(x: -hw, y: -hh), CGPoint(x: hw, y: -hh), CGPoint(x: hw, y: hh), CGPoint(x: -hw, y: hh)].map {
-            CGPoint(x: center.x + $0.x * c - $0.y * s, y: center.y + $0.x * s + $0.y * c)
+        let a: Double = angleDegrees * .pi / 180
+        let c = CGFloat(cos(a)), s = CGFloat(sin(a))
+        let hw: CGFloat = size.width / 2, hh: CGFloat = size.height / 2
+        let local: [CGPoint] = [CGPoint(x: -hw, y: -hh), CGPoint(x: hw, y: -hh), CGPoint(x: hw, y: hh), CGPoint(x: -hw, y: hh)]
+        return local.map { (p: CGPoint) -> CGPoint in
+            let x: CGFloat = center.x + p.x * c - p.y * s
+            let y: CGFloat = center.y + p.x * s + p.y * c
+            return CGPoint(x: x, y: y)
         }
     }
 

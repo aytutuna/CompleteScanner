@@ -244,13 +244,18 @@ struct PhotoCornersEditorView: View {
     /// the first of the other diagonals that keeps it in the viewport.
     private func loupeCenter(corner: CGPoint, middle: CGPoint, in size: CGSize) -> CGPoint {
         let dx: CGFloat = corner.x >= middle.x ? 1 : -1, dy: CGFloat = corner.y >= middle.y ? 1 : -1
-        let reach = loupeSize / 2 + loupeGap
-        let candidates = [(dx, dy), (-dx, dy), (dx, -dy), (-dx, -dy)].map {
-            CGPoint(x: corner.x + $0.0 * reach, y: corner.y + $0.1 * reach)
+        let reach: CGFloat = loupeSize / 2 + loupeGap
+        let offsets: [(CGFloat, CGFloat)] = [(dx, dy), (-dx, dy), (dx, -dy), (-dx, -dy)]
+        let candidates: [CGPoint] = offsets.map { (o: (CGFloat, CGFloat)) -> CGPoint in
+            CGPoint(x: corner.x + o.0 * reach, y: corner.y + o.1 * reach)
         }
-        let half = loupeSize / 2
-        return candidates.first { $0.x - half >= 0 && $0.y - half >= 0 && $0.x + half <= size.width && $0.y + half <= size.height }
-            ?? candidates[3]
+        let half: CGFloat = loupeSize / 2
+        for p in candidates {
+            let fitsX: Bool = p.x - half >= 0 && p.x + half <= size.width
+            let fitsY: Bool = p.y - half >= 0 && p.y + half <= size.height
+            if fitsX && fitsY { return p }
+        }
+        return candidates[3]
     }
 
     // MARK: - Dragging and keys
