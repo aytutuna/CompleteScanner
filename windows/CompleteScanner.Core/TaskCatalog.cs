@@ -141,10 +141,10 @@ public static class TaskCatalog
     /// <paramref name="current"/> with the task's settings laid over it: mode, source,
     /// resolution, color, format, JPEG quality, PDF size, the after-save action, the text beside a
     /// PDF (off: only the Scan to Word task saves text), archival PDF (only the Archive document
-    /// task, at the Best size), the photo and
+    /// task, at the Best size, which turns the password off), the photo and
     /// document switches, searchable PDF, adjustments, two-sided scanning, skipping blank pages,
     /// crop and straighten, turning pages upright, splitting facing pages,
-    /// file name and the task itself. The destination folder, the photo detection tuning, the
+    /// file name and the task itself. The password option, the destination folder, the photo detection tuning, the
     /// legacy OCR languages, the paper size, the edge backs are turned on, how much counts as
     /// blank and the choices of each task (<see cref="ScanSettings.TaskOptions"/>) are kept: they
     /// describe the user's paper and how they want a task done, not the task. <paramref name="current"/> is
@@ -177,6 +177,8 @@ public static class TaskCatalog
         s.Output.AfterSave = AfterSaveAction.None;
         s.Output.AlsoSaveText = false;
         s.Output.Archival = task == ScanTask.Archive;
+        // The password is the user's choice for every task; a PDF/A file can't have one.
+        if (task == ScanTask.Archive) s.Output.Protect = false;
         s.Duplex = DuplexMode.Off;
         s.Document.RemoveBlankPages = task is ScanTask.TwoSided or ScanTask.Batch;
         s.Document.AutoCrop = false;

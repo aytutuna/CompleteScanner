@@ -60,6 +60,7 @@ internal static class CompatFixtures
         settings.Output.AfterSave = AfterSaveAction.Share;
         settings.Output.AlsoSaveText = true;
         settings.Output.Archival = true;
+        settings.Output.Protect = true;
         settings.Duplex = DuplexMode.Manual;
         settings.BackBinding = DuplexBinding.ShortEdge;
         settings.PaperSize = PaperSize.A4;
@@ -137,7 +138,7 @@ internal static class CompatFixtures
     public static readonly string CurrentFormatPresetsJson = PresetsJsonBeforePdfSize.ReplaceLineEndings("\n").Replace(
         "        \"blackWhiteThreshold\": 0.375\n      }\n",
         "        \"blackWhiteThreshold\": 0.375\n      },\n      \"output\": {\n        \"pdfSize\": \"compact\",\n        \"afterSave\": \"share\",\n"
-        + "        \"alsoSaveText\": true,\n        \"archival\": true\n      },\n"
+        + "        \"alsoSaveText\": true,\n        \"archival\": true,\n        \"protect\": true\n      },\n"
         + "      \"duplex\": \"manual\",\n      \"backBinding\": \"shortEdge\",\n      \"paperSize\": \"a4\",\n"
         + "      \"document\": {\n        \"removeBlankPages\": true,\n        \"blankSensitivity\": \"high\",\n"
         + "        \"autoCrop\": true,\n        \"autoStraighten\": true,\n        \"splitMode\": \"sheetCount\",\n"
@@ -453,6 +454,7 @@ public class ModelsCompatTests
         expected.Output.AfterSave = AfterSaveAction.None;
         expected.Output.AlsoSaveText = false;
         expected.Output.Archival = false;
+        expected.Output.Protect = false;
         expected.Duplex = DuplexMode.Off;
         expected.BackBinding = DuplexBinding.LongEdge;
         expected.PaperSize = PaperSize.Auto;
@@ -488,7 +490,7 @@ public class ModelsCompatTests
             settings.Output.PdfSize = size;
             string json = CompatFixtures.Encode(settings);
             using var written = JsonDocument.Parse(json);
-            Assert.Equal(["pdfSize", "afterSave", "alsoSaveText", "archival"], written.RootElement.GetProperty("output").EnumerateObject().Select(p => p.Name));
+            Assert.Equal(["pdfSize", "afterSave", "alsoSaveText", "archival", "protect"], written.RootElement.GetProperty("output").EnumerateObject().Select(p => p.Name));
             Assert.Equal(size, Decode<ScanSettings>(json).Output.PdfSize);
         }
     }
@@ -590,6 +592,51 @@ public class ModelsCompatTests
         using var written = JsonDocument.Parse(CompatFixtures.Encode(settings));
         Assert.Equal("archive", written.RootElement.GetProperty("taskId").GetString());
         Assert.True(written.RootElement.GetProperty("output").GetProperty("archival").GetBoolean());
+    }
+
+    // MARK: - Password-protected PDFs (CONTRACTS.md, rule 6)
+
+    [Fact]
+    public void Protect_OffByDefault_AndInFilesWithoutIt()
+    {
+        Assert.False(new ScanSettings().Output.Protect);
+        Assert.False(Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize)[0].Settings.Output.Protect);
+        Assert.False(Decode<ScanSettings>("""{"output": {"pdfSize": "compact", "archival": true}}""").Output.Protect);
+        foreach (string value in new[] { "\"yes\"", "1", "null", "{}", "[]" })
+        {
+            var settings = Decode<ScanSettings>($$"""{"output": {"pdfSize": "best", "protect": {{value}}, "alsoSaveText": true}, "resolution": 150}""");
+            Assert.False(settings.Output.Protect);
+            Assert.Equal(PdfSizePreset.Best, settings.Output.PdfSize);
+            Assert.True(settings.Output.AlsoSaveText);
+            Assert.Equal(150, settings.Resolution);
+        }
+        Assert.True(Decode<ScanSettings>("""{"output": {"protect": true}}""").Output.Protect);
+    }
+
+    [Fact]
+    public void Clone_CopiesProtect()
+    {
+        var settings = new ScanSettings();
+        settings.Output.Protect = true;
+        var clone = settings.Clone();
+        Assert.True(clone.Output.Protect);
+        clone.Output.Protect = false;
+        Assert.True(settings.Output.Protect);
+        Assert.NotEqual(settings.Output, clone.Output);
+    }
+
+    [Fact]
+    public void ProtectSettings_KeepOnlyTheSwitch()
+    {
+        // Only "protect" is written: a settings file never holds a password, whatever it was read from.
+        const string json = """{"output": {"pdfSize": "standard", "protect": true, "password": "Şifre 2026"}}""";
+        var settings = Decode<ScanSettings>(json);
+        Assert.True(settings.Output.Protect);
+        string written = CompatFixtures.Encode(settings);
+        Assert.DoesNotContain("password", written, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Şifre", written, StringComparison.Ordinal);
+        using var document = JsonDocument.Parse(written);
+        Assert.True(document.RootElement.GetProperty("output").GetProperty("protect").GetBoolean());
     }
 
     // MARK: - Two-sided scanning and paper size (CONTRACTS.md, rule 6)

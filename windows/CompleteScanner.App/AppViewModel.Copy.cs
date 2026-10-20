@@ -214,7 +214,8 @@ public sealed partial class AppViewModel
     /// against the corner as it lay on the glass or centred when an area was selected, as many copies
     /// as asked, in grey for a grey or black-and-white scan; then saves them as a PDF too when asked,
     /// also when printing failed (the pages are kept nowhere else; the print error is reported after).
-    /// The status says where they went and what the printer's margins cut off.
+    /// A protected PDF's password is asked for before printing; with no answer and a failed print the
+    /// pages go to the queue. The status says where they went and what the printer's margins cut off.
     /// </summary>
     private async Task PrintCopyPages(List<ScannedPage> pages, ScanSettings s, PrinterSetup setup, bool areaSelected,
                                    CancellationToken token)
@@ -229,6 +230,13 @@ public sealed partial class AppViewModel
         var plan = PrintCopies.Plan(copies, setup.MaxCopyCount, printPages.Count, setup.CanCollate);
         var job = new PrintJob(setup.PrinterName, "Copy", setup.Paper, RequestedPaper(s), printPages,
                                plan, Gray: s.ColorMode != ColorMode.Color);
+        // No answer still prints the copy; the PDF is then not written.
+        bool noPassword = false;
+        if (options.CopyAlsoSavePdf)
+        {
+            try { ProtectionFor(s); }
+            catch (PasswordNotGivenException) { noPassword = true; }
+        }
         StatusMessage = $"Printing on {setup.PrinterName}…";
         NotifyAll();
         Exception? printError = null;
@@ -249,6 +257,17 @@ public sealed partial class AppViewModel
             StatusMessage = sent + warningNote;
             return;
         }
+        if (noPassword)
+        {
+            if (printError is null)
+            {
+                StatusMessage = $"{sent} {PdfProtection.NotSavedMessage}{warningNote}";
+                return;
+            }
+            // Neither printed nor saved: the pages wait in the queue rather than being lost.
+            await KeepInQueue(pages);
+            throw CopyNotPrinted(printError, setup, $" {PdfProtection.KeptInQueueMessage(pages.Count)}");
+        }
         StatusMessage = "Saving the PDF…";
         NotifyAll();
         // After a copy went to the printer, a PDF that cannot be written is reported, not undone.
@@ -261,7 +280,9 @@ public sealed partial class AppViewModel
         {
             if (printError is not null) throw CopyNotPrinted(printError, setup, " The PDF was not saved (cancelled).");
             // The copy has gone to the printer: only the PDF was cancelled.
-            StatusMessage = $"{sent} PDF not saved (cancelled).";
+            StatusMessage = e is PasswordNotGivenException
+                ? $"{sent} {PdfProtection.NotSavedMessage}"
+                : $"{sent} PDF not saved (cancelled).";
             return;
         }
         catch (Exception e) when (printError is not null && e is not OutOfMemoryException)

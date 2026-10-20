@@ -432,18 +432,25 @@ public sealed class OutputOptions : IEquatable<OutputOptions>
 
     /// <summary>
     /// Saved PDFs are PDF/A-2b, made for keeping (<see cref="PdfWriteOptions.For"/>). A PDF/A file
-    /// cannot have a password, so the password option (M20) and this one exclude each other.
-    /// Settings without it get false.
+    /// cannot have a password, so the password option (<see cref="Protect"/>) and this one exclude
+    /// each other. Settings without it get false.
     /// </summary>
     public bool Archival { get; set; } = false;
+
+    /// <summary>
+    /// Saved PDFs open only with a password (AES-256, <see cref="PdfEncryption"/>), asked for at
+    /// each save: only this switch is stored, never the password. Excludes <see cref="Archival"/>;
+    /// when a settings file has both on, the password wins. Settings without it get false.
+    /// </summary>
+    public bool Protect { get; set; } = false;
 
     public OutputOptions Clone() => (OutputOptions)MemberwiseClone();
 
     public bool Equals(OutputOptions? other) =>
         other is not null && PdfSize == other.PdfSize && AfterSave == other.AfterSave
-        && AlsoSaveText == other.AlsoSaveText && Archival == other.Archival;
+        && AlsoSaveText == other.AlsoSaveText && Archival == other.Archival && Protect == other.Protect;
     public override bool Equals(object? obj) => Equals(obj as OutputOptions);
-    public override int GetHashCode() => HashCode.Combine(PdfSize, AfterSave, AlsoSaveText, Archival);
+    public override int GetHashCode() => HashCode.Combine(PdfSize, AfterSave, AlsoSaveText, Archival, Protect);
 }
 
 /// <summary>

@@ -633,6 +633,23 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertTrue(current.output.archival)
     }
 
+    /// Twin of `Apply_KeepsThePasswordOption_TheArchiveTaskTurnsItOff`: the Mac has no Archive
+    /// document task yet, so every task keeps the password option as it is.
+    func test_apply_keepsThePasswordOption() {
+        var current = customized()
+        current.output.protect = true
+        for task in ScanTask.allCases {
+            let s = TaskCatalog.apply(task, to: current)
+            XCTAssertTrue(s.output.protect, task.rawValue)
+            XCTAssertFalse(s.output.protect && s.output.archival, task.rawValue)
+        }
+        XCTAssertTrue(current.output.protect)
+        current.output.protect = false
+        for task in ScanTask.allCases {
+            XCTAssertFalse(TaskCatalog.apply(task, to: current).output.protect, task.rawValue)
+        }
+    }
+
     func test_apply_turnsTheTextBesideAPDFOff() {
         var current = customized()
         current.output.alsoSaveText = true

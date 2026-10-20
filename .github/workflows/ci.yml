@@ -19,6 +19,64 @@ jobs:
           dotnet-version: 10.0.x
       - name: Test
         run: dotnet test windows/CompleteScanner.sln -c Release
+        env:
+          # PdfATests.Archival_ValidationSamples keeps the PDF/A files it writes here, for veraPDF.
+          COMPLETESCANNER_PDFA_SAMPLES: ${{ runner.temp }}\pdfa-samples
+      # veraPDF, the PDF/A validator (MPL-2.0 / GPL-3.0), checks those files. It is downloaded here
+      # only, pinned to one release and its SHA-256, and never shipped. Its official Docker image is
+      # Linux-only, and there is no official action, so the CLI is installed from its release
+      # installer the way that image's Dockerfile does it (veraPDF-apps, docker-install.xml).
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Validate PDF/A samples (veraPDF)
+        shell: pwsh
+        env:
+          VERAPDF_VERSION: 1.30.3
+          VERAPDF_SHA256: B512BF24945503A33FC10738ECFFC1F2DCCAAF8593A448E94EE9AC86A9559A59
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:VERAPDF_VERSION
+          $series = $version.Substring(0, $version.LastIndexOf('.'))
+          $zip = Join-Path $env:RUNNER_TEMP 'verapdf-installer.zip'
+          Invoke-WebRequest "https://software.verapdf.org/releases/$series/verapdf-greenfield-$version-installer.zip" -OutFile $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
+          if ($hash -ne $env:VERAPDF_SHA256) { throw "veraPDF installer checksum mismatch: $hash" }
+          Expand-Archive $zip -DestinationPath $env:RUNNER_TEMP
+          $target = Join-Path $env:RUNNER_TEMP 'verapdf'
+          $config = Join-Path $env:RUNNER_TEMP 'verapdf-install.xml'
+          @"
+          <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+          <AutomatedInstallation langpack="eng">
+              <com.izforge.izpack.panels.htmlhello.HTMLHelloPanel id="welcome"/>
+              <com.izforge.izpack.panels.target.TargetPanel id="install_dir">
+                  <installpath>$target</installpath>
+              </com.izforge.izpack.panels.target.TargetPanel>
+              <com.izforge.izpack.panels.packs.PacksPanel id="sdk_pack_select">
+                  <pack index="0" name="veraPDF GUI" selected="false"/>
+                  <pack index="1" name="veraPDF CLI" selected="true"/>
+                  <pack index="2" name="veraPDF Documentation" selected="false"/>
+                  <pack index="3" name="veraPDF Sample Plugins" selected="false"/>
+              </com.izforge.izpack.panels.packs.PacksPanel>
+              <com.izforge.izpack.panels.install.InstallPanel id="install"/>
+              <com.izforge.izpack.panels.finish.FinishPanel id="finish"/>
+          </AutomatedInstallation>
+          "@ | Set-Content -Path $config -Encoding utf8
+          java -jar (Join-Path $env:RUNNER_TEMP "verapdf-greenfield-$version\verapdf-izpack-installer-$version.jar") $config
+          if ($LASTEXITCODE -ne 0) { throw "veraPDF did not install (exit code $LASTEXITCODE)" }
+          $samples = @(Get-ChildItem (Join-Path $env:RUNNER_TEMP 'pdfa-samples') -Filter *.pdf)
+          if ($samples.Count -lt 2) { throw "Expected the tests' PDF/A samples, found $($samples.Count)" }
+          # Machine-readable report: one validationReport per file, isCompliant="true" when it passes.
+          $report = & (Join-Path $target 'verapdf.bat') --flavour 2b --format mrr $samples.FullName
+          $code = $LASTEXITCODE
+          $text = $report -join "`n"
+          Write-Output $text
+          $passed = [regex]::Matches($text, '<validationReport\b[^>]*\bisCompliant="true"').Count
+          if ($code -ne 0 -or $passed -ne $samples.Count) {
+            throw "veraPDF: exit code $code, $passed of $($samples.Count) files are PDF/A-2b"
+          }
+          Write-Output "veraPDF $version`: all $passed samples are PDF/A-2b."
 
   macos:
     # Package.swift declares swift-tools-version 5.9 and macOS 14. The macos-15 image

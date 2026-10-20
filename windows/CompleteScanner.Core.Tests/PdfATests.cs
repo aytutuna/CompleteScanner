@@ -392,6 +392,40 @@ public class PdfATests
         }
     }
 
+    /// <summary>
+    /// PDF/A files for an outside validator: with COMPLETESCANNER_PDFA_SAMPLES naming a folder they
+    /// are written there and kept (CI runs veraPDF on them, see .github/workflows/ci.yml); without
+    /// it they are written to a temporary folder, read back and removed.
+    /// </summary>
+    [Fact]
+    public void Archival_ValidationSamples()
+    {
+        string? samples = Environment.GetEnvironmentVariable("COMPLETESCANNER_PDFA_SAMPLES");
+        bool keep = !string.IsNullOrWhiteSpace(samples);
+        string dir = keep ? samples! : Path.Combine(Path.GetTempPath(), $"PdfATests-{Guid.NewGuid()}");
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var files = new (string Name, PdfPageInput[] Pages, string? Title)[]
+            {
+                ("pdfa-text-layer.pdf", [Page(ScriptLines()), Page()], "Tapu belgesi — Çağrı"),
+                ("pdfa-image-only.pdf", [Page()], null),
+            };
+            foreach (var (name, pages, title) in files)
+            {
+                string path = Path.Combine(dir, name);
+                PdfBuilder.WriteFile(pages, path, options: new PdfWriteOptions { Conformance = PdfConformance.PdfA2b, Title = title });
+                using var document = PdfDocument.Open(path);
+                Assert.Equal(pages.Length, document.NumberOfPages);
+                Assert.False(document.IsEncrypted);
+            }
+        }
+        finally
+        {
+            if (!keep) Directory.Delete(dir, recursive: true);
+        }
+    }
+
     // MARK: - The object writer
 
     [Fact]
@@ -409,6 +443,16 @@ public class PdfATests
                      "1 0 obj\n<</Type /Catalog>>\nendobj\n" +
                      "xref\n0 3\n0000000000 65535 f \n0000000065 00000 n \n0000000015 00000 n \n" +
                      "trailer\n<</Size 3 /Root 1 0 R>>\nstartxref\n99\n%%EOF\n", text);
+    }
+
+    [Fact]
+    public void ObjectWriter_AsciiString_IsALiteralInAnOpenFile()
+    {
+        var w = new PdfObjectWriter(new MemoryStream());
+        Assert.Null(w.Encryption);
+        Assert.Equal("(Adobe)", w.AsciiString("Adobe"));
+        Assert.Equal(@"(a\(b\)\\c)", w.AsciiString(@"a(b)\c"));
+        Assert.Throws<ArgumentException>(() => w.AsciiString("Çağrı"));
     }
 
     [Fact]

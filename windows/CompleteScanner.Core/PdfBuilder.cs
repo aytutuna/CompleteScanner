@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace CompleteScanner.Core;
@@ -23,7 +24,8 @@ public sealed record PdfPageInput(byte[] JpegData, int PixelWidth, int PixelHeig
 /// <summary>
 /// Minimal, dependency-free PDF writer for scanned pages (the macOS app draws its PDFs with
 /// CGContext's PDF engine in Sources/CompleteScannerKit/Output/PDFBuilder.swift until the port
-/// of this writer). It writes PDF 1.4, or PDF/A-2b (<see cref="PdfWriteOptions"/>) for keeping.
+/// of this writer). It writes PDF 1.4, PDF/A-2b for keeping, or a PDF 1.7 file that opens only
+/// with a password (AES-256), as <see cref="PdfWriteOptions"/> ask.
 ///
 /// Each page carries one full-page JPEG XObject (/DeviceRGB, or /DeviceGray for a
 /// one-component JPEG); when OCR lines are provided they are drawn with text rendering mode 3
@@ -193,12 +195,20 @@ public static class PdfBuilder
     /// with <see cref="ScanException"/> (<see cref="ScanErrorKind.Cancelled"/>), leaving
     /// <paramref name="output"/> holding an incomplete document (use <see cref="WriteFile"/>
     /// for an all-or-nothing file). <paramref name="options"/> (null: a plain PDF) choose
-    /// PDF/A-2b and carry its title, date and file identifier.
+    /// PDF/A-2b and carry its title, date and file identifier, or protect the file with a
+    /// password; options asking for both are refused (<see cref="ArgumentException"/>): PDF/A
+    /// forbids encryption.
     /// <para>
     /// Objects are numbered in a fixed order: 1 Catalog, 2 Pages; when any page has text, the six
     /// objects of the text layer's font (Type0 font, CIDFont, FontDescriptor, FontFile2,
     /// CIDToGIDMap, ToUnicode); for PDF/A, the Info dictionary, the XMP Metadata and the sRGB
-    /// profile; then Page, Image and Contents for each page.
+    /// profile; for a protected file, the Encrypt dictionary; then Page, Image and Contents for
+    /// each page.
+    /// </para>
+    /// <para>
+    /// A protected file is PDF 1.7 with Adobe's extension level 8 declared in the catalog (what
+    /// AES-256 readers look for), every stream and string encrypted with its own random file key
+    /// (<see cref="PdfEncryption"/>), and /Encrypt and /ID in the trailer.
     /// </para>
     /// </summary>
     public static void Write(IReadOnlyList<PdfPageInput> pages, Stream output, Action<string>? progress = null,
@@ -206,17 +216,21 @@ public static class PdfBuilder
     {
         options ??= PdfWriteOptions.Standard;
         bool archival = options.IsArchival;
+        if (archival && options.IsProtected) throw new ArgumentException(PdfA.CannotProtectNote, nameof(options));
         bool hasText = pages.Any(p => p.OcrLines is { Count: > 0 });
         // The text layer's character codes: characters beyond the BMP get theirs from every line.
         var codes = GlyphlessCodes.For(pages.SelectMany(p => p.OcrLines ?? []).Select(l => l.Text ?? ""));
-        var w = new PdfObjectWriter(output);
-        w.WriteHeader(archival ? "1.7" : "1.4");
+        // A protected file gets its own random file key; it is wiped once the file is written.
+        using var encryption = options.Protection is { } protection ? PdfEncryption.Create(protection, options.Random) : null;
+        var w = new PdfObjectWriter(output, encryption);
+        w.WriteHeader(archival || encryption is not null ? "1.7" : "1.4");
 
         int next = 3;
         int fontObject = hasText ? next : 0;
         if (hasText) next += 6;
         int infoObject = archival ? next : 0, metadataObject = infoObject + 1, profileObject = infoObject + 2;
         if (archival) next += 3;
+        int encryptObject = encryption is not null ? next++ : 0;
         int firstPageObject = next;
         int ObjPage(int i) => firstPageObject + i * 3;
         int ObjImage(int i) => firstPageObject + 1 + i * 3;
@@ -225,7 +239,9 @@ public static class PdfBuilder
         // 1: Catalog
         w.WriteObject(1, archival
             ? $"<</Type /Catalog /Pages 2 0 R /Metadata {metadataObject} 0 R /OutputIntents {PdfA.OutputIntents(profileObject)}>>"
-            : "<</Type /Catalog /Pages 2 0 R>>");
+            : encryption is not null
+                ? "<</Type /Catalog /Pages 2 0 R /Extensions <</ADBE <</BaseVersion /1.7 /ExtensionLevel 8>>>>>>"
+                : "<</Type /Catalog /Pages 2 0 R>>");
 
         // 2: Pages
         var kids = new StringBuilder();
@@ -247,6 +263,8 @@ public static class PdfBuilder
             w.WriteStream(metadataObject, "/Type /Metadata /Subtype /XML", PdfA.Xmp(title, date));
             w.WriteStream(profileObject, "/N 3", PdfA.SrgbProfile);
         }
+
+        if (encryption is not null) w.WriteObject(encryptObject, encryption.Dictionary);
 
         for (int i = 0; i < pages.Count; i++)
         {
@@ -291,6 +309,14 @@ public static class PdfBuilder
             string hex = Convert.ToHexString(id);
             trailer += $" /Info {infoObject} 0 R /ID [<{hex}> <{hex}>]";
         }
+        else if (encryption is not null)
+        {
+            // PDF 2.0 asks for the identifier whenever a file is encrypted.
+            byte[] id = options.DocumentId is { Length: 16 } given ? given : new byte[16];
+            if (options.DocumentId is not { Length: 16 }) (options.Random ?? RandomNumberGenerator.Fill)(id);
+            string hex = Convert.ToHexString(id);
+            trailer += $" /Encrypt {encryptObject} 0 R /ID [<{hex}> <{hex}>]";
+        }
         w.Finish(trailer);
     }
 
@@ -309,7 +335,7 @@ public static class PdfBuilder
             $"/DescendantFonts [{cidFont} 0 R] /ToUnicode {toUnicode} 0 R>>");
         w.WriteObject(cidFont,
             $"<</Type /Font /Subtype /CIDFontType2 /BaseFont /{name} " +
-            "/CIDSystemInfo <</Registry (Adobe) /Ordering (Identity) /Supplement 0>> " +
+            $"/CIDSystemInfo <</Registry {w.AsciiString("Adobe")} /Ordering {w.AsciiString("Identity")} /Supplement 0>> " +
             $"/FontDescriptor {descriptor} 0 R /DW {GlyphlessFont.GlyphWidth} /CIDToGIDMap {cidToGid} 0 R>>");
         w.WriteObject(descriptor,
             $"<</Type /FontDescriptor /FontName /{name} /Flags 5 " +

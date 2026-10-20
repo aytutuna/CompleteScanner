@@ -6,7 +6,7 @@ namespace CompleteScanner.Core;
 /// <summary>Which standard a written PDF follows. The first member is the default.</summary>
 public enum PdfConformance
 {
-    /// <summary>A plain PDF 1.4 file.</summary>
+    /// <summary>A plain PDF file: PDF 1.4, or PDF 1.7 when it is password-protected.</summary>
     Standard,
     /// <summary>
     /// PDF/A-2b (ISO 19005-2, level B) for long-term keeping: PDF 1.7, XMP metadata matching the
@@ -16,9 +16,9 @@ public enum PdfConformance
 }
 
 /// <summary>
-/// How <see cref="PdfBuilder"/> writes a document beyond its pages. The date and the file
-/// identifier are taken from here when given, so the same input gives the same bytes (tests);
-/// otherwise the current time and random bytes are used.
+/// How <see cref="PdfBuilder"/> writes a document beyond its pages. The date, the file identifier
+/// and (for a protected file) the random bytes are taken from here when given, so the same input
+/// gives the same bytes (tests); otherwise the current time and random bytes are used.
 /// </summary>
 public sealed record PdfWriteOptions
 {
@@ -36,17 +36,40 @@ public sealed record PdfWriteOptions
     /// <summary>The 16-byte file identifier (/ID); null means random bytes.</summary>
     public byte[]? DocumentId { get; init; }
 
+    /// <summary>
+    /// The password the file opens with and its permissions (AES-256, <see cref="PdfEncryption"/>);
+    /// null writes a file anyone can open. A PDF/A file can't have one: <see cref="PdfBuilder"/>
+    /// refuses options asking for both.
+    /// </summary>
+    public PdfProtection? Protection { get; init; }
+
+    /// <summary>Where a protected file's key, salts and IVs come from (tests); null: the system's cryptographic random generator.</summary>
+    internal Action<Span<byte>>? Random { get; init; }
+
     public bool IsArchival => Conformance == PdfConformance.PdfA2b;
 
+    public bool IsProtected => Protection is not null;
+
     /// <summary>
-    /// The options a save with <paramref name="output"/> asks for: PDF/A-2b when the archival
-    /// option is on (<see cref="OutputOptions.Archival"/>), titled <paramref name="title"/>.
+    /// The options a save with <paramref name="output"/> asks for, titled <paramref name="title"/>:
+    /// protected with <paramref name="protection"/> when the password option is on
+    /// (<see cref="OutputOptions.Protect"/>; it must then be given), else PDF/A-2b when the archival
+    /// option is on (<see cref="OutputOptions.Archival"/>). The two exclude each other; a settings
+    /// file with both on gets the password, never a file anyone can open.
     /// </summary>
-    public static PdfWriteOptions For(OutputOptions output, string? title) => new()
+    public static PdfWriteOptions For(OutputOptions output, string? title, PdfProtection? protection = null)
     {
-        Conformance = output.Archival ? PdfConformance.PdfA2b : PdfConformance.Standard,
-        Title = title,
-    };
+        if (output.Protect && protection is null)
+        {
+            throw new ArgumentNullException(nameof(protection), "The password option is on: a password is needed.");
+        }
+        return new()
+        {
+            Conformance = output.Archival && !output.Protect ? PdfConformance.PdfA2b : PdfConformance.Standard,
+            Title = title,
+            Protection = output.Protect ? protection : null,
+        };
+    }
 }
 
 /// <summary>
@@ -69,7 +92,7 @@ public static class PdfA
     public const string OptionHint =
         "Made to be kept for years: a PDF/A file holds everything it needs to look the same later. PDF/A files can't have a password.";
 
-    /// <summary>Why a password cannot be set while the archival option is on (for the password option, M20).</summary>
+    /// <summary>Why the password option is greyed out while the archival option is on, and the other way round.</summary>
     public const string CannotProtectNote = "PDF/A can't be password-protected.";
 
     /// <summary>

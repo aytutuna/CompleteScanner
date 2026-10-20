@@ -52,6 +52,7 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.output.afterSave = .share
     settings.output.alsoSaveText = true
     settings.output.archival = true
+    settings.output.protect = true
     settings.duplex = .manual
     settings.backBinding = .shortEdge
     settings.paperSize = .a4
@@ -133,7 +134,7 @@ private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
     .replacingOccurrences(
         of: "\"pdfSearchable\" : false",
         with: "\"output\" : {\n        \"afterSave\" : \"share\",\n        \"alsoSaveText\" : true,\n        \"archival\" : true,\n"
-            + "        \"pdfSize\" : \"compact\"\n      },\n"
+            + "        \"pdfSize\" : \"compact\",\n        \"protect\" : true\n      },\n"
             + "      \"paperSize\" : \"a4\",\n      \"pdfSearchable\" : false")
     .replacingOccurrences(of: "\"colorMode\" : \"grayscale\"",
                           with: "\"backBinding\" : \"shortEdge\",\n      \"colorMode\" : \"grayscale\"")
@@ -382,6 +383,7 @@ final class ModelsCompatTests: XCTestCase {
         expected.output.afterSave = AfterSaveAction.none
         expected.output.alsoSaveText = false
         expected.output.archival = false
+        expected.output.protect = false
         expected.duplex = .off
         expected.backBinding = .longEdge
         expected.paperSize = .auto
@@ -412,7 +414,7 @@ final class ModelsCompatTests: XCTestCase {
             settings.output.pdfSize = size
             let data = try encode(settings)
             let output = try XCTUnwrap(try jsonObject(data)["output"] as? [String: Any])
-            XCTAssertEqual(Set(output.keys), ["pdfSize", "afterSave", "alsoSaveText", "archival"])
+            XCTAssertEqual(Set(output.keys), ["pdfSize", "afterSave", "alsoSaveText", "archival", "protect"])
             XCTAssertEqual(output["pdfSize"] as? String, size.rawValue)
             XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: data).output.pdfSize, size)
         }
@@ -504,6 +506,50 @@ final class ModelsCompatTests: XCTestCase {
         XCTAssertEqual(written["taskId"] as? String, "archive")
         let output = try XCTUnwrap(written["output"] as? [String: Any])
         XCTAssertEqual(output["archival"] as? Bool, true)
+    }
+
+    // MARK: Password-protected PDFs (CONTRACTS.md, rule 6)
+
+    /// Twin of `Protect_OffByDefault_AndInFilesWithoutIt`.
+    func test_protect_offByDefault_andInFilesWithoutIt() throws {
+        XCTAssertFalse(ScanSettings().output.protect)
+        XCTAssertFalse(try decode([Preset].self, presetsJSONBeforePDFSize)[0].settings.output.protect)
+        XCTAssertFalse(try decode(ScanSettings.self, #"{"output": {"pdfSize": "compact", "archival": true}}"#)
+            .output.protect)
+        for value in [#""yes""#, "1", "null", "{}", "[]"] {
+            let settings = try decode(ScanSettings.self,
+                                      #"{"output": {"pdfSize": "best", "protect": "# + value + #", "alsoSaveText": true}, "resolution": 150}"#)
+            XCTAssertFalse(settings.output.protect, value)
+            XCTAssertEqual(settings.output.pdfSize, .best, value)
+            XCTAssertTrue(settings.output.alsoSaveText, value)
+            XCTAssertEqual(settings.resolution, 150, value)
+        }
+        XCTAssertTrue(try decode(ScanSettings.self, #"{"output": {"protect": true}}"#).output.protect)
+    }
+
+    /// Twin of `Clone_CopiesProtect`.
+    func test_copy_carriesProtect() {
+        var settings = ScanSettings()
+        settings.output.protect = true
+        var copy = settings
+        XCTAssertTrue(copy.output.protect)
+        copy.output.protect = false
+        XCTAssertTrue(settings.output.protect)
+        XCTAssertNotEqual(settings.output, copy.output)
+    }
+
+    /// Twin of `ProtectSettings_KeepOnlyTheSwitch`: only "protect" is written; a settings file never
+    /// holds a password, whatever it was read from.
+    func test_protectSettings_keepOnlyTheSwitch() throws {
+        let json = #"{"output": {"pdfSize": "standard", "protect": true, "password": "Şifre 2026"}}"#
+        let settings = try decode(ScanSettings.self, json)
+        XCTAssertTrue(settings.output.protect)
+        let data = try encode(settings)
+        let written = String(decoding: data, as: UTF8.self)
+        XCTAssertFalse(written.lowercased().contains("password"))
+        XCTAssertFalse(written.contains("Şifre"))
+        let output = try XCTUnwrap(try jsonObject(data)["output"] as? [String: Any])
+        XCTAssertEqual(output["protect"] as? Bool, true)
     }
 
     // MARK: Two-sided scanning and paper size (CONTRACTS.md, rule 6)

@@ -29,7 +29,7 @@ Already written (READ THESE FIRST, code against them exactly):
 ## Global rules
 
 1. Write ONLY the files assigned to you. Never edit shared files.
-2. Platform parity and CI. The Windows app under `windows/` is a sibling of this package. Every change to shared core logic (models, settings, naming, pipeline, output, persistence) lands on both platforms in the same change, with mirrored tests: `Tests/CompleteScannerTests` here and `windows/CompleteScanner.Core.Tests` there, same cases. Both suites must be green in CI (`.github/workflows/ci.yml`: `swift build` + `swift test` on macOS, `dotnet test windows/CompleteScanner.sln` on Windows) before a change counts as done. The one exception is the protocol logic of connections only Windows has — WIA, eSCL and TWAIN (`windows/CompleteScanner.Core/WiaErrors.cs`, `Escl/`, `Twain/`), and the Windows service and network values the troubleshooter reads (`WindowsSystemStatus.cs`): macOS reaches the same scanners through ImageCaptureCore, so that logic and its tests have no Swift twin (see `windows/README.md`). What those connections report to the app (`ScannerInfo`, `ScannerCapabilities`, `ScannerProblem`, `ScanStop`) stays shared. One exception is temporary: M19's PDF writer pieces (`PdfObjectWriter.cs`, `GlyphlessFont.cs`, `PdfA.cs`), the Archive document task and their tests exist only on Windows until the Mac's port of the C# PDF writer, which waits for macOS CI to compile the existing Swift (see "PDF/A-2b and the Unicode text layer" below); the settings field they read is shared now.
+2. Platform parity and CI. The Windows app under `windows/` is a sibling of this package. Every change to shared core logic (models, settings, naming, pipeline, output, persistence) lands on both platforms in the same change, with mirrored tests: `Tests/CompleteScannerTests` here and `windows/CompleteScanner.Core.Tests` there, same cases. Both suites must be green in CI (`.github/workflows/ci.yml`: `swift build` + `swift test` on macOS, `dotnet test windows/CompleteScanner.sln` on Windows) before a change counts as done. The one exception is the protocol logic of connections only Windows has — WIA, eSCL and TWAIN (`windows/CompleteScanner.Core/WiaErrors.cs`, `Escl/`, `Twain/`), and the Windows service and network values the troubleshooter reads (`WindowsSystemStatus.cs`): macOS reaches the same scanners through ImageCaptureCore, so that logic and its tests have no Swift twin (see `windows/README.md`). What those connections report to the app (`ScannerInfo`, `ScannerCapabilities`, `ScannerProblem`, `ScanStop`) stays shared. One exception is temporary: M19's and M20's PDF writer pieces (`PdfObjectWriter.cs`, `GlyphlessFont.cs`, `PdfA.cs`, `PdfEncryption.cs`), the Archive document task, the password dialog and their tests exist only on Windows until the Mac's port of the C# PDF writer, which waits for macOS CI to compile the existing Swift (see "PDF/A-2b and the Unicode text layer" and "Password-protected PDFs" below); the settings fields they read are shared now.
 3. Any helper function, extension, or type not listed in this document must be `private` or `fileprivate` in your file to avoid cross-file collisions.
 4. Coordinate conventions:
    - Image/region coordinates: pixels, origin TOP-LEFT, x right, y down (see DetectedPhotoRegion doc comment; positive angle = clockwise on screen).
@@ -216,7 +216,8 @@ public enum TaskCatalog {
     /// `taskId`. Only `.twoSided` sets `duplex` (`.both`); the others set `.off`. Only `.idCard`
     /// (the numbers on an ID are better not indexed) and `.copy` (a copy is for paper) turn
     /// `pdfSearchable` off. Every task turns `output.alsoSaveText` and `output.archival` off (on
-    /// Windows all but its Archive document task, see M19 below); `.word` (Scan to Word)
+    /// Windows all but its Archive document task, see M19 below) and keeps `output.protect` (on
+    /// Windows the Archive document task turns it off, see M20 below); `.word` (Scan to Word)
     /// saves a Word document (`format = .word`, 300 dpi, collected pages); `.receipt` scans in
     /// grayscale (the only task that does) into Compact PDFs named "Receipt {docdate} {counter}";
     /// `.batch` (feeder, 300 dpi PDF, "Document {label} {date} {counter}") is the only task that
@@ -1066,9 +1067,63 @@ public static class PdfA {
 - **PDF/A-2b:** `%PDF-1.7` and the binary comment line; the catalog's `/Metadata` (unfiltered XMP: `pdfaid:part 2`, `pdfaid:conformance B`, `dc:format`, `dc:title` x-default, `xmp:CreateDate` = `ModifyDate` = `MetadataDate`, `xmp:CreatorTool`, `pdf:Producer`) and `/OutputIntents` (`/GTS_PDFA1`, the sRGB profile with `/N 3`); an Info dictionary that says exactly the same (`/Title`, `/Producer`, `/Creator`, `/CreationDate`, `/ModDate`, whole seconds with the local offset); `/ID [<id> <id>]` in the trailer; no encryption, no `/Interpolate`, no LZW. The title is the file name without its extension: when `WriteNewFile` is given that title and another writer takes the name while the PDF is being built, the file goes to the next free " 2", " 3", … name and is rewritten in place titled with that name (a failed rewrite leaves the complete file with the requested title); any other title is kept as given. The JPEG pages (`/DeviceRGB`, `/DeviceGray`) are covered by the output intent.
 - **The text layer (every PDF):** the embedded `GlyphLessFont` replaces Helvetica/WinAnsi, so no character turns into "?" any more. Type0 with `/Encoding /Identity-H` over a CIDFontType2 with `/DW 500` and a `/CIDToGIDMap` that sends every code to glyph 1 (never .notdef); FontDescriptor `/Flags 5 /FontBBox [0 0 500 1000] /Ascent 1000 /Descent 0 /CapHeight 1000 /StemV 80`. A BMP character is its UTF-16 code unit; each character beyond the BMP gets a code from D800 in order of first use (2048 at most, the rest and lone surrogates U+FFFD), and the ToUnicode map gives it back as its pair (`bfchar`), next to 248 identity ranges `<XX00> <XXFF> <XX00>` that skip D8–DF, in blocks of at most 100. Each line: `/F1 <box height> Tf`, `Tz` = box width ÷ (codes × 0.5 × size) × 100 clamped to 20–500, `1 0 0 1 <box left> <box bottom> Tm`, the codes as a hex string, `Tj`, all in `3 Tr`. The font size is the box's height and the baseline its bottom edge, so a selection covers the box.
 - **Golden bytes** (`PdfATests`): a dated, identified one-page Letter PDF/A with a Turkish line is 11496 bytes, SHA-256 `6A264EF6…AA33`; the same line as a plain two-page PDF is 9865 bytes, SHA-256 `BC4C14E0…A779` (full values in the tests). The Swift port must produce the same bytes.
-- **Not with a password:** PDF/A forbids encryption. When the password option (M20) arrives, it and the archival option exclude each other: turning one on turns the other off and greys it out with `PdfA.CannotProtectNote`, and `PdfBuilder` refuses options asking for both.
+- **Not with a password:** PDF/A forbids encryption. The password option (M20, below) and the archival option exclude each other: while one is on the other is off and greyed out, with `PdfA.CannotProtectNote` as its tooltip and in a note under both; a settings file with both on gets the password (`PdfWriteOptions.For`); `PdfBuilder` refuses options asking for both (`ArgumentException`).
 - **Windows UI:** "Archival PDF (PDF/A)" under the PDF size in Output (shown for PDF output, hint `PdfA.OptionHint`); the **Archive document** task (`ScanTask.Archive`, raw value "archive", icon "archive", after `Book`): flatbed or feeder, 300 dpi color PDF at the Best size, searchable, archival, "Scan {date} {counter}", file label "Document". It fits while the format is PDF and archival is on; every other task turns archival off. Every PDF the app saves (queue, split documents, receipts, the ID card's page, a copy's PDF) follows the setting; the separator sheet does not.
 - **Checks:** `PdfATests` and `GlyphlessFontTests` (structure, XMP dates equal Info dates, the text layer read back in Turkish, Greek, Cyrillic, Arabic, Hebrew, Japanese, Chinese with an Extension B ideograph, Devanagari and emoji through PdfPig, a test-only package; the font's checksums and tables; the map inflated with `ZLibStream`). veraPDF and qpdf are developer checks to run where they are installed; neither ships.
+
+### Password-protected PDFs (M20: Windows now, the Mac with its PDF writer port)
+
+Like M19, the Mac side arrives with the Swift port of the C# PDF writer (`Output/PDFWriter.swift`),
+after macOS CI has compiled the existing Swift. Until then only the settings field below exists
+here, decoded and written like every other field, so settings files stay the same on both
+platforms; the Mac writes no protected PDFs and shows no switch.
+
+```swift
+// OutputOptions gains `protect: Bool` ("protect" in the "output" object; false by default and for
+// files written before it existed; a wrong-typed value reads as false). Only the switch is stored,
+// never a password. TaskCatalog.apply keeps it: the Mac has no Archive document task yet.
+```
+The C# side, which the Swift port must mirror name for name and byte for byte:
+```csharp
+public enum PasswordStrength { None, Weak, Fair, Strong }        // first member = default
+public sealed class PdfProtection : IDisposable {                // one save's password; Dispose wipes it
+    const int MaxPasswordBytes = 127;
+    const string OptionLabel = "Protect with a password", OptionHint, DialogTitle, DialogMessage,
+                 PermissionsNote, NotSavedMessage;
+    static string KeptInQueueMessage(int pages);
+    PdfProtection(string password, bool allowPrinting = true, bool allowCopying = true); // throws on Problem
+    bool AllowPrinting, AllowCopying; int PermissionFlags;
+    internal ReadOnlySpan<byte> Password;                        // prepared; throws once disposed
+    static int Permissions(bool allowPrinting, bool allowCopying); // -4; no printing clears bits 3 and 12, no copying bit 5
+    static byte[] PreparePassword(string);  // SASLprep's mappings (spaces to U+0020, B.1 to nothing), NFKC, UTF-8, cut at 127 bytes
+    static string? Problem(string password, string confirmation);  // empty, control characters, nothing left once prepared, mismatch
+    static PasswordStrength StrengthOf(string); static string StrengthHint(PasswordStrength);
+}
+public sealed class PdfEncryption : IDisposable {                // standard security handler V5 R6, AES-256
+    const int FileKeyLength = 32, SaltLength = 8, OwnerPasswordLength = 32, PermsRandomLength = 4, IvLength = 16;
+    static PdfEncryption Create(PdfProtection, Action<Span<byte>>? random = null);
+    int P; byte[] O, U, OE, UE, Perms; string Dictionary;
+    byte[] Encrypt(ReadOnlySpan<byte>);                          // 16-byte random IV, then AES-256-CBC with PKCS#7
+    static byte[] Hash(ReadOnlySpan<byte> password, ReadOnlySpan<byte> salt, ReadOnlySpan<byte> userKey); // algorithm 2.B
+    static byte[]? FileKeyFor(ReadOnlySpan<byte> password, o, u, oe, ue);   // algorithm 2.A, owner first
+    static bool PermsMatch(ReadOnlySpan<byte> fileKey, ReadOnlySpan<byte> perms, int p); // algorithm 13
+    static byte[] Decrypt(ReadOnlySpan<byte> fileKey, ReadOnlySpan<byte> stored);
+}
+// PdfWriteOptions gains `PdfProtection? Protection`, `bool IsProtected` and (tests) `internal Action<Span<byte>>? Random`;
+// For(OutputOptions output, string? title, PdfProtection? protection = null): protected when output.Protect (the
+// protection must then be given: ArgumentNullException), else PDF/A when output.Archival.
+// PdfObjectWriter gains `PdfObjectWriter(Stream, PdfEncryption? encryption = null)`, `PdfEncryption? Encryption` and
+// `string AsciiString(string)`: "(text)" escaped in an open file, the encrypted bytes as hex in an encrypted one;
+// WriteStream encrypts the data (the /Length is the encrypted data's).
+```
+- **The random bytes,** in the order they are taken: the file key (32), the user validation and key salts (8 + 8), the owner password (32), the owner validation and key salts (8 + 8), the /Perms filler (4); then 16 for the IV of each string and stream in the order they are written; then the file identifier when none is given.
+- **The values:** /U = hash(user password, user validation salt) ‖ the user salts; /UE = the file key in AES-256-CBC (zero IV, no padding) under hash(user password, user key salt); /O and /OE the same with the owner password, hashed with the whole 48-byte /U; /Perms = P (little-endian) ‖ FF FF FF FF ‖ "T" ‖ "adb" ‖ 4 random bytes in AES-256-ECB under the file key. Hash = algorithm 2.B (SHA-256 of password ‖ salt ‖ userKey, then at least 64 rounds of AES-128-CBC over (password ‖ K ‖ userKey) × 64 and SHA-256/384/512 by the sum of the first 16 bytes modulo 3, while the last byte is above the round number − 32).
+- **The file:** `%PDF-1.7` and the binary comment line; the catalog adds `/Extensions <</ADBE <</BaseVersion /1.7 /ExtensionLevel 8>>>>`; the Encrypt dictionary (`/Filter /Standard /V 5 /R 6 /Length 256 /CF <</StdCF <</CFM /AESV3 /AuthEvent /DocOpen /Length 32>>>> /StmF /StdCF /StrF /StdCF /O /U /OE /UE /Perms /P /EncryptMetadata true`) is the object after the font (and PDF/A objects, which never come with it), before the pages; the trailer adds `/Encrypt n 0 R /ID [<id> <id>]`. Every stream (the font, its map and ToUnicode, each image and content stream) and every string (the CIDSystemInfo's) is encrypted with the file key; the Encrypt dictionary and /ID are not. Each file gets its own key, salts and IVs.
+- **Golden bytes** (`PdfEncryptionTests`): "Şifre 2026" with the counting bytes 0, 1, 2, … gives /U `69E56736…2E2F`, /O `F6D87938…5E5F`, /UE `5939E7CB…6E0D`, /OE `4FDF86C3…7705`, /Perms `A23A07C7…CB0E` (full values in the tests; also computed by a separate implementation of algorithm 2.B); the one-page Letter file with a Turkish line is 10029 bytes, SHA-256 `F975D734…2EC8`. The Swift port must produce the same bytes.
+- **Known answers:** algorithm 2.B, /UE and /OE against pdf.js's PDF 2.0 cases (`test/unit/crypto_spec.js`, Apache-2.0); its SASLprep case ("S\u{AA}SL\u{AD}prep" opens the file made with "SaSLprep"); its revision 6 dictionary, whose /P was changed after /Perms was made, fails `PermsMatch` for that /P.
+- **The password is never stored:** settings and presets keep only `protect`; the view model asks for the password once per save (`AppViewModel.AskPdfPassword`, the window's `PdfPasswordWindow`), uses it for every PDF of that save and disposes it when the save ends; nothing about it is logged. No answer saves nothing: collected pages stay, pages saved as they are scanned go to the queue (`PdfProtection.KeptInQueueMessage`), a split save writes no document, and the status is `PdfProtection.NotSavedMessage`. A copy that also saves a PDF asks before printing: no answer still prints it, and when printing fails its pages go to the queue (the print error, then `KeptInQueueMessage`).
+- **Windows UI:** "Protect with a password" under "Archival PDF (PDF/A)" in Output (shown for PDF output, hint `PdfProtection.OptionHint`); the two grey each other out (see M19). The dialog asks for the password twice, shows `StrengthHint` and `Problem` as they are typed, and offers "Allow printing" and "Allow copying text and images" (both on) with `PermissionsNote`: the permissions are advisory. Every PDF the app saves follows the switch; the separator sheet does not. A saved file's status ends "(412 KB, password-protected)"; a split save's says it in the brackets after the page count ("(7 pages, 1.2 MB, password-protected)"), receipts' after the last file name. The dialog announces the strength hint to screen readers when it changes, and Enter while Save is off (or leaving the second box with something in it) shows the problem.
+- **Checks:** `PdfEncryptionTests` and the password cases of `ModelsCompatTests`, `ScanTaskTests` and `SaveActionsTests`; PdfPig (test-only) opens the files with the password and refuses them without it or with a wrong one. `Windows.Data.Pdf` opens no revision 6 file (reference files made by qpdf fail with 0x80048040 as ours do), so the Saved tab shows a protected file's icon. qpdf (`qpdf --password=… --check`) is a developer check where installed.
 
 ### Output/OCRText.swift, TextExport.swift, DocxWriter.swift, ZipStore.swift (+ OutputFormat, OutputOptions in Core/Models.swift)
 

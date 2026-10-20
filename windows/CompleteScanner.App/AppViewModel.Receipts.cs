@@ -125,6 +125,8 @@ public sealed partial class AppViewModel
             await Settled(_recropChain);
             var receipts = DetectedPhotos.Where(p => p.Photo.Included).Select(p => p.Photo).ToList();
             if (receipts.Count == 0) return;
+            // A protected PDF's password is asked for before the receipts are read.
+            if (format == OutputFormat.Pdf) ProtectionFor(s);
             bool combine = Receipts.Combines(s.TaskOptions.ReceiptCombine, s.Format, receipts.Count);
             var today = DocumentDate.Of(DateTime.Now);
 
@@ -214,7 +216,11 @@ public sealed partial class AppViewModel
             _photoSourceImages = [];
             ResetFlow();
             int undated = byDate ? dates.Count(d => d is null) : 0;
-            StatusMessage = Receipts.SavedMessage(receipts.Count, saved.Select(p => Path.GetFileName(p)).ToList(), combine, undated);
+            var names = saved.Select(p => Path.GetFileName(p)).ToList();
+            // Protected PDFs say so after their names: "a.pdf, b.pdf (password-protected)".
+            bool pdfs = combine || format == OutputFormat.Pdf;
+            if (pdfs && names.Count > 0 && PdfNote(null, LastPdfProtected) is { } note) names[^1] += $" ({note})";
+            StatusMessage = Receipts.SavedMessage(receipts.Count, names, combine, undated);
             RunAfterSave(s.Output.AfterSave, saved);
         });
     }

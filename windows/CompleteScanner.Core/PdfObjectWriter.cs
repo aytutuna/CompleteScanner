@@ -9,17 +9,25 @@ namespace CompleteScanner.Core;
 /// fonts (<see cref="PdfBuilder"/> decides what the objects are and how they are numbered), and
 /// it never holds more than one object in memory: everything goes straight to the stream.
 /// Objects may be written in any order, but every number from 1 to the highest one used must be
-/// written before <see cref="Finish"/>.
+/// written before <see cref="Finish"/>. With an <see cref="Encryption"/>, every stream's data and
+/// every string made by <see cref="AsciiString"/> is encrypted as it is written; the dictionaries
+/// themselves (and so the /Encrypt dictionary, written as a plain object) are not.
 /// </summary>
 public sealed class PdfObjectWriter
 {
     private readonly Stream _output;
     private readonly List<long> _offsets = []; // _offsets[i] = byte offset of object i + 1; -1 = not written yet
 
-    public PdfObjectWriter(Stream output)
+    /// <param name="output">Where the file goes.</param>
+    /// <param name="encryption">How strings and streams are encrypted (null: they are not).</param>
+    public PdfObjectWriter(Stream output, PdfEncryption? encryption = null)
     {
         _output = output;
+        Encryption = encryption;
     }
+
+    /// <summary>What encrypts the file's strings and streams; null for an open file.</summary>
+    public PdfEncryption? Encryption { get; }
 
     /// <summary>Bytes written so far: the offset the next byte lands at.</summary>
     public long Position { get; private set; }
@@ -59,16 +67,29 @@ public sealed class PdfObjectWriter
     /// <summary>
     /// A stream object: "&lt;&lt;{entries} /Length n&gt;&gt;", the data between "stream" and
     /// "endstream", each keyword on a line of its own. <paramref name="entries"/> are the
-    /// dictionary's other entries ("" for none); the length is always added last.
+    /// dictionary's other entries ("" for none); the length is always added last. The data is
+    /// encrypted first when the file is (the length is then the encrypted data's).
     /// </summary>
     public void WriteStream(int number, string entries, ReadOnlySpan<byte> data)
     {
+        if (Encryption is { } encryption) data = encryption.Encrypt(data);
         BeginObject(number);
         string separator = entries.Length > 0 ? " " : "";
         WriteAscii($"<<{entries}{separator}/Length {data.Length}>>\nstream\n");
         WriteBytes(data);
         WriteAscii("\nendstream\n");
         EndObject();
+    }
+
+    /// <summary>
+    /// A string in an object's dictionary: "(text)" with \, ( and ) escaped in an open file, the
+    /// encrypted bytes as a hex string in an encrypted one. <paramref name="text"/> is ASCII.
+    /// </summary>
+    public string AsciiString(string text)
+    {
+        if (!Ascii.IsValid(text)) throw new ArgumentException("PDF syntax strings are ASCII.", nameof(text));
+        if (Encryption is { } encryption) return $"<{Convert.ToHexString(encryption.Encrypt(Encoding.ASCII.GetBytes(text)))}>";
+        return "(" + text.Replace(@"\", @"\\").Replace("(", @"\(").Replace(")", @"\)") + ")";
     }
 
     /// <summary>

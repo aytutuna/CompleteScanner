@@ -185,8 +185,9 @@ public sealed partial class AppViewModel
         var textFiles = new List<string>();
         var noText = new List<string>();
         long? totalBytes = 0;
-        // Each PDF written sets the last PDF's size; a save undone puts back the one before.
+        // Each PDF written sets the last PDF's size and protection; a save undone puts back the ones before.
         long? lastPdfBytes = LastPdfBytes;
+        bool lastPdfProtected = LastPdfProtected;
         try
         {
             await SavePlan.WriteAllOrNothingAsync(files, async () =>
@@ -222,6 +223,7 @@ public sealed partial class AppViewModel
         catch (Exception e)
         {
             LastPdfBytes = lastPdfBytes;
+            LastPdfProtected = lastPdfProtected;
             if (IsCancellation(e)) throw;
             throw new IOException(SavePlan.NotSavedMessage(e.Message), e);
         }
@@ -229,7 +231,10 @@ public sealed partial class AppViewModel
         DeleteSpoolFiles(queued);
         ScannedPages.Clear();
         ResetFlow();
-        string? size = format == OutputFormat.Pdf && totalBytes is { } total ? SavedFiles.SizeText(total) : null;
+        // The PDFs' size together, and "password-protected" when they are, in the brackets after the page count.
+        string? size = format == OutputFormat.Pdf
+            ? PdfNote(totalBytes is { } total ? SavedFiles.SizeText(total) : null, LastPdfProtected)
+            : null;
         StatusMessage = plan.SavedMessage(format, saved.Select(path => Path.GetFileName(path)).ToList(), size, textFiles, noText);
         RunAfterSave(s.Output.AfterSave, saved);
     }
@@ -258,6 +263,8 @@ public sealed partial class AppViewModel
                 return PdfBuilder.WriteNewFile([new PdfPageInput(jpeg, sheet.Width, sheet.Height, SeparatorSheet.Dpi, null)],
                                                path, progress: null, token);
             }, token);
+            // The sheet is never protected, whatever the last PDF saved was.
+            LastPdfProtected = false;
             try { LastPdfBytes = new FileInfo(written).Length; }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { LastPdfBytes = null; }
             MarkSaved([written]);

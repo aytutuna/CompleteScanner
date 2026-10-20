@@ -387,6 +387,18 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     public List<string> LastSavedPaths { get; private set; } = [];
     /// <summary>Size of the PDF saved last in this session, in bytes; null before the first one.</summary>
     public long? LastPdfBytes { get; private set; }
+    /// <summary>The PDF saved last was password-protected.</summary>
+    public bool LastPdfProtected { get; private set; }
+
+    /// <summary>
+    /// Asks for the password of a protected PDF (<see cref="OutputOptions.Protect"/>) when a save
+    /// needs one: the window shows its dialog; null (cancelled, or nobody to ask) saves nothing.
+    /// Asked once per save; the answer is used for every PDF of that save and wiped when it ends.
+    /// </summary>
+    public Func<PdfProtection?>? AskPdfPassword { get; set; }
+
+    /// <summary>The password of the save running now (<see cref="ProtectionFor"/>); null between saves.</summary>
+    private PdfProtection? _savePassword;
     /// <summary>"Last PDF: 412 KB", shown under the PDF size choice; empty before the first PDF.</summary>
     public string LastPdfSizeText => LastPdfBytes is { } bytes ? $"Last PDF: {SavedFiles.SizeText(bytes)}" : "";
     /// <summary>Bumped whenever files are written to the destination folder (drives the Saved tab).</summary>
@@ -1590,6 +1602,14 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         }
         if (s.Format == OutputFormat.Pdf)
         {
+            // These pages are held nowhere else: without the password they wait in the queue.
+            try { ProtectionFor(s); }
+            catch (PasswordNotGivenException)
+            {
+                await KeepInQueue(pages);
+                StatusMessage = PdfProtection.KeptInQueueMessage(pages.Count);
+                return;
+            }
             var text = s.Output.AlsoSaveText ? new PdfText() : null;
             saved = [await WritePdfAtomically(pages, s, OutputPath(s, "pdf"), token, text)];
             string? textPath = text is null ? null : await WriteTextBeside(saved[0], text);
@@ -3020,6 +3040,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                                                   CancellationToken token, PdfText? text = null,
                                                   IReadOnlyList<IReadOnlyList<OcrLine>?>? knownLines = null)
     {
+        // A protected PDF's password is asked for before any page is read or written.
+        var protection = ProtectionFor(s);
         var inputs = new List<PdfPageInput>();
         for (int i = 0; i < pages.Count; i++)
         {
@@ -3070,14 +3092,40 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
 
         StatusMessage = "Writing PDF…";
         NotifyAll();
-        // PDF/A when the archival option is on, titled with the file's name (WriteNewFile
-        // retitles the file when it has to take another free name).
-        var options = PdfWriteOptions.For(s.Output, Path.GetFileNameWithoutExtension(path));
+        // Protected with the password when that option is on, else PDF/A when the archival option
+        // is; titled with the file's name (WriteNewFile retitles the file when it has to take
+        // another free name).
+        var options = PdfWriteOptions.For(s.Output, Path.GetFileNameWithoutExtension(path), protection);
         string written = await Task.Run(() => PdfBuilder.WriteNewFile(inputs, path, progress: null, token, options), token);
+        LastPdfProtected = options.IsProtected;
         try { LastPdfBytes = new FileInfo(written).Length; }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { LastPdfBytes = null; }
         return written;
     }
+
+    /// <summary>
+    /// The password the PDFs of this save are protected with: null when the option is off; else
+    /// the one given earlier in this save, or asked for now (<see cref="AskPdfPassword"/>). No
+    /// answer throws <see cref="PasswordNotGivenException"/>, a cancellation: nothing is saved
+    /// unprotected. Kept nowhere but here, and wiped when the save ends (<see cref="ForgetPdfPassword"/>).
+    /// </summary>
+    private PdfProtection? ProtectionFor(ScanSettings s)
+    {
+        if (!s.Output.Protect) return null;
+        if (_savePassword is { } given) return given;
+        _savePassword = AskPdfPassword?.Invoke() ?? throw new PasswordNotGivenException();
+        return _savePassword;
+    }
+
+    /// <summary>Wipes the password of the save that just ended.</summary>
+    private void ForgetPdfPassword()
+    {
+        _savePassword?.Dispose();
+        _savePassword = null;
+    }
+
+    /// <summary>A save that needed a password got none: handled as a cancellation, with its own message.</summary>
+    private sealed class PasswordNotGivenException() : OperationCanceledException(PdfProtection.NotSavedMessage);
 
     /// <summary>
     /// The text file beside a PDF just saved, with the PDF's name (the next free one when that is
@@ -3192,8 +3240,28 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         });
     }
 
-    /// <summary>" (412 KB)" after the name of the PDF just saved, or nothing when its size is unknown.</summary>
-    private string PdfSizeSuffix() => LastPdfBytes is { } bytes ? $" ({SavedFiles.SizeText(bytes)})" : "";
+    /// <summary>
+    /// " (412 KB)" after the name of the PDF just saved, " (412 KB, password-protected)" when it is
+    /// protected; without a known size, " (password-protected)" or nothing.
+    /// </summary>
+    private string PdfSizeSuffix() => PdfNote(LastPdfBytes is { } bytes ? SavedFiles.SizeText(bytes) : null, LastPdfProtected) is { } note
+        ? $" ({note})"
+        : "";
+
+    /// <summary>
+    /// What is said in brackets after saved PDFs: their size and "password-protected" when they are
+    /// ("412 KB, password-protected"); null when there is neither.
+    /// </summary>
+    private static string? PdfNote(string? size, bool isProtected) =>
+        (size, isProtected) switch
+        {
+            (null, false) => null,
+            (null, true) => ProtectedNote,
+            (_, false) => size,
+            _ => $"{size}, {ProtectedNote}",
+        };
+
+    private const string ProtectedNote = "password-protected";
 
     /// <summary>
     /// The full-resolution UNROTATED pixels from the page's spill file, or null when the page
@@ -3292,6 +3360,10 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         {
             await operation(cts.Token);
         }
+        catch (PasswordNotGivenException)
+        {
+            StatusMessage = PdfProtection.NotSavedMessage;
+        }
         catch (Exception e) when (IsCancellation(e))
         {
             StatusMessage = "Cancelled.";
@@ -3302,6 +3374,10 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             StatusMessage = "Ready.";
             // A scan the scanner refused (busy, offline, ...) is what the troubleshooter explains.
             if (e is ScanException && _session is { } session) RecordFailure(session.Info.Name, e);
+        }
+        finally
+        {
+            ForgetPdfPassword();
         }
         _operationCts = null;
         Progress = null;

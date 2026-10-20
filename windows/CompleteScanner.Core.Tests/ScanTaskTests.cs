@@ -665,6 +665,22 @@ public class ScanTaskTests
     }
 
     [Fact]
+    public void Apply_KeepsThePasswordOption_TheArchiveTaskTurnsItOff()
+    {
+        var current = Customized();
+        current.Output.Protect = true;
+        foreach (var task in ScanTasks.All)
+        {
+            var s = TaskCatalog.Apply(task, current);
+            Assert.Equal(task != ScanTask.Archive, s.Output.Protect);
+            Assert.False(s.Output.Protect && s.Output.Archival);
+        }
+        Assert.True(current.Output.Protect);
+        current.Output.Protect = false;
+        Assert.All(ScanTasks.All, task => Assert.False(TaskCatalog.Apply(task, current).Output.Protect));
+    }
+
+    [Fact]
     public void Archive_IsABestSizeSearchablePdfA_AndEndsWithAPlainPdf()
     {
         var definition = TaskCatalog.Definition(ScanTask.Archive);

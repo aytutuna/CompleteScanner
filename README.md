@@ -50,6 +50,12 @@ scanners** — including the Epson Perfection V39 II.
   embedded in the file, so text in any script (Turkish, Greek, Cyrillic, Arabic, Chinese, …)
   can be selected and searched. The Mac gets both with the port of the Windows PDF writer;
   until then it keeps its CoreText text layer, and the setting is kept in its settings file.
+- **Password-protected PDFs** (Windows for now): **Protect with a password** encrypts saved PDFs
+  with AES-256 (the PDF 2.0 standard security handler). The password is asked for at each save,
+  typed twice, with a hint about its strength, and never stored; printing and copying can be
+  disallowed, which PDF apps honor as a request, not a lock. A PDF/A file can't have a password,
+  so the two switches exclude each other. The Mac gets it with the port of the Windows PDF
+  writer; until then it keeps the switch in its settings file and writes no protected PDFs.
 - **Share, email, open with, copy**: after a save, and on every file in the Saved tab, open the
   file, open it with another app, show it in Finder, share it (Mail, Messages, AirDrop, …), start
   a Mail message with it attached, or copy it (an image also as a picture). **After saving** can

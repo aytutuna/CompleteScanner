@@ -56,6 +56,12 @@ public partial class MainWindow : Window
         ArchivalBox.Content = PdfA.OptionLabel;
         ArchivalBox.ToolTip = PdfA.OptionHint;
         AutomationProperties.SetHelpText(ArchivalBox, PdfA.OptionHint);
+        ProtectBox.Content = PdfProtection.OptionLabel;
+        ProtectBox.ToolTip = PdfProtection.OptionHint;
+        AutomationProperties.SetHelpText(ProtectBox, PdfProtection.OptionHint);
+        PdfExclusionNote.Text = PdfA.CannotProtectNote;
+        // A protected PDF's password is asked for at save time, over this window.
+        ViewModel.AskPdfPassword = () => PdfPasswordWindow.Ask(this);
         BuildBlankSensitivitySegments();
         BuildSplitChoices();
         BuildBookChoices();
@@ -1193,7 +1199,9 @@ public partial class MainWindow : Window
             MultiPageBox.IsChecked = s.DocumentMultiPage;
             SearchableBox.IsChecked = s.PdfSearchable;
             AlsoSaveTextBox.IsChecked = s.Output.AlsoSaveText;
-            ArchivalBox.IsChecked = s.Output.Archival;
+            // The two exclude each other; a settings file with both on gets the password.
+            ProtectBox.IsChecked = s.Output.Protect;
+            ArchivalBox.IsChecked = s.Output.Archival && !s.Output.Protect;
             AutoSplitBox.IsChecked = s.PhotoAutoSplit;
             DeskewBox.IsChecked = s.PhotoAutoDeskew;
             AutoEnhanceBox.IsChecked = s.Adjustments.AutoEnhance;
@@ -1249,7 +1257,8 @@ public partial class MainWindow : Window
         s.DocumentMultiPage = MultiPageBox.IsChecked == true;
         s.PdfSearchable = SearchableBox.IsChecked == true;
         s.Output.AlsoSaveText = AlsoSaveTextBox.IsChecked == true;
-        s.Output.Archival = ArchivalBox.IsChecked == true;
+        s.Output.Protect = ProtectBox.IsChecked == true;
+        s.Output.Archival = ArchivalBox.IsChecked == true && !s.Output.Protect;
         if (PdfSizeSegments.Children.OfType<RadioButton>().FirstOrDefault(b => b.IsChecked == true) is { Tag: PdfSizePreset size })
         {
             s.Output.PdfSize = size;
@@ -1526,6 +1535,26 @@ public partial class MainWindow : Window
         AlsoSaveTextBox.ToolTip = hint;
         AutomationProperties.SetHelpText(AlsoSaveTextBox, hint);
         ToolTipService.SetShowOnDisabled(AlsoSaveTextBox, true);
+        SyncPdfProtectionOptions();
+    }
+
+    /// <summary>
+    /// Archival PDF and the password exclude each other: while one is on, the other is greyed out
+    /// and the note under them (and the greyed switch's tooltip) says why.
+    /// </summary>
+    private void SyncPdfProtectionOptions()
+    {
+        var output = ViewModel.Settings.Output;
+        bool protect = output.Protect, archival = output.Archival && !protect;
+        ArchivalBox.IsEnabled = !protect;
+        ProtectBox.IsEnabled = !archival;
+        string archivalHint = protect ? PdfA.CannotProtectNote : PdfA.OptionHint;
+        string protectHint = archival ? PdfA.CannotProtectNote : PdfProtection.OptionHint;
+        ArchivalBox.ToolTip = archivalHint;
+        ProtectBox.ToolTip = protectHint;
+        AutomationProperties.SetHelpText(ArchivalBox, archivalHint);
+        AutomationProperties.SetHelpText(ProtectBox, protectHint);
+        PdfExclusionNote.Visibility = protect || archival ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>

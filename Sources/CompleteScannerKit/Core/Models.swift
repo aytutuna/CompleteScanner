@@ -360,6 +360,11 @@ public struct OutputOptions: Codable, Equatable, Sendable {
     /// platforms; only the Windows PDF writer acts on it until the Mac's PDF writer port (M19, see
     /// CONTRACTS.md). Settings without it get false.
     public var archival: Bool = false
+    /// Saved PDFs open only with a password asked for at each save (AES-256); only this switch is
+    /// stored, never the password. Stored so settings files stay the same on both platforms; only
+    /// the Windows PDF writer acts on it until the Mac's PDF writer port (M20, see CONTRACTS.md).
+    /// Settings without it get false.
+    public var protect: Bool = false
 
     public init() {}
 
@@ -369,6 +374,7 @@ public struct OutputOptions: Codable, Equatable, Sendable {
         case afterSave
         case alsoSaveText
         case archival
+        case protect
     }
 }
 
@@ -381,6 +387,7 @@ extension OutputOptions {
         afterSave = container.decodeLenient(forKey: .afterSave, default: afterSave)
         alsoSaveText = container.decodeLenient(forKey: .alsoSaveText, default: alsoSaveText)
         archival = container.decodeLenient(forKey: .archival, default: archival)
+        protect = container.decodeLenient(forKey: .protect, default: protect)
     }
 }
 
