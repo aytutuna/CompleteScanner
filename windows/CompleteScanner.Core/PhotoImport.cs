@@ -291,8 +291,21 @@ public static class PhotoImport
             Source = PageSource.Photo,
         };
 
-    /// <summary>"Photo" for a page taken from a photo; null for other pages.</summary>
-    public static string? SourceLabel(ScannedPage page) => page.Source == PageSource.Photo ? Label : null;
+    /// <summary>"Photo" for a page taken from a photo, "From phone" for one a paired phone sent; null for other pages.</summary>
+    public static string? SourceLabel(ScannedPage page) => page.Source switch
+    {
+        PageSource.Photo => Label,
+        PageSource.Phone => CompanionProtocol.PageLabel,
+        _ => null,
+    };
+
+    /// <summary>The source label's tooltip: where a photo's or a phone's page came from; null for other pages.</summary>
+    public static string? SourceHelp(ScannedPage page) => page.Source switch
+    {
+        PageSource.Photo => LabelHelp,
+        PageSource.Phone => CompanionProtocol.PageLabelHelp,
+        _ => null,
+    };
 
     /// <summary>The corner editor's note on why it is shown; empty for <see cref="PhotoReviewReason.None"/>.</summary>
     public static string ReasonText(PhotoReviewReason reason) => reason switch

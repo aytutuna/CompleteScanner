@@ -250,11 +250,13 @@ public enum PageInclusion: String, Sendable {
     case skip
 }
 
-/// Where a queued page came from (`ScannedPage.source`): a scanner, or a photo of a document imported
-/// from a file (`PhotoImport`). Not stored in settings files. Twin of C# `PageSource`.
+/// Where a queued page came from (`ScannedPage.source`): a scanner, a photo of a document imported
+/// from a file (`PhotoImport`), or a paired phone over the companion link (`CompanionProtocol`). Not
+/// stored in settings files. Twin of C# `PageSource`.
 public enum PageSource: String, Sendable {
     case scanner
     case photo
+    case phone
 }
 
 /// Where a stack of collected pages is split into separate documents (`DocumentOptions.splitMode`,

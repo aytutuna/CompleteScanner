@@ -39,6 +39,8 @@ jobs:
           COMPLETESCANNER_REQUIRE_TWAIN_HELPER: '1'
           # PdfATests.Archival_ValidationSamples keeps the PDF/A files it writes here, for veraPDF.
           COMPLETESCANNER_PDFA_SAMPLES: ${{ runner.temp }}\pdfa-samples
+          # The phone link's certificate test uses a certificate store of its own; on the runner only.
+          COMPLETESCANNER_CERT_STORE_TESTS: '1'
       # veraPDF, the PDF/A validator (MPL-2.0 / GPL-3.0), checks those files. It is downloaded here
       # only, pinned to one release and its SHA-256, and never shipped. Its official Docker image is
       # Linux-only, and there is no official action, so the CLI is installed from its release

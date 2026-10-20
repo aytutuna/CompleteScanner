@@ -1,0 +1,136 @@
+<Window x:Class="CompleteScanner.App.PhoneWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:CompleteScanner.App"
+        Title="Phone"
+        Width="620" Height="760" MinWidth="460" MinHeight="420" ResizeMode="CanResize"
+        FontFamily="{StaticResource TextFontFamily}"
+        Icon="{x:Static ui:AppIcon.Image}"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Window.Resources>
+        <Style x:Key="DetailLabelText" TargetType="TextBlock" BasedOn="{StaticResource CaptionText}">
+            <Setter Property="Margin" Value="0,0,16,6" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        </Style>
+        <!-- Read-only and selectable, so an address or code can be typed on the phone. -->
+        <Style x:Key="DetailBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <!-- Footer: start over on the left, close on the right. -->
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource DialogFooterStyle}" Padding="24,14,24,18">
+            <DockPanel>
+                <Button x:Name="CloseButton" DockPanel.Dock="Right" Content="Close" IsCancel="True" IsDefault="True"
+                        MinWidth="96" Style="{StaticResource AccentButtonStyle}" />
+                <Button x:Name="ResetButton" DockPanel.Dock="Left" Content="Reset pairing…" ui:Icon.Glyph="&#xE72C;"
+                        Style="{StaticResource SubtleButtonStyle}" HorizontalAlignment="Left"
+                        ToolTip="Unpair every phone and make a new security key for this PC"
+                        AutomationProperties.HelpText="Unpairs every phone and makes a new security key; phones pair again with a new code"
+                        Click="Reset_Click" />
+                <TextBlock x:Name="FooterStatus" Style="{StaticResource CaptionText}" VerticalAlignment="Center"
+                           Margin="8,0" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                           AutomationProperties.LiveSetting="Polite" />
+            </DockPanel>
+        </Border>
+
+        <!-- Header: whether this PC receives from phones now. -->
+        <StackPanel DockPanel.Dock="Top" Margin="24,20,24,12">
+            <TextBlock Text="Send from your phone" Style="{StaticResource SubtitleText}" TextWrapping="Wrap" />
+            <TextBlock x:Name="HeadlineText" Style="{StaticResource BodyStrongText}" TextWrapping="Wrap" Margin="0,8,0,0"
+                       AutomationProperties.LiveSetting="Polite" />
+            <TextBlock Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" Margin="0,2,0,0"
+                       Text="Documents scanned with CompleteScanner on a paired phone are added to the page queue here. Nothing goes through the internet: the phone and this PC talk directly, encrypted, on networks you trust." />
+        </StackPanel>
+
+        <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                      Focusable="False" Padding="24,0,24,16">
+            <StackPanel>
+                <!-- The networks this PC is on, and whether it receives there. -->
+                <TextBlock Text="Networks" Style="{StaticResource SectionHeaderText}" Margin="0,4,0,8" />
+                <StackPanel x:Name="NetworksPanel" AutomationProperties.Name="Networks" />
+
+                <!-- Pairing: the QR code with its one-time code, the details to type it by hand, and the question. -->
+                <TextBlock Text="Pair a phone" Style="{StaticResource SectionHeaderText}" Margin="0,16,0,8" />
+                <Border x:Name="PairCard" Style="{StaticResource CardStyle}" Padding="16,12,16,12">
+                    <StackPanel>
+                        <TextBlock x:Name="PairIntro" Style="{StaticResource BodyText}" TextWrapping="Wrap"
+                                   Text="Open CompleteScanner on your phone, choose Pair a computer, and scan the code shown here. The code works once, for 5 minutes." />
+                        <Button x:Name="PairButton" Content="Pair a phone" ui:Icon.Glyph="&#xE8EA;" HorizontalAlignment="Left"
+                                Margin="0,10,0,0" Style="{StaticResource AccentIconTextButtonStyle}" Click="Pair_Click" />
+                        <StackPanel x:Name="PairingPanel" Visibility="Collapsed" Margin="0,8,0,0">
+                            <DockPanel>
+                                <Border DockPanel.Dock="Left" Background="White" Padding="0" Margin="0,0,16,0"
+                                        CornerRadius="4" VerticalAlignment="Top">
+                                    <Image x:Name="QrImage" Stretch="None" RenderOptions.BitmapScalingMode="NearestNeighbor"
+                                           AutomationProperties.Name="Pairing code to scan with your phone" />
+                                </Border>
+                                <StackPanel>
+                                    <TextBlock x:Name="ExpiryText" Style="{StaticResource BodyStrongText}" TextWrapping="Wrap"
+                                               AutomationProperties.LiveSetting="Polite" />
+                                    <TextBlock Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" Margin="0,4,0,10"
+                                               Text="No camera at hand? Enter these on the phone, then check that the phone shows the same check code." />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock x:Name="AddressLabel" Text="Address" Style="{StaticResource DetailLabelText}" Margin="0,6,16,6" />
+                                        <TextBox Grid.Column="1" x:Name="AddressBox" Style="{StaticResource DetailBox}"
+                                                 AutomationProperties.LabeledBy="{Binding ElementName=AddressLabel}" />
+                                        <TextBlock Grid.Row="1" x:Name="CodeLabel" Text="Code" Style="{StaticResource DetailLabelText}" Margin="0,6,16,6" />
+                                        <TextBox Grid.Row="1" Grid.Column="1" x:Name="CodeBox" Style="{StaticResource DetailBox}"
+                                                 AutomationProperties.LabeledBy="{Binding ElementName=CodeLabel}" />
+                                        <TextBlock Grid.Row="2" x:Name="CheckLabel" Text="Check code" Style="{StaticResource DetailLabelText}" Margin="0,6,16,6" />
+                                        <TextBox Grid.Row="2" Grid.Column="1" x:Name="CheckCodeBox" Style="{StaticResource DetailBox}"
+                                                 AutomationProperties.LabeledBy="{Binding ElementName=CheckLabel}" />
+                                    </Grid>
+                                    <Button x:Name="StopPairingButton" Content="Stop pairing" HorizontalAlignment="Left" Margin="0,8,0,0"
+                                            Style="{StaticResource SubtleButtonStyle}" Click="StopPairing_Click" />
+                                </StackPanel>
+                            </DockPanel>
+                        </StackPanel>
+                        <!-- A phone presented the code: the user allows it or not (shown until answered, though the code is used). -->
+                        <Border x:Name="ApprovalCard" Style="{StaticResource CardStyle}" Visibility="Collapsed" Margin="0,12,0,0"
+                                Padding="16,12,16,12" BorderThickness="2"
+                                BorderBrush="{DynamicResource AccentFillColorDefaultBrush}">
+                            <StackPanel>
+                                <TextBlock x:Name="ApprovalText" Style="{StaticResource BodyStrongText}" TextWrapping="Wrap"
+                                           AutomationProperties.LiveSetting="Assertive" />
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <Button x:Name="AllowButton" Content="Allow" MinWidth="96"
+                                            Style="{StaticResource AccentButtonStyle}" Click="Allow_Click" />
+                                    <Button x:Name="DenyButton" Content="Don't allow" MinWidth="96" Margin="8,0,0,0" Click="Deny_Click" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock x:Name="PairNote" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                   Visibility="Collapsed" AutomationProperties.LiveSetting="Polite" />
+                    </StackPanel>
+                </Border>
+
+                <!-- The paired phones, each with Remove. -->
+                <TextBlock Text="Paired phones" Style="{StaticResource SectionHeaderText}" Margin="0,16,0,8" />
+                <StackPanel x:Name="PhonesPanel" AutomationProperties.Name="Paired phones" />
+
+                <!-- Why a phone may not connect: the checks, one card each. -->
+                <TextBlock Text="Connection checks" Style="{StaticResource SectionHeaderText}" Margin="0,16,0,4" />
+                <TextBlock x:Name="SummaryText" Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                           AutomationProperties.LiveSetting="Polite" />
+                <StackPanel x:Name="ChecksPanel" AutomationProperties.Name="Connection checks"
+                            KeyboardNavigation.TabNavigation="Continue" />
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

@@ -113,13 +113,15 @@ public enum PageInclusion
 }
 
 /// <summary>
-/// Where a queued page came from (<see cref="ScannedPage.Source"/>): a scanner, or a photo of a
-/// document imported from a file (<see cref="PhotoImport"/>). Not stored in settings files.
+/// Where a queued page came from (<see cref="ScannedPage.Source"/>): a scanner, a photo of a
+/// document imported from a file (<see cref="PhotoImport"/>), or a paired phone over the companion
+/// link (<see cref="CompanionProtocol"/>). Not stored in settings files.
 /// </summary>
 public enum PageSource
 {
     Scanner,
     Photo,
+    Phone,
 }
 
 /// <summary>

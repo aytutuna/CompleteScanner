@@ -282,8 +282,23 @@ public enum PhotoImport {
         return page
     }
 
-    /// "Photo" for a page taken from a photo; nil for other pages.
-    public static func sourceLabel(_ page: ScannedPage) -> String? { page.source == .photo ? label : nil }
+    /// "Photo" for a page taken from a photo, "From phone" for one a paired phone sent; nil for other pages.
+    public static func sourceLabel(_ page: ScannedPage) -> String? {
+        switch page.source {
+        case .photo: return label
+        case .phone: return CompanionProtocol.pageLabel
+        case .scanner: return nil
+        }
+    }
+
+    /// The source label's tooltip: where a photo's or a phone's page came from; nil for other pages.
+    public static func sourceHelp(_ page: ScannedPage) -> String? {
+        switch page.source {
+        case .photo: return labelHelp
+        case .phone: return CompanionProtocol.pageLabelHelp
+        case .scanner: return nil
+        }
+    }
 
     /// The corner editor's note on why it is shown; empty for `.none`.
     public static func reasonText(_ reason: PhotoReviewReason) -> String {

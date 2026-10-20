@@ -704,8 +704,9 @@ private struct OCRLineDTO: Decodable {
 
 // MARK: - SHA-256
 
-/// SHA-256 (FIPS 180-4) over a whole buffer, written out because Foundation has none.
-private enum SHA256Digest {
+/// SHA-256 (FIPS 180-4) over a whole buffer, written out because Foundation has none. Also used by
+/// the phone link (`SpkiFingerprint`, `PairedDeviceStore`).
+enum SHA256Digest {
     private static let k: [UInt32] = [
         0x428A_2F98, 0x7137_4491, 0xB5C0_FBCF, 0xE9B5_DBA5, 0x3956_C25B, 0x59F1_11F1, 0x923F_82A4, 0xAB1C_5ED5,
         0xD807_AA98, 0x1283_5B01, 0x2431_85BE, 0x550C_7DC3, 0x72BE_5D74, 0x80DE_B1FE, 0x9BDC_06A7, 0xC19B_F174,

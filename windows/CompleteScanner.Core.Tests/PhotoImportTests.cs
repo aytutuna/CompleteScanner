@@ -237,6 +237,20 @@ public class PhotoImportTests
     }
 
     [Fact]
+    public void APageFromAPhoneIsLabelledAsSuch()
+    {
+        var page = new ScannedPage(PhotoScenes.NoPageScene(), 300, ColorMode.Color) { Source = PageSource.Phone };
+        Assert.Equal("From phone", PhotoImport.SourceLabel(page));
+        Assert.Equal("Sent from a paired phone", PhotoImport.SourceHelp(page));
+        Assert.Equal("Imported from a photo", PhotoImport.SourceHelp(PhotoImport.WholePhotoPage(PhotoScenes.NoPageScene())));
+        Assert.Null(PhotoImport.SourceHelp(new ScannedPage(page.Image, 300, ColorMode.Color)));
+        // The page's source follows it through every change.
+        Assert.Equal(PageSource.Phone, page.RotatedClockwise().Source);
+        Assert.Equal(PageSource.Phone, page.WithInclusion(PageInclusion.Skip).Source);
+        Assert.Equal(PageSource.Phone, new ScannedPage(page.Image, 300, ColorMode.Color).CopyMeta(page).Source);
+    }
+
+    [Fact]
     public void ThePhotosCornersAreNamedAgainBeforeThePageIsCutOut()
     {
         // Corners dragged around the outline, starting anywhere and either way round, cut out the same page.

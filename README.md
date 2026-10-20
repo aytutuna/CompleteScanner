@@ -109,6 +109,12 @@ scanners** — including the Epson Perfection V39 II.
   Letter, Legal, ID-1), else 200 dpi, is labelled **Photo** in the page strip, and one click shows
   it as photographed. The photo files themselves are only read, never changed or moved. On Windows,
   HEIC photos need Microsoft's free HEIF Image Extensions.
+- **Send from your phone** (Windows now): pair a phone once by scanning a QR code on the PC, and
+  documents scanned with CompleteScanner on the phone are added to the PC's page queue on their own,
+  labelled **From phone**. The phone and the PC talk directly, encrypted and pinned to the PC's own
+  key, with no account and no server; the PC listens only on networks you trust (Windows' Private
+  networks, and ones you allow in the app, such as your school's Wi-Fi) and only while a phone is
+  paired or a pairing code is shown. The iPhone app and the Mac's side follow.
 - **Rotate pages upright**: a page put in upside down or sideways is turned the right way up by
   reading its text (Vision on the Mac, Windows OCR on Windows). Only a page whose text reads clearly
   better one way is turned; blank pages, separator sheets, photos and pages the reading is unsure

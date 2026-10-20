@@ -65,6 +65,7 @@ public partial class MainWindow : Window
         ViewModel.AskPdfPassword = () => PdfPasswordWindow.Ask(this);
         SetUpAddToPdf();
         SetUpImport();
+        SetUpPhone();
         BuildBlankSensitivitySegments();
         BuildSplitChoices();
         BuildBookChoices();
@@ -89,6 +90,8 @@ public partial class MainWindow : Window
         {
             PushSettingsToUi();
             ViewModel.Start();
+            // Receives from paired phones on trusted networks; nothing listens while no phone is paired.
+            ViewModel.StartCompanionIfPaired();
             if (StartTab.IsSelected) StartView.FocusDefaultCard();
         };
         // A printer added or removed while the app was in the background (in Windows Settings, say)
@@ -165,12 +168,18 @@ public partial class MainWindow : Window
             AppearanceButton.ContentTemplate = (DataTemplate)FindResource("IconOnlyTemplate");
             AppearanceButton.HorizontalContentAlignment = HorizontalAlignment.Center;
             AppearanceButton.ToolTip = "Appearance: light, dark, or follow Windows";
+            PhoneButton.ContentTemplate = (DataTemplate)FindResource("IconOnlyTemplate");
+            PhoneButton.HorizontalContentAlignment = HorizontalAlignment.Center;
+            PhoneButton.ToolTip = "Phone: send documents from your phone to this PC";
         }
         else
         {
             AppearanceButton.ClearValue(ContentControl.ContentTemplateProperty);
             AppearanceButton.HorizontalContentAlignment = HorizontalAlignment.Left;
             AppearanceButton.ToolTip = "Light, dark, or follow Windows";
+            PhoneButton.ClearValue(ContentControl.ContentTemplateProperty);
+            PhoneButton.HorizontalContentAlignment = HorizontalAlignment.Left;
+            PhoneButton.ToolTip = "Send documents from your phone to this PC";
         }
     }
 

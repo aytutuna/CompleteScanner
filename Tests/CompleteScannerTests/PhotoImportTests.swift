@@ -233,6 +233,21 @@ final class PhotoImportTests: XCTestCase {
         XCTAssertEqual(scanned.source, .scanner)
     }
 
+    func testAPageFromAPhoneIsLabelledAsSuch() throws {
+        let photo = PhotoScenes.noPageScene()
+        let whole = try XCTUnwrap(PhotoImport.wholePhotoPage(photo))
+        var page = ScannedPage(image: whole.image, dpi: 300, colorMode: .color)
+        page.source = .phone
+        XCTAssertEqual(PhotoImport.sourceLabel(page), "From phone")
+        XCTAssertEqual(PhotoImport.sourceHelp(page), "Sent from a paired phone")
+        XCTAssertEqual(PhotoImport.sourceHelp(whole), "Imported from a photo")
+        XCTAssertNil(PhotoImport.sourceHelp(ScannedPage(image: whole.image, dpi: 300, colorMode: .color)))
+        // The page's source follows it through every change.
+        XCTAssertEqual(page.withInclusion(.skip).source, .phone)
+        XCTAssertEqual(page.turnedUpright(2).source, .phone)
+        XCTAssertEqual(ScannedPage(image: page.image, dpi: 300, colorMode: .color).copyMeta(from: page).source, .phone)
+    }
+
     func testThePhotosCornersAreNamedAgainBeforeThePageIsCutOut() throws {
         // Corners dragged around the outline, starting anywhere and either way round, cut out the same page.
         let photo = PhotoScenes.woodScene()

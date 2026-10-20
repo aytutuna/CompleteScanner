@@ -96,6 +96,23 @@
                             Text="Saved" FontWeight="SemiBold" /><Run Text="  " /><Run x:Name="SavedBarMessage" /></TextBlock>
                 </DockPanel>
             </Border>
+
+            <!-- A paired phone sent a document: its pages were added to the queue (or wait for it).
+                 Hidden by its close button; the next document replaces the text. -->
+            <Border x:Name="PhoneBar" Style="{StaticResource SavedBarStyle}" Visibility="Collapsed">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource GlyphText}" Text="&#xE8EA;" Margin="0,0,12,0"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource SystemFillColorSuccessBrush}" />
+                    <Button DockPanel.Dock="Right" Style="{StaticResource SmallIconButtonStyle}" Content="&#xE711;"
+                            ToolTip="Dismiss" AutomationProperties.Name="Dismiss" VerticalAlignment="Center"
+                            Margin="4,0,0,0" Click="PhoneBarClose_Click" />
+                    <TextBlock x:Name="PhoneBarText" Style="{StaticResource BodyText}" TextWrapping="Wrap"
+                               VerticalAlignment="Center" Padding="0,4"
+                               AutomationProperties.LiveSetting="Polite"><Run
+                            Text="From your phone" FontWeight="SemiBold" /><Run Text="  " /><Run x:Name="PhoneBarMessage" /></TextBlock>
+                </DockPanel>
+            </Border>
         </StackPanel>
 
         <DockPanel Grid.Row="1" x:Name="MainContent">
@@ -248,11 +265,20 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
 
-                <Button Grid.Row="5" x:Name="AppearanceButton" Style="{StaticResource SubtleButtonStyle}"
-                        local:Icon.Glyph="&#xE793;" Content="Appearance"
-                        ToolTip="Light, dark, or follow Windows"
-                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="4,4,4,8"
-                        Click="AppearanceButton_Click" />
+                <StackPanel Grid.Row="5">
+                    <!-- Pair a phone, the paired phones and the networks receiving is allowed on. -->
+                    <Button x:Name="PhoneButton" Style="{StaticResource SubtleButtonStyle}"
+                            local:Icon.Glyph="&#xE8EA;" Content="Phone"
+                            ToolTip="Send documents from your phone to this PC"
+                            AutomationProperties.HelpText="Opens the phone settings: pair a phone, the paired phones and the networks this PC receives on"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="4,4,4,0"
+                            Click="PhoneButton_Click" />
+                    <Button x:Name="AppearanceButton" Style="{StaticResource SubtleButtonStyle}"
+                            local:Icon.Glyph="&#xE793;" Content="Appearance"
+                            ToolTip="Light, dark, or follow Windows"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Margin="4,4,4,8"
+                            Click="AppearanceButton_Click" />
+                </StackPanel>
             </Grid>
 
             <TabControl x:Name="MainTabs" Style="{StaticResource PivotTabControlStyle}"

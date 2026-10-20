@@ -51,7 +51,15 @@ UI per platform** architecture:
   and photos of documents (`PhotoDocumentDetector.cs`: a page's four corners found in a camera
   photo; `PerspectiveCorrector.cs` over `Quad.cs` and `Homography.cs`: the page made upright with
   its perspective corrected; `CaptureStability.cs`: when a held-still page should be taken;
-  `PhotoImport.cs`: importing photos of documents as pages).
+  `PhotoImport.cs`: importing photos of documents as pages), and the phone companion (`Companion/`:
+  the certificate pin `SpkiFingerprint.cs`, the pairing code `PairingUri.cs`, the one-time pairing
+  window `PairingSession.cs`, the paired phones `PairedDeviceStore.cs`, the HTTP subset
+  `CompanionHttp.cs` and the messages `CompanionProtocol.cs`, shared with the Swift package; and,
+  Windows only until the Mac's server, the TLS server and its requests `CompanionServer.cs`,
+  `CompanionRouter.cs`, the inbox and outbox, rate limits, the trusted-network rule
+  `CompanionNetworks.cs`, the firewall verdict and the phone checks, and `CompanionHost.cs` /
+  `CompanionService.cs`, which listen only on trusted networks; see
+  [Send from your phone](#send-from-your-phone)).
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
   xUnit with the same fixtures, geometry, and tolerances. **This is the contract that keeps
   the Swift and C# cores behaviorally identical** — change an algorithm on one side, port
@@ -65,7 +73,11 @@ UI per platform** architecture:
   on synthetic scans, the 32-bit TWAIN helper is started for real and scans its stand-in
   scanners (`TwainHelperTests`), the Windows Scan device watcher runs in the unpackaged test
   process (`WinRtScannerTests`), and photo files are read with WIC as an import reads them (the
-  orientation tag, a HEIC photo Windows cannot decode, the file only read; `PhotoFileReaderTests`).
+  orientation tag, a HEIC photo Windows cannot decode, the file only read; `PhotoFileReaderTests`),
+  and a phone's document becomes queue pages, the network list and firewall rules are read (read
+  only), and the phone link's certificate is kept in a certificate store of the test's own
+  (`CompanionAppTests`; the certificate case runs only with `COMPLETESCANNER_CERT_STORE_TESTS=1`,
+  which CI sets).
   Nothing is sent to a printer.
 - **`CompleteScanner.TwainHelper`** — the 32-bit TWAIN helper (x86, .NET 10): a small console
   program without a window that the app starts when a scanner driver is installed only for
@@ -314,6 +326,52 @@ sRGB).
 **To check on real hardware:** real phone photos (HEIC from an iPhone, whose turn WIC may report
 differently from a JPEG's; 48–50 MP photos), drags from the Photos app and from a phone's folder,
 and the corner editor with a touch screen or pen.
+
+### Send from your phone
+
+A phone with CompleteScanner sends what it scans straight into this PC's page queue. **Phone** (at
+the bottom of the side pane) opens the phone window:
+
+- **Pair a phone** shows a QR code to scan with the phone (Pair a computer, on the phone). The code
+  works once and for 5 minutes, and five wrong tries close it. When a phone presents it, the window
+  asks **Allow "Aytu's iPhone" to send documents to this PC?**; nothing is paired without Allow (no
+  answer in 2 minutes counts as Don't allow; the question stays until it is answered). Without a camera, the address, the code and a
+  six-digit check code are shown to type on the phone and compare.
+- **Paired phones** lists each phone with when it was paired and last seen, and **Remove**: a removed
+  phone is refused at once. **Reset pairing…** unpairs every phone and gives this PC a new key, so a
+  phone that kept the old one can no longer connect.
+- **Networks** lists the networks the PC is on and whether it receives there. It receives on networks
+  Windows treats as **Private**, and on others only after **Allow receiving on this network** (for a
+  network you trust but cannot set to Private, such as your school's Wi-Fi). It never listens on any
+  other network, and nothing listens at all unless a phone is paired or a code is shown. On a network
+  it does not receive on, Pair a phone says why instead of showing a code. On an allowed
+  network that Windows treats as public, Windows Firewall asks once about CompleteScanner the first
+  time it receives: tick **Public networks**, then **Allow**.
+- **Connection checks** say why a phone may not connect: the network not received on, Windows
+  Firewall blocking the app on a network it receives on (often after its question was cancelled: the
+  rules to remove are named; a rule for another adapter, such as WSL's virtual switch, does not count),
+  listening or why not, and that some networks (schools, hotels, guest Wi-Fi) keep devices from
+  reaching each other, where the phone's hotspot or its share sheet helps instead.
+
+Documents from paired phones are added to the queue **on their own**, labelled **From phone** in the
+page strip, with a bar saying what arrived (the taskbar button flashes when the window is in the
+background). A document sent as new starts a document of its own in the queue, under the name it
+came with; one sent to the current document joins it. While the queue does not collect pages
+(Photos mode, the ID card, copy and receipt tasks, a review open) or a scan runs, the document waits
+and says so, and is added as soon as it can be. Pages the phone kept as photographed can be shown
+that way with one click, as for imported photos.
+
+How it is kept safe: the phone and the PC talk directly (HTTP over TLS 1.2/1.3) with no server or
+account in between. The PC's certificate (an ECDSA P-256 key of its own in the user's certificate
+store, made the first time a pairing code is shown) is pinned by the phone from the QR code, so the first
+connection is already checked. Each phone gets a 256-bit secret when it pairs; the PC keeps only its
+SHA-256 (`companion-devices.json`), and every request without a paired phone's secret is refused
+(401), except checking that the PC answers and pairing with a valid code. Uploads are checked in full
+(every picture's checksum and format, see the `.csdoc` package) before they count, are taken once
+however often a phone retries, and are refused when too large; repeated wrong secrets or codes block
+the sender for a minute. The PC advertises itself (DNS-SD, `_completescan._tcp`) only on the
+networks it receives on and only while it receives, and the phone also remembers the address from the
+QR code. Only one CompleteScanner window receives at a time.
 
 ### Rotate pages upright
 
@@ -1198,6 +1256,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | Receipts (`ReceiptDetector`, `ReceiptEnhancer`, `ReceiptDateExtractor`, the review) | Covered by `ReceiptTests` (two receipts on a white lid found apart along their paper, cut around their print when the paper is as light as the lid, a 2 × 11 in receipt that is too long for a page but not for a receipt, prices far from the items, two receipts 0.15 in apart, one receipt per feeder sheet, nothing on the glass, a 300 dpi scan, the enhancer on fading paper, little print and a dark logo, the date rules and the 99-case date set, the texts) and the receipt cases of `ScanTaskTests`, `ModelsCompatTests`, `NamingTemplateTests` and `MockScannerTests` (same cases as macOS, on the same synthetic beds checked by checksum). Checked on harder synthetic beds (four receipts on a white lid, an open lid and with invisible paper, 12° tilts, receipts in a column 0.2 in apart, a receipt lying sideways, an 11 in receipt at the glass's edge: all found and held whole; two receipts 0.15 in apart with paper as light as the lid are not told apart), by driving the view model with the demo scanner and Windows OCR (both receipts found and cut along their paper, a gray Compact PDF each with a text layer named by its own date, one PDF for all named by the earliest, JPEG files, the text beside each PDF, today's date without OCR, OCR that fails, a save cancelled while reading, Fix crop, Discard) and by building the window without showing it: the Receipts card, the inspector's Receipts section and its switches, one PDF off for JPEG, the review's title and save button, rendered off screen in light and dark. **Unverified:** real thermal receipts on a real lid (see [Receipts](#receipts)) |
 | Batch of separate documents (`PatchCodeDetector`, `DocumentSplitter`, `SavePlan`, the strip's gaps) | Covered by `PatchCodeTests` (all six codes across and down the page, ±2.5° and ±3°, the separator sheet at 100 and 300 dpi and turned, its bar widths, no code on text, a ruled table, blank pages, photos), `DocumentSplitterTests` (every mode, the two-sided blank-sheet rule, separators in a row, empty documents, every N sheets with an odd last sheet and skipped sheets, splits and joins by hand and their undo, keeping a separator page, names, also across a change of the settings, the strip's texts) and `SavePlanTests` (the documents, the texts, all or nothing on success, failure and cancel), and the split cases of `ModelsCompatTests`, `ScanTaskTests`, `PageProcessorTests`, `NamingTemplateTests` and `MockScannerTests` (same cases as macOS). Checked by driving the view model with the demo scanner's batch stack and stand-ins for OCR, the file actions and the printers (the task's settings and card, three PDFs of 2, 1 and 2 pages named with their number, the separators left out, the queue and its spool files cleared; joining, splitting and undoing by hand, keeping a separator page, naming a document from any of its pages, turning and moving pages; a save whose third file cannot be written and one cancelled during the second document leaving no file and the queue intact, then saved again with the text beside each PDF; three text files; both sides with blank backs skipped and separator backs left out; at blank sheets; every 2 sheets; no split ending the task; the separator sheet printed on Letter and A4 stand-in printers (and on the printer's paper when the scan asks for Legal), read back as Patch T, and refused without a printer, then saved as a PDF without one, a page of the usual paper read back as Patch T, and saved again under the next free name; a named first page skipped and kept again with the name following it, and left out and saved again by a change of what counts as blank, of Skip blank pages and of the split, a 300-character name cut to 100; the PDFs' size, the text files beside them and "no text was found" in the status; the last PDF size put back after a failed or cancelled save; another task unchanged) and by building the window without showing it: the card, the Split into documents choice and its hint, Print separator sheet, Sheets per document, the strip's badges, gaps and bars, a click on a gap joining two documents, the save button and label, the name box's 100-character limit, Save separator sheet (PDF) and its hint, Skip blank pages greyed out with the reason at blank sheets one-sided and back with both sides, the choice greyed out when each scan is saved at once, rendered off screen in light and dark. **Not tried on screen:** the name box (a popup window) and the page menu. **Unverified:** printed separator sheets scanned by real feeders (see [Batch of separate documents](#batch-of-separate-documents)) |
 | Barcode and QR separator sheets (`Barcodes.cs`, `BarcodeStep`, `ZXingBarcodeReader`, `ZXingQrEncoder`) | Covered by `BarcodeTests` (the four kinds, reading order and repeats, bounds back in the page's and a spooled page's pixels, a queued page read on its spool file turned like the page and left unread when only its preview shows nothing, the separator prefix and the codes it ignores, the name a code's text gives with format characters dropped, the step and when it runs, every rule of the split at barcode or QR sheets one- and two-sided, keeping, names typed winning, the strip's texts naming the document the plan starts, the QR sheet and the demo's Code 39 sheet pinned by checksum; same cases as macOS), `OrientationTests` (barcode or QR separator sheets not turned upright) and the barcode cases of `ModelsCompatTests` and `MockScannerTests`, and in the app's tests by `BarcodeReaderTests` (ZXing.Net on synthetic scans at 150, 200 and 300 dpi with noise and a ±3° slant: every kind, Data Matrix anywhere, several codes, no false codes, QR sheets in four scripts, a queued page's preview, small 1D codes a preview loses read from the spool file, an end-to-end stack with an order number ignored). Checked by driving the view model with the demo scanner's stack of Code 39 sheets (split and named, saved as "Document INVOICE 1002 … 2.pdf"; queued pages read when the split is chosen later, from their previews; a barcode starting a document; a typed name winning and removed; a separator page kept) and stand-in printers (the QR sheet saved as a PDF and printed on Letter and A4, each read back exactly, a Turkish name included; Patch T with the switch on), and by building the window without showing it: the choice, the switch and its hint, the name box, the QR buttons, the strip, rendered off screen in light and dark. **Unverified:** printed QR sheets fed through real scanners, codes printed by other software, Vision on a Mac (CI runs `VisionBarcodeTests`) |
+| Send from your phone (`Companion/`, `Services/Companion/`, `PhoneWindow`) | The protocol pieces are covered by `SpkiFingerprintTests`, `PairingUriTests`, `PairingSessionTests`, `PairedDeviceStoreTests`, `CompanionHttpTests`, `CompanionProtocolTests` (same cases as macOS), the server by `CompanionRouterTests`, `CompanionNetworkTests` and `CompanionLoopbackTests` (a fake phone over TLS on 127.0.0.1: pairing with the pinned certificate, a wrong fingerprint refused, expired and reused codes refused, a removed phone gets 401, idempotent uploads, damaged, malicious, oversize and chunked uploads refused, rate limits, listening stops when the network is no longer trusted and starts again when it is allowed, advertising only on trusted interfaces, a phone waiting for the user's answer keeps the PC listening and a declined one stops it, no pairing session left open when no code can be shown, a reset without a new key changing nothing), the app's side by `CompanionAppTests`, and a window-free run of the view model and the Phone window with a fake phone (the question, staying while the window's clock ticks and the PC is refreshed, queued pages labelled From phone, a retry not added twice, a document waiting in Photos mode, a document kept when its pages cannot be spooled, the firewall verdict for the network received on only, a failed reset reported, a launch with an unreadable inbox still serving the paired phone). **Needs the user's PC and a phone:** Windows Firewall's question when the app first listens (on a Public network approved in the app: tick Public networks), a cancelled question (block rules, shown by the checks), the certificate in `CurrentUser\My` (checked on CI in a store of the test's own), DNS-SD with `DnsServiceRegister` (never run here), and the iPhone app itself (I20). |
 | eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — see [Network scanners](#network-scanners-escl) below for discovery, adding by address and HTTPS. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the paper size's region, clamped to the feeder (the feeder's own sheet size for Automatic, at most 17 in tall); two-sided feeder jobs send `<scan:Duplex>true</scan:Duplex>` and use the two-sided feeder's capabilities (`AdfDuplexInputCaps`) when the device lists them, and a device that lists no two-sided feeding scans one side and says so; black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. The protocol client (`EsclClient`, `EsclScannerSession`) is covered by `EsclClientTests` through a stub HTTP handler. Checked against local fake eSCL servers (plain and HTTPS), not a real device |
 
 Known divergences from the macOS app (all documented in the source):
@@ -1538,7 +1597,7 @@ row's **via** menu chooses between them.
 The app and its 32-bit TWAIN helper (not Core, not the Mac app) include these packages, unchanged,
 each under its own license (the helper uses NTwain only):
 
-- **ZXing.Net** 0.16.11 — by Michael Jahn, a port of ZXing ("Zebra Crossing") by the ZXing
+- **ZXing.Net** 0.16.11 (barcode and QR separator sheets, and the phone pairing code) — by Michael Jahn, a port of ZXing ("Zebra Crossing") by the ZXing
   authors. Licensed under the Apache License, Version 2.0
   (<https://www.apache.org/licenses/LICENSE-2.0>); the package ships no NOTICE file.
   <https://github.com/micjahn/ZXing.Net>
@@ -1553,7 +1612,10 @@ Presets, scan settings and app preferences are JSON files in `%APPDATA%\Complete
 (`presets.json`, `settings.json`, `preferences.json`; the preferences hold the appearance,
 the connection chosen per scanner and the TWAIN connections that use their driver's
 window), next to the network scanners added by address (`escl-hosts.json`) and their
-trusted certificates (`escl-trust.json`). The scan settings and presets remember the task
+trusted certificates (`escl-trust.json`), and the phone link's paired phones
+(`companion-devices.json`: this PC's id and each phone's id, name and the SHA-256 of its secret,
+never the secret) and the networks receiving is allowed on (`companion-networks.json`); what phones
+sent and what waits for them is under `%LOCALAPPDATA%\CompleteScanner\Companion`. The scan settings and presets remember the task
 they were set up for as text (`"taskId": "document"`), left out when there is none, so a task
 added by a newer version is kept by an older one. They also hold an `"output"` object with the
 PDF size, the after-save action, the text beside a PDF, PDF/A and the password switch

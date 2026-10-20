@@ -95,7 +95,7 @@ public enum SettingsStore {
 
 private let storeLog = Logger(subsystem: "CompleteScanner", category: "Persistence")
 
-private enum StoreReadResult<Value> {
+enum StoreReadResult<Value> {
     /// No file yet (first run).
     case missing
     /// The file was read but its contents do not decode; it is safe to move aside.
@@ -127,8 +127,9 @@ private final class ProtectedFiles: @unchecked Sendable {
     }
 }
 
-/// JSON storage under `~/Library/Application Support/CompleteScanner/` (created on demand).
-private enum StoreFiles {
+/// JSON storage under `~/Library/Application Support/CompleteScanner/` (created on demand). Also used
+/// by the phone link's files (`PairedDeviceStore`), which follow the same settings-file rules.
+enum StoreFiles {
     static var defaultDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
@@ -212,14 +213,21 @@ private enum StoreFiles {
     }
 
     /// Best-effort atomic write; creates the directory on demand. Refuses to replace a file
-    /// that could not be read, or that did not decode and could not be moved aside.
-    static func write<T: Encodable>(_ value: T, to url: URL) {
-        guard !ProtectedFiles.shared.isProtected(url) else { return }
+    /// that could not be read, or that did not decode and could not be moved aside. Returns
+    /// whether the file was written.
+    @discardableResult
+    static func write<T: Encodable>(_ value: T, to url: URL) -> Bool {
+        guard !ProtectedFiles.shared.isProtected(url) else { return false }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(value) else { return }
+        guard let data = try? encoder.encode(value) else { return false }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                  withIntermediateDirectories: true)
-        try? data.write(to: url, options: .atomic)
+        do {
+            try data.write(to: url, options: .atomic)
+            return true
+        } catch {
+            return false
+        }
     }
 }

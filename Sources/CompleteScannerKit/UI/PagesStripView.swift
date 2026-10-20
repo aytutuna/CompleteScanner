@@ -264,7 +264,7 @@ fileprivate struct PageThumbnailCell: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .help(DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? book.help
-                              ?? (page.source == .photo ? PhotoImport.labelHelp : ""))
+                              ?? (PhotoImport.sourceHelp(page) ?? ""))
                 }
                 geometryToggle
                 uprightToggle
@@ -308,11 +308,16 @@ fileprivate struct PageThumbnailCell: View {
     }
 
     /// "Page 3", "Page 3 · back" for a page of a two-sided stack, "Page 3 · not split" for a spread
-    /// of a book kept whole, or "Page 3 · photo" for a page imported from a photo.
+    /// of a book kept whole, "Page 3 · photo" for a page imported from a photo, or "Page 3 · from
+    /// phone" for one a paired phone sent.
     private var caption: String {
         guard let side = page.side else {
             if book.isWhole { return "Page \(pageNumber) \u{00B7} not split" }
-            return page.source == .photo ? "Page \(pageNumber) \u{00B7} photo" : "Page \(pageNumber)"
+            switch page.source {
+            case .photo: return "Page \(pageNumber) \u{00B7} photo"
+            case .phone: return "Page \(pageNumber) \u{00B7} from phone"
+            case .scanner: return "Page \(pageNumber)"
+            }
         }
         return "Page \(pageNumber) \u{00B7} \(side == .front ? "front" : "back")"
     }
