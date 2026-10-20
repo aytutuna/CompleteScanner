@@ -510,37 +510,16 @@ public enum CompanionPackage {
             suggestedName: manifest.naming.suggestedName, namingTemplate: manifest.naming.template)
     }
 
-    /// The manifest as the C# twin reads it (`StoreFiles.Decode`): UTF-8 with or without a
-    /// byte-order mark, UTF-16 or UTF-32 (left to JSONDecoder), and UTF-8 text checked whole here
-    /// so that an invalid byte damages the manifest whichever JSONDecoder implementation runs,
-    /// not only the field it is in.
+    /// The manifest as the C# twin reads it (`StoreFiles.Decode`), through the same settings-file
+    /// rules as `StoreFiles.utf8JSON`: UTF-8 with or without a byte-order mark, UTF-16 or UTF-32,
+    /// text invalid in its encoding damaging the whole manifest whichever JSONDecoder runs, and no
+    /// comma before a closing bracket or brace (System.Text.Json refuses one; JSONDecoder takes it).
     private static func decodeManifest(_ bytes: Data) throws -> ManifestDTO {
-        var json = bytes
-        if json.starts(with: [0xEF, 0xBB, 0xBF]) { json = Data(json.dropFirst(3)) }
-        let raw = [UInt8](json)
-        if isUTF8JSON(raw) && Array(String(decoding: raw, as: UTF8.self).utf8) != raw {
-            throw CompanionPackageError(.invalidManifest, damagedManifestMessage)
-        }
         do {
-            return try JSONDecoder().decode(ManifestDTO.self, from: json)
+            return try JSONDecoder().decode(ManifestDTO.self, from: StoreFiles.utf8JSON(bytes))
         } catch {
             throw CompanionPackageError(.invalidManifest, damagedManifestMessage)
         }
-    }
-
-    /// Whether JSONDecoder takes `bytes` (after any UTF-8 byte-order mark) for UTF-8: no UTF-16 or
-    /// UTF-32 byte-order mark and none of their zero-byte patterns around the first (ASCII) JSON
-    /// character; the twin of C# `StoreFiles.DetectEncoding` answering UTF-8.
-    private static func isUTF8JSON(_ b: [UInt8]) -> Bool {
-        if b.starts(with: [0x00, 0x00, 0xFE, 0xFF]) || b.starts(with: [0xFE, 0xFF]) || b.starts(with: [0xFF, 0xFE]) {
-            return false
-        }
-        if b.count >= 4 {
-            let z0 = b[0] == 0, z1 = b[1] == 0, z2 = b[2] == 0, z3 = b[3] == 0
-            return !((z0 && z1 && z2) || (z1 && z2 && z3) || (z0 && z2) || (z1 && z3))
-        }
-        if b.count >= 2 { return b[0] != 0 && b[1] != 0 }
-        return true
     }
 
     private static func readImage(_ reader: ZipStoreReader, _ dto: ImageDTO?, pageNumber: Int, original: Bool,

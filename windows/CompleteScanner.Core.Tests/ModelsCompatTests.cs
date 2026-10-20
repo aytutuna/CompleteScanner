@@ -1710,6 +1710,17 @@ public sealed class PresetStoreFileTests : IDisposable
         Assert.Equal(damaged, File.ReadAllBytes(Path.Combine(_directory, kept)));
     }
 
+    // Swift's JSONDecoder takes a comma before a closing bracket; this reader does not, and the
+    // Swift twin refuses it too, so neither app reads such a file.
+    [Fact]
+    public void PresetsFileWithATrailingComma_IsKept()
+    {
+        File.WriteAllText(PresetsPath, CompatFixtures.CurrentFormatPresetsJson.Replace("\"name\"", "\"future\":[1,],\"name\""));
+
+        Assert.Empty(new PresetStore(_directory).Load());
+        Assert.Single(KeptFiles("presets.unreadable-"));
+    }
+
     [Fact]
     public void PresetsSaveThenLoad_RoundTrips()
     {

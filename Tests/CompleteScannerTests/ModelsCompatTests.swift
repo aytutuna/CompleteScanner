@@ -1434,6 +1434,40 @@ final class PresetStoreFileTests: XCTestCase {
         }
     }
 
+    func test_invalidUTF16PresetsFile_isKept() throws {
+        // A byte-order mark followed by an unpaired high surrogate inside a string.
+        var damaged: [UInt8] = [0xFF, 0xFE]
+        damaged += [UInt8](try XCTUnwrap("[{\"name\": \"".data(using: .utf16LittleEndian)))
+        damaged += [0x00, 0xD8]
+        damaged += [UInt8](try XCTUnwrap("\"}]".data(using: .utf16LittleEndian)))
+        try Data(damaged).write(to: presetsURL)
+
+        let presets = PresetStore(directory: directory).load()
+
+        XCTAssertEqual(presets, [])
+        let kept = try keptFiles(prefix: "presets.unreadable-")
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent(try XCTUnwrap(kept.first))), Data(damaged))
+    }
+
+    // JSONDecoder takes a comma before a closing bracket; the C# twin's reader does not, so
+    // neither app reads such a file.
+    func test_presetsFileWithATrailingComma_isKept() throws {
+        let json = Data(currentFormatPresetsJSON.replacingOccurrences(of: "\"name\"", with: "\"future\":[1,],\"name\"").utf8)
+        try json.write(to: presetsURL)
+
+        XCTAssertEqual(PresetStore(directory: directory).load(), [])
+        XCTAssertEqual(try keptFiles(prefix: "presets.unreadable-").count, 1)
+    }
+
+    func test_trailingCommasAreFoundOutsideStringsOnly() {
+        XCTAssertTrue(StoreFiles.hasTrailingComma(Array("[1,]".utf8)))
+        XCTAssertTrue(StoreFiles.hasTrailingComma(Array("{\"a\":1 ,
+ }".utf8)))
+        XCTAssertFalse(StoreFiles.hasTrailingComma(Array("{\"a,]\":\"\\\",}\"}".utf8)))
+        XCTAssertFalse(StoreFiles.hasTrailingComma(Array("[1,2]".utf8)))
+    }
+
     func test_presetsSaveThenLoad_roundTrips() throws {
         let presets = [Preset(id: sampleID, name: "Receipts", settings: nonDefaultSettings())]
         PresetStore(directory: directory).save(presets)
