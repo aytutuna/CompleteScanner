@@ -428,6 +428,10 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
     /// reading order (`BookSplitter`); a spread whose spine is not clear stays whole. The page strip
     /// joins the pages again or moves the cut. Off unless chosen (the Book or magazine task turns it on).
     public var splitFacingPages: Bool = false
+    /// On each page cut from a spread, the shadow along the spine is lightened towards the paper's white,
+    /// keeping the text dark and leaving pictures beside it as they are (`SpineShadow`); one click in the
+    /// page strip shows a page as scanned. Off unless chosen (the Book or magazine task turns it on).
+    public var softenSpineShadow: Bool = false
 
     public init() {}
 
@@ -441,6 +445,7 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
         case splitSheetCount
         case autoRotate
         case splitFacingPages
+        case softenSpineShadow
     }
 }
 
@@ -457,6 +462,7 @@ extension DocumentOptions {
         splitSheetCount = container.decodeLenient(forKey: .splitSheetCount, default: splitSheetCount)
         autoRotate = container.decodeLenient(forKey: .autoRotate, default: autoRotate)
         splitFacingPages = container.decodeLenient(forKey: .splitFacingPages, default: splitFacingPages)
+        softenSpineShadow = container.decodeLenient(forKey: .softenSpineShadow, default: softenSpineShadow)
     }
 }
 
@@ -693,11 +699,16 @@ public struct ScannedPage: Identifiable {
     /// (`BookSplitter`); nil for a page not scanned as part of a spread. In memory only.
     public var spread: SpreadPart?
 
+    /// What softening the spine's shadow did to the page (`SpineShadow`), or nil when it did nothing (off,
+    /// not cut from a spread, or no shadow found). In memory only.
+    public var spineShadow: SpineShadowResult?
+
     /// The spread this page was cut from (`spread`); nil for other pages.
     public var spreadID: UUID? { spread?.spreadID }
 
-    /// The page was cropped or straightened and the other version is at hand: one click swaps them.
-    public var canSwapVersions: Bool { geometry != nil && alternate != nil }
+    /// The page was cropped, straightened or had its spine's shadow softened, and the other version is at
+    /// hand: one click swaps them.
+    public var canSwapVersions: Bool { (geometry != nil || spineShadow != nil) && alternate != nil }
 
     public init(image: CGImage, dpi: Int, colorMode: ColorMode, id: UUID = UUID(),
                 createdAt: Date = Date(), fileURL: URL? = nil, fullPixelSize: CGSize? = nil) {
@@ -728,8 +739,8 @@ public struct ScannedPage: Identifiable {
     /// This page carrying what the scan recorded about `source`: its side and sheet, the
     /// blank-page check, the user's keep or skip, what crop and straighten did and which version is
     /// shown, the patch code found on it, the user's document break and document name, the turn that
-    /// made it upright and the spread it was cut from. Pixels, id, file, rotation and the other version
-    /// stay this page's. Twin of C# `ScannedPage.CopyMeta`.
+    /// made it upright, the spread it was cut from and what softening its spine's shadow did. Pixels, id,
+    /// file, rotation and the other version stay this page's. Twin of C# `ScannedPage.CopyMeta`.
     public func copyMeta(from source: ScannedPage) -> ScannedPage {
         var page = self
         page.side = source.side
@@ -743,6 +754,7 @@ public struct ScannedPage: Identifiable {
         page.documentLabel = source.documentLabel
         page.upright = source.upright
         page.spread = source.spread
+        page.spineShadow = source.spineShadow
         return page
     }
 
@@ -762,7 +774,30 @@ public struct ScannedPage: Identifiable {
         page.documentLabel = documentLabel
         page.upright = upright
         page.spread = spread
+        page.spineShadow = spineShadow
         page.alternate = PageVersion(image: image, fileURL: fileURL, fullPixelSize: fullPixelSize)
+        return page
+    }
+
+    /// This page with its spine's shadow softened (`SpineShadowStep`): `softened` is shown, with what was
+    /// done (`result`). The other version stays the page as scanned when crop and straighten kept one;
+    /// otherwise the page as it was becomes the `alternate`. Twin of C# `ScannedPage.WithSpineShadow`.
+    public func withSpineShadow(_ softened: CGImage, result: SpineShadowResult) -> ScannedPage {
+        var page = ScannedPage(image: softened, dpi: dpi, colorMode: colorMode, id: id, createdAt: createdAt)
+        page.rotationQuarterTurns = rotationQuarterTurns
+        page.side = side
+        page.sheetIndex = sheetIndex
+        page.blank = blank
+        page.inclusion = inclusion
+        page.geometry = geometry
+        page.showsOriginal = false
+        page.patch = patch
+        page.documentBreak = documentBreak
+        page.documentLabel = documentLabel
+        page.upright = upright
+        page.spread = spread
+        page.spineShadow = result
+        page.alternate = alternate ?? PageVersion(image: image, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }
 
@@ -794,6 +829,7 @@ public struct ScannedPage: Identifiable {
         page.documentLabel = documentLabel
         page.upright = upright
         page.spread = spread
+        page.spineShadow = spineShadow
         page.alternate = PageVersion(image: fileURL == nil ? image : nil, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }

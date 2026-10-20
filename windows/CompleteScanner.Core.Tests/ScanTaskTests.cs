@@ -797,10 +797,13 @@ public class ScanTaskTests
         Assert.Equal((ScanIntent.Document, ScanSource.Flatbed, OutputFormat.Pdf, 300, ColorMode.Color, DuplexMode.Off),
                      (s.Intent, s.Source, s.Format, s.Resolution, s.ColorMode, s.Duplex));
         Assert.True(s.DocumentMultiPage && s.PdfSearchable);
-        // Each page is straightened and turned upright on its own; nothing is cropped or skipped.
+        // Each page is straightened, has the spine's shadow softened and is turned upright on its own; nothing is
+        // cropped or skipped.
         Assert.Equal((true, true, true, false, false, SplitMode.None),
                      (s.Document.SplitFacingPages, s.Document.AutoStraighten, s.Document.AutoRotate, s.Document.AutoCrop,
                       s.Document.RemoveBlankPages, s.Document.SplitMode));
+        Assert.True(s.Document.SoftenSpineShadow);
+        Assert.True(PageProcessor.SoftensSpineShadow(s));
         // Left to right and not turned, unless chosen.
         Assert.Equal((false, 0), (s.TaskOptions.BookRightToLeft, s.TaskOptions.BookRotationQuarterTurns));
         Assert.Equal(TaskFlowKind.DocumentQueue, TaskCatalog.FlowOf(s));
@@ -836,13 +839,15 @@ public class ScanTaskTests
     {
         var current = Customized();
         current.Document.SplitFacingPages = true;
+        current.Document.SoftenSpineShadow = true;
         foreach (var task in ScanTasks.All)
         {
             var s = TaskCatalog.Apply(task, current);
             Assert.Equal(task == ScanTask.Book, s.Document.SplitFacingPages);
+            Assert.Equal(task == ScanTask.Book, s.Document.SoftenSpineShadow);
             Assert.Equal((true, 3), (s.TaskOptions.BookRightToLeft, s.TaskOptions.BookRotationQuarterTurns));
         }
-        Assert.True(current.Document.SplitFacingPages);
+        Assert.True(current.Document.SplitFacingPages && current.Document.SoftenSpineShadow);
         // Without a stored task, split spreads look like a book; split documents still like a batch.
         var untagged = TaskCatalog.Apply(ScanTask.Book, new ScanSettings());
         untagged.TaskId = null;

@@ -41,7 +41,7 @@ UI per platform** architecture:
   stack into documents (`DocumentSplitter.cs`; `PatchCode.cs`: separator sheets with patch codes,
   read and drawn for printing; `SavePlan.cs`: several files saved all or nothing), and books and
   magazines (`BookSplitter.cs`: the gutter of an open book found on a spread, which is cut into
-  its pages in reading order).
+  its pages in reading order; `SpineShadow.cs`: the shadow along the spine softened on each page).
 - **`CompleteScanner.Core.Tests`** — the conformance suite: the macOS test cases ported to
   xUnit with the same fixtures, geometry, and tolerances. **This is the contract that keeps
   the Swift and C# cores behaviorally identical** — change an algorithm on one side, port
@@ -872,9 +872,10 @@ because the Standard PDF size already stores pages that are really gray in gray,
 their color. The switch works for any collected document scan of one side of each sheet; with each
 scan saved at once, for copies, for receipts and for two-sided feeder scans (whose pages are paired
 by sheet and side) it is greyed out and says why. While it is on, **Reads right to left**
-(Arabic, Hebrew, manga: the right page first) and **Turn the pages** (as scanned, 90° clockwise,
-180°, 90° counterclockwise, for a book lying sideways or upside down) show beneath it; both are kept
-when a task is picked, and apply from the next spread on.
+(Arabic, Hebrew, manga: the right page first), **Turn the pages** (as scanned, 90° clockwise,
+180°, 90° counterclockwise, for a book lying sideways or upside down) and **Soften spine shadow**
+show beneath it; the first two are kept when a task is picked, and all three apply from the next
+spread on (and to a spread joined or split again).
 
 The split runs in the page clean-up stage (`PageProcessor`), before the other steps, so each page is
 checked for being blank, straightened and turned upright on its own. The two pages are put in
@@ -926,10 +927,60 @@ more and no shadow; the rest (tight margins without a shadow, a blank page witho
 whole. 160 synthetic single pages (one or two columns, section gaps, pictures, letters folded in
 three) were never split. The demo book is cut at its spine to the pixel. Finding the spine takes
 about 50 ms at 100 dpi and 120 to 240 ms on a 300 dpi spread. Curved pages near the spine are not
-flattened, and the spine's shadow is not lightened (later).
-**To check on real hardware:** real books pressed on real glass (thick spines lifted off the glass,
-a gutter that runs at a slant, curved lines near the spine), magazines with pictures across the
-spread, and a book lying sideways with **Rotate pages upright** reading its text.
+flattened.
+
+**Soften spine shadow** (on for the Book or magazine task, off for every other task and for settings
+files written before it existed) lifts the shadow along the spine on each page cut from a spread
+(`SpineShadow`, a step of the clean-up stage after straightening and before the separator check).
+The edge along the spine is the edge of the cut, turned with the page by **Turn the pages**; a
+spread kept whole is left alone. The shadow is measured from the paper itself, on a gray copy at 100
+dpi: in the band up to 1.5 in from the spine (at most half the page), in blocks of rows 0.3 in long,
+the paper's brightness at every distance from the edge (the 90th percentile of three columns, so the
+paper between the text counts, not the ink) is divided by the paper's brightness just past the band.
+The blocks that show the shadow (darker near the spine, paper again at the far side of the band; at
+least 30 % of them, since a small book leaves the lid above and below it) agree on it, their median;
+a block darker than that (a picture, a tint, a dark lid) takes the shadow of the blocks above and
+below it, from the edge out to where it differs, a lighter one keeps its own, and the shadow is
+smoothed across the rows and along the edge. A shadow is softened when it darkens the paper by at
+least 4 %, is deepest within 0.25 in of the spine and fades before the end of the band, gradually:
+from a quarter of the way back to the paper to within 2 % of it takes at least 0.04 in (a tint, a
+thumb index or a bleed printed all along the spine comes back in a step, and is left as printed).
+Every pixel is then divided by the shadow there (red, green and blue alike, so the paper keeps its
+tint), leaving a 2 % margin and brightening at most 2.5 times: paper comes back to white and ink
+keeps its share of the paper's light, so text keeps its contrast. Pictures beside the spine (dark or
+mid-tone areas once thin strokes of text are taken away, at least 0.3 in square) keep every pixel at
+any resolution (on a finer scan their box reaches one 100 dpi pixel further, since a picture's edge
+can fall inside one), the gain fading in over the 0.06 in beyond it. Nothing past the band
+changes. A softened page keeps the page as scanned as its other version: the arrow on the page shows
+it as scanned and back, like a cropped or straightened page ("Spine shadow softened", "Straightened
+1.2°, spine shadow softened"), and the status after a scan says "Spine shadow softened on 2 pages.".
+
+Checked here (`SpineShadowTests`, the same cases and bytes as the Mac's, and an evaluation run): on
+a synthetic book page with a shadow 0.8 in wide, 45 % deep at the top of the spine and 30 % at the
+bottom, the paper within 0.8 in of the spine goes from 13.2 % darker on average to 1.9 %, and within
+0.1 in of it from 33.6 % to 2.5 % (the worst column, the one at the spine, 3.3 %), the same at 300
+dpi; the text keeps its contrast to within 0.1 % (ink against paper 0.837 without the shadow, 0.838
+softened). Over 20 synthetic pages with shadows 10 % to 60 % deep and 0.3 to 1.4 in wide, the paper
+ends up within 1.4 % to 3.2 % of the page without the shadow on average (2.0 % to 5.3 % within 0.1
+in of the spine, from 6 % to 47 %), and on the 16 with text inside the shadow contrast is kept to
+within 0.2 %. A textured picture 0.2 in from the spine and a flat gray band reaching it keep every
+pixel (0 levels changed), scanned at 100 dpi and at 200 to 500 dpi, while the paper around them is
+softened as elsewhere; so do textured and flat pictures (gray 90 to 200) whose edges fall between
+the 100 dpi pixels (scanned at 150 to 500 dpi and moved 1 to 4 pixels). Pages without a shadow, a shadow of 3 %, a dark picture all along the spine,
+a dark stripe 0.5 in from it and a flat bar 0.03 to 0.2 in wide printed all along it (gray 235 to
+60, with a sharp edge or one blurred over 0.03 in, at 100 and 300 dpi) are left alone, while a
+shadow 0.15 in wide and 8 % deep is still softened. On the real public-domain menu spread above, the
+fold darkens the paper by 1 % to 3 % (pressed flat), so both pages are left alone; with a known
+shadow (45 % to 30 %, 0.8 in) laid over each real page, the paper near the spine goes from 12.7 %
+and 12.8 % darker to 1.2 % and 2.2 % (within 0.1 in of it, from 33 % to 1.3 % and 3.0 %), the ratio
+of ink to paper is back to the real page's (left page: 0.216 as scanned, 0.165 shadowed, 0.216
+softened; right page: 0.327, 0.336 and 0.326), and a real photograph (National Archives 548697,
+1973) placed beside the spine, framed or not, touching the spine or not, keeps every pixel (the
+paper right beside it is softened less: within 0.1 in of the spine 7.5 % remains). The demo book,
+which covers half the glass, has both pages softened. Softening a 300 dpi page takes about 30 ms, a
+600 dpi page about 100 ms.
+**To check on real hardware:** real books with deep, uneven shadows (a thick spine lifted off the
+glass at one end), magazines with photographs and tints bleeding into the gutter, and colored paper.
 
 ### Why isn't my scanner listed?
 

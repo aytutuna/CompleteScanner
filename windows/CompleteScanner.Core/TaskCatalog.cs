@@ -143,7 +143,7 @@ public static class TaskCatalog
     /// PDF (off: only the Scan to Word task saves text), archival PDF (only the Archive document
     /// task, at the Best size, which turns the password off), the photo and
     /// document switches, searchable PDF, adjustments, two-sided scanning, skipping blank pages,
-    /// crop and straighten, turning pages upright, splitting facing pages,
+    /// crop and straighten, turning pages upright, splitting facing pages, softening the spine's shadow,
     /// file name and the task itself. The password option, the page pictures of a Word document, the destination folder, the photo detection tuning, the
     /// legacy OCR languages, the paper size, the edge backs are turned on, how much counts as
     /// blank and the choices of each task (<see cref="ScanSettings.TaskOptions"/>) are kept: they
@@ -151,8 +151,8 @@ public static class TaskCatalog
     /// not changed. The two-sided task asks for <see cref="DuplexMode.Both"/>, skips blank
     /// pages (the empty backs of one-sided sheets), straightens pages the feeder pulled in at a
     /// slant and turns upright the sheets put in the wrong way round; the Book or magazine task splits
-    /// each spread into its facing pages, straightens each page and turns upright a book lying
-    /// sideways (its reading order and turn, in <see cref="ScanSettings.TaskOptions"/>, are kept); no
+    /// each spread into its facing pages, straightens each page, softens the shadow along the spine and
+    /// turns upright a book lying sideways (its reading order and turn, in <see cref="ScanSettings.TaskOptions"/>, are kept); no
     /// task crops yet; <see cref="SettingsAdapter"/> turns
     /// <see cref="DuplexMode.Both"/> into turning over by hand on a feeder that scans one side.
     /// The ID card task makes no searchable PDF: the numbers on an ID are better not indexed; neither
@@ -186,6 +186,7 @@ public static class TaskCatalog
         s.Document.AutoRotate = task is ScanTask.TwoSided or ScanTask.Book;
         s.Document.SplitMode = task == ScanTask.Batch ? SplitMode.SeparatorSheet : SplitMode.None;
         s.Document.SplitFacingPages = task == ScanTask.Book;
+        s.Document.SoftenSpineShadow = task == ScanTask.Book;
         switch (task)
         {
             case ScanTask.Document:

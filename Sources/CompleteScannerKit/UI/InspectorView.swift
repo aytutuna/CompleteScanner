@@ -690,12 +690,13 @@ struct InspectorView: View {
 
     /// Split facing pages: each scan of an open book becomes its two pages, on pages collected in the
     /// queue only, where a page's menu joins them again or moves the cut, scanned one side of each sheet;
-    /// otherwise the switch is off and says why. The reading order and the book's rotation show while spreads are split. Twin of the
-    /// Windows inspector's "Split facing pages".
+    /// otherwise the switch is off and says why. The reading order, the book's rotation and softening the
+    /// spine's shadow show while spreads are split. Twin of the Windows inspector's "Split facing pages".
     private var bookRow: some View {
         let collecting = state.settings.documentMultiPage && !state.isCopyFlow && !state.isReceiptFlow
             && BookPages.scansOneSide(state.settings)
         let hint = BookPages.hint(state.settings)
+        let shadowHint = SpineShadow.hint(state.settings.document.softenSpineShadow)
         return VStack(alignment: .leading, spacing: 6) {
             Toggle("Split facing pages", isOn: $state.settings.document.splitFacingPages)
                 .disabled(!collecting)
@@ -715,6 +716,12 @@ struct InspectorView: View {
                     }
                 }
                 .help("For a book lying sideways or upside down on the glass, from the next spread on.")
+                Toggle("Soften spine shadow", isOn: $state.settings.document.softenSpineShadow)
+                    .help(shadowHint)
+                Text(shadowHint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

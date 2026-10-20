@@ -167,14 +167,14 @@ public enum TaskCatalog {
     /// Scan to Word task saves text), archival PDF (off: Windows' Archive document task is the only
     /// one that turns it on, and the Mac has no such task until its PDF writer port), the photo and document switches,
     /// searchable PDF, adjustments, two-sided scanning, skipping blank pages, crop and straighten,
-    /// turning pages upright, splitting facing pages, file name and the task itself. The password
+    /// turning pages upright, splitting facing pages, softening the spine's shadow, file name and the task itself. The password
     /// option (`output.protect`), the page pictures of a Word document (`output.wordPageImages`), the destination folder, the photo detection tuning, the
     /// legacy OCR languages, the paper size, the edge backs are turned on, how much counts as blank
     /// and the choices of each task (`taskOptions`) are kept: they describe the user's paper and how
     /// they want a task done, not the task. The two-sided task asks for `.both`, skips blank pages
     /// (the empty backs of one-sided sheets), straightens pages the feeder pulled in at a slant and
     /// turns upright the sheets put in the wrong way round; the Book or magazine task splits each spread
-    /// into its facing pages, straightens each page and turns upright a book lying sideways (its reading
+    /// into its facing pages, straightens each page, softens the shadow along the spine and turns upright a book lying sideways (its reading
     /// order and turn, in `taskOptions`, are kept); no task crops yet; `SettingsAdapter` turns `.both` into turning over by hand on a feeder that
     /// scans one side. The ID card task makes no searchable PDF: the numbers on an ID are better not
     /// indexed; neither does the Copy task, whose PDF (when one is saved too) is a record of the paper
@@ -203,6 +203,7 @@ public enum TaskCatalog {
         s.document.autoRotate = task == .twoSided || task == .book
         s.document.splitMode = task == .batch ? .separatorSheet : SplitMode.none
         s.document.splitFacingPages = task == .book
+        s.document.softenSpineShadow = task == .book
         switch task {
         case .document:
             s.intent = .document

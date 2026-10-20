@@ -515,17 +515,25 @@ public sealed class DocumentOptions : IEquatable<DocumentOptions>
     /// </summary>
     public bool SplitFacingPages { get; set; } = false;
 
+    /// <summary>
+    /// On each page cut from a spread, the shadow along the spine is lightened towards the paper's white,
+    /// keeping the text dark and leaving pictures beside it as they are (<see cref="SpineShadow"/>); one
+    /// click in the page strip shows a page as scanned. Off unless chosen (the Book or magazine task turns
+    /// it on). Written after the earlier keys.
+    /// </summary>
+    public bool SoftenSpineShadow { get; set; } = false;
+
     public DocumentOptions Clone() => (DocumentOptions)MemberwiseClone();
 
     public bool Equals(DocumentOptions? other) =>
         other is not null && RemoveBlankPages == other.RemoveBlankPages && BlankSensitivity == other.BlankSensitivity
         && AutoCrop == other.AutoCrop && AutoStraighten == other.AutoStraighten
         && SplitMode == other.SplitMode && SplitSheetCount == other.SplitSheetCount && AutoRotate == other.AutoRotate
-        && SplitFacingPages == other.SplitFacingPages;
+        && SplitFacingPages == other.SplitFacingPages && SoftenSpineShadow == other.SoftenSpineShadow;
     public override bool Equals(object? obj) => Equals(obj as DocumentOptions);
     public override int GetHashCode() =>
         HashCode.Combine(RemoveBlankPages, BlankSensitivity, AutoCrop, AutoStraighten, SplitMode, SplitSheetCount, AutoRotate,
-                         SplitFacingPages);
+                         HashCode.Combine(SplitFacingPages, SoftenSpineShadow));
 }
 
 /// <summary>
@@ -776,8 +784,11 @@ public sealed class ScannedPage
     /// </summary>
     public PageVersion? Alternate { get; init; }
 
-    /// <summary>The page was cropped or straightened and the other version is at hand: one click swaps them.</summary>
-    public bool CanSwapVersions => Geometry is not null && Alternate is not null;
+    /// <summary>
+    /// The page was cropped, straightened or had its spine's shadow softened, and the other version is at
+    /// hand: one click swaps them.
+    /// </summary>
+    public bool CanSwapVersions => (Geometry is not null || SpineShadow is not null) && Alternate is not null;
 
     /// <summary>
     /// The patch code found on the page (<see cref="PatchCodeDetector"/>), which makes it a
@@ -808,6 +819,12 @@ public sealed class ScannedPage
 
     /// <summary>The spread this page was cut from (<see cref="Spread"/>); null for other pages.</summary>
     public Guid? SpreadId => Spread?.SpreadId;
+
+    /// <summary>
+    /// What softening the spine's shadow did to the page (<see cref="CompleteScanner.Core.SpineShadow"/>), or null when it
+    /// did nothing (off, not cut from a spread, or no shadow found). In memory only.
+    /// </summary>
+    public SpineShadowResult? SpineShadow { get; init; }
 
     public ScannedPage(RgbaImage image, int dpi, ColorMode colorMode, Guid? id = null,
                        DateTime? createdAt = null, string? filePath = null, SizeD? fullPixelSize = null)
@@ -841,8 +858,8 @@ public sealed class ScannedPage
     /// This page carrying what the scan recorded about <paramref name="source"/>: its side and
     /// sheet, the blank-page check, the user's keep or skip, what crop and straighten did and
     /// which version is shown, the patch code found on it, the user's document break and
-    /// document name, the turn that made it upright and the spread it was cut from. Pixels, id, file,
-    /// rotation and the other version stay this page's.
+    /// document name, the turn that made it upright, the spread it was cut from and what softening
+    /// its spine's shadow did. Pixels, id, file, rotation and the other version stay this page's.
     /// </summary>
     public ScannedPage CopyMeta(ScannedPage source) =>
         new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
@@ -859,6 +876,7 @@ public sealed class ScannedPage
             DocumentLabel = source.DocumentLabel,
             Upright = source.Upright,
             Spread = source.Spread,
+            SpineShadow = source.SpineShadow,
             Alternate = Alternate,
         };
 
@@ -878,6 +896,7 @@ public sealed class ScannedPage
             DocumentLabel = DocumentLabel,
             Upright = Upright,
             Spread = Spread,
+            SpineShadow = SpineShadow,
             Alternate = Alternate,
         };
 
@@ -897,6 +916,7 @@ public sealed class ScannedPage
             DocumentLabel = DocumentLabel,
             Upright = Upright,
             Spread = Spread,
+            SpineShadow = SpineShadow,
             Alternate = Alternate,
         };
 
@@ -916,6 +936,7 @@ public sealed class ScannedPage
             DocumentLabel = DocumentLabel,
             Upright = Upright,
             Spread = Spread,
+            SpineShadow = SpineShadow,
             Alternate = Alternate,
         };
 
@@ -935,6 +956,7 @@ public sealed class ScannedPage
             DocumentLabel = DocumentLabel,
             Upright = Upright,
             Spread = Spread,
+            SpineShadow = SpineShadow,
             Alternate = Alternate,
         };
 
@@ -954,6 +976,7 @@ public sealed class ScannedPage
             DocumentLabel = DocumentLabel,
             Upright = Upright,
             Spread = Spread,
+            SpineShadow = SpineShadow,
             Alternate = Alternate,
         };
 
@@ -973,6 +996,7 @@ public sealed class ScannedPage
             DocumentLabel = documentLabel,
             Upright = Upright,
             Spread = Spread,
+            SpineShadow = SpineShadow,
             Alternate = Alternate,
         };
 
@@ -995,7 +1019,32 @@ public sealed class ScannedPage
             DocumentLabel = DocumentLabel,
             Upright = Upright,
             Spread = Spread,
+            SpineShadow = SpineShadow,
             Alternate = new PageVersion(Image, FilePath, FullPixelSize),
+        };
+
+    /// <summary>
+    /// This page with its spine's shadow softened (<see cref="SpineShadowStep"/>): <paramref name="softened"/>
+    /// is shown, with what was done (<paramref name="result"/>). The other version stays the page as
+    /// scanned when crop and straighten kept one; otherwise the page as it was becomes the <see cref="Alternate"/>.
+    /// </summary>
+    public ScannedPage WithSpineShadow(RgbaImage softened, SpineShadowResult result) =>
+        new(softened, Dpi, ColorMode, Id, CreatedAt)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = Side,
+            SheetIndex = SheetIndex,
+            Blank = Blank,
+            Inclusion = Inclusion,
+            Geometry = Geometry,
+            ShowsOriginal = false,
+            Patch = Patch,
+            DocumentBreak = DocumentBreak,
+            DocumentLabel = DocumentLabel,
+            Upright = Upright,
+            Spread = Spread,
+            SpineShadow = result,
+            Alternate = Alternate ?? new PageVersion(Image, FilePath, FullPixelSize),
         };
 
     /// <summary>This page with what turning pages upright did to it (null: not turned); the pixels are not changed.</summary>
@@ -1014,6 +1063,7 @@ public sealed class ScannedPage
             DocumentLabel = DocumentLabel,
             Upright = upright,
             Spread = Spread,
+            SpineShadow = SpineShadow,
             Alternate = Alternate,
         };
 
@@ -1033,6 +1083,7 @@ public sealed class ScannedPage
             DocumentLabel = DocumentLabel,
             Upright = Upright,
             Spread = spread,
+            SpineShadow = SpineShadow,
             Alternate = Alternate,
         };
 
@@ -1092,6 +1143,7 @@ public sealed class ScannedPage
             DocumentLabel = DocumentLabel,
             Upright = Upright,
             Spread = Spread,
+            SpineShadow = SpineShadow,
             Alternate = alternate,
         };
 
@@ -1119,6 +1171,7 @@ public sealed class ScannedPage
             DocumentLabel = DocumentLabel,
             Upright = Upright,
             Spread = Spread,
+            SpineShadow = SpineShadow,
             Alternate = new PageVersion(FilePath is null ? Image : null, FilePath, FullPixelSize),
         };
     }

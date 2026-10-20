@@ -781,6 +781,7 @@ public class PageProcessorTests
                      page.TurnedUpright(2),
                      page.WithAlternate(null),
                      page.WithGeometry(RgbaImage.Filled(3, 3, 0, 0, 0), new PageGeometry(false, 1.5, GeometryBasis.TextLines)),
+                     page.WithSpineShadow(RgbaImage.Filled(3, 3, 0, 0, 0), new SpineShadowResult(PageEdge.Left, 0.2, 0.5, 1.3, 0)),
                      Page(TextImage).CopyMeta(page),
                  })
         {
@@ -791,5 +792,167 @@ public class PageProcessorTests
         Assert.Equal(part, corrected.WithVersionsSwapped(BlankImage).Spread);
         Assert.Null(page.WithSpread(null).Spread);
         Assert.Null(Page(BlankImage).SpreadId);
+    }
+
+    // MARK: - Softening the spine's shadow
+
+    [Fact]
+    public void ForScan_SoftensTheSpineShadow_OnlyOnSplitSpreads()
+    {
+        var s = new ScanSettings();
+        s.Document.SoftenSpineShadow = true;
+        // Facing pages are not split: there is no spine.
+        Assert.False(PageProcessor.SoftensSpineShadow(s));
+        Assert.DoesNotContain("spineShadow", PageProcessor.ForScan(s).Steps.Select(step => step.Name));
+        s.Document.SplitFacingPages = true;
+        s.TaskOptions.BookRotationQuarterTurns = 5;
+        Assert.True(PageProcessor.SoftensSpineShadow(s));
+        var steps = PageProcessor.ForScan(s).Steps;
+        Assert.Equal(["blank", "spineShadow", "separator"], steps.Select(step => step.Name));
+        // The step knows how the book's pages were turned before the steps.
+        Assert.Equal(1, Assert.IsType<SpineShadowStep>(steps[1]).RotationQuarterTurns);
+        // The Book or magazine task softens it, after straightening each page.
+        var book = TaskCatalog.Apply(ScanTask.Book, new ScanSettings());
+        Assert.Equal(["blank", "geometry", "spineShadow", "separator"], PageProcessor.ForScan(book).Steps.Select(step => step.Name));
+        Assert.Equal(["blank", "geometry", "spineShadow", "separator", "orientation"],
+                     PageProcessor.ForScan(book, scorer: new StubScorer(true)).Steps.Select(step => step.Name));
+        // Off, or with spreads kept as scanned (two-sided, saved at once, photos), there is no step.
+        book.Document.SoftenSpineShadow = false;
+        Assert.DoesNotContain("spineShadow", PageProcessor.ForScan(book).Steps.Select(step => step.Name));
+        foreach (var other in new[]
+                 {
+                     new ScanSettings { Source = ScanSource.DocumentFeeder, Duplex = DuplexMode.Both },
+                     new ScanSettings { DocumentMultiPage = false },
+                     new ScanSettings { Intent = ScanIntent.Photo },
+                 })
+        {
+            other.Document.SplitFacingPages = true;
+            other.Document.SoftenSpineShadow = true;
+            Assert.False(PageProcessor.SoftensSpineShadow(other));
+            Assert.DoesNotContain("spineShadow", PageProcessor.ForScan(other).Steps.Select(step => step.Name));
+        }
+    }
+
+    [Fact]
+    public void Process_ASpreadWithTheSpinesShadow_SoftensBothPages_KeepingThemAsScanned()
+    {
+        var s = new ScanSettings();
+        s.Document.SplitFacingPages = true;
+        s.Document.SoftenSpineShadow = true;
+        var spread = Page(TestPages.ShadowedBookSpread().ToRgba());
+        var result = PageProcessor.ForScan(s).Process([spread]);
+        Assert.Equal(2, result.Pages.Count);
+        var (left, right) = (result.Pages[0], result.Pages[1]);
+        Assert.Equal((0, 1), (left.Spread!.Part!.Value, right.Spread!.Part!.Value));
+        Assert.Equal((PageEdge.Right, PageEdge.Left), (left.SpineShadow!.Edge, right.SpineShadow!.Edge));
+        foreach (var page in result.Pages)
+        {
+            Assert.True(page.CanSwapVersions);
+            Assert.False(page.ShowsOriginal);
+            Assert.Null(page.Geometry);
+            Assert.Equal("Spine shadow softened", PageCorrections.Caption(page));
+            Assert.Equal("Show as scanned", PageCorrections.ToggleLabel(page));
+        }
+        // The page as cut is the other version: the paper at the spine (between two lines) is brighter on the page shown.
+        static int Paper(RgbaImage image, bool atRight) => image.Pixels[(430 * image.Width + (atRight ? image.Width - 3 : 2)) * 4];
+        Assert.True(Paper(left.Image, true) > Paper(left.Alternate!.Image!, true) + 40);
+        Assert.True(Paper(right.Image, false) > Paper(right.Alternate!.Image!, false) + 40);
+        Assert.Equal(" Spine shadow softened on 2 pages.", PageCorrections.ScanNote(result.Pages));
+        // One click shows the page as cut from the scan.
+        var asScanned = left.WithVersionsSwapped(left.Alternate!.Image!);
+        Assert.Equal("As scanned", PageCorrections.Caption(asScanned));
+        Assert.Equal("Show with the spine shadow softened", PageCorrections.ToggleLabel(asScanned));
+        Assert.Equal("Page 1 is shown as scanned. It is saved that way.", PageCorrections.SwapNote(asScanned, 1));
+        Assert.Equal("Page 1 is shown with the spine shadow softened again.",
+                     PageCorrections.SwapNote(asScanned.WithVersionsSwapped(left.Image), 1));
+        Assert.Equal("", PageCorrections.ScanNote([asScanned]));
+        // Turned off, the pages are cut and nothing else.
+        s.Document.SoftenSpineShadow = false;
+        Assert.All(PageProcessor.ForScan(s).Process([spread]).Pages, p => Assert.Null(p.SpineShadow));
+    }
+
+    [Fact]
+    public void SpineShadowStep_TakesTheEdgeOfTheCut_TurnedByTheBook()
+    {
+        var page = TestPages.ShadowedBookPage().ToRgba();   // the spine's shadow on its right
+        var cut = BookSplitter.Manual(GutterAxis.Vertical, 0.5, 1100, 850);
+        var leftPart = Page(page).WithSpread(new SpreadPart(Guid.NewGuid(), 0, cut));
+        Assert.Equal(PageEdge.Right, new SpineShadowStep(0).Apply(leftPart).SpineShadow?.Edge);
+        // The same pixels as the right part of a spread are looked at along their left edge: no shadow there.
+        var rightPart = Page(page).WithSpread(new SpreadPart(Guid.NewGuid(), 1, cut));
+        Assert.Same(rightPart, new SpineShadowStep(0).Apply(rightPart));
+        // A book upside down on the glass: the left part, turned half round, has the spine on its left.
+        var turned = Page(page.RotatedQuarterTurns(2)).WithSpread(new SpreadPart(Guid.NewGuid(), 0, cut));
+        Assert.Equal(PageEdge.Left, new SpineShadowStep(2).Apply(turned).SpineShadow?.Edge);
+        Assert.Same(turned, new SpineShadowStep(0).Apply(turned));
+        // Pages not cut from a spread, and whole spreads, are left alone.
+        var plain = Page(page);
+        Assert.Same(plain, new SpineShadowStep(0).Apply(plain));
+        var whole = Page(page).WithSpread(new SpreadPart(Guid.NewGuid(), null, null));
+        Assert.Same(whole, new SpineShadowStep(0).Apply(whole));
+        Assert.Equal("spineShadow", new SpineShadowStep(0).Name);
+        Assert.Equal(3, new SpineShadowStep(-1).RotationQuarterTurns);
+    }
+
+    [Fact]
+    public void WithSpineShadow_KeepsThePageAsScanned_AsTheOtherVersion()
+    {
+        var softened = RgbaImage.Filled(6, 8, 250, 250, 250);
+        var result = new SpineShadowResult(PageEdge.Right, 0.3, 0.6, 1.7, 0);
+        // Not cropped or straightened: the page as it was becomes the other version.
+        var page = Page(TextImage).WithSide(PageSide.Front, 2).WithBlank(new BlankPageResult(0.01, 50, false, false));
+        var soft = page.WithSpineShadow(softened, result);
+        Assert.Same(softened, soft.Image);
+        Assert.Same(TextImage, soft.Alternate!.Image);
+        Assert.Equal((page.Id, result, PageSide.Front, 2), (soft.Id, soft.SpineShadow, soft.Side!.Value, soft.SheetIndex!.Value));
+        Assert.Equal(page.Blank, soft.Blank);
+        Assert.True(soft.CanSwapVersions);
+        Assert.False(soft.WithAlternate(null).CanSwapVersions);
+        // Straightened first: the other version stays the page as scanned, not the straightened one.
+        var straightened = Page(SheetImage).WithGeometry(TextImage, new PageGeometry(false, 1.5, GeometryBasis.TextLines));
+        var both = straightened.WithSpineShadow(softened, result);
+        Assert.Same(SheetImage, both.Alternate!.Image);
+        Assert.Equal(straightened.Geometry, both.Geometry);
+        Assert.Equal("Straightened 1.5°, spine shadow softened", PageCorrections.Caption(both));
+        Assert.Equal("Show as scanned", PageCorrections.ToggleLabel(both));
+        Assert.Equal("Page 4 is straightened again, with the spine shadow softened.", PageCorrections.SwapNote(both, 4));
+        var original = both.WithVersionsSwapped(SheetImage);
+        Assert.Equal("As scanned", PageCorrections.Caption(original));
+        Assert.Equal("Show straightened, with the spine shadow softened", PageCorrections.ToggleLabel(original));
+        Assert.Equal(result, original.SpineShadow);
+        Assert.Equal(" 1 straightened. Spine shadow softened on 1 page.", PageCorrections.ScanNote([both, original]));
+        // The adjustments reach both versions.
+        var gray = new AdjustmentStep(new AdjustmentSettings(), ColorMode.Grayscale).Apply(both);
+        Assert.Equal(ImagePipeline.Apply(new AdjustmentSettings(), SheetImage, ColorMode.Grayscale).Pixels, gray.Alternate!.Image!.Pixels);
+        Assert.Equal(result, gray.SpineShadow);
+    }
+
+    [Fact]
+    public void SpineShadow_SurvivesRebuildingThePage()
+    {
+        var result = new SpineShadowResult(PageEdge.Left, 0.2, 0.5, 1.4, 0.1);
+        var page = Page(TextImage).WithSpineShadow(BlankImage, result);
+        foreach (var rebuilt in new[]
+                 {
+                     page.WithImage(RgbaImage.Filled(3, 3, 0, 0, 0)),
+                     page.RotatedClockwise(),
+                     page.WithSide(PageSide.Front, 0),
+                     page.WithBlank(null),
+                     page.WithInclusion(PageInclusion.Skip),
+                     page.WithPatch(null),
+                     page.WithDocumentBreak(DocumentBreak.Split),
+                     page.WithDocumentLabel("Chapter 1"),
+                     page.WithUpright(new UprightTurn(2)),
+                     page.TurnedUpright(1),
+                     page.WithAlternate(null),
+                     page.WithSpread(null),
+                     page.WithGeometry(RgbaImage.Filled(3, 3, 0, 0, 0), new PageGeometry(false, 1.5, GeometryBasis.TextLines)),
+                     page.WithVersionsSwapped(TextImage),
+                     Page(SheetImage).CopyMeta(page),
+                 })
+        {
+            Assert.Equal(result, rebuilt.SpineShadow);
+        }
+        Assert.Null(Page(TextImage).SpineShadow);
     }
 }

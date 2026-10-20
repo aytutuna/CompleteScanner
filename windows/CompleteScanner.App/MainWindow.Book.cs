@@ -21,8 +21,8 @@ public partial class MainWindow
     /// <summary>
     /// Splitting facing pages works on pages collected in the queue only, where the strip shows the
     /// pages, scanned one side of each sheet: with each scan saved at once, for copies, receipts and
-    /// two-sided scans, the switch is off and says why. The reading order and the rotation show while
-    /// spreads are split.
+    /// two-sided scans, the switch is off and says why. The reading order, the rotation and softening the
+    /// spine's shadow show while spreads are split.
     /// </summary>
     private void SyncBookOptions()
     {
@@ -38,6 +38,7 @@ public partial class MainWindow
             BookRightToLeftBox.IsChecked = s.TaskOptions.BookRightToLeft;
             int turns = BookSplitter.NormalizedTurns(s.TaskOptions.BookRotationQuarterTurns);
             BookRotationBox.SelectedItem = BookRotationBox.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (int)i.Tag == turns);
+            SoftenSpineShadowBox.IsChecked = s.Document.SoftenSpineShadow;
         }
         finally
         {
@@ -49,6 +50,18 @@ public partial class MainWindow
         SplitFacingPagesHint.Text = hint;
         SplitFacingPagesBox.ToolTip = hint;
         AutomationProperties.SetHelpText(SplitFacingPagesBox, hint);
+        string shadowHint = SpineShadow.Hint(s.Document.SoftenSpineShadow);
+        SoftenSpineShadowHint.Text = shadowHint;
+        SoftenSpineShadowBox.ToolTip = shadowHint;
+        AutomationProperties.SetHelpText(SoftenSpineShadowBox, shadowHint);
+    }
+
+    private void SoftenSpineShadow_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_updatingUi || !IsLoaded) return;
+        ViewModel.SetSoftenSpineShadow(SoftenSpineShadowBox.IsChecked == true);
+        SyncBookOptions();
+        RefreshFromViewModel();
     }
 
     private void SplitFacingPages_Changed(object sender, RoutedEventArgs e)

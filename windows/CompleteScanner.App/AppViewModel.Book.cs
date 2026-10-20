@@ -213,6 +213,15 @@ public sealed partial class AppViewModel
         NotifyAll();
     }
 
+    /// <summary>Softening the spine's shadow, from the inspector: for the spreads scanned (or split again) from now on.</summary>
+    public void SetSoftenSpineShadow(bool soften)
+    {
+        if (Settings.Document.SoftenSpineShadow == soften) return;
+        Settings.Document.SoftenSpineShadow = soften;
+        SettingsEdited();
+        NotifyAll();
+    }
+
     /// <summary>Right-to-left reading order, from the inspector: for the spreads scanned from now on.</summary>
     public void SetBookRightToLeft(bool rightToLeft)
     {

@@ -65,6 +65,7 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.document.splitSheetCount = 3
     settings.document.autoRotate = true
     settings.document.splitFacingPages = true
+    settings.document.softenSpineShadow = true
     settings.taskOptions.idCardPaper = .letter
     settings.taskOptions.idCardSaveSidesAsImages = true
     settings.taskOptions.copyCount = 3
@@ -129,7 +130,7 @@ private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
         of: "\"documentMultiPage\" : false",
         with: "\"document\" : {\n        \"autoCrop\" : true,\n        \"autoRotate\" : true,\n        \"autoStraighten\" : true,\n"
             + "        \"blankSensitivity\" : \"high\",\n        \"removeBlankPages\" : true,\n"
-            + "        \"splitFacingPages\" : true,\n"
+            + "        \"softenSpineShadow\" : true,\n        \"splitFacingPages\" : true,\n"
             + "        \"splitMode\" : \"sheetCount\",\n        \"splitSheetCount\" : 3\n      },\n"
             + "      \"documentMultiPage\" : false")
     .replacingOccurrences(
@@ -1046,6 +1047,44 @@ final class ModelsCompatTests: XCTestCase {
         XCTAssertEqual(original.taskOptions.bookRotationQuarterTurns, 1)
         XCTAssertNotEqual(original.document, copy.document)
         XCTAssertNotEqual(original.taskOptions, copy.taskOptions)
+    }
+
+    // MARK: Softening the spine's shadow (CONTRACTS.md, rule 6)
+
+    /// Twin of `SoftenSpineShadow_OffByDefault_AndInFilesWithoutIt`.
+    func test_softenSpineShadow_offByDefault_andInFilesWithoutIt() throws {
+        XCTAssertFalse(ScanSettings().document.softenSpineShadow)
+        XCTAssertFalse(try decode([Preset].self, presetsJSONBeforePDFSize)[0].settings.document.softenSpineShadow)
+        // A "document" object written before it existed keeps its other settings.
+        let older = try decode(ScanSettings.self, #"{"document": {"autoStraighten": true, "splitFacingPages": true}}"#)
+        XCTAssertTrue(older.document.autoStraighten)
+        XCTAssertTrue(older.document.splitFacingPages)
+        XCTAssertFalse(older.document.softenSpineShadow)
+        for value in [#""yes""#, "1", "null", "{}", "[]"] {
+            let settings = try decode(ScanSettings.self,
+                                      #"{"document": {"splitFacingPages": true, "softenSpineShadow": "# + value + #", "autoRotate": true}, "resolution": 150}"#)
+            XCTAssertFalse(settings.document.softenSpineShadow, value)
+            XCTAssertTrue(settings.document.splitFacingPages, value)
+            XCTAssertTrue(settings.document.autoRotate, value)
+            XCTAssertEqual(settings.resolution, 150, value)
+        }
+        XCTAssertTrue(try decode(ScanSettings.self, #"{"document": {"softenSpineShadow": true}}"#).document.softenSpineShadow)
+    }
+
+    /// Twin of `SoftenSpineShadow_RoundTrips_AndCloneIsIndependent`.
+    func test_softenSpineShadow_roundTrips_andCopyIsIndependent() throws {
+        for soften in [false, true] {
+            var settings = ScanSettings()
+            settings.document.softenSpineShadow = soften
+            let back = try JSONDecoder().decode(ScanSettings.self, from: encode(settings))
+            XCTAssertEqual(back.document.softenSpineShadow, soften)
+            XCTAssertEqual(back.document, settings.document)
+        }
+        let original = nonDefaultSettings()
+        var copy = original
+        copy.document.softenSpineShadow = false
+        XCTAssertTrue(original.document.softenSpineShadow)
+        XCTAssertNotEqual(original.document, copy.document)
     }
 
     func test_corruptReceiptOptions_fallBackOneByOne_restIntact() throws {

@@ -156,7 +156,10 @@ scanners** — including the Epson Perfection V39 II.
   reading order: left then right, or right then left for Arabic, Hebrew or manga (**Reads right to
   left**). A book lying sideways on the glass is handled too: its pages are turned upright by reading
   their text, or by **Turn the pages**, and put in order the way they lie once turned. Each page is
-  straightened on its own and blank pages are flagged. When the spine is not clear (a picture across
+  straightened on its own and blank pages are flagged. **Soften spine shadow** (on for this task)
+  lifts the dark shadow along the spine of each page back towards the paper's white while the text
+  stays dark, and leaves pictures beside the spine as they are; the arrow on a page shows it as
+  scanned, and back. When the spine is not clear (a picture across
   it, a centered title page with no shadow) the spread stays one page, marked "not split"; a page's
   right-click menu splits a spread by hand (drag the cut to the spine), moves the cut, or joins the
   two pages again. **Split facing pages** works for any collected document scan of one side of each

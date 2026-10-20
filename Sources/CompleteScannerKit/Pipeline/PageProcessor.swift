@@ -54,6 +54,28 @@ public struct GeometryStep: PageStep {
     }
 }
 
+/// Softens the shadow along the spine on a page cut from a spread (`SpineShadow.soften`), keeping the page
+/// as scanned as the other version (`ScannedPage.withSpineShadow`): the edge along the spine is the edge of
+/// the cut, turned by the book's rotation (`rotationQuarterTurns`, the turn every page of the spread was
+/// given before the steps). Pages not cut from a spread, and pages with no shadow to soften, stay as they
+/// are. Runs after crop and straighten, before the separator check. Twin of C# `SpineShadowStep`.
+public struct SpineShadowStep: PageStep {
+    public let rotationQuarterTurns: Int
+    public var name: String { "spineShadow" }
+
+    public init(rotationQuarterTurns: Int) {
+        self.rotationQuarterTurns = BookSplitter.normalizedTurns(rotationQuarterTurns)
+    }
+
+    public func apply(_ page: ScannedPage) -> ScannedPage {
+        guard let edge = SpineShadow.gutterEdge(page.spread, rotationQuarterTurns: rotationQuarterTurns),
+              let pixels = RgbaImage(cgImage: page.image),
+              let softened = SpineShadow.soften(pixels, dpi: page.dpi, edge: edge),
+              let image = softened.image.makeCGImage() else { return page }
+        return page.withSpineShadow(image, result: softened.result)
+    }
+}
+
 /// Looks for a patch code on the page (`PatchCodeDetector`) and records it: the page is then a
 /// separator sheet, used when the stack is split at separator sheets (`DocumentSplitter`). The
 /// pixels are not changed. Runs after crop and straighten, before the adjustments. Twin of C#
@@ -102,7 +124,8 @@ public struct OrientationStep: CancellablePageStep {
 }
 
 /// The image adjustments and the color mode (`ImagePipeline.apply`), on the page and on its other
-/// version (the page as scanned, kept by crop and straighten), so either can be shown.
+/// version (the page as scanned, kept by crop and straighten or by softening the spine's shadow), so either
+/// can be shown.
 public struct AdjustmentStep: PageStep {
     public let adjustments: AdjustmentSettings
     public let colorMode: ColorMode
@@ -157,7 +180,8 @@ public struct ProcessedScan {
 /// pages are put in reading order with their sides (two-sided scans), each spread of an open book is
 /// cut into its two pages when facing pages are split (`book`), then every step runs on every page in
 /// order. The order of the steps is fixed: `forScan` builds them from the settings: blank check
-/// (document pages), crop and straighten, separator sheets, turning pages upright, then adjustments.
+/// (document pages), crop and straighten, softening the spine's shadow, separator sheets, turning pages
+/// upright, then adjustments.
 /// Twin of C# `PageProcessor`.
 public struct PageProcessor {
     public let steps: [any PageStep]
@@ -176,7 +200,8 @@ public struct PageProcessor {
 
     /// The steps for a scan made with `settings`: the blank-page check for pages collected in the
     /// document queue (whether or not blank pages are left out, so the page strip can flag them),
-    /// crop and straighten when asked for those pages, the separator-sheet check for those pages
+    /// crop and straighten when asked for those pages, softening the spine's shadow when asked for on split
+    /// spreads (`softensSpineShadow`), the separator-sheet check for those pages
     /// (whether or not the stack is split, so a split chosen later finds them), turning those pages
     /// upright when asked for and `scorer` can read text, then the adjustments unless they change
     /// nothing. Facing pages are split before the steps when asked for those pages
@@ -189,6 +214,9 @@ public struct PageProcessor {
         }
         if correctsGeometry(settings) {
             steps.append(GeometryStep(crop: settings.document.autoCrop, straighten: settings.document.autoStraighten))
+        }
+        if softensSpineShadow(settings) {
+            steps.append(SpineShadowStep(rotationQuarterTurns: BookSplitOptions.of(settings).rotationQuarterTurns))
         }
         if checksBlankPages(settings) {
             steps.append(SeparatorStep())
@@ -230,6 +258,13 @@ public struct PageProcessor {
     /// scanned are never cut unseen, and pages scanned on both sides keep their sheet and side.
     public static func splitsFacingPages(_ settings: ScanSettings) -> Bool {
         checksBlankPages(settings) && settings.document.splitFacingPages && BookPages.scansOneSide(settings)
+    }
+
+    /// Whether the pages cut from spreads have their spine's shadow softened: asked for, while facing pages
+    /// are split (`splitsFacingPages`), where the page strip shows a softened page and one click shows it as
+    /// scanned.
+    public static func softensSpineShadow(_ settings: ScanSettings) -> Bool {
+        splitsFacingPages(settings) && settings.document.softenSpineShadow
     }
 
     /// Arranges the pages, splits each spread when facing pages are split (where its gutter is found,
@@ -383,43 +418,59 @@ public enum PageFilter {
     }
 }
 
-/// What the page strip and the status say about crop and straighten: a caption on a changed page,
-/// its one-click swap with the page as scanned, and the note after a scan. Twin of C#
-/// `PageCorrections`.
+/// What the page strip and the status say about crop and straighten and the softened spine shadow: a
+/// caption on a changed page, its one-click swap with the page as scanned, and the note after a scan.
+/// Twin of C# `PageCorrections`.
 public enum PageCorrections {
     /// "Cropped and straightened 2.4°", "Straightened 1.5°" or "Cropped" for a changed page shown
-    /// changed; "As scanned" when the user went back to the page as scanned; nil for other pages.
+    /// changed, followed by ", spine shadow softened" ("Spine shadow softened" alone) when the shadow was
+    /// softened; "As scanned" when the user went back to the page as scanned; nil for other pages.
     public static func caption(_ page: ScannedPage) -> String? {
-        guard let geometry = page.geometry else { return nil }
-        return page.showsOriginal ? "As scanned" : geometry.caption
+        if page.geometry == nil && page.spineShadow == nil { return nil }
+        if page.showsOriginal { return "As scanned" }
+        guard let geometry = page.geometry else { return "Spine shadow softened" }
+        return page.spineShadow == nil ? geometry.caption : "\(geometry.caption), spine shadow softened"
     }
 
     /// What one click on the page's swap button does: "Show as scanned", or back: "Show cropped and
-    /// straightened", "Show straightened", "Show cropped"; nil when the page cannot swap.
+    /// straightened", "Show straightened", "Show cropped", "Show with the spine shadow softened", "Show
+    /// straightened, with the spine shadow softened"; nil when the page cannot swap.
     public static func toggleLabel(_ page: ScannedPage) -> String? {
-        guard page.canSwapVersions, let geometry = page.geometry else { return nil }
-        return page.showsOriginal ? "Show \(done(geometry))" : "Show as scanned"
+        guard page.canSwapVersions else { return nil }
+        if !page.showsOriginal { return "Show as scanned" }
+        guard let geometry = page.geometry else { return "Show with the spine shadow softened" }
+        return page.spineShadow == nil ? "Show \(done(geometry))" : "Show \(done(geometry)), with the spine shadow softened"
     }
 
-    /// The status after a page's versions were swapped: "Page 3 is shown as scanned. It is saved
-    /// that way." or "Page 3 is cropped and straightened again."
+    /// The status after a page's versions were swapped: "Page 3 is shown as scanned. It is saved that
+    /// way.", "Page 3 is cropped and straightened again.", "Page 3 is shown with the spine shadow softened
+    /// again." or "Page 3 is straightened again, with the spine shadow softened."
     public static func swapNote(_ page: ScannedPage, number: Int) -> String {
-        guard !page.showsOriginal, let geometry = page.geometry else {
+        if page.showsOriginal || (page.geometry == nil && page.spineShadow == nil) {
             return "Page \(number) is shown as scanned. It is saved that way."
         }
-        return "Page \(number) is \(done(geometry)) again."
+        guard let geometry = page.geometry else { return "Page \(number) is shown with the spine shadow softened again." }
+        return page.spineShadow == nil
+            ? "Page \(number) is \(done(geometry)) again."
+            : "Page \(number) is \(done(geometry)) again, with the spine shadow softened."
     }
 
     /// The status after a scan's pages were queued, when crop and straighten changed some: " 2
-    /// straightened." or " 3 cropped or straightened." (leading space; empty when none was).
+    /// straightened." or " 3 cropped or straightened."; then, when the spine's shadow was softened on
+    /// some, " Spine shadow softened on 2 pages." (leading space; empty when nothing was changed).
     public static func scanNote(_ added: [ScannedPage]) -> String {
         let changed = added.compactMap { page -> String? in
             guard let geometry = page.geometry, !page.showsOriginal else { return nil }
             return done(geometry)
         }
-        guard let first = changed.first else { return "" }
-        let verb = Set(changed).count == 1 ? first : "cropped or straightened"
-        return " \(changed.count) \(verb)."
+        var note = ""
+        if let first = changed.first {
+            let verb = Set(changed).count == 1 ? first : "cropped or straightened"
+            note = " \(changed.count) \(verb)."
+        }
+        let softened = added.filter { $0.spineShadow != nil && !$0.showsOriginal }.count
+        if softened > 0 { note += " Spine shadow softened on \(softened) page\(softened == 1 ? "" : "s")." }
+        return note
     }
 
     /// "cropped and straightened", "straightened" or "cropped".

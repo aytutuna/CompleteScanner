@@ -615,6 +615,33 @@ enum TestPages {
             }
         }
 
+        /// A printed picture: the rectangle (x, y, w, h) filled with a mid-tone texture, 60 + (7x + 13y) mod 176
+        /// (diagonal ramps from dark gray to near white).
+        func picture(_ x: Int, _ y: Int, _ w: Int, _ h: Int) {
+            let y0 = max(0, y), y1 = min(canvasHeight, y + h)
+            let x0 = max(0, x), x1 = min(canvasWidth, x + w)
+            guard y0 < y1, x0 < x1 else { return }
+            for py in y0..<y1 {
+                for px in x0..<x1 { p[py * canvasWidth + px] = UInt8(60 + (px * 7 + py * 13) % 176) }
+            }
+        }
+
+        /// The spine's shadow along the right edge, `width` px wide: the column d px from the edge darkened by
+        /// k × (width − d)² / width² ‰, where k runs from `depthTop` ‰ on the first row to `depthBottom` ‰ on
+        /// the last (a book pressed harder at one end).
+        func spineShadow(width: Int, depthTop: Int, depthBottom: Int) {
+            let columns = min(width, canvasWidth)
+            guard columns > 0 else { return }
+            for y in 0..<canvasHeight {
+                let depth = depthTop + (depthBottom - depthTop) * y / max(1, canvasHeight - 1)
+                for d in 0..<columns {
+                    let k = depth * (width - d) * (width - d) / (width * width)
+                    let i = y * canvasWidth + canvasWidth - 1 - d
+                    p[i] = UInt8(Int(p[i]) * (1000 - k) / 1000)
+                }
+            }
+        }
+
         func gray() -> GrayImage {
             GrayImage(width: canvasWidth, height: canvasHeight, pixels: p)
         }
@@ -705,6 +732,55 @@ enum TestPages {
         c.fillRect(420, 0, 3, 850, 150)
         c.textBlock(500, 90, maxWidth: 520, lines: 34, pitch: 20, ink: 40, Rng(0xB00C_000D))
         return c.gray()
+    }
+
+    // MARK: - Book pages with the spine's shadow
+
+    /// One page of a book as cut from its spread, at 100 dpi (5.5 × 8.5 in, 550 × 850), the spine along its
+    /// right edge: 36 lines of text every 0.2 in from y = 60, from 0.6 in from the outer edge to 0.3 in from
+    /// the spine; with `picture`, a picture 1.3 × 2.2 in at (400, 300), 0.2 in from the spine; with `tint`, a
+    /// flat gray band (150) 1.2 in long and 1 in tall reaching the spine at (430, 640); then the spine's
+    /// shadow (`Canvas.spineShadow`, `shadowWidth` px wide) when `depthTop` or `depthBottom` is above 0. The
+    /// same arguments with no depth give the page as it would be without the shadow.
+    static func bookPage(_ depthTop: Int, _ depthBottom: Int, _ shadowWidth: Int, seed: UInt32,
+                         picture: Bool = false, tint: Bool = false) -> GrayImage {
+        let c = Canvas(550, 850, paper: 245, seed: seed)
+        c.textBlock(60, 60, maxWidth: 460, lines: 36, pitch: 20, ink: 40, Rng(seed ^ 0x5A5A_5A5A))
+        if picture { c.picture(400, 300, 130, 220) }
+        if tint { c.fillRect(430, 640, 120, 100, 150) }
+        if depthTop > 0 || depthBottom > 0 { c.spineShadow(width: shadowWidth, depthTop: depthTop, depthBottom: depthBottom) }
+        return c.gray()
+    }
+
+    /// A book page with a shadow 0.8 in wide, 45 % deep at the top of the spine and 30 % at the bottom.
+    static func shadowedBookPage() -> GrayImage { bookPage(450, 300, 80, seed: 0xB00C_0020) }
+
+    /// `shadowedBookPage` as it would be without the shadow.
+    static func unshadowedBookPage() -> GrayImage { bookPage(0, 0, 80, seed: 0xB00C_0020) }
+
+    /// A book page with a picture near the spine, in a shadow 0.8 in wide and 40 % deep.
+    static func pictureBookPage() -> GrayImage { bookPage(400, 400, 80, seed: 0xB00C_0021, picture: true) }
+
+    /// `pictureBookPage` as it would be without the shadow.
+    static func unshadowedPictureBookPage() -> GrayImage { bookPage(0, 0, 80, seed: 0xB00C_0021, picture: true) }
+
+    /// A book page with a flat gray band reaching the spine, in a shadow 0.8 in wide and 40 % deep.
+    static func tintBookPage() -> GrayImage { bookPage(400, 400, 80, seed: 0xB00C_0022, tint: true) }
+
+    /// An open book at 100 dpi (11 × 8.5 in): `shadowedBookPage` on the left and the same page mirrored on
+    /// the right, so the spine lies at the middle (x = 550) in the shadow of both.
+    static func shadowedBookSpread() -> GrayImage {
+        let page = shadowedBookPage()
+        let w = page.width, h = page.height
+        var p = [UInt8](repeating: 0, count: 2 * w * h)
+        for y in 0..<h {
+            for x in 0..<w {
+                let v = page.pixels[y * w + x]
+                p[y * 2 * w + x] = v
+                p[y * 2 * w + 2 * w - 1 - x] = v
+            }
+        }
+        return GrayImage(width: 2 * w, height: h, pixels: p)
     }
 
     /// FNV-1a of the pixels: one number per page, the same on both platforms.

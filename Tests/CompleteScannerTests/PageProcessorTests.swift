@@ -790,6 +790,8 @@ final class PageProcessorTests: XCTestCase {
             original.withAlternate(nil),
             original.withGeometry(solid(3, 3, 0), geometry: geometry),
             original.withGeometry(solid(3, 3, 0), geometry: geometry).withVersionsSwapped(blankImage),
+            original.withSpineShadow(solid(3, 3, 0), result: SpineShadowResult(edge: .left, depth: 0.2, widthInches: 0.5,
+                                                                                maxGain: 1.3, protectedFraction: 0)),
             page(textImage).copyMeta(from: original),
         ]
         for page in rebuilt {
@@ -798,5 +800,172 @@ final class PageProcessorTests: XCTestCase {
         }
         XCTAssertNil(original.withSpread(nil).spread)
         XCTAssertNil(page(blankImage).spreadID)
+    }
+
+    // MARK: Softening the spine's shadow
+
+    func test_forScan_softensTheSpineShadow_onlyOnSplitSpreads() throws {
+        var s = ScanSettings()
+        s.document.softenSpineShadow = true
+        // Facing pages are not split: there is no spine.
+        XCTAssertFalse(PageProcessor.softensSpineShadow(s))
+        XCTAssertFalse(PageProcessor.forScan(s).steps.map(\.name).contains("spineShadow"))
+        s.document.splitFacingPages = true
+        s.taskOptions.bookRotationQuarterTurns = 5
+        XCTAssertTrue(PageProcessor.softensSpineShadow(s))
+        let steps = PageProcessor.forScan(s).steps
+        XCTAssertEqual(steps.map(\.name), ["blank", "spineShadow", "separator"])
+        // The step knows how the book's pages were turned before the steps.
+        XCTAssertEqual(try XCTUnwrap(steps[1] as? SpineShadowStep).rotationQuarterTurns, 1)
+        // The Book or magazine task softens it, after straightening each page.
+        var book = TaskCatalog.apply(.book, to: ScanSettings())
+        XCTAssertEqual(PageProcessor.forScan(book).steps.map(\.name), ["blank", "geometry", "spineShadow", "separator"])
+        XCTAssertEqual(PageProcessor.forScan(book, scorer: StubScorer(isAvailable: true)).steps.map(\.name),
+                       ["blank", "geometry", "spineShadow", "separator", "orientation"])
+        // Off, or with spreads kept as scanned (two-sided, saved at once, photos), there is no step.
+        book.document.softenSpineShadow = false
+        XCTAssertFalse(PageProcessor.forScan(book).steps.map(\.name).contains("spineShadow"))
+        var twoSided = ScanSettings()
+        twoSided.source = .documentFeeder
+        twoSided.duplex = .both
+        var once = ScanSettings()
+        once.documentMultiPage = false
+        var photos = ScanSettings()
+        photos.intent = .photo
+        for var other in [twoSided, once, photos] {
+            other.document.splitFacingPages = true
+            other.document.softenSpineShadow = true
+            XCTAssertFalse(PageProcessor.softensSpineShadow(other))
+            XCTAssertFalse(PageProcessor.forScan(other).steps.map(\.name).contains("spineShadow"))
+        }
+    }
+
+    func test_process_aSpreadWithTheSpinesShadow_softensBothPages_keepingThemAsScanned() throws {
+        var s = ScanSettings()
+        s.document.splitFacingPages = true
+        s.document.softenSpineShadow = true
+        let spread = page(TestPages.shadowedBookSpread().toRgba().makeCGImage()!)
+        let result = try PageProcessor.forScan(s).process([spread])
+        XCTAssertEqual(result.pages.count, 2)
+        let left = result.pages[0], right = result.pages[1]
+        XCTAssertEqual(left.spread?.part, 0)
+        XCTAssertEqual(right.spread?.part, 1)
+        XCTAssertEqual(left.spineShadow?.edge, .right)
+        XCTAssertEqual(right.spineShadow?.edge, .left)
+        for page in result.pages {
+            XCTAssertTrue(page.canSwapVersions)
+            XCTAssertFalse(page.showsOriginal)
+            XCTAssertNil(page.geometry)
+            XCTAssertEqual(PageCorrections.caption(page), "Spine shadow softened")
+            XCTAssertEqual(PageCorrections.toggleLabel(page), "Show as scanned")
+        }
+        // The page as cut is the other version: the paper at the spine (between two lines) is brighter on the page shown.
+        func paper(_ image: CGImage?, atRight: Bool) throws -> Int {
+            let pixels = try XCTUnwrap(image.flatMap { RgbaImage(cgImage: $0) })
+            return Int(pixels.pixels[(430 * pixels.width + (atRight ? pixels.width - 3 : 2)) * 4])
+        }
+        XCTAssertGreaterThan(try paper(left.image, atRight: true), try paper(left.alternate?.image, atRight: true) + 40)
+        XCTAssertGreaterThan(try paper(right.image, atRight: false), try paper(right.alternate?.image, atRight: false) + 40)
+        XCTAssertEqual(PageCorrections.scanNote(result.pages), " Spine shadow softened on 2 pages.")
+        // One click shows the page as cut from the scan.
+        let asScanned = left.withVersionsSwapped(try XCTUnwrap(left.alternate?.image))
+        XCTAssertEqual(PageCorrections.caption(asScanned), "As scanned")
+        XCTAssertEqual(PageCorrections.toggleLabel(asScanned), "Show with the spine shadow softened")
+        XCTAssertEqual(PageCorrections.swapNote(asScanned, number: 1), "Page 1 is shown as scanned. It is saved that way.")
+        XCTAssertEqual(PageCorrections.swapNote(asScanned.withVersionsSwapped(left.image), number: 1),
+                       "Page 1 is shown with the spine shadow softened again.")
+        XCTAssertEqual(PageCorrections.scanNote([asScanned]), "")
+        // Turned off, the pages are cut and nothing else.
+        s.document.softenSpineShadow = false
+        XCTAssertTrue(try PageProcessor.forScan(s).process([spread]).pages.allSatisfy { $0.spineShadow == nil })
+    }
+
+    func test_spineShadowStep_takesTheEdgeOfTheCut_turnedByTheBook() {
+        let pixels = TestPages.shadowedBookPage().toRgba()   // the spine's shadow on its right
+        let image = pixels.makeCGImage()!
+        let cut = BookSplitter.manual(.vertical, fraction: 0.5, width: 1100, height: 850)
+        let leftPart = page(image).withSpread(SpreadPart(spreadID: UUID(), part: 0, gutter: cut))
+        XCTAssertEqual(SpineShadowStep(rotationQuarterTurns: 0).apply(leftPart).spineShadow?.edge, .right)
+        // The same pixels as the right part of a spread are looked at along their left edge: no shadow there.
+        let rightPart = page(image).withSpread(SpreadPart(spreadID: UUID(), part: 1, gutter: cut))
+        let unchanged = SpineShadowStep(rotationQuarterTurns: 0).apply(rightPart)
+        XCTAssertTrue(unchanged.image === image)
+        XCTAssertNil(unchanged.spineShadow)
+        // A book upside down on the glass: the left part, turned half round, has the spine on its left.
+        let upsideDown = pixels.rotatedQuarterTurns(2).makeCGImage()!
+        let turned = page(upsideDown).withSpread(SpreadPart(spreadID: UUID(), part: 0, gutter: cut))
+        XCTAssertEqual(SpineShadowStep(rotationQuarterTurns: 2).apply(turned).spineShadow?.edge, .left)
+        XCTAssertNil(SpineShadowStep(rotationQuarterTurns: 0).apply(turned).spineShadow)
+        // Pages not cut from a spread, and whole spreads, are left alone.
+        let plain = SpineShadowStep(rotationQuarterTurns: 0).apply(page(image))
+        XCTAssertTrue(plain.image === image)
+        XCTAssertNil(plain.spineShadow)
+        let whole = page(image).withSpread(SpreadPart(spreadID: UUID(), part: nil, gutter: nil))
+        XCTAssertNil(SpineShadowStep(rotationQuarterTurns: 0).apply(whole).spineShadow)
+        XCTAssertEqual(SpineShadowStep(rotationQuarterTurns: 0).name, "spineShadow")
+        XCTAssertEqual(SpineShadowStep(rotationQuarterTurns: -1).rotationQuarterTurns, 3)
+    }
+
+    func test_withSpineShadow_keepsThePageAsScanned_asTheOtherVersion() throws {
+        let softened = solid(6, 8, 250)
+        let result = SpineShadowResult(edge: .right, depth: 0.3, widthInches: 0.6, maxGain: 1.7, protectedFraction: 0)
+        // Not cropped or straightened: the page as it was becomes the other version.
+        let plain = page(textImage).withSide(.front, sheetIndex: 2)
+            .withBlank(BlankPageResult(inkCoverage: 0.01, inkComponents: 50, hasLargeDarkArea: false, isBlank: false))
+        let soft = plain.withSpineShadow(softened, result: result)
+        XCTAssertTrue(soft.image === softened)
+        XCTAssertTrue(soft.alternate?.image === textImage)
+        XCTAssertEqual(soft.id, plain.id)
+        XCTAssertEqual(soft.spineShadow, result)
+        XCTAssertEqual(soft.side, .front)
+        XCTAssertEqual(soft.sheetIndex, 2)
+        XCTAssertEqual(soft.blank, plain.blank)
+        XCTAssertTrue(soft.canSwapVersions)
+        XCTAssertFalse(soft.withAlternate(nil).canSwapVersions)
+        // Straightened first: the other version stays the page as scanned, not the straightened one.
+        let straightened = page(sheetImage).withGeometry(textImage, geometry: PageGeometry(cropped: false, angleDegrees: 1.5, basis: .textLines))
+        let both = straightened.withSpineShadow(softened, result: result)
+        XCTAssertTrue(both.alternate?.image === sheetImage)
+        XCTAssertEqual(both.geometry, straightened.geometry)
+        XCTAssertEqual(PageCorrections.caption(both), "Straightened 1.5°, spine shadow softened")
+        XCTAssertEqual(PageCorrections.toggleLabel(both), "Show as scanned")
+        XCTAssertEqual(PageCorrections.swapNote(both, number: 4), "Page 4 is straightened again, with the spine shadow softened.")
+        let original = both.withVersionsSwapped(sheetImage)
+        XCTAssertEqual(PageCorrections.caption(original), "As scanned")
+        XCTAssertEqual(PageCorrections.toggleLabel(original), "Show straightened, with the spine shadow softened")
+        XCTAssertEqual(original.spineShadow, result)
+        XCTAssertEqual(PageCorrections.scanNote([both, original]), " 1 straightened. Spine shadow softened on 1 page.")
+        // The adjustments reach both versions.
+        let gray = AdjustmentStep(adjustments: AdjustmentSettings(), colorMode: .grayscale).apply(both)
+        let other = try XCTUnwrap(gray.alternate?.image)
+        XCTAssertFalse(other === sheetImage)
+        XCTAssertEqual(other.width, sheetImage.width)
+        XCTAssertEqual(gray.spineShadow, result)
+    }
+
+    func test_spineShadow_survivesRebuildingThePage() {
+        let result = SpineShadowResult(edge: .left, depth: 0.2, widthInches: 0.5, maxGain: 1.4, protectedFraction: 0.1)
+        let original = page(textImage).withSpineShadow(blankImage, result: result)
+        let geometry = PageGeometry(cropped: false, angleDegrees: 1.5, basis: .textLines)
+        let rebuilt = [
+            original.withImage(solid(3, 3, 0)),
+            original.withSide(.front, sheetIndex: 0),
+            original.withBlank(nil),
+            original.withInclusion(.skip),
+            original.withPatch(nil),
+            original.withDocumentBreak(.split),
+            original.withDocumentLabel("Chapter 1"),
+            original.withUpright(UprightTurn(quarterTurns: 2)),
+            original.turnedUpright(1),
+            original.withAlternate(nil),
+            original.withSpread(nil),
+            original.withGeometry(solid(3, 3, 0), geometry: geometry),
+            original.withVersionsSwapped(textImage),
+            page(sheetImage).copyMeta(from: original),
+        ]
+        for page in rebuilt {
+            XCTAssertEqual(page.spineShadow, result)
+        }
+        XCTAssertNil(page(textImage).spineShadow)
     }
 }

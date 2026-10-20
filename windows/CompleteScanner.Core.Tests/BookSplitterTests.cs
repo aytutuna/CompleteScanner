@@ -344,6 +344,18 @@ public class BookSplitterTests
         }
     }
 
+    [Fact]
+    public void DemoBook_PagesHaveTheSpineShadowSoftened()
+    {
+        var spread = MockBedRenderer.RenderBookSpread(150, 0);
+        var pages = PageProcessor.ForScan(TaskCatalog.Apply(ScanTask.Book, new ScanSettings()))
+            .Process([new ScannedPage(spread, 150, ColorMode.Color)]).Pages;
+        Assert.Equal(new PageEdge?[] { PageEdge.Right, PageEdge.Left }, pages.Select(p => p.SpineShadow?.Edge));
+        // The demo spine's shadow is 25 % deep at the fold; each page keeps the page as cut to show.
+        Assert.All(pages, p => Assert.InRange(p.SpineShadow!.Depth, 0.1, 0.3));
+        Assert.All(pages, p => Assert.True(p.CanSwapVersions));
+    }
+
     // MARK: - What the strip and the status say
 
     private static ScannedPage Part(Guid spread, int? part) =>

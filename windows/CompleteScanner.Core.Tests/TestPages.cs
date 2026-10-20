@@ -668,6 +668,40 @@ internal static class TestPages
             }
         }
 
+        /// <summary>
+        /// A printed picture: the rectangle (x, y, w, h) filled with a mid-tone texture, 60 + (7x + 13y) mod 176
+        /// (diagonal ramps from dark gray to near white).
+        /// </summary>
+        public void Picture(int x, int y, int w, int h)
+        {
+            for (int py = Math.Max(0, y); py < Math.Min(CanvasHeight, y + h); py++)
+            {
+                for (int px = Math.Max(0, x); px < Math.Min(CanvasWidth, x + w); px++)
+                {
+                    P[py * CanvasWidth + px] = (byte)(60 + (px * 7 + py * 13) % 176);
+                }
+            }
+        }
+
+        /// <summary>
+        /// The spine's shadow along the right edge, <paramref name="width"/> px wide: the column d px from the
+        /// edge darkened by k × (width − d)² / width² ‰, where k runs from <paramref name="depthTop"/> ‰ on the
+        /// first row to <paramref name="depthBottom"/> ‰ on the last (a book pressed harder at one end).
+        /// </summary>
+        public void SpineShadow(int width, int depthTop, int depthBottom)
+        {
+            for (int y = 0; y < CanvasHeight; y++)
+            {
+                int depth = depthTop + (depthBottom - depthTop) * y / Math.Max(1, CanvasHeight - 1);
+                for (int d = 0; d < Math.Min(width, CanvasWidth); d++)
+                {
+                    int k = depth * (width - d) * (width - d) / (width * width);
+                    int i = y * CanvasWidth + CanvasWidth - 1 - d;
+                    P[i] = (byte)(P[i] * (1000 - k) / 1000);
+                }
+            }
+        }
+
         public GrayImage Gray() => new(CanvasWidth, CanvasHeight, (byte[])P.Clone());
     }
 
@@ -755,6 +789,63 @@ internal static class TestPages
         c.FillRect(420, 0, 3, 850, 150);
         c.TextBlock(500, 90, 520, 34, 20, 40, new Rng(0xB00C000D));
         return c.Gray();
+    }
+
+    // MARK: - Book pages with the spine's shadow
+
+    /// <summary>
+    /// One page of a book as cut from its spread, at 100 dpi (5.5 × 8.5 in, 550 × 850), the spine along its
+    /// right edge: 36 lines of text every 0.2 in from y = 60, from 0.6 in from the outer edge to 0.3 in from the
+    /// spine; with <paramref name="picture"/>, a picture 1.3 × 2.2 in at (400, 300), 0.2 in from the spine;
+    /// with <paramref name="tint"/>, a flat gray band (150) 1.2 in long and 1 in tall reaching the spine at
+    /// (430, 640); then the spine's shadow (<see cref="Canvas.SpineShadow"/>, <paramref name="shadowWidth"/> px
+    /// wide) when <paramref name="depthTop"/> or <paramref name="depthBottom"/> is above 0. The same arguments
+    /// with no depth give the page as it would be without the shadow.
+    /// </summary>
+    public static GrayImage BookPage(int depthTop, int depthBottom, int shadowWidth, uint seed, bool picture = false, bool tint = false)
+    {
+        var c = new Canvas(550, 850, 245, seed);
+        c.TextBlock(60, 60, 460, 36, 20, 40, new Rng(seed ^ 0x5A5A5A5A));
+        if (picture) c.Picture(400, 300, 130, 220);
+        if (tint) c.FillRect(430, 640, 120, 100, 150);
+        if (depthTop > 0 || depthBottom > 0) c.SpineShadow(shadowWidth, depthTop, depthBottom);
+        return c.Gray();
+    }
+
+    /// <summary>A book page with a shadow 0.8 in wide, 45 % deep at the top of the spine and 30 % at the bottom.</summary>
+    public static GrayImage ShadowedBookPage() => BookPage(450, 300, 80, 0xB00C0020);
+
+    /// <summary><see cref="ShadowedBookPage"/> as it would be without the shadow.</summary>
+    public static GrayImage UnshadowedBookPage() => BookPage(0, 0, 80, 0xB00C0020);
+
+    /// <summary>A book page with a picture near the spine, in a shadow 0.8 in wide and 40 % deep.</summary>
+    public static GrayImage PictureBookPage() => BookPage(400, 400, 80, 0xB00C0021, picture: true);
+
+    /// <summary><see cref="PictureBookPage"/> as it would be without the shadow.</summary>
+    public static GrayImage UnshadowedPictureBookPage() => BookPage(0, 0, 80, 0xB00C0021, picture: true);
+
+    /// <summary>A book page with a flat gray band reaching the spine, in a shadow 0.8 in wide and 40 % deep.</summary>
+    public static GrayImage TintBookPage() => BookPage(400, 400, 80, 0xB00C0022, tint: true);
+
+    /// <summary>
+    /// An open book at 100 dpi (11 × 8.5 in): <see cref="ShadowedBookPage"/> on the left and the same page
+    /// mirrored on the right, so the spine lies at the middle (x = 550) in the shadow of both.
+    /// </summary>
+    public static GrayImage ShadowedBookSpread()
+    {
+        var page = ShadowedBookPage();
+        int w = page.Width, h = page.Height;
+        var p = new byte[2 * w * h];
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                byte v = page.Pixels[y * w + x];
+                p[y * 2 * w + x] = v;
+                p[y * 2 * w + 2 * w - 1 - x] = v;
+            }
+        }
+        return new GrayImage(2 * w, h, p);
     }
 
     /// <summary>FNV-1a of the pixels: one number per page, the same on both platforms.</summary>

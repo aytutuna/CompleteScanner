@@ -73,6 +73,7 @@ internal static class CompatFixtures
         settings.Document.SplitSheetCount = 3;
         settings.Document.AutoRotate = true;
         settings.Document.SplitFacingPages = true;
+        settings.Document.SoftenSpineShadow = true;
         settings.TaskOptions.IdCardPaper = IdCardPaper.Letter;
         settings.TaskOptions.IdCardSaveSidesAsImages = true;
         settings.TaskOptions.CopyCount = 3;
@@ -143,7 +144,8 @@ internal static class CompatFixtures
         + "      \"duplex\": \"manual\",\n      \"backBinding\": \"shortEdge\",\n      \"paperSize\": \"a4\",\n"
         + "      \"document\": {\n        \"removeBlankPages\": true,\n        \"blankSensitivity\": \"high\",\n"
         + "        \"autoCrop\": true,\n        \"autoStraighten\": true,\n        \"splitMode\": \"sheetCount\",\n"
-        + "        \"splitSheetCount\": 3,\n        \"autoRotate\": true,\n        \"splitFacingPages\": true\n      },\n"
+        + "        \"splitSheetCount\": 3,\n        \"autoRotate\": true,\n        \"splitFacingPages\": true,\n"
+        + "        \"softenSpineShadow\": true\n      },\n"
         + "      \"taskOptions\": {\n        \"idCardPaper\": \"letter\",\n        \"idCardSaveSidesAsImages\": true,\n"
         + "        \"copyCount\": 3,\n        \"copyFitToPage\": true,\n        \"copyPrinterName\": \"Office printer\",\n"
         + "        \"copyAlsoSavePdf\": true,\n        \"receiptNameByDate\": false,\n        \"receiptCombine\": true,\n"
@@ -1166,6 +1168,44 @@ public class ModelsCompatTests
         Assert.NotEqual(original.Document, clone.Document);
         Assert.NotEqual(original.TaskOptions, clone.TaskOptions);
         Assert.NotEqual(original.TaskOptions.GetHashCode(), clone.TaskOptions.GetHashCode());
+    }
+
+    // MARK: - Softening the spine's shadow (CONTRACTS.md, rule 6)
+
+    [Fact]
+    public void SoftenSpineShadow_OffByDefault_AndInFilesWithoutIt()
+    {
+        Assert.False(new ScanSettings().Document.SoftenSpineShadow);
+        Assert.False(Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize)[0].Settings.Document.SoftenSpineShadow);
+        // A "document" object written before it existed keeps its other settings.
+        var older = Decode<ScanSettings>("""{"document": {"autoStraighten": true, "splitFacingPages": true}}""");
+        Assert.Equal((true, true, false), (older.Document.AutoStraighten, older.Document.SplitFacingPages, older.Document.SoftenSpineShadow));
+        foreach (string value in new[] { "\"yes\"", "1", "null", "{}", "[]" })
+        {
+            var settings = Decode<ScanSettings>($$"""{"document": {"splitFacingPages": true, "softenSpineShadow": {{value}}, "autoRotate": true}, "resolution": 150}""");
+            Assert.False(settings.Document.SoftenSpineShadow);
+            Assert.Equal((true, true, 150), (settings.Document.SplitFacingPages, settings.Document.AutoRotate, settings.Resolution));
+        }
+        Assert.True(Decode<ScanSettings>("""{"document": {"softenSpineShadow": true}}""").Document.SoftenSpineShadow);
+    }
+
+    [Fact]
+    public void SoftenSpineShadow_RoundTrips_AndCloneIsIndependent()
+    {
+        foreach (bool soften in new[] { false, true })
+        {
+            var settings = new ScanSettings();
+            settings.Document.SoftenSpineShadow = soften;
+            var back = Decode<ScanSettings>(CompatFixtures.Encode(settings));
+            Assert.Equal(soften, back.Document.SoftenSpineShadow);
+            Assert.Equal(settings.Document, back.Document);
+        }
+        var original = CompatFixtures.NonDefaultSettings();
+        var clone = original.Clone();
+        clone.Document.SoftenSpineShadow = false;
+        Assert.True(original.Document.SoftenSpineShadow);
+        Assert.NotEqual(original.Document, clone.Document);
+        Assert.NotEqual(original.Document.GetHashCode(), clone.Document.GetHashCode());
     }
 
     [Fact]

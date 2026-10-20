@@ -484,6 +484,9 @@ final class MockScannerTests: XCTestCase {
         XCTAssertEqual(processed.pages[0].image.width + processed.pages[1].image.width, first.image.width)
         XCTAssertEqual(processed.pages.map { $0.spread?.part }, [0, 1, 0, 1])
         XCTAssertEqual(processed.pages.compactMap(\.spreadID), [first.id, first.id, second.id, second.id])
+        // The book task softens the spine's shadow on each page, keeping the page as cut to show.
+        XCTAssertEqual(processed.pages.map { $0.spineShadow?.edge }, [.right, .left, .right, .left])
+        XCTAssertTrue(processed.pages.allSatisfy { $0.canSwapVersions })
         // Other scans leave the book where it is.
         var plain = ScanSettings()
         plain.resolution = mockDPI

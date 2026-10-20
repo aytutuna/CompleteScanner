@@ -967,6 +967,12 @@
                                                               AutomationProperties.HelpText="For a book lying sideways or upside down on the glass, from the next spread on."
                                                               ToolTip="For a book lying sideways or upside down on the glass, from the next spread on."
                                                               SelectionChanged="BookRotation_Changed" />
+                                                    <!-- The spine's shadow lightened on each page; the page strip's arrow shows a page as scanned. -->
+                                                    <CheckBox x:Name="SoftenSpineShadowBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,8,0,0"
+                                                              Content="Soften spine shadow"
+                                                              Checked="SoftenSpineShadow_Changed" Unchecked="SoftenSpineShadow_Changed" />
+                                                    <TextBlock x:Name="SoftenSpineShadowHint" Style="{StaticResource CaptionText}"
+                                                               TextWrapping="Wrap" Margin="0,0,0,4" />
                                                 </StackPanel>
                                                 <!-- Split the stack into documents: the page strip shows where before
                                                      saving, and one click on the gap between two pages splits or joins. -->

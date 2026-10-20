@@ -739,6 +739,8 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertTrue(s.documentMultiPage && s.pdfSearchable)
         // Each page is straightened and turned upright on its own; nothing is cropped or skipped.
         XCTAssertTrue(s.document.splitFacingPages)
+        XCTAssertTrue(s.document.softenSpineShadow)
+        XCTAssertTrue(PageProcessor.softensSpineShadow(s))
         XCTAssertTrue(s.document.autoStraighten)
         XCTAssertTrue(s.document.autoRotate)
         XCTAssertFalse(s.document.autoCrop)
@@ -778,13 +780,16 @@ final class ScanTaskTests: XCTestCase {
     func test_apply_onlyTheBookTaskSplitsFacingPages_itsReadingOrderAndTurnAreKept() {
         var current = customized()
         current.document.splitFacingPages = true
+        current.document.softenSpineShadow = true
         for task in ScanTask.allCases {
             let s = TaskCatalog.apply(task, to: current)
             XCTAssertEqual(s.document.splitFacingPages, task == .book, task.rawValue)
+            XCTAssertEqual(s.document.softenSpineShadow, task == .book, task.rawValue)
             XCTAssertTrue(s.taskOptions.bookRightToLeft, task.rawValue)
             XCTAssertEqual(s.taskOptions.bookRotationQuarterTurns, 3, task.rawValue)
         }
         XCTAssertTrue(current.document.splitFacingPages)
+        XCTAssertTrue(current.document.softenSpineShadow)
         // Without a stored task, split spreads look like a book; split documents still like a batch.
         var untagged = TaskCatalog.apply(.book, to: ScanSettings())
         untagged.taskId = nil

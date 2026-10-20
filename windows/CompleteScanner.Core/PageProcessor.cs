@@ -56,6 +56,27 @@ public sealed class GeometryStep(bool crop, bool straighten) : IPageStep
 }
 
 /// <summary>
+/// Softens the shadow along the spine on a page cut from a spread (<see cref="SpineShadow.Soften"/>), keeping
+/// the page as scanned as the other version (<see cref="ScannedPage.WithSpineShadow"/>): the edge along the
+/// spine is the edge of the cut, turned by the book's rotation (<paramref name="rotationQuarterTurns"/>,
+/// the turn every page of the spread was given before the steps). Pages not cut from a spread, and pages
+/// with no shadow to soften, stay as they are. Runs after crop and straighten, before the separator check.
+/// </summary>
+public sealed class SpineShadowStep(int rotationQuarterTurns) : IPageStep
+{
+    public int RotationQuarterTurns { get; } = BookSplitter.NormalizedTurns(rotationQuarterTurns);
+    public string Name => "spineShadow";
+
+    public ScannedPage Apply(ScannedPage page)
+    {
+        if (SpineShadow.GutterEdge(page.Spread, RotationQuarterTurns) is not { } edge) return page;
+        return SpineShadow.Soften(page.Image, page.Dpi, edge) is { } softened
+            ? page.WithSpineShadow(softened.Image, softened.Result)
+            : page;
+    }
+}
+
+/// <summary>
 /// Looks for a patch code on the page (<see cref="PatchCodeDetector"/>) and records it: the page is
 /// then a separator sheet, used when the stack is split at separator sheets
 /// (<see cref="DocumentSplitter"/>). The pixels are not changed. Runs after crop and straighten,
@@ -97,7 +118,8 @@ public sealed class OrientationStep(IOrientationScorer scorer, double maxSeconds
 
 /// <summary>
 /// The image adjustments and the color mode (<see cref="ImagePipeline.Apply"/>), on the page and on
-/// its other version (the page as scanned, kept by crop and straighten), so either can be shown.
+/// its other version (the page as scanned, kept by crop and straighten or by softening the spine's
+/// shadow), so either can be shown.
 /// </summary>
 public sealed class AdjustmentStep(AdjustmentSettings adjustments, ColorMode colorMode) : IPageStep
 {
@@ -154,8 +176,8 @@ public sealed record ProcessedScan(IReadOnlyList<ScannedPage> Arranged, IReadOnl
 /// pages are put in reading order with their sides (two-sided scans), each spread of an open book
 /// is cut into its two pages when facing pages are split (<paramref name="book"/>), then every step
 /// runs on every page in order. The order of the steps is fixed: <see cref="ForScan"/> builds them
-/// from the settings: blank check (document pages), crop and straighten, separator sheets, turning
-/// pages upright, then adjustments.
+/// from the settings: blank check (document pages), crop and straighten, softening the spine's shadow,
+/// separator sheets, turning pages upright, then adjustments.
 /// </summary>
 public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
                                   ScanArrangement arrangement = ScanArrangement.AsScanned,
@@ -171,7 +193,8 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// <summary>
     /// The steps for a scan made with <paramref name="settings"/>: the blank-page check for pages
     /// collected in the document queue (whether or not blank pages are left out, so the page
-    /// strip can flag them), crop and straighten when asked for those pages, the separator-sheet
+    /// strip can flag them), crop and straighten when asked for those pages, softening the spine's
+    /// shadow when asked for on split spreads (<see cref="SoftensSpineShadow"/>), the separator-sheet
     /// check for those pages (whether or not the stack is split, so a split chosen later finds
     /// them), turning those pages upright when asked for and <paramref name="scorer"/> can read text,
     /// then the adjustments unless they change nothing. Facing pages are split before the steps when
@@ -189,6 +212,10 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
         if (CorrectsGeometry(settings))
         {
             steps.Add(new GeometryStep(settings.Document.AutoCrop, settings.Document.AutoStraighten));
+        }
+        if (SoftensSpineShadow(settings))
+        {
+            steps.Add(new SpineShadowStep(BookSplitOptions.Of(settings).RotationQuarterTurns));
         }
         if (ChecksBlankPages(settings))
         {
@@ -238,6 +265,14 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// </summary>
     public static bool SplitsFacingPages(ScanSettings settings) =>
         ChecksBlankPages(settings) && settings.Document.SplitFacingPages && BookPages.ScansOneSide(settings);
+
+    /// <summary>
+    /// Whether the pages cut from spreads have their spine's shadow softened: asked for, while facing pages
+    /// are split (<see cref="SplitsFacingPages"/>), where the page strip shows a softened page and one
+    /// click shows it as scanned.
+    /// </summary>
+    public static bool SoftensSpineShadow(ScanSettings settings) =>
+        SplitsFacingPages(settings) && settings.Document.SoftenSpineShadow;
 
     /// <summary>
     /// Arranges the pages, splits each spread when facing pages are split (where its gutter is found,
@@ -404,47 +439,72 @@ public static class PageFilter
 }
 
 /// <summary>
-/// What the page strip and the status say about crop and straighten: a caption on a changed page,
-/// its one-click swap with the page as scanned, and the note after a scan.
+/// What the page strip and the status say about crop and straighten and the softened spine shadow: a
+/// caption on a changed page, its one-click swap with the page as scanned, and the note after a scan.
 /// </summary>
 public static class PageCorrections
 {
     /// <summary>
     /// "Cropped and straightened 2.4°", "Straightened 1.5°" or "Cropped" for a changed page shown
-    /// changed; "As scanned" when the user went back to the page as scanned; null for other pages.
+    /// changed, followed by ", spine shadow softened" ("Spine shadow softened" alone) when the shadow was
+    /// softened; "As scanned" when the user went back to the page as scanned; null for other pages.
     /// </summary>
-    public static string? Caption(ScannedPage page) =>
-        page.Geometry is not { } geometry ? null : page.ShowsOriginal ? "As scanned" : geometry.Caption;
-
-    /// <summary>
-    /// What one click on the page's swap button does: "Show as scanned", or back: "Show cropped
-    /// and straightened", "Show straightened", "Show cropped"; null when the page cannot swap.
-    /// </summary>
-    public static string? ToggleLabel(ScannedPage page)
+    public static string? Caption(ScannedPage page)
     {
-        if (!page.CanSwapVersions || page.Geometry is not { } geometry) return null;
-        return page.ShowsOriginal ? $"Show {Done(geometry)}" : "Show as scanned";
+        if (page.Geometry is null && page.SpineShadow is null) return null;
+        if (page.ShowsOriginal) return "As scanned";
+        if (page.Geometry is not { } geometry) return "Spine shadow softened";
+        return page.SpineShadow is null ? geometry.Caption : $"{geometry.Caption}, spine shadow softened";
     }
 
     /// <summary>
-    /// The status after a page's versions were swapped: "Page 3 is shown as scanned." or
-    /// "Page 3 is cropped and straightened again."
+    /// What one click on the page's swap button does: "Show as scanned", or back: "Show cropped
+    /// and straightened", "Show straightened", "Show cropped", "Show with the spine shadow softened",
+    /// "Show straightened, with the spine shadow softened"; null when the page cannot swap.
     /// </summary>
-    public static string SwapNote(ScannedPage page, int number) =>
-        page.ShowsOriginal || page.Geometry is not { } geometry
-            ? $"Page {number} is shown as scanned. It is saved that way."
-            : $"Page {number} is {Done(geometry)} again.";
+    public static string? ToggleLabel(ScannedPage page)
+    {
+        if (!page.CanSwapVersions) return null;
+        if (!page.ShowsOriginal) return "Show as scanned";
+        if (page.Geometry is not { } geometry) return "Show with the spine shadow softened";
+        return page.SpineShadow is null ? $"Show {Done(geometry)}" : $"Show {Done(geometry)}, with the spine shadow softened";
+    }
+
+    /// <summary>
+    /// The status after a page's versions were swapped: "Page 3 is shown as scanned. It is saved that
+    /// way.", "Page 3 is cropped and straightened again.", "Page 3 is shown with the spine shadow
+    /// softened again." or "Page 3 is straightened again, with the spine shadow softened."
+    /// </summary>
+    public static string SwapNote(ScannedPage page, int number)
+    {
+        if (page.ShowsOriginal || (page.Geometry is null && page.SpineShadow is null))
+        {
+            return $"Page {number} is shown as scanned. It is saved that way.";
+        }
+        if (page.Geometry is not { } geometry) return $"Page {number} is shown with the spine shadow softened again.";
+        return page.SpineShadow is null
+            ? $"Page {number} is {Done(geometry)} again."
+            : $"Page {number} is {Done(geometry)} again, with the spine shadow softened.";
+    }
 
     /// <summary>
     /// The status after a scan's pages were queued, when crop and straighten changed some: " 2
-    /// straightened." or " 3 cropped or straightened." (leading space; empty when none was).
+    /// straightened." or " 3 cropped or straightened."; then, when the spine's shadow was softened on
+    /// some, " Spine shadow softened on 2 pages." (leading space; empty when nothing was changed).
     /// </summary>
     public static string ScanNote(IEnumerable<ScannedPage> added)
     {
-        var changed = added.Where(p => p.Geometry is not null && !p.ShowsOriginal).Select(p => Done(p.Geometry!)).ToList();
-        if (changed.Count == 0) return "";
-        string verb = changed.Distinct().Count() == 1 ? changed[0] : "cropped or straightened";
-        return $" {changed.Count} {verb}.";
+        var pages = added.ToList();
+        var changed = pages.Where(p => p.Geometry is not null && !p.ShowsOriginal).Select(p => Done(p.Geometry!)).ToList();
+        string note = "";
+        if (changed.Count > 0)
+        {
+            string verb = changed.Distinct().Count() == 1 ? changed[0] : "cropped or straightened";
+            note = $" {changed.Count} {verb}.";
+        }
+        int softened = pages.Count(p => p.SpineShadow is not null && !p.ShowsOriginal);
+        if (softened > 0) note += $" Spine shadow softened on {softened} page{(softened == 1 ? "" : "s")}.";
+        return note;
     }
 
     /// <summary>"cropped and straightened", "straightened" or "cropped".</summary>
