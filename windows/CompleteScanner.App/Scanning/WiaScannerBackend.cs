@@ -17,9 +17,10 @@ namespace CompleteScanner.App.Scanning;
 ///   - Transfer() is synchronous with no progress callbacks — progress is coarse;
 ///   - CancelScan() cannot abort an in-flight WIA transfer, it only discards the result.
 /// </summary>
-public sealed class WiaScannerBackend : IScannerBackend, IScannerBackendDiagnostics
+public sealed class WiaScannerBackend : IPolledScannerBackend, IScannerBackendDiagnostics
 {
     public event Action? DevicesChanged;
+    public event Action? EnumerationFinished;
 
     private readonly List<ScannerInfo> _devices = [];
     public IReadOnlyList<ScannerInfo> Devices => _devices;
@@ -61,7 +62,15 @@ public sealed class WiaScannerBackend : IScannerBackend, IScannerBackendDiagnost
     private CancellationTokenSource? _watchdog;
     /// <summary>Bumped by every Start/StopBrowsing; enumeration results from an older generation are dropped.</summary>
     private int _browseGeneration;
-    private bool _refreshing;
+    /// <summary>The number of the enumeration running now; 0 when none is.</summary>
+    private long _running;
+    /// <summary>A refresh was asked for while one ran: another starts when it ends.</summary>
+    private bool _refreshAgain;
+    private long _enumerationsStarted;
+    private long _enumerationsFinished;
+
+    public long EnumerationsStarted => Interlocked.Read(ref _enumerationsStarted);
+    public long EnumerationsFinished => Interlocked.Read(ref _enumerationsFinished);
 
     /// <summary>
     /// Enumerate once now, then keep re-enumerating so the list follows the hardware without
@@ -78,7 +87,8 @@ public sealed class WiaScannerBackend : IScannerBackend, IScannerBackendDiagnost
         _context = SynchronizationContext.Current;
         _browseGeneration++;
         // An enumeration still running from before a Stop is stale; don't let it block this one.
-        _refreshing = false;
+        _running = 0;
+        _refreshAgain = false;
         _watchdog = new CancellationTokenSource();
         RefreshDevices();
         _ = RunWatchdog(_watchdog.Token);
@@ -145,22 +155,40 @@ public sealed class WiaScannerBackend : IScannerBackend, IScannerBackendDiagnost
 
     /// <summary>
     /// Re-enumerate WIA scanners in the background (call again to pick up newly plugged
-    /// devices). Overlapping calls are coalesced.
+    /// devices). A call while one runs does not start a second at once: one more starts when the
+    /// running one ends, so the result of an enumeration begun after the call always arrives
+    /// (the app waits for that before it uses Windows Scan for a scanner WIA does not list yet).
     /// </summary>
     public void RefreshDevices()
     {
-        if (_refreshing) return;
-        _refreshing = true;
+        // Without a context to post to, results are applied on the enumeration thread under this
+        // lock (see Post); it is re-entered when a result starts the enumeration asked for meanwhile.
+        lock (_devices) StartEnumeration();
+    }
+
+    private void StartEnumeration()
+    {
+        if (_running != 0)
+        {
+            _refreshAgain = true;
+            return;
+        }
+        _refreshAgain = false;
         int generation = _browseGeneration;
+        long number = Interlocked.Increment(ref _enumerationsStarted);
+        _running = number;
         var thread = new Thread(() =>
         {
             var found = EnumerateScanners();
             Post(() =>
             {
-                _refreshing = false;
+                if (_running == number) _running = 0;
                 // A Stop/Start since this enumeration began makes its result stale.
                 if (generation != _browseGeneration) return;
+                if (number > Interlocked.Read(ref _enumerationsFinished)) Interlocked.Exchange(ref _enumerationsFinished, number);
                 ReplaceDevices(found);
+                EnumerationFinished?.Invoke();
+                if (_refreshAgain && _running == 0) RefreshDevices();
             });
         })
         {

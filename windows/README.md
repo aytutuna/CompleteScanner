@@ -18,7 +18,9 @@ UI per platform** architecture:
   Swift `CompleteScannerKit` core (see `../CONTRACTS.md` for the shared conventions,
   especially the four coordinate systems). It also holds the testable protocol logic of the
   Windows-only backends, which has no Swift twin because macOS reaches the same scanners
-  through ImageCaptureCore: the WIA error and document-handling tables (`WiaErrors.cs`),
+  through ImageCaptureCore: the WIA error and document-handling tables (`WiaErrors.cs`), the
+  decisions of the Windows Scan backup connection (`WindowsScan.cs`: capabilities, the scan
+  request, error mapping and its diagnostics; see [Windows Scan](#windows-scan-backup-connection)),
   the eSCL protocol (`Escl/`: capabilities parser, job request builder, 503 retry policy,
   status parser, the HTTP client and session, DNS-SD TXT records and address parsing, and
   certificate pinning for HTTPS), and the TWAIN scan logic (`Twain/`: the acquisition state machine behind an
@@ -56,14 +58,15 @@ UI per platform** architecture:
 - **`CompleteScanner.App.Tests`** — checks of the app's own Windows code that need WPF but no
   window and no device: the print document is written to an XPS file and read back (paper size,
   where each image lands, copies, grey, cancel), barcodes and QR codes are read with ZXing.Net
-  on synthetic scans, and the 32-bit TWAIN helper is started for real and scans its stand-in
-  scanners (`TwainHelperTests`). Nothing is sent to a printer.
+  on synthetic scans, the 32-bit TWAIN helper is started for real and scans its stand-in
+  scanners (`TwainHelperTests`), and the Windows Scan device watcher runs in the unpackaged test
+  process (`WinRtScannerTests`). Nothing is sent to a printer.
 - **`CompleteScanner.TwainHelper`** — the 32-bit TWAIN helper (x86, .NET 10): a small console
   program without a window that the app starts when a scanner driver is installed only for
   32-bit programs (see [TWAIN](#twain)). The app's build copies it next to `CompleteScanner.exe`.
 - **`CompleteScanner.App`** — the native Windows shell (WPF, .NET 10): main window with
   sidebar/inspector/preview-canvas/page-strip/photo-review, a view-model porting the macOS
-  `AppState` orchestration, and Windows service implementations (WIA, eSCL and TWAIN
+  `AppState` orchestration, and Windows service implementations (WIA, Windows Scan, eSCL and TWAIN
   scanning, Windows.Media.Ocr, WPF imaging codecs). Its package dependencies, each pinned to an
   exact version, are [NTwain](https://github.com/soukoku/ntwain) 3.7.6 (MIT) for TWAIN and
   [ZXing.Net](https://github.com/micjahn/ZXing.Net) 0.16.11 (Apache-2.0) for barcode and QR
@@ -111,7 +114,8 @@ The main window has four tabs, like the macOS app:
 
 A scanner that several backends reach (WIA and TWAIN for one USB scanner, WIA and eSCL for
 one network MFP) is one row in the sidebar. The app connects through WIA when it can, then
-eSCL, then TWAIN; the row's **via WIA ▾** menu chooses another connection for that scanner
+eSCL, then TWAIN, and through Windows Scan only when it is chosen or the only connection left
+(see [Windows Scan](#windows-scan-backup-connection)); the row's **via WIA ▾** menu chooses another connection for that scanner
 (or **Automatic** again). The same menu is the row's context menu (right-click, Shift+F10 or
 the Menu key), which is also the way to reach it in the folded sidebar rail; Tab moves from
 the selected row to its **via** button. While a scan runs or the photo review is open, a new
@@ -1116,6 +1120,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | Demo scanner + WPF shell | **Verified on Windows 11:** the app launches and connects to the Demo Scanner; driving the view-model, Photos-mode scans detect, re-crop and save the demo photos, Document-mode scans queue, rotate and save a multi-page PDF (with the OCR pass), cancelled scans/OCR/PDF saves leave no files, and scan history fills. All three tabs, the photo review and the crop editor were checked on screen (including the 700×560 minimum window); a hands-on interactive walkthrough is still to do |
 | Windows OCR (`WindowsOcrService`) | **Verified on Windows 11** against rendered text (line boxes come back in the bottom-left-origin Core convention); needs a language pack installed |
 | WIA backend (`WiaScannerBackend`) | **Experimental, untested against hardware** — documented WIA Automation flow; enumeration runs off the UI thread and re-polls (every 10 s backing off to 60 s while no scanner is present, every 60 s while one is), so scanners plugged in or unplugged later show up without a restart. The sources come from the device's document-handling capabilities, so a feeder-only scanner offers no flatbed and no preview; the feeder's sheet size and two-sided support are reported; two-sided feeder scans select FEEDER, DUPLEX and FRONT_FIRST (without FRONT_FIRST for a driver that refuses it, the feeder alone, one side, for a driver that refuses two-sided feeding, which the app is told) and every sheet (`WIA_DPS_PAGES` 0); a driver that takes no feeder selection at all scans the feeder only when it is already selected (single-source drivers can make the selection read-only), with the sides it has selected, and otherwise fails rather than scanning another source; a feeder paper size is set through `WIA_DPS_PAGE_SIZE` (the custom size and width/height for sizes WIA has no name for) and the item's extents; a feeder batch uses one connection; WIA error codes become plain messages (an empty feeder says "Load paper in the feeder, then scan again."); a batch that fails partway keeps the sheets already scanned and tells the user how many were kept and why it stopped. Expect to iterate with a real scanner attached |
+| Windows Scan backup connection (`WinRtScannerBackend`, `WindowsScan`) | **Experimental, untested against hardware** — see [Windows Scan](#windows-scan-backup-connection) below. The decisions in Core (capabilities from each source's reported bounds, the scan request: resolution, color mode, file format, area, paper size, two sides; error mapping, which failures hide the connection (one scanner refusing to open does not hide the others: `WindowsScanAccess`), the feeder area a scan of a feeder of unknown size puts back, page order of a partly scanned batch, the diagnostics) are covered by `WindowsScanTests` and the `FromBounds` cases of `ResolutionListTests`; `WinRtScannerTests` check the Core enums against the WinRT ones, the paper sizes against `PrintMediaSize`, and run the real device watcher. Checked on Windows 11 without a scanner, in this unpackaged app: the watcher's first pass completes in about half a second with no scanner listed and `devices.txt` says "Windows Scan (backup): watching, 0 scanner(s)"; opening a device that is not there reports an offline scanner (`WIA_S_NO_DEVICE_AVAILABLE`), not a refusal of the API. Driving the view model with stand-in WIA and Windows Scan entries for one scanner checked one row "via WIA", the chooser offering "Windows Scan (backup)", choosing it and Automatic again, the backup taking over when WIA stops listing the scanner (captioned "Windows Scan (backup)") and WIA taking back over when it lists it again, and the watcher ending with the app; and, with a stand-in WIA whose enumerations end when told, parked on the demo: a scanner Windows Scan lists first is not chosen, WIA is asked to look again at once and is used when it lists the scanner (Windows Scan never opened), a WIA look that began before the scanner appeared does not count, and Windows Scan is chosen once WIA has looked and does not list it. `WiaEnumerationTests` checks that a refresh asked for while WIA enumerates starts one more after it, and `WinRtScannerTests` that the sources a session reads raise a list change, which writes `devices.txt` again. **Unverified:** real devices: listing, names and grouping with their WIA entries, capabilities, scans, preview, the feeder, two sides and their page order, paper sizes, cancel, and the file names a partly scanned batch leaves |
 | Task start screen (`TaskCatalog`, `TaskFlow`, `SettingsAdapter`) | Covered by `ScanTaskTests`, `TaskFlowTests`, `SettingsAdapterTests` and the task cases in `ModelsCompatTests` (same cases as macOS). Checked by driving the view model with the demo scanner and fake flatbed-only and feeder-only scanners (each task's settings, scans and file names, the task ending when the mode is changed by hand or the scanner lacks its source, the reasons on unavailable cards, presets and scanner switches going through `SettingsAdapter`, the task coming back after a restart), and by building the window without showing it: tabs, cards, banner, keyboard navigation, screen-reader names and the banner's announcements of the task and of each new step, rendered off screen in light and dark |
 | PDF sizes (`PdfImageEncoding`, `ColorAnalysis`) | Covered by `PdfImageEncodingTests`, `ColorAnalysisTests`, the gray-JPEG cases in `PdfBuilderTests` and the size cases in `ModelsCompatTests` and `ScanTaskTests` (same cases as macOS). Checked by driving the view model's real save path with two public-domain document scans in every color mode and size (image size and color space as planned, page size unchanged, every PDF renders through Windows.Data.Pdf close to the scan, sizes shrink in order; see [PDF size](#pdf-size)) and by building the window without showing it: the size control, its hint and last-size line, hiding it for other formats and Photos, the Email card, rendered off screen in light and dark |
 | Black & white as CCITT G4 (`CcittG4Encoder`, `Bilevel`, `BilevelTiff`, `PdfCcittImage`) | Covered by `CcittG4EncoderTests` (the code tables against T.4, known answers for all-white and all-black pages, pass, horizontal and every vertical mode, runs past 2560, no rows, single pixels and one-pixel lines; every run length of both colors, odd widths and 20000-pixel rows decoded back by PdfPig's CCITT filter; golden bytes for a checkerboard, seeded noise and the blank-page tests' text page; the threshold), `BilevelOutputTests` in Core (the image dictionary and its data, JPEG and G4 pages with a text layer, PDF/A, a protected file opened with its password, a page added to a PDF, all decoded by PdfPig; one- and three-page TIFFs field by field, golden bytes) and in the App tests (WIC decodes one- and three-page TIFFs pixel for pixel; WIC's own G4 encoder gives the same bytes, strip by strip, for every page and every run length; saving a black & white TIFF writes G4 and others stay LZW; turning one in the Saved tab keeps it G4; Windows.Data.Pdf renders plain, PDF/A and added G4 pages pixel for pixel, read at three times their size), and the G4 cases of `PdfImageEncodingTests` (same cases as macOS). Checked by driving the view model's real save path with the two public-domain scans in black & white at every size, at 300 and 600 dpi, as PDF/A, with a password, added to an existing PDF and as TIFF: the image is the planned 1-bit G4 image, PdfPig decodes exactly the stored pixels, Windows.Data.Pdf renders it as it renders the same pixels in a quality-100 gray JPEG (it resamples large page images whatever their encoding), WIC decodes the TIFFs exactly; sizes in [PDF size](#pdf-size). **Not run:** veraPDF on a black & white PDF/A file here (CI validates the new `pdfa-black-and-white.pdf` sample) and qpdf (neither is installed here). **The Mac** stores black & white pages as gray JPEGs and writes LZW TIFFs until its port of the PDF writer |
@@ -1149,11 +1154,13 @@ Known divergences from the macOS app (all documented in the source):
   font rasterizer), so OCR demos need a real scan. Its receipts are the exception: they are
   printed in a plain stroke type drawn pixel by pixel (the same on the Mac), which Windows OCR
   reads.
-- WIA, eSCL and TWAIN exist only here, so their logic in Core (`WiaErrors.cs`, `Escl/`,
-  `Twain/`) and its tests (`WiaErrorsTests`, `EsclTests`, `EsclRetryTests`,
-  `EsclClientTests`, `EsclDiscoveryTests`, `EsclTrustTests`, `TwainScanLoopTests`,
-  `TwainRasterTests`, `TwainScanRequestsTests`, `TwainHelperProtocolTests`,
-  `TwainHelperSessionTests`) have no Swift counterparts, nor has the 32-bit TWAIN helper: the Mac reaches
+- WIA, Windows Scan, eSCL and TWAIN exist only here, so their logic in Core (`WiaErrors.cs`,
+  `WindowsScan.cs` and `ResolutionList.FromBounds`, `Escl/`, `Twain/`) and its tests
+  (`WiaErrorsTests`, `WindowsScanTests` and the `FromBounds` cases of `ResolutionListTests`,
+  `EsclTests`, `EsclRetryTests`, `EsclClientTests`, `EsclDiscoveryTests`, `EsclTrustTests`,
+  `TwainScanLoopTests`, `TwainRasterTests`, `TwainScanRequestsTests`, `TwainHelperProtocolTests`,
+  `TwainHelperSessionTests`, and `WinRtScannerTests` and `WiaEnumerationTests` in
+  `CompleteScanner.App.Tests`) have no Swift counterparts, nor has the 32-bit TWAIN helper: the Mac reaches
   the same scanners through ImageCaptureCore, whose Bonjour browsing also finds network
   scanners. The scanner problems they report (`ScannerProblem`) are shared with macOS.
 - The troubleshooter's checks (`Troubleshooter`) are shared, but each app fills in what it can
@@ -1252,6 +1259,79 @@ Known divergences from the macOS app (all documented in the source):
   a gray JPEG, planned as a gray page is, so its black & white PDFs are as before, and writes its
   black & white TIFFs as LZW; both change with the Mac's port of the PDF writer, which must give
   the same G4 bytes (the golden values in `CcittG4EncoderTests`).
+
+## Windows Scan (backup connection)
+
+WIA scanners can also be reached through Windows Scan, the WinRT `ImageScanner` API
+(`Windows.Devices.Scanners`) that the Windows Scan app uses, over the same WIA 2.0 drivers. It
+is a backup to the WIA Automation connection, never a replacement: nothing changes for a
+scanner WIA Automation reaches unless the user picks it. It is Windows only; the Mac reaches the
+same scanners through ImageCaptureCore.
+
+- **Where it shows.** The same scanner listed by WIA and by Windows Scan is one row; its
+  **via** menu offers "Windows Scan (backup)". The connection ranks after every other one
+  (WIA, network, TWAIN), so it is used only when chosen there, or when it is the only
+  connection left to the scanner, for example when WIA Automation lists nothing; the row is
+  then captioned "Windows Scan (backup)". The choice is kept like any other connection choice
+  (`preferredConnection` in `preferences.json`).
+- **Not ahead of WIA.** Windows Scan lists a scanner as soon as it is plugged in, WIA
+  Automation only on its next poll (10 s to a minute later). So a scanner only Windows Scan
+  (or Windows Scan and TWAIN) lists is not chosen on its own until WIA Automation has looked
+  again: the app has it enumerate at once, and waits for an enumeration that began after the
+  scanner appeared (one already running when it appeared does not count). If WIA then lists
+  it, WIA is used and Windows Scan is never opened; if not, Windows Scan is the connection
+  left and is chosen. Meanwhile the row is listed and the user can pick it.
+- **Finding scanners.** A device watcher on `ImageScanner.GetDeviceSelector()` lists the
+  scanners that are plugged in and follows them being plugged in or out, without polling.
+- **Without package identity.** The app is not installed as a package. Listing scanners and
+  opening one work without package identity or any declared capability (checked on Windows 11:
+  the watcher's first pass completes, and opening a device reaches WIA, which answers
+  `WIA_S_NO_DEVICE_AVAILABLE` for one that is not there). Should Windows refuse the API
+  (no package identity, access denied, or an edition without it) when the watcher starts or
+  a device is opened, the connection lists nothing and `devices.txt` says "Windows Scan
+  (backup): unavailable, connection hidden" and why; the other connections are not affected.
+  An access denial from opening a device can also be that one device refusing (its driver, or
+  the device held by another program), so it hides the connection only when no device has
+  opened yet and every scanner Windows Scan lists has refused; until then only that scanner
+  fails, and the others stay listed.
+  Once a device is open the API works, so later errors (an access denial from the device, or
+  the app's own temporary folder that cannot be written) fail that scan only. When Windows stops the watcher on its own,
+  what it found stays listed, `devices.txt` says so, and the troubleshooter's **Refresh**
+  starts it again.
+- **What it reports.** The flatbed and the feeder as the device reports them (a feeder-only
+  scanner offers no flatbed and no preview), the glass and the feeder's largest sheet, two-sided
+  feeding, and the resolutions: Windows Scan gives only the smallest, largest and optical
+  resolution, so the standard ladder between the first two is offered, nothing above the optical
+  one (`ResolutionList.FromBounds`; a largest resolution the driver does not report is unknown,
+  and the usual list is offered). The color modes, file formats and paper sizes each source
+  takes, and whether it can measure the sheets itself, decide the request and are listed in
+  `devices.txt` once a scanner has been opened. A device that offers neither a flatbed nor a
+  feeder to configure is scanned with its own settings.
+- **Scanning.** The resolution nearest the one asked for; the same color mode, or the nearest
+  the source takes (black & white falls back to gray, which the app turns black and white
+  itself); PNG, else TIFF, else BMP, else JPEG. The flatbed scans the selected area in inches
+  (the whole glass without one). The feeder takes every sheet, both sides when asked and it
+  can, and a paper size by name when it takes it (otherwise as an area), or measures each sheet
+  for Automatic when it can (otherwise it scans its largest sheet). The device keeps its
+  settings for the whole session, so every feeder scan states its area: the whole feeder, set
+  before a size by name or measuring, unless the paper is asked for as an area. A feeder whose
+  size it does not report gets no area to state: a scan that asks for no size by name there
+  (Automatic, or a size it does not take by name) first puts back the page size and area the
+  feeder had when the session opened, so an earlier scan's paper size does not stay. Pages are
+  tagged with the resolution the driver reports; a device that configures itself reports none,
+  and its pages take the resolution their file records (not 72 or 96 dpi, which stand for none),
+  else the one asked for. Each scan writes its files to a new folder inside the app's own
+  page spool (`%TEMP%\CompleteScanner-pages`), never to the user's folders, and the folder is
+  deleted once the pages are read. A multi-page TIFF gives one page per frame.
+- **Preview, cancel and errors.** The overview is the device's own preview when it makes
+  one, otherwise a 150 dpi scan. Cancel cancels the running Windows operation. Errors become
+  the same plain messages as WIA's (the WIA codes Windows Scan passes on, a device that went
+  away, a broken link to the WIA service); a feeder batch that fails partway keeps the sheets
+  already written and says why it stopped, and an empty feeder after some sheets just ends it.
+- **To check on real hardware:** listing and grouping with the WIA entries (`devices.txt`),
+  capabilities, flatbed, preview, feeder and two-sided scans and their page order, paper
+  sizes and measured sheets, cancel during a long scan, a jam partway (the file names a partly
+  scanned batch leaves), and a scanner unplugged while open.
 
 ## TWAIN
 

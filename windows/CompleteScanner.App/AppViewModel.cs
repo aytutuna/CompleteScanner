@@ -554,6 +554,16 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// so only the user choosing one asks about its certificate.
     /// </summary>
     private readonly HashSet<string> _certificateRefused = [];
+    /// <summary>WIA Automation, which finds scanners by polling (null when the app runs without it).</summary>
+    private readonly Scanning.IPolledScannerBackend? _polled;
+    /// <summary>
+    /// Each Windows Scan entry listed now, with how many WIA enumerations had started when it was
+    /// first listed: until WIA finishes a later one, its scanner may simply not be in WIA's list
+    /// yet (see <see cref="AwaitingWia"/>).
+    /// </summary>
+    private readonly Dictionary<string, long> _windowsScanListedAt = [];
+    /// <summary>The last merge found a Windows Scan entry <see cref="AwaitingWia"/>: the end of a WIA enumeration merges again.</summary>
+    private bool _windowsScanAwaitingWia;
     /// <summary>The device diagnostics last written (see <see cref="WriteDeviceDiagnostics"/>).</summary>
     private string _lastDeviceReport = "";
     /// <summary>Reads the WIA service and the network for the troubleshooter; opens Settings and copies (a stand-in in tests).</summary>
@@ -630,7 +640,9 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         _labelsCarriedUnder = Settings.Document.Clone();
         _readsBarcodes = PageProcessor.ReadsBarcodes(Settings);
         SyncTaskFlow();
-        _backends = backends ?? DefaultBackends();
+        // Windows Scan writes each scan's files to the page spool, created below; it is read only once a scan runs.
+        _backends = backends ?? DefaultBackends(SpoolDirectory);
+        _polled = _backends.OfType<Scanning.IPolledScannerBackend>().FirstOrDefault();
         _presetStore = new PresetStore();
         var preferences = AppPreferencesStore.Load();
         // A null value can only come from a hand-edited file; it means no choice.
@@ -662,10 +674,17 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// </summary>
     public Task CurrentOperation => _currentOperation;
 
-    private static IReadOnlyList<IScannerBackend> DefaultBackends()
+    /// <summary>This process's page spool folder.</summary>
+    private string SpoolDirectory() => _spool.Directory;
+
+    /// <param name="spoolFolder">This process's page spool folder, where Windows Scan writes the files of a scan.</param>
+    private static IReadOnlyList<IScannerBackend> DefaultBackends(Func<string> spoolFolder)
     {
         var twain = new Scanning.Twain.TwainScannerBackend();
         return [new Scanning.WiaScannerBackend(),
+                // The backup connection to WIA scanners: ranked after every other connection, and
+                // listed before the 32-bit TWAIN helper, which also ranks last.
+                new Scanning.WinRtScannerBackend(spoolFolder),
                 new Scanning.EsclScannerBackend(),
                 twain,
                 // Drivers installed only for 32-bit programs, through the 32-bit helper.
@@ -747,6 +766,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
 
     public void Start()
     {
+        // A Windows Scan entry WIA had not confirmed waits for the end of a WIA enumeration (see AwaitingWia).
+        if (_polled is not null) _polled.EnumerationFinished += () => _dispatcher.BeginInvoke(AfterWiaEnumeration);
         foreach (var backend in _backends)
         {
             backend.DevicesChanged += () => _dispatcher.BeginInvoke(MergeDevices);
@@ -771,6 +792,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     private void MergeDevices()
     {
         var entries = _backends.SelectMany(b => b.Devices).ToList();
+        TrackWindowsScanEntries(entries);
         DeviceGroups = DeviceMerge.Group(entries, DeviceMerge.WindowsRanking, _preferredConnection);
         WriteDeviceDiagnostics();
 
@@ -823,6 +845,42 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         NotifyAll();
     }
 
+    /// <summary>
+    /// Notes when each Windows Scan entry was first listed, and has WIA Automation look again for a
+    /// new one: Windows Scan reports a scanner as soon as it is plugged in, WIA only on its next
+    /// poll (up to a minute later), so the WIA entry of the same scanner is usually on its way.
+    /// </summary>
+    private void TrackWindowsScanEntries(List<ScannerInfo> entries)
+    {
+        var listed = entries.Where(e => e.Backend == WindowsScanConnection.Backend).Select(e => e.Id).ToHashSet();
+        foreach (string gone in _windowsScanListedAt.Keys.Where(id => !listed.Contains(id)).ToList())
+        {
+            _windowsScanListedAt.Remove(gone);
+        }
+        if (_polled is null) return;
+        bool added = false;
+        foreach (string id in listed)
+        {
+            added |= _windowsScanListedAt.TryAdd(id, _polled.EnumerationsStarted);
+        }
+        if (added) _polled.RefreshDevices();
+        _windowsScanAwaitingWia = _windowsScanListedAt.Values.Any(listedAt => _polled.EnumerationsFinished <= listedAt);
+    }
+
+    /// <summary>
+    /// A Windows Scan entry listed before WIA Automation finished an enumeration that started after
+    /// it appeared: WIA may list the same scanner any moment, so it is not chosen on its own yet.
+    /// </summary>
+    private bool AwaitingWia(ScannerInfo device) =>
+        device.Backend == WindowsScanConnection.Backend && _polled is { } wia
+        && _windowsScanListedAt.TryGetValue(device.Id, out long listedAt) && wia.EnumerationsFinished <= listedAt;
+
+    /// <summary>WIA Automation finished looking: a scanner waiting for it is either in its list now or reached only through Windows Scan.</summary>
+    private void AfterWiaEnumeration()
+    {
+        if (_windowsScanAwaitingWia) MergeDevices();
+    }
+
     /// <summary>Re-evaluate a deferred automatic device switch once nothing is in progress.</summary>
     private void EndOfWork()
     {
@@ -840,13 +898,20 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// scanner only TWAIN reaches is never chosen on its own: TWAIN lists installed drivers,
     /// not connected scanners, and opening the driver of one that is off or gone can show the
     /// driver's own error messages and fails anyway. It is opened only when the user picks it.
-    /// Nor is a scanner whose changed certificate was not trusted (<see cref="_certificateRefused"/>).
+    /// Nor is a scanner whose changed certificate was not trusted (<see cref="_certificateRefused"/>),
+    /// nor, for now, one only Windows Scan (and TWAIN) lists before WIA Automation has looked
+    /// again (<see cref="AwaitingWia"/>): Windows Scan is a backup, and the WIA entry of the same
+    /// scanner is usually on its way. Once WIA has looked and does not list it, Windows Scan is
+    /// the connection left, and it is chosen.
     /// </summary>
     private string? PreferredDefaultDevice() =>
-        (DeviceGroups.FirstOrDefault(g => !g.Primary.IsDemo && !TwainOnly(g) && !_certificateRefused.Contains(g.Primary.Id))
+        (DeviceGroups.FirstOrDefault(g => !g.Primary.IsDemo && !NotChosenOnItsOwn(g) && !_certificateRefused.Contains(g.Primary.Id))
          ?? DeviceGroups.FirstOrDefault(g => g.Primary.IsDemo))?.Primary.Id;
 
     private static bool TwainOnly(DeviceGroup group) => group.Members.All(m => IsTwain(m));
+
+    /// <summary>Every connection to the scanner is TWAIN or a Windows Scan entry <see cref="AwaitingWia"/> (see <see cref="PreferredDefaultDevice"/>).</summary>
+    private bool NotChosenOnItsOwn(DeviceGroup group) => group.Members.All(m => IsTwain(m) || AwaitingWia(m));
 
     /// <summary>A TWAIN connection, in this process (64-bit drivers) or through the 32-bit helper.</summary>
     internal static bool IsTwain(ScannerInfo device) => device.Backend is "twain" or TwainHelperSources.Backend;

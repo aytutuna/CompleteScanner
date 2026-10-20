@@ -120,4 +120,39 @@ public class ResolutionListTests
         Assert.Equal([75, 150], ResolutionList.Build([0, -75], [75, 150, -1], 0));
         Assert.Empty(ResolutionList.Build(null, [0, -1], 0));
     }
+
+    // MARK: - FromBounds (the Windows Scan connection reports only min, max and optical)
+
+    [Fact]
+    public void FromBoundsIsTheLadderBetweenTheBoundsCappedAtOptical()
+    {
+        Assert.Equal([50, 72, 75, 100, 150, 200, 240, 300, 400, 600, 800, 1200], ResolutionList.FromBounds(50, 4800, 1200));
+        // Bounds off the ladder are offered too.
+        Assert.Equal([60, 72, 75, 100, 150, 200, 240, 300, 400, 600, 700], ResolutionList.FromBounds(60, 700, 0));
+        // An optical resolution between the bounds but off the ladder is a real value.
+        Assert.Equal([100, 150, 200, 240, 300, 400, 500], ResolutionList.FromBounds(100, 1200, 500));
+        // An optical resolution outside the bounds caps nothing it cannot reach.
+        Assert.Equal([100, 150, 200, 240, 300], ResolutionList.FromBounds(100, 300, 600));
+    }
+
+    [Fact]
+    public void FromBoundsOfASingleValueOrSwappedBounds()
+    {
+        Assert.Equal([300], ResolutionList.FromBounds(300, 300, 300));
+        Assert.Equal([150, 200, 240, 300], ResolutionList.FromBounds(300, 150, 0));
+    }
+
+    [Fact]
+    public void FromBoundsWithUnknownValues()
+    {
+        // No minimum: the ladder from its lowest value.
+        Assert.Equal([50, 72, 75, 100, 150, 200], ResolutionList.FromBounds(0, 200, 0));
+        Assert.Equal([50, 72, 75, 100, 150, 200], ResolutionList.FromBounds(-10, 200, -1));
+        Assert.Equal([10], ResolutionList.FromBounds(-10, 50, 10));
+        Assert.Empty(ResolutionList.FromBounds(0, 0, 0));
+        Assert.Empty(ResolutionList.FromBounds(-300, -100, 0));
+        // No maximum (its read failed) is unknown, not a cap at the minimum.
+        Assert.Empty(ResolutionList.FromBounds(50, 0, 0));
+        Assert.Empty(ResolutionList.FromBounds(300, -1, 600));
+    }
 }

@@ -118,6 +118,27 @@ public static class ResolutionList
     }
 
     /// <summary>
+    /// The resolutions of a device that reports only its smallest, largest and optical
+    /// resolution (the Windows Scan connection): the <see cref="StandardLadder"/> values between
+    /// <paramref name="min"/> and <paramref name="max"/>, the two bounds themselves and the
+    /// optical resolution when it lies between them, then <see cref="Build"/> with the optical
+    /// resolution as the native one. A non-positive maximum is unknown: empty, whatever the
+    /// minimum (so the caller offers its fallback list rather than only the minimum). A
+    /// non-positive minimum is unknown too (the ladder starts at its lowest value). Two known
+    /// bounds given the wrong way round are swapped.
+    /// </summary>
+    public static List<int> FromBounds(int min, int max, int optical)
+    {
+        if (max <= 0) return [];
+        if (min > max) (min, max) = (max, min);
+        int low = Math.Max(min, 1);
+        var supported = new HashSet<int>(StandardLadder.Where(dpi => dpi >= low && dpi <= max)) { max };
+        if (min > 0) supported.Add(min);
+        if (optical >= low && optical <= max) supported.Add(optical);
+        return Build(preferred: null, supported, optical);
+    }
+
+    /// <summary>
     /// Upper bound for <see cref="ExpandRange"/>: far above any real optical resolution, but
     /// keeps a hostile or broken device (e.g. max = int.MaxValue, step = 1) from making the
     /// expansion enumerate billions of values.
