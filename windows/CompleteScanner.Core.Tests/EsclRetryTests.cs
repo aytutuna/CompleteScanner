@@ -8,6 +8,7 @@ namespace CompleteScanner.Core.Tests;
 // eSCL only (see EsclTests): no Swift counterpart. Time is simulated: the fake delay
 // advances a fake clock instead of waiting.
 
+[Collection(WallClockCollection.Name)]
 public class EsclRetryTests
 {
     /// <summary>Answers with the queued statuses in order, then 200; records every request.</summary>

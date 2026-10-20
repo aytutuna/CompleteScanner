@@ -11,6 +11,7 @@ namespace CompleteScanner.Core.Tests;
 // image data, errors, cancel, a helper that crashes or stops answering. The real helper process
 // is checked in CompleteScanner.App.Tests (TwainHelperTests).
 
+[Collection(WallClockCollection.Name)]
 public class TwainHelperSessionTests
 {
     private static readonly TwainLoopTimeouts LoopTimeouts =

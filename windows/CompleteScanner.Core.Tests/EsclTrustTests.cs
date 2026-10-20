@@ -13,6 +13,7 @@ namespace CompleteScanner.Core.Tests;
 // Certificate pinning for eSCL over HTTPS, the escl-trust.json and escl-hosts.json files, and
 // one end-to-end check through a real TLS connection to a loopback server.
 
+[Collection(WallClockCollection.Name)]
 public sealed class EsclTrustTests : IDisposable
 {
     private const string Uuid = "564e4333-4230-3538-3930-a0b3cce51a2b";

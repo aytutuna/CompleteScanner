@@ -9,6 +9,7 @@ namespace CompleteScanner.Core.Tests;
 // a stub HttpMessageHandler that plays a device; retry waits run on a fake clock. Pages are
 // "decoded" by a stub decoder: "PAGE w h" becomes a w×h image, anything else is unreadable.
 
+[Collection(WallClockCollection.Name)]
 public class EsclClientTests
 {
     private static readonly Uri Base = new("http://scanner.test/eSCL/");

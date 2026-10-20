@@ -32,8 +32,11 @@ jobs:
             & $script -Channel 10.0 -Runtime windowsdesktop -Architecture x86 -InstallDir $root -NoPath
           }
           Get-ChildItem (Join-Path $root 'shared\Microsoft.WindowsDesktop.App') | Select-Object -ExpandProperty Name
+      # Built first, so the tests do not share the runner's cores with the compiler.
+      - name: Build
+        run: dotnet build windows/CompleteScanner.sln -c Release
       - name: Test
-        run: dotnet test windows/CompleteScanner.sln -c Release
+        run: dotnet test windows/CompleteScanner.sln -c Release --no-build
         env:
           # The helper's tests must run here, never be skipped for a missing runtime.
           COMPLETESCANNER_REQUIRE_TWAIN_HELPER: '1'

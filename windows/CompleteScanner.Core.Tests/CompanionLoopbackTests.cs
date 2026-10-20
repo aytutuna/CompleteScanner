@@ -123,6 +123,7 @@ internal sealed class FakePhone : IDisposable
     public void Dispose() => _client.Dispose();
 }
 
+[Collection(WallClockCollection.Name)]
 public sealed class CompanionLoopbackTests : IAsyncLifetime
 {
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "CompleteScannerTests-" + Guid.NewGuid().ToString("N"));

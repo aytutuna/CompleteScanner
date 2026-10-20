@@ -7,6 +7,7 @@ namespace CompleteScanner.Core.Tests;
 
 // The desktop's request handling, without a network (C# only until the Mac server).
 
+[Collection(WallClockCollection.Name)]
 public sealed class CompanionRouterTests : IDisposable
 {
     private static readonly IPAddress Phone = IPAddress.Parse("192.168.1.30");
