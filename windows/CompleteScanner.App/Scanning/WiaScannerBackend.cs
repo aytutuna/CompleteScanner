@@ -17,7 +17,7 @@ namespace CompleteScanner.App.Scanning;
 ///   - Transfer() is synchronous with no progress callbacks — progress is coarse;
 ///   - CancelScan() cannot abort an in-flight WIA transfer, it only discards the result.
 /// </summary>
-public sealed class WiaScannerBackend : IPolledScannerBackend, IScannerBackendDiagnostics
+public sealed class WiaScannerBackend : IPolledScannerBackend, IScannerBackendDiagnostics, IBackendDiagnostics
 {
     public event Action? DevicesChanged;
     public event Action? EnumerationFinished;
@@ -58,6 +58,12 @@ public sealed class WiaScannerBackend : IPolledScannerBackend, IScannerBackendDi
     /// <summary>Upper bound of the watchdog backoff.</summary>
     internal static readonly TimeSpan MaxRebrowseDelay = TimeSpan.FromSeconds(60);
 
+    internal const string DeviceManagerProgId = "WIA.DeviceManager";
+
+    /// <summary>Reads the WIA service (stisvc); any thread, never throws.</summary>
+    private readonly Func<ServiceStatus> _serviceStatus;
+    /// <summary>Whether WIA Automation (wiaaut.dll) is registered; any thread, never throws.</summary>
+    private readonly Func<bool> _automationRegistered;
     private SynchronizationContext? _context;
     private CancellationTokenSource? _watchdog;
     /// <summary>Bumped by every Start/StopBrowsing; enumeration results from an older generation are dropped.</summary>
@@ -68,9 +74,30 @@ public sealed class WiaScannerBackend : IPolledScannerBackend, IScannerBackendDi
     private bool _refreshAgain;
     private long _enumerationsStarted;
     private long _enumerationsFinished;
+    /// <summary>Why the last enumeration could not ask WIA (see <see cref="WiaAvailability"/>); null when it could.</summary>
+    private string? _unavailable;
+    /// <summary>The WIA service as the last enumeration read it.</summary>
+    private ServiceStatus _service;
 
     public long EnumerationsStarted => Interlocked.Read(ref _enumerationsStarted);
     public long EnumerationsFinished => Interlocked.Read(ref _enumerationsFinished);
+
+    public WiaScannerBackend() : this(new WindowsSystemDiagnostics().WiaService, AutomationRegistered)
+    {
+    }
+
+    /// <param name="serviceStatus">Reads the WIA service; asked on the WIA thread before each enumeration.</param>
+    /// <param name="automationRegistered">Whether WIA Automation is registered; asked likewise.</param>
+    internal WiaScannerBackend(Func<ServiceStatus> serviceStatus, Func<bool> automationRegistered)
+    {
+        _serviceStatus = serviceStatus;
+        _automationRegistered = automationRegistered;
+    }
+
+    /// <summary>Why WIA is not asked for scanners now; null when it is (or before the first enumeration).</summary>
+    public string? Unavailable => _unavailable;
+
+    public string? DiagnosticsReport => WiaAvailability.Report(_watchdog is not null, _unavailable, _devices.Count);
 
     /// <summary>
     /// Enumerate once now, then keep re-enumerating so the list follows the hardware without
@@ -79,14 +106,14 @@ public sealed class WiaScannerBackend : IPolledScannerBackend, IScannerBackendDi
     /// are not wired up here, so this polls). While no scanner is listed the poll starts at
     /// 10 s and doubles up to 60 s; while one is listed it runs every 60 s. A session that
     /// finds its device gone also triggers an immediate re-enumeration. Enumeration runs on
-    /// a background STA thread, so the UI thread never blocks on WIA.
+    /// the WIA thread (<see cref="WiaApartment"/>), so the UI thread never blocks on WIA.
     /// </summary>
     public void StartBrowsing()
     {
         if (_watchdog is not null) return;
         _context = SynchronizationContext.Current;
-        _browseGeneration++;
-        // An enumeration still running from before a Stop is stale; don't let it block this one.
+        Interlocked.Increment(ref _browseGeneration);
+        // An enumeration still queued from before a Stop is stale; don't let it block this one.
         _running = 0;
         _refreshAgain = false;
         _watchdog = new CancellationTokenSource();
@@ -99,7 +126,8 @@ public sealed class WiaScannerBackend : IPolledScannerBackend, IScannerBackendDi
         _watchdog?.Cancel();
         _watchdog?.Dispose();
         _watchdog = null;
-        _browseGeneration++;
+        Interlocked.Increment(ref _browseGeneration);
+        _unavailable = null;
         if (_devices.Count == 0) return;
         _devices.Clear();
         DevicesChanged?.Invoke();
@@ -138,8 +166,14 @@ public sealed class WiaScannerBackend : IPolledScannerBackend, IScannerBackendDi
             ? MaxRebrowseDelay
             : TimeSpan.FromTicks(Math.Min(current.Ticks * 2, MaxRebrowseDelay.Ticks));
 
-    /// <summary>The WIA service's state is read by the app (Services/SystemDiagnostics.cs); WIA adds nothing else.</summary>
-    public DiscoverySnapshot AddStatus(DiscoverySnapshot snapshot) => snapshot;
+    /// <summary>
+    /// The WIA service's state as the last enumeration read it, for a snapshot where the app has
+    /// not read it itself (it does, in Services/SystemDiagnostics.cs); WIA adds nothing else.
+    /// </summary>
+    public DiscoverySnapshot AddStatus(DiscoverySnapshot snapshot) =>
+        snapshot.WiaService == ServiceStatus.Unknown && _service != ServiceStatus.Unknown
+            ? snapshot with { WiaService = _service }
+            : snapshot;
 
     /// <summary>The troubleshooter's Refresh: list the WIA scanners again now, while browsing.</summary>
     public void Rescan()
@@ -161,8 +195,8 @@ public sealed class WiaScannerBackend : IPolledScannerBackend, IScannerBackendDi
     /// </summary>
     public void RefreshDevices()
     {
-        // Without a context to post to, results are applied on the enumeration thread under this
-        // lock (see Post); it is re-entered when a result starts the enumeration asked for meanwhile.
+        // Without a context to post to, results are applied on a pool thread under this lock (see
+        // Post); it is re-entered when a result starts the enumeration asked for meanwhile.
         lock (_devices) StartEnumeration();
     }
 
@@ -174,39 +208,74 @@ public sealed class WiaScannerBackend : IPolledScannerBackend, IScannerBackendDi
             return;
         }
         _refreshAgain = false;
-        int generation = _browseGeneration;
+        int generation = Volatile.Read(ref _browseGeneration);
         long number = Interlocked.Increment(ref _enumerationsStarted);
         _running = number;
-        var thread = new Thread(() =>
+        WiaApartment.Run(() => Enumerate(generation)).ContinueWith(task =>
         {
-            var found = EnumerateScanners();
+            var result = task.IsCompletedSuccessfully ? task.Result : new EnumerationResult([], null, ServiceStatus.Unknown);
             Post(() =>
             {
                 if (_running == number) _running = 0;
                 // A Stop/Start since this enumeration began makes its result stale.
                 if (generation != _browseGeneration) return;
                 if (number > Interlocked.Read(ref _enumerationsFinished)) Interlocked.Exchange(ref _enumerationsFinished, number);
-                ReplaceDevices(found);
+                _service = result.Service;
+                bool noteChanged = result.Unavailable != _unavailable;
+                _unavailable = result.Unavailable;
+                // A new reason (or none) is a change too: devices.txt is written again with it.
+                if (!ReplaceDevices(result.Found) && noteChanged) DevicesChanged?.Invoke();
                 EnumerationFinished?.Invoke();
                 if (_refreshAgain && _running == 0) RefreshDevices();
             });
-        })
-        {
-            IsBackground = true,
-            Name = "WIA enumeration",
-        };
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
+        }, TaskScheduler.Default);
     }
 
-    /// <summary>Run on the thread that started browsing (the UI thread in the app).</summary>
+    private sealed record EnumerationResult(List<ScannerInfo> Found, string? Unavailable, ServiceStatus Service);
+
+    /// <summary>
+    /// One enumeration, on the WIA thread: nothing when browsing stopped while it waited there, and
+    /// no WIA object at all when the service or WIA Automation is missing (<see cref="WiaAvailability"/>).
+    /// </summary>
+    private EnumerationResult Enumerate(int generation)
+    {
+        if (generation != Volatile.Read(ref _browseGeneration)) return new([], null, ServiceStatus.Unknown);
+        ServiceStatus service = _serviceStatus();
+        string? unavailable = WiaAvailability.Unavailable(service, _automationRegistered());
+        return new(unavailable is null ? EnumerateScanners() : [], unavailable, service);
+    }
+
+    /// <summary>Run on the thread that started browsing (the UI thread in the app); without one, under the lock.</summary>
     private void Post(Action action)
     {
         if (_context is { } context) context.Post(_ => action(), null);
         else lock (_devices) action();
     }
 
-    private static List<ScannerInfo> EnumerateScanners()
+    /// <summary>
+    /// WIA Automation's DeviceManager is registered and its DLL is on disk. Checked before the
+    /// first WIA object is created, so a PC without WIA lists nothing instead of failing in COM.
+    /// </summary>
+    internal static bool AutomationRegistered()
+    {
+        try
+        {
+            if (Type.GetTypeFromProgID(DeviceManagerProgId, throwOnError: false) is not { } type) return false;
+            using var server = Microsoft.Win32.Registry.ClassesRoot.OpenSubKey($@"CLSID\{{{type.GUID}}}\InprocServer32");
+            if (server?.GetValue(null) is not string path || path.Trim('"').Length == 0) return false;
+            path = Environment.ExpandEnvironmentVariables(path.Trim('"'));
+            // A bare file name is looked up on the search path, as COM does.
+            return !Path.IsPathRooted(path) || File.Exists(path);
+        }
+        catch (Exception e)
+        {
+            System.Diagnostics.Trace.TraceWarning($"Could not read the WIA Automation registration: {e.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>The scanners WIA lists now. WIA thread only.</summary>
+    internal static List<ScannerInfo> EnumerateScanners()
     {
         var found = new List<ScannerInfo>();
         // The watchdog may enumerate for hours: release every COM object deterministically
@@ -214,7 +283,7 @@ public sealed class WiaScannerBackend : IPolledScannerBackend, IScannerBackendDi
         var comObjects = new List<object>();
         try
         {
-            var managerType = Type.GetTypeFromProgID("WIA.DeviceManager");
+            var managerType = Type.GetTypeFromProgID(DeviceManagerProgId);
             if (managerType is null) return found;
             dynamic manager = Activator.CreateInstance(managerType)!;
             comObjects.Add(manager);
@@ -265,12 +334,14 @@ public sealed class WiaScannerBackend : IPolledScannerBackend, IScannerBackendDi
         return model.Length > 0 ? model : null;
     }
 
-    private void ReplaceDevices(List<ScannerInfo> found)
+    /// <summary>Lists <paramref name="found"/>; true (and DevicesChanged raised) when the list changed.</summary>
+    private bool ReplaceDevices(List<ScannerInfo> found)
     {
-        if (_devices.SequenceEqual(found)) return;
+        if (_devices.SequenceEqual(found)) return false;
         _devices.Clear();
         _devices.AddRange(found);
         DevicesChanged?.Invoke();
+        return true;
     }
 
     public Task<IScannerSession> OpenSessionAsync(string deviceId)
@@ -619,7 +690,7 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
 
     private dynamic Connect()
     {
-        var managerType = Type.GetTypeFromProgID("WIA.DeviceManager")
+        var managerType = Type.GetTypeFromProgID(WiaScannerBackend.DeviceManagerProgId)
             ?? throw ScanException.DeviceUnavailable("WIA is not available on this system.");
         dynamic manager = Activator.CreateInstance(managerType)!;
         dynamic infos = manager.DeviceInfos;
@@ -723,22 +794,9 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
     }
 
     /// <summary>
-    /// WIA Automation requires an STA apartment; transfers also block, so each call runs
-    /// on its own STA thread to keep the UI live.
+    /// WIA Automation requires an STA apartment and must not be used from two threads at once;
+    /// transfers also block. Each call runs on the WIA thread (<see cref="WiaApartment"/>), after
+    /// the enumerations and session work queued before it, so the UI stays live.
     /// </summary>
-    private static Task<T> RunSta<T>(Func<T> work)
-    {
-        var tcs = new TaskCompletionSource<T>();
-        var thread = new Thread(() =>
-        {
-            try { tcs.SetResult(work()); }
-            catch (Exception e) { tcs.SetException(e); }
-        })
-        {
-            IsBackground = true,
-        };
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        return tcs.Task;
-    }
+    private static Task<T> RunSta<T>(Func<T> work) => WiaApartment.Run(work);
 }

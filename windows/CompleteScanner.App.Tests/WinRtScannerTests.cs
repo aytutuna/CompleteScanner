@@ -187,4 +187,151 @@ public class WiaEnumerationTests
             SynchronizationContext.SetSynchronizationContext(previous);
         }
     }
+
+    /// <summary>
+    /// Many backends start, refresh and stop browsing from many threads at once, while other
+    /// threads list WIA's scanners directly. Every WIA call runs on the one WIA thread, one at a
+    /// time: WIA used from two STA threads at once hands objects across apartments and can crash
+    /// the process (an access violation in CoCreateInstance). Where WIA is not there, this runs
+    /// the same way without creating any WIA object.
+    /// </summary>
+    [Fact]
+    public async Task StartingAndStoppingFromManyThreadsKeepsWiaOnOneThread()
+    {
+        int wiaThread = WiaApartment.ThreadId;
+        var askedOn = new System.Collections.Concurrent.ConcurrentBag<(int Thread, ApartmentState Apartment)>();
+        var system = new Services.WindowsSystemDiagnostics();
+        ServiceStatus Service()
+        {
+            askedOn.Add((Environment.CurrentManagedThreadId, Thread.CurrentThread.GetApartmentState()));
+            return system.WiaService();
+        }
+
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(null);
+        var backends = new List<WiaScannerBackend>();
+        try
+        {
+            var browsers = Enumerable.Range(0, 8).Select(i => Task.Run(() =>
+            {
+                var wia = new WiaScannerBackend(Service, WiaScannerBackend.AutomationRegistered);
+                lock (backends) backends.Add(wia);
+                for (int round = 0; round < 25; round++)
+                {
+                    wia.StartBrowsing();
+                    wia.RefreshDevices();
+                    if ((round + i) % 3 == 0) Thread.Sleep(1);
+                    wia.Rescan();
+                    wia.StopBrowsing();
+                }
+                wia.StartBrowsing();
+            }));
+            // WIA asked directly too, as sessions do: every call succeeds with the same answer.
+            bool wiaThere = WiaScannerBackend.AutomationRegistered() && system.WiaService() == ServiceStatus.Running;
+            var counts = Enumerable.Range(0, 32).Select(_ => Task.Run(() => WiaApartment.Run(() => wiaThere ? CountWiaDevices() : 0)))
+                                   .ToList();
+            await Task.WhenAll(browsers);
+            int[] answers = await Task.WhenAll(counts);
+            Assert.All(answers, count => Assert.Equal(answers[0], count));
+
+            // Each backend browses at the end: its latest enumeration finishes, with an answer.
+            var waited = System.Diagnostics.Stopwatch.StartNew();
+            while (backends.Any(b => b.EnumerationsFinished < b.EnumerationsStarted) && waited.Elapsed < TimeSpan.FromSeconds(120))
+            {
+                await Task.Delay(20);
+            }
+            Assert.All(backends, b => Assert.Equal(b.EnumerationsStarted, b.EnumerationsFinished));
+            Assert.All(backends, b => Assert.Equal(backends[0].Unavailable, b.Unavailable));
+            Assert.All(backends, b => Assert.Equal(backends[0].Devices, b.Devices));
+            Assert.All(backends, b => Assert.StartsWith("WIA: ", b.DiagnosticsReport));
+        }
+        finally
+        {
+            foreach (var wia in backends) wia.StopBrowsing();
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
+        Assert.NotEmpty(askedOn);
+        Assert.All(askedOn, asked => Assert.Equal((wiaThread, ApartmentState.STA), asked));
+        Assert.Equal(1, WiaApartment.MostAtOnce);
+    }
+
+    /// <summary>The devices WIA lists, by plain WIA Automation calls that throw when WIA fails.</summary>
+    private static int CountWiaDevices()
+    {
+        var type = Type.GetTypeFromProgID(WiaScannerBackend.DeviceManagerProgId, throwOnError: true)!;
+        object manager = Activator.CreateInstance(type)!;
+        object? infos = null;
+        try
+        {
+            infos = ((dynamic)manager).DeviceInfos;
+            return (int)((dynamic)infos!).Count;
+        }
+        finally
+        {
+            if (infos is not null) System.Runtime.InteropServices.Marshal.FinalReleaseComObject(infos);
+            System.Runtime.InteropServices.Marshal.FinalReleaseComObject(manager);
+        }
+    }
+
+    /// <summary>Without its service WIA is not asked at all: nothing is listed, devices.txt and the troubleshooter say why.</summary>
+    [Theory]
+    [InlineData(ServiceStatus.NotInstalled, true, "the Windows Image Acquisition service (stisvc) is not installed")]
+    [InlineData(ServiceStatus.Disabled, true, "the Windows Image Acquisition service (stisvc) is disabled")]
+    [InlineData(ServiceStatus.Stopped, true, "the Windows Image Acquisition service (stisvc) is not running")]
+    [InlineData(ServiceStatus.Running, false, "WIA Automation (wiaaut.dll) is not registered on this PC")]
+    public void WithoutWiaNothingIsListedAndTheReportSaysWhy(ServiceStatus service, bool registered, string reason)
+    {
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(null);
+        var wia = new WiaScannerBackend(() => service, () => registered);
+        int changes = 0;
+        wia.DevicesChanged += () => Interlocked.Increment(ref changes);
+        try
+        {
+            Assert.Equal("WIA: off\n", wia.DiagnosticsReport);
+            wia.StartBrowsing();
+            var waited = System.Diagnostics.Stopwatch.StartNew();
+            while (wia.EnumerationsFinished < 1 && waited.Elapsed < TimeSpan.FromSeconds(60)) Thread.Sleep(10);
+            Thread.Sleep(50);
+            Assert.Equal(1, wia.EnumerationsFinished);
+            Assert.Empty(wia.Devices);
+            Assert.Equal(reason, wia.Unavailable);
+            Assert.Equal($"WIA: unavailable - {reason}\n", wia.DiagnosticsReport);
+            // The new reason is a change, so the app writes devices.txt again.
+            Assert.Equal(1, Volatile.Read(ref changes));
+            var snapshot = wia.AddStatus(new DiscoverySnapshot { Platform = TroubleshootPlatform.Windows });
+            Assert.Equal(service, snapshot.WiaService);
+            // What the app read itself stays.
+            Assert.Equal(ServiceStatus.Running,
+                         wia.AddStatus(new DiscoverySnapshot { WiaService = ServiceStatus.Running }).WiaService);
+        }
+        finally
+        {
+            wia.StopBrowsing();
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
+        Assert.Equal("WIA: off\n", wia.DiagnosticsReport);
+        Assert.Null(wia.Unavailable);
+    }
+
+    /// <summary>Work for WIA runs on its STA thread in the order it was asked for, and its failures reach the caller.</summary>
+    [Fact]
+    public async Task WiaWorkRunsInOrderOnItsStaThread()
+    {
+        var order = new List<int>();
+        var runs = Enumerable.Range(0, 50).Select(i => WiaApartment.Run(() =>
+        {
+            Assert.Equal(ApartmentState.STA, Thread.CurrentThread.GetApartmentState());
+            Assert.Equal(WiaApartment.ThreadId, Environment.CurrentManagedThreadId);
+            order.Add(i);
+            return i;
+        })).ToList();
+        Assert.Equal(Enumerable.Range(0, 50), await Task.WhenAll(runs));
+        Assert.Equal(Enumerable.Range(0, 50), order);
+        var failed = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            WiaApartment.Run<int>(() => throw new InvalidOperationException("driver")));
+        Assert.Equal("driver", failed.Message);
+        // The thread survives a failure.
+        Assert.Equal(7, await WiaApartment.Run(() => 7));
+    }
 }
