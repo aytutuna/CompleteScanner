@@ -160,6 +160,20 @@ final class PDFEncryptionTests: XCTestCase {
         XCTAssertEqual(cut, Array(Self.utf8(String(repeating: "ğ", count: 64))[0..<127]))
     }
 
+    func test_decomposePassword_isThePreparedPassword_decomposed_asPDFKitPassesItOn() {
+        // "Ş" is "S" and a combining cedilla (U+0327) once decomposed.
+        XCTAssertEqual(PDFProtection.decomposePassword("Şifre 2026"), Self.hex("53CCA7696672652032303236"))
+        XCTAssertEqual(PDFProtection.decomposePassword("\u{C7}a\u{11F}r\u{131}"), Self.utf8("C\u{327}ag\u{306}r\u{131}"))
+        XCTAssertEqual(PDFProtection.decomposePassword("\u{FB01}le"), Self.utf8("file")) // the "fi" ligature
+        XCTAssertEqual(PDFProtection.decomposePassword("a\u{A0}b\u{3000}c"), Self.utf8("a b c"))
+        XCTAssertEqual(PDFProtection.decomposePassword("x\u{AD}\u{200D}y\u{FE0F}"), Self.utf8("xy"))
+        // A Hangul syllable becomes its letters; ideographs and ASCII stay as they are.
+        XCTAssertEqual(PDFProtection.decomposePassword("\u{D55C}\u{AE00}"), Self.hex("E18492E185A1E186ABE18480E185B3E186AF"))
+        XCTAssertEqual(PDFProtection.decomposePassword("\u{5BC6}\u{7801}"), PDFProtection.preparePassword("\u{5BC6}\u{7801}"))
+        XCTAssertEqual(PDFProtection.decomposePassword("pw"), Self.utf8("pw"))
+        XCTAssertEqual(PDFProtection.decomposePassword(String(repeating: "ğ", count: 100)).count, 127)
+    }
+
     func test_problem_needsAPassword_typedTwiceTheSame_withoutControlCharacters() {
         XCTAssertNil(PDFProtection.problem("correct horse", "correct horse"))
         XCTAssertNil(PDFProtection.problem("a", "a")) // weak but allowed
@@ -256,9 +270,15 @@ final class PDFEncryptionTests: XCTestCase {
                                                     oe: encryption.oe, ue: encryption.ue), fileKey)
         XCTAssertNil(try PDFEncryption.fileKeyFor(PDFProtection.preparePassword("Sifre 2026"), o: encryption.o, u: encryption.u,
                                                   oe: encryption.oe, ue: encryption.ue))
-        // The owner password is the random bytes 48-79, known to nobody.
-        XCTAssertEqual(try PDFEncryption.fileKeyFor(Self.bytes(48..<80), o: encryption.o, u: encryption.u,
+        // "Ş" decomposes, so the owner password is the password as PDFKit passes it on; the random
+        // bytes 48-79 are still taken, and open nothing.
+        let decomposed = PDFProtection.decomposePassword("Şifre 2026")
+        XCTAssertEqual(try PDFEncryption.hash(decomposed, salt: Array(encryption.o[32..<40]), userKey: encryption.u),
+                       Array(encryption.o[0..<32]))
+        XCTAssertEqual(try PDFEncryption.fileKeyFor(decomposed, o: encryption.o, u: encryption.u,
                                                     oe: encryption.oe, ue: encryption.ue), fileKey)
+        XCTAssertNil(try PDFEncryption.fileKeyFor(Self.bytes(48..<80), o: encryption.o, u: encryption.u,
+                                                  oe: encryption.oe, ue: encryption.ue))
         XCTAssertTrue(PDFEncryption.permsMatch(fileKey: fileKey, perms: encryption.perms, p: -4))
         let block = try PDFEncryption.aes(kCCDecrypt, key: fileKey, iv: [UInt8](repeating: 0, count: 16),
                                           options: kCCOptionECBMode, data: encryption.perms)
@@ -274,10 +294,24 @@ final class PDFEncryptionTests: XCTestCase {
     /// The values for "Şifre 2026" and the counting bytes (C#'s `Golden`).
     private enum Golden {
         static let u = "69E56736D0DC99ADAB81C8C974CB117CD64C8EACD3B03BA79DAA6F37ACA51290202122232425262728292A2B2C2D2E2F"
-        static let o = "F6D8793869C7418AB1BE980323F4DDF6C76717D168050679226E5AD5EBD86926505152535455565758595A5B5C5D5E5F"
+        static let o = "5FBC1E5693C9182C7FF0F1F08FCC86C0151769BFD5E52B6BB85C82CA6947FE31505152535455565758595A5B5C5D5E5F"
         static let ue = "5939E7CB89B321D9B11D24CF5015E35106ED748026E84F76FE7B2542DDEA6E0D"
-        static let oe = "4FDF86C332319050440D7022CD29D423E9E2BD82D8CDD28B7A9FF601A0A97705"
+        static let oe = "C111D7C0AD5019A4F5F79A04440B045F021A190568483E674680507BF74F1A2C"
         static let perms = "A23A07C7EAEAB688EBF15FA2C4DBCB0E"
+    }
+
+    func test_create_keepsTheRandomOwnerPassword_whenThePasswordDoesNotDecompose() throws {
+        let protection = try PDFProtection("Gizli 2026")
+        let encryption = try PDFEncryption.create(protection, random: Self.counting())
+        let fileKey = Self.bytes(0..<32)
+        // The owner password is the random bytes 48-79, known to nobody.
+        let owner = Self.bytes(48..<80)
+        XCTAssertEqual(try PDFEncryption.hash(owner, salt: Array(encryption.o[32..<40]), userKey: encryption.u),
+                       Array(encryption.o[0..<32]))
+        XCTAssertEqual(try PDFEncryption.fileKeyFor(owner, o: encryption.o, u: encryption.u,
+                                                    oe: encryption.oe, ue: encryption.ue), fileKey)
+        XCTAssertEqual(try PDFEncryption.fileKeyFor(Self.utf8("Gizli 2026"), o: encryption.o, u: encryption.u,
+                                                    oe: encryption.oe, ue: encryption.ue), fileKey)
     }
 
     func test_encrypt_putsARandomIvFirst_padsToTheBlock_andDecryptsBack() throws {
@@ -396,9 +430,9 @@ final class PDFEncryptionTests: XCTestCase {
     func test_protected_opensInPDFKit_withTheUserPassword_orTheOwnerPassword_only() throws {
         let protection = try PDFProtection("Şifre 2026")
         var options = PDFWriteOptions(protection: protection)
-        // The counting bytes make the owner password the bytes 48-79: "0123456789:;<=>?@ABCDEFGHIJKLMNO".
         options.random = Self.counting()
         let pdf = try PDFWriter.make([Self.page([Self.line]), Self.page()], options: options)
+        // PDFKit passes the password on decomposed, which is this file's owner password ("Ş" decomposes).
         let user = try XCTUnwrap(PDFDocument(data: pdf))
         XCTAssertTrue(user.isEncrypted)
         XCTAssertTrue(user.isLocked)
@@ -412,11 +446,57 @@ final class PDFEncryptionTests: XCTestCase {
         XCTAssertTrue(text.contains("Çağrı"), "PDFKit read: \(text)")
         let width = try XCTUnwrap(user.page(at: 1)).bounds(for: .mediaBox).width
         XCTAssertEqual(Double(width), 612, accuracy: 0.01)
-        let owner = try XCTUnwrap(PDFDocument(data: pdf))
+        // A password that does not decompose opens the file as its user, so the permissions apply; the
+        // counting bytes make the owner password the bytes 48-79: "0123456789:;<=>?@ABCDEFGHIJKLMNO".
+        let ascii = try PDFProtection("Gizli 2026", allowPrinting: false)
+        var asciiOptions = PDFWriteOptions(protection: ascii)
+        asciiOptions.random = Self.counting()
+        let asciiPDF = try PDFWriter.make([Self.page()], options: asciiOptions)
+        let reader = try XCTUnwrap(PDFDocument(data: asciiPDF))
+        XCTAssertTrue(reader.isLocked)
+        XCTAssertTrue(reader.unlock(withPassword: "Gizli 2026"))
+        XCTAssertFalse(reader.allowsPrinting)
+        let owner = try XCTUnwrap(PDFDocument(data: asciiPDF))
         XCTAssertTrue(owner.isLocked)
         XCTAssertTrue(owner.unlock(withPassword: String(decoding: Self.bytes(48..<80), as: UTF8.self)))
         XCTAssertFalse(owner.isLocked)
-        XCTAssertEqual(owner.pageCount, 2)
+        XCTAssertTrue(owner.allowsPrinting)
+        XCTAssertEqual(owner.pageCount, 1)
+    }
+
+    func test_protected_aPasswordThatDecomposes_opensInPDFKit_asItsOwner() throws {
+        let typed = "\u{C7}a\u{11F}r\u{131} 2026" // "Çağrı 2026", composed, as keyboards type it
+        let protection = try PDFProtection(typed, allowPrinting: false, allowCopying: false)
+        let pdf = try PDFWriter.make([Self.page()], options: Self.protected(protection))
+        let document = try XCTUnwrap(PDFDocument(data: pdf))
+        XCTAssertTrue(document.isLocked)
+        XCTAssertFalse(document.unlock(withPassword: "Cagri 2026"))
+        XCTAssertTrue(document.unlock(withPassword: typed))
+        XCTAssertEqual(document.pageCount, 1)
+        #if os(macOS)
+        // The Mac's PDFKit tries the decomposed form only, the owner password: the permissions don't
+        // apply there.
+        XCTAssertTrue(document.allowsPrinting)
+        #endif
+        // A reader that prepares the password as PDF 2.0 asks (composed) opens the file as its user.
+        let prepared = PDFProtection.preparePassword(typed)
+        let o = try Self.value(pdf, "O")
+        let u = try Self.value(pdf, "U")
+        XCTAssertNotEqual(try PDFEncryption.hash(prepared, salt: Array(o[32..<40]), userKey: u), Array(o[0..<32]))
+        XCTAssertEqual(try PDFEncryption.hash(prepared, salt: Array(u[32..<40]), userKey: []), Array(u[0..<32]))
+        XCTAssertNotNil(try PDFEncryption.fileKeyFor(prepared, o: o, u: u, oe: Self.value(pdf, "OE"), ue: Self.value(pdf, "UE")))
+        // So does CoreGraphics, given those bytes.
+        let provider = try XCTUnwrap(CGDataProvider(data: pdf as CFData))
+        let reference = try XCTUnwrap(CGPDFDocument(provider))
+        XCTAssertTrue(reference.isEncrypted)
+        var bytes: [CChar] = []
+        for byte in prepared { bytes.append(CChar(bitPattern: byte)) }
+        bytes.append(0)
+        let unlocked: Bool = bytes.withUnsafeBufferPointer { (buffer: UnsafeBufferPointer<CChar>) -> Bool in
+            reference.unlockWithPassword(buffer.baseAddress!)
+        }
+        XCTAssertTrue(unlocked)
+        XCTAssertFalse(reference.allowsPrinting)
     }
 
     func test_protected_noPrintingOrCopying_isWrittenInP() throws {
@@ -484,7 +564,7 @@ final class PDFEncryptionTests: XCTestCase {
         let pdf = try PDFWriter.make([Self.page([Self.line])], options: Self.protected(protection))
         XCTAssertEqual(pdf.count, 10030)
         XCTAssertEqual(CompanionPackage.sha256Hex(pdf).uppercased(),
-                       "A665F1906B163D10C82CAE43433433163651DCD1CFE79F8702B4C4A660DACB8A")
+                       "CFA0C44FAC59790215E53E6D3D7AD08467844D2FCF53CD6DD87875459AEFD2B1")
     }
 
     func test_writeFile_writesAProtectedFile() throws {

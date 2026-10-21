@@ -71,6 +71,7 @@ public final class PDFProtection: @unchecked Sendable {
     }
 
     private var prepared: [UInt8]
+    private var decomposed: [UInt8]
     private var disposed = false
 
     /// PDF apps may print the file.
@@ -86,12 +87,14 @@ public final class PDFProtection: @unchecked Sendable {
             throw ScanError.exportFailed(problem)
         }
         self.prepared = PDFProtection.preparePassword(password)
+        self.decomposed = PDFProtection.decomposePassword(password)
         self.allowPrinting = allowPrinting
         self.allowCopying = allowCopying
     }
 
     deinit {
         PDFEncryption.wipe(&prepared)
+        PDFEncryption.wipe(&decomposed)
     }
 
     /// The file's /P value (`permissions`).
@@ -105,9 +108,16 @@ public final class PDFProtection: @unchecked Sendable {
         return prepared
     }
 
+    /// The password decomposed (`decomposePassword`); throws once disposed.
+    func decomposedPassword() throws -> [UInt8] {
+        if disposed { throw ScanError.exportFailed("The password was already wiped.") }
+        return decomposed
+    }
+
     /// Wipes the prepared password; the protection can't be used after.
     public func dispose() {
         PDFEncryption.wipe(&prepared)
+        PDFEncryption.wipe(&decomposed)
         disposed = true
     }
 
@@ -128,6 +138,19 @@ public final class PDFProtection: @unchecked Sendable {
     /// normalized, encoded as UTF-8 and cut to `maxPasswordBytes` bytes. SASLprep's prohibited
     /// characters are refused before this by `problem` (control characters) or are kept as they are.
     public static func preparePassword(_ password: String) -> [UInt8] {
+        utf8Cut(mapped(password).precomposedStringWithCompatibilityMapping)
+    }
+
+    /// The bytes the Mac's PDFKit makes of a typed password (`PDFDocument.unlock`, and so Preview and
+    /// the Mac app): the password with `preparePassword`'s mappings, decomposed (NFKD) rather than
+    /// composed, in UTF-8, cut at `maxPasswordBytes` bytes. The same bytes as the prepared
+    /// password unless it has a character that decomposes (an accented letter, a Hangul syllable, ...).
+    public static func decomposePassword(_ password: String) -> [UInt8] {
+        utf8Cut(mapped(password).decomposedStringWithCompatibilityMapping)
+    }
+
+    /// SASLprep's mappings: other spaces to U+0020, the characters mapped to nothing dropped.
+    private static func mapped(_ password: String) -> String {
         var mapped = String.UnicodeScalarView()
         for scalar in password.unicodeScalars {
             let c = Int(scalar.value)
@@ -137,8 +160,12 @@ public final class PDFProtection: @unchecked Sendable {
                 mapped.append(scalar)
             }
         }
-        let normalized: String = String(mapped).precomposedStringWithCompatibilityMapping
-        var utf8: [UInt8] = Array(normalized.utf8)
+        return String(mapped)
+    }
+
+    /// `text` in UTF-8, cut at `maxPasswordBytes` bytes.
+    private static func utf8Cut(_ text: String) -> [UInt8] {
+        var utf8: [UInt8] = Array(text.utf8)
         if utf8.count <= maxPasswordBytes { return utf8 }
         let cut: [UInt8] = Array(utf8[0..<maxPasswordBytes])
         PDFEncryption.wipe(&utf8)
@@ -279,8 +306,10 @@ public final class PDFProtection: @unchecked Sendable {
 /// stream (AES-256-CBC, PKCS#7 padding, a random 16-byte IV before the data), and the /U, /UE, /O,
 /// /OE and /Perms values let a PDF app check the password and recover the key (algorithms 8, 9 and
 /// 10, with the hash of algorithm 2.B). The owner password is 32 random bytes nobody knows, so the
-/// permissions apply to everyone who opens the file. `dispose()` wipes the file key. Twin of C#
-/// `PdfEncryption`.
+/// permissions apply to everyone who opens the file; but when the password has a character that
+/// decomposes, it is the password as PDFKit passes it on (`PDFProtection.decomposePassword`), as
+/// PDFKit tries no other form: PDFKit then opens the file as its owner, without the permissions.
+/// `dispose()` wipes the file key. Twin of C# `PdfEncryption`.
 public final class PDFEncryption {
     /// The bytes the random source gives, in this order: file key, user validation and key salts,
     /// owner password, owner validation and key salts, the /Perms filler; then 16 per IV.
@@ -363,7 +392,10 @@ public final class PDFEncryption {
         let permsRandom: [UInt8] = try randomBytes(source, permsRandomLength)
         var userPassword: [UInt8] = try protection.password()
         defer { wipe(&userPassword) }
-        return try create(userPassword: userPassword, ownerPassword: ownerPassword, fileKey: fileKey,
+        var decomposed: [UInt8] = try protection.decomposedPassword()
+        defer { wipe(&decomposed) }
+        let owner: [UInt8] = decomposed == userPassword ? ownerPassword : decomposed
+        return try create(userPassword: userPassword, ownerPassword: owner, fileKey: fileKey,
                           userValidationSalt: userValidationSalt, userKeySalt: userKeySalt,
                           ownerValidationSalt: ownerValidationSalt, ownerKeySalt: ownerKeySalt,
                           permissions: protection.permissionFlags, permsRandom: permsRandom, random: source)

@@ -127,6 +127,22 @@ public class PdfEncryptionTests
     }
 
     [Fact]
+    public void DecomposePassword_IsThePreparedPassword_Decomposed_AsPdfKitPassesItOn()
+    {
+        // "Ş" is "S" and a combining cedilla (U+0327) once decomposed.
+        Assert.Equal(Hex("53CCA7696672652032303236"), PdfProtection.DecomposePassword("Şifre 2026"));
+        Assert.Equal(Utf8("C\u0327ag\u0306r\u0131"), PdfProtection.DecomposePassword("\u00C7a\u011Fr\u0131"));
+        Assert.Equal(Utf8("file"), PdfProtection.DecomposePassword("\uFB01le")); // the "fi" ligature
+        Assert.Equal(Utf8("a b c"), PdfProtection.DecomposePassword("a\u00A0b\u3000c"));
+        Assert.Equal(Utf8("xy"), PdfProtection.DecomposePassword("x\u00AD\u200Dy\uFE0F"));
+        // A Hangul syllable becomes its letters; ideographs and ASCII stay as they are.
+        Assert.Equal(Hex("E18492E185A1E186ABE18480E185B3E186AF"), PdfProtection.DecomposePassword("\uD55C\uAE00"));
+        Assert.Equal(PdfProtection.PreparePassword("\u5BC6\u7801"), PdfProtection.DecomposePassword("\u5BC6\u7801"));
+        Assert.Equal(Utf8("pw"), PdfProtection.DecomposePassword("pw"));
+        Assert.Equal(127, PdfProtection.DecomposePassword(new string('ğ', 100)).Length);
+    }
+
+    [Fact]
     public void Problem_NeedsAPassword_TypedTwiceTheSame_WithoutControlCharacters()
     {
         Assert.Null(PdfProtection.Problem("correct horse", "correct horse"));
@@ -221,9 +237,13 @@ public class PdfEncryptionTests
                                                         encryption.O, encryption.U, encryption.OE, encryption.UE));
         Assert.Null(PdfEncryption.FileKeyFor(PdfProtection.PreparePassword("Sifre 2026"),
                                              encryption.O, encryption.U, encryption.OE, encryption.UE));
-        // The owner password is the random bytes 48-79, known to nobody.
-        Assert.Equal(fileKey, PdfEncryption.FileKeyFor([.. Enumerable.Range(48, 32).Select(i => (byte)i)],
-                                                        encryption.O, encryption.U, encryption.OE, encryption.UE));
+        // "Ş" decomposes, so the owner password is the password as PDFKit passes it on; the random
+        // bytes 48-79 are still taken, and open nothing.
+        byte[] decomposed = PdfProtection.DecomposePassword("Şifre 2026");
+        Assert.Equal(encryption.O[..32], PdfEncryption.Hash(decomposed, encryption.O[32..40], encryption.U));
+        Assert.Equal(fileKey, PdfEncryption.FileKeyFor(decomposed, encryption.O, encryption.U, encryption.OE, encryption.UE));
+        Assert.Null(PdfEncryption.FileKeyFor([.. Enumerable.Range(48, 32).Select(i => (byte)i)],
+                                             encryption.O, encryption.U, encryption.OE, encryption.UE));
         Assert.True(PdfEncryption.PermsMatch(fileKey, encryption.Perms, -4));
         using var aes = Aes.Create();
         aes.Key = fileKey;
@@ -240,10 +260,23 @@ public class PdfEncryptionTests
     private static class Golden
     {
         public const string U = "69E56736D0DC99ADAB81C8C974CB117CD64C8EACD3B03BA79DAA6F37ACA51290202122232425262728292A2B2C2D2E2F";
-        public const string O = "F6D8793869C7418AB1BE980323F4DDF6C76717D168050679226E5AD5EBD86926505152535455565758595A5B5C5D5E5F";
+        public const string O = "5FBC1E5693C9182C7FF0F1F08FCC86C0151769BFD5E52B6BB85C82CA6947FE31505152535455565758595A5B5C5D5E5F";
         public const string UE = "5939E7CB89B321D9B11D24CF5015E35106ED748026E84F76FE7B2542DDEA6E0D";
-        public const string OE = "4FDF86C332319050440D7022CD29D423E9E2BD82D8CDD28B7A9FF601A0A97705";
+        public const string OE = "C111D7C0AD5019A4F5F79A04440B045F021A190568483E674680507BF74F1A2C";
         public const string Perms = "A23A07C7EAEAB688EBF15FA2C4DBCB0E";
+    }
+
+    [Fact]
+    public void Create_KeepsTheRandomOwnerPassword_WhenThePasswordDoesNotDecompose()
+    {
+        using var protection = new PdfProtection("Gizli 2026");
+        using var encryption = PdfEncryption.Create(protection, Counting());
+        byte[] fileKey = [.. Enumerable.Range(0, 32).Select(i => (byte)i)];
+        // The owner password is the random bytes 48-79, known to nobody.
+        byte[] owner = [.. Enumerable.Range(48, 32).Select(i => (byte)i)];
+        Assert.Equal(encryption.O[..32], PdfEncryption.Hash(owner, encryption.O[32..40], encryption.U));
+        Assert.Equal(fileKey, PdfEncryption.FileKeyFor(owner, encryption.O, encryption.U, encryption.OE, encryption.UE));
+        Assert.Equal(fileKey, PdfEncryption.FileKeyFor(Utf8("Gizli 2026"), encryption.O, encryption.U, encryption.OE, encryption.UE));
     }
 
     [Fact]
@@ -421,7 +454,7 @@ public class PdfEncryptionTests
         using var protection = new PdfProtection("Şifre 2026");
         byte[] pdf = PdfBuilder.Make([Page([Line])], options: Protected(protection));
         Assert.Equal(10030, pdf.Length);
-        Assert.Equal("A665F1906B163D10C82CAE43433433163651DCD1CFE79F8702B4C4A660DACB8A", Convert.ToHexString(SHA256.HashData(pdf)));
+        Assert.Equal("CFA0C44FAC59790215E53E6D3D7AD08467844D2FCF53CD6DD87875459AEFD2B1", Convert.ToHexString(SHA256.HashData(pdf)));
     }
 
     [Fact]

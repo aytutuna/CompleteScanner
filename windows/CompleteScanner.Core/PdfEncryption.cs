@@ -66,6 +66,7 @@ public sealed class PdfProtection : IDisposable
         $"Not saved: no password was given for the protected PDF. The {(pages == 1 ? "page is" : $"{pages} pages are")} in the queue: save with a password, or turn the password off.";
 
     private readonly byte[] _password;
+    private readonly byte[] _decomposed;
     private bool _disposed;
 
     /// <param name="password">What the user typed; it must pass <see cref="Problem"/> (typed twice the same).</param>
@@ -76,6 +77,7 @@ public sealed class PdfProtection : IDisposable
         ArgumentNullException.ThrowIfNull(password);
         if (Problem(password, password) is { } problem) throw new ArgumentException(problem, nameof(password));
         _password = PreparePassword(password);
+        _decomposed = DecomposePassword(password);
         AllowPrinting = allowPrinting;
         AllowCopying = allowCopying;
     }
@@ -97,10 +99,21 @@ public sealed class PdfProtection : IDisposable
         }
     }
 
+    /// <summary>The password decomposed (<see cref="DecomposePassword"/>); throws once disposed.</summary>
+    internal ReadOnlySpan<byte> DecomposedPassword
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _decomposed;
+        }
+    }
+
     /// <summary>Wipes the prepared password; the protection can't be used after.</summary>
     public void Dispose()
     {
         CryptographicOperations.ZeroMemory(_password);
+        CryptographicOperations.ZeroMemory(_decomposed);
         _disposed = true;
     }
 
@@ -126,7 +139,21 @@ public sealed class PdfProtection : IDisposable
     /// prohibited characters are refused before this by <see cref="Problem"/> (control characters)
     /// or are kept as they are.
     /// </summary>
-    public static byte[] PreparePassword(string password)
+    public static byte[] PreparePassword(string password) =>
+        Utf8Cut(Mapped(password).Normalize(NormalizationForm.FormKC));
+
+    /// <summary>
+    /// The bytes the Mac's PDFKit makes of a typed password (<c>PDFDocument.unlock</c>, and so
+    /// Preview and the Mac app): the password with <see cref="PreparePassword"/>'s mappings,
+    /// decomposed (NFKD) rather than composed, in UTF-8, cut at <see cref="MaxPasswordBytes"/>
+    /// bytes. The same bytes as the prepared password unless it has a character that decomposes
+    /// (an accented letter, a Hangul syllable, ...).
+    /// </summary>
+    public static byte[] DecomposePassword(string password) =>
+        Utf8Cut(Mapped(password).Normalize(NormalizationForm.FormKD));
+
+    /// <summary>SASLprep's mappings: other spaces to U+0020, the characters mapped to nothing dropped.</summary>
+    private static string Mapped(string password)
     {
         var mapped = new StringBuilder(password.Length);
         foreach (var rune in password.EnumerateRunes())
@@ -135,7 +162,13 @@ public sealed class PdfProtection : IDisposable
             if (IsNonAsciiSpace(c)) mapped.Append(' ');
             else if (!MapsToNothing(c)) mapped.Append(rune.ToString());
         }
-        byte[] utf8 = Encoding.UTF8.GetBytes(mapped.ToString().Normalize(NormalizationForm.FormKC));
+        return mapped.ToString();
+    }
+
+    /// <summary><paramref name="text"/> in UTF-8, cut at <see cref="MaxPasswordBytes"/> bytes.</summary>
+    private static byte[] Utf8Cut(string text)
+    {
+        byte[] utf8 = Encoding.UTF8.GetBytes(text);
         if (utf8.Length <= MaxPasswordBytes) return utf8;
         byte[] cut = utf8[..MaxPasswordBytes];
         CryptographicOperations.ZeroMemory(utf8);
@@ -239,8 +272,10 @@ public sealed class PdfProtection : IDisposable
 /// string and stream (AES-256-CBC, PKCS#7 padding, a random 16-byte IV before the data), and the
 /// /U, /UE, /O, /OE and /Perms values let a PDF app check the password and recover the key
 /// (algorithms 8, 9 and 10, with the hash of algorithm 2.B). The owner password is 32 random
-/// bytes nobody knows, so the permissions apply to everyone who opens the file. Only
-/// System.Security.Cryptography is used. <see cref="Dispose"/> wipes the file key.
+/// bytes nobody knows, so the permissions apply to everyone who opens the file; but when the
+/// password has a character that decomposes, it is the password as Apple's PDFKit passes it on
+/// (<see cref="PdfProtection.DecomposePassword"/>), as PDFKit tries no other form: PDFKit then
+/// opens the file as its owner, without the permissions. Only System.Security.Cryptography is used. <see cref="Dispose"/> wipes the file key.
 /// </summary>
 public sealed class PdfEncryption : IDisposable
 {
@@ -299,7 +334,9 @@ public sealed class PdfEncryption : IDisposable
         byte[] permsRandom = RandomBytes(random, PermsRandomLength);
         try
         {
-            return Create(protection.Password, ownerPassword, fileKey, userValidationSalt, userKeySalt,
+            ReadOnlySpan<byte> decomposed = protection.DecomposedPassword;
+            ReadOnlySpan<byte> owner = decomposed.SequenceEqual(protection.Password) ? ownerPassword : decomposed;
+            return Create(protection.Password, owner, fileKey, userValidationSalt, userKeySalt,
                           ownerValidationSalt, ownerKeySalt, protection.PermissionFlags, permsRandom, random);
         }
         finally

@@ -742,8 +742,11 @@ AES-256, Adobe extension level 8 declared): every stream and string encrypted wi
 under a random file key of its own, the password checked through the SHA-256/384/512 hash of
 ISO 32000-2 algorithm 2.B, the password prepared as PDF 2.0 asks (SASLprep's mappings, NFKC,
 UTF-8, at most 127 bytes). The owner password is 32 random bytes nobody knows, so the
-permissions apply to everyone who opens the file. **The permissions are advisory:** most PDF
-apps honor them, but anyone with the password can print or copy with software that ignores
+permissions apply to everyone who opens the file, with one exception: the Mac's PDFKit (Preview,
+the Mac app) passes a typed password on decomposed ("Ş" as "S" and a combining cedilla) and
+tries no other form, so for a password with such a character the owner password is that
+decomposed form, and PDFKit opens the file as its owner, without the permissions. **The
+permissions are advisory:** most PDF apps honor them, but anyone with the password can print or copy with software that ignores
 them; the dialog says so. A PDF/A file cannot be encrypted, so the two switches exclude each
 other (a settings file with both on gets the password), the Archive document task turns the
 password off, and `PdfBuilder` refuses options that ask for both.
@@ -767,7 +770,8 @@ The Mac protects its PDFs the same way: the Swift twin (`PDFEncryption.swift`, C
 AES and CryptoKit's SHA-2) gives the same values and the same file for the same password and
 random bytes (`PdfEncryptionTests.Protected_GoldenBytes` is checked by `PDFEncryptionTests` too),
 and its PDFKit opens the files only with the user's or the owner password, on the Mac and in the
-iOS Simulator. Its dialog is a window of its own with the same texts, strength bar and checks.
+iOS Simulator, including passwords with accented letters. Its dialog is a window of its own with
+the same texts, strength bar and checks.
 
 ### Add pages to an existing PDF
 
