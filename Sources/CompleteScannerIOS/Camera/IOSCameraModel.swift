@@ -59,7 +59,12 @@ public protocol IOSCameraDriving: AnyObject {
 /// (`IOSCameraLifecycle`: shown, in the front, not too warm, not interrupted, no photo in the corner
 /// editor), the page's live outline (`LiveQuadTracker` on the session's frames), the torch and the
 /// shutter. A photo taken comes back as an `IOSCameraShot` with the live outline turned into the
-/// photo's shares; the scan screen hands it to the import (`IOSImportSession.importShot`).
+/// photo's shares; the scan screen hands it to the import (`IOSImportSession.importShot`). The automatic
+/// shutter (`autoShutter`, on unless turned off; remembered in `UserDefaults`) takes the photo itself when
+/// a live update says so (`LiveQuadUpdate.shouldCapture`: the page held still on a sharp, lit frame) and
+/// hands it to `onAutoShot`; a decision that comes while a photo cannot be taken (one being taken or read,
+/// `canTakePage` false) has the page judged again, so it is taken once it can be. After every photo the
+/// page in view counts as taken (`LiveQuadTracker.markCaptured`), so the next photo waits for the next page.
 @MainActor
 public final class IOSCameraModel: ObservableObject {
     /// Whether the camera can be used here; nil until checked (and asked, the first time).
@@ -77,6 +82,17 @@ public final class IOSCameraModel: ObservableObject {
     @Published public private(set) var photoFailed: Bool = false
     /// Photos taken while the screen was open (the haptic tap follows it).
     @Published public private(set) var shotCount: Int = 0
+    /// The automatic shutter is on (`setAutoShutter`).
+    @Published public private(set) var autoShutter: Bool = true
+    /// Where the automatic shutter's photos go (the scan screen: `IOSImportSession.importShot`); nil: the
+    /// automatic shutter takes nothing.
+    public var onAutoShot: (@MainActor (IOSCameraShot) async -> Void)?
+    /// Whether a page can be taken now besides the camera being live (no photo being read, the queue takes
+    /// pages); nil: always.
+    public var canTakePage: (@MainActor () -> Bool)?
+
+    /// Where the automatic shutter's setting is remembered.
+    public static let autoShutterKey: String = "cameraAutoShutter"
 
     public let driver: any IOSCameraDriving
     private let tracker: LiveQuadTracker
@@ -85,20 +101,22 @@ public final class IOSCameraModel: ObservableObject {
     private let requestAccess: @MainActor () async -> Bool
     private let thermalState: @MainActor () -> ProcessInfo.ThermalState
     private let center: NotificationCenter
+    private let defaults: UserDefaults
     private var asked: Bool = false
     /// The session is set up (the preview can show it).
     @Published private var prepared: Bool = false
     private var thermalObserver: NSObjectProtocol?
 
     /// `driver` runs the session. The others default to the device's own: its cameras
-    /// (`IOSCameraLens.hasCamera`), the camera permission and its prompt, and the thermal state with
-    /// its notifications on `center`; tests pass stand-ins.
+    /// (`IOSCameraLens.hasCamera`), the camera permission and its prompt, the thermal state with its
+    /// notifications on `center`, and the app's `UserDefaults` for the automatic shutter's setting; tests
+    /// pass stand-ins.
     public init(driver: any IOSCameraDriving, tracker: LiveQuadTracker? = nil,
                 hasCamera: (@MainActor () -> Bool)? = nil,
                 authorization: (@MainActor () -> AVAuthorizationStatus)? = nil,
                 requestAccess: (@MainActor () async -> Bool)? = nil,
                 thermalState: (@MainActor () -> ProcessInfo.ThermalState)? = nil,
-                center: NotificationCenter = .default) {
+                center: NotificationCenter = .default, defaults: UserDefaults = .standard) {
         self.driver = driver
         if let given = tracker {
             self.tracker = given
@@ -134,6 +152,10 @@ public final class IOSCameraModel: ObservableObject {
             }
         }
         self.center = center
+        self.defaults = defaults
+        if let stored = defaults.object(forKey: IOSCameraModel.autoShutterKey) as? Bool {
+            autoShutter = stored
+        }
     }
 
     /// The model of the device's own camera (`IOSCameraController`).
@@ -204,10 +226,23 @@ public final class IOSCameraModel: ObservableObject {
         apply(.ready(prepared))
     }
 
-    /// The screen is gone: the session stops.
+    /// The screen is gone: the session stops and the page is forgotten.
     public func disappear() {
         apply(.hidden)
         stopObserving()
+        tracker.reset()
+    }
+
+    /// Turns the automatic shutter on or off, remembered for the next time. Turned on, a page in view that
+    /// was decided on while it was off, with no photo taken, is judged afresh, so it is taken once it holds
+    /// still; a page photographed by hand stays taken (`LiveQuadTracker.rearm`).
+    public func setAutoShutter(_ on: Bool) {
+        guard on != autoShutter else { return }
+        autoShutter = on
+        defaults.set(on, forKey: IOSCameraModel.autoShutterKey)
+        if on {
+            tracker.rearm()
+        }
     }
 
     /// Takes `event` in and starts or stops the session as `IOSCameraLifecycle` answers.
@@ -249,7 +284,9 @@ public final class IOSCameraModel: ObservableObject {
             return nil
         }
         shotCount += 1
-        tracker.reset()
+        // The page in view is taken: the next photo waits for the next page; the outline starts again.
+        tracker.markCaptured()
+        live = nil
         var seed: Quad?
         if let shown = outline, let degrees = taken.rotationDegrees, !taken.mirrored {
             seed = LiveQuadTracker.photoOutline(shown, rotationDegrees: degrees)
@@ -274,7 +311,8 @@ public final class IOSCameraModel: ObservableObject {
     }
 
     private func stop() {
-        tracker.stopFollowing()
+        // Paused, not forgotten: the page taken before stays taken when the camera comes back.
+        tracker.pauseFollowing()
         driver.stopRunning()
         torchOn = false
         live = nil
@@ -283,6 +321,30 @@ public final class IOSCameraModel: ObservableObject {
     private func show(_ update: LiveQuadUpdate) {
         guard lifecycle.isLive else { return }
         live = update
+        if update.shouldCapture {
+            shootAutomatically()
+        }
+    }
+
+    /// The live search says the page held still on a sharp, lit frame: the photo is taken and handed to
+    /// `onAutoShot`, when the automatic shutter is on; when a photo cannot be taken now, the page is judged
+    /// again.
+    private func shootAutomatically() {
+        guard autoShutter, let deliver = onAutoShot else { return }
+        var free: Bool = true
+        if let check = canTakePage {
+            free = check()
+        }
+        guard canShoot, free else {
+            tracker.reset()
+            return
+        }
+        Task { @MainActor [weak self] in
+            guard let model = self else { return }
+            if let shot = await model.shoot() {
+                await deliver(shot)
+            }
+        }
     }
 
     private func startObserving() {

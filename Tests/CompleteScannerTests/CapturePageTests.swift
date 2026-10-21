@@ -225,10 +225,12 @@ final class CapturePageTests: XCTestCase {
     func testForCaptureCutsThePageOutFirst() throws {
         var s = ScanSettings()
         s.document.autoCrop = true
-        XCTAssertEqual(PageProcessor.forCapture(s).steps.map(\.name), ["perspective", "blank", "separator"])
+        XCTAssertEqual(PageProcessor.forCapture(s).steps.map(\.name), ["perspective", "enhance", "blank", "separator"])
         s.colorMode = .grayscale
         let processor = PageProcessor.forCapture(s)
-        XCTAssertEqual(processor.steps.map(\.name), ["perspective", "blank", "separator", "adjust"])
+        XCTAssertEqual(processor.steps.map(\.name), ["perspective", "enhance", "blank", "separator", "adjust"])
+        let enhance: EnhanceStep = try XCTUnwrap(processor.steps[1] as? EnhanceStep)
+        XCTAssertEqual(enhance.mode, .gray)
         let photo = image(WarpFixtures.photo(640, 480))
         let processed = try XCTUnwrap(try processor.process([captured(photo, facts())]).pages.first)
         XCTAssertEqual(processed.geometry?.basis, .perspective)
@@ -236,6 +238,59 @@ final class CapturePageTests: XCTestCase {
         XCTAssertNotNil(processed.blank)
         XCTAssertEqual(processed.colorMode, .grayscale)
         XCTAssertNotNil(processed.capture?.scale)
+        XCTAssertEqual(processed.capture?.enhancement, .gray)
+    }
+
+    func testAdjustmentsKeepACameraPageWithoutColorGrayInAColorTask() throws {
+        var s = ScanSettings()
+        s.adjustments.brightness = 0.1
+        let processor = PageProcessor.forCapture(s)
+        XCTAssertEqual(processor.steps.map(\.name), ["perspective", "enhance", "blank", "separator", "adjust"])
+        func shot(_ sheet: RgbaImage) -> ScannedPage {
+            let photo: RgbaImage = EnhancerPages.onATable(sheet)
+            var page: ScannedPage = ScannedPage(image: image(photo), dpi: CaptureScale.nominalDPI, colorMode: .color)
+                .withCapture(CaptureFacts(quad: EnhancerPages.tableQuad, sourceWidth: photo.width,
+                                          sourceHeight: photo.height))
+            page.source = .photo
+            return page
+        }
+        // Black print on white paper: made gray by the clean-up, and still gray after the brightness.
+        let plain: ScannedPage = try XCTUnwrap(try processor.process([shot(EnhancerPages.shadowed(stamp: false))]).pages.first)
+        XCTAssertEqual(plain.capture?.enhancement, .gray)
+        XCTAssertEqual(plain.colorMode, .grayscale)
+        XCTAssertTrue(ColorAnalysis.isEffectivelyGray(plain.image))
+        // The photo kept as the other version is adjusted in the task's color mode: its warm paper stays warm.
+        let alternate: RgbaImage = try XCTUnwrap(RgbaImage(cgImage: try XCTUnwrap(plain.alternate?.image)))
+        var warm: Bool = false
+        var p: Int = 0
+        while p < alternate.width * alternate.height && !warm {
+            warm = alternate.pixels[p * 4] != alternate.pixels[p * 4 + 2]
+            p += 1
+        }
+        XCTAssertTrue(warm)
+        // With the red stamp: color.
+        let stamped: ScannedPage = try XCTUnwrap(try processor.process([shot(EnhancerPages.shadowed())]).pages.first)
+        XCTAssertEqual(stamped.capture?.enhancement, .color)
+        XCTAssertEqual(stamped.colorMode, .color)
+        // The mode the step adjusts a page in.
+        let flat: CGImage = image(RgbaImage.filled(width: 8, height: 8, r: 200, g: 200, b: 200))
+        var grayFacts: CaptureFacts = facts()
+        grayFacts.enhancement = .gray
+        var bwFacts: CaptureFacts = facts()
+        bwFacts.enhancement = .blackAndWhite
+        var colorFacts: CaptureFacts = facts()
+        colorFacts.enhancement = .color
+        let grayPage: ScannedPage = ScannedPage(image: flat, dpi: 72, colorMode: .grayscale).withCapture(grayFacts)
+        let bwPage: ScannedPage = ScannedPage(image: flat, dpi: 72, colorMode: .blackWhite).withCapture(bwFacts)
+        let colorPage: ScannedPage = ScannedPage(image: flat, dpi: 72, colorMode: .color).withCapture(colorFacts)
+        let scanned = ScannedPage(image: flat, dpi: 72, colorMode: .grayscale)
+        let colorStep = AdjustmentStep(adjustments: s.adjustments, colorMode: .color)
+        XCTAssertEqual(colorStep.mode(for: grayPage), .grayscale)
+        XCTAssertEqual(colorStep.mode(for: bwPage), .blackWhite)
+        XCTAssertEqual(colorStep.mode(for: colorPage), .color)
+        XCTAssertEqual(colorStep.mode(for: scanned), .color)
+        XCTAssertEqual(colorStep.apply(grayPage).colorMode, .grayscale)
+        XCTAssertEqual(AdjustmentStep(adjustments: s.adjustments, colorMode: .blackWhite).mode(for: grayPage), .blackWhite)
     }
 
     func testCaptureFactsSurviveEveryRebuildOfThePage() {

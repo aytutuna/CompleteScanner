@@ -13,8 +13,8 @@ enum ScanCover: String, Identifiable {
 
 /// The scan screen: the task's step, the cameras and imports (`CaptureBar`), the scanner, the last scan,
 /// the page strip, the status line, and Scan and Save (as a PDF or a JPEG a page, `IOSShell.saveFormats`);
-/// once saved, the saved file with Share and Show in Files. Doc scanner opens Apple's document scanner,
-/// Camera our own camera (`CameraScreen`).
+/// once saved, the saved file with Share and Show in Files. Camera opens our own camera (`CameraScreen`),
+/// the default; Use Apple's scanner opens Apple's document scanner.
 struct ScanScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession

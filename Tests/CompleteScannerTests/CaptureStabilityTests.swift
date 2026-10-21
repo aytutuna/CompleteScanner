@@ -226,4 +226,130 @@ final class CaptureStabilityTests: XCTestCase {
         // After a reset the next frame is a page seen again: steady from 31, fires at 50.
         XCTAssertEqual(feedFrames(&stability, 30, held(page, 30)), [50])
     }
+
+    func testAHeldPageWaitsForASharpFrame() {
+        var stability = CaptureStability()
+        var log: [CaptureDecision] = []
+        // Blurred (the camera still focusing) for 40 frames: held still long enough from frame 20, never taken.
+        XCTAssertEqual(feedWithReadings(&stability, 0, held(page, 40), sharpness: 10, brightness: 180, &log), [])
+        for i in 20..<40 {
+            XCTAssertEqual(log[i].state, .steadying)
+            XCTAssertEqual(log[i].progress, 1)
+            XCTAssertEqual(log[i].quality, .blurry)
+        }
+        // The first sharp frame is taken, and only once.
+        XCTAssertEqual(feedWithReadings(&stability, 40, held(page, 30), sharpness: 400, brightness: 180, &log), [40])
+        XCTAssertEqual(log[40].quality, .good)
+        XCTAssertEqual(stability.state, .captured)
+    }
+
+    func testAHeldPageWaitsForLight() {
+        var stability = CaptureStability()
+        var log: [CaptureDecision] = []
+        XCTAssertEqual(feedWithReadings(&stability, 0, held(page, 30), sharpness: 400, brightness: 20, &log), [])
+        XCTAssertEqual(log[29].quality, .dark)
+        XCTAssertEqual(log[29].state, .steadying)
+        XCTAssertEqual(feedWithReadings(&stability, 30, held(page, 10), sharpness: 400, brightness: 120, &log), [30])
+        // Moving frames are judged too, so the screen can say why before the page holds still.
+        var moving = CaptureStability()
+        let decision: CaptureDecision = moving.update(CaptureObservation(quad: page, confidence: 0.9, timestampMs: 0,
+                                                                         frameWidth: frameWidth, frameHeight: frameHeight,
+                                                                         sharpness: 400, brightness: 20))
+        XCTAssertEqual(decision.quality, .dark)
+        XCTAssertEqual(decision.state, .moving)
+    }
+
+    func testTheReadingsAreJudgedDarkFirst() {
+        XCTAssertEqual(CaptureStability.minSharpness, 40)
+        XCTAssertEqual(CaptureStability.minBrightness, 50)
+        XCTAssertEqual(CaptureStability.judge(sharpness: 10, brightness: 20), .dark)
+        XCTAssertEqual(CaptureStability.judge(sharpness: 10, brightness: 120), .blurry)
+        XCTAssertEqual(CaptureStability.judge(sharpness: 40, brightness: 50), .good)
+        XCTAssertEqual(CaptureStability.judge(sharpness: 39.99, brightness: 50), .blurry)
+        XCTAssertEqual(CaptureStability.judge(sharpness: 400, brightness: 49.99), .dark)
+        XCTAssertEqual(CaptureStability.judge(sharpness: nil, brightness: nil), .good)
+        XCTAssertEqual(CaptureStability.judge(sharpness: nil, brightness: 120), .good)
+        var strict = CaptureStabilityOptions()
+        strict.minSharpness = 500
+        strict.minBrightness = 10
+        XCTAssertEqual(CaptureStability.judge(sharpness: 400, brightness: 20, options: strict), .blurry)
+        // Frames without readings are taken as before.
+        var plain = CaptureStability()
+        var log: [CaptureDecision] = []
+        XCTAssertEqual(feedWithReadings(&plain, 0, held(page, 30), sharpness: nil, brightness: nil, &log), [20])
+    }
+
+    func testAPhotoTakenByHandCountsAsTaken() {
+        var stability = CaptureStability()
+        // Nothing seen yet: nothing to mark.
+        stability.markCaptured()
+        XCTAssertEqual(stability.state, .noPage)
+        // Held still for ten frames, then the shutter pressed by hand: the same page is not taken again…
+        XCTAssertEqual(feedFrames(&stability, 0, held(page, 10)), [])
+        stability.markCaptured()
+        XCTAssertEqual(stability.state, .captured)
+        XCTAssertEqual(feedFrames(&stability, 10, held(page, 60)), [])
+        // …the next page laid 200 px aside is: re-armed at 70, steady from 71, fires at 90.
+        XCTAssertEqual(feedFrames(&stability, 70, held(shifted(page, 200, 0), 40)), [90])
+    }
+
+    func testAPauseIsNeitherTimeMissingNorTimeHeldStill() {
+        // Taken at frame 20; the camera stops (the corner editor) after frame 29 and starts again at frame 200.
+        var stability = CaptureStability()
+        XCTAssertEqual(feedFrames(&stability, 0, held(page, 30)), [20])
+        stability.resume(atMs: 200 * frameMs)
+        // The first frame back misses the page (the exposure still settling): the page taken stays taken…
+        var log: [CaptureDecision] = []
+        XCTAssertEqual(feedFrames(&stability, 200, missing(1), &log), [])
+        XCTAssertEqual(log[0].state, CaptureState.captured)
+        // …and the same page held still again is not taken again.
+        XCTAssertEqual(feedFrames(&stability, 201, held(page, 60)), [])
+        XCTAssertEqual(stability.state, CaptureState.captured)
+
+        // Without resume(atMs:) the pause counts as the page gone, and the same page is taken twice.
+        var unresumed = CaptureStability()
+        XCTAssertEqual(feedFrames(&unresumed, 0, held(page, 30)), [20])
+        var unresumedLog: [CaptureDecision] = []
+        XCTAssertEqual(feedFrames(&unresumed, 200, missing(1), &unresumedLog), [])
+        XCTAssertEqual(unresumedLog[0].state, CaptureState.noPage)
+        XCTAssertEqual(feedFrames(&unresumed, 201, held(page, 60)), [221])
+
+        // A page that went meanwhile is gone once frames without it span maxGapMs, as ever.
+        var gone = CaptureStability()
+        XCTAssertEqual(feedFrames(&gone, 0, held(page, 30)), [20])
+        gone.resume(atMs: 200 * frameMs)
+        var goneLog: [CaptureDecision] = []
+        XCTAssertEqual(feedFrames(&gone, 200, missing(9), &goneLog), [])
+        XCTAssertEqual(goneLog[7].state, CaptureState.captured)
+        XCTAssertEqual(goneLog[8].state, CaptureState.noPage)
+
+        // A page holding still when the camera stopped goes on from where it was: steady from 1, 264 ms held
+        // by frame 9, so 600 ms are reached at frame 311, not at once.
+        var steady = CaptureStability()
+        XCTAssertEqual(feedFrames(&steady, 0, held(page, 10)), [])
+        steady.resume(atMs: 300 * frameMs)
+        XCTAssertEqual(feedFrames(&steady, 300, held(page, 20)), [311])
+
+        // Nothing to resume before any frame.
+        var fresh = CaptureStability()
+        fresh.resume(atMs: 1000)
+        XCTAssertEqual(feedFrames(&fresh, 0, held(page, 30)), [20])
+    }
+}
+
+/// Feeds frames from `start` on with these readings; returns the indices of frames that fired.
+private func feedWithReadings(_ stability: inout CaptureStability, _ start: Int, _ frames: [Step],
+                              sharpness: Double?, brightness: Double?, _ log: inout [CaptureDecision]) -> [Int] {
+    var fired: [Int] = []
+    var i: Int = start
+    for step in frames {
+        let observation = CaptureObservation(quad: step.quad, confidence: step.confidence,
+                                             timestampMs: Double(i) * frameMs, frameWidth: frameWidth,
+                                             frameHeight: frameHeight, sharpness: sharpness, brightness: brightness)
+        let decision: CaptureDecision = stability.update(observation)
+        log.append(decision)
+        if decision.shouldCapture { fired.append(i) }
+        i += 1
+    }
+    return fired
 }

@@ -1,5 +1,6 @@
 #if os(iOS)
 import AVFoundation
+import CompleteScannerKit
 import Foundation
 
 /// Why the camera was taken from us for a while (`AVCaptureSession` interruptions: a phone call,
@@ -180,7 +181,20 @@ public enum IOSCameraText {
     public static let title = "Camera"
     public static let doneLabel = "Done"
     public static let shutterLabel = "Take photo"
-    public static let shutterHint = "The page is found again in the photo, then you check its corners"
+    public static let shutterHint = "The page is found again in the photo"
+    /// The automatic shutter's toggle.
+    public static let autoLabel = "Auto"
+    public static let autoHint = "Takes each page once it holds still"
+    /// The scan screen's Camera button, whether Auto is on or off.
+    public static let cameraHint = "Opens the camera to take pages"
+    /// A toggle's spoken value (Auto, the torch).
+    public static let onValue = "On"
+    public static let offValue = "Off"
+    /// Why a page held still is not taken yet (`CaptureQuality`).
+    public static let holdStill = "Hold still"
+    public static let tooDark = "Too dark"
+    /// The last page taken, beside the count.
+    public static let lastPageLabel = "Last page"
     public static let torchLabel = "Torch"
     public static let settingsLabel = "Settings"
     /// The session could not be set up, or stopped with errors.
@@ -193,6 +207,54 @@ public enum IOSCameraText {
     /// The pages in the queue: "1 page", "3 pages".
     public static func pageCount(_ count: Int) -> String {
         count == 1 ? "1 page" : "\(count) pages"
+    }
+
+    /// The line under the outline while a page held still waits (`CaptureQuality`): "Hold still" or "Too
+    /// dark"; nil for a good frame.
+    public static func waitReason(_ quality: CaptureQuality) -> String? {
+        switch quality {
+        case .good:
+            return nil
+        case .blurry:
+            return holdStill
+        case .dark:
+            return tooDark
+        }
+    }
+}
+
+/// What the camera screen shows of the automatic shutter's wait, for VoiceOver: whether a page held still
+/// waits (Auto on, `CaptureState.steadying`) and the wait line as shown (nil without one, or while the
+/// import's progress or a message is shown in its place).
+public struct IOSWaitCue: Equatable, Sendable {
+    public var steadying: Bool
+    public var line: String?
+
+    public init(steadying: Bool, line: String?) {
+        self.steadying = steadying
+        self.line = line
+    }
+}
+
+/// When VoiceOver says the wait line: once per wait. The line follows each live frame, so near the limits
+/// of sharpness or light it comes and goes from frame to frame while the page holds still; it is said the
+/// first time it is shown in a wait and not again until the page is no longer held still (taken, moved,
+/// lost, or Auto turned off). A line covered by another is not said; it is said when it is first shown.
+public struct IOSWaitAnnouncer: Equatable, Sendable {
+    /// Whether the line was said in this wait.
+    public private(set) var hasAnnounced: Bool = false
+
+    public init() {}
+
+    /// The line to say for `cue`, the screen's latest, if any.
+    public mutating func next(_ cue: IOSWaitCue) -> String? {
+        guard cue.steadying else {
+            hasAnnounced = false
+            return nil
+        }
+        guard !hasAnnounced, let line = cue.line else { return nil }
+        hasAnnounced = true
+        return line
     }
 }
 #endif

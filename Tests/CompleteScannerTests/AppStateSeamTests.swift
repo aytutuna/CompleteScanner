@@ -350,6 +350,8 @@ final class AppStateSeamTests: XCTestCase {
         XCTAssertEqual(queued.fullPixelSize, CGSize(width: scale.pixelWidth, height: scale.pixelHeight))
         XCTAssertEqual(queued.alternate?.fullPixelSize, CGSize(width: 640, height: 480))
         XCTAssertEqual(queued.capture?.sourceWidth, 640)
+        // Cleaned up once cut out, in the task's mode (color here: auto).
+        XCTAssertNotNil(queued.capture?.enhancement)
     }
 
     @MainActor

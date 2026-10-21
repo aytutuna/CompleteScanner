@@ -24,14 +24,31 @@ public struct CaptureObservation: Equatable, Sendable {
     /// The frame's size in pixels (movement is measured against its diagonal).
     public var frameWidth: Int
     public var frameHeight: Int
+    /// How sharp the frame is (`FrameQuality`: the variance of the Laplacian); nil when not measured.
+    public var sharpness: Double?
+    /// How bright the frame is (`FrameQuality`: its mean luma, 0...255); nil when not measured.
+    public var brightness: Double?
 
-    public init(quad: Quad?, confidence: Double, timestampMs: Double, frameWidth: Int, frameHeight: Int) {
+    public init(quad: Quad?, confidence: Double, timestampMs: Double, frameWidth: Int, frameHeight: Int,
+                sharpness: Double? = nil, brightness: Double? = nil) {
         self.quad = quad
         self.confidence = confidence
         self.timestampMs = timestampMs
         self.frameWidth = frameWidth
         self.frameHeight = frameHeight
+        self.sharpness = sharpness
+        self.brightness = brightness
     }
+}
+
+/// Whether a frame is good enough to be taken (`CaptureStability.judge`). Twin of C# `CaptureQuality`.
+public enum CaptureQuality: Sendable {
+    /// Sharp and lit, or not measured.
+    case good
+    /// Not sharp enough: the camera moves or has not focused yet.
+    case blurry
+    /// Too dark.
+    case dark
 }
 
 /// What the shutter should do after a frame.
@@ -42,6 +59,8 @@ public struct CaptureDecision: Equatable, Sendable {
     public var shouldCapture: Bool
     /// How far the page is through the steady time, 0...1 (for a ring in the view).
     public var progress: Double
+    /// The frame's quality (`CaptureStability.judge`); a page held still long enough waits while it is not good.
+    public var quality: CaptureQuality = .good
 }
 
 /// The thresholds of `CaptureStability`; the defaults are its constants.
@@ -60,6 +79,10 @@ public struct CaptureStabilityOptions: Equatable, Sendable {
     public var maxGapMs = CaptureStability.maxGapMs
     /// After a capture, the next page counts as new once a corner moved this share of the diagonal from the captured page.
     public var newPageMovement = CaptureStability.newPageMovement
+    /// A frame less sharp than this (`CaptureObservation.sharpness`) is not taken.
+    public var minSharpness = CaptureStability.minSharpness
+    /// A frame darker than this (`CaptureObservation.brightness`) is not taken.
+    public var minBrightness = CaptureStability.minBrightness
 
     public init() {}
 
@@ -74,9 +97,14 @@ public struct CaptureStabilityOptions: Equatable, Sendable {
 /// missing for up to `maxGapMs` is waited for, and the time it was missing does not count as holding
 /// still. Once taken, the same page is not taken again: the shutter re-arms when frames without a
 /// page span more than `maxGapMs` (the page has gone) or a corner moved `newPageMovement` from where
-/// it was taken, or when `reset()` is called; a pause between frames alone does not re-arm it.
-/// Corners are compared whichever of them a quad names first (`movement`), so a page turned to where
-/// `Quad.fromCorners` names its corners from another edge does not seem to move. Pure logic: the
+/// it was taken, or when `reset()` is called; a pause between frames alone does not re-arm it, and after
+/// the camera stopped for a while `resume(atMs:)` takes the time without frames out, so it counts neither
+/// as time the page was missing nor as time it held still. A page held still long enough is taken only from a frame that is sharp and lit (`judge`, when the frame's
+/// `sharpness` and `brightness` were measured): until one comes, the page stays steadying with its
+/// progress full, and every decision says how the frame was judged (`CaptureDecision.quality`).
+/// `markCaptured()` counts the page in view as taken (a photo taken by hand). Corners are compared
+/// whichever of them a quad names first (`movement`), so a page turned to where `Quad.fromCorners`
+/// names its corners from another edge does not seem to move. Pure logic: the
 /// camera feeds it one `CaptureObservation` per analysed frame, in time order. Twin of C#
 /// `CaptureStability`.
 public struct CaptureStability: Sendable {
@@ -87,6 +115,10 @@ public struct CaptureStability: Sendable {
     public static let stayConfidence = 0.45
     public static let maxGapMs = 250.0
     public static let newPageMovement = 0.15
+    /// The least sharpness a frame is taken at: the variance of its luma's 4-neighbour Laplacian (`FrameQuality`).
+    public static let minSharpness = 40.0
+    /// The least brightness a frame is taken at: its mean luma, 0...255 (`FrameQuality`).
+    public static let minBrightness = 50.0
 
     private let options: CaptureStabilityOptions
     private var previous: Quad?
@@ -94,6 +126,7 @@ public struct CaptureStability: Sendable {
     private var captured: Quad?
     private var steadySince = 0.0
     private var lastSeen = -Double.infinity
+    private var lastFrame = -Double.infinity
     private var missing = false
 
     /// The state after the last frame.
@@ -110,11 +143,53 @@ public struct CaptureStability: Sendable {
         anchor = nil
         captured = nil
         lastSeen = -Double.infinity
+        lastFrame = -Double.infinity
         missing = false
+    }
+
+    /// Frames come again after a pause (the camera stopped for a while and started again), the first of them
+    /// taken at `timestampMs`: the time since the last frame counts neither as time the page was missing nor
+    /// as time it held still, as if the first frame came right after the last. So a page taken before the
+    /// pause stays taken through a first frame that misses it, and a page holding still goes on from where it
+    /// was. Nothing changes before any frame, or for a time before the last frame's. Twin of C#
+    /// `CaptureStability.Resume`.
+    public mutating func resume(atMs timestampMs: Double) {
+        guard lastFrame != -Double.infinity, timestampMs > lastFrame else { return }
+        let paused: Double = timestampMs - lastFrame
+        lastFrame = timestampMs
+        lastSeen += paused
+        steadySince += paused
+    }
+
+    /// The page in view was taken another way (the shutter pressed by hand): it counts as captured, so the
+    /// same page is not taken again until it moves or goes. Nothing changes while no page is seen.
+    public mutating func markCaptured() {
+        guard let quad = previous else { return }
+        state = .captured
+        captured = quad
+        anchor = nil
+    }
+
+    /// How a frame with these readings is judged: `.dark` below `minBrightness`, else `.blurry` below
+    /// `minSharpness`, else (and when not measured) `.good`.
+    public static func judge(sharpness: Double?, brightness: Double?,
+                             options: CaptureStabilityOptions = .default) -> CaptureQuality {
+        if let lit = brightness, lit < options.minBrightness { return .dark }
+        if let sharp = sharpness, sharp < options.minSharpness { return .blurry }
+        return .good
     }
 
     /// The decision after one more frame.
     public mutating func update(_ frame: CaptureObservation) -> CaptureDecision {
+        let quality: CaptureQuality = CaptureStability.judge(sharpness: frame.sharpness, brightness: frame.brightness,
+                                                             options: options)
+        lastFrame = frame.timestampMs
+        var decision: CaptureDecision = decide(frame, quality: quality)
+        decision.quality = quality
+        return decision
+    }
+
+    private mutating func decide(_ frame: CaptureObservation, quality: CaptureQuality) -> CaptureDecision {
         let o = options
         let fw = Double(frame.frameWidth), fh = Double(frame.frameHeight)
         let diagonal = (fw * fw + fh * fh).squareRoot()
@@ -161,6 +236,10 @@ public struct CaptureStability: Sendable {
             let stays = frame.confidence >= o.stayConfidence && CaptureStability.movement(quad, held) <= o.stayMovement * diagonal
             if stays {
                 if t - steadySince >= o.steadyMs {
+                    // Held still long enough: taken from the first frame that is sharp and lit.
+                    if quality != .good {
+                        return CaptureDecision(state: state, shouldCapture: false, progress: 1)
+                    }
                     state = .captured
                     captured = quad
                     anchor = nil

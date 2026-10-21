@@ -225,4 +225,130 @@ public class CaptureStabilityTests
         // After a reset the next frame is a page seen again: steady from 31, fires at 50.
         Assert.Equal(new[] { 50 }, Run(stability, 30, Held(Page, 30)));
     }
+
+    /// <summary>Feeds the frames from <paramref name="start"/> on with these readings; returns the indices that fired.</summary>
+    private static List<int> RunWithReadings(CaptureStability stability, int start, IEnumerable<(Quad?, double)> frames,
+                                             double? sharpness, double? brightness, List<CaptureDecision>? log = null)
+    {
+        var fired = new List<int>();
+        int i = start;
+        foreach (var (quad, confidence) in frames)
+        {
+            var decision = stability.Update(Frame(i, quad, confidence) with { Sharpness = sharpness, Brightness = brightness });
+            log?.Add(decision);
+            if (decision.ShouldCapture) fired.Add(i);
+            i++;
+        }
+        return fired;
+    }
+
+    [Fact]
+    public void AHeldPageWaitsForASharpFrame()
+    {
+        var stability = new CaptureStability();
+        var log = new List<CaptureDecision>();
+        // Blurred (the camera still focusing) for 40 frames: held still long enough from frame 20, never taken.
+        Assert.Empty(RunWithReadings(stability, 0, Held(Page, 40), 10, 180, log));
+        for (int i = 20; i < 40; i++)
+        {
+            Assert.Equal(CaptureState.Steadying, log[i].State);
+            Assert.Equal(1, log[i].Progress);
+            Assert.Equal(CaptureQuality.Blurry, log[i].Quality);
+        }
+        // The first sharp frame is taken, and only once.
+        Assert.Equal(new[] { 40 }, RunWithReadings(stability, 40, Held(Page, 30), 400, 180, log));
+        Assert.Equal(CaptureQuality.Good, log[40].Quality);
+        Assert.Equal(CaptureState.Captured, stability.State);
+    }
+
+    [Fact]
+    public void AHeldPageWaitsForLight()
+    {
+        var stability = new CaptureStability();
+        var log = new List<CaptureDecision>();
+        Assert.Empty(RunWithReadings(stability, 0, Held(Page, 30), 400, 20, log));
+        Assert.Equal(CaptureQuality.Dark, log[29].Quality);
+        Assert.Equal(CaptureState.Steadying, log[29].State);
+        Assert.Equal(new[] { 30 }, RunWithReadings(stability, 30, Held(Page, 10), 400, 120));
+        // Moving frames are judged too, so the screen can say why before the page holds still.
+        var moving = new CaptureStability();
+        var decision = moving.Update(Frame(0, Page) with { Sharpness = 400, Brightness = 20 });
+        Assert.Equal(CaptureQuality.Dark, decision.Quality);
+        Assert.Equal(CaptureState.Moving, decision.State);
+    }
+
+    [Fact]
+    public void TheReadingsAreJudgedDarkFirst()
+    {
+        Assert.Equal(40, CaptureStability.MinSharpness);
+        Assert.Equal(50, CaptureStability.MinBrightness);
+        Assert.Equal(CaptureQuality.Dark, CaptureStability.Judge(10, 20));
+        Assert.Equal(CaptureQuality.Blurry, CaptureStability.Judge(10, 120));
+        Assert.Equal(CaptureQuality.Good, CaptureStability.Judge(40, 50));
+        Assert.Equal(CaptureQuality.Blurry, CaptureStability.Judge(39.99, 50));
+        Assert.Equal(CaptureQuality.Dark, CaptureStability.Judge(400, 49.99));
+        Assert.Equal(CaptureQuality.Good, CaptureStability.Judge(null, null));
+        Assert.Equal(CaptureQuality.Good, CaptureStability.Judge(null, 120));
+        var strict = new CaptureStabilityOptions { MinSharpness = 500, MinBrightness = 10 };
+        Assert.Equal(CaptureQuality.Blurry, CaptureStability.Judge(400, 20, strict));
+        // Frames without readings are taken as before.
+        Assert.Equal(new[] { 20 }, RunWithReadings(new CaptureStability(), 0, Held(Page, 30), null, null));
+    }
+
+    [Fact]
+    public void APhotoTakenByHandCountsAsTaken()
+    {
+        var stability = new CaptureStability();
+        // Nothing seen yet: nothing to mark.
+        stability.MarkCaptured();
+        Assert.Equal(CaptureState.NoPage, stability.State);
+        // Held still for ten frames, then the shutter pressed by hand: the same page is not taken again…
+        Assert.Empty(Run(stability, 0, Held(Page, 10)));
+        stability.MarkCaptured();
+        Assert.Equal(CaptureState.Captured, stability.State);
+        Assert.Empty(Run(stability, 10, Held(Page, 60)));
+        // …the next page laid 200 px aside is: re-armed at 70, steady from 71, fires at 90.
+        Assert.Equal(new[] { 90 }, Run(stability, 70, Held(Shifted(Page, 200, 0), 40)));
+    }
+
+    [Fact]
+    public void APauseIsNeitherTimeMissingNorTimeHeldStill()
+    {
+        // Taken at frame 20; the camera stops (the corner editor) after frame 29 and starts again at frame 200.
+        var stability = new CaptureStability();
+        Assert.Equal(new[] { 20 }, Run(stability, 0, Held(Page, 30)));
+        stability.Resume(200 * FrameMs);
+        // The first frame back misses the page (the exposure still settling): the page taken stays taken…
+        Assert.Equal(CaptureState.Captured, stability.Update(Frame(200, null)).State);
+        // …and the same page held still again is not taken again.
+        Assert.Empty(Run(stability, 201, Held(Page, 60)));
+        Assert.Equal(CaptureState.Captured, stability.State);
+
+        // Without Resume the pause counts as the page gone, and the same page is taken twice.
+        var unresumed = new CaptureStability();
+        Assert.Equal(new[] { 20 }, Run(unresumed, 0, Held(Page, 30)));
+        Assert.Equal(CaptureState.NoPage, unresumed.Update(Frame(200, null)).State);
+        Assert.Equal(new[] { 221 }, Run(unresumed, 201, Held(Page, 60)));
+
+        // A page that went meanwhile is gone once frames without it span MaxGapMs, as ever.
+        var gone = new CaptureStability();
+        Run(gone, 0, Held(Page, 30));
+        gone.Resume(200 * FrameMs);
+        var log = new List<CaptureDecision>();
+        Run(gone, 200, Enumerable.Repeat(((Quad?)null, 0.0), 9), log);
+        Assert.Equal(CaptureState.Captured, log[7].State);
+        Assert.Equal(CaptureState.NoPage, log[8].State);
+
+        // A page holding still when the camera stopped goes on from where it was: steady from 1, 264 ms held
+        // by frame 9, so 600 ms are reached at frame 311, not at once.
+        var steady = new CaptureStability();
+        Assert.Empty(Run(steady, 0, Held(Page, 10)));
+        steady.Resume(300 * FrameMs);
+        Assert.Equal(new[] { 311 }, Run(steady, 300, Held(Page, 20)));
+
+        // Nothing to resume before any frame.
+        var fresh = new CaptureStability();
+        fresh.Resume(1000);
+        Assert.Equal(new[] { 20 }, Run(fresh, 0, Held(Page, 30)));
+    }
 }

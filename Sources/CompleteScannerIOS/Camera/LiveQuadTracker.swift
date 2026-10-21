@@ -27,18 +27,26 @@ public protocol FrameSource: AnyObject {
 
 /// What the tracker saw in a frame: the page's outline (corners as shares of the frame, 0...1, x to the
 /// right and y down, named by `Quad.fromCorners`), nil when no page is in view; how steady it is
-/// (`CaptureStability`); whether it holds still now; and the frame's time.
+/// (`CaptureStability`); whether it holds still now; the frame's time; and the shutter's decision: take
+/// the photo now (`shouldCapture`, once per page held still on a sharp, lit frame) and how the frame was
+/// judged (`quality`).
 public struct LiveQuadUpdate: Equatable, Sendable {
     public let outline: Quad?
     public let state: CaptureState
     public let progress: Double
     public let timestampMs: Double
     /// The page holds still now (the outline is drawn green): `.steadying`, or `.captured` while the page
-    /// stays where it held still (`LiveQuadTracker`), not merely within `newPageMovement` of it.
+    /// stays where it held still (`LiveQuadTracker`), not merely within `newPageMovement` of it. For the
+    /// outline's colour only: the automatic shutter follows `shouldCapture`.
     public let isSteady: Bool
+    /// Take the photo now (`CaptureDecision.shouldCapture`): the automatic shutter's trigger.
+    public let shouldCapture: Bool
+    /// How the frame was judged (`CaptureDecision.quality`): why a page held still is not taken yet.
+    public let quality: CaptureQuality
 
     /// `isSteady` nil: the page holds still while `state` is `.steadying`.
-    public init(outline: Quad?, state: CaptureState, progress: Double, timestampMs: Double, isSteady: Bool? = nil) {
+    public init(outline: Quad?, state: CaptureState, progress: Double, timestampMs: Double, isSteady: Bool? = nil,
+                shouldCapture: Bool = false, quality: CaptureQuality = .good) {
         self.outline = outline
         self.state = state
         self.progress = progress
@@ -48,6 +56,8 @@ public struct LiveQuadUpdate: Equatable, Sendable {
         } else {
             self.isSteady = state == .steadying
         }
+        self.shouldCapture = shouldCapture
+        self.quality = quality
     }
 }
 
@@ -59,8 +69,16 @@ public struct LiveQuadUpdate: Equatable, Sendable {
 /// Once `CaptureStability` has taken the page (`.captured`) it keeps that state until the page moves
 /// `newPageMovement` away, so whether the page holds still meanwhile is judged here, by the same rules:
 /// it does while no corner strays `stayMovement` from where it held still, and holds still again once no
-/// corner moved `enterMovement` since the frame before (`LiveQuadUpdate.isSteady`). Frames are searched on the source's own queue, one at a time, never on the main thread; `reset()`
-/// may be called from any thread and drops a frame being searched meanwhile.
+/// corner moved `enterMovement` since the frame before (`LiveQuadUpdate.isSteady`). Each frame searched is
+/// also measured (`FrameQuality`, over the page found: how sharp, how bright), so the shutter's decision
+/// (`LiveQuadUpdate.shouldCapture`) comes only from a page held still on a sharp, lit frame. A photo taken
+/// (`markCaptured()`) counts the page in view as taken, so the next is taken only once the page moved away
+/// or went (continuous capture); a pause (`pauseFollowing()`: the camera stopped for the corner editor, the
+/// background, heat) keeps that, and the time the camera was stopped counts neither as time the page was
+/// missing nor as time it held still (`CaptureStability.resume(atMs:)` on the first frame searched after
+/// it). Turning the automatic shutter on re-arms only a page taken without a photo (`rearm()`). Frames are
+/// searched on the source's own queue, one at a time, never on the main thread; `reset()` may be called
+/// from any thread and drops a frame being searched meanwhile.
 public final class LiveQuadTracker: @unchecked Sendable {
     /// About ten searches a second.
     public static let frameIntervalMs: Double = 100
@@ -74,8 +92,11 @@ public final class LiveQuadTracker: @unchecked Sendable {
 
     /// The page search: a frame and the outline found in the frame before (its pixels), if any.
     public typealias Detector = @Sendable (RgbaImage, Quad?) -> PhotoDocumentDetection
+    /// How sharp and bright a frame is, over the page found in it (its pixels), if any.
+    public typealias QualityMeasure = @Sendable (RgbaImage, Quad?) -> FrameQualityReading
 
     private let detector: Detector
+    private let measure: QualityMeasure
     private let stabilityOptions: CaptureStabilityOptions
     private let lock = NSLock()
     private var stability: CaptureStability
@@ -90,14 +111,27 @@ public final class LiveQuadTracker: @unchecked Sendable {
     private var frameHeight: Int = 0
     private var generation: Int = 0
     private var source: FrameSource?
+    /// A source was let go (a pause): the next frame searched resumes `stability` first.
+    private var resuming: Bool = false
+    /// A photo was taken of the page `stability` counts as taken (`markCaptured()`), not only decided on;
+    /// false again once it is no longer taken.
+    private var photographed: Bool = false
 
-    /// `detector` nil: the shared page search with `liveOptions` (tests may pass their own).
-    public init(detector: Detector? = nil, stability: CaptureStabilityOptions = .default) {
+    /// `detector` nil: the shared page search with `liveOptions`; `quality` nil: `FrameQuality.measure` (tests
+    /// may pass their own).
+    public init(detector: Detector? = nil, stability: CaptureStabilityOptions = .default, quality: QualityMeasure? = nil) {
         if let given = detector {
             self.detector = given
         } else {
             self.detector = { (image: RgbaImage, hint: Quad?) -> PhotoDocumentDetection in
                 LiveQuadTracker.detect(image, hint: hint)
+            }
+        }
+        if let given = quality {
+            self.measure = given
+        } else {
+            self.measure = { (image: RgbaImage, page: Quad?) -> FrameQualityReading in
+                FrameQuality.measure(image, region: page)
             }
         }
         self.stabilityOptions = stability
@@ -145,14 +179,24 @@ public final class LiveQuadTracker: @unchecked Sendable {
         lock.unlock()
 
         let detection: PhotoDocumentDetection = detector(frame.image, hint)
+        let reading: FrameQualityReading = measure(frame.image, detection.quad)
 
         lock.lock()
         defer { lock.unlock() }
         // Reset while the frame was searched: its answer belongs to before.
         guard started == generation else { return nil }
+        if resuming {
+            // The first frame after a pause: the time the camera was stopped is not time without the page.
+            resuming = false
+            stability.resume(atMs: t)
+        }
         let observation = CaptureObservation(quad: detection.quad, confidence: detection.confidence, timestampMs: t,
-                                             frameWidth: width, frameHeight: height)
+                                             frameWidth: width, frameHeight: height,
+                                             sharpness: reading.sharpness, brightness: reading.brightness)
         let decision: CaptureDecision = stability.update(observation)
+        if decision.state != .captured {
+            photographed = false
+        }
         let diagonal: Double = (Double(width) * Double(width) + Double(height) * Double(height)).squareRoot()
         let steady: Bool = holdsStill(decision, quad: detection.quad, confidence: detection.confidence, diagonal: diagonal)
         lastFound = detection.quad
@@ -171,7 +215,7 @@ public final class LiveQuadTracker: @unchecked Sendable {
             outline = LiveQuadTracker.normalized(quad, width: width, height: height)
         }
         return LiveQuadUpdate(outline: outline, state: decision.state, progress: decision.progress, timestampMs: t,
-                              isSteady: steady)
+                              isSteady: steady, shouldCapture: decision.shouldCapture, quality: decision.quality)
     }
 
     /// Whether the page holds still after `decision` (called with the lock held): while `.steadying`, yes;
@@ -209,7 +253,7 @@ public final class LiveQuadTracker: @unchecked Sendable {
         }
     }
 
-    /// Forgets the page (the photo was taken, the camera stopped): the next frame starts over.
+    /// Forgets the page (the camera screen closed, a page to be judged again): the next frame starts over.
     public func reset() {
         lock.lock()
         clearState()
@@ -217,10 +261,35 @@ public final class LiveQuadTracker: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// A photo was taken of the page in view (by hand, or as the shutter's decision said): it counts as
+    /// taken (`CaptureStability.markCaptured`), so it is not taken again until it moves away or goes.
+    public func markCaptured() {
+        lock.lock()
+        stability.markCaptured()
+        if stability.state == .captured {
+            heldAt = lastFound
+            photographed = true
+        }
+        lock.unlock()
+    }
+
+    /// The automatic shutter was turned on: a page `CaptureStability` counted as taken while no photo was
+    /// taken of it (the shutter was off when it decided) is judged afresh (as `reset()`), so it is taken once
+    /// it holds still; a page photographed (`markCaptured()`) stays taken, and nothing else changes.
+    public func rearm() {
+        lock.lock()
+        let untaken: Bool = stability.state == .captured && !photographed
+        lock.unlock()
+        if untaken {
+            reset()
+        }
+    }
+
     /// Searches the frames `source` hands over and reports each search to `onUpdate`, on the source's
-    /// queue; any source followed before is let go.
+    /// queue; any source followed before is let go. What the tracker knows of the page is kept (see
+    /// `pauseFollowing()`).
     public func follow(_ source: FrameSource, onUpdate: @escaping @Sendable (LiveQuadUpdate) -> Void) {
-        stopFollowing()
+        detach()
         lock.lock()
         self.source = source
         lock.unlock()
@@ -234,12 +303,26 @@ public final class LiveQuadTracker: @unchecked Sendable {
 
     /// Stops following the source (its frames are no longer searched) and forgets the page.
     public func stopFollowing() {
+        detach()
+        reset()
+    }
+
+    /// Stops following the source but keeps what is known of the page, above all that it was taken: the
+    /// camera stopped for a while (the corner editor, the background, heat) and the same page still in view
+    /// afterwards is not taken again.
+    public func pauseFollowing() {
+        detach()
+    }
+
+    private func detach() {
         lock.lock()
         let followed: FrameSource? = source
         source = nil
+        if followed != nil {
+            resuming = true
+        }
         lock.unlock()
         followed?.stopFrames()
-        reset()
     }
 
     /// `quad` (pixels of a `width` × `height` frame) as shares of the frame.
@@ -283,6 +366,8 @@ public final class LiveQuadTracker: @unchecked Sendable {
         lastSeenMs = -Double.infinity
         lastFound = nil
         heldAt = nil
+        resuming = false
+        photographed = false
     }
 }
 

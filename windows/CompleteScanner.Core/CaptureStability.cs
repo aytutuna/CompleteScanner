@@ -21,13 +21,34 @@ public enum CaptureState
 /// <param name="TimestampMs">When the frame was taken, in milliseconds on any steady clock.</param>
 /// <param name="FrameWidth">The frame's size in pixels (movement is measured against its diagonal).</param>
 /// <param name="FrameHeight"></param>
-public readonly record struct CaptureObservation(Quad? Quad, double Confidence, double TimestampMs, int FrameWidth, int FrameHeight);
+public readonly record struct CaptureObservation(Quad? Quad, double Confidence, double TimestampMs, int FrameWidth, int FrameHeight)
+{
+    /// <summary>How sharp the frame is (<see cref="FrameQuality"/>: the variance of the Laplacian); null when not measured.</summary>
+    public double? Sharpness { get; init; }
+    /// <summary>How bright the frame is (<see cref="FrameQuality"/>: its mean luma, 0...255); null when not measured.</summary>
+    public double? Brightness { get; init; }
+}
+
+/// <summary>Whether a frame is good enough to be taken (<see cref="CaptureStability.Judge"/>).</summary>
+public enum CaptureQuality
+{
+    /// <summary>Sharp and lit, or not measured.</summary>
+    Good,
+    /// <summary>Not sharp enough: the camera moves or has not focused yet.</summary>
+    Blurry,
+    /// <summary>Too dark.</summary>
+    Dark,
+}
 
 /// <summary>What the shutter should do after a frame.</summary>
 /// <param name="State">The state after the frame.</param>
 /// <param name="ShouldCapture">Take the photo now (true on exactly one frame per steady page).</param>
 /// <param name="Progress">How far the page is through the steady time, 0...1 (for a ring in the view).</param>
-public readonly record struct CaptureDecision(CaptureState State, bool ShouldCapture, double Progress);
+public readonly record struct CaptureDecision(CaptureState State, bool ShouldCapture, double Progress)
+{
+    /// <summary>The frame's quality (<see cref="CaptureStability.Judge"/>); a page held still long enough waits while it is not good.</summary>
+    public CaptureQuality Quality { get; init; }
+}
 
 /// <summary>The thresholds of <see cref="CaptureStability"/>; the defaults are its constants.</summary>
 public sealed record CaptureStabilityOptions
@@ -46,6 +67,10 @@ public sealed record CaptureStabilityOptions
     public double MaxGapMs { get; init; } = CaptureStability.MaxGapMs;
     /// <summary>After a capture, the next page counts as new once a corner moved this share of the diagonal from the captured page…</summary>
     public double NewPageMovement { get; init; } = CaptureStability.NewPageMovement;
+    /// <summary>A frame less sharp than this (<see cref="CaptureObservation.Sharpness"/>) is not taken.</summary>
+    public double MinSharpness { get; init; } = CaptureStability.MinSharpness;
+    /// <summary>A frame darker than this (<see cref="CaptureObservation.Brightness"/>) is not taken.</summary>
+    public double MinBrightness { get; init; } = CaptureStability.MinBrightness;
 
     public static CaptureStabilityOptions Default { get; } = new();
 }
@@ -62,7 +87,13 @@ public sealed record CaptureStabilityOptions
 /// taken again: the shutter re-arms when frames without a page span more than
 /// <see cref="MaxGapMs"/> (the page has gone) or a corner moved <see cref="NewPageMovement"/> from
 /// where it was taken, or when <see cref="Reset"/> is called; a pause between frames alone does
-/// not re-arm it. Corners are compared whichever of them a quad names first (<see cref="Movement"/>),
+/// not re-arm it, and after the camera stopped for a while <see cref="Resume"/> takes the time without
+/// frames out, so it counts neither as time the page was missing nor as time it held still. A page held still long enough is taken only from a frame that is sharp and lit
+/// (<see cref="Judge"/>, when the frame's <see cref="CaptureObservation.Sharpness"/> and
+/// <see cref="CaptureObservation.Brightness"/> were measured): until one comes, the page stays
+/// steadying with its progress full, and every decision says how the frame was judged
+/// (<see cref="CaptureDecision.Quality"/>). <see cref="MarkCaptured"/> counts the page in view as
+/// taken (a photo taken by hand). Corners are compared whichever of them a quad names first (<see cref="Movement"/>),
 /// so a page turned to where <see cref="Quad.FromCorners"/> names its corners from another edge
 /// does not seem to move. Pure logic: the camera feeds it one <see cref="CaptureObservation"/> per
 /// analysed frame, in time order.
@@ -76,6 +107,10 @@ public sealed class CaptureStability
     public const double StayConfidence = 0.45;
     public const double MaxGapMs = 250;
     public const double NewPageMovement = 0.15;
+    /// <summary>The least sharpness a frame is taken at: the variance of its luma's 4-neighbour Laplacian (<see cref="FrameQuality"/>).</summary>
+    public const double MinSharpness = 40;
+    /// <summary>The least brightness a frame is taken at: its mean luma, 0...255 (<see cref="FrameQuality"/>).</summary>
+    public const double MinBrightness = 50;
 
     private readonly CaptureStabilityOptions _options;
     private Quad? _previous;
@@ -83,6 +118,7 @@ public sealed class CaptureStability
     private Quad? _captured;
     private double _steadySince;
     private double _lastSeen = double.NegativeInfinity;
+    private double _lastFrame = double.NegativeInfinity;
     private bool _missing;
 
     public CaptureStability(CaptureStabilityOptions? options = null)
@@ -101,11 +137,60 @@ public sealed class CaptureStability
         _anchor = null;
         _captured = null;
         _lastSeen = double.NegativeInfinity;
+        _lastFrame = double.NegativeInfinity;
         _missing = false;
+    }
+
+    /// <summary>
+    /// Frames come again after a pause (the camera stopped for a while and started again), the first of
+    /// them taken at <paramref name="timestampMs"/>: the time since the last frame counts neither as time
+    /// the page was missing nor as time it held still, as if the first frame came right after the last.
+    /// So a page taken before the pause stays taken through a first frame that misses it, and a page
+    /// holding still goes on from where it was. Nothing changes before any frame, or for a time before the last frame's.
+    /// </summary>
+    public void Resume(double timestampMs)
+    {
+        if (double.IsNegativeInfinity(_lastFrame) || timestampMs <= _lastFrame) return;
+        double paused = timestampMs - _lastFrame;
+        _lastFrame = timestampMs;
+        _lastSeen += paused;
+        _steadySince += paused;
+    }
+
+    /// <summary>
+    /// The page in view was taken another way (the shutter pressed by hand): it counts as captured, so
+    /// the same page is not taken again until it moves or goes. Nothing changes while no page is seen.
+    /// </summary>
+    public void MarkCaptured()
+    {
+        if (_previous is not { } quad) return;
+        State = CaptureState.Captured;
+        _captured = quad;
+        _anchor = null;
+    }
+
+    /// <summary>
+    /// How a frame with these readings is judged: <see cref="CaptureQuality.Dark"/> below
+    /// <see cref="CaptureStabilityOptions.MinBrightness"/>, else <see cref="CaptureQuality.Blurry"/> below
+    /// <see cref="CaptureStabilityOptions.MinSharpness"/>, else (and when not measured) <see cref="CaptureQuality.Good"/>.
+    /// </summary>
+    public static CaptureQuality Judge(double? sharpness, double? brightness, CaptureStabilityOptions? options = null)
+    {
+        var o = options ?? CaptureStabilityOptions.Default;
+        if (brightness is { } lit && lit < o.MinBrightness) return CaptureQuality.Dark;
+        if (sharpness is { } sharp && sharp < o.MinSharpness) return CaptureQuality.Blurry;
+        return CaptureQuality.Good;
     }
 
     /// <summary>The decision after one more frame.</summary>
     public CaptureDecision Update(CaptureObservation frame)
+    {
+        var quality = Judge(frame.Sharpness, frame.Brightness, _options);
+        _lastFrame = frame.TimestampMs;
+        return Decide(frame, quality) with { Quality = quality };
+    }
+
+    private CaptureDecision Decide(CaptureObservation frame, CaptureQuality quality)
     {
         var o = _options;
         double diagonal = Math.Sqrt((double)frame.FrameWidth * frame.FrameWidth + (double)frame.FrameHeight * frame.FrameHeight);
@@ -159,6 +244,8 @@ public sealed class CaptureStability
             {
                 if (t - _steadySince >= o.SteadyMs)
                 {
+                    // Held still long enough: taken from the first frame that is sharp and lit.
+                    if (quality != CaptureQuality.Good) return new CaptureDecision(State, false, 1);
                     State = CaptureState.Captured;
                     _captured = quad;
                     _anchor = null;

@@ -138,6 +138,7 @@ public class GrayImageTests
         Assert.Equal(new byte[] { 10, 20, 30, 40, 50, 60, 70, 80, 90 }, map.Tiles);
         Assert.Equal(50, map.MedianTile());
         Assert.Equal(new byte[] { 50, 60, 60, 80, 90, 90, 80, 90, 90 }, map.MaxSmoothed().Tiles);
+        Assert.Equal(new byte[] { 10, 10, 20, 10, 10, 20, 40, 40, 50 }, map.MinSmoothed().Tiles);
         Assert.Equal(new byte[] { 45, 45, 45, 45, 50, 60, 70, 80, 90 }, map.ClampedBelow(45).Tiles);
         Assert.Equal(new byte[] { 10, 20, 30, 40, 50, 60, 70, 80, 90 }, map.Tiles); // unchanged
     }

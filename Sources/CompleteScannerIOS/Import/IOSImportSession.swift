@@ -54,18 +54,23 @@ public struct IOSImportItem: Equatable, Sendable {
 /// in hand is in memory: a photo the Photos picker hands over when asked, a file read off the main
 /// actor (`file`), or bytes already in hand (`item`). A photo from our camera also carries the outline
 /// its live preview showed (`liveOutline`, shares of the upright photo), the corner editor's start
-/// when the page is not found clearly in the photo itself (`shot`).
+/// when the page is not found clearly in the photo itself (`shot`), and, in continuous capture, that the
+/// corner editor opens only when the photo's own search is unsure (`asksOnlyWhenUnsure`).
 public struct IOSImportSource {
     public let name: String
     public let expectedKind: IOSImportItem.Kind
     public let liveOutline: Quad?
+    /// A page found clearly in the photo itself (`IOSFoundPage.reason` `.none` before any live outline is
+    /// used) goes into the queue along its corners without the corner editor.
+    public let asksOnlyWhenUnsure: Bool
     let read: @MainActor () async -> Result<IOSImportItem, IOSImportError>
 
-    public init(name: String, expectedKind: IOSImportItem.Kind, liveOutline: Quad? = nil,
+    public init(name: String, expectedKind: IOSImportItem.Kind, liveOutline: Quad? = nil, asksOnlyWhenUnsure: Bool = false,
                 read: @escaping @MainActor () async -> Result<IOSImportItem, IOSImportError>) {
         self.name = name
         self.expectedKind = expectedKind
         self.liveOutline = liveOutline
+        self.asksOnlyWhenUnsure = asksOnlyWhenUnsure
         self.read = read
     }
 
@@ -76,11 +81,12 @@ public struct IOSImportSource {
         }
     }
 
-    /// A photo our camera took (`IOSCameraShot`), named `IOSImportText.shotName`, with its live outline.
-    public static func shot(_ shot: IOSCameraShot) -> IOSImportSource {
+    /// A photo our camera took (`IOSCameraShot`), named `IOSImportText.shotName`, with its live outline; in
+    /// continuous capture the corner editor opens only when the photo's own search is unsure.
+    public static func shot(_ shot: IOSCameraShot, asksOnlyWhenUnsure: Bool = false) -> IOSImportSource {
         let item = IOSImportItem(name: IOSImportText.shotName, data: shot.data, kind: .image)
-        return IOSImportSource(name: item.name, expectedKind: .image,
-                               liveOutline: shot.liveOutline) { () async -> Result<IOSImportItem, IOSImportError> in
+        return IOSImportSource(name: item.name, expectedKind: .image, liveOutline: shot.liveOutline,
+                               asksOnlyWhenUnsure: asksOnlyWhenUnsure) { () async -> Result<IOSImportItem, IOSImportError> in
             .success(item)
         }
     }
@@ -143,12 +149,12 @@ public struct IOSImportOutcome: Equatable, Sendable {
 
 /// The iPhone's short texts of importing and the camera.
 public enum IOSImportText {
-    /// Our own camera (`CameraScreen`).
+    /// Our own camera (`CameraScreen`), the default way to take pages.
     public static let cameraLabel = "Camera"
-    /// Apple's document scanner (VisionKit), on the Document, Email and Word tasks.
-    public static let scannerLabel = "Doc scanner"
-    /// What VoiceOver calls Apple's document scanner.
-    public static let scannerName = "Document scanner"
+    /// Apple's document scanner (VisionKit), offered beside our camera on the Document, Email and Word tasks.
+    public static let scannerLabel = "Use Apple's scanner"
+    /// What VoiceOver calls Apple's document scanner's button.
+    public static let scannerName = "Use Apple's document scanner"
     /// The name a photo from our camera is shown with (the corner editor, the messages).
     public static let shotName = "Camera photo"
     /// The pages Apple's document scanner took, in the message when they could not be added.
@@ -312,10 +318,12 @@ public final class IOSImportSession: ObservableObject {
     /// A photo our camera took, imported as a photo is (see `importSources`): read with its orientation
     /// tag and focal length (`IOSPhotoDecoder`), its page found again in it (`IOSPageFinder`; where the
     /// page is not found clearly, the outline the live preview showed is the editor's start, `seeded`),
-    /// the corner editor, then the page into the queue with its capture facts.
+    /// the corner editor, then the page into the queue with its capture facts. In continuous capture
+    /// (`asksOnlyWhenUnsure`) a page the photo's own search found clearly skips the editor (I7's rule, as
+    /// the Mac's and Windows' photo import cut a page found surely at once).
     @discardableResult
-    public func importShot(_ shot: IOSCameraShot) async -> IOSImportOutcome {
-        await importSources([IOSImportSource.shot(shot)])
+    public func importShot(_ shot: IOSCameraShot, asksOnlyWhenUnsure: Bool = false) async -> IOSImportOutcome {
+        await importSources([IOSImportSource.shot(shot, asksOnlyWhenUnsure: asksOnlyWhenUnsure)])
     }
 
     /// The corner editor's answer: the import waiting for it goes on. A second answer changes nothing.
@@ -406,7 +414,8 @@ public final class IOSImportSession: ObservableObject {
             return IOSFirstPage(pageCount: pageCount, prepared: prepared)
         }.value
         let rest: Data? = first.pageCount > 1 ? data : nil
-        return .photo(IOSPhotoFile(name: name, pageCount: first.pageCount, first: first.prepared, rest: rest))
+        return .photo(IOSPhotoFile(name: name, pageCount: first.pageCount, first: first.prepared, rest: rest,
+                                   asksOnlyWhenUnsure: source.asksOnlyWhenUnsure))
     }
 
     /// The pages of one photo file (one, or a TIFF's several), each through the corner editor. Page 1 is
@@ -437,7 +446,8 @@ public final class IOSImportSession: ObservableObject {
                 }.value
             }
             let shownName: String = PhotoImport.pageName(name, page: page, pageCount: pageCount)
-            let part: IOSImportOutcome = await importPage(prepared, shownName: shownName, number: number, count: count)
+            let part: IOSImportOutcome = await importPage(prepared, shownName: shownName, number: number, count: count,
+                                                          asksOnlyWhenUnsure: file.asksOnlyWhenUnsure)
             outcome.merge(part)
             page += 1
         }
@@ -446,8 +456,10 @@ public final class IOSImportSession: ObservableObject {
         return outcome
     }
 
-    /// One photo read and searched: the corner editor, then the page made and brought in.
-    private func importPage(_ prepared: IOSPreparedPhoto, shownName: String, number: Int, count: Int) async -> IOSImportOutcome {
+    /// One photo read and searched: the corner editor (not for a page found clearly when
+    /// `asksOnlyWhenUnsure`), then the page made and brought in.
+    private func importPage(_ prepared: IOSPreparedPhoto, shownName: String, number: Int, count: Int,
+                            asksOnlyWhenUnsure: Bool) async -> IOSImportOutcome {
         var outcome = IOSImportOutcome()
         if let problem = prepared.problem {
             outcome.add(problem)
@@ -466,7 +478,12 @@ public final class IOSImportSession: ObservableObject {
         let plan = PhotoImportPlan(action: .review, corners: found.corners, reason: found.reason,
                                    detection: PhotoDocumentDetection.nothing)
         let request = PhotoCornersRequest(photo: photo, plan: plan, fileName: shownName, number: number, count: count)
-        let reply: PhotoCornersAnswer = await askCorners(request)
+        let reply: PhotoCornersAnswer
+        if asksOnlyWhenUnsure && prepared.sure && !stopRequested {
+            reply = PhotoCornersAnswer(choice: .useCorners, corners: found.corners)
+        } else {
+            reply = await askCorners(request)
+        }
         let focalLength: Double? = decoded.focalLength
         var page: ScannedPage?
         switch reply.choice {
@@ -631,14 +648,17 @@ enum IOSReadItem {
 final class IOSPhotoFile {
     let name: String
     let pageCount: Int
+    /// Its pages skip the corner editor when found clearly (`IOSImportSource.asksOnlyWhenUnsure`).
+    let asksOnlyWhenUnsure: Bool
     private var first: IOSPreparedPhoto?
     private(set) var rest: Data?
 
-    init(name: String, pageCount: Int, first: IOSPreparedPhoto, rest: Data?) {
+    init(name: String, pageCount: Int, first: IOSPreparedPhoto, rest: Data?, asksOnlyWhenUnsure: Bool = false) {
         self.name = name
         self.pageCount = pageCount
         self.first = first
         self.rest = rest
+        self.asksOnlyWhenUnsure = asksOnlyWhenUnsure
     }
 
     /// Page 1 read and searched, handed over once; nil after that.
@@ -661,11 +681,12 @@ struct IOSFirstPage: Sendable {
 }
 
 /// A photo read and searched, off the main actor: the photo and where its page is, or why it could not
-/// be read.
+/// be read; `sure` when the photo's own search found the page clearly (before any live outline was used).
 struct IOSPreparedPhoto: Sendable {
     let decoded: IOSDecodedPhoto?
     let found: IOSFoundPage?
     let problem: String?
+    var sure: Bool = false
 
     /// Page `page` (from 1) of the photo file `data`, read and searched; `liveOutline` (shares of the
     /// upright photo) is the start where the search finds no page clearly (`IOSImportSession.seeded`).
@@ -676,7 +697,8 @@ struct IOSPreparedPhoto: Sendable {
             let searched: IOSFoundPage = finder(decoded.photo)
             let found: IOSFoundPage = IOSImportSession.seeded(searched, liveOutline: liveOutline,
                                                               width: decoded.photo.width, height: decoded.photo.height)
-            return IOSPreparedPhoto(decoded: decoded, found: found, problem: nil)
+            let sure: Bool = searched.reason == PhotoReviewReason.none
+            return IOSPreparedPhoto(decoded: decoded, found: found, problem: nil, sure: sure)
         } catch let error as IOSImportError {
             return IOSPreparedPhoto(decoded: nil, found: nil, problem: error.message)
         } catch {

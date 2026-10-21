@@ -6,8 +6,9 @@ import XCTest
 // over). The photo is the test's own fixture (Fixtures/document-photo.png, drawn by
 // scripts/make_ios_ui_fixture.py: a sheet on a table, no real document). The page is found, the corner
 // editor opens with its corners, Use corners puts the straightened page in the strip, and Save writes
-// a PDF in the app's own Documents folder in the Simulator. The Simulator has no document camera, so
-// the Camera button is dimmed with its reason. Stop in the corner editor ends the import: no page comes in.
+// a PDF in the app's own Documents folder in the Simulator. The Simulator has no document scanner, so
+// Use Apple's scanner is dimmed with its reason, while Camera (our own, the default) stays available.
+// Stop in the corner editor ends the import: no page comes in.
 
 final class ImportTests: XCTestCase {
     override func setUpWithError() throws {
@@ -29,11 +30,13 @@ final class ImportTests: XCTestCase {
         let page: XCUIElement = app.descendants(matching: .any)["page.1"]
         XCTAssertTrue(page.waitForExistence(timeout: 240), "The imported page in the page strip")
 
-        // The Simulator has no document camera: the Camera button is there, dimmed, with why.
-        let camera: XCUIElement = app.buttons["capture.camera"]
-        XCTAssertTrue(camera.exists, "The Camera button")
-        XCTAssertFalse(camera.isEnabled, "No camera in the Simulator")
-        XCTAssertTrue(app.staticTexts["camera.reason"].exists, "Why there is no camera")
+        // The Simulator has no document scanner: Use Apple's scanner is there, dimmed, with why; our
+        // camera, the default, is there too (its own screen says there is no camera).
+        let scanner: XCUIElement = app.buttons["capture.scanner"]
+        XCTAssertTrue(scanner.exists, "The Use Apple's scanner button")
+        XCTAssertFalse(scanner.isEnabled, "No document scanner in the Simulator")
+        XCTAssertTrue(app.staticTexts["scanner.reason"].exists, "Why there is no document scanner")
+        XCTAssertTrue(app.buttons["capture.camera"].exists, "The Camera button")
 
         let save: XCUIElement = app.buttons["save.button"]
         waitUntilEnabled(save, timeout: 120)

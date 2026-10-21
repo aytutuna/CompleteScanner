@@ -127,6 +127,111 @@ public sealed class BackgroundMap
         return new BackgroundMap(X, Y, Width, Height, Columns, Rows, output);
     }
 
+    /// <summary>
+    /// Each tile replaced by the darkest of itself and its eight neighbors (the counterpart of
+    /// <see cref="MaxSmoothed"/>).
+    /// </summary>
+    public BackgroundMap MinSmoothed()
+    {
+        var output = new byte[Tiles.Length];
+        for (int ty = 0; ty < Rows; ty++)
+        {
+            for (int tx = 0; tx < Columns; tx++)
+            {
+                byte least = 255;
+                for (int ny = Math.Max(0, ty - 1); ny <= Math.Min(Rows - 1, ty + 1); ny++)
+                {
+                    for (int nx = Math.Max(0, tx - 1); nx <= Math.Min(Columns - 1, tx + 1); nx++)
+                    {
+                        least = Math.Min(least, Tiles[ny * Columns + nx]);
+                    }
+                }
+                output[ty * Columns + tx] = least;
+            }
+        }
+        return new BackgroundMap(X, Y, Width, Height, Columns, Rows, output);
+    }
+
+    /// <summary>
+    /// Tiles much darker than the paper beside them filled in from it: a tile darker than
+    /// <paramref name="share"/> of the brightest of its eight neighbors takes that neighbor's value,
+    /// pass after pass (each pass reading the one before), until no tile changes or as many passes as
+    /// the map is tiles across or down. A soft shadow darkens from tile to tile by less than that and
+    /// stays; a picture or a dark mark larger than a tile is filled from the paper around it inwards.
+    /// A filled region (tiles that changed, joined through their eight neighbors) that reaches the map's
+    /// outer tiles is lighting, not a picture: a shadow cast across the sheet from beyond its edge, however
+    /// hard its edge, so its tiles keep their own values and the shadow is evened out like a soft one.
+    /// </summary>
+    public BackgroundMap RaisedDarkTiles(double share)
+    {
+        var current = (byte[])Tiles.Clone();
+        var next = new byte[current.Length];
+        int passes = Math.Max(Columns, Rows);
+        for (int pass = 0; pass < passes; pass++)
+        {
+            bool changed = false;
+            for (int ty = 0; ty < Rows; ty++)
+            {
+                for (int tx = 0; tx < Columns; tx++)
+                {
+                    byte best = 0;
+                    for (int ny = Math.Max(0, ty - 1); ny <= Math.Min(Rows - 1, ty + 1); ny++)
+                    {
+                        for (int nx = Math.Max(0, tx - 1); nx <= Math.Min(Columns - 1, tx + 1); nx++)
+                        {
+                            if (nx == tx && ny == ty) continue;
+                            best = Math.Max(best, current[ny * Columns + nx]);
+                        }
+                    }
+                    byte value = current[ty * Columns + tx];
+                    if (value < share * best)
+                    {
+                        next[ty * Columns + tx] = best;
+                        changed = true;
+                    }
+                    else
+                    {
+                        next[ty * Columns + tx] = value;
+                    }
+                }
+            }
+            (current, next) = (next, current);
+            if (!changed) break;
+        }
+        // Each filled region in turn, from its first tile in row-major order; one that reaches an outer
+        // tile is lighting and takes its own values back.
+        var visited = new bool[current.Length];
+        var members = new int[current.Length];
+        for (int start = 0; start < current.Length; start++)
+        {
+            if (visited[start] || current[start] == Tiles[start]) continue;
+            visited[start] = true;
+            members[0] = start;
+            int count = 1;
+            bool reachesEdge = false;
+            for (int k = 0; k < count; k++)
+            {
+                int tile = members[k];
+                int tx = tile % Columns, ty = tile / Columns;
+                if (tx == 0 || ty == 0 || tx == Columns - 1 || ty == Rows - 1) reachesEdge = true;
+                for (int ny = Math.Max(0, ty - 1); ny <= Math.Min(Rows - 1, ty + 1); ny++)
+                {
+                    for (int nx = Math.Max(0, tx - 1); nx <= Math.Min(Columns - 1, tx + 1); nx++)
+                    {
+                        int n = ny * Columns + nx;
+                        if (visited[n] || current[n] == Tiles[n]) continue;
+                        visited[n] = true;
+                        members[count] = n;
+                        count++;
+                    }
+                }
+            }
+            if (!reachesEdge) continue;
+            for (int k = 0; k < count; k++) current[members[k]] = Tiles[members[k]];
+        }
+        return new BackgroundMap(X, Y, Width, Height, Columns, Rows, current);
+    }
+
     /// <summary>Each tile raised to at least <paramref name="floor"/>.</summary>
     public BackgroundMap ClampedBelow(byte floor)
     {

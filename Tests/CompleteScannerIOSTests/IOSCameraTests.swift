@@ -13,9 +13,13 @@ import XCTest
 // the screen's model (`IOSCameraModel`) with a stand-in session: no camera, access asked once and a
 // denial leading to Settings, the session started and stopped by the app going to the background, heat,
 // interruptions and the corner editor, the torch, and the shutter with the live outline turned into the
-// photo; then the shutter's photo from a fixture still through the corner editor into the queue with
-// its focal length (`IOSImportSession.importShot`), and the live outline as the editor's start. The
-// Simulator has no camera: the real model says so there.
+// photo; the automatic shutter (frames pushed one by one: a page held still on sharp, lit frames is
+// taken once and handed over; blurred or dark frames, Auto turned off, or a photo that cannot be taken
+// yet take nothing; the setting is remembered; the wait line said to VoiceOver once per wait,
+// `IOSWaitAnnouncer`); then the shutter's photo from a fixture still through
+// the corner editor into the queue with its focal length (`IOSImportSession.importShot`), the live
+// outline as the editor's start, and continuous capture, where a page found clearly skips the editor.
+// The Simulator has no camera: the real model says so there.
 
 /// A stand-in for the capture session: counts what it was asked and hands over the photo it is given.
 @MainActor
@@ -86,6 +90,77 @@ private func makeModel(_ driver: FakeCameraDriver, access: FakeCameraAccess, has
                    requestAccess: { () async -> Bool in access.ask() },
                    thermalState: { () -> ProcessInfo.ThermalState in access.thermal },
                    center: center)
+}
+
+/// Frames the test hands over one at a time, to the tracker following it, as the camera would.
+final class ManualFrameSource: FrameSource, @unchecked Sendable {
+    private var deliver: (@Sendable (IOSCameraFrame) -> Void)?
+
+    func startFrames(_ deliver: @escaping @Sendable (IOSCameraFrame) -> Void) {
+        self.deliver = deliver
+    }
+
+    func stopFrames() {
+        deliver = nil
+    }
+
+    /// Frames `first`...`last` of `image`, 100 ms apart, the page found in each by the stand-in search.
+    func push(_ image: RgbaImage, from first: Int, through last: Int) {
+        var index: Int = first
+        while index <= last {
+            deliver?(IOSCameraFrame(image: image, timestampMs: Double(index) * 100.0))
+            index += 1
+        }
+    }
+}
+
+/// The automatic shutter's photos, as the scan screen would get them.
+@MainActor
+final class ShotLog {
+    private(set) var shots: [IOSCameraShot] = []
+
+    func add(_ shot: IOSCameraShot) {
+        shots.append(shot)
+    }
+}
+
+/// A page search that finds the sheet of `LiveFrames` in every frame, surely.
+private func sheetSearch() -> LiveQuadTracker.Detector {
+    { (_: RgbaImage, _: Quad?) -> PhotoDocumentDetection in
+        var result: PhotoDocumentDetection = PhotoDocumentDetection.nothing
+        result.quad = LiveFrames.sheet
+        result.confidence = 1
+        result.rejection = PhotoDocumentRejection.none
+        return result
+    }
+}
+
+/// A model of the stand-in session with camera access, a tracker that finds the sheet (frames measured
+/// for real), its setting kept in `defaults`, and the automatic shutter's photos going to `log`.
+@MainActor
+private func makeAutoModel(_ driver: FakeCameraDriver, defaults: UserDefaults, log: ShotLog) -> IOSCameraModel {
+    let model = IOSCameraModel(driver: driver, tracker: LiveQuadTracker(detector: sheetSearch()),
+                               hasCamera: { () -> Bool in true },
+                               authorization: { () -> AVAuthorizationStatus in .authorized },
+                               requestAccess: { () async -> Bool in true },
+                               thermalState: { () -> ProcessInfo.ThermalState in .nominal },
+                               center: NotificationCenter(), defaults: defaults)
+    model.onAutoShot = { (shot: IOSCameraShot) async -> Void in
+        log.add(shot)
+    }
+    return model
+}
+
+/// UserDefaults of the test's own, empty.
+private func freshDefaults() throws -> UserDefaults {
+    let name: String = "IOSCameraTests-\(UUID().uuidString)"
+    return try XCTUnwrap(UserDefaults(suiteName: name))
+}
+
+/// Lets the updates handed to the main actor be shown.
+@MainActor
+private func settle() async throws {
+    try await Task.sleep(nanoseconds: 300_000_000)
 }
 
 /// Ten frames of the fixture page held still, 100 ms apart.
@@ -318,14 +393,61 @@ final class IOSCameraTests: XCTestCase {
             XCTAssertLessThanOrEqual(words(line), 4, line)
         }
         let buttons: [String] = [IOSCameraText.doneLabel, IOSCameraText.shutterLabel, IOSCameraText.torchLabel,
-                                 IOSCameraText.settingsLabel, IOSImportText.cameraLabel, IOSImportText.scannerLabel]
+                                 IOSCameraText.settingsLabel, IOSImportText.cameraLabel, IOSCameraText.autoLabel,
+                                 IOSCameraText.lastPageLabel]
         for button in buttons {
             XCTAssertLessThanOrEqual(words(button), 2, button)
         }
+        // The secondary way in names whose scanner it is.
+        XCTAssertLessThanOrEqual(words(IOSImportText.scannerLabel), 3)
         XCTAssertLessThanOrEqual(words(IOSCameraText.shutterHint), 15)
+        XCTAssertLessThanOrEqual(words(IOSCameraText.autoHint), 15)
+        // The scan screen's Camera button promises nothing about Auto, which may be off.
+        XCTAssertLessThanOrEqual(words(IOSCameraText.cameraHint), 15)
+        XCTAssertNotEqual(IOSCameraText.cameraHint, IOSCameraText.autoHint)
+        XCTAssertEqual(IOSCameraText.onValue, "On")
+        XCTAssertEqual(IOSCameraText.offValue, "Off")
+        // While a page held still waits: two words.
+        XCTAssertNil(IOSCameraText.waitReason(.good))
+        XCTAssertEqual(IOSCameraText.waitReason(.blurry), "Hold still")
+        XCTAssertEqual(IOSCameraText.waitReason(.dark), "Too dark")
         XCTAssertEqual(IOSCameraText.pageCount(1), "1 page")
         XCTAssertEqual(IOSCameraText.pageCount(0), "0 pages")
         XCTAssertEqual(IOSCameraText.pageCount(3), "3 pages")
+    }
+
+    func test_theWaitLine_isSaidOncePerWait_andOnlyWhenShown() {
+        var announcer: IOSWaitAnnouncer = IOSWaitAnnouncer()
+        // A dim room: the light hovers at the limit, so frame after frame the line comes and goes (and turns
+        // to "Hold still") while the page holds still. It is said once, when it first shows.
+        let flicker: [String?] = [nil, IOSCameraText.tooDark, nil, IOSCameraText.tooDark, IOSCameraText.holdStill,
+                                  nil, IOSCameraText.tooDark, nil]
+        var said: [String] = []
+        for line in flicker {
+            if let reason = announcer.next(IOSWaitCue(steadying: true, line: line)) {
+                said.append(reason)
+            }
+        }
+        XCTAssertEqual(said, [IOSCameraText.tooDark])
+        XCTAssertTrue(announcer.hasAnnounced)
+        // The page taken, moved or lost, or Auto off: the next wait is said again.
+        let left: String? = announcer.next(IOSWaitCue(steadying: false, line: nil))
+        XCTAssertNil(left)
+        XCTAssertFalse(announcer.hasAnnounced)
+        let nextWait: String? = announcer.next(IOSWaitCue(steadying: true, line: IOSCameraText.holdStill))
+        let sameWait: String? = announcer.next(IOSWaitCue(steadying: true, line: IOSCameraText.holdStill))
+        XCTAssertEqual(nextWait, IOSCameraText.holdStill)
+        XCTAssertNil(sameWait)
+        // While the import's progress is shown in its place the line is not said (the screen passes none);
+        // it is said once it shows, in the same wait.
+        var covered: IOSWaitAnnouncer = IOSWaitAnnouncer()
+        let hidden: String? = covered.next(IOSWaitCue(steadying: true, line: nil))
+        XCTAssertNil(hidden)
+        XCTAssertFalse(covered.hasAnnounced)
+        let shown: String? = covered.next(IOSWaitCue(steadying: true, line: IOSCameraText.tooDark))
+        let again: String? = covered.next(IOSWaitCue(steadying: true, line: IOSCameraText.tooDark))
+        XCTAssertEqual(shown, IOSCameraText.tooDark)
+        XCTAssertNil(again)
     }
 
     // MARK: The screen's model
@@ -524,6 +646,149 @@ final class IOSCameraTests: XCTestCase {
         model.disappear()
     }
 
+    // MARK: The automatic shutter
+
+    @MainActor
+    func test_theAutomaticShutter_takesAPageHeldStillOnce_andHandsItOver() async throws {
+        let driver = FakeCameraDriver()
+        let source = ManualFrameSource()
+        driver.frameSource = source
+        driver.photo = IOSCameraPhoto(data: Data([7]), rotationDegrees: 0, mirrored: false)
+        let log = ShotLog()
+        let defaults: UserDefaults = try freshDefaults()
+        let model: IOSCameraModel = makeAutoModel(driver, defaults: defaults, log: log)
+        await model.appear()
+        XCTAssertTrue(model.autoShutter)
+        // Held still on sharp, lit frames: taken after 0.6 s, with the haptic tap's count.
+        source.push(LiveFrames.frame(), from: 0, through: 14)
+        try await ImportTestSupport.waitUntil(timeout: 30) { log.shots.count == 1 }
+        XCTAssertEqual(driver.photos, 1)
+        XCTAssertEqual(model.shotCount, 1)
+        XCTAssertEqual(log.shots.first?.data, Data([7]))
+        // The same page still in view: not taken again.
+        source.push(LiveFrames.frame(), from: 15, through: 30)
+        try await settle()
+        XCTAssertEqual(log.shots.count, 1)
+        XCTAssertEqual(driver.photos, 1)
+        // A photo taken by hand counts the page as taken too.
+        let manual: IOSCameraShot? = await model.shoot()
+        XCTAssertNotNil(manual)
+        source.push(LiveFrames.frame(), from: 31, through: 45)
+        try await settle()
+        XCTAssertEqual(log.shots.count, 1)
+        XCTAssertEqual(driver.photos, 2)
+        model.disappear()
+    }
+
+    @MainActor
+    func test_theAutomaticShutter_waitsForASharpLitFrame_andCanBeTurnedOff() async throws {
+        let driver = FakeCameraDriver()
+        let source = ManualFrameSource()
+        driver.frameSource = source
+        driver.photo = IOSCameraPhoto(data: Data([8]), rotationDegrees: 0, mirrored: false)
+        let defaults: UserDefaults = try freshDefaults()
+        let log = ShotLog()
+        let model: IOSCameraModel = makeAutoModel(driver, defaults: defaults, log: log)
+        await model.appear()
+        // Blurred, then dark: held still, but nothing is taken, and the screen can say why.
+        source.push(LiveFrames.frame(blur: 2), from: 0, through: 14)
+        try await settle()
+        XCTAssertEqual(model.live?.quality, CaptureQuality.blurry)
+        XCTAssertEqual(model.live?.state, CaptureState.steadying)
+        source.push(LiveFrames.frame(dim: 40), from: 15, through: 24)
+        try await settle()
+        XCTAssertEqual(model.live?.quality, CaptureQuality.dark)
+        XCTAssertEqual(log.shots.count, 0)
+        // Auto off: a sharp, lit page held still is left to the shutter button.
+        model.setAutoShutter(false)
+        XCTAssertFalse(model.autoShutter)
+        source.push(LiveFrames.frame(), from: 25, through: 40)
+        try await settle()
+        XCTAssertEqual(log.shots.count, 0)
+        XCTAssertEqual(driver.photos, 0)
+        // Remembered for the next time the camera opens.
+        let next: IOSCameraModel = makeAutoModel(FakeCameraDriver(), defaults: defaults, log: ShotLog())
+        XCTAssertFalse(next.autoShutter)
+        // Turned on again: the page in view is judged afresh and taken.
+        model.setAutoShutter(true)
+        source.push(LiveFrames.frame(), from: 41, through: 60)
+        try await ImportTestSupport.waitUntil(timeout: 30) { log.shots.count == 1 }
+        XCTAssertEqual(driver.photos, 1)
+        let remembered: IOSCameraModel = makeAutoModel(FakeCameraDriver(), defaults: defaults, log: ShotLog())
+        XCTAssertTrue(remembered.autoShutter)
+        model.disappear()
+    }
+
+    @MainActor
+    func test_aPageTakenByHand_staysTaken_whenAutoIsTurnedOn() async throws {
+        let driver = FakeCameraDriver()
+        let source = ManualFrameSource()
+        driver.frameSource = source
+        driver.photo = IOSCameraPhoto(data: Data([6]), rotationDegrees: 0, mirrored: false)
+        let defaults: UserDefaults = try freshDefaults()
+        let log = ShotLog()
+        let model: IOSCameraModel = makeAutoModel(driver, defaults: defaults, log: log)
+        model.setAutoShutter(false)
+        await model.appear()
+        // Auto off: the page taken by hand before it held still long enough.
+        source.push(LiveFrames.frame(), from: 0, through: 3)
+        try await settle()
+        let manual: IOSCameraShot? = await model.shoot()
+        XCTAssertNotNil(manual)
+        source.push(LiveFrames.frame(), from: 4, through: 20)
+        try await settle()
+        // Auto on with the same page still in view: not taken a second time.
+        model.setAutoShutter(true)
+        source.push(LiveFrames.frame(), from: 21, through: 45)
+        try await settle()
+        XCTAssertEqual(log.shots.count, 0)
+        XCTAssertEqual(driver.photos, 1)
+        XCTAssertEqual(model.live?.state, CaptureState.captured)
+        model.disappear()
+    }
+
+    @MainActor
+    func test_aDecisionThatCannotBeTakenNow_hasThePageJudgedAgain() async throws {
+        let driver = FakeCameraDriver()
+        let source = ManualFrameSource()
+        driver.frameSource = source
+        driver.photo = IOSCameraPhoto(data: Data([9]), rotationDegrees: 0, mirrored: false)
+        let log = ShotLog()
+        let defaults: UserDefaults = try freshDefaults()
+        let model: IOSCameraModel = makeAutoModel(driver, defaults: defaults, log: log)
+        var free: Bool = false
+        model.canTakePage = { () -> Bool in free }
+        await model.appear()
+        // A photo is still being read: the decision is not acted on…
+        source.push(LiveFrames.frame(), from: 0, through: 14)
+        try await settle()
+        XCTAssertEqual(log.shots.count, 0)
+        XCTAssertEqual(driver.photos, 0)
+        // …and the page is taken once it can be, after holding still again.
+        free = true
+        source.push(LiveFrames.frame(), from: 15, through: 30)
+        try await ImportTestSupport.waitUntil(timeout: 30) { log.shots.count == 1 }
+        XCTAssertEqual(driver.photos, 1)
+        model.disappear()
+    }
+
+    @MainActor
+    func test_withoutAPlaceForItsPhotos_theAutomaticShutterTakesNothing() async throws {
+        let driver = FakeCameraDriver()
+        let source = ManualFrameSource()
+        driver.frameSource = source
+        driver.photo = IOSCameraPhoto(data: Data([1]), rotationDegrees: 0, mirrored: false)
+        let defaults: UserDefaults = try freshDefaults()
+        let model: IOSCameraModel = makeAutoModel(driver, defaults: defaults, log: ShotLog())
+        model.onAutoShot = nil
+        await model.appear()
+        source.push(LiveFrames.frame(), from: 0, through: 14)
+        try await settle()
+        XCTAssertEqual(driver.photos, 0)
+        XCTAssertEqual(model.live?.state, CaptureState.captured)
+        model.disappear()
+    }
+
     // MARK: From the shutter into the queue
 
     @MainActor
@@ -588,6 +853,53 @@ final class IOSCameraTests: XCTestCase {
         XCTAssertTrue(state.scannedPages.isEmpty)
     }
 
+    @MainActor
+    func test_inContinuousCapture_aPageFoundClearly_goesStraightIntoTheQueue() async throws {
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        XCTAssertTrue(IOSShell.capturesContinuously(state.settings))
+        let importer = IOSImportSession(state: state, finder: fixedFinder(sheetQuad, reason: .none))
+        let shot = IOSCameraShot(data: cameraStill(), liveOutline: nil)
+        let importing: Task<IOSImportOutcome, Never> = Task { @MainActor in
+            await importer.importShot(shot, asksOnlyWhenUnsure: true)
+        }
+        try await ImportTestSupport.waitUntil(timeout: 120) { importer.lastOutcome != nil || importer.cornerRequest != nil }
+        // No corner editor: the page found clearly is cut out along its corners.
+        XCTAssertNil(importer.cornerRequest)
+        if importer.cornerRequest != nil {
+            importer.answer(PhotoCornersAnswer.skip)
+        }
+        let outcome: IOSImportOutcome = await importing.value
+        XCTAssertEqual(outcome.added, 1)
+        defer { state.deleteSpoolFiles(of: state.scannedPages) }
+        let page: ScannedPage = try XCTUnwrap(state.scannedPages.first)
+        let capture: CaptureFacts = try XCTUnwrap(page.capture)
+        XCTAssertEqual(capture.quad, sheetQuad)
+        XCTAssertNotNil(capture.scale)
+        XCTAssertEqual(page.geometry?.basis, .perspective)
+        // Cleaned up once cut out (the task's color mode: auto).
+        XCTAssertNotNil(capture.enhancement)
+    }
+
+    @MainActor
+    func test_inContinuousCapture_aPageTheStillIsUnsureOf_stillOpensTheEditor() async throws {
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        let start: Quad = PhotoImport.startCorners(width: 600, height: 450)
+        let importer = IOSImportSession(state: state, finder: fixedFinder(start, reason: .nothingFound))
+        // Even with the live outline as its start (which the editor shows as found), the still's own search
+        // was unsure: the editor opens.
+        let live: Quad = sheetQuad.scaled(1.0 / 600.0, 1.0 / 450.0)
+        let importing: Task<IOSImportOutcome, Never> = Task { @MainActor in
+            await importer.importShot(IOSCameraShot(data: cameraStill(), liveOutline: live), asksOnlyWhenUnsure: true)
+        }
+        try await ImportTestSupport.waitUntil(timeout: 60) { importer.cornerRequest != nil }
+        let request: PhotoCornersRequest = try XCTUnwrap(importer.cornerRequest)
+        XCTAssertLessThan(request.plan.corners.maxCornerDistance(sheetQuad), 1e-6)
+        importer.answer(PhotoCornersAnswer.skip)
+        let outcome: IOSImportOutcome = await importing.value
+        XCTAssertEqual(outcome.skipped, 1)
+        XCTAssertTrue(state.scannedPages.isEmpty)
+    }
+
     func test_theLiveOutline_isOnlyAStartWhereThePhotoGivesNone() {
         let start: Quad = PhotoImport.startCorners(width: 600, height: 450)
         let unsure = IOSFoundPage(corners: start, reason: PhotoReviewReason.unsure, byVision: false)
@@ -625,11 +937,17 @@ final class IOSCameraTests: XCTestCase {
         var photos: ScanSettings = state.settings
         photos.intent = .photo
         XCTAssertFalse(IOSShell.offersOwnCamera(photos))
-        // Apple's scanner stays on its three tasks.
+        // Apple's scanner stays on its three tasks, as the secondary way in.
         XCTAssertTrue(IOSShell.offersCamera(.document))
         XCTAssertFalse(IOSShell.offersCamera(.feeder))
         XCTAssertEqual(IOSImportText.cameraLabel, "Camera")
-        XCTAssertEqual(IOSImportText.scannerLabel, "Doc scanner")
+        XCTAssertEqual(IOSImportText.scannerLabel, "Use Apple's scanner")
+        // Page after page wherever several pages are collected.
+        XCTAssertTrue(IOSShell.capturesContinuously(state.settings))
+        var single: ScanSettings = state.settings
+        single.documentMultiPage = false
+        XCTAssertFalse(IOSShell.capturesContinuously(single))
+        XCTAssertFalse(IOSShell.capturesContinuously(photos))
     }
 
     @MainActor

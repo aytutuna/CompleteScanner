@@ -76,6 +76,40 @@ public struct PerspectiveStep: PageStep {
     }
 }
 
+/// Cleans up a page `PerspectiveStep` cut out of a camera's photo (`DocumentEnhancer`: the lighting evened
+/// out, the paper white, the print black) in `mode`, or as a photo when the shot was of a photo print or an ID
+/// card (`DocumentEnhancer.mode(_:kind:)`), and records the mode applied on its capture
+/// (`CaptureFacts.enhancement`); a gray or black and white result sets the page's color mode. Once only:
+/// pages cleaned up already, pages not cut out along their corners (Apple's document scanner hands its pages
+/// over cleaned up and whole) and pages from scanners stay as they are; the photo kept as the other version
+/// is not changed. Runs right after `PerspectiveStep`. Twin of C# `EnhanceStep`.
+public struct EnhanceStep: PageStep {
+    public let mode: DocumentEnhanceMode
+    public var name: String { "enhance" }
+
+    public init(mode: DocumentEnhanceMode) {
+        self.mode = mode
+    }
+
+    public func apply(_ page: ScannedPage) -> ScannedPage {
+        guard let capture = page.capture, capture.scale != nil, capture.enhancement == nil,
+              page.geometry?.basis == .perspective,
+              let photo = RgbaImage(cgImage: page.image) else { return page }
+        let applied: DocumentEnhanceMode = DocumentEnhancer.mode(mode, kind: capture.kind)
+        let result: DocumentEnhancement = DocumentEnhancer.enhance(photo, mode: applied)
+        guard let image = result.image.makeCGImage() else { return page }
+        var colorMode: ColorMode = page.colorMode
+        if result.mode == .gray {
+            colorMode = .grayscale
+        } else if result.mode == .blackAndWhite {
+            colorMode = .blackWhite
+        }
+        var facts: CaptureFacts = capture
+        facts.enhancement = result.mode
+        return page.withImage(image, colorMode: colorMode).withCapture(facts)
+    }
+}
+
 /// Crops the page to the sheet and straightens it (`DocumentGeometry.correct`), keeping the page as
 /// it was as the other version (`ScannedPage.withGeometry`); a page the analysis is not sure about
 /// stays as it is, and so does a page from a camera or a photo (`ScannedPage.capture`,
@@ -210,7 +244,8 @@ public struct OrientationStep: CancellablePageStep {
 
 /// The image adjustments and the color mode (`ImagePipeline.apply`), on the page and on its other
 /// version (the page as scanned, kept by crop and straighten or by softening the spine's shadow), so either
-/// can be shown.
+/// can be shown. A camera page `EnhanceStep` made gray or black and white in a color task (a page without
+/// color) keeps that mode (`mode(for:)`); its other version, the photo, takes the task's.
 public struct AdjustmentStep: PageStep {
     public let adjustments: AdjustmentSettings
     public let colorMode: ColorMode
@@ -221,9 +256,19 @@ public struct AdjustmentStep: PageStep {
         self.colorMode = colorMode
     }
 
+    /// The color mode `page` is adjusted in: the page's own when the task is color and the camera's
+    /// clean-up made it gray or black and white (`CaptureFacts.enhancement`), else `colorMode`. Twin of C#
+    /// `AdjustmentStep.ModeFor`.
+    public func mode(for page: ScannedPage) -> ColorMode {
+        guard colorMode == .color, let enhanced = page.capture?.enhancement else { return colorMode }
+        if enhanced == .gray || enhanced == .blackAndWhite { return page.colorMode }
+        return colorMode
+    }
+
     public func apply(_ page: ScannedPage) -> ScannedPage {
-        let adjusted = page.withImage(ImagePipeline.apply(adjustments, to: page.image, colorMode: colorMode),
-                                      colorMode: colorMode)
+        let pageMode: ColorMode = self.mode(for: page)
+        let adjusted = page.withImage(ImagePipeline.apply(adjustments, to: page.image, colorMode: pageMode),
+                                      colorMode: pageMode)
         guard var version = page.alternate, let other = version.image else { return adjusted }
         version.image = ImagePipeline.apply(adjustments, to: other, colorMode: colorMode)
         return adjusted.withAlternate(version)
@@ -347,11 +392,12 @@ public struct PageProcessor {
     }
 
     /// The steps for pages taken by a camera (`ScannedPage.capture`), which go to the queue like imported
-    /// photos: `PerspectiveStep` cuts each page out of its photo at its real size, then the steps of
-    /// `forPhotoImport`. Twin of C# `PageProcessor.ForCapture`.
+    /// photos: `PerspectiveStep` cuts each page out of its photo at its real size, `EnhanceStep` cleans it up
+    /// in the task's mode (`DocumentEnhancer.mode(for:)`), then the steps of `forPhotoImport`. Twin of C#
+    /// `PageProcessor.ForCapture`.
     public static func forCapture(_ settings: ScanSettings, scorer: (any OrientationScorer)? = nil,
                                   barcodes: (any BarcodeReader)? = nil) -> PageProcessor {
-        var steps: [any PageStep] = [PerspectiveStep()]
+        var steps: [any PageStep] = [PerspectiveStep(), EnhanceStep(mode: DocumentEnhancer.mode(for: settings))]
         let rest = forPhotoImport(settings, scorer: scorer, barcodes: barcodes)
         for step in rest.steps { steps.append(step) }
         return PageProcessor(steps: steps)

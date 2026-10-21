@@ -89,6 +89,9 @@ public sealed record CaptureFacts(Quad Quad, int SourceWidth, int SourceHeight)
     /// <summary>The real size the page snapped to when it was cut out; null until then.</summary>
     public CaptureScaleResult? Scale { get; init; }
 
+    /// <summary>How the page was cleaned up once cut out (<see cref="EnhanceStep"/>, <see cref="DocumentEnhancer"/>; auto resolved); null until then. Kept in memory only.</summary>
+    public DocumentEnhanceMode? Enhancement { get; init; }
+
     /// <summary>
     /// These facts for the photo mirrored and turned as <paramref name="orientation"/> says (mirrored left
     /// to right first, then turned clockwise, as <see cref="PhotoImport.Oriented"/> turns its pixels): each

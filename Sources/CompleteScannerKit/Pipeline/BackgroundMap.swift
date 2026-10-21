@@ -109,6 +109,106 @@ public struct BackgroundMap: Sendable {
         return BackgroundMap(x: x, y: y, width: width, height: height, columns: columns, rows: rows, tiles: output)
     }
 
+    /// Each tile replaced by the darkest of itself and its eight neighbors (the counterpart of
+    /// `maxSmoothed`). Twin of C# `BackgroundMap.MinSmoothed`.
+    public func minSmoothed() -> BackgroundMap {
+        var output = [UInt8](repeating: 0, count: tiles.count)
+        for ty in 0..<rows {
+            for tx in 0..<columns {
+                var least: UInt8 = 255
+                for ny in max(0, ty - 1)...min(rows - 1, ty + 1) {
+                    for nx in max(0, tx - 1)...min(columns - 1, tx + 1) {
+                        least = min(least, tiles[ny * columns + nx])
+                    }
+                }
+                output[ty * columns + tx] = least
+            }
+        }
+        return BackgroundMap(x: x, y: y, width: width, height: height, columns: columns, rows: rows, tiles: output)
+    }
+
+    /// Tiles much darker than the paper beside them filled in from it: a tile darker than `share` of the
+    /// brightest of its eight neighbors takes that neighbor's value, pass after pass (each pass reading the
+    /// one before), until no tile changes or as many passes as the map is tiles across or down. A soft
+    /// shadow darkens from tile to tile by less than that and stays; a picture or a dark mark larger than a
+    /// tile is filled from the paper around it inwards. A filled region (tiles that changed, joined through
+    /// their eight neighbors) that reaches the map's outer tiles is lighting, not a picture: a shadow cast
+    /// across the sheet from beyond its edge, however hard its edge, so its tiles keep their own values and
+    /// the shadow is evened out like a soft one. Twin of C# `BackgroundMap.RaisedDarkTiles`.
+    public func raisedDarkTiles(share: Double) -> BackgroundMap {
+        var current: [UInt8] = tiles
+        var next: [UInt8] = [UInt8](repeating: 0, count: tiles.count)
+        let passes: Int = max(columns, rows)
+        var pass: Int = 0
+        while pass < passes {
+            var changed: Bool = false
+            for ty in 0..<rows {
+                for tx in 0..<columns {
+                    var best: UInt8 = 0
+                    for ny in max(0, ty - 1)...min(rows - 1, ty + 1) {
+                        for nx in max(0, tx - 1)...min(columns - 1, tx + 1) {
+                            if nx == tx && ny == ty { continue }
+                            best = max(best, current[ny * columns + nx])
+                        }
+                    }
+                    let value: UInt8 = current[ty * columns + tx]
+                    if Double(value) < share * Double(best) {
+                        next[ty * columns + tx] = best
+                        changed = true
+                    } else {
+                        next[ty * columns + tx] = value
+                    }
+                }
+            }
+            let previous: [UInt8] = current
+            current = next
+            next = previous
+            pass += 1
+            if !changed { break }
+        }
+        // Each filled region in turn, from its first tile in row-major order; one that reaches an outer tile
+        // is lighting and takes its own values back.
+        var visited: [Bool] = [Bool](repeating: false, count: current.count)
+        var members: [Int] = [Int](repeating: 0, count: current.count)
+        var start: Int = 0
+        while start < current.count {
+            if visited[start] || current[start] == tiles[start] {
+                start += 1
+                continue
+            }
+            visited[start] = true
+            members[0] = start
+            var count: Int = 1
+            var reachesEdge: Bool = false
+            var k: Int = 0
+            while k < count {
+                let tile: Int = members[k]
+                let tx: Int = tile % columns
+                let ty: Int = tile / columns
+                if tx == 0 || ty == 0 || tx == columns - 1 || ty == rows - 1 { reachesEdge = true }
+                for ny in max(0, ty - 1)...min(rows - 1, ty + 1) {
+                    for nx in max(0, tx - 1)...min(columns - 1, tx + 1) {
+                        let n: Int = ny * columns + nx
+                        if visited[n] || current[n] == tiles[n] { continue }
+                        visited[n] = true
+                        members[count] = n
+                        count += 1
+                    }
+                }
+                k += 1
+            }
+            if reachesEdge {
+                var m: Int = 0
+                while m < count {
+                    current[members[m]] = tiles[members[m]]
+                    m += 1
+                }
+            }
+            start += 1
+        }
+        return BackgroundMap(x: x, y: y, width: width, height: height, columns: columns, rows: rows, tiles: current)
+    }
+
     /// Each tile raised to at least `floor`.
     public func clampedBelow(_ floor: UInt8) -> BackgroundMap {
         BackgroundMap(x: x, y: y, width: width, height: height, columns: columns, rows: rows,

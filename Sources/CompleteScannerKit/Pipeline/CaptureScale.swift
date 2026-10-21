@@ -107,6 +107,9 @@ public struct CaptureFacts: Equatable, Sendable {
     public var focalLength: Double?
     /// The real size the page snapped to when it was cut out; nil until then.
     public var scale: CaptureScaleResult?
+    /// How the page was cleaned up once cut out (`EnhanceStep`, `DocumentEnhancer`; auto resolved); nil until
+    /// then. Kept in memory only.
+    public var enhancement: DocumentEnhanceMode? = nil
 
     public init(quad: Quad, sourceWidth: Int, sourceHeight: Int, kind: CaptureKind = .document,
                 focalLength: Double? = nil, scale: CaptureScaleResult? = nil) {

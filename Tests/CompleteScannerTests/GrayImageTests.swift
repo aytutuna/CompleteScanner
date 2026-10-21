@@ -125,6 +125,7 @@ final class GrayImageTests: XCTestCase {
         XCTAssertEqual(map.tiles, [10, 20, 30, 40, 50, 60, 70, 80, 90])
         XCTAssertEqual(map.medianTile(), 50)
         XCTAssertEqual(map.maxSmoothed().tiles, [50, 60, 60, 80, 90, 90, 80, 90, 90])
+        XCTAssertEqual(map.minSmoothed().tiles, [10, 10, 20, 10, 10, 20, 40, 40, 50])
         XCTAssertEqual(map.clampedBelow(45).tiles, [45, 45, 45, 45, 50, 60, 70, 80, 90])
         XCTAssertEqual(map.tiles, [10, 20, 30, 40, 50, 60, 70, 80, 90])   // unchanged
     }

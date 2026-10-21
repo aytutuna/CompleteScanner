@@ -185,16 +185,58 @@ public class CapturePageTests
     {
         var s = new ScanSettings();
         s.Document.AutoCrop = true;
-        Assert.Equal(["perspective", "blank", "separator"], PageProcessor.ForCapture(s).Steps.Select(step => step.Name));
+        Assert.Equal(["perspective", "enhance", "blank", "separator"], PageProcessor.ForCapture(s).Steps.Select(step => step.Name));
         s.ColorMode = ColorMode.Grayscale;
         var processor = PageProcessor.ForCapture(s);
-        Assert.Equal(["perspective", "blank", "separator", "adjust"], processor.Steps.Select(step => step.Name));
+        Assert.Equal(["perspective", "enhance", "blank", "separator", "adjust"], processor.Steps.Select(step => step.Name));
+        Assert.Equal(DocumentEnhanceMode.Gray, Assert.IsType<EnhanceStep>(processor.Steps[1]).Mode);
         var processed = processor.Process([Captured(Photo(640, 480), Facts)]).Pages.Single();
         Assert.Equal(GeometryBasis.Perspective, processed.Geometry!.Basis);
         Assert.Equal(33, processed.Dpi);
         Assert.NotNull(processed.Blank);
         Assert.Equal(ColorMode.Grayscale, processed.ColorMode);
         Assert.NotNull(processed.Capture!.Scale);
+        Assert.Equal(DocumentEnhanceMode.Gray, processed.Capture.Enhancement);
+    }
+
+    [Fact]
+    public void AdjustmentsKeepACameraPageWithoutColorGrayInAColorTask()
+    {
+        var s = new ScanSettings();
+        s.Adjustments.Brightness = 0.1;
+        var processor = PageProcessor.ForCapture(s);
+        Assert.Equal(["perspective", "enhance", "blank", "separator", "adjust"], processor.Steps.Select(step => step.Name));
+        static ScannedPage Shot(RgbaImage sheet)
+        {
+            var photo = EnhancerPages.OnATable(sheet);
+            return new ScannedPage(photo, CaptureScale.NominalDpi, ColorMode.Color) { Source = PageSource.Photo }
+                .WithCapture(new CaptureFacts(EnhancerPages.TableQuad, photo.Width, photo.Height));
+        }
+        // Black print on white paper: made gray by the clean-up, and still gray after the brightness.
+        var plain = processor.Process([Shot(EnhancerPages.Shadowed(stamp: false))]).Pages.Single();
+        Assert.Equal(DocumentEnhanceMode.Gray, plain.Capture!.Enhancement);
+        Assert.Equal(ColorMode.Grayscale, plain.ColorMode);
+        Assert.True(ColorAnalysis.IsEffectivelyGray(plain.Image));
+        // The photo kept as the other version is adjusted in the task's color mode: its warm paper stays warm.
+        var alternate = plain.Alternate!.Image!.Pixels;
+        Assert.Contains(Enumerable.Range(0, alternate.Length / 4), p => alternate[p * 4] != alternate[p * 4 + 2]);
+        // With the red stamp: color.
+        var stamped = processor.Process([Shot(EnhancerPages.Shadowed())]).Pages.Single();
+        Assert.Equal(DocumentEnhanceMode.Color, stamped.Capture!.Enhancement);
+        Assert.Equal(ColorMode.Color, stamped.ColorMode);
+        // The mode the step adjusts a page in.
+        var image = RgbaImage.Filled(8, 8, 200, 200, 200);
+        var grayPage = new ScannedPage(image, 72, ColorMode.Grayscale).WithCapture(Facts with { Enhancement = DocumentEnhanceMode.Gray });
+        var bwPage = new ScannedPage(image, 72, ColorMode.BlackWhite).WithCapture(Facts with { Enhancement = DocumentEnhanceMode.BlackAndWhite });
+        var colorPage = new ScannedPage(image, 72, ColorMode.Color).WithCapture(Facts with { Enhancement = DocumentEnhanceMode.Color });
+        var scanned = new ScannedPage(image, 72, ColorMode.Grayscale);
+        var colorStep = new AdjustmentStep(s.Adjustments, ColorMode.Color);
+        Assert.Equal(ColorMode.Grayscale, colorStep.ModeFor(grayPage));
+        Assert.Equal(ColorMode.BlackWhite, colorStep.ModeFor(bwPage));
+        Assert.Equal(ColorMode.Color, colorStep.ModeFor(colorPage));
+        Assert.Equal(ColorMode.Color, colorStep.ModeFor(scanned));
+        Assert.Equal(ColorMode.Grayscale, colorStep.Apply(grayPage).ColorMode);
+        Assert.Equal(ColorMode.BlackWhite, new AdjustmentStep(s.Adjustments, ColorMode.BlackWhite).ModeFor(grayPage));
     }
 
     [Fact]

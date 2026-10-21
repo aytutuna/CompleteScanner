@@ -260,11 +260,15 @@ xcodebuild test -scheme CompleteScanner-Package   -destination 'platform=iOS Sim
 ```
 
 The app itself (one universal app for iPhone and iPad; so far the task start screen, the Demo Scanner,
-Apple's document scanner behind Document to PDF, Email a document and Scan to Word, our own camera
-with the page's outline drawn live over the preview, the lens that focuses close, the torch and a
-shutter whose photo goes through the corner editor, photos and PDFs imported from Photos, Files or
-other apps with a touch corner editor and magnifier, the page strip, Save as PDF or JPEG and the
-share sheet) is an Xcode project that
+our own camera as the default way to take pages, with the page's outline drawn live over the
+preview, the lens that focuses close, the torch, an automatic shutter that takes each page once it
+holds still on a sharp, lit frame (Auto, on unless turned off, with a ring that fills as it waits) and
+continuous capture, page after page, with the corner editor only for a page the photo leaves unsure;
+camera pages cleaned up with their lighting evened out, the paper white and the print black, in the
+task's color mode; Apple's document scanner kept as "Use Apple's scanner" on Document to PDF, Email a
+document and Scan to Word; photos and PDFs imported from Photos, Files or other apps with a touch
+corner editor and magnifier, the page strip, Save as PDF or JPEG and the share sheet) is an Xcode
+project that
 [XcodeGen](https://github.com/yonaskolb/XcodeGen) writes from `ios/project.yml`; CI pins XcodeGen's
 release and checks its SHA-256. To build it and run its UI smoke test on the Simulator:
 
@@ -278,11 +282,12 @@ The app's icon is drawn by `python scripts/make_ios_icon.py ios/CompleteScanneri
 (standard library only), and the photo the import UI test brings in by
 `python scripts/make_ios_ui_fixture.py ios/CompleteScanneriOSUITests/Fixtures/document-photo.png`
 (a sheet with grey bars on a dark table; standard library only). The Simulator has no camera: there
-the camera screen says so, and its live outline, lens choice, start and stop rules and shutter are
-checked with fixture frames and stand-ins. The cameras themselves (the wide lens's view at the start
-on Pro and dual-wide models, focus and macro switching, low
-light, the torch, Pro and non-Pro models, memory over a long queue; and iCloud-only photos, large
-HEIC files and saving to the Files app) are checked on a real iPhone.
+the camera screen says so, and its live outline, lens choice, start and stop rules, shutter and
+automatic shutter (scripted sharp, blurred and dark frames) are checked with fixture frames and
+stand-ins. The cameras themselves (the wide lens's view at the start on Pro and dual-wide models,
+focus and macro switching, low light, the torch, Pro and non-Pro models, the automatic shutter's
+timing and thresholds on real frames, the clean-up on real photos, heat and memory over a long queue;
+and iCloud-only photos, large HEIC files and saving to the Files app) are checked on a real iPhone.
 
 ## Windows version
 
@@ -344,7 +349,7 @@ target for each platform's own parts:
 - `Sources/CompleteScannerIOS` — the iPhone and iPad only (each file inside `#if os(iOS)`):
   `UIKitLifecycle`, the app shell's services (`IOSShell`, `IOSFileActions`: Quick Look, the share
   sheet, the Files app), Apple's document scanner and our own camera (`Camera/`: the capture session,
-  the lens choice, the live page outline, when the camera runs), importing photos and PDFs with the
+  the lens choice, the live page outline, the automatic shutter, when the camera runs), importing photos and PDFs with the
   corner editor (`Import/`: decoding with the EXIF turn, PDF pages at 300 dpi, Vision's page search,
   the import session), `CompleteScannerIOSApp` and its SwiftUI views
 - `ios/` — the iPhone and iPad app's Xcode project for XcodeGen (`project.yml`): the app target that

@@ -1,10 +1,11 @@
 import XCTest
 
 // Our own camera as a person meets it on the Simulator: launched on the demo scanner alone
-// (`-demoScanner`), pick Document to PDF, and the scan screen offers Camera beside Apple's document
-// scanner (Doc scanner, the task's default, dimmed there with its reason). The Simulator has no camera,
-// so the camera screen opens and says so in one line, and Done brings the scan screen back. Nothing is
-// photographed and no permission prompt is shown.
+// (`-demoScanner`), pick Document to PDF, and the scan screen offers Camera, the default, with Apple's
+// document scanner below it as Use Apple's scanner (dimmed there with its reason). The Simulator has no
+// camera, so the camera screen opens and says so in one line, with the Auto toggle and the shutter
+// dimmed, and Done brings the scan screen back. Nothing is photographed and no permission prompt is
+// shown.
 
 final class CameraTests: XCTestCase {
     override func setUpWithError() throws {
@@ -21,12 +22,13 @@ final class CameraTests: XCTestCase {
         XCTAssertTrue(tile.waitForExistence(timeout: 60), "The start screen's Document to PDF tile")
         tile.tap()
 
-        // Apple's document scanner stays on the task, dimmed in the Simulator; our camera is beside it.
-        let scanner: XCUIElement = app.buttons["capture.camera"]
-        XCTAssertTrue(scanner.waitForExistence(timeout: 30), "The Doc scanner button")
+        // Our camera is the task's default; Apple's document scanner stays below it, dimmed in the Simulator.
+        let camera: XCUIElement = app.buttons["capture.camera"]
+        XCTAssertTrue(camera.waitForExistence(timeout: 30), "The Camera button")
+        let scanner: XCUIElement = app.buttons["capture.scanner"]
+        XCTAssertTrue(scanner.exists, "The Use Apple's scanner button")
         XCTAssertFalse(scanner.isEnabled, "No document scanner in the Simulator")
-        let camera: XCUIElement = app.buttons["capture.live"]
-        XCTAssertTrue(camera.exists, "The Camera button")
+        XCTAssertTrue(app.staticTexts["scanner.reason"].exists, "Why there is no document scanner")
         waitUntilEnabled(camera, timeout: 60)
         camera.tap()
 
@@ -37,6 +39,8 @@ final class CameraTests: XCTestCase {
         let shutter: XCUIElement = app.buttons["camera.shutter"]
         XCTAssertTrue(shutter.exists, "The shutter")
         XCTAssertFalse(shutter.isEnabled, "No shutter without a camera")
+        XCTAssertTrue(app.descendants(matching: .any)["camera.auto"].exists, "The Auto toggle")
+        XCTAssertFalse(app.descendants(matching: .any)["camera.lastPage"].exists, "No page taken yet")
 
         app.buttons["camera.done"].tap()
         XCTAssertTrue(app.buttons["save.button"].waitForExistence(timeout: 30), "Back on the scan screen")

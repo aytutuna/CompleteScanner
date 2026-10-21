@@ -8,7 +8,9 @@ import XCTest
 // The live page outline of our own camera (`LiveQuadTracker`), fed fixture frames through a
 // `FrameSource` as the camera's video output feeds it: a page sliding across a dark table, then held
 // still, then taken away; frames with no page; a page missed for a moment; frames too close together;
-// a clock that starts over. The frames are drawn here, pixel by pixel (no real document). Also the
+// a clock that starts over; the shutter's decision only from a page held still on a sharp, lit frame
+// (blurred and dark frames scripted through a `FrameSource`), a photo taken counting the page as taken,
+// and a pause keeping that. The frames are drawn here, pixel by pixel (no real document). Also the
 // frames made small for the search (`IOSFrameScaler`) and a live outline turned into the photo's shares.
 
 /// A colour of a fixture frame.
@@ -206,6 +208,97 @@ final class SearchCount: @unchecked Sendable {
         lock.unlock()
         return copy
     }
+}
+
+/// Frames judged sharp and lit whatever they show (for page searches stood in for).
+private let goodReadings: LiveQuadTracker.QualityMeasure = { (_: RgbaImage, _: Quad?) -> FrameQualityReading in
+    FrameQualityReading(sharpness: 1000, brightness: 200)
+}
+
+/// Live frames of 320 × 240 like the shared `QualityFrames` (CompleteScannerTests): a wooden table and a
+/// blank sheet from (80, 40) to (240, 200), blurred by a box of (2·blur + 1)² pixels and darkened to
+/// dim/255, if asked. Measured over the sheet found (±1 px): a sharpness of about 690 sharp, 17 blurred by 2
+/// (blurry); a brightness of about 195, 30 dimmed to 40 (dark).
+enum LiveFrames {
+    static let width: Int = 320
+    static let height: Int = 240
+    static let sheet = Quad(topLeft: CGPoint(x: 80, y: 40), topRight: CGPoint(x: 240, y: 40),
+                            bottomRight: CGPoint(x: 240, y: 200), bottomLeft: CGPoint(x: 80, y: 200))
+
+    static func frame(blur: Int = 0, dim: Int = 255) -> RgbaImage {
+        var r: [Int] = [Int](repeating: 88, count: width * height)
+        var g: [Int] = [Int](repeating: 80, count: width * height)
+        var b: [Int] = [Int](repeating: 72, count: width * height)
+        var y: Int = 40
+        while y < 200 {
+            var x: Int = 80
+            while x < 240 {
+                let i: Int = y * width + x
+                r[i] = 205
+                g[i] = 200
+                b[i] = 192
+                x += 1
+            }
+            y += 1
+        }
+        var pixels: [UInt8] = [UInt8](repeating: 255, count: width * height * 4)
+        y = 0
+        while y < height {
+            var x: Int = 0
+            while x < width {
+                var sr: Int = 0
+                var sg: Int = 0
+                var sb: Int = 0
+                var n: Int = 0
+                var yy: Int = max(0, y - blur)
+                while yy < min(height, y + blur + 1) {
+                    var xx: Int = max(0, x - blur)
+                    while xx < min(width, x + blur + 1) {
+                        let i: Int = yy * width + xx
+                        sr += r[i]
+                        sg += g[i]
+                        sb += b[i]
+                        n += 1
+                        xx += 1
+                    }
+                    yy += 1
+                }
+                let o: Int = (y * width + x) * 4
+                pixels[o] = UInt8(((sr + n / 2) / n * dim + 127) / 255)
+                pixels[o + 1] = UInt8(((sg + n / 2) / n * dim + 127) / 255)
+                pixels[o + 2] = UInt8(((sb + n / 2) / n * dim + 127) / 255)
+                x += 1
+            }
+            y += 1
+        }
+        return RgbaImage(width: width, height: height, pixels: pixels)
+    }
+
+    /// The sheet moved `dx` px to the right.
+    static func sheetMoved(_ dx: Double) -> Quad {
+        Quad(topLeft: CGPoint(x: 80 + dx, y: 40), topRight: CGPoint(x: 240 + dx, y: 40),
+             bottomRight: CGPoint(x: 240 + dx, y: 200), bottomLeft: CGPoint(x: 80 + dx, y: 200))
+    }
+}
+
+/// A page search that finds the sheet `offsets[i]` px to the right in frame i, surely (the frame's index is
+/// kept in its first pixel's alpha, `tagged`).
+private func sheetDetector(_ offsets: [Double]) -> LiveQuadTracker.Detector {
+    { (image: RgbaImage, _: Quad?) -> PhotoDocumentDetection in
+        let index: Int = Int(image.pixels[3])
+        var dx: Double = 0
+        if index < offsets.count {
+            dx = offsets[index]
+        }
+        return detection(LiveFrames.sheetMoved(dx))
+    }
+}
+
+/// `image` with frame index `index` kept in its first pixel's alpha (0...255), for stand-in searches.
+private func tagged(_ image: RgbaImage, _ index: Int) -> RgbaImage {
+    var pixels: [UInt8] = image.pixels
+    pixels[3] = UInt8(index)
+    return RgbaImage(width: image.width, height: image.height, pixels: pixels)
 }
 
 /// A frame of `width` × `height` of one grey.
@@ -417,7 +510,7 @@ final class LiveQuadTrackerTests: XCTestCase {
             let quad = Quad(topLeft: CGPoint(x: 100 + dx, y: 60), topRight: CGPoint(x: 220 + dx, y: 60),
                             bottomRight: CGPoint(x: 220 + dx, y: 180), bottomLeft: CGPoint(x: 100 + dx, y: 180))
             return detection(quad)
-        })
+        }, quality: goodReadings)
         var updates: [LiveQuadUpdate] = []
         index = 0
         while index < moves.count {
@@ -469,6 +562,216 @@ final class LiveQuadTrackerTests: XCTestCase {
         let after: LiveQuadUpdate? = tracker.process(plainFrame(10))
         XCTAssertNotNil(after)
         XCTAssertEqual(after?.state, CaptureState.moving)
+    }
+
+    func test_theShutter_firesOnlyForAPageHeldStillOnASharpLitFrame_throughAFrameSource() {
+        // The sheet held still (±1 px) at 10 frames a second: blurred while the camera focuses (frames
+        // 0–14), then too dark (15–24), then sharp and lit (25–40). Each frame is measured for real
+        // (`FrameQuality`, over the page found); the page search is stood in for, so it finds the sheet in
+        // every frame.
+        let blurred: RgbaImage = LiveFrames.frame(blur: 2)
+        let dark: RgbaImage = LiveFrames.frame(dim: 40)
+        let sharp: RgbaImage = LiveFrames.frame()
+        var offsets: [Double] = []
+        var frames: [IOSCameraFrame] = []
+        var index: Int = 0
+        while index < 41 {
+            offsets.append(index % 2 == 0 ? 1 : -1)
+            var image: RgbaImage = sharp
+            if index < 15 {
+                image = blurred
+            } else if index < 25 {
+                image = dark
+            }
+            frames.append(IOSCameraFrame(image: tagged(image, index), timestampMs: Double(index) * 100.0))
+            index += 1
+        }
+        let tracker = LiveQuadTracker(detector: sheetDetector(offsets))
+        let log = TrackerLog()
+        tracker.follow(FixtureFrameSource(frames)) { (update: LiveQuadUpdate) -> Void in
+            log.add(update)
+        }
+        let updates: [LiveQuadUpdate] = log.updates
+        XCTAssertEqual(updates.count, 41)
+        var fired: [Int] = []
+        index = 0
+        while index < updates.count {
+            if updates[index].shouldCapture { fired.append(index) }
+            index += 1
+        }
+        // Held still from frame 1, long enough by frame 7: it waits through the blurred and dark frames,
+        // and the first sharp, lit frame is taken, once.
+        XCTAssertEqual(fired, [25])
+        XCTAssertEqual(updates[7].state, CaptureState.steadying)
+        XCTAssertEqual(updates[7].quality, CaptureQuality.blurry)
+        XCTAssertEqual(updates[14].progress, 1)
+        XCTAssertEqual(updates[15].quality, CaptureQuality.dark)
+        XCTAssertEqual(updates[25].quality, CaptureQuality.good)
+        XCTAssertEqual(updates[40].state, CaptureState.captured)
+        // The display-only steadiness says nothing of the shutter: green while waiting, never a shot.
+        XCTAssertTrue(updates[10].isSteady)
+        XCTAssertFalse(updates[10].shouldCapture)
+    }
+
+    func test_aMovingPage_isNeverTaken_howeverSharp() {
+        var offsets: [Double] = []
+        var frames: [IOSCameraFrame] = []
+        let sharp: RgbaImage = LiveFrames.frame()
+        var index: Int = 0
+        while index < 40 {
+            offsets.append(Double((index % 5) * 8))     // 8 px a frame: never within the 4 px to hold still
+            frames.append(IOSCameraFrame(image: tagged(sharp, index), timestampMs: Double(index) * 100.0))
+            index += 1
+        }
+        let tracker = LiveQuadTracker(detector: sheetDetector(offsets))
+        let log = TrackerLog()
+        tracker.follow(FixtureFrameSource(frames)) { (update: LiveQuadUpdate) -> Void in
+            log.add(update)
+        }
+        for update in log.updates {
+            XCTAssertFalse(update.shouldCapture)
+            XCTAssertNotEqual(update.state, CaptureState.steadying)
+        }
+    }
+
+    func test_aPhotoTaken_countsThePageAsTaken_untilANewPageComes() {
+        var offsets: [Double] = []
+        var index: Int = 0
+        while index < 60 {
+            var dx: Double = index % 2 == 0 ? 1 : -1
+            if index >= 40 { dx += 100 }               // the next page laid 100 px aside
+            offsets.append(dx)
+            index += 1
+        }
+        let tracker = LiveQuadTracker(detector: sheetDetector(offsets), quality: goodReadings)
+        let sharp: RgbaImage = LiveFrames.frame()
+        var fired: [Int] = []
+        index = 0
+        while index < 60 {
+            let frame = IOSCameraFrame(image: tagged(sharp, index), timestampMs: Double(index) * 100.0)
+            if let update = tracker.process(frame), update.shouldCapture {
+                fired.append(index)
+            }
+            // Taken by hand while the page holds still, before the shutter would have fired.
+            if index == 3 {
+                tracker.markCaptured()
+            }
+            index += 1
+        }
+        // Never taken again until the next page came (steady from 41, taken at 47).
+        XCTAssertEqual(fired, [47])
+    }
+
+    func test_aPause_keepsThePageTaken_whileStoppingForgetsIt() {
+        var offsets: [Double] = []
+        var index: Int = 0
+        while index < 20 {
+            offsets.append(index % 2 == 0 ? 1 : -1)
+            index += 1
+        }
+        let sharp: RgbaImage = LiveFrames.frame()
+        func frames(from start: Double) -> [IOSCameraFrame] {
+            var list: [IOSCameraFrame] = []
+            var i: Int = 0
+            while i < 20 {
+                list.append(IOSCameraFrame(image: tagged(sharp, i), timestampMs: start + Double(i) * 100.0))
+                i += 1
+            }
+            return list
+        }
+        let tracker = LiveQuadTracker(detector: sheetDetector(offsets), quality: goodReadings)
+        let log = TrackerLog()
+        tracker.follow(FixtureFrameSource(frames(from: 0))) { (update: LiveQuadUpdate) -> Void in
+            log.add(update)
+        }
+        XCTAssertEqual(log.updates.filter { (update: LiveQuadUpdate) -> Bool in update.shouldCapture }.count, 1)
+        // Paused (the corner editor was open) with the same page still in view: not taken again.
+        tracker.pauseFollowing()
+        let after = TrackerLog()
+        tracker.follow(FixtureFrameSource(frames(from: 5000))) { (update: LiveQuadUpdate) -> Void in
+            after.add(update)
+        }
+        XCTAssertEqual(after.updates.filter { (update: LiveQuadUpdate) -> Bool in update.shouldCapture }.count, 0)
+        XCTAssertEqual(after.updates.last?.state, CaptureState.captured)
+        // Stopped (the screen closed): forgotten, so the page is taken again.
+        tracker.stopFollowing()
+        let again = TrackerLog()
+        tracker.follow(FixtureFrameSource(frames(from: 10000))) { (update: LiveQuadUpdate) -> Void in
+            again.add(update)
+        }
+        XCTAssertEqual(again.updates.filter { (update: LiveQuadUpdate) -> Bool in update.shouldCapture }.count, 1)
+    }
+
+    func test_aFirstFrameWithoutThePageAfterAPause_doesNotHaveItTakenAgain() {
+        // Frame 20, the first after the pause (the exposure still settling), finds no page; every other frame
+        // finds the sheet (±1 px).
+        let detector: LiveQuadTracker.Detector = { (image: RgbaImage, _: Quad?) -> PhotoDocumentDetection in
+            let index: Int = Int(image.pixels[3])
+            if index == 20 {
+                return detection(nil)
+            }
+            return detection(LiveFrames.sheetMoved(index % 2 == 0 ? 1 : -1))
+        }
+        let sharp: RgbaImage = LiveFrames.frame()
+        func frames(_ first: Int, _ end: Int, from start: Double) -> [IOSCameraFrame] {
+            var list: [IOSCameraFrame] = []
+            var i: Int = first
+            while i < end {
+                list.append(IOSCameraFrame(image: tagged(sharp, i), timestampMs: start + Double(i - first) * 100.0))
+                i += 1
+            }
+            return list
+        }
+        let tracker = LiveQuadTracker(detector: detector, quality: goodReadings)
+        let log = TrackerLog()
+        tracker.follow(FixtureFrameSource(frames(0, 20, from: 0))) { (update: LiveQuadUpdate) -> Void in
+            log.add(update)
+        }
+        XCTAssertEqual(log.updates.filter { (update: LiveQuadUpdate) -> Bool in update.shouldCapture }.count, 1)
+        // Paused for the corner editor, about 3 s; the 3 s are not time without the page.
+        tracker.pauseFollowing()
+        let after = TrackerLog()
+        tracker.follow(FixtureFrameSource(frames(20, 40, from: 5000))) { (update: LiveQuadUpdate) -> Void in
+            after.add(update)
+        }
+        let updates: [LiveQuadUpdate] = after.updates
+        XCTAssertEqual(updates.count, 20)
+        XCTAssertEqual(updates.first?.state, CaptureState.captured)
+        XCTAssertEqual(updates.filter { (update: LiveQuadUpdate) -> Bool in update.shouldCapture }.count, 0)
+        XCTAssertEqual(updates.last?.state, CaptureState.captured)
+    }
+
+    func test_rearm_judgesAgainOnlyAPageTakenWithoutAPhoto() {
+        var offsets: [Double] = []
+        var index: Int = 0
+        while index < 40 {
+            offsets.append(index % 2 == 0 ? 1 : -1)
+            index += 1
+        }
+        let tracker = LiveQuadTracker(detector: sheetDetector(offsets), quality: goodReadings)
+        let sharp: RgbaImage = LiveFrames.frame()
+        var fired: [Int] = []
+        index = 0
+        while index < 40 {
+            let frame = IOSCameraFrame(image: tagged(sharp, index), timestampMs: Double(index) * 100.0)
+            if let update = tracker.process(frame), update.shouldCapture {
+                fired.append(index)
+            }
+            if index == 9 {
+                // Decided on at 7 with the automatic shutter off, so no photo: turned on, judged afresh.
+                tracker.rearm()
+            }
+            if index == 17 {
+                // Decided on again at 17 and photographed this time.
+                tracker.markCaptured()
+            }
+            if index == 20 {
+                // Turned on again: the page photographed stays taken.
+                tracker.rearm()
+            }
+            index += 1
+        }
+        XCTAssertEqual(fired, [7, 17])
     }
 
     func test_stopFollowing_stopsTheSource() {

@@ -5,18 +5,18 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// The ways pages come in besides the scanner: Doc scanner (Apple's document scanner, on the Document,
-/// Email and Word tasks, still their default; dimmed with one short line where there is none, as in the
-/// Simulator), Camera (our own camera, `CameraScreen`, on every task that collects pages; its screen
-/// says why when there is no camera or access is off), Photos (the system's photo picker, several in
-/// the order picked) and Files (photos and PDFs). Imported photos go to the corner editor one by one
-/// (`IOSImportSession`); the root view shows it. Each picked photo is loaded only when its turn comes;
-/// while an import runs, its progress shows with Stop.
+/// The ways pages come in besides the scanner: Camera (our own camera, `CameraScreen`, the default on
+/// every task that collects pages; its screen says why when there is no camera or access is off), Photos
+/// (the system's photo picker, several in the order picked) and Files (photos and PDFs); below them, on
+/// the Document, Email and Word tasks, Use Apple's scanner (Apple's document scanner, a secondary way in,
+/// dimmed with one short line where there is none, as in the Simulator). Imported photos go to the corner
+/// editor one by one (`IOSImportSession`); the root view shows it. Each picked photo is loaded only when
+/// its turn comes; while an import runs, its progress shows with Stop.
 struct CaptureBar: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
 
-    /// Whether the task opens Apple's scanner.
+    /// Whether the task also offers Apple's scanner.
     let offersScanner: Bool
     /// Whether Apple's scanner can be opened here.
     let scanner: IOSCameraAvailability
@@ -35,43 +35,30 @@ struct CaptureBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if offersScanner {
-                // Four ways in: the two cameras above, the imports below.
-                HStack(spacing: 10) {
-                    scannerButton
-                    if offersCamera {
-                        cameraButton
-                    }
+            HStack(spacing: 10) {
+                if offersCamera {
+                    cameraButton
                 }
-                HStack(spacing: 10) {
-                    photosButton
-                    filesButton
-                }
-            } else {
-                HStack(spacing: 10) {
-                    if offersCamera {
-                        cameraButton
-                    }
-                    photosButton
-                    filesButton
-                }
+                photosButton
+                filesButton
             }
-            if offersScanner, let reason = scanner.reason {
+            if offersScanner {
+                // Apple's scanner: a second way in, below the default ones.
                 HStack(spacing: 6) {
-                    Image(systemName: "camera.badge.ellipsis")
-                        .font(.caption)
-                        .accessibilityHidden(true)
-                    Text(reason)
-                        .font(.caption)
-                        .accessibilityIdentifier("camera.reason")
-                    if scanner.opensSettings {
-                        Button("Settings") {
-                            openSettings()
+                    scannerButton
+                    if let reason = scanner.reason {
+                        Text(reason)
+                            .font(.caption)
+                            .foregroundStyle(Color.secondary)
+                            .accessibilityIdentifier("scanner.reason")
+                        if scanner.opensSettings {
+                            Button(IOSCameraText.settingsLabel) {
+                                openSettings()
+                            }
+                            .font(.caption)
                         }
-                        .font(.caption)
                     }
                 }
-                .foregroundStyle(Color.secondary)
             }
             if let progress = importer.progressText {
                 HStack(spacing: 6) {
@@ -121,22 +108,24 @@ struct CaptureBar: View {
         }
     }
 
-    /// Apple's document scanner (the Document, Email and Word tasks' default), dimmed where it cannot run.
+    /// Apple's document scanner (on the Document, Email and Word tasks), a secondary way in, dimmed where
+    /// it cannot run.
     private var scannerButton: some View {
         Button {
             onScanner()
         } label: {
             Label(IOSImportText.scannerLabel, systemImage: "doc.viewfinder")
-                .frame(maxWidth: .infinity)
+                .font(.footnote)
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.borderless)
         .disabled(!scanner.isAvailable || !importer.canImport)
         .accessibilityLabel(Text(IOSImportText.scannerName))
-        .accessibilityHint(Text(scanner.reason ?? "Finds each page and takes it when steady"))
-        .accessibilityIdentifier("capture.camera")
+        .accessibilityHint(Text(scanner.reason ?? "Apple's scanner finds each page and takes it"))
+        .accessibilityIdentifier("capture.scanner")
     }
 
-    /// Our own camera; its screen says why when there is no camera or access is off.
+    /// Our own camera, the default way to take pages; its screen says why when there is no camera or
+    /// access is off.
     private var cameraButton: some View {
         Button {
             onCamera()
@@ -144,10 +133,10 @@ struct CaptureBar: View {
             Label(IOSImportText.cameraLabel, systemImage: "camera")
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.borderedProminent)
         .disabled(!importer.canImport)
-        .accessibilityHint(Text("Shows the page's outline live; you take each photo"))
-        .accessibilityIdentifier("capture.live")
+        .accessibilityHint(Text(IOSCameraText.cameraHint))
+        .accessibilityIdentifier("capture.camera")
     }
 
     private var photosButton: some View {

@@ -81,6 +81,36 @@ public sealed class PerspectiveStep : IPageStep
 }
 
 /// <summary>
+/// Cleans up a page <see cref="PerspectiveStep"/> cut out of a camera's photo (<see cref="DocumentEnhancer"/>:
+/// the lighting evened out, the paper white, the print black) in <see cref="Mode"/>, or as a photo when the
+/// shot was of a photo print or an ID card (<see cref="DocumentEnhancer.ModeFor(DocumentEnhanceMode, CaptureKind)"/>),
+/// and records the mode applied on its capture (<see cref="CaptureFacts.Enhancement"/>); a gray or black and
+/// white result sets the page's color mode. Once only: pages cleaned up already, pages not cut out along
+/// their corners (Apple's document scanner hands its pages over cleaned up and whole) and pages from
+/// scanners stay as they are; the photo kept as the other version is not changed. Runs right after
+/// <see cref="PerspectiveStep"/>.
+/// </summary>
+public sealed class EnhanceStep(DocumentEnhanceMode mode) : IPageStep
+{
+    public DocumentEnhanceMode Mode { get; } = mode;
+    public string Name => "enhance";
+
+    public ScannedPage Apply(ScannedPage page)
+    {
+        if (page.Capture is not { Scale: not null, Enhancement: null } capture
+            || page.Geometry?.Basis != GeometryBasis.Perspective) return page;
+        var result = DocumentEnhancer.Enhance(page.Image, DocumentEnhancer.ModeFor(Mode, capture.Kind));
+        var colorMode = result.Mode switch
+        {
+            DocumentEnhanceMode.Gray => ColorMode.Grayscale,
+            DocumentEnhanceMode.BlackAndWhite => ColorMode.BlackWhite,
+            _ => page.ColorMode,
+        };
+        return page.WithImage(result.Image, colorMode).WithCapture(capture with { Enhancement = result.Mode });
+    }
+}
+
+/// <summary>
 /// Crops the page to the sheet and straightens it (<see cref="DocumentGeometry.Correct"/>), keeping
 /// the page as it was as the other version (<see cref="ScannedPage.WithGeometry"/>); a page the
 /// analysis is not sure about stays as it is, and so does a page from a camera or a photo
@@ -203,7 +233,9 @@ public sealed class OrientationStep(IOrientationScorer scorer, double maxSeconds
 /// <summary>
 /// The image adjustments and the color mode (<see cref="ImagePipeline.Apply"/>), on the page and on
 /// its other version (the page as scanned, kept by crop and straighten or by softening the spine's
-/// shadow), so either can be shown.
+/// shadow), so either can be shown. A camera page <see cref="EnhanceStep"/> made gray or black and white
+/// in a color task (a page without color) keeps that mode (<see cref="ModeFor"/>); its other version, the
+/// photo, takes the task's.
 /// </summary>
 public sealed class AdjustmentStep(AdjustmentSettings adjustments, ColorMode colorMode) : IPageStep
 {
@@ -211,9 +243,20 @@ public sealed class AdjustmentStep(AdjustmentSettings adjustments, ColorMode col
     public ColorMode ColorMode { get; } = colorMode;
     public string Name => "adjust";
 
+    /// <summary>
+    /// The color mode <paramref name="page"/> is adjusted in: the page's own when the task is color and the
+    /// camera's clean-up made it gray or black and white (<see cref="CaptureFacts.Enhancement"/>), else <see cref="ColorMode"/>.
+    /// </summary>
+    public ColorMode ModeFor(ScannedPage page) =>
+        ColorMode == ColorMode.Color
+        && page.Capture?.Enhancement is DocumentEnhanceMode.Gray or DocumentEnhanceMode.BlackAndWhite
+            ? page.ColorMode
+            : ColorMode;
+
     public ScannedPage Apply(ScannedPage page)
     {
-        var adjusted = page.WithImage(ImagePipeline.Apply(Adjustments, page.Image, ColorMode), ColorMode);
+        var pageMode = ModeFor(page);
+        var adjusted = page.WithImage(ImagePipeline.Apply(Adjustments, page.Image, pageMode), pageMode);
         return page.Alternate is { Image: { } other } version
             ? adjusted.WithAlternate(version with { Image = ImagePipeline.Apply(Adjustments, other, ColorMode) })
             : adjusted;
@@ -358,12 +401,13 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// <summary>
     /// The steps for pages taken by a camera (<see cref="ScannedPage.Capture"/>), which go to the queue
     /// like imported photos: <see cref="PerspectiveStep"/> cuts each page out of its photo at its real
-    /// size, then the steps of <see cref="ForPhotoImport"/>.
+    /// size, <see cref="EnhanceStep"/> cleans it up in the task's mode (<see cref="DocumentEnhancer.ModeFor(ScanSettings)"/>),
+    /// then the steps of <see cref="ForPhotoImport"/>.
     /// </summary>
     public static PageProcessor ForCapture(ScanSettings settings, IOrientationScorer? scorer = null,
                                            IBarcodeReader? barcodes = null)
     {
-        var steps = new List<IPageStep> { new PerspectiveStep() };
+        var steps = new List<IPageStep> { new PerspectiveStep(), new EnhanceStep(DocumentEnhancer.ModeFor(settings)) };
         steps.AddRange(ForPhotoImport(settings, scorer, barcodes).Steps);
         return new PageProcessor(steps);
     }

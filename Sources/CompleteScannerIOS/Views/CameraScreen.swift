@@ -6,17 +6,24 @@ import SwiftUI
 import UIKit
 
 /// Our own camera, full screen: the live preview with the page's outline over it (yellow, green once the
-/// page holds still), Done, the torch, the shutter and how many pages the queue holds. After the shutter
-/// the photo goes through the photo import (`IOSImportSession.importShot`): the page is found again in
-/// the photo, and the corner editor opens here, in place of the preview (the camera stops meanwhile);
-/// Use corners puts the page in the queue and the camera comes back for the next one. Where the camera
-/// cannot be used (no camera, as in the Simulator; access off, with Settings; not allowed) or waits (too
-/// warm, interrupted), one short line says why.
+/// page holds still), Done, Auto (the automatic shutter), the torch, the shutter with a ring that fills
+/// while the page holds still, and the last page taken with how many pages the queue holds. With Auto on
+/// the photo is taken by itself once the page held still on a sharp, lit frame (`IOSCameraModel`,
+/// `LiveQuadUpdate.shouldCapture`), with a short tap felt; while it waits for a sharper or brighter frame,
+/// one line says so ("Hold still", "Too dark"), and VoiceOver says it once per wait (`IOSWaitAnnouncer`).
+/// Each photo goes through the photo import (`IOSImportSession.importShot`): the page is found again in
+/// the photo; in continuous capture (`IOSShell.capturesContinuously`) a page found clearly goes straight
+/// into the queue and the camera stays on for the next page, which is taken once the page in view changed;
+/// otherwise the corner editor opens here, in place of the preview (the camera stops meanwhile), and Use
+/// corners puts the page in the queue. Done goes back to the page strip. Where the camera cannot be used
+/// (no camera, as in the Simulator; access off, with Settings; not allowed) or waits (too warm,
+/// interrupted), one short line says why.
 struct CameraScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model: IOSCameraModel
+    @State private var waitAnnouncer: IOSWaitAnnouncer = IOSWaitAnnouncer()
     let onClose: @MainActor () -> Void
 
     init(onClose: @escaping @MainActor () -> Void) {
@@ -37,6 +44,14 @@ struct CameraScreen: View {
         .onAppear {
             importer.editorInCamera = true
             let shown: IOSCameraModel = model
+            let session: IOSImportSession = importer
+            let continuous: Bool = IOSShell.capturesContinuously(state.settings)
+            shown.onAutoShot = { (shot: IOSCameraShot) async -> Void in
+                _ = await session.importShot(shot, asksOnlyWhenUnsure: continuous)
+            }
+            shown.canTakePage = { () -> Bool in
+                !session.isImporting && session.canImport
+            }
             Task { @MainActor in
                 await shown.appear()
             }
@@ -54,6 +69,13 @@ struct CameraScreen: View {
         }
         .onChange(of: importer.cornerRequest != nil) { (_: Bool, reviewing: Bool) in
             model.apply(reviewing ? IOSCameraEvent.reviewStarted : IOSCameraEvent.reviewEnded)
+        }
+        .onChange(of: waitCue) { (_: IOSWaitCue, cue: IOSWaitCue) in
+            // Spoken once per wait, when the line is first shown, so a VoiceOver user knows why nothing is
+            // taken yet without hearing it again each time a frame flips it.
+            if let reason = waitAnnouncer.next(cue) {
+                AccessibilityNotification.Announcement(reason).post()
+            }
         }
         .sensoryFeedback(SensoryFeedback.impact(weight: SensoryFeedback.Weight.medium), trigger: model.shotCount)
         .modifier(ErrorAlert(state: state))
@@ -95,6 +117,19 @@ struct CameraScreen: View {
             .tint(Color.white)
             .accessibilityIdentifier("camera.done")
             Spacer(minLength: 0)
+            Button {
+                model.setAutoShutter(!model.autoShutter)
+            } label: {
+                Label(IOSCameraText.autoLabel, systemImage: model.autoShutter ? "a.circle.fill" : "a.circle")
+                    .font(.headline)
+            }
+            .buttonStyle(.bordered)
+            .tint(model.autoShutter ? Color.yellow : Color.white)
+            .accessibilityLabel(Text(IOSCameraText.autoLabel))
+            .accessibilityValue(Text(model.autoShutter ? IOSCameraText.onValue : IOSCameraText.offValue))
+            .accessibilityHint(Text(IOSCameraText.autoHint))
+            .accessibilityAddTraits(AccessibilityTraits.isToggle)
+            .accessibilityIdentifier("camera.auto")
             if model.hasTorch {
                 Button {
                     let shown: IOSCameraModel = model
@@ -110,7 +145,7 @@ struct CameraScreen: View {
                 .tint(Color.white)
                 .disabled(!model.lifecycle.isLive)
                 .accessibilityLabel(Text(IOSCameraText.torchLabel))
-                .accessibilityValue(Text(model.torchOn ? "On" : "Off"))
+                .accessibilityValue(Text(model.torchOn ? IOSCameraText.onValue : IOSCameraText.offValue))
                 .accessibilityIdentifier("camera.torch")
             }
         }
@@ -156,17 +191,57 @@ struct CameraScreen: View {
             .background(Capsule().fill(Color.black.opacity(0.6)))
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("camera.progress")
+        } else if let reason = waitLine {
+            Text(reason)
+                .font(.headline)
+                .foregroundStyle(Color.white)
+                .padding(12)
+                .background(Capsule().fill(Color.black.opacity(0.6)))
+                .accessibilityIdentifier("camera.wait")
         }
+    }
+
+    /// Why the page held still is not taken yet (a blurred or dark frame), while the automatic shutter waits.
+    private var waitLine: String? {
+        guard model.autoShutter, let update = model.live, update.state == CaptureState.steadying else { return nil }
+        return IOSCameraText.waitReason(update.quality)
+    }
+
+    /// Whether a page held still waits, and the wait line as `notice` shows it (nil while a message or the
+    /// import's progress is shown in its place), for VoiceOver (`IOSWaitAnnouncer`).
+    private var waitCue: IOSWaitCue {
+        let steadying: Bool = model.autoShutter && model.live?.state == CaptureState.steadying
+        let covered: Bool = model.message != nil || (importer.isImporting && importer.progressText != nil)
+        return IOSWaitCue(steadying: steadying, line: covered ? nil : waitLine)
+    }
+
+    /// How far the page is through the steady time, for the ring around the shutter (Auto on only).
+    private var ringProgress: CGFloat {
+        guard model.autoShutter, let update = model.live, update.state == CaptureState.steadying else { return 0 }
+        return CGFloat(update.progress)
     }
 
     private var bottomBar: some View {
         let count: Int = state.scannedPages.count
+        let last: CGImage? = state.scannedPages.last?.image
+        let ring: CGFloat = ringProgress
         return HStack(alignment: .center) {
-            Text(IOSCameraText.pageCount(count))
-                .font(.footnote)
-                .foregroundStyle(Color.white)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("camera.count")
+            HStack(spacing: 8) {
+                if let image = last {
+                    Image(image, scale: 1, label: Text(IOSCameraText.lastPageLabel))
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 44, height: 56)
+                        .background(Color.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .accessibilityIdentifier("camera.lastPage")
+                }
+                Text(IOSCameraText.pageCount(count))
+                    .font(.footnote)
+                    .foregroundStyle(Color.white)
+                    .accessibilityIdentifier("camera.count")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Button {
                 shoot()
             } label: {
@@ -177,6 +252,13 @@ struct CameraScreen: View {
                     Circle()
                         .stroke(Color.white, lineWidth: 4)
                         .frame(width: 76, height: 76)
+                    // The automatic shutter's countdown: full when the page held still long enough.
+                    Circle()
+                        .trim(from: 0, to: ring)
+                        .stroke(Color.green, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .rotationEffect(Angle.degrees(-90))
+                        .frame(width: 76, height: 76)
+                        .animation(Animation.linear(duration: 0.1), value: ring)
                 }
             }
             .buttonStyle(.plain)
@@ -202,9 +284,10 @@ struct CameraScreen: View {
         guard canShoot else { return }
         let shown: IOSCameraModel = model
         let session: IOSImportSession = importer
+        let continuous: Bool = IOSShell.capturesContinuously(state.settings)
         Task { @MainActor in
             if let shot = await shown.shoot() {
-                await session.importShot(shot)
+                await session.importShot(shot, asksOnlyWhenUnsure: continuous)
             }
         }
     }
