@@ -88,6 +88,72 @@ public sealed record CaptureFacts(Quad Quad, int SourceWidth, int SourceHeight)
 
     /// <summary>The real size the page snapped to when it was cut out; null until then.</summary>
     public CaptureScaleResult? Scale { get; init; }
+
+    /// <summary>
+    /// These facts for the photo mirrored and turned as <paramref name="orientation"/> says (mirrored left
+    /// to right first, then turned clockwise, as <see cref="PhotoImport.Oriented"/> turns its pixels): each
+    /// corner moves with its pixel, (x, y) to (W − x, y) when mirrored and to (H − y, x) for each quarter
+    /// turn of a W × H photo, and the corners are named again (<see cref="Quad.FromCorners"/>); the photo's
+    /// size swaps with an odd turn; the kind, the focal length (a turn keeps the scale) and the real size
+    /// stay. An upright orientation returns the facts as they are.
+    /// </summary>
+    public CaptureFacts Oriented(PhotoOrientation orientation)
+    {
+        int turns = ((orientation.QuarterTurns % 4) + 4) % 4;
+        if (turns == 0 && !orientation.Mirrored) return this;
+        var corners = Quad.Corners;
+        var moved = new PointD[4];
+        for (int i = 0; i < 4; i++)
+        {
+            double x = corners[i].X, y = corners[i].Y;
+            if (orientation.Mirrored) x = SourceWidth - x;
+            int height = SourceHeight, width = SourceWidth;
+            for (int t = 0; t < turns; t++)
+            {
+                double turnedX = height - y;
+                y = x;
+                x = turnedX;
+                (width, height) = (height, width);
+            }
+            moved[i] = new PointD(x, y);
+        }
+        bool swaps = turns % 2 == 1;
+        return this with
+        {
+            Quad = Quad.FromCorners(moved),
+            SourceWidth = swaps ? SourceHeight : SourceWidth,
+            SourceHeight = swaps ? SourceWidth : SourceHeight,
+        };
+    }
+
+    /// <summary>
+    /// These facts for the photo resized to <paramref name="width"/> × <paramref name="height"/> pixels:
+    /// the corners scaled with it, the focal length by the geometric mean of the two scales
+    /// (√(sx · sy), the scale itself when the photo keeps its shape), and the kind and real size kept.
+    /// The same size, facts without a photo size, or a size of no pixels return the facts as they are.
+    /// </summary>
+    public CaptureFacts ScaledTo(int width, int height)
+    {
+        if (SourceWidth <= 0 || SourceHeight <= 0 || width <= 0 || height <= 0) return this;
+        if (width == SourceWidth && height == SourceHeight) return this;
+        double sx = (double)width / SourceWidth, sy = (double)height / SourceHeight;
+        double? focalLength = FocalLength is { } f ? f * Math.Sqrt(sx * sy) : null;
+        return this with { Quad = Quad.Scaled(sx, sy), SourceWidth = width, SourceHeight = height, FocalLength = focalLength };
+    }
+
+    /// <summary>
+    /// Whether a photo of <paramref name="width"/> × <paramref name="height"/> pixels is the photo these
+    /// facts were taken on, perhaps resized: the same shape to within the rounding of a resize
+    /// (|width · SourceHeight − height · SourceWidth| at most the longer source side). A photo turned a
+    /// quarter since is not, unless it is nearly square, where its shape cannot tell: whoever turns a
+    /// photo turns its facts with it (<see cref="Oriented"/>).
+    /// </summary>
+    public bool DescribesPhoto(int width, int height)
+    {
+        if (SourceWidth <= 0 || SourceHeight <= 0 || width <= 0 || height <= 0) return false;
+        long difference = Math.Abs((long)width * SourceHeight - (long)height * SourceWidth);
+        return difference <= Math.Max(SourceWidth, SourceHeight);
+    }
 }
 
 /// <summary>

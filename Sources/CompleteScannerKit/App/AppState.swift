@@ -857,15 +857,17 @@ public final class AppState: ObservableObject {
     }
 
     /// The clean-up stage for pages from `source`: a scan's (`PageProcessor.forScan`, arranged as
-    /// `arrangement` says), an imported photo's (`PageProcessor.forPhotoImport`), or only the
-    /// arrangement for a phone's pages, which the phone has cleaned up already.
+    /// `arrangement` says), a camera's or an imported photo's (`PageProcessor.forCapture`: a page with
+    /// capture facts not yet measured is cut out of its photo first, `PerspectiveStep`, which leaves
+    /// every other page alone, then `forPhotoImport`'s steps), or only the arrangement for a phone's
+    /// pages, which the phone has cleaned up already.
     nonisolated static func cleanUpStage(for source: PageSource, settings: ScanSettings, arrangement: ScanArrangement,
                                          scorer: any OrientationScorer, barcodes: any BarcodeReader) -> PageProcessor {
         switch source {
         case .scanner:
             return PageProcessor.forScan(settings, arrangement: arrangement, scorer: scorer, barcodes: barcodes)
         case .photo:
-            return PageProcessor.forPhotoImport(settings, scorer: scorer, barcodes: barcodes)
+            return PageProcessor.forCapture(settings, scorer: scorer, barcodes: barcodes)
         case .phone:
             return PageProcessor(steps: [], arrangement: arrangement, binding: settings.backBinding)
         }

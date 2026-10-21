@@ -34,12 +34,14 @@ public struct BlankDetectionStep: PageStep {
 }
 
 /// Cuts a page taken by a camera out of its photo (`ScannedPage.capture` not yet measured, no geometry
-/// yet): its real size from `CaptureScale.measure` (the capture's corners and focal length scaled to
-/// the pixels at hand when the photo in memory is smaller than the one taken), the page made upright at
-/// that size by `PerspectiveWarp`, the resolution set to the size's and recorded on the capture
-/// (`CaptureFacts.scale`), and the photo kept as the other version (`ScannedPage.withGeometry`,
-/// `GeometryBasis.perspective` with the corners). Other pages, and corners that outline no page, stay
-/// as they are. Runs first, before the blank check. Twin of C# `PerspectiveStep`.
+/// yet): its real size from `CaptureScale.measure` (the capture's facts scaled to the pixels at hand,
+/// `CaptureFacts.scaled(toWidth:height:)`, when the photo in memory is the one taken at another size),
+/// the page made upright at that size by `PerspectiveWarp`, the resolution set to the size's and
+/// recorded on the capture (`CaptureFacts.scale`), and the photo kept as the other version
+/// (`ScannedPage.withGeometry`, `GeometryBasis.perspective` with the corners), the facts in that photo's
+/// pixels. Other pages, corners that outline no page, and a photo whose shape is not the facts' (turned
+/// without them, `CaptureFacts.describesPhoto`) stay as they are. Runs first, before the blank check.
+/// Twin of C# `PerspectiveStep`.
 public struct PerspectiveStep: PageStep {
     public var name: String { "perspective" }
 
@@ -48,21 +50,21 @@ public struct PerspectiveStep: PageStep {
     public func apply(_ page: ScannedPage) -> ScannedPage {
         guard let capture = page.capture, capture.scale == nil, page.geometry == nil,
               let photo = RgbaImage(cgImage: page.image) else { return page }
-        var quad = capture.quad
-        var focalLength: Double? = capture.focalLength
+        var facts: CaptureFacts = capture
         if capture.sourceWidth > 0 && capture.sourceHeight > 0
             && (capture.sourceWidth != photo.width || capture.sourceHeight != photo.height) {
-            let sx: Double = Double(photo.width) / Double(capture.sourceWidth)
-            let sy: Double = Double(photo.height) / Double(capture.sourceHeight)
-            quad = quad.scaled(sx, sy)
-            if let f = focalLength { focalLength = f * sx }
+            // A photo turned since its facts were taken (without them) cannot be cut out along them.
+            guard capture.describesPhoto(width: photo.width, height: photo.height) else { return page }
+            facts = capture.scaled(toWidth: photo.width, height: photo.height)
         }
+        let quad: Quad = facts.quad
         guard quad.isConvex else { return page }
         let scale = CaptureScale.measure(quad, imageWidth: photo.width, imageHeight: photo.height,
-                                         kind: capture.kind, focalLength: focalLength)
+                                         kind: facts.kind, focalLength: facts.focalLength)
         guard let warped = PerspectiveWarp.warp(photo, quad: quad, width: scale.pixelWidth, height: scale.pixelHeight),
               let image = warped.makeCGImage() else { return page }
-        var measuredFacts = capture
+        // The facts follow the photo kept as the other version, so its corners and its pixels agree.
+        var measuredFacts: CaptureFacts = facts
         measuredFacts.scale = scale
         var measured = ScannedPage(image: page.image, dpi: scale.dpi, colorMode: page.colorMode, id: page.id,
                                    createdAt: page.createdAt, fileURL: page.fileURL, fullPixelSize: page.fullPixelSize)

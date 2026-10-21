@@ -117,6 +117,73 @@ public struct CaptureFacts: Equatable, Sendable {
         self.focalLength = focalLength
         self.scale = scale
     }
+
+    /// These facts for the photo mirrored and turned as `orientation` says (mirrored left to right first,
+    /// then turned clockwise, as `PhotoImport.oriented` turns its pixels): each corner moves with its
+    /// pixel, (x, y) to (W − x, y) when mirrored and to (H − y, x) for each quarter turn of a W × H photo,
+    /// and the corners are named again (`Quad.fromCorners`); the photo's size swaps with an odd turn; the
+    /// kind, the focal length (a turn keeps the scale) and the real size stay. An upright orientation
+    /// returns the facts as they are. Twin of C# `CaptureFacts.Oriented`.
+    public func oriented(_ orientation: PhotoOrientation) -> CaptureFacts {
+        let turns: Int = ((orientation.quarterTurns % 4) + 4) % 4
+        if turns == 0 && !orientation.mirrored { return self }
+        let corners: [CGPoint] = quad.corners
+        var moved: [CGPoint] = []
+        for corner in corners {
+            var x: Double = Double(corner.x)
+            var y: Double = Double(corner.y)
+            if orientation.mirrored { x = Double(sourceWidth) - x }
+            var width: Int = sourceWidth
+            var height: Int = sourceHeight
+            var turn: Int = 0
+            while turn < turns {
+                let turnedX: Double = Double(height) - y
+                y = x
+                x = turnedX
+                let oldWidth: Int = width
+                width = height
+                height = oldWidth
+                turn += 1
+            }
+            moved.append(CGPoint(x: x, y: y))
+        }
+        let swaps: Bool = turns % 2 == 1
+        var result: CaptureFacts = self
+        result.quad = Quad.fromCorners(moved)
+        result.sourceWidth = swaps ? sourceHeight : sourceWidth
+        result.sourceHeight = swaps ? sourceWidth : sourceHeight
+        return result
+    }
+
+    /// These facts for the photo resized to `width` × `height` pixels: the corners scaled with it, the
+    /// focal length by the geometric mean of the two scales (√(sx · sy), the scale itself when the photo
+    /// keeps its shape), and the kind and real size kept. The same size, facts without a photo size, or a
+    /// size of no pixels return the facts as they are. Twin of C# `CaptureFacts.ScaledTo`.
+    public func scaled(toWidth width: Int, height: Int) -> CaptureFacts {
+        if sourceWidth <= 0 || sourceHeight <= 0 || width <= 0 || height <= 0 { return self }
+        if width == sourceWidth && height == sourceHeight { return self }
+        let sx: Double = Double(width) / Double(sourceWidth)
+        let sy: Double = Double(height) / Double(sourceHeight)
+        var result: CaptureFacts = self
+        result.quad = quad.scaled(sx, sy)
+        result.sourceWidth = width
+        result.sourceHeight = height
+        if let f = focalLength {
+            result.focalLength = f * (sx * sy).squareRoot()
+        }
+        return result
+    }
+
+    /// Whether a photo of `width` × `height` pixels is the photo these facts were taken on, perhaps
+    /// resized: the same shape to within the rounding of a resize (|width · sourceHeight − height ·
+    /// sourceWidth| at most the longer source side). A photo turned a quarter since is not, unless it is
+    /// nearly square, where its shape cannot tell: whoever turns a photo turns its facts with it
+    /// (`oriented`). Twin of C# `CaptureFacts.DescribesPhoto`.
+    public func describesPhoto(width: Int, height: Int) -> Bool {
+        if sourceWidth <= 0 || sourceHeight <= 0 || width <= 0 || height <= 0 { return false }
+        let difference: Int64 = abs(Int64(width) * Int64(sourceHeight) - Int64(height) * Int64(sourceWidth))
+        return difference <= Int64(max(sourceWidth, sourceHeight))
+    }
 }
 
 /// The real size of a page taken by a camera, which has no scale of its own: the page's true shape

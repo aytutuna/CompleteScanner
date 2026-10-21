@@ -3,16 +3,21 @@ import CompleteScannerKit
 import CoreGraphics
 import SwiftUI
 
-/// The scan screen: the task's step, the scanner, the last scan, the page strip, the status line,
-/// and Scan and Save; once saved, the saved file with Share and Show in Files.
+/// The scan screen: the task's step, the camera and imports (`CaptureBar`), the scanner, the last scan,
+/// the page strip, the status line, and Scan and Save (as a PDF or a JPEG a page, `IOSShell.saveFormats`);
+/// once saved, the saved file with Share and Show in Files. Camera opens Apple's document scanner.
 struct ScanScreen: View {
     @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var importer: IOSImportSession
+    @State private var showsCamera: Bool = false
+    @State private var camera: IOSCameraAvailability = .noCamera
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     stepCard
+                    CaptureBar(offersCamera: IOSShell.offersCamera(state.activeTask), camera: camera, onCamera: openCamera)
                     scannerRow
                     PreviewArea(image: state.canvasImage)
                 }
@@ -26,6 +31,40 @@ struct ScanScreen: View {
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle(state.activeTaskDefinition?.title ?? "Scanner")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            camera = IOSCameraAvailability.current
+        }
+        .fullScreenCover(isPresented: $showsCamera) {
+            DocumentCameraView(onFinish: cameraFinished, onCancel: closeCamera, onFail: cameraFailed)
+                .ignoresSafeArea()
+        }
+    }
+
+    // MARK: Camera
+
+    private func openCamera() {
+        camera = IOSCameraAvailability.current
+        guard camera.isAvailable, importer.canImport else { return }
+        showsCamera = true
+    }
+
+    private func closeCamera() {
+        showsCamera = false
+        camera = IOSCameraAvailability.current
+    }
+
+    private func cameraFinished(_ images: [CGImage]) {
+        closeCamera()
+        let pages: [ScannedPage] = IOSDocumentCamera.pages(images)
+        let session: IOSImportSession = importer
+        Task { @MainActor in
+            await session.bringInScans(pages)
+        }
+    }
+
+    private func cameraFailed(_ message: String) {
+        closeCamera()
+        state.errorMessage = message
     }
 
     /// The current step's one-line prompt, with its fuller help below.
@@ -84,11 +123,30 @@ struct ScanScreen: View {
         state.capabilities != nil && !state.isBusy
     }
 
+    /// PDF or JPEG, while the queue is saved as one of them.
+    private var formatChoice: Binding<OutputFormat> {
+        let appState: AppState = state
+        return Binding<OutputFormat>(
+            get: { appState.settings.format.isImageFormat ? OutputFormat.jpeg : OutputFormat.pdf },
+            set: { (format: OutputFormat) in
+                appState.settings.format = format
+            })
+    }
+
+    private func save() {
+        if IOSShell.savesImages(state.settings) {
+            state.saveImages()
+        } else {
+            state.savePDF()
+        }
+    }
+
     private var bottomBar: some View {
         let options: DocumentOptions = state.settings.document
         let plan: SavePlan = SavePlan.make(state.scannedPages, options: options)
-        let saveTitle: String = plan.saveTitle(state.settings.format)
+        let saveTitle: String = IOSShell.saveTitle(state.settings, plan: plan)
         let saveCount: Int = plan.pageCount
+        let formats: [OutputFormat] = IOSShell.saveFormats(state.settings)
         return VStack(alignment: .leading, spacing: 10) {
             Text(statusText)
                 .font(.footnote)
@@ -98,6 +156,16 @@ struct ScanScreen: View {
                 .accessibilityIdentifier("status.line")
             if !state.lastSavedURLs.isEmpty && !state.isBusy {
                 SavedFilesRow()
+            }
+            if !formats.isEmpty {
+                Picker("Save as", selection: formatChoice) {
+                    ForEach(formats) { (format: OutputFormat) in
+                        Text(format.label).tag(format)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(state.isBusy)
+                .accessibilityIdentifier("save.format")
             }
             HStack(spacing: 12) {
                 if state.isBusy {
@@ -119,13 +187,13 @@ struct ScanScreen: View {
                 .disabled(!canScan)
                 .accessibilityIdentifier("scan.button")
                 Button {
-                    state.savePDF()
+                    save()
                 } label: {
                     Text(saveTitle)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-                .disabled(state.isBusy || saveCount == 0)
+                .disabled(state.isBusy || importer.isImporting || saveCount == 0)
                 .accessibilityIdentifier("save.button")
             }
         }

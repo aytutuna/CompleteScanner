@@ -80,15 +80,131 @@ final class CapturePageTests: XCTestCase {
 
     func testPerspectiveStepScalesTheCornersToASmallerPhotoInMemory() throws {
         let halfPixels = WarpFixtures.photo(320, 240)
-        let cut = PerspectiveStep().apply(captured(image(halfPixels), facts()))
+        let half: CGImage = image(halfPixels)
+        let cut = PerspectiveStep().apply(captured(half, facts()))
         let quad = sheetQuad.scaled(0.5, 0.5)
         XCTAssertEqual(cut.geometry?.quad, quad)
         XCTAssertEqual(cut.dpi, 16) // 198 px over 11.6929 in
         let expected = try XCTUnwrap(PerspectiveWarp.warp(halfPixels, quad: quad, width: cut.image.width,
                                                           height: cut.image.height))
         XCTAssertEqual(pixels(cut).pixels, expected.pixels)
-        // The facts keep the corners as taken.
-        XCTAssertEqual(cut.capture?.quad, sheetQuad)
+        // The facts follow the photo kept as the other version: its corners, its size, its focal length.
+        XCTAssertTrue(cut.alternate?.image === half)
+        let kept: CaptureFacts = try XCTUnwrap(cut.capture)
+        XCTAssertEqual(kept.quad, quad)
+        XCTAssertEqual(kept.sourceWidth, 320)
+        XCTAssertEqual(kept.sourceHeight, 240)
+        XCTAssertEqual(kept.focalLength, 250)
+        XCTAssertEqual(cut.geometry?.quad, kept.quad)
+        XCTAssertEqual(kept.scale?.dpi, 16)
+    }
+
+    func testPerspectiveStepLeavesAPhotoTurnedWithoutItsFactsAlone() {
+        let turnedPixels: RgbaImage = PhotoImport.oriented(WarpFixtures.photo(640, 480),
+                                                          orientation: PhotoOrientation(quarterTurns: 1, mirrored: false))
+        XCTAssertEqual(turnedPixels.width, 480)
+        XCTAssertEqual(turnedPixels.height, 640)
+        let turned: CGImage = image(turnedPixels)
+        let page: ScannedPage = captured(turned, facts())
+        let result: ScannedPage = PerspectiveStep().apply(page)
+        XCTAssertTrue(result.image === turned)
+        XCTAssertNil(result.geometry)
+        XCTAssertEqual(result.capture, facts())
+        XCTAssertEqual(result.dpi, 72)
+    }
+
+    func testPerspectiveStepCutsAPhotoTurnedWithItsFacts() throws {
+        let quarter = PhotoOrientation(quarterTurns: 1, mirrored: false)
+        let turned: CGImage = image(PhotoImport.oriented(WarpFixtures.photo(640, 480), orientation: quarter))
+        let turnedFacts: CaptureFacts = facts().oriented(quarter)
+        let cut: ScannedPage = PerspectiveStep().apply(captured(turned, turnedFacts))
+        let scale: CaptureScaleResult = try XCTUnwrap(cut.capture?.scale)
+        XCTAssertEqual(scale.size, "a4")
+        XCTAssertEqual(cut.dpi, 33)
+        // The sheet lies on its side in the turned photo: the same page, turned.
+        XCTAssertEqual(cut.image.width, 386)
+        XCTAssertEqual(cut.image.height, 273)
+        var measured: CaptureFacts = turnedFacts
+        measured.scale = scale
+        XCTAssertEqual(cut.capture, measured)
+        XCTAssertEqual(cut.geometry?.quad, turnedFacts.quad)
+    }
+
+    func testCaptureFactsTurnWithThePhoto() {
+        // Four marked pixels at the corners of an outline in a 64 × 48 photo: for every orientation tag,
+        // the turned facts' corners land on the same marks in the photo turned the same way.
+        let w: Int = 64
+        let h: Int = 48
+        var photo: RgbaImage = RgbaImage.filled(width: w, height: h, r: 0, g: 0, b: 0)
+        let markXs: [Int] = [10, 49, 52, 7]
+        let markYs: [Int] = [5, 8, 40, 37]
+        let markValues: [UInt8] = [50, 100, 150, 200]
+        for index in 0..<4 {
+            photo.pixels[(markYs[index] * w + markXs[index]) * 4] = markValues[index]
+        }
+        let quad = Quad(topLeft: CGPoint(x: 10.5, y: 5.5), topRight: CGPoint(x: 49.5, y: 8.5),
+                        bottomRight: CGPoint(x: 52.5, y: 40.5), bottomLeft: CGPoint(x: 7.5, y: 37.5))
+        let capture = CaptureFacts(quad: quad, sourceWidth: w, sourceHeight: h, kind: .receipt, focalLength: 70)
+        for tag in 1...8 {
+            let orientation: PhotoOrientation = PhotoOrientation.fromExif(tag)
+            let turnedPhoto: RgbaImage = PhotoImport.oriented(photo, orientation: orientation)
+            let turned: CaptureFacts = capture.oriented(orientation)
+            XCTAssertEqual(turned.sourceWidth, turnedPhoto.width, "tag \(tag)")
+            XCTAssertEqual(turned.sourceHeight, turnedPhoto.height, "tag \(tag)")
+            XCTAssertTrue(turned.quad.isConvex, "tag \(tag)")
+            XCTAssertEqual(turned.kind, .receipt)
+            XCTAssertEqual(turned.focalLength, 70)
+            XCTAssertNil(turned.scale)
+            var found: [UInt8] = []
+            for corner in turned.quad.corners {
+                let px: Int = Int(Double(corner.x).rounded(.down))
+                let py: Int = Int(Double(corner.y).rounded(.down))
+                found.append(turnedPhoto.pixels[(py * turnedPhoto.width + px) * 4])
+            }
+            found.sort()
+            XCTAssertEqual(found, markValues, "tag \(tag)")
+        }
+        // A quarter turn clockwise: (x, y) to (48 − y, x), named again from the top edge.
+        let quarter = PhotoOrientation(quarterTurns: 1, mirrored: false)
+        XCTAssertEqual(capture.oriented(quarter).quad,
+                       Quad(topLeft: CGPoint(x: 10.5, y: 7.5), topRight: CGPoint(x: 42.5, y: 10.5),
+                            bottomRight: CGPoint(x: 39.5, y: 49.5), bottomLeft: CGPoint(x: 7.5, y: 52.5)))
+        // Turned all the way round, and upright, the facts are as they were.
+        XCTAssertEqual(capture.oriented(quarter).oriented(PhotoOrientation(quarterTurns: 3, mirrored: false)), capture)
+        let flipped = PhotoOrientation(quarterTurns: 2, mirrored: true)
+        XCTAssertEqual(capture.oriented(flipped).oriented(flipped), capture)
+        XCTAssertEqual(capture.oriented(.upright), capture)
+    }
+
+    func testCaptureFactsScaleWithThePhoto() {
+        let capture: CaptureFacts = facts()
+        let half: CaptureFacts = capture.scaled(toWidth: 320, height: 240)
+        XCTAssertEqual(half.quad, sheetQuad.scaled(0.5, 0.5))
+        XCTAssertEqual(half.sourceWidth, 320)
+        XCTAssertEqual(half.sourceHeight, 240)
+        XCTAssertEqual(half.focalLength, 250)
+        XCTAssertEqual(half.kind, capture.kind)
+        // Another shape: each way by its own scale, the focal length by their geometric mean.
+        let wide: CaptureFacts = capture.scaled(toWidth: 1280, height: 240)
+        XCTAssertEqual(wide.quad, sheetQuad.scaled(2, 0.5))
+        XCTAssertEqual(wide.focalLength, 500)
+        // No focal length is made up; the same size and no size change nothing.
+        var unknown: CaptureFacts = capture
+        unknown.focalLength = nil
+        XCTAssertNil(unknown.scaled(toWidth: 320, height: 240).focalLength)
+        XCTAssertEqual(capture.scaled(toWidth: 640, height: 480), capture)
+        XCTAssertEqual(capture.scaled(toWidth: 0, height: 480), capture)
+        // The photos the facts describe: the same shape, to within a resize's rounding.
+        XCTAssertTrue(capture.describesPhoto(width: 640, height: 480))
+        XCTAssertTrue(capture.describesPhoto(width: 320, height: 240))
+        XCTAssertTrue(capture.describesPhoto(width: 321, height: 240))
+        XCTAssertTrue(capture.describesPhoto(width: 4000, height: 3000))
+        XCTAssertFalse(capture.describesPhoto(width: 480, height: 640))
+        XCTAssertFalse(capture.describesPhoto(width: 640, height: 400))
+        XCTAssertFalse(capture.describesPhoto(width: 0, height: 0))
+        XCTAssertFalse(CaptureFacts(quad: sheetQuad, sourceWidth: 0, sourceHeight: 480).describesPhoto(width: 640, height: 480))
+        // A nearly square photo turned a quarter is not taken for the same photo either.
+        XCTAssertFalse(CaptureFacts(quad: sheetQuad, sourceWidth: 1000, sourceHeight: 999).describesPhoto(width: 999, height: 1000))
     }
 
     func testGeometryStepLeavesCameraAndPhotoPagesAlone() throws {

@@ -5,9 +5,11 @@ import SwiftUI
 /// The start screen: what are you scanning? One tile per task (`TaskCatalog.sections`) in its group:
 /// an icon, the title and the one-line subtitle. A task that cannot be started (no feeder, or not in
 /// this version yet, `IOSShell.availability`) is dimmed with one short line saying why. Picking a
-/// tile sets the task up and opens the scan screen (`onOpenScanner`).
+/// tile sets the task up and opens the scan screen (`onOpenScanner`); not while an import runs, whose
+/// pages belong to the task set up.
 struct TaskStartScreen: View {
     @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var importer: IOSImportSession
 
     /// Opens the scan screen (after a tile was set up, or for the Scanner button).
     let onOpenScanner: @MainActor () -> Void
@@ -56,7 +58,7 @@ struct TaskStartScreen: View {
             TaskTileLabel(tile: tile)
         }
         .buttonStyle(TaskTileButtonStyle())
-        .disabled(!available || state.isBusy)
+        .disabled(!available || state.isBusy || importer.isImporting)
         .accessibilityLabel(Text(tile.title))
         .accessibilityValue(Text(tile.accessibilityValue))
         .accessibilityHint(Text(hint))

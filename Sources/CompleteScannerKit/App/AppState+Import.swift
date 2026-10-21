@@ -62,8 +62,10 @@ struct PhotoUnreadableError: LocalizedError {
 /// is read once into memory and never written, moved or locked. A TIFF file may hold several pages (a
 /// fax, a scan): each is read as a photo of its own (`decode` with its page); other files give their
 /// main picture. The orientation tag is read, not applied: `PhotoImport.oriented` turns the pixels.
-/// Twin of the Windows `PhotoFileReader` (WIC).
-enum PhotoFileReader {
+/// Twin of the Windows `PhotoFileReader` (WIC). Its header checks and page count are `package`: the
+/// iPhone's photo decoder (`CompleteScannerIOS`) turns down the same photos before decoding them and
+/// reads a TIFF's pages as the Mac does.
+package enum PhotoFileReader {
     /// Page `page` (from 1) of the photo file at `url`: `readData`, then `decode`.
     static func read(_ url: URL, page: Int = 1) throws -> PhotoFile {
         try decode(readData(url), fileName: url.lastPathComponent, page: page)
@@ -88,14 +90,15 @@ enum PhotoFileReader {
 
     /// How many pages the photo file `data` holds: a TIFF's pages, 1 for other files and for files that
     /// cannot be read (`decode` says why). Only the file's header is read, so a page that cannot be
-    /// decoded does not hide the pages after it.
-    static func pageCount(_ data: Data) -> Int {
+    /// decoded does not hide the pages after it. `package`: the iPhone's photo decoder reads a TIFF's
+    /// pages the same way.
+    package static func pageCount(_ data: Data) -> Int {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return 1 }
         return pagesIn(source)
     }
 
     /// A TIFF's pages, 1 for other files.
-    private static func pagesIn(_ source: CGImageSource) -> Int {
+    package static func pagesIn(_ source: CGImageSource) -> Int {
         let isTiff = CGImageSourceGetType(source).map { ($0 as String) == UTType.tiff.identifier } ?? false
         return isTiff ? max(1, CGImageSourceGetCount(source)) : 1
     }
@@ -135,14 +138,14 @@ enum PhotoFileReader {
 
     /// More than `PhotoImport.maxPhotoPixels`; a damaged header may claim sizes whose product does not
     /// fit an Int, which is too large all the same.
-    static func tooLarge(width: Int, height: Int) -> Bool {
+    package static func tooLarge(width: Int, height: Int) -> Bool {
         let pixels = width.multipliedReportingOverflow(by: height)
         return pixels.overflow || pixels.partialValue > PhotoImport.maxPhotoPixels
     }
 
     /// The pixel size a PNG (its IHDR) or JPEG (its first start-of-frame) header claims, read from the
     /// bytes alone; nil for other files and for headers cut short.
-    static func headerPixelSize(_ data: Data) -> (width: Int, height: Int)? {
+    package static func headerPixelSize(_ data: Data) -> (width: Int, height: Int)? {
         let b = [UInt8](data.prefix(1 << 20))
         func be16(_ at: Int) -> Int { (Int(b[at]) << 8) | Int(b[at + 1]) }
         func be32(_ at: Int) -> Int { (be16(at) << 16) | be16(at + 2) }

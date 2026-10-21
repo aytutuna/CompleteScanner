@@ -8,18 +8,24 @@ import SwiftUI
 public struct CompleteScannerIOSApp: App {
     @StateObject private var fileActions: IOSFileActions
     @StateObject private var state: AppState
+    @StateObject private var importer: IOSImportSession
+    private let launchImport: IOSImportItem?
 
     public init() {
-        let options: IOSLaunchOptions = IOSLaunchOptions(arguments: ProcessInfo.processInfo.arguments)
+        let process: ProcessInfo = ProcessInfo.processInfo
+        let options: IOSLaunchOptions = IOSLaunchOptions(arguments: process.arguments, environment: process.environment)
         let actions: IOSFileActions = IOSFileActions()
         let appState: AppState = AppState.makeForIOS(options: options, fileActions: actions)
+        let session: IOSImportSession = IOSImportSession(state: appState)
         _fileActions = StateObject(wrappedValue: actions)
         _state = StateObject(wrappedValue: appState)
+        _importer = StateObject(wrappedValue: session)
+        launchImport = options.launchImport
     }
 
     public var body: some Scene {
         WindowGroup {
-            IOSRootView(fileActions: fileActions)
+            IOSRootView(fileActions: fileActions, importer: importer, launchImport: launchImport)
                 .environmentObject(state)
         }
     }

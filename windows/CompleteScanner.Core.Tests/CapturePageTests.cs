@@ -63,8 +63,108 @@ public class CapturePageTests
         Assert.Equal(quad, cut.Geometry!.Quad);
         Assert.Equal(16, cut.Dpi); // 198 px over 11.6929 in
         Assert.Equal(PerspectiveWarp.Warp(half, quad, cut.Image.Width, cut.Image.Height)!.Pixels, cut.Image.Pixels);
-        // The facts keep the corners as taken.
-        Assert.Equal(SheetQuad, cut.Capture!.Quad);
+        // The facts follow the photo kept as the other version: its corners, its size, its focal length.
+        Assert.Same(half, cut.Alternate!.Image);
+        var kept = cut.Capture!;
+        Assert.Equal(quad, kept.Quad);
+        Assert.Equal((320, 240), (kept.SourceWidth, kept.SourceHeight));
+        Assert.Equal(250, kept.FocalLength);
+        Assert.Equal(cut.Geometry!.Quad, kept.Quad);
+        Assert.Equal(16, kept.Scale!.Dpi);
+    }
+
+    [Fact]
+    public void PerspectiveStepLeavesAPhotoTurnedWithoutItsFactsAlone()
+    {
+        var turned = PhotoImport.Oriented(Photo(640, 480), new PhotoOrientation(1, false));
+        Assert.Equal((480, 640), (turned.Width, turned.Height));
+        var page = Captured(turned, Facts);
+        Assert.Same(page, new PerspectiveStep().Apply(page));
+    }
+
+    [Fact]
+    public void PerspectiveStepCutsAPhotoTurnedWithItsFacts()
+    {
+        var quarter = new PhotoOrientation(1, false);
+        var turned = PhotoImport.Oriented(Photo(640, 480), quarter);
+        var facts = Facts.Oriented(quarter);
+        var cut = new PerspectiveStep().Apply(Captured(turned, facts));
+        var scale = cut.Capture!.Scale!;
+        Assert.Equal("a4", scale.Size);
+        Assert.Equal(33, cut.Dpi);
+        // The sheet lies on its side in the turned photo: the same page, turned.
+        Assert.Equal((386, 273), (cut.Image.Width, cut.Image.Height));
+        Assert.Equal(facts with { Scale = scale }, cut.Capture);
+        Assert.Equal(facts.Quad, cut.Geometry!.Quad);
+    }
+
+    [Fact]
+    public void CaptureFactsTurnWithThePhoto()
+    {
+        // Four marked pixels at the corners of an outline in a 64 × 48 photo: for every orientation tag,
+        // the turned facts' corners land on the same marks in the photo turned the same way.
+        const int w = 64, h = 48;
+        var photo = RgbaImage.Filled(w, h, 0, 0, 0);
+        var marks = new (int X, int Y, byte Value)[] { (10, 5, 50), (49, 8, 100), (52, 40, 150), (7, 37, 200) };
+        foreach (var (x, y, value) in marks) photo.Pixels[(y * w + x) * 4] = value;
+        var quad = new Quad(new PointD(10.5, 5.5), new PointD(49.5, 8.5), new PointD(52.5, 40.5), new PointD(7.5, 37.5));
+        var facts = new CaptureFacts(quad, w, h) { Kind = CaptureKind.Receipt, FocalLength = 70 };
+        for (int tag = 1; tag <= 8; tag++)
+        {
+            var orientation = PhotoOrientation.FromExif(tag);
+            var turnedPhoto = PhotoImport.Oriented(photo, orientation);
+            var turned = facts.Oriented(orientation);
+            Assert.Equal((turnedPhoto.Width, turnedPhoto.Height), (turned.SourceWidth, turned.SourceHeight));
+            Assert.True(turned.Quad.IsConvex, $"tag {tag}");
+            Assert.Equal(CaptureKind.Receipt, turned.Kind);
+            Assert.Equal(70, turned.FocalLength);
+            Assert.Null(turned.Scale);
+            var found = new List<byte>();
+            foreach (var corner in turned.Quad.Corners)
+            {
+                int px = (int)Math.Floor(corner.X), py = (int)Math.Floor(corner.Y);
+                found.Add(turnedPhoto.Pixels[(py * turnedPhoto.Width + px) * 4]);
+            }
+            found.Sort();
+            Assert.Equal([50, 100, 150, 200], found);
+        }
+        // A quarter turn clockwise: (x, y) to (48 − y, x), named again from the top edge.
+        Assert.Equal(new Quad(new PointD(10.5, 7.5), new PointD(42.5, 10.5), new PointD(39.5, 49.5), new PointD(7.5, 52.5)),
+                     facts.Oriented(new PhotoOrientation(1, false)).Quad);
+        // Turned all the way round, and upright, the facts are as they were.
+        Assert.Equal(facts, facts.Oriented(new PhotoOrientation(1, false)).Oriented(new PhotoOrientation(3, false)));
+        Assert.Equal(facts, facts.Oriented(new PhotoOrientation(2, true)).Oriented(new PhotoOrientation(2, true)));
+        Assert.Same(facts, facts.Oriented(PhotoOrientation.Upright));
+    }
+
+    [Fact]
+    public void CaptureFactsScaleWithThePhoto()
+    {
+        var facts = Facts;
+        var half = facts.ScaledTo(320, 240);
+        Assert.Equal(SheetQuad.Scaled(0.5, 0.5), half.Quad);
+        Assert.Equal((320, 240), (half.SourceWidth, half.SourceHeight));
+        Assert.Equal(250, half.FocalLength);
+        Assert.Equal(facts.Kind, half.Kind);
+        // Another shape: each way by its own scale, the focal length by their geometric mean.
+        var wide = facts.ScaledTo(1280, 240);
+        Assert.Equal(SheetQuad.Scaled(2, 0.5), wide.Quad);
+        Assert.Equal(500, wide.FocalLength);
+        // No focal length is made up; the same size and no size change nothing.
+        Assert.Null((facts with { FocalLength = null }).ScaledTo(320, 240).FocalLength);
+        Assert.Same(facts, facts.ScaledTo(640, 480));
+        Assert.Same(facts, facts.ScaledTo(0, 480));
+        // The photos the facts describe: the same shape, to within a resize's rounding.
+        Assert.True(facts.DescribesPhoto(640, 480));
+        Assert.True(facts.DescribesPhoto(320, 240));
+        Assert.True(facts.DescribesPhoto(321, 240));
+        Assert.True(facts.DescribesPhoto(4000, 3000));
+        Assert.False(facts.DescribesPhoto(480, 640));
+        Assert.False(facts.DescribesPhoto(640, 400));
+        Assert.False(facts.DescribesPhoto(0, 0));
+        Assert.False(new CaptureFacts(SheetQuad, 0, 480).DescribesPhoto(640, 480));
+        // A nearly square photo turned a quarter is not taken for the same photo either.
+        Assert.False(new CaptureFacts(SheetQuad, 1000, 999).DescribesPhoto(999, 1000));
     }
 
     [Fact]

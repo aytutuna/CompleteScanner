@@ -3,22 +3,45 @@ import CompleteScannerKit
 import Foundation
 
 /// What the app was launched with. `-demoScanner` (the UI smoke test's) keeps the app on the demo
-/// scanner alone: the iPhone has no other connection yet, and once it has (the camera, eSCL), a test
-/// launched this way still scans the same made-up pages.
+/// scanner alone: the iPhone has no other connection yet, and once it has (eSCL), a test launched this
+/// way still scans the same made-up pages. `-importFixture` (the import UI test's) imports one photo at
+/// launch into the Document task, as the Files app would hand it over: its PNG bytes, base64, in the
+/// environment variable `importFixtureVariable`, since a UI test cannot drive the system's pickers.
 public struct IOSLaunchOptions: Equatable, Sendable {
     /// The launch argument for the demo scanner alone.
     public static let demoScannerArgument = "-demoScanner"
+    /// The launch argument that imports the photo in `importFixtureVariable` at launch.
+    public static let importFixtureArgument = "-importFixture"
+    /// The environment variable holding that photo's bytes, base64.
+    public static let importFixtureVariable = "COMPLETESCANNER_IMPORT_FIXTURE"
+    /// The name the photo imported at launch is shown with.
+    public static let importFixtureName = "fixture.png"
 
     /// Only the demo scanner is offered.
     public let demoScannerOnly: Bool
+    /// The photo to import at launch; nil for none.
+    public let launchImport: IOSImportItem?
 
     public init(demoScannerOnly: Bool) {
         self.demoScannerOnly = demoScannerOnly
+        self.launchImport = nil
     }
 
     /// The options in the process's launch arguments.
     public init(arguments: [String]) {
+        self.init(arguments: arguments, environment: [:])
+    }
+
+    /// The options in the process's launch arguments and environment (`ProcessInfo`).
+    public init(arguments: [String], environment: [String: String]) {
         self.demoScannerOnly = arguments.contains(IOSLaunchOptions.demoScannerArgument)
+        var item: IOSImportItem?
+        if arguments.contains(IOSLaunchOptions.importFixtureArgument),
+           let text = environment[IOSLaunchOptions.importFixtureVariable],
+           let data = Data(base64Encoded: text, options: [.ignoreUnknownCharacters]), !data.isEmpty {
+            item = IOSImportItem(name: IOSLaunchOptions.importFixtureName, data: data, kind: .image)
+        }
+        self.launchImport = item
     }
 }
 
@@ -46,6 +69,33 @@ public enum IOSShell {
 
     /// Why a task is not offered yet: the tile's one visible line.
     public static let notYetReason = "Not in this version yet"
+
+    /// Whether a task's scan screen opens Apple's document scanner (Document, Email, Word).
+    public static func offersCamera(_ task: ScanTask?) -> Bool {
+        guard let task else { return false }
+        return IOSDocumentCamera.tasks.contains(task)
+    }
+
+    /// The formats the scan screen's Save offers: PDF or JPEG (a picture a page) while the queue would
+    /// be saved as a PDF; none to choose for Word and text, which are saved as chosen.
+    public static func saveFormats(_ settings: ScanSettings) -> [OutputFormat] {
+        if settings.format.isTextFormat { return [] }
+        return [.pdf, .jpeg]
+    }
+
+    /// The collected pages are saved as pictures (`AppState.saveImages`), not as one file (`savePDF`).
+    public static func savesImages(_ settings: ScanSettings) -> Bool {
+        settings.format.isImageFormat
+    }
+
+    /// The Save button's title: "Save 3 JPEGs" for pictures (`AppState.imagesSaveTitle`), else the
+    /// queue's own ("Save PDF (3 pages)", "Save Word").
+    public static func saveTitle(_ settings: ScanSettings, plan: SavePlan) -> String {
+        if savesImages(settings) {
+            return AppState.imagesSaveTitle(settings.format, pageCount: plan.pageCount)
+        }
+        return plan.saveTitle(settings.format)
+    }
 
     /// Whether a start-screen tile can be picked, and if not, why: a task this app does not offer
     /// yet says so; otherwise the card's own availability (a scanner without a feeder, say).

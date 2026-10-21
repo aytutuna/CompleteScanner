@@ -260,7 +260,9 @@ xcodebuild test -scheme CompleteScanner-Package   -destination 'platform=iOS Sim
 ```
 
 The app itself (one universal app for iPhone and iPad; so far the task start screen, the Demo Scanner,
-the page strip, Save PDF and the share sheet) is an Xcode project that
+Apple's document scanner behind Document to PDF, Email a document and Scan to Word, photos and PDFs
+imported from Photos, Files or other apps with a touch corner editor and magnifier, the page strip,
+Save as PDF or JPEG and the share sheet) is an Xcode project that
 [XcodeGen](https://github.com/yonaskolb/XcodeGen) writes from `ios/project.yml`; CI pins XcodeGen's
 release and checks its SHA-256. To build it and run its UI smoke test on the Simulator:
 
@@ -271,7 +273,11 @@ xcodebuild test -project ios/CompleteScanneriOS.xcodeproj -scheme CompleteScanne
 ```
 
 The app's icon is drawn by `python scripts/make_ios_icon.py ios/CompleteScanneriOS/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`
-(standard library only).
+(standard library only), and the photo the import UI test brings in by
+`python scripts/make_ios_ui_fixture.py ios/CompleteScanneriOSUITests/Fixtures/document-photo.png`
+(a sheet with grey bars on a dark table; standard library only). The Simulator has no document camera,
+so the camera itself (and iCloud-only photos, large HEIC files and saving to the Files app) is checked
+on a real iPhone.
 
 ## Windows version
 
@@ -332,10 +338,13 @@ target for each platform's own parts:
   `SystemTroubleshooterService`, `AppKitLifecycle`) and `CompleteScannerApp`
 - `Sources/CompleteScannerIOS` — the iPhone and iPad only (each file inside `#if os(iOS)`):
   `UIKitLifecycle`, the app shell's services (`IOSShell`, `IOSFileActions`: Quick Look, the share
-  sheet, the Files app), `CompleteScannerIOSApp` and its SwiftUI views
+  sheet, the Files app), Apple's document scanner (`Camera/`), importing photos and PDFs with the
+  corner editor (`Import/`: decoding with the EXIF turn, PDF pages at 300 dpi, Vision's page search,
+  the import session), `CompleteScannerIOSApp` and its SwiftUI views
 - `ios/` — the iPhone and iPad app's Xcode project for XcodeGen (`project.yml`): the app target that
   only starts `CompleteScannerIOSApp`, its `Info.plist`, privacy manifest and asset catalog, and the
-  UI smoke test (`CompleteScanneriOSUITests`); the `.xcodeproj` XcodeGen writes is not checked in
+  UI tests (`CompleteScanneriOSUITests`: the smoke test and the photo import, with its fixture
+  photo); the `.xcodeproj` XcodeGen writes is not checked in
 - `Sources/CompleteScanner` — the Mac app's entry point
 - `Tests/CompleteScannerTests` — unit tests (synthetic-image based), run on macOS and on the iOS
   Simulator; `Tests/CompleteScannerMacTests` and `Tests/CompleteScannerIOSTests` — each platform's own

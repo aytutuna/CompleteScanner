@@ -55,6 +55,12 @@ targets:
     deploymentTarget: "18.0"
     sources:
       - path: CompleteScanneriOSUITests
+        excludes:
+          - Fixtures
+          - Fixtures/**
+      # The photo the import test brings in (drawn by scripts/make_ios_ui_fixture.py).
+      - path: CompleteScanneriOSUITests/Fixtures/document-photo.png
+        buildPhase: resources
     dependencies:
       - target: CompleteScanneriOS
     settings:

@@ -1,5 +1,6 @@
 import Combine
 import CoreGraphics
+import ImageIO
 import PDFKit
 import XCTest
 @testable import CompleteScannerKit
@@ -295,8 +296,10 @@ final class AppStateSeamTests: XCTestCase {
         XCTAssertEqual(scan.arrangement, .twoSided)
         let photo = AppState.cleanUpStage(for: .photo, settings: settings, arrangement: .asScanned,
                                           scorer: scorer, barcodes: barcodes)
+        // A camera's or a photo's: a page with capture facts is cut out of its photo first.
         XCTAssertEqual(photo.steps.map(\.name),
-                       PageProcessor.forPhotoImport(settings, scorer: scorer, barcodes: barcodes).steps.map(\.name))
+                       PageProcessor.forCapture(settings, scorer: scorer, barcodes: barcodes).steps.map(\.name))
+        XCTAssertEqual(photo.steps.first?.name, "perspective")
         // A phone's pages were cleaned up on the phone.
         let phone = AppState.cleanUpStage(for: .phone, settings: settings, arrangement: .asScanned,
                                           scorer: scorer, barcodes: barcodes)
@@ -322,6 +325,77 @@ final class AppStateSeamTests: XCTestCase {
         XCTAssertEqual(state.scanHistory.count, 2)
         XCTAssertTrue(state.statusMessage.hasPrefix("Added 2 pages — 2 in queue."), state.statusMessage)
         XCTAssertNotNil(state.lastScanImage)
+    }
+
+    @MainActor
+    func test_ingest_cutsACapturedPageOutOfItsPhoto() async throws {
+        let state = makeState()
+        // An A4-shaped outline (280 × 396 px) photographed square on in a 640 × 480 photo.
+        let photo: CGImage = try XCTUnwrap(WarpFixtures.photo(640, 480).makeCGImage())
+        let quad = Quad(topLeft: CGPoint(x: 100, y: 40), topRight: CGPoint(x: 380, y: 40),
+                        bottomRight: CGPoint(x: 380, y: 436), bottomLeft: CGPoint(x: 100, y: 436))
+        let capture = CaptureFacts(quad: quad, sourceWidth: 640, sourceHeight: 480)
+        let page: ScannedPage = ScannedPage(image: photo, dpi: 72, colorMode: .color).withCapture(capture)
+        XCTAssertTrue(state.ingest([page], source: .photo))
+        try await waitUntil(timeout: 60) { !state.isBusy }
+        defer { state.deleteSpoolFiles(of: state.scannedPages) }
+        XCTAssertNil(state.errorMessage)
+        let queued: ScannedPage = try XCTUnwrap(state.scannedPages.first)
+        let scale: CaptureScaleResult = try XCTUnwrap(queued.capture?.scale)
+        XCTAssertEqual(scale.size, "a4")
+        XCTAssertEqual(queued.dpi, scale.dpi)
+        XCTAssertEqual(queued.geometry?.basis, .perspective)
+        XCTAssertEqual(queued.source, .photo)
+        // The page and the photo it was cut from are spooled at their full size.
+        XCTAssertEqual(queued.fullPixelSize, CGSize(width: scale.pixelWidth, height: scale.pixelHeight))
+        XCTAssertEqual(queued.alternate?.fullPixelSize, CGSize(width: 640, height: 480))
+        XCTAssertEqual(queued.capture?.sourceWidth, 640)
+    }
+
+    @MainActor
+    func test_saveImages_writesAPictureAPage_leavesOutSkippedPages_andEmptiesTheQueue() async throws {
+        let state = makeState()
+        let pages: [ScannedPage] = [seamPage(width: 400, height: 520, dpi: 50), seamPage(width: 300, height: 200, dpi: 50),
+                                    seamPage(width: 260, height: 340, dpi: 50)]
+        XCTAssertTrue(state.ingest(pages, source: .photo))
+        try await waitUntil(timeout: 60) { !state.isBusy }
+        XCTAssertEqual(state.scannedPages.count, 3)
+        // The second page is skipped in the strip.
+        state.scannedPages[1] = state.scannedPages[1].withInclusion(.skip)
+        state.settings.format = .jpeg
+        state.saveImages()
+        try await waitUntil(timeout: 60) { !state.isBusy }
+        XCTAssertNil(state.errorMessage)
+        XCTAssertEqual(state.lastSavedURLs.count, 2)
+        var sizes: [Int] = []
+        for url in state.lastSavedURLs {
+            XCTAssertEqual(url.pathExtension, "jpg")
+            XCTAssertEqual(url.deletingLastPathComponent().standardizedFileURL.path, folder.standardizedFileURL.path)
+            let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
+            let image: CGImage = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+            sizes.append(image.width)
+            sizes.append(image.height)
+        }
+        XCTAssertEqual(sizes, [400, 520, 260, 340])
+        XCTAssertTrue(state.scannedPages.isEmpty)
+        XCTAssertTrue(state.statusMessage.hasPrefix("Saved 2 JPEG files: "), state.statusMessage)
+        // The spool files went with the queue.
+        let spool = AppStateFiles.all(in: folder).spoolDirectory
+        let left: [String] = (try? FileManager.default.contentsOfDirectory(atPath: spool.path)) ?? []
+        XCTAssertEqual(left.filter { (name: String) -> Bool in name.hasSuffix(".tiff") }, [])
+    }
+
+    func test_imagesSaveTitle_andMessage() {
+        XCTAssertEqual(AppState.imagesSaveTitle(.jpeg, pageCount: 1), "Save JPEG")
+        XCTAssertEqual(AppState.imagesSaveTitle(.jpeg, pageCount: 0), "Save JPEG")
+        XCTAssertEqual(AppState.imagesSaveTitle(.jpeg, pageCount: 3), "Save 3 JPEGs")
+        XCTAssertEqual(AppState.imagesSaveTitle(.pdf, pageCount: 2), "Save 2 JPEGs")
+        XCTAssertEqual(AppState.imagesSaveTitle(.png, pageCount: 2), "Save 2 PNGs")
+        let one = URL(fileURLWithPath: "/tmp/Scan 1.jpg")
+        let two = URL(fileURLWithPath: "/tmp/Scan 2.jpg")
+        XCTAssertEqual(AppState.imagesSavedMessage([one], format: .jpeg), "Saved JPEG: Scan 1.jpg")
+        XCTAssertEqual(AppState.imagesSavedMessage([one, two], format: .jpeg), "Saved 2 JPEG files: Scan 1.jpg \u{2026}")
+        XCTAssertEqual(AppState.imagesSavedMessage([], format: .jpeg), "Saved nothing.")
     }
 
     @MainActor
