@@ -17,7 +17,8 @@ UI per platform** architecture:
   scanner. It is a type-for-type port of the
   Swift `CompleteScannerKit` core, the Swift package's shared target, which builds for macOS and
   iOS (the Mac's views and system services are in `CompleteScannerMac`, the iPhone's in
-  `CompleteScannerIOS`; see `../CONTRACTS.md` for the shared conventions, especially the four
+  `CompleteScannerIOS`, with the iPhone app's Xcode project in `../ios/`; see `../CONTRACTS.md` for
+  the shared conventions, especially the four
   coordinate systems). It also holds the testable protocol logic of the
   Windows-only backends, which has no Swift twin because macOS reaches the same scanners
   through ImageCaptureCore: the WIA error and document-handling tables (`WiaErrors.cs`), the
@@ -1736,6 +1737,7 @@ When an algorithm changes on either side:
 2. Port both to the other platform (the sources carry matching structure and comments —
    `PhotoDetector.cs` is diffable against `PhotoDetector.swift` stage by stage).
 3. Both `swift test` (repo root) and `dotnet test` (this directory) must pass; CI also runs the
-   shared Swift suite on the iOS Simulator (the `ios` job). Shared Swift code goes in
-   `Sources/CompleteScannerKit`, which uses no AppKit, UIKit, SwiftUI or ImageCaptureCore; what only
-   the Mac has goes in `Sources/CompleteScannerMac`.
+   shared Swift suite on the iOS Simulator and the iPhone app's UI smoke test (the `ios` job).
+   Shared Swift code goes in `Sources/CompleteScannerKit`, which uses no AppKit, UIKit, SwiftUI or
+   ImageCaptureCore; what only the Mac has goes in `Sources/CompleteScannerMac`, what only the
+   iPhone and iPad have in `Sources/CompleteScannerIOS` (the app's project is `../ios/project.yml`).

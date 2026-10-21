@@ -150,7 +150,7 @@ jobs:
     # silently. Source: actions/runner-images, images/macos/macos-26-arm64-Readme.md.
     needs: macos
     runs-on: macos-26
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v7
       - name: Select Xcode 26.6
@@ -200,10 +200,59 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test             -scheme CompleteScanner-Package             -configuration Release             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}"             -resultBundlePath "$RUNNER_TEMP/ios-tests.xcresult"             ENABLE_TESTABILITY=YES             CODE_SIGNING_ALLOWED=NO
+      # XcodeGen (MIT) writes the iPhone and iPad app's Xcode project from ios/project.yml. It is
+      # downloaded here only, pinned to one release and its SHA-256 (the release's xcodegen.zip, a
+      # universal macOS binary with its setting presets), and never shipped; the project it writes is
+      # not checked in. Source: github.com/yonaskolb/XcodeGen/releases/tag/2.46.0.
+      - name: Install XcodeGen
+        env:
+          XCODEGEN_VERSION: 2.46.0
+          XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+        run: |
+          set -euo pipefail
+          zip="$RUNNER_TEMP/xcodegen.zip"
+          curl -fsSL -o "$zip" "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          hash=$(shasum -a 256 "$zip" | cut -d ' ' -f 1)
+          if [ "$hash" != "$XCODEGEN_SHA256" ]; then
+            echo "XcodeGen checksum mismatch: $hash"
+            exit 1
+          fi
+          unzip -q "$zip" -d "$RUNNER_TEMP/xcodegen-$XCODEGEN_VERSION"
+          echo "$RUNNER_TEMP/xcodegen-$XCODEGEN_VERSION/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: Write the app's project
+        run: |
+          xcodegen --version
+          xcodegen generate --spec ios/project.yml
+      # The app and its UI smoke test, built once for the simulator picked above (optimized, as the
+      # package's tests are; unsigned, which the Simulator allows), then run without building again.
+      - name: Build the app for testing
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -project ios/CompleteScanneriOS.xcodeproj \
+            -scheme CompleteScanneriOS \
+            -configuration Release \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/app-build" \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Run the app's smoke test
+        timeout-minutes: 30
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -project ios/CompleteScanneriOS.xcodeproj \
+            -scheme CompleteScanneriOS \
+            -configuration Release \
+            -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/app-build" \
+            -resultBundlePath "$RUNNER_TEMP/ios-app-tests.xcresult" \
+            CODE_SIGNING_ALLOWED=NO
       - name: Upload the test results
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: ios-tests-xcresult
-          path: ${{ runner.temp }}/ios-tests.xcresult
+          path: |
+            ${{ runner.temp }}/ios-tests.xcresult
+            ${{ runner.temp }}/ios-app-tests.xcresult
           if-no-files-found: ignore

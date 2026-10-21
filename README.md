@@ -258,6 +258,20 @@ tests run on the iOS Simulator with Xcode 26 or later, as CI's `ios` job runs th
 xcodebuild test -scheme CompleteScanner-Package   -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5'
 ```
 
+The app itself (one universal app for iPhone and iPad; so far the task start screen, the Demo Scanner,
+the page strip, Save PDF and the share sheet) is an Xcode project that
+[XcodeGen](https://github.com/yonaskolb/XcodeGen) writes from `ios/project.yml`; CI pins XcodeGen's
+release and checks its SHA-256. To build it and run its UI smoke test on the Simulator:
+
+```bash
+xcodegen generate --spec ios/project.yml
+xcodebuild test -project ios/CompleteScanneriOS.xcodeproj -scheme CompleteScanneriOS \
+  -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' CODE_SIGNING_ALLOWED=NO
+```
+
+The app's icon is drawn by `python scripts/make_ios_icon.py ios/CompleteScanneriOS/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`
+(standard library only).
+
 ## Windows version
 
 A native Windows sibling app lives in [windows/](windows/) — same architecture (shared
@@ -315,8 +329,12 @@ target for each platform's own parts:
 - `Sources/CompleteScannerMac` — the Mac only (each file inside `#if os(macOS)`): the SwiftUI views,
   the ImageCaptureCore backend, the system services (`SystemFileActions`, `SystemPrintService`,
   `SystemTroubleshooterService`, `AppKitLifecycle`) and `CompleteScannerApp`
-- `Sources/CompleteScannerIOS` — the iPhone and iPad only (each file inside `#if os(iOS)`): so far
-  `UIKitLifecycle`; the app shell comes next
+- `Sources/CompleteScannerIOS` — the iPhone and iPad only (each file inside `#if os(iOS)`):
+  `UIKitLifecycle`, the app shell's services (`IOSShell`, `IOSFileActions`: Quick Look, the share
+  sheet, the Files app), `CompleteScannerIOSApp` and its SwiftUI views
+- `ios/` — the iPhone and iPad app's Xcode project for XcodeGen (`project.yml`): the app target that
+  only starts `CompleteScannerIOSApp`, its `Info.plist`, privacy manifest and asset catalog, and the
+  UI smoke test (`CompleteScanneriOSUITests`); the `.xcodeproj` XcodeGen writes is not checked in
 - `Sources/CompleteScanner` — the Mac app's entry point
 - `Tests/CompleteScannerTests` — unit tests (synthetic-image based), run on macOS and on the iOS
   Simulator; `Tests/CompleteScannerMacTests` and `Tests/CompleteScannerIOSTests` — each platform's own
