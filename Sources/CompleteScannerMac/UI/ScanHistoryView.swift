@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+import CompleteScannerKit
 import SwiftUI
 
 /// The "Scans" tab: every scan of this session, newest first, as preview cards.
@@ -87,3 +89,4 @@ struct ScanHistoryView: View {
         .frame(minWidth: 560, idealWidth: 760, minHeight: 460, idealHeight: 640)
     }
 }
+#endif

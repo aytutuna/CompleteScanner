@@ -1,14 +1,41 @@
-import AppKit
 import Combine
 import CoreGraphics
 import Foundation
 import ImageIO
 
-/// Where document pages are spilled to disk while they wait in the queue,
-/// so a long high-dpi batch doesn't hold gigabytes of pixels in memory (and the spreads book pages
-/// were cut from, AppState+Book.swift).
-let pageSpoolDirectory: URL = FileManager.default.temporaryDirectory
-    .appendingPathComponent("CompleteScanner-pages", isDirectory: true)
+/// Where an `AppState` keeps its files: the settings it reads when it is made and writes, the spool its
+/// queued pages are spilled to, and the device diagnostics. The app's own places (`standard`) in the
+/// app; a folder of their own in tests (`all(in:)`), so a test never reads the user's settings, empties
+/// the running app's spool or overwrites its diagnostics.
+struct AppStateFiles {
+    /// Where `settings.json` is read and written.
+    var settingsDirectory: URL
+    /// Where document pages are spilled to disk while they wait in the queue, so a long high-dpi batch
+    /// doesn't hold gigabytes of pixels in memory (and the spreads book pages were cut from,
+    /// AppState+Book.swift). Emptied when the `AppState` is made: what a previous run left goes.
+    var spoolDirectory: URL
+    /// The device diagnostics file, devices.txt (`AppState.writeDeviceDiagnostics`); nil: not written.
+    var diagnosticsFile: URL?
+
+    /// Application Support, CompleteScanner-pages in the temporary folder, and
+    /// ~/Library/Logs/CompleteScanner/devices.txt.
+    static var standard: AppStateFiles {
+        let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
+        let logs = library?.appendingPathComponent("Logs", isDirectory: true)
+            .appendingPathComponent("CompleteScanner", isDirectory: true)
+        return AppStateFiles(settingsDirectory: StoreFiles.defaultDirectory,
+                             spoolDirectory: FileManager.default.temporaryDirectory
+                                 .appendingPathComponent("CompleteScanner-pages", isDirectory: true),
+                             diagnosticsFile: logs?.appendingPathComponent("devices.txt"))
+    }
+
+    /// Everything in `folder`: its settings.json, a spool in its "pages" folder and its devices.txt.
+    static func all(in folder: URL) -> AppStateFiles {
+        AppStateFiles(settingsDirectory: folder,
+                      spoolDirectory: folder.appendingPathComponent("pages", isDirectory: true),
+                      diagnosticsFile: folder.appendingPathComponent("devices.txt"))
+    }
+}
 
 /// Cooperative cancellation for the busy phases hardware cancel can't reach:
 /// processing, photo detection, OCR, PDF assembly, and file exports all poll this
@@ -38,6 +65,35 @@ final class PDFTextCollector: @unchecked Sendable {
     var pages: [OCRPage] = []
     /// The OCR error of the first page whose text could not be read; no text file is written then.
     var problem: String?
+}
+
+/// What comes with pages brought in through `AppState.ingest` besides the pages: the settings they
+/// were captured with, where they come from and, for a scan, how its sides were scanned and what part
+/// of the glass it covered.
+struct PageIntake {
+    /// The settings the pages were captured with (a snapshot).
+    var settings: ScanSettings
+    /// Where the pages come from; it picks their clean-up stage (`AppState.cleanUpStage`).
+    var source: PageSource
+    /// The scanner choice the pages belong to (`AppState.switchGeneration`): a scan's pages are
+    /// dropped once another scanner is chosen. nil for pages that belong to no scanner.
+    var generation: Int?
+    /// How the pages are put in reading order with their sides.
+    var arrangement: ScanArrangement = .asScanned
+    /// Both sides were asked of the feeder.
+    var askedBothSides = false
+    /// The side of a stack turned over by hand the pages are; nil otherwise.
+    var manualSide: PageSide?
+    /// The side of the ID card the pages are; nil outside the ID card task.
+    var cardSide: PageSide?
+    /// The part of the glass scanned (normalized, origin top left); nil for the whole glass or the feeder.
+    var selection: CGRect?
+    /// What a copy prints on; nil outside the Copy task.
+    var copySetup: PrinterSetup?
+    /// An area selected on the preview was scanned: its copy is centred on the paper.
+    var areaSelected = false
+    /// The feeder stopped before it ran out (`ScannerSession.lastScanStop`).
+    var stopped = false
 }
 
 /// Central controller: owns backends, the open scanner session, settings, scan results,
@@ -165,8 +221,9 @@ public final class AppState: ObservableObject {
     @Published public internal(set) var defaultPrinterPaper: PaperSize?
     /// What the printer chosen for copies offers (paper, margins), for the inspector.
     @Published public internal(set) var copySetup: PrinterSetup?
-    /// Reads the printers again each time the app comes to the front; set once, by `start()`.
-    private var activationObserver: NSObjectProtocol?
+    /// The printers are read again each time the app comes to the front (`PlatformLifecycle`); set
+    /// once, by `start()`.
+    private var observesActivation = false
 
     @Published public private(set) var isBusy = false
     @Published public private(set) var progress: ScanProgress?
@@ -203,7 +260,7 @@ public final class AppState: ObservableObject {
     /// The inspector sections started tasks opened (`InspectorSections.openedBy`), open until the user
     /// closes them, for this session only: kept here, not in the inspector, so they stay open when the
     /// inspector is shown again. Never remembered across launches.
-    @Published public internal(set) var sectionsOpenedByTask: Set<String> = []
+    @Published public package(set) var sectionsOpenedByTask: Set<String> = []
     /// Turning over by hand, the fronts and backs did not pair up, e.g. "3 fronts but 2 backs";
     /// nil otherwise. The user scans the backs again, combines the pages as they are, or keeps
     /// the fronts only.
@@ -216,7 +273,7 @@ public final class AppState: ObservableObject {
     /// The capabilities the sides are decided with (the settings, the steps, the inspector): until
     /// a session that tells only once the feeder is selected has answered, its feeder is taken to
     /// scan both sides (`DocumentSides.capabilitiesForSides`).
-    var sidesCapabilities: ScannerCapabilities? {
+    package var sidesCapabilities: ScannerCapabilities? {
         let known = feederDuplexChecked || !(session?.feederDuplexNeedsSelection ?? false)
         return DocumentSides.capabilitiesForSides(capabilities, duplexKnown: known)
     }
@@ -225,12 +282,21 @@ public final class AppState: ObservableObject {
 
     private let backends: [any ScannerBackend]
     private let presetStore: PresetStore
-    /// Opens, shows, shares and copies saved files through macOS (a stand-in in tests).
+    /// Where `settings.json` is read and written (Application Support; a folder of their own in tests).
+    let settingsDirectory: URL
+    /// Where queued pages are spilled to disk (`AppStateFiles.spoolDirectory`).
+    let spoolDirectory: URL
+    /// devices.txt (`writeDeviceDiagnostics`); nil: not written.
+    private let diagnosticsFile: URL?
+    /// When the app is about to quit and when it comes to the front, as the app shell reports it
+    /// (nil: never, as in tests that pass none).
+    private let lifecycle: (any PlatformLifecycle)?
+    /// Opens, shows, shares and copies saved files through the system (a stand-in in tests).
     private let fileActions: any FileActionService
     /// Opens Image Capture and System Settings and copies for the troubleshooter (a stand-in in tests).
     private let troubleshooterService: any TroubleshooterService
     /// Lists the printers and prints through the print panel (a stand-in in tests; AppState+Copy.swift).
-    let printService: any PrintService
+    package let printService: any PrintService
     /// Reads pages for "Rotate pages upright" (`OrientationStep`; a stand-in in tests).
     let orientationScorer: any OrientationScorer
     /// Reads barcodes and QR codes on pages, when the stack is split at barcode or QR sheets
@@ -276,46 +342,71 @@ public final class AppState: ObservableObject {
 
     public static let fallbackResolutions = [75, 150, 200, 300, 600, 1200]
 
-    public init(backends: [any ScannerBackend]? = nil, presetStore: PresetStore = PresetStore(),
-                fileActions: (any FileActionService)? = nil,
-                troubleshooterService: (any TroubleshooterService)? = nil,
-                printService: (any PrintService)? = nil,
-                orientationScorer: (any OrientationScorer)? = nil,
-                barcodeReader: (any BarcodeReader)? = nil,
-                qrEncoder: (any QrEncoder)? = nil) {
-        let saved = SettingsStore.load()
+    /// Each app shell passes its scanner connections and its system services (the Mac's:
+    /// `AppState.makeForMac()` in CompleteScannerMac). Without them the app has the demo scanner only
+    /// (`makeDemoBackend()`), no printer, and file and troubleshooter actions that are refused; text
+    /// recognition, barcode reading and QR codes default to Vision and Core Image, which every
+    /// platform has. The settings, the page spool and the diagnostics are in the app's own places
+    /// (`AppStateFiles.standard`).
+    public convenience init(backends: [any ScannerBackend]? = nil, presetStore: PresetStore = PresetStore(),
+                            fileActions: (any FileActionService)? = nil,
+                            troubleshooterService: (any TroubleshooterService)? = nil,
+                            printService: (any PrintService)? = nil,
+                            orientationScorer: (any OrientationScorer)? = nil,
+                            barcodeReader: (any BarcodeReader)? = nil,
+                            qrEncoder: (any QrEncoder)? = nil,
+                            lifecycle: (any PlatformLifecycle)? = nil) {
+        self.init(backends: backends, presetStore: presetStore, fileActions: fileActions,
+                  troubleshooterService: troubleshooterService, printService: printService,
+                  orientationScorer: orientationScorer, barcodeReader: barcodeReader, qrEncoder: qrEncoder,
+                  lifecycle: lifecycle, files: AppStateFiles.standard)
+    }
+
+    /// The same, with the settings read from and written to, the page spool emptied and used, and the
+    /// diagnostics written where `files` says (tests: a folder of their own).
+    init(backends: [any ScannerBackend]? = nil, presetStore: PresetStore = PresetStore(),
+         fileActions: (any FileActionService)? = nil,
+         troubleshooterService: (any TroubleshooterService)? = nil,
+         printService: (any PrintService)? = nil,
+         orientationScorer: (any OrientationScorer)? = nil,
+         barcodeReader: (any BarcodeReader)? = nil,
+         qrEncoder: (any QrEncoder)? = nil,
+         lifecycle: (any PlatformLifecycle)? = nil,
+         files: AppStateFiles) {
+        self.settingsDirectory = files.settingsDirectory
+        self.spoolDirectory = files.spoolDirectory
+        self.diagnosticsFile = files.diagnosticsFile
+        let saved = SettingsStore.load(directory: files.settingsDirectory)
         self.isFirstRun = saved == nil
         // A task saved last time is still active: its banner comes back with the settings.
         var initial = saved ?? ScanSettings()
         if let task = initial.task, !TaskCatalog.fits(task, initial) { initial.taskId = nil }
         self.settings = initial
-        self.backends = backends ?? [ICScannerBackend(), AppState.makeDemoBackend()]
+        self.backends = backends ?? [AppState.makeDemoBackend()]
         self.presetStore = presetStore
-        self.fileActions = fileActions ?? SystemFileActions()
-        self.troubleshooterService = troubleshooterService ?? SystemTroubleshooterService()
-        self.printService = printService ?? SystemPrintService()
+        self.lifecycle = lifecycle
+        self.fileActions = fileActions ?? UnavailableFileActions()
+        self.troubleshooterService = troubleshooterService ?? UnavailableTroubleshooterService()
+        self.printService = printService ?? NoPrintService()
         self.orientationScorer = orientationScorer ?? VisionOrientationScorer()
         self.barcodeReader = barcodeReader ?? VisionBarcodeReader()
         self.qrEncoder = qrEncoder ?? CoreImageQrEncoder()
         self.presets = presetStore.load()
         syncTaskFlow()
         // Clear page spill files left behind by a previous run.
-        try? FileManager.default.removeItem(at: pageSpoolDirectory)
-        try? FileManager.default.createDirectory(at: pageSpoolDirectory, withIntermediateDirectories: true)
+        try? FileManager.default.removeItem(at: files.spoolDirectory)
+        try? FileManager.default.createDirectory(at: files.spoolDirectory, withIntermediateDirectories: true)
         // Flush any debounced settings write on quit so a change made just
         // before Cmd-Q is not lost.
-        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
-                                               object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.settingsSaveTask?.cancel()
-                SettingsStore.save(self.settings)
-            }
+        lifecycle?.observeWillTerminate { [weak self] in
+            guard let self else { return }
+            self.settingsSaveTask?.cancel()
+            SettingsStore.save(self.settings, directory: self.settingsDirectory)
         }
     }
 
     /// The demo scanner. Its second sheet has a blank back, to show blank pages being flagged.
-    private static func makeDemoBackend() -> MockScannerBackend {
+    public static func makeDemoBackend() -> MockScannerBackend {
         let demo = MockScannerBackend()
         demo.feederBlankBackSheets = [1]
         return demo
@@ -333,13 +424,11 @@ public final class AppState: ObservableObject {
         refreshPrinters()
         // A printer added or removed while the app was in the background (in System Settings, say)
         // is seen when the app is back in front.
-        if activationObserver == nil {
-            activationObserver = NotificationCenter.default.addObserver(
-                forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.refreshPrinters()
-                }
+        if !observesActivation, let lifecycle {
+            observesActivation = true
+            lifecycle.observeDidBecomeActive { [weak self] in
+                guard let self else { return }
+                self.refreshPrinters()
             }
         }
     }
@@ -433,19 +522,17 @@ public final class AppState: ObservableObject {
     }
 
     /// Writes the raw device names, how they were grouped and the troubleshooter's checks to
-    /// ~/Library/Logs/CompleteScanner/devices.txt whenever they change, so the names real
-    /// devices report can be collected to tune `DeviceMerge` and a user's setup can be read
-    /// from one file. Best effort.
+    /// devices.txt (`diagnosticsFile`: ~/Library/Logs/CompleteScanner/devices.txt in the app) whenever
+    /// they change, so the names real devices report can be collected to tune `DeviceMerge` and a
+    /// user's setup can be read from one file. Best effort.
     private func writeDeviceDiagnostics() {
+        guard let file = diagnosticsFile else { return }
         let report = diagnosticsText(troubleshootSnapshot())
         guard report != lastDeviceReport else { return }
         lastDeviceReport = report
         let fileManager = FileManager.default
-        guard let library = fileManager.urls(for: .libraryDirectory, in: .userDomainMask).first else { return }
-        let folder = library.appendingPathComponent("Logs", isDirectory: true)
-            .appendingPathComponent("CompleteScanner", isDirectory: true)
-        try? fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
-        try? Data(report.utf8).write(to: folder.appendingPathComponent("devices.txt"), options: .atomic)
+        try? fileManager.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? Data(report.utf8).write(to: file, options: .atomic)
     }
 
     // MARK: Troubleshooter ("Why isn't my scanner listed?")
@@ -690,172 +777,274 @@ public final class AppState: ObservableObject {
             // A scanner that fell back to one side (its feeder could not scan both, or was never
             // asked) delivered one side of each sheet.
             let twoSided = sides == .both && session.lastScanDuplex != false
-            self.statusMessage = "Processing…"
-            // The clean-up stage: two-sided pages in reading order with their sides marked and the
-            // backs turned upright, then the blank-page check and the adjustments. Pixel-heavy work
-            // runs off the main actor so the UI stays live; the cancel flag is polled between
-            // pages and steps.
+            // Two-sided pages are put in reading order with their sides marked and the backs turned
+            // upright; a stack turned over by hand gets its side.
             let arrangement: ScanArrangement = twoSided ? .twoSided
                 : manualSide == .back ? .turnedOverBacks
                 : manualSide == .front ? .turnedOverFronts
                 : .asScanned
-            let scorer = self.orientationScorer
-            let barcodes = self.barcodeReader
-            let cleaned: ProcessedScan = try await Task.detached(priority: .userInitiated) {
-                try PageProcessor.forScan(s, arrangement: arrangement, scorer: scorer, barcodes: barcodes)
-                    .process(scanned, shouldContinue: { !flag.isCancelled })
-            }.value
-            guard self.switchGeneration == generation else { return }
-            if flag.isCancelled { throw ScanError.cancelled }
-            let raw = cleaned.arranged
-            let processed = cleaned.pages
-
-            // The canvas shows the RAW scan: PreviewCanvasView applies the current
-            // adjustment settings to it live, so slider changes are visible
-            // immediately without rescanning. Only a downsampled preview is retained —
-            // a full-resolution raw at high dpi would pin hundreds of MB in memory.
-            let rawLast = raw.last?.image
-            let rawPreview: CGImage? = await Task.detached(priority: .userInitiated) {
-                rawLast.map { Self.makePreview($0, maxSide: 2600) ?? $0 }
-            }.value
-            guard self.switchGeneration == generation else { return }
-            let rawPixelSize = rawLast.map { CGSize(width: $0.width, height: $0.height) }
-
-            // Record every scanned page in the session history (small previews only). ID cards are
-            // kept out of it: nothing of them is left once saved or discarded.
-            if !idCard {
-                let historyThumbs: [(CGImage, CGSize, Int)] = await Task.detached(priority: .utility) {
-                    raw.map { page in
-                        (Self.makePreview(page.image, maxSide: 700) ?? page.image,
-                         CGSize(width: page.image.width, height: page.image.height),
-                         page.dpi)
-                    }
-                }.value
-                guard self.switchGeneration == generation else { return }
-                let now = Date()
-                let entries = historyThumbs.map {
-                    ScanHistoryEntry(date: now, intent: s.intent, dpi: $0.2,
-                                     thumbnail: $0.0, pixelSize: $0.1)
-                }
-                self.scanHistory.insert(contentsOf: entries.reversed(), at: 0)
-                if self.scanHistory.count > 50 {
-                    self.scanHistory.removeSubrange(50...)
-                }
-            }
-
-            switch TaskCatalog.flow(of: s) {
-            case .documentQueue:
-                if s.documentMultiPage {
-                    // Spill full-resolution pages to disk; keep only previews in the queue. The
-                    // spreads book pages were cut from are kept too, to join or split them again.
-                    let spreads = cleaned.spreads
-                    let spooled = await Task.detached(priority: .userInitiated) {
-                        Self.spoolPages(processed)
-                    }.value
-                    let spreadSources = await Task.detached(priority: .userInitiated) {
-                        Self.spoolSpreads(spreads)
-                    }.value
-                    guard self.switchGeneration == generation else {
-                        self.deleteSpoolFiles(of: spooled)
-                        Self.deleteSpreadFiles(Array(spreadSources.values))
-                        return
-                    }
-                    // The spreads first: adding the pages drops the spreads no page is cut from.
-                    self.spreadSources.merge(spreadSources) { _, new in new }
-                    self.scannedPages.append(contentsOf: spooled)
-                    // Pages queued earlier and never read (a reading stopped) are read once the scan is done.
-                    if PageProcessor.readsBarcodes(self.settings) { self.readBarcodesAfterWork = true }
-                    self.recordCaptures(spooled.map(\.id))
-                    self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
-                    let n = processed.count
-                    if let manualSide {
-                        self.afterTurnedOverScan(manualSide, count: n, stopped: stop != nil)
-                    } else if twoSided {
-                        let sheets = Set(processed.compactMap(\.sheetIndex)).count
-                        self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") from \(sheets) sheet\(sheets == 1 ? "" : "s"), both sides — \(self.scannedPages.count) in queue. Scan more or \(self.settings.format.saveTitle)."
-                    } else if sides == .both {
-                        self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s"), one side of each sheet: the scanner did not scan both sides — \(self.scannedPages.count) in queue. Scan more or \(self.settings.format.saveTitle)."
-                    } else {
-                        self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") — \(self.scannedPages.count) in queue. Scan more or \(self.settings.format.saveTitle)."
-                    }
-                    // " 2 look blank and will be skipped.", " Found 2 separator pages: 3 documents to save."
-                    self.statusMessage += self.queueScanNote(processed, options: s.document)
-                    if PageProcessor.turnsPagesUpright(s) && !scorer.isAvailable {
-                        self.statusMessage += PageTurns.unavailableNote
-                    }
-                } else {
-                    self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
-                    try await self.saveImmediately(processed, settings: s, flag: flag)
-                    self.recordCaptures(processed.map(\.id))
-                }
-            case .photoSplit:
-                // Full resolution here: the detection overlay maps source-pixel
-                // coordinates onto this image (raw and processed share dimensions).
-                self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
-                self.statusMessage = "Detecting photos…"
-                let found: [DetectedPhoto] = try await Task.detached(priority: .userInitiated) {
-                    var all: [DetectedPhoto] = []
-                    for page in processed {
-                        if flag.isCancelled { throw ScanError.cancelled }
-                        all.append(contentsOf: Self.splitPhotos(from: page, settings: s))
-                    }
-                    return all
-                }.value
-                guard self.switchGeneration == generation else { return }
-                if flag.isCancelled { throw ScanError.cancelled }
-                // Keep every sheet's full-resolution source while the review is open so
-                // manual crop corrections can re-extract from the correct page.
-                self.photoSourceImages = Dictionary(uniqueKeysWithValues: processed.map { ($0.id, $0.image) })
-                self.detectedPhotos = found
-                self.isReceiptReview = false
-                self.recordCaptures(found.map(\.id))
-                self.showPhotoReview = !found.isEmpty
-                self.statusMessage = "Found \(found.count) photo\(found.count == 1 ? "" : "s") on the bed."
-            case .idCard:
-                guard self.isIdCardFlow else {
-                    self.dropIdCardScanOutsideTask()
-                    break
-                }
-                self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
-                guard let side = cardSide, let page = processed.last else { break }
-                self.statusMessage = "Finding the card\u{2026}"
-                // A back that does not stand out takes the front's place, the card turned over where it
-                // lay, when both scans cover the same part of the glass.
-                let area = IdCardScanArea(dpi: page.dpi,
-                                          pixelSize: CGSize(width: page.image.width, height: page.image.height),
-                                          selection: selection)
-                var frontPlace: DetectedPhotoRegion?
-                if side == .back, let front = self.idCardFront, let frontScan = front.sourcePageID,
-                   let frontArea = self.idCardScanAreas[frontScan] {
-                    frontPlace = IdCardDetector.frontPlaceOnBack(front.region, front: frontArea, back: area)
-                }
-                let fallback = frontPlace
-                let found: (DetectedPhoto, String?) = try await Task.detached(priority: .userInitiated) { () throws -> (DetectedPhoto, String?) in
-                    let pick = IdCardDetector.detect(page.image, dpi: page.dpi, fallback: fallback)
-                    if flag.isCancelled { throw ScanError.cancelled }
-                    let image = IdCardDetector.extract(page.image, pick: pick)
-                    return (DetectedPhoto(region: pick.region, image: image, dpi: page.dpi, sourcePageID: page.id,
-                                          colorMode: page.colorMode),
-                            pick.note)
-                }.value
-                guard self.switchGeneration == generation else { return }
-                if flag.isCancelled { throw ScanError.cancelled }
-                self.recordIdCardSide(side, photo: found.0, note: found.1, source: page.image, area: area)
-            case .copy:
-                self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
-                guard let copySetup else { throw PrintError.noPrinter }
-                try await self.printCopyPages(processed, settings: s, setup: copySetup, areaSelected: areaSelected,
-                                              flag: flag)
-                self.recordCaptures(processed.map(\.id))
-            case .receiptSplit:
-                self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
-                try await self.showReceipts(processed, settings: s, flag: flag, generation: generation)
-            }
+            var intake = PageIntake(settings: s, source: .scanner, generation: generation)
+            intake.arrangement = arrangement
+            intake.askedBothSides = sides == .both
+            intake.manualSide = manualSide
+            intake.cardSide = cardSide
+            intake.selection = selection
+            intake.copySetup = copySetup
+            intake.areaSelected = areaSelected
+            intake.stopped = stop != nil
+            guard let kept = try await self.ingestPages(scanned, intake: intake, flag: flag) else { return }
             if let stop {
-                self.errorMessage = stop.message(pagesKept: raw.count)
+                self.errorMessage = stop.message(pagesKept: kept)
             }
             if self.capabilities == nil { await self.readCapabilitiesAfterScan(session, generation: generation) }
         }
+    }
+
+    // MARK: Bringing pages in
+
+    /// Brings in pages captured outside a scanner session (a camera, a phone, a file): they are
+    /// marked as coming from `source`, go through that source's clean-up stage (`cleanUpStage`), are
+    /// recorded in the scan history and are handled as the task says, exactly as a scan's pages are:
+    /// queued and spooled (or saved at once), searched for photos or receipts, taken as a side of the
+    /// ID card, or printed as a copy. Pages that belong to no scanner are kept when another scanner
+    /// is chosen meanwhile. Returns whether the pages were taken: not when there are none, nor when
+    /// they cannot be now (`canIngest`), nor when the ID card's sides are in already (its review
+    /// opens instead). A caller keeps the pages it was refused, to bring them in later.
+    @discardableResult
+    public func ingest(_ pages: [ScannedPage], source: PageSource) -> Bool {
+        guard !pages.isEmpty, canIngest else { return false }
+        let idCard = TaskCatalog.flow(of: settings) == .idCard
+        let cardSide: PageSide? = idCard ? IdCardSteps.sideOf(taskFlow?.current?.id) : nil
+        if idCard && cardSide == nil {
+            openIdCardReview()
+            return false
+        }
+        let copy = TaskCatalog.flow(of: settings) == .copy
+        let s = settings
+        runExclusive { flag in
+            var copySetup: PrinterSetup?
+            if copy {
+                guard let setup = self.setupForPrinting(s, requestedPaper: Self.requestedPaper(s)) else {
+                    throw PrintError.noPrinter
+                }
+                copySetup = setup
+            }
+            var intake = PageIntake(settings: s, source: source, generation: nil)
+            intake.cardSide = cardSide
+            intake.copySetup = copySetup
+            _ = try await self.ingestPages(pages, intake: intake, flag: flag)
+        }
+        return true
+    }
+
+    /// Pages can be brought in now (`ingest`): nothing else is running, no stack is being turned over
+    /// by hand (its steps count the scanner's fronts and backs), and neither the photo or receipt
+    /// review nor the ID card's review is open (new pages would replace what is being reviewed). The
+    /// same rule as `canImportPhotos` without its settings check, and as the Windows
+    /// `AppViewModel.CanTakePhonePages`.
+    public var canIngest: Bool {
+        !isBusy && !isTurningOverByHand && !showPhotoReview && !showIdCardReview
+    }
+
+    /// The clean-up stage for pages from `source`: a scan's (`PageProcessor.forScan`, arranged as
+    /// `arrangement` says), an imported photo's (`PageProcessor.forPhotoImport`), or only the
+    /// arrangement for a phone's pages, which the phone has cleaned up already.
+    nonisolated static func cleanUpStage(for source: PageSource, settings: ScanSettings, arrangement: ScanArrangement,
+                                         scorer: any OrientationScorer, barcodes: any BarcodeReader) -> PageProcessor {
+        switch source {
+        case .scanner:
+            return PageProcessor.forScan(settings, arrangement: arrangement, scorer: scorer, barcodes: barcodes)
+        case .photo:
+            return PageProcessor.forPhotoImport(settings, scorer: scorer, barcodes: barcodes)
+        case .phone:
+            return PageProcessor(steps: [], arrangement: arrangement, binding: settings.backBinding)
+        }
+    }
+
+    /// Pages of `generation` still belong to the scanner chosen now; pages of none always do.
+    func isCurrent(_ generation: Int?) -> Bool {
+        guard let generation else { return true }
+        return switchGeneration == generation
+    }
+
+    /// The pages of a scan, or of `ingest`, from the clean-up stage to the task: processed off the
+    /// main actor, the last one shown, recorded in the history (not an ID card's), then queued, saved,
+    /// searched for photos or receipts, taken as a side of the ID card or printed. Returns how many
+    /// pages there were as scanned (for `ScanStop.message`); nil when another scanner was chosen
+    /// meanwhile and the pages were dropped.
+    func ingestPages(_ incoming: [ScannedPage], intake: PageIntake, flag: CancelFlag) async throws -> Int? {
+        let s = intake.settings
+        let source = intake.source
+        let generation = intake.generation
+        let manualSide = intake.manualSide
+        let cardSide = intake.cardSide
+        let selection = intake.selection
+        let arrangement = intake.arrangement
+        let twoSided = arrangement == .twoSided
+        let scanned: [ScannedPage] = incoming.map { (page: ScannedPage) -> ScannedPage in
+            var marked = page
+            marked.source = source
+            return marked
+        }
+        self.statusMessage = "Processing…"
+        // The clean-up stage: two-sided pages in reading order with their sides marked and the
+        // backs turned upright, then the blank-page check and the adjustments. Pixel-heavy work
+        // runs off the main actor so the UI stays live; the cancel flag is polled between
+        // pages and steps.
+        let scorer = self.orientationScorer
+        let barcodes = self.barcodeReader
+        let cleaned: ProcessedScan = try await Task.detached(priority: .userInitiated) {
+            try Self.cleanUpStage(for: source, settings: s, arrangement: arrangement, scorer: scorer, barcodes: barcodes)
+                .process(scanned, shouldContinue: { !flag.isCancelled })
+        }.value
+        guard self.isCurrent(generation) else { return nil }
+        if flag.isCancelled { throw ScanError.cancelled }
+        let raw = cleaned.arranged
+        let processed = cleaned.pages
+
+        // The canvas shows the RAW scan: PreviewCanvasView applies the current
+        // adjustment settings to it live, so slider changes are visible
+        // immediately without rescanning. Only a downsampled preview is retained —
+        // a full-resolution raw at high dpi would pin hundreds of MB in memory.
+        let rawLast = raw.last?.image
+        let rawPreview: CGImage? = await Task.detached(priority: .userInitiated) {
+            rawLast.map { Self.makePreview($0, maxSide: 2600) ?? $0 }
+        }.value
+        guard self.isCurrent(generation) else { return nil }
+        let rawPixelSize = rawLast.map { CGSize(width: $0.width, height: $0.height) }
+
+        // Record every scanned page in the session history (small previews only). ID cards are
+        // kept out of it: nothing of them is left once saved or discarded.
+        if cardSide == nil {
+            let historyThumbs: [(CGImage, CGSize, Int)] = await Task.detached(priority: .utility) {
+                raw.map { page in
+                    (Self.makePreview(page.image, maxSide: 700) ?? page.image,
+                     CGSize(width: page.image.width, height: page.image.height),
+                     page.dpi)
+                }
+            }.value
+            guard self.isCurrent(generation) else { return nil }
+            let now = Date()
+            let entries = historyThumbs.map {
+                ScanHistoryEntry(date: now, intent: s.intent, dpi: $0.2,
+                                 thumbnail: $0.0, pixelSize: $0.1)
+            }
+            self.scanHistory.insert(contentsOf: entries.reversed(), at: 0)
+            if self.scanHistory.count > 50 {
+                self.scanHistory.removeSubrange(50...)
+            }
+        }
+
+        switch TaskCatalog.flow(of: s) {
+        case .documentQueue:
+            if s.documentMultiPage {
+                // Spill full-resolution pages to disk; keep only previews in the queue. The
+                // spreads book pages were cut from are kept too, to join or split them again.
+                let spreads = cleaned.spreads
+                let spool = self.spoolDirectory
+                let spooled = await Task.detached(priority: .userInitiated) {
+                    Self.spoolPages(processed, to: spool)
+                }.value
+                let spreadSources = await Task.detached(priority: .userInitiated) {
+                    Self.spoolSpreads(spreads, to: spool)
+                }.value
+                guard self.isCurrent(generation) else {
+                    self.deleteSpoolFiles(of: spooled)
+                    Self.deleteSpreadFiles(Array(spreadSources.values))
+                    return nil
+                }
+                // The spreads first: adding the pages drops the spreads no page is cut from.
+                self.spreadSources.merge(spreadSources) { _, new in new }
+                self.scannedPages.append(contentsOf: spooled)
+                // Pages queued earlier and never read (a reading stopped) are read once the scan is done.
+                if PageProcessor.readsBarcodes(self.settings) { self.readBarcodesAfterWork = true }
+                self.recordCaptures(spooled.map(\.id))
+                self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
+                let n = processed.count
+                if let manualSide {
+                    self.afterTurnedOverScan(manualSide, count: n, stopped: intake.stopped)
+                } else if twoSided {
+                    let sheets = Set(processed.compactMap(\.sheetIndex)).count
+                    self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") from \(sheets) sheet\(sheets == 1 ? "" : "s"), both sides — \(self.scannedPages.count) in queue. Scan more or \(self.settings.format.saveTitle)."
+                } else if intake.askedBothSides {
+                    self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s"), one side of each sheet: the scanner did not scan both sides — \(self.scannedPages.count) in queue. Scan more or \(self.settings.format.saveTitle)."
+                } else {
+                    self.statusMessage = "Added \(n) page\(n == 1 ? "" : "s") — \(self.scannedPages.count) in queue. Scan more or \(self.settings.format.saveTitle)."
+                }
+                // " 2 look blank and will be skipped.", " Found 2 separator pages: 3 documents to save."
+                self.statusMessage += self.queueScanNote(processed, options: s.document)
+                if PageProcessor.turnsPagesUpright(s) && !scorer.isAvailable {
+                    self.statusMessage += PageTurns.unavailableNote
+                }
+            } else {
+                self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
+                try await self.saveImmediately(processed, settings: s, flag: flag)
+                self.recordCaptures(processed.map(\.id))
+            }
+        case .photoSplit:
+            // Full resolution here: the detection overlay maps source-pixel
+            // coordinates onto this image (raw and processed share dimensions).
+            self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
+            self.statusMessage = "Detecting photos…"
+            let found: [DetectedPhoto] = try await Task.detached(priority: .userInitiated) {
+                var all: [DetectedPhoto] = []
+                for page in processed {
+                    if flag.isCancelled { throw ScanError.cancelled }
+                    all.append(contentsOf: Self.splitPhotos(from: page, settings: s))
+                }
+                return all
+            }.value
+            guard self.isCurrent(generation) else { return nil }
+            if flag.isCancelled { throw ScanError.cancelled }
+            // Keep every sheet's full-resolution source while the review is open so
+            // manual crop corrections can re-extract from the correct page.
+            self.photoSourceImages = Dictionary(uniqueKeysWithValues: processed.map { ($0.id, $0.image) })
+            self.detectedPhotos = found
+            self.isReceiptReview = false
+            self.recordCaptures(found.map(\.id))
+            self.showPhotoReview = !found.isEmpty
+            self.statusMessage = "Found \(found.count) photo\(found.count == 1 ? "" : "s") on the bed."
+        case .idCard:
+            guard self.isIdCardFlow else {
+                self.dropIdCardScanOutsideTask()
+                break
+            }
+            self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
+            guard let side = cardSide, let page = processed.last else { break }
+            self.statusMessage = "Finding the card\u{2026}"
+            // A back that does not stand out takes the front's place, the card turned over where it
+            // lay, when both scans cover the same part of the glass.
+            let area = IdCardScanArea(dpi: page.dpi,
+                                      pixelSize: CGSize(width: page.image.width, height: page.image.height),
+                                      selection: selection)
+            var frontPlace: DetectedPhotoRegion?
+            if side == .back, let front = self.idCardFront, let frontScan = front.sourcePageID,
+               let frontArea = self.idCardScanAreas[frontScan] {
+                frontPlace = IdCardDetector.frontPlaceOnBack(front.region, front: frontArea, back: area)
+            }
+            let fallback = frontPlace
+            let found: (DetectedPhoto, String?) = try await Task.detached(priority: .userInitiated) { () throws -> (DetectedPhoto, String?) in
+                let pick = IdCardDetector.detect(page.image, dpi: page.dpi, fallback: fallback)
+                if flag.isCancelled { throw ScanError.cancelled }
+                let image = IdCardDetector.extract(page.image, pick: pick)
+                return (DetectedPhoto(region: pick.region, image: image, dpi: page.dpi, sourcePageID: page.id,
+                                      colorMode: page.colorMode),
+                        pick.note)
+            }.value
+            guard self.isCurrent(generation) else { return nil }
+            if flag.isCancelled { throw ScanError.cancelled }
+            self.recordIdCardSide(side, photo: found.0, note: found.1, source: page.image, area: area)
+        case .copy:
+            self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
+            guard let copySetup = intake.copySetup else { throw PrintError.noPrinter }
+            try await self.printCopyPages(processed, settings: s, setup: copySetup, areaSelected: intake.areaSelected,
+                                          flag: flag)
+            self.recordCaptures(processed.map(\.id))
+        case .receiptSplit:
+            self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
+            try await self.showReceipts(processed, settings: s, flag: flag, generation: generation)
+        }
+        return raw.count
     }
 
     /// The capabilities could not be read on connect (the scanner was off, say) yet a scan just
@@ -1001,8 +1190,9 @@ public final class AppState: ObservableObject {
             } catch {
                 // Nothing was written: the pages go to the queue rather than being lost, to be
                 // saved once the text can be read or the file written, or in another format.
+                let spool = spoolDirectory
                 let spooled = await Task.detached(priority: .userInitiated) {
-                    Self.spoolPages(pages)
+                    Self.spoolPages(pages, to: spool)
                 }.value
                 scannedPages.append(contentsOf: spooled)
                 let cancelled: Bool
@@ -1489,8 +1679,9 @@ public final class AppState: ObservableObject {
 
     // MARK: Helpers
 
+    /// Shows the file in Finder, selected (`FileActionService.reveal`).
     public func revealInFinder(_ url: URL) {
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        fileActions.reveal([url])
     }
 
     // MARK: Saved files: open, share, copy
@@ -1579,10 +1770,11 @@ public final class AppState: ObservableObject {
     private func scheduleSettingsSave() {
         settingsSaveTask?.cancel()
         let snapshot = settings
+        let directory = settingsDirectory
         settingsSaveTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled else { return }
-            SettingsStore.save(snapshot)
+            SettingsStore.save(snapshot, directory: directory)
         }
     }
 
@@ -1590,10 +1782,11 @@ public final class AppState: ObservableObject {
     /// that carry only a preview in memory. A page whose spill fails is kept
     /// fully in memory instead. The page as scanned, kept by crop and straighten, gets a spool
     /// file of its own (and keeps its pixels in memory when that fails), so one click can show it.
-    nonisolated static func spoolPages(_ pages: [ScannedPage]) -> [ScannedPage] {
-        try? FileManager.default.createDirectory(at: pageSpoolDirectory, withIntermediateDirectories: true)
+    /// The files go in `directory` (the app's `spoolDirectory`).
+    nonisolated static func spoolPages(_ pages: [ScannedPage], to directory: URL) -> [ScannedPage] {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return pages.map { page in
-            let url = pageSpoolDirectory.appendingPathComponent("\(page.id.uuidString).tiff")
+            let url = directory.appendingPathComponent("\(page.id.uuidString).tiff")
             do {
                 try ImageExporter.write(page.image, to: url, format: .tiff,
                                         dpi: page.dpi, jpegQuality: 1.0)
@@ -1604,7 +1797,7 @@ public final class AppState: ObservableObject {
             var spooled = page.withImage(preview, fileURL: url,
                                          fullPixelSize: CGSize(width: page.image.width, height: page.image.height))
             if let other = page.alternate?.image {
-                let otherURL = pageSpoolDirectory.appendingPathComponent("\(page.id.uuidString)-other.tiff")
+                let otherURL = directory.appendingPathComponent("\(page.id.uuidString)-other.tiff")
                 do {
                     try ImageExporter.write(other, to: otherURL, format: .tiff, dpi: page.dpi, jpegQuality: 1.0)
                     spooled = spooled.withAlternate(PageVersion(image: nil, fileURL: otherURL,

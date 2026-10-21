@@ -88,6 +88,10 @@ private struct StoredZip {
     }
 }
 
+/// Why a test that reads a package's XML back is skipped on iOS: it parses with XMLDocument, which
+/// Foundation has on macOS only. The macOS job runs it.
+private let xmlDocumentIsMacOnly = "XMLDocument, which reads the XML back here, is macOS only; the macOS job runs this test."
+
 final class ZipStoreTests: XCTestCase {
     func test_crc32_knownValues() {
         XCTAssertEqual(ZipStore.crc32([UInt8]()), 0)
@@ -159,6 +163,7 @@ final class DocxWriterTests: XCTestCase {
         OCRFixtures.line(text, left, top, width, height)
     }
 
+    #if os(macOS)
     private func open(_ docx: Data) throws -> (zip: StoredZip, document: XMLDocument) {
         let zip = try StoredZip(docx)
         let xml = try XCTUnwrap(zip.data("word/document.xml"))
@@ -192,8 +197,10 @@ final class DocxWriterTests: XCTestCase {
     private func paragraphTexts(_ document: XMLDocument) throws -> [String] {
         try paragraphs(document).map { text(of: $0) }
     }
+    #endif
 
     func test_make_isAWordPackage_withTheRequiredPartsAndRelationships() throws {
+        #if os(macOS)
         let docx = DocxWriter.make(TextExportTests.samplePages())
         XCTAssertEqual(Array(docx.prefix(4)), [0x50, 0x4B, 0x03, 0x04])
         let (zip, document) = try open(docx)
@@ -229,9 +236,20 @@ final class DocxWriterTests: XCTestCase {
         XCTAssertEqual(root.uri, wordNamespace)
         let last = try body(document).children?.last as? XMLElement
         XCTAssertEqual(last?.localName, "sectPr")
+        #else
+        throw XCTSkip(xmlDocumentIsMacOnly)
+        #endif
     }
 
     func test_make_oneParagraphPerParagraph_newPageForEachPage() throws {
+        // Text keeps its spaces; a tab is a tab element between two pieces of text, and the rows
+        // of a table are lines of one paragraph.
+        let xml = DocxWriter.documentXML(TextExportTests.samplePages())
+        XCTAssertFalse(xml.contains("<w:t>"))
+        XCTAssertEqual(xml.components(separatedBy: "<w:t xml:space=\"preserve\">").count - 1, 8)
+        XCTAssertEqual(xml.components(separatedBy: "<w:tab/>").count - 1, 2)
+        XCTAssertEqual(xml.components(separatedBy: "<w:br/>").count - 1, 1)
+        #if os(macOS)
         let (_, document) = try open(DocxWriter.make(TextExportTests.samplePages()))
         XCTAssertEqual(try paragraphTexts(document),
                        ["Café menu", "Soupe à l'oignon\t4,50 €\n東京 ラーメン\t9.00", "This line is forwarding the rest.",
@@ -241,13 +259,9 @@ final class DocxWriterTests: XCTestCase {
             !(paragraph.elements(forLocalName: "pPr", uri: wordNamespace).first?
                 .elements(forLocalName: "pageBreakBefore", uri: wordNamespace).isEmpty ?? true)
         }, [false, false, false, true, false])
-        // Text keeps its spaces; a tab is a tab element between two pieces of text, and the rows
-        // of a table are lines of one paragraph.
-        let xml = DocxWriter.documentXML(TextExportTests.samplePages())
-        XCTAssertFalse(xml.contains("<w:t>"))
-        XCTAssertEqual(xml.components(separatedBy: "<w:t xml:space=\"preserve\">").count - 1, 8)
-        XCTAssertEqual(xml.components(separatedBy: "<w:tab/>").count - 1, 2)
-        XCTAssertEqual(xml.components(separatedBy: "<w:br/>").count - 1, 1)
+        #else
+        throw XCTSkip(xmlDocumentIsMacOnly + " The markup itself was checked above.")
+        #endif
     }
 
     func test_documentXML_escapesMarkup_andLeavesOutWhatXMLCannotHold() throws {
@@ -262,14 +276,22 @@ final class DocxWriterTests: XCTestCase {
                                                                L("c", 50, 130, 50), L("d", 500, 130, 50))])
             .contains("<w:p><w:r><w:t xml:space=\"preserve\">a</w:t><w:tab/><w:t xml:space=\"preserve\">b</w:t><w:br/>"
                       + "<w:t xml:space=\"preserve\">c</w:t><w:tab/><w:t xml:space=\"preserve\">d</w:t></w:r></w:p>"))
+        #if os(macOS)
         XCTAssertEqual(try paragraphTexts(XMLDocument(data: Data(xml.utf8))), ["A & B <tag> \"q\" 'a'"])
+        #else
+        throw XCTSkip(xmlDocumentIsMacOnly + " The markup itself was checked above.")
+        #endif
     }
 
     func test_make_unicodeRoundTrip() throws {
+        #if os(macOS)
         let samples = ["東京都の天気は晴れ", "שלום עולם", "مرحبا بالعالم", "Ελληνικά", "emoji \u{1F600} ok", "\u{01C4}emal \u{FB01}ne"]
         let pages = samples.map { OCRFixtures.page(L($0, 50, 100, 500)) }
         let (_, document) = try open(DocxWriter.make(pages))
         XCTAssertEqual(try paragraphTexts(document), samples)
+        #else
+        throw XCTSkip(xmlDocumentIsMacOnly)
+        #endif
     }
 
     func test_pageSize_fromTheFirstPage_inTwips_withOneInchMargins() {
@@ -293,6 +315,7 @@ final class DocxWriterTests: XCTestCase {
     }
 
     func test_emptyPages_stillGiveAParagraphEach() throws {
+        #if os(macOS)
         let (_, document) = try open(DocxWriter.make([OCRFixtures.page(), OCRFixtures.page()]))
         XCTAssertEqual(try paragraphTexts(document), ["", ""])
         XCTAssertEqual(
@@ -300,6 +323,9 @@ final class DocxWriterTests: XCTestCase {
             "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">"
             + "<w:body><w:p></w:p><w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/><w:pgMar w:top=\"1440\" w:right=\"1440\" "
             + "w:bottom=\"1440\" w:left=\"1440\" w:header=\"720\" w:footer=\"720\" w:gutter=\"0\"/></w:sectPr></w:body></w:document>")
+        #else
+        throw XCTSkip(xmlDocumentIsMacOnly)
+        #endif
     }
 
     func test_make_fingerprint_matchesWindows() {
@@ -390,6 +416,7 @@ final class DocxWriterPictureTests: XCTestCase {
     private let w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
     private let r = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
+    #if os(macOS)
     private func part(_ zip: StoredZip, _ name: String) throws -> XMLDocument {
         try XMLDocument(data: XCTUnwrap(zip.data(name)))
     }
@@ -431,8 +458,10 @@ final class DocxWriterPictureTests: XCTestCase {
     private func value(_ element: XMLElement?, _ name: String) -> String? {
         element?.attribute(forName: name)?.stringValue
     }
+    #endif
 
     func test_make_withPageImages_hasTheMediaPartsRelationshipsAndContentTypes() throws {
+        #if os(macOS)
         let docx = DocxWriter.make(TextExportTests.samplePages(),
                                    pictures: [DocxFixtures.jpegPicture, DocxFixtures.pngPicture])
         let zip = try StoredZip(docx)
@@ -496,9 +525,13 @@ final class DocxWriterPictureTests: XCTestCase {
                 XCTAssertEqual(gray[y * 16 + x] < 128, DocxFixtures.pngIsBlack(x, y), "pixel (\(x), \(y))")
             }
         }
+        #else
+        throw XCTSkip(xmlDocumentIsMacOnly)
+        #endif
     }
 
     func test_make_withPageImages_eachPagePictureThenItsText() throws {
+        #if os(macOS)
         let docx = DocxWriter.make(TextExportTests.samplePages(),
                                    pictures: [DocxFixtures.jpegPicture, DocxFixtures.pngPicture])
         let elements = try paragraphs(part(StoredZip(docx), "word/document.xml"))
@@ -515,6 +548,9 @@ final class DocxWriterPictureTests: XCTestCase {
         XCTAssertEqual(drawings, [true, false, false, false, true, false, false])
         // The second page starts at its picture; the text after a picture never breaks the page itself.
         XCTAssertEqual(breaks, [false, false, false, false, true, false, false])
+        #else
+        throw XCTSkip(xmlDocumentIsMacOnly)
+        #endif
     }
 
     func test_documentXML_pictureParagraph_exactMarkup() throws {
@@ -540,7 +576,11 @@ final class DocxWriterPictureTests: XCTestCase {
         expected += "<w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/><w:pgMar w:top=\"1440\" w:right=\"1440\" "
         expected += "w:bottom=\"1440\" w:left=\"1440\" w:header=\"720\" w:footer=\"720\" w:gutter=\"0\"/></w:sectPr></w:body></w:document>"
         XCTAssertEqual(xml, expected)
+        #if os(macOS)
         XCTAssertEqual(try XMLDocument(data: Data(xml.utf8)).rootElement()?.localName, "document")
+        #else
+        throw XCTSkip(xmlDocumentIsMacOnly + " The markup itself was checked above.")
+        #endif
     }
 
     func test_pictureSize_realSize_orShrunkInsideTheMargins_keepingItsShape() {
@@ -579,6 +619,7 @@ final class DocxWriterPictureTests: XCTestCase {
     }
 
     func test_make_somePagesWithPictures_numbersThePicturesInOrder() throws {
+        #if os(macOS)
         let pages = [OCRFixtures.page(OCRFixtures.line("One", 50, 100, 200)), OCRFixtures.page(), OCRFixtures.page()]
         let docx = DocxWriter.make(pages, pictures: [DocxFixtures.pngPicture, nil, DocxFixtures.pngPicture])
         let zip = try StoredZip(docx)
@@ -605,6 +646,9 @@ final class DocxWriterPictureTests: XCTestCase {
         XCTAssertEqual(value(docPr, "name"), "Page 3")
         XCTAssertEqual(value(docPr, "descr"), "Page 3 as scanned")
         XCTAssertEqual(value(try all(elements[3], "cNvPr").first, "name"), "image2.png")
+        #else
+        throw XCTSkip(xmlDocumentIsMacOnly)
+        #endif
     }
 
     func test_pictureFormat_followsThePDFSizePlan_andNames() {
@@ -766,6 +810,7 @@ final class DocxPictureTests: XCTestCase {
     }
 
     func test_wordDocument_withPictures_readsBackAndEveryPictureDecodes() throws {
+        #if os(macOS)
         // A Letter page in color and a narrow black & white receipt, both at 300 dpi.
         let color = page(2550, 3300) { x, y in (UInt8(x * 255 / 2550), UInt8(y * 255 / 3300), 128) }
         let receipt = page(900, 3000, Self.inkColor)
@@ -798,5 +843,8 @@ final class DocxPictureTests: XCTestCase {
         // Stored entries: the pictures are already compressed, and the package is about their size.
         let media = zip.entries.filter { $0.name.hasPrefix("word/media/") }.reduce(0) { $0 + $1.data.count }
         XCTAssertLessThan(docx.count, media + 8000)
+        #else
+        throw XCTSkip(xmlDocumentIsMacOnly)
+        #endif
     }
 }

@@ -1,3 +1,5 @@
+#if os(macOS)
+import CompleteScannerKit
 import SwiftUI
 
 /// "Why isn't my scanner listed?": one line saying what is listed and how many problems and
@@ -211,3 +213,4 @@ private struct TroubleshootCheckCard: View {
         }
     }
 }
+#endif

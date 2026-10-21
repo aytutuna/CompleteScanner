@@ -1,3 +1,5 @@
+#if os(macOS)
+import CompleteScannerKit
 import CoreGraphics
 import Foundation
 import ImageCaptureCore
@@ -743,3 +745,4 @@ private func performOnMainActor(_ body: @escaping @MainActor () -> Void) {
         }
     }
 }
+#endif

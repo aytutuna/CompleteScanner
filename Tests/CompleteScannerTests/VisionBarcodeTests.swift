@@ -117,8 +117,30 @@ private func read(_ scan: GrayImage) throws -> [BarcodeReading] {
     try BarcodeSeparators.read(scan.toRgba(), dpi: Int(scan.dpi), reader: VisionBarcodeReader())
 }
 
+/// The iOS Simulator may have no barcode detector for Vision to run: there the tests that read codes
+/// are skipped, saying so, when a plain QR code printed large reads as nothing. macOS (and a device)
+/// always runs them.
+private func skipUnlessVisionReadsCodes() throws {
+    #if targetEnvironment(simulator)
+    let modules = try qrModules("CS-SEP PROBE")
+    let page = printed(3, 3) { pixels, w, h in
+        stamp(modules, x: 0.5, y: 0.5, moduleInches: 0.06)(&pixels, w, h)
+    }
+    let found: [BarcodeReading]
+    do {
+        found = try read(scanned(page, dpi: 200, noise: 0))
+    } catch {
+        throw XCTSkip("Vision cannot read barcodes in this iOS Simulator (\(error.localizedDescription)); the macOS job runs these tests.")
+    }
+    if found.isEmpty {
+        throw XCTSkip("Vision read no barcode in this iOS Simulator; the macOS job runs these tests.")
+    }
+    #endif
+}
+
 final class VisionBarcodeTests: XCTestCase {
     func test_qrAndCode128_areRead_atCommonResolutions_withNoiseAndASlant() throws {
+        try skipUnlessVisionReadsCodes()
         let qrCode = try qrModules("Invoice 0042 · März")
         let bars = try code128("INV-0042/b")
         let cases: [(GrayImage, BarcodeSymbology, String, Double)] = [
@@ -153,6 +175,7 @@ final class VisionBarcodeTests: XCTestCase {
     }
 
     func test_theQrSeparatorSheet_readsBackItsName() throws {
+        try skipUnlessVisionReadsCodes()
         let cases: [(String?, Int, Double)] = [
             ("Lease 2026", 150, 0), ("Fatura Şubat 2026 — №5", 200, 2), ("東京の請求書 0042", 200, -2),
             ("Αρχείο Ιανουάριος", 300, 1), (nil, 150, -1.5),
@@ -170,6 +193,7 @@ final class VisionBarcodeTests: XCTestCase {
     }
 
     func test_theDemoScannersCode39Sheet_readsAsItsText() throws {
+        try skipUnlessVisionReadsCodes()
         // The demo's sheets carry the separator prefix and a name (`MockScannerBackend.batchBarcodeText`).
         for dpi in [150, 300] {
             let sheet = Code39.renderSheet("CS-SEP INVOICE 1002", widthInches: 8.5, heightInches: 11, dpi: dpi)
@@ -181,12 +205,14 @@ final class VisionBarcodeTests: XCTestCase {
     }
 
     func test_pagesWithoutCodes_readNothing() throws {
+        try skipUnlessVisionReadsCodes()
         XCTAssertEqual(try read(scanned(printed(8.5, 11), dpi: 200, noise: 8)), [])
         let patch = PatchCodeDetector.renderSheet(.patchT, widthInches: 8.5, heightInches: 11, dpi: 300)
         XCTAssertEqual(try read(scanned(patch, dpi: 200)), [])
     }
 
     func test_aStack_splitsAtItsCodeSheets_andTheirTextNamesTheDocuments() throws {
+        try skipUnlessVisionReadsCodes()
         let encoder = CoreImageQrEncoder()
         let lease = try XCTUnwrap(encoder.encode(QrSeparatorSheet.text("Lease 2026")))
         let unnamed = try XCTUnwrap(encoder.encode(QrSeparatorSheet.text(nil)))

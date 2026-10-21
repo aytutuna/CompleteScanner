@@ -15,8 +15,10 @@ UI per platform** architecture:
   backend contract, scanner problems with their user-facing text (`Troubleshooting.cs`), the
   "Why isn't my scanner listed?" checks (`Troubleshooter.cs`), and the hardware-free demo
   scanner. It is a type-for-type port of the
-  Swift `CompleteScannerKit` core (see `../CONTRACTS.md` for the shared conventions,
-  especially the four coordinate systems). It also holds the testable protocol logic of the
+  Swift `CompleteScannerKit` core, the Swift package's shared target, which builds for macOS and
+  iOS (the Mac's views and system services are in `CompleteScannerMac`, the iPhone's in
+  `CompleteScannerIOS`; see `../CONTRACTS.md` for the shared conventions, especially the four
+  coordinate systems). It also holds the testable protocol logic of the
   Windows-only backends, which has no Swift twin because macOS reaches the same scanners
   through ImageCaptureCore: the WIA error and document-handling tables (`WiaErrors.cs`), the
   decisions of the Windows Scan backup connection (`WindowsScan.cs`: capabilities, the scan
@@ -83,7 +85,7 @@ UI per platform** architecture:
   program without a window that the app starts when a scanner driver is installed only for
   32-bit programs (see [TWAIN](#twain)). The app's build copies it next to `CompleteScanner.exe`.
 - **`CompleteScanner.App`** — the native Windows shell (WPF, .NET 10): main window with
-  sidebar/inspector/preview-canvas/page-strip/photo-review, a view-model porting the macOS
+  sidebar/inspector/preview-canvas/page-strip/photo-review, a view-model porting the shared Swift
   `AppState` orchestration, and Windows service implementations (WIA, Windows Scan, eSCL and TWAIN
   scanning, Windows.Media.Ocr, WPF imaging codecs). Its package dependencies, each pinned to an
   exact version, are [NTwain](https://github.com/soukoku/ntwain) 3.7.6 (MIT) for TWAIN and
@@ -1733,4 +1735,7 @@ When an algorithm changes on either side:
 1. Change the implementation and its test in that platform's suite.
 2. Port both to the other platform (the sources carry matching structure and comments —
    `PhotoDetector.cs` is diffable against `PhotoDetector.swift` stage by stage).
-3. Both `swift test` (repo root) and `dotnet test` (this directory) must pass.
+3. Both `swift test` (repo root) and `dotnet test` (this directory) must pass; CI also runs the
+   shared Swift suite on the iOS Simulator (the `ios` job). Shared Swift code goes in
+   `Sources/CompleteScannerKit`, which uses no AppKit, UIKit, SwiftUI or ImageCaptureCore; what only
+   the Mac has goes in `Sources/CompleteScannerMac`.

@@ -1,6 +1,7 @@
-import XCTest
+#if os(macOS)
 import AppKit
-@testable import CompleteScannerKit
+import XCTest
+@testable import CompleteScannerMac
 
 // Where the macOS menus and share picker open. Mac only: on Windows the photo review is part of
 // the main window, so there is no sheet to look past.
@@ -27,3 +28,4 @@ final class FileActionsTests: XCTestCase {
                        NSPoint(x: 400, y: 300))
     }
 }
+#endif

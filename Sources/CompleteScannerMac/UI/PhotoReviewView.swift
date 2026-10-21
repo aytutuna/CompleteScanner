@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+import CompleteScannerKit
 import CoreGraphics
 import SwiftUI
 
@@ -201,3 +203,4 @@ fileprivate func reviewThumbnail(_ image: CGImage, maxDimension: CGFloat) -> CGI
     ctx.draw(image, in: CGRect(x: 0, y: 0, width: tw, height: th))
     return ctx.makeImage() ?? image
 }
+#endif

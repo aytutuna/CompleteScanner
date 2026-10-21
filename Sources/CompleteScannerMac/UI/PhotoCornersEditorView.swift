@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+import CompleteScannerKit
 import CoreGraphics
 import SwiftUI
 
@@ -334,3 +336,4 @@ struct PhotoCornersEditorView: View {
         showLoupe = true
     }
 }
+#endif

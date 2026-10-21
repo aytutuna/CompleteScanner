@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+import CompleteScannerKit
 import SwiftUI
 
 /// Right column: the scan settings in sections (`InspectorSections`), presets, and the Preview / Scan /
@@ -1156,3 +1158,4 @@ private struct InspectorSectionHeader: View {
         }
     }
 }
+#endif

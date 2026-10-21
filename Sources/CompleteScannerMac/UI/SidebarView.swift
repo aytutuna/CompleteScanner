@@ -1,3 +1,5 @@
+#if os(macOS)
+import CompleteScannerKit
 import SwiftUI
 
 /// Left column: the list of discovered scanner devices.
@@ -116,3 +118,4 @@ private struct DeviceRow: View {
         .padding(.vertical, 2)
     }
 }
+#endif

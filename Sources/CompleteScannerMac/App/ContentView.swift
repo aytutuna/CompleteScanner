@@ -1,3 +1,5 @@
+#if os(macOS)
+import CompleteScannerKit
 import SwiftUI
 
 struct ContentView: View {
@@ -190,3 +192,4 @@ struct ContentView: View {
         }
     }
 }
+#endif

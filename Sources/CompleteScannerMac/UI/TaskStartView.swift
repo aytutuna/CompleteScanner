@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+import CompleteScannerKit
 import SwiftUI
 
 /// SF Symbols for the task icons (`TaskDefinition.iconKey`); the Windows app maps the same
@@ -216,3 +218,4 @@ private struct TaskCardButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
     }
 }
+#endif

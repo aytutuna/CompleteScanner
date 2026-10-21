@@ -251,6 +251,13 @@ Run the test suite (photo detection, PDF/OCR, naming, adjustments):
 swift test
 ```
 
+The package also builds for iOS 18 (the iPhone and iPad app is in progress): the shared core and its
+tests run on the iOS Simulator with Xcode 26 or later, as CI's `ios` job runs them:
+
+```bash
+xcodebuild test -scheme CompleteScanner-Package   -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5'
+```
+
 ## Windows version
 
 A native Windows sibling app lives in [windows/](windows/) — same architecture (shared
@@ -289,12 +296,27 @@ instructions and current status.
 
 ## Project layout
 
-- `Sources/CompleteScannerKit/Core` — shared models + backend protocols
-- `Sources/CompleteScannerKit/Backends` — ImageCaptureCore backend, demo backend
-- `Sources/CompleteScannerKit/Pipeline` — photo detection/split/deskew, image adjustments, the
-  page clean-up stage (`PageProcessor`: blank-page check, then adjustments) and its image
-  toolkit (`RgbaImage`, `GrayImage`, `BackgroundMap`, `MaskOps`, `BlankPageDetector`), and the ID
-  card's detector, layout and page (`IdCard`)
-- `Sources/CompleteScannerKit/Output` — PDF builder, OCR, image export, naming templates
-- `Sources/CompleteScannerKit/UI` — SwiftUI views
-- `Tests/CompleteScannerTests` — unit tests (synthetic-image based)
+The Swift package (tools 6.0, Swift 5 language mode, macOS 14 and iOS 18) has one shared core and a
+target for each platform's own parts:
+
+- `Sources/CompleteScannerKit` — the shared core, built for macOS and iOS, with no AppKit, UIKit,
+  SwiftUI or ImageCaptureCore:
+  - `Core` — shared models + backend protocols
+  - `Backends` — the demo backend
+  - `Pipeline` — photo detection/split/deskew, image adjustments, the page clean-up stage
+    (`PageProcessor`: blank-page check, then adjustments) and its image toolkit (`RgbaImage`,
+    `GrayImage`, `BackgroundMap`, `MaskOps`, `BlankPageDetector`), and the ID card's detector,
+    layout and page (`IdCard`)
+  - `Output` — PDF builder, OCR, image export, naming templates
+  - `Persistence`, `Companion` — settings files; the phone companion's shared pieces
+  - `App` — `AppState`, which every view binds to, and the protocols of the system services each
+    app passes in (`FileActionService`, `PrintService`, `TroubleshooterService`,
+    `PlatformLifecycle`); pages from a scan or any other source come in through `AppState.ingest`
+- `Sources/CompleteScannerMac` — the Mac only (each file inside `#if os(macOS)`): the SwiftUI views,
+  the ImageCaptureCore backend, the system services (`SystemFileActions`, `SystemPrintService`,
+  `SystemTroubleshooterService`, `AppKitLifecycle`) and `CompleteScannerApp`
+- `Sources/CompleteScannerIOS` — the iPhone and iPad only (each file inside `#if os(iOS)`): so far
+  `UIKitLifecycle`; the app shell comes next
+- `Sources/CompleteScanner` — the Mac app's entry point
+- `Tests/CompleteScannerTests` — unit tests (synthetic-image based), run on macOS and on the iOS
+  Simulator; `Tests/CompleteScannerMacTests` and `Tests/CompleteScannerIOSTests` — each platform's own

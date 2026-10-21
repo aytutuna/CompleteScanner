@@ -53,9 +53,11 @@ extension AppState {
         return receipts
     }
 
-    /// Opens the review on the receipts found on the pages just scanned.
+    /// Opens the review on the receipts found on the pages just scanned. The pages of a scan
+    /// (`generation`, the scanner choice they belong to) are dropped when another scanner is chosen
+    /// meanwhile; pages that belong to no scanner (nil, `ingest`) are kept (`isCurrent`).
     func showReceipts(_ processed: [ScannedPage], settings s: ScanSettings, flag: CancelFlag,
-                      generation: Int) async throws {
+                      generation: Int?) async throws {
         statusMessage = "Finding receipts\u{2026}"
         let found: [DetectedPhoto] = try await Task.detached(priority: .userInitiated) {
             var all: [DetectedPhoto] = []
@@ -65,7 +67,7 @@ extension AppState {
             }
             return all
         }.value
-        guard switchGeneration == generation else { return }
+        guard isCurrent(generation) else { return }
         if flag.isCancelled { throw ScanError.cancelled }
         // Every page's full-resolution scan stays while the review is open, for Fix crop.
         photoSourceImages = Dictionary(uniqueKeysWithValues: processed.map { ($0.id, $0.image) })

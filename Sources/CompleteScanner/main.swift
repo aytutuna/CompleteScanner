@@ -1,5 +1,7 @@
+#if os(macOS)
 import AppKit
-import CompleteScannerKit
+import CompleteScannerMac
 
 NSApplication.shared.setActivationPolicy(.regular)
 CompleteScannerApp.main()
+#endif

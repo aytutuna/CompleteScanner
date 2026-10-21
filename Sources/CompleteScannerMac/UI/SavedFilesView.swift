@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+import CompleteScannerKit
 import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
@@ -316,3 +318,4 @@ fileprivate func loadThumbnail(for file: SavedFileItem) async -> CGImage? {
         return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }.value
 }
+#endif

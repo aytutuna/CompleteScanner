@@ -1,4 +1,3 @@
-import AppKit
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -184,23 +183,6 @@ extension AppState {
         !isBusy && PhotoImport.isOffered(settings) && !isTurningOverByHand && !showPhotoReview && !showIdCardReview
     }
 
-    /// Picks photo files with the open panel and imports them.
-    public func chooseAndImportPhotos() {
-        guard canImportPhotos else { return }
-        let panel = NSOpenPanel()
-        panel.title = PhotoImport.pickerTitle
-        panel.message = PhotoImport.buttonHint
-        panel.prompt = "Import"
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
-        panel.allowedContentTypes = PhotoImport.fileExtensions.compactMap { UTType(filenameExtension: $0) }
-        if let pictures = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first {
-            panel.directoryURL = pictures
-        }
-        guard panel.runModal() == .OK else { return }
-        importPhotos(panel.urls)
-    }
-
     /// Adds the photos among `urls` to the queue, one after another: each is read (the file itself is
     /// never changed), turned upright by its orientation tag, its page found and cut out along its
     /// corners; a photo whose page is not found clearly goes to the corner editor (`cornerReview`),
@@ -219,6 +201,7 @@ extension AppState {
         let s = settings
         let scorer = orientationScorer
         let barcodes = barcodeReader
+        let spool = spoolDirectory
         runExclusive { flag in
             var added: [ScannedPage] = []
             var problems: [String] = []
@@ -299,7 +282,7 @@ extension AppState {
                         let done: ([ScannedPage], CGImage?) = try await Task.detached(priority: .userInitiated) {
                             let processed = try PageProcessor.forPhotoImport(s, scorer: scorer, barcodes: barcodes)
                                 .process([cleaned], shouldContinue: { !flag.isCancelled }).pages
-                            return (Self.spoolPages(processed), Self.makePreview(cleaned.image, maxSide: 2600))
+                            return (Self.spoolPages(processed, to: spool), Self.makePreview(cleaned.image, maxSide: 2600))
                         }.value
                         let spooled = done.0
                         if flag.isCancelled {

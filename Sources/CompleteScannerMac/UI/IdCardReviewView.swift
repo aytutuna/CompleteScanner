@@ -1,4 +1,6 @@
+#if os(macOS)
 import AppKit
+import CompleteScannerKit
 import CoreGraphics
 import SwiftUI
 
@@ -269,3 +271,4 @@ fileprivate func sideThumbnail(_ image: CGImage, maxDimension: CGFloat) -> CGIma
     ctx.draw(image, in: CGRect(x: 0, y: 0, width: tw, height: th))
     return ctx.makeImage() ?? image
 }
+#endif

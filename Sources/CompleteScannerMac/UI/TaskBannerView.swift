@@ -1,3 +1,5 @@
+#if os(macOS)
+import CompleteScannerKit
 import SwiftUI
 
 /// The banner above the preview while a task is active or a stack is turned over by hand: the
@@ -185,3 +187,4 @@ struct TaskBannerView: View {
         }
     }
 }
+#endif

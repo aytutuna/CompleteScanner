@@ -1,3 +1,5 @@
+#if os(macOS)
+import CompleteScannerKit
 import CoreGraphics
 import SwiftUI
 
@@ -143,3 +145,4 @@ struct SpreadSplitView: View {
         fraction = min(max(share, Self.range.lowerBound), Self.range.upperBound)
     }
 }
+#endif

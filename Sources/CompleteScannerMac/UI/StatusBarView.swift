@@ -1,3 +1,5 @@
+#if os(macOS)
+import CompleteScannerKit
 import SwiftUI
 
 /// Slim bar under the preview canvas: current status, a busy spinner, and what can be done with
@@ -82,3 +84,4 @@ struct StatusBarView: View {
         .controlSize(.small)
     }
 }
+#endif

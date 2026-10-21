@@ -40,12 +40,13 @@ public struct SpreadEditorSource: Identifiable {
 /// `AppViewModel.Book.cs`.
 extension AppState {
     /// Writes each spread as scanned to a spool TIFF of its own ("{id}-spread.tiff"), for joining and
-    /// splitting it again; a spread whose file cannot be written is kept in memory.
-    nonisolated static func spoolSpreads(_ spreads: [ScannedPage]) -> [UUID: SpreadSource] {
-        try? FileManager.default.createDirectory(at: pageSpoolDirectory, withIntermediateDirectories: true)
+    /// splitting it again, in `directory` (the app's `spoolDirectory`); a spread whose file cannot be
+    /// written is kept in memory.
+    nonisolated static func spoolSpreads(_ spreads: [ScannedPage], to directory: URL) -> [UUID: SpreadSource] {
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var sources: [UUID: SpreadSource] = [:]
         for spread in spreads {
-            let url = pageSpoolDirectory.appendingPathComponent("\(spread.id.uuidString)-spread.tiff")
+            let url = directory.appendingPathComponent("\(spread.id.uuidString)-spread.tiff")
             do {
                 try ImageExporter.write(spread.image, to: url, format: .tiff, dpi: spread.dpi, jpegQuality: 1.0)
                 sources[spread.id] = SpreadSource(fileURL: url, image: nil, dpi: spread.dpi, colorMode: spread.colorMode,
@@ -144,6 +145,7 @@ extension AppState {
         let s = settings
         let scorer = orientationScorer
         let barcodes = barcodeReader
+        let spool = spoolDirectory
         runExclusive { flag in
             // Turns and swaps clicked before must not land on pages about to be replaced.
             await self.pageEditChain?.value
@@ -167,7 +169,7 @@ extension AppState {
                 let gutter = cut.map { BookSplitter.manual($0.axis, fraction: $0.fraction, width: image.width, height: image.height) }
                 let processed = try PageProcessor.forScan(s, arrangement: .asScanned, scorer: scorer, barcodes: barcodes)
                     .processSpread(spread, cut: gutter, options: BookSplitOptions.of(s), shouldContinue: { !flag.isCancelled })
-                return Self.spoolPages(processed)
+                return Self.spoolPages(processed, to: spool)
             }.value
             let indices = self.scannedPages.indices.filter { self.scannedPages[$0].spreadID == spreadID }
             guard !flag.isCancelled, let firstIndex = indices.first, !pages.isEmpty else {
