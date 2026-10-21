@@ -348,7 +348,9 @@ public class WiaEnumerationTests
             var waited = System.Diagnostics.Stopwatch.StartNew();
             while (wia.EnumerationsFinished < 1 && waited.Elapsed < TimeSpan.FromSeconds(60)) Thread.Sleep(10);
             Thread.Sleep(50);
-            Assert.Equal(1, wia.EnumerationsFinished);
+            // On a stalled machine the first enumeration can take as long as the watchdog's 10 s, so a
+            // second one may have finished too; each ends the same way, and only the first is a change.
+            Assert.True(wia.EnumerationsFinished >= 1, $"{wia.EnumerationsFinished} enumerations finished");
             Assert.Empty(wia.Devices);
             Assert.Equal(reason, wia.Unavailable);
             Assert.Equal($"WIA: unavailable - {reason}\n", wia.DiagnosticsReport);
