@@ -134,7 +134,7 @@ public class PdfEncryptionTests
         Assert.Equal("Type a password.", PdfProtection.Problem("", ""));
         // Only characters that stand for nothing: the file would open without a password.
         Assert.Equal("Type a password.", PdfProtection.Problem("­‍", "­‍"));
-        Assert.Equal("The two passwords don't match.", PdfProtection.Problem("Şifre", "Sifre"));
+        Assert.Equal("Passwords don't match", PdfProtection.Problem("Şifre", "Sifre"));
         Assert.Equal("A password can't contain tabs, line breaks or other control characters.", PdfProtection.Problem("a\tb", "a\tb"));
         Assert.Throws<ArgumentException>(() => new PdfProtection(""));
         Assert.Throws<ArgumentException>(() => new PdfProtection("line\nbreak"));
@@ -156,6 +156,30 @@ public class PdfEncryptionTests
     {
         Assert.Equal(expected, PdfProtection.StrengthOf(password));
         Assert.Equal(expected == PasswordStrength.None, PdfProtection.StrengthHint(expected).Length == 0);
+    }
+
+    [Fact]
+    public void StrengthLabel_IsShort_AndTheBarFillsWithTheStrength()
+    {
+        Assert.Equal("", PdfProtection.StrengthLabel(PasswordStrength.None));
+        Assert.Equal("Weak · use 12+ characters", PdfProtection.StrengthLabel(PasswordStrength.Weak));
+        Assert.Equal("Strong", PdfProtection.StrengthLabel(PasswordStrength.Strong));
+        foreach (var strength in Enum.GetValues<PasswordStrength>())
+        {
+            // A few words on screen; the full advice stays the tooltip.
+            Assert.True(PdfProtection.StrengthLabel(strength).Split(' ').Count(w => w.Any(char.IsLetterOrDigit)) <= 5);
+        }
+        Assert.Equal([0, 1, 2, 4], new[] { PasswordStrength.None, PasswordStrength.Weak, PasswordStrength.Fair, PasswordStrength.Strong }
+            .Select(PdfProtection.StrengthSegments));
+    }
+
+    [Fact]
+    public void PasswordAndArchival_NameEachOtherInTheirShortReasons()
+    {
+        Assert.Equal("Not with PDF/A", PdfProtection.NotWithArchivalReason);
+        Assert.Equal("Not with a password", PdfA.NotWithPasswordReason);
+        // The exception PdfBuilder throws keeps its full sentence.
+        Assert.Equal("PDF/A can't be password-protected.", PdfA.CannotProtectNote);
     }
 
     [Fact]

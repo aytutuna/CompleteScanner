@@ -67,9 +67,17 @@ public partial class PhotoCornersWindow : Window
         string reason = PhotoImport.ReasonText(request.Plan.Reason);
         ReasonText.Text = reason;
         ReasonPanel.Visibility = reason.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-        HelpText.Text = PhotoImport.EditorHelp;
-        CounterText.Text = PhotoImport.Counter(request.Number, request.Count, request.FileName);
+        // The first sentence on screen; the keys behind the ⓘ.
+        var (lead, keys) = TextSplit.Lead(PhotoImport.EditorHelp);
+        HelpText.Text = lead;
+        KeyboardInfoButton.InfoText = keys;
+        KeyboardInfoButton.Visibility = keys.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        // "Photo 2 of 3"; the file's name is the tooltip.
+        CounterText.Text = request.Count > 1
+            ? $"Photo {request.Number} of {request.Count}"
+            : PhotoImport.Counter(request.Number, request.Count, request.FileName);
         CounterText.ToolTip = request.FileName;
+        AutomationProperties.SetName(CounterText, PhotoImport.Counter(request.Number, request.Count, request.FileName));
         WholePhotoButton.Content = PhotoImport.WholePhotoLabel;
         SkipButton.Content = PhotoImport.SkipLabel;
         UseButton.Content = PhotoImport.UseCornersLabel;

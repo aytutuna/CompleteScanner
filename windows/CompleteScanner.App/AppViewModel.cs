@@ -113,6 +113,23 @@ public sealed class PageItem : INotifyPropertyChanged
     public string? SideToolTip => DocumentSides.SideLabel(Page.Side, Page.SheetIndex) ?? _book?.Help
                                   ?? PhotoImport.SourceHelp(Page);
 
+    /// <summary>
+    /// The side badge on the thumbnail: "1 · front" for a page of a two-sided stack, "Spread 2 · page 1"
+    /// for a page of a book, "Photo" or "From phone"; null for other pages and for a spread kept whole,
+    /// which shows its "Not split" badge instead.
+    /// </summary>
+    public string? BadgeText => IsNotSplit ? null
+        : SideBadge.Text(Page.Side, Page.SheetIndex) ?? _book?.Label ?? PhotoImport.SourceLabel(Page);
+
+    /// <summary>The thumbnail's tooltip: where a photo's or phone's page came from; null for other pages.</summary>
+    public string? SourceToolTip => Page.Side is null && _book is null ? PhotoImport.SourceHelp(Page) : null;
+
+    /// <summary>A spread of a book kept as one page: its spine was not found, or its pages were joined.</summary>
+    public bool IsNotSplit => _book is not null && Page.Spread is { IsWhole: true };
+
+    /// <summary>The gap's tooltip: what a click does, in two words.</summary>
+    public string? BreakToolTip => BreakLabel is null ? null : StartsDocument ? "Join" : "Split here";
+
     /// <summary>The page menu's "Split this spread…" or "Change the split…"; null when the page has none.</summary>
     public string? SplitSpreadLabel => _book?.SplitLabel;
 
@@ -135,8 +152,8 @@ public sealed class PageItem : INotifyPropertyChanged
     /// <summary>What the page's one-click button does ("Keep this page", "Skip this page"); null when it has none.</summary>
     public string? ToggleLabel => _split is { } split ? split.ToggleLabel : PageFilter.ToggleLabel(Page, _options);
 
-    /// <summary>The badge's tooltip: what a separator page is, else the badge itself.</summary>
-    public string? BadgeToolTip => _split?.SeparatorNote ?? BlankBadge;
+    /// <summary>The badge's tooltip: what a separator page is; none for other badges, which say it all.</summary>
+    public string? BadgeToolTip => _split?.SeparatorNote;
 
     /// <summary>"Document 2 · Lease" on the first page of each document when the queue is split; null otherwise.</summary>
     public string? DividerTitle => _split?.DividerTitle;
@@ -220,7 +237,8 @@ public sealed class PageItem : INotifyPropertyChanged
     /// <param name="number">The page's position in the queue, from 1.</param>
     public string AccessibleName(int number)
     {
-        string name = SideLabel is { } label ? $"Page {number}, {label}" : $"Page {number}";
+        string? side = SideBadge.Name(Page.Side, Page.SheetIndex) ?? _book?.Label ?? PhotoImport.SourceLabel(Page);
+        string name = side is { } label ? $"Page {number}, {label}" : $"Page {number}";
         if (DividerTitle is { } title) name = $"{title}, {name}";
         if (_split?.SeparatorNote is { } note) name = $"{name}, {note}";
         else if (BlankBadge is { } badge) name = $"{name}, {badge}";
@@ -319,6 +337,15 @@ public sealed class HistoryItem(ScanHistoryEntry entry, BitmapSource thumbnail)
     public string TimeText => Entry.Date.ToString("T");
     public string DetailText =>
         $"{Summary} · {PixelSizeText} · {Entry.Date:d} {Entry.Date:T}";
+
+    /// <summary>The card's name for screen readers: "Document scan, 300 dpi, 2550 by 3510 pixels, 4:23 PM".</summary>
+    public string AccessibleName =>
+        $"{(Entry.Intent == ScanIntent.Photo ? "Photo scan" : "Document scan")}, {Entry.Dpi} dpi, "
+        + $"{(int)Entry.PixelSize.Width} by {(int)Entry.PixelSize.Height} pixels, {Entry.Date:t}";
+
+    /// <summary>The card's tooltip: what the card does not show ("300 dpi · 2550 × 3510 px · Just now").</summary>
+    public string ToolTipText(DateTime now) =>
+        $"{Entry.Dpi} dpi · {PixelSizeText} · {ScanTimeConverter.Relative(Entry.Date, now)}";
 }
 
 /// <summary>
@@ -406,7 +433,36 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// <summary>The password of the save running now (<see cref="ProtectionFor"/>); null between saves.</summary>
     private PdfProtection? _savePassword;
     /// <summary>"Last PDF: 412 KB", shown under the PDF size choice; empty before the first PDF.</summary>
-    public string LastPdfSizeText => LastPdfBytes is { } bytes ? $"Last PDF: {SavedFiles.SizeText(bytes)}" : "";
+    public string LastPdfSizeText => LastPdfBytes is { } bytes ? $"Last PDF: {RoundedSizeText(bytes)}" : "";
+
+    /// <summary>A file size as the inspector shows it: whole kilobytes ("498 KB"), else as <see cref="SavedFiles.SizeText"/> ("1.2 MB").</summary>
+    internal static string RoundedSizeText(long bytes) =>
+        bytes >= 1000 && Math.Round(bytes / 1000.0) < 1000 ? $"{Math.Round(bytes / 1000.0):0} KB" : SavedFiles.SizeText(bytes);
+
+    /// <summary>
+    /// The name the next file gets with <paramref name="template"/> and the current settings, for the
+    /// inspector's preview ("Scan 2026-10-20 4.pdf"); null when it can't be worked out. Only reads
+    /// the counter: nothing is written.
+    /// </summary>
+    public string? FileNamePreview(string template)
+    {
+        var s = Settings;
+        try
+        {
+            var flow = TaskCatalog.FlowOf(s);
+            var format = flow == TaskFlowKind.ReceiptSplit ? OutputFormats.PageFormat(s.Format)
+                : s.Intent == ScanIntent.Photo ? OutputFormats.ImageFormatOrJpeg(s.Format)
+                : s.DocumentMultiPage ? OutputFormats.QueueFormat(s.Format)
+                : s.Format;
+            string name = new NamingTemplate(template)
+                .BaseFilename(new NamingContext(PeekCounter() + 1, DateTime.Now, s.Intent) { Task = TaskCatalog.Infer(s) });
+            return $"{name}.{format.FileExtension()}";
+        }
+        catch
+        {
+            return null;
+        }
+    }
     /// <summary>Bumped whenever files are written to the destination folder (drives the Saved tab).</summary>
     public int SavedRevision { get; private set; }
 
@@ -415,6 +471,9 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// above the window content; null once the bar is dismissed or the next scan starts.
     /// </summary>
     public IReadOnlyList<string>? SavedBarPaths { get; private set; }
+
+    /// <summary>What the last save's several files are, for the Saved bar: "photos", "receipts" or "files".</summary>
+    public string SavedBarNoun { get; private set; } = "files";
     /// <summary>What the bar says was saved: "Scan 2026-10-19 3.pdf (412 KB)", or "3 files in Scans".</summary>
     public string SavedBarText { get; private set; } = "";
 
@@ -2971,6 +3030,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         SavedRevision++;
         SavedBarPaths = paths.Count > 0 ? [.. paths] : null;
         SavedBarText = SavedSummary(paths);
+        SavedBarNoun = Settings.Intent == ScanIntent.Photo ? "photos" : IsReceiptFlow ? "receipts" : "files";
     }
 
     /// <summary>"Scan 3.pdf (412 KB)" for one file (the size for PDFs), "3 files in Scans" for several.</summary>
@@ -3446,6 +3506,22 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                 if (path is null) continue;
                 try { File.Delete(path); } catch { /* best effort */ }
             }
+        }
+    }
+
+    /// <summary>The counter's last value, without taking the next one (0 when none was taken yet).</summary>
+    private int PeekCounter()
+    {
+        string counterPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "CompleteScanner", "counter.txt");
+        try
+        {
+            return File.Exists(counterPath) ? int.Parse(File.ReadAllText(counterPath).Trim()) : _counterFallback;
+        }
+        catch
+        {
+            return _counterFallback;
         }
     }
 

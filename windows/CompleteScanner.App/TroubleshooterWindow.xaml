@@ -14,7 +14,7 @@
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button x:Name="RefreshButton" Content="Refresh" ui:Icon.Glyph="&#xE72C;" MinWidth="96"
                             Style="{StaticResource IconTextButtonStyle}"
-                            ToolTip="Look for scanners again and repeat the checks"
+                            ToolTip="Check again"
                             AutomationProperties.HelpText="Looks for scanners again and repeats the checks"
                             Click="Refresh_Click" />
                     <Button x:Name="CloseButton" Content="Close" IsCancel="True" IsDefault="True" MinWidth="96" Margin="8,0,0,0"
@@ -22,7 +22,7 @@
                 </StackPanel>
                 <Button x:Name="CopyButton" DockPanel.Dock="Left" Content="Copy diagnostics" ui:Icon.Glyph="&#xE8C8;"
                         Style="{StaticResource SubtleButtonStyle}" HorizontalAlignment="Left"
-                        ToolTip="Copy these checks and the list of connections, to send to support"
+                        ToolTip="Copy the results to send to support"
                         AutomationProperties.HelpText="Copies these checks and the list of connections as text"
                         Click="Copy_Click" />
                 <TextBlock x:Name="FooterStatus" Style="{StaticResource CaptionText}" VerticalAlignment="Center"
@@ -31,15 +31,19 @@
             </DockPanel>
         </Border>
 
-        <!-- Header: what is listed, and how many things to look at. -->
+        <!-- Header: what is listed and how many things to look at, in one line; "Looking for scanners…"
+             while a Refresh runs. -->
         <StackPanel DockPanel.Dock="Top" Margin="24,20,24,12">
             <TextBlock Text="Why isn't my scanner listed?" Style="{StaticResource SubtitleText}" TextWrapping="Wrap" />
-            <TextBlock x:Name="HeadlineText" Style="{StaticResource BodyStrongText}" TextWrapping="Wrap" Margin="0,8,0,0" />
-            <TextBlock x:Name="SummaryText" Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" Margin="0,2,0,0"
+            <TextBlock x:Name="HeadlineText" Style="{StaticResource BodyStrongText}" TextWrapping="Wrap" Margin="0,8,0,0"
                        AutomationProperties.LiveSetting="Polite" />
+            <TextBlock x:Name="SummaryText" Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" Margin="0,2,0,0"
+                       AutomationProperties.LiveSetting="Polite" Visibility="Collapsed" />
         </StackPanel>
 
-        <!-- One card per check (see TroubleshooterWindow.xaml.cs): problems, warnings, what is fine, tips. -->
+        <!-- One card per check that needs a look (see TroubleshooterWindow.xaml.cs): problems, warnings
+             and tips, each with its first sentence, its buttons and "More help"; a compact row for each
+             check that passed. -->
         <ScrollViewer x:Name="ChecksScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                       Focusable="False" Padding="24,0,24,16">
             <StackPanel x:Name="ChecksPanel" AutomationProperties.Name="Checks"

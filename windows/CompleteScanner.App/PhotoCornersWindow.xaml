@@ -35,7 +35,11 @@
                     <TextBlock x:Name="ReasonText" Style="{StaticResource BodyText}" TextWrapping="Wrap"
                                AutomationProperties.LiveSetting="Polite" />
                 </DockPanel>
-                <TextBlock x:Name="HelpText" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                <DockPanel Margin="0,4,0,0" HorizontalAlignment="Left">
+                    <ui:InfoButton x:Name="KeyboardInfoButton" DockPanel.Dock="Right" Label="keyboard use" Heading="Keyboard"
+                                   Margin="4,-4,0,-4" />
+                    <TextBlock x:Name="HelpText" Style="{StaticResource CaptionText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                </DockPanel>
             </StackPanel>
             <Border Grid.Column="1" Style="{StaticResource CornersChipStyle}" Margin="0,4,0,0">
                 <StackPanel Orientation="Horizontal">
@@ -55,7 +59,7 @@
                     ToolTip="Go back to the corners found in the photo" />
             <Button x:Name="WholePhotoButton" DockPanel.Dock="Left" Style="{StaticResource SubtleButtonStyle}"
                     ui:Icon.Glyph="&#xE740;" Margin="4,0,0,0" Click="WholePhoto_Click"
-                    ToolTip="Add the whole photo as the page, as it is" />
+                    AutomationProperties.HelpText="Add the whole photo as the page, as it is" />
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Button x:Name="SkipButton" IsCancel="True" MinWidth="96" Click="Skip_Click" />
                 <Button x:Name="UseButton" IsDefault="True" MinWidth="96" Margin="8,0,0,0"

@@ -20,12 +20,12 @@ public sealed partial class AppViewModel
     /// <summary>The review holds receipts rather than photos: it is titled and saved as receipts.</summary>
     public bool IsReceiptReview { get; private set; }
 
-    /// <summary>The review's title: "Found 3 receipts", or for photos "Detected 3 photos".</summary>
+    /// <summary>The review's title: "Found 3 receipts", or for photos "Found 3 photos".</summary>
     public string ReviewTitle => IsReceiptReview
         ? Receipts.ReviewTitle(DetectedPhotos.Count)
-        : $"Detected {DetectedPhotos.Count} photo{(DetectedPhotos.Count == 1 ? "" : "s")}";
+        : $"Found {DetectedPhotos.Count} photo{(DetectedPhotos.Count == 1 ? "" : "s")}";
 
-    /// <summary>The review's save button: "Save 2 Receipts", "Save as One PDF", "Save 3 Photos".</summary>
+    /// <summary>The review's save button: "Save 2 Receipts", "Save as One PDF", "Save 3 photos".</summary>
     public string ReviewSaveTitle
     {
         get
@@ -33,7 +33,7 @@ public sealed partial class AppViewModel
             int included = DetectedPhotos.Count(p => p.Photo.Included);
             return IsReceiptReview
                 ? Receipts.SaveTitle(included, Settings.TaskOptions.ReceiptCombine, Settings.Format)
-                : $"Save {included} Photo{(included == 1 ? "" : "s")}";
+                : $"Save {included} photo{(included == 1 ? "" : "s")}";
         }
     }
 

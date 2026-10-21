@@ -22,9 +22,11 @@ public partial class MainWindow
 
     private void SetUpImport()
     {
-        ImportPhotosButton.Content = PhotoImport.ButtonLabel;
-        ImportPhotosButton.ToolTip = PhotoImport.ButtonHint;
+        // An icon button: its tooltip is its name; what it does is its help text.
+        string importName = PhotoImport.ButtonLabel.TrimEnd('…');
+        ImportPhotosButton.ToolTip = importName;
         ToolTipService.SetShowOnDisabled(ImportPhotosButton, true);
+        AutomationProperties.SetName(ImportPhotosButton, importName);
         AutomationProperties.SetHelpText(ImportPhotosButton, PhotoImport.ButtonHint);
         CanvasImportButton.Content = PhotoImport.ButtonLabel;
         CanvasImportButton.ToolTip = PhotoImport.ButtonHint;
@@ -80,12 +82,16 @@ public partial class MainWindow
     private void Window_PreviewDragOver(object sender, DragEventArgs e)
     {
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
-        e.Effects = DroppedPhotos(e) is null ? DragDropEffects.None : DragDropEffects.Copy;
+        var photos = DroppedPhotos(e);
+        e.Effects = photos is null ? DragDropEffects.None : DragDropEffects.Copy;
+        // "Drop to add as pages" while the drop would add them (not when it would only say why not).
+        ShowDropOverlay(photos is not null && ViewModel.CanImportPhotos);
         e.Handled = true;
     }
 
     private void Window_PreviewDrop(object sender, DragEventArgs e)
     {
+        ShowDropOverlay(false);
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
         e.Handled = true;
         if (DroppedPhotos(e) is not { } paths)

@@ -39,8 +39,12 @@
             </Grid.ColumnDefinitions>
             <StackPanel Margin="0,0,16,0">
                 <TextBlock Text="Adjust crop" Style="{StaticResource SubtitleText}" TextWrapping="NoWrap" />
-                <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0"
-                           Text="Drag a corner to resize or drag inside the frame to move it. Arrow keys move it, Ctrl+arrow keys resize it, and Shift takes bigger steps." />
+                <DockPanel Margin="0,4,0,0" HorizontalAlignment="Left">
+                    <ui:InfoButton DockPanel.Dock="Right" Label="keyboard use" Heading="Keyboard" Margin="4,-4,0,-4"
+                                   InfoText="Arrow keys move the frame, Ctrl+arrow keys resize it, Shift takes bigger steps." />
+                    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" VerticalAlignment="Center"
+                               Text="Drag corners to resize, or inside to move." />
+                </DockPanel>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,4,0,0">
                 <Border Style="{StaticResource CropChipStyle}" ToolTip="Crop size in scanned pixels">

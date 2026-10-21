@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
@@ -64,9 +65,8 @@ public partial class ScanHistoryView : UserControl
         bool empty = count == 0;
         EmptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
         CardsPanel.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
-        CountText.Text = count == 1
-            ? "1 scan. Select it to enlarge it."
-            : $"{count} scans, newest first. Select one to enlarge it.";
+        CountText.Text = count == 1 ? "1 scan" : $"{count} scans";
+        AutomationProperties.SetHelpText(CountText, "Newest first. Select a scan to enlarge it.");
 
         // A new scan arrived: re-measure so it reads "Just now" rather than against a stale clock.
         var newest = empty ? null : _viewModel!.History[0];
@@ -94,6 +94,12 @@ public partial class ScanHistoryView : UserControl
         Header.Margin = new Thickness(header.Left, 16, header.Right, 8);
     }
 
+    /// <summary>The card's tooltip, made as it opens so its "Just now" or "12 min ago" is current.</summary>
+    private void Card_ToolTipOpening(object sender, ToolTipEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: HistoryItem item } card) card.ToolTip = item.ToolTipText(DateTime.Now);
+    }
+
     private void Thumbnail_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { DataContext: HistoryItem item }) return;
@@ -111,8 +117,8 @@ public partial class ScanHistoryView : UserControl
 }
 
 /// <summary>
-/// Card time line: "Just now" or "12 min ago" next to the clock time while recent, then the
-/// clock time alone (with "Yesterday" or the date once the day has changed).
+/// Card time line: the clock time on the day of the scan, then the date with it ("10/19/2026 4:23 PM").
+/// How long ago ("Just now", "12 min ago") is in the card's tooltip (<see cref="Relative"/>).
 /// Values: the scan's <see cref="DateTime"/> and the current time.
 /// </summary>
 public sealed class ScanTimeConverter : IMultiValueConverter
@@ -120,7 +126,25 @@ public sealed class ScanTimeConverter : IMultiValueConverter
     public object Convert(object[] values, Type targetType, object? parameter, CultureInfo culture)
     {
         if (values.Length < 2 || values[0] is not DateTime date || values[1] is not DateTime now) return "";
-        return Format(date, now, culture);
+        return Short(date, now, culture);
+    }
+
+    /// <summary>"4:23 PM" today, "10/19/2026 4:23 PM" on an earlier day.</summary>
+    public static string Short(DateTime date, DateTime now, CultureInfo culture)
+    {
+        string time = date.ToString("t", culture);
+        return date.Date == now.Date ? time : $"{date.ToString("d", culture)} {time}";
+    }
+
+    /// <summary>"Just now", "12 min ago", "Today", "Yesterday" or the date: how long ago, for the tooltip.</summary>
+    public static string Relative(DateTime date, DateTime now)
+    {
+        var age = now - date;
+        if (age < TimeSpan.FromMinutes(1)) return "Just now";
+        if (age < TimeSpan.FromHours(1)) return $"{(int)age.TotalMinutes} min ago";
+        if (date.Date == now.Date) return "Today";
+        if (date.Date == now.Date.AddDays(-1)) return "Yesterday";
+        return date.ToString("d", CultureInfo.CurrentCulture);
     }
 
     public static string Format(DateTime date, DateTime now, CultureInfo culture)

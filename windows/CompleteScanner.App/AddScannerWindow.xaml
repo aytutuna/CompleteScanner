@@ -18,16 +18,22 @@
 
         <StackPanel Margin="24,20,24,16">
             <TextBlock Text="Add a network scanner" Style="{StaticResource SubtitleText}" TextWrapping="Wrap" />
-            <TextBlock Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" Margin="0,6,0,16"
-                       Text="Scanners on your network usually appear on their own. If yours does not, enter its IP address or host name. You can find it on the scanner's network settings page or its control panel." />
+            <!-- One line; where to find the address and the forms it can take are behind the ⓘ. -->
+            <DockPanel Margin="0,6,0,16" HorizontalAlignment="Left">
+                <ui:InfoButton x:Name="AddressInfoButton" DockPanel.Dock="Right" Label="the scanner's address" Margin="4,-2,0,-2"
+                               InfoText="Most network scanners appear on their own. The address is on the scanner's screen or its network settings page. Forms: 192.168.1.50, scanner.local, 192.168.1.50:8080, https://192.168.1.50." />
+                <TextBlock Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" VerticalAlignment="Center"
+                           Text="Enter the scanner's IP address or name." />
+            </DockPanel>
 
             <TextBlock x:Name="AddressLabel" Text="Address" Style="{StaticResource FieldLabelText}" />
-            <TextBox x:Name="AddressBox" AutomationProperties.LabeledBy="{Binding ElementName=AddressLabel}"
-                     AutomationProperties.HelpText="For example 192.168.1.50, scanner.local or https://192.168.1.50"
-                     TextChanged="AddressBox_TextChanged" />
-            <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,6,0,0"
-                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                       Text="For example 192.168.1.50, scanner.local, 192.168.1.50:8080 or https://192.168.1.50" />
+            <Grid>
+                <TextBox x:Name="AddressBox" AutomationProperties.LabeledBy="{Binding ElementName=AddressLabel}"
+                         AutomationProperties.HelpText="For example 192.168.1.50, scanner.local, 192.168.1.50:8080 or https://192.168.1.50"
+                         TextChanged="AddressBox_TextChanged" />
+                <TextBlock x:Name="AddressPlaceholder" Style="{StaticResource PlaceholderText}"
+                           Text="e.g. 192.168.1.50 or scanner.local" />
+            </Grid>
 
             <!-- Progress and errors; announced to screen readers as they change. -->
             <DockPanel x:Name="StatusPanel" Margin="0,14,0,0" Visibility="Collapsed">

@@ -1425,6 +1425,25 @@ public class ModelsCompatTests
         Assert.Contains("\"twainDriverWindow\"", json);
         Assert.Equal(["twain:EPSON Perfection V600"], Decode<AppPreferences>(json).TwainDriverWindow);
     }
+
+    [Fact]
+    public void InspectorSections_MissingOrCorrupt_IsEmptyAndRoundTrips()
+    {
+        Assert.Empty(Decode<AppPreferences>("""{ "appearance": "dark" }""").InspectorSections);
+        var corrupt = Decode<AppPreferences>("""{ "appearance": "dark", "inspectorSections": ["pages"] }""");
+        Assert.Empty(corrupt.InspectorSections);
+        Assert.Equal(AppAppearance.Dark, corrupt.Appearance);
+        Assert.Empty(Decode<AppPreferences>("""{ "inspectorSections": null }""").InspectorSections);
+
+        var preferences = new AppPreferences();
+        preferences.InspectorSections["pages"] = true;
+        preferences.InspectorSections["output"] = false;
+        string json = CompatFixtures.Encode(preferences);
+        Assert.Contains("\"inspectorSections\"", json);
+        var read = Decode<AppPreferences>(json).InspectorSections;
+        Assert.True(read["pages"]);
+        Assert.False(read["output"]);
+    }
 }
 
 // MARK: - Store files

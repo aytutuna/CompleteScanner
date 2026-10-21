@@ -25,6 +25,7 @@ public partial class AddScannerWindow : Window
     public AddScannerWindow(EsclScannerBackend backend)
     {
         InitializeComponent();
+        Placeholders.Attach(AddressBox, AddressPlaceholder);
         _backend = backend;
         ConfirmCertificate = certificate =>
             new CertificateTrustWindow(certificate, CertificateTrustWindow.AddAction) { Owner = this }.ShowDialog() == true;

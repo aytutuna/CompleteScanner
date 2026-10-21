@@ -108,27 +108,86 @@ dotnet run --project CompleteScanner.App     # launch the app
 
 The main window has four tabs, like the macOS app:
 
-- **Start** — "What are you scanning?": one card per task (Document to PDF, Multi-page from
-  feeder, Photos, Old photo restoration, Quick scan, Email a document, Two-sided document, ID card,
-  Copy, Scan to Word, Receipts, Batch of separate documents, Book or magazine, Archive document) and
-  the user's own presets, each badged with its task. Picking a card sets everything up for that task, keeps the save folder, fits
-  the settings to the connected scanner and opens **Scan**; a card the scanner cannot do (the
-  feeder task on a flatbed-only scanner) is greyed out with the reason. On **Scan** a banner
+- **Start** — "What are you scanning?": the user's presets first (only when there are some), then
+  one tile per task in three groups: **Documents** (Document to PDF, Multi-page from feeder,
+  Two-sided document, Batch of separate documents, Scan to Word, Email a document, Archive
+  document), **Photos & images** (Photos, Old photo restoration, Quick scan) and **Other** (ID card,
+  Copy, Receipts, Book or magazine). A tile is an icon and a title; what the task does and what it
+  sets are its tooltip (also on keyboard focus) and its help text for screen readers. Picking a tile
+  sets everything up for that task, keeps the save folder, fits
+  the settings to the connected scanner and opens **Scan**; a tile the scanner cannot do (the
+  feeder task on a flatbed-only scanner) is greyed out with a short reason ("Needs a document
+  feeder"; the full reason is the tooltip). On **Scan** a banner
   names the active task and says what to do; **Change task** goes back to Start and the close
   button leaves the task (its settings stay). The task is saved with the settings, so a
-  restart comes back to it. A first run opens on Start, later runs on Scan. Each group of
-  cards is one Tab stop; the arrow keys move between cards and Enter or Space picks one.
+  restart comes back to it. A first run opens on Start, later runs on Scan. The task tiles are
+  one Tab stop, the presets another; the arrow keys move between tiles and Enter or Space picks one.
 - **Scan** — preview canvas, page queue and the settings inspector (Preview/Scan stay pinned
   at the bottom). Adjustment sliders are centered (-100…+100, 0 = neutral) and preview live
   on the canvas; queued pages can be reordered, rotated 90° or removed; detected photos open
   in a review where each crop can be corrected by hand. **Cancel** works in every busy phase
   (scanning, processing, photo detection, OCR, PDF writing, exports) and never leaves a
   partial file behind.
-- **Scans** — this session's scans, newest first; click one to enlarge it.
+- **Scans** — this session's scans, newest first; click one to enlarge it. A card shows the
+  scan's mode as an icon and the time; resolution, pixel size and how long ago are its tooltip.
 - **Saved** — the destination folder's files, newest first, with open, share, show-in-Explorer
   and rotate-in-place for JPEG/PNG/TIFF on each card; its **…** button and its context menu
   (right-click, Shift+F10 or the Menu key) add open with, email and copy (see
   [Share, email, open with, copy](#share-email-open-with-copy)).
+
+### Less text on screen
+
+Each screen shows icons, short labels and what prevents a mistake; explanations are one hover or
+one click away (the layout half of the text spec; the shared Core strings it shortens, and
+the Mac's matching layout, come in a second step, so the Mac app is unchanged by this one).
+
+- **Inspector sections.** Scanner (Source, Sides, Flip on, Paper size, Resolution, Color), Output
+  (Format, PDF size, the last PDF's size, Searchable PDF, Collect pages before saving, Save to; in
+  Photos mode it is **Photos**: Find each photo, Straighten photos, Format, Save to), Adjustments,
+  Pages (Skip blank pages, Crop to page, Straighten pages, Rotate pages upright, Split facing
+  pages), Split into documents, Archive & password (PDF/A and the password) and More options (Also
+  save text, After saving, File name), after the Photocopy or Receipts section of those tasks. The
+  task section, Scanner and Output start open, the rest collapsed; each stays as the user leaves
+  it (`inspectorSections` in `preferences.json`, not in presets), and the Restore old photos, Book
+  or magazine, Batch and Archive tasks open their own section. A collapsed header shows what is on
+  in it ("Skip blank · Upright +1", "Separator sheets", a lock and "Password on") with an accent
+  dot when anything differs from the defaults; its accessible name carries the same summary.
+- **Hide or disable.** What does nothing for the task or format is hidden (Pages and Split for
+  copies and receipts, Archive & password and Searchable PDF when the save writes no PDF: a queue
+  of JPEG pages still saves a PDF, so they show for it, and Archive & password shows for a copy
+  with Also save as PDF on). **What counts as blank** shows whenever collected pages are checked
+  for blanks, Skip blank on or off (it decides which pages the strip flags and which sheets are
+  separators), with "Check flagged pages before saving" at High. What conflicts with another choice is greyed out with a short reason and a glyph next
+  to it ("Needs the feeder", "Not with PDF/A", "Not with a password", "Not with two-sided", "Needs
+  Collect pages", "Needs {docdate} in File name"); the full sentence is its tooltip (shown on disabled controls too) and its help
+  text. The captions that explained a switch are its tooltip and help text now.
+- **ⓘ flyouts** (`InfoButton`, a Popup styled as a Fluent flyout) hold procedures and keyboard
+  help: the task banner's fuller guidance (the banner shows the step's first sentence), how
+  splitting works, where a network scanner's address is, and the keys of the crop, spread and
+  corner editors. The flyout takes focus, closes with Esc and gives the focus back.
+- **State instead of instructions.** "Drag to select an area" on a preview until an area is
+  selected, "Using the selected area" (with × to clear it) under Paper size, "Drop to add as pages"
+  while photo files are dragged over the window, a **Not split** badge with **Split…** on a spread
+  kept whole, a scissors or link on the gap between two pages (Split here / Join), the next file's
+  name under File name (with an **Insert** menu for its parts), and "1 · front" side badges.
+- **Save** is a split button: **Save PDF** with a badge of the pages it saves and a lock while the
+  PDF gets a password (named "Save password-protected PDF, 5 pages" for screen readers), and a ▾
+  menu with **Add to existing PDF…**. Importing photos of documents is an icon button next to it.
+- **The status bar** shows at most six words, facts only ("6 pages added · 1 blank", "Saved"); a
+  setting changed for the scanner, or a two-sided scan that came back one-sided, stays on it as a
+  short warning ("Ready — Office Scanner · feeder used", "300 dpi used", "3 pages added · one side
+  only", "Saved · 600 dpi used"); its accessible name is the whole sentence, read out as it changes. The Saved bar counts
+  what was saved: "3 photos · Scans", "3 receipts · Scans", "3 files · Scans".
+- **Dialogs** are trimmed the same way: the troubleshooter shows each check's first sentence with
+  its buttons and a **More help** expander (a passed check is one line, its detail the tooltip, unless it offers an action such as **Add
+  scanner by address…**, which keeps its card and button),
+  the password dialog keeps its warning and a strength bar, and the add-scanner, crop, spread,
+  corner and save-preset dialogs keep one line each.
+
+The short texts that have no home in Core yet are in `LessText.cs` (`ShortText`, with
+`StatusLine`, `TextSplit`, `SideBadge`, `TaskGroups` and `InspectorSummary`), checked by
+`LessTextTests` in `CompleteScanner.App.Tests`; the PDF/A and password texts live in their
+Windows-only Core files (`PdfA.cs`, `PdfEncryption.cs`).
 
 A scanner that several backends reach (WIA and TWAIN for one USB scanner, WIA and eSCL for
 one network MFP) is one row in the sidebar. The app connects through WIA when it can, then
@@ -202,8 +261,7 @@ properties, eSCL feeder regions on center-fed feeders, and TWAIN drivers that di
 Every document page collected in the queue is checked for being blank as it is scanned
 (`BlankPageDetector`, run by `PageProcessor` on the page as scanned, before the adjustments). A
 page that looks blank is never removed from the queue: the page strip badges it **Looks blank**
-and offers **Skip**. With **Skip blank pages** on (the inspector's **Output** section, under
-"Collect pages, then Save PDF") it is dimmed and badged **Blank, skipped** instead, and offers
+and offers **Skip**. With **Skip blank pages** on (the inspector's **Pages** section) it is dimmed and badged **Blank, skipped** instead, and offers
 **Keep**; the button is always shown, not only on hover. Pages are left out only when the queue
 is saved, and the status says how many were ("Saved 5-page PDF: … — 1 skipped page was left
 out"). A second click on a page undoes the first. The strip's label counts them ("24 pages in
@@ -232,7 +290,7 @@ show-through, and pencil notes on otherwise empty backs.
 ### Crop and straighten
 
 **Crop to page** cuts each page out of the scanner's background, and **Straighten pages** turns a
-page that lies at a slant straight (the inspector's **Output** section, under the blank-page
+page that lies at a slant straight (the inspector's **Pages** section, under the blank-page
 settings). Both are off unless a task turns them on: the **Two-sided document** task straightens,
 since feeders pull sheets in at a slant; no task crops yet. Like the blank-page check they run on
 pages collected in the queue only, after the blank-page check and before the adjustments, and a
@@ -375,7 +433,7 @@ QR code. Only one CompleteScanner window receives at a time.
 
 ### Rotate pages upright
 
-**Rotate pages upright** (the inspector's **Output** section, under crop and straighten) turns a
+**Rotate pages upright** (the inspector's **Pages** section, under crop and straighten) turns a
 page put in upside down or sideways the right way up by reading its text with Windows OCR
 (`WindowsOrientationScorer`: the recognizer of the user's languages, else the first installed).
 It is off unless a task turns it on: the **Two-sided document** task does, since sheets go into a
@@ -423,7 +481,7 @@ tables with little running text, pages in other scripts with the matching OCR la
 The **ID card** task (flatbed only; greyed out on a scanner without one) makes a copy of an ID
 card or driving licence with both sides on one page at real size. The banner guides three steps:
 **Scan front** (the card face down near a corner of the glass, the lid closed), **Scan back** (the
-card turned over where it lies; **Skip back side** when nothing is printed there), then the
+card turned over where it lies; **No back side** when nothing is printed there), then the
 review. Each scan takes the whole glass (or the area selected on the preview). The card is found among what stands out from the lid
 (`PhotoDetector`, things smaller than 1.5 in ignored, four at most): the region closest to an ID-1
 card in shape and size (85.60 × 53.98 mm, aspect 1.586; up to a 6 in passport page), else the
@@ -471,19 +529,20 @@ printer) makes the scanner and a printer a photocopier: the main button is **Cop
 prints straight away, at real size: a page scanned at 300 dpi prints at its pixels / 300 inches, 1
 inch on the glass is 1 inch on paper, and nothing is scaled to the page unless **Fit to page** is on
 (then it is made smaller, never larger, to fit the part of the paper the printer prints on, turned a
-quarter when that makes it larger, and centred). The inspector's **Copies** section has the
+quarter when that makes it larger, and centered). The inspector's **Photocopy** section has the
 **Printer** (the default printer unless another is chosen; a chosen printer that is no longer
 installed falls back to the default, and choosing the default follows the default), its paper,
-the **Number of copies** (1 to 99), **Fit to page**, **Also save a PDF** and **Print ruler test
-page**; color or grey is the inspector's Color. On the glass with nothing selected and Automatic
+**Copies** (1 to 99), **Fit to page**, **Also save a PDF** and **Print test ruler**; color or grey
+is the inspector's Color. On the glass with nothing selected and Automatic
 paper size, the part of the glass the printer's paper covers is scanned from the corner, as a copier
 copies the sheet it prints on; another paper size is asked of the printer too; an area selected on
 the preview is centred on the paper; the feeder copies a whole stack. The status says what was sent
 ("Sent 2 pages to Office Laser, 3 copies.") and what the printer's margins cut off ("Edges may be cut
 by up to 5 mm (printer margins).", or "Larger than the paper: …" for a scan larger than the paper);
-the inspector says the same before copying. Copies are scanned like any scan (they are in the Scans
+the inspector says it before copying ("Edges may lose up to 5 mm", with a warning glyph, while Fit
+to page is off). Copies are scanned like any scan (they are in the Scans
 tab) but never queued or spooled, so they are printed as scanned: no page is left out as blank,
-cropped or straightened (those switches are off for the task, saying so); **Also save a PDF** saves
+cropped or straightened (the Pages and Split sections are hidden for the task); **Also save a PDF** saves
 each copy as "Copy {date} {counter}" after it has gone to the printer, and also when printing failed
 (the error then names the PDF), so the scanned pages are not lost; a Cancel while the PDF is written
 says the copy was sent and the PDF not saved. Without a printer the section says so and has **Look
@@ -516,8 +575,8 @@ an imageable area.
 ### PDF size
 
 The inspector's **Output** section has a **PDF size** choice for PDF output: Best, Standard,
-Compact or Smallest, with a line under it saying what the chosen size does and how big the
-last saved PDF was (the status bar names the size too). `PdfImageEncoding` plans each page:
+Compact or Smallest (what each does is its tooltip), with a line under it saying how big the
+last saved PDF was ("Last PDF: 498 KB"; the status bar's accessible name gives the exact size). `PdfImageEncoding` plans each page:
 
 | Size | Page images at most | JPEG quality (color / gray) | Color pages without color | Black & white pages (CCITT G4) at most |
 |---|---|---|---|---|
@@ -598,16 +657,15 @@ a gray JPEG at quality 100.
 
 ### Archival PDF (PDF/A) and the text layer
 
-**Archival PDF (PDF/A)**, under the PDF size in the inspector's Output section, saves every PDF
+**Archival PDF (PDF/A)**, in the inspector's Archive & password section, saves every PDF
 as PDF/A-2b, the ISO format for keeping documents: the file carries its own color profile (sRGB),
 its fonts and its description (title, dates, producer) in XMP metadata that matches the
 document information, and an identifier. It works with every PDF size and every PDF the app
 saves (collected pages, split documents, receipts, the ID card's page, a copy's PDF). The
 **Archive document** task sets it up: 300 dpi color, Best size, searchable, PDF/A. Turning the
 switch off, or choosing another format, ends the task; picking any other task turns it off.
-PDF/A files cannot have a password: while **Protect with a password** is on, this switch is
-greyed out, and the other way round, with the note "PDF/A can't be password-protected." under
-them.
+PDF/A files cannot have a password: while **Require a password** is on, this switch is greyed out
+with a lock and "Not with a password" next to it, and the other way round ("Not with PDF/A").
 
 The invisible text layer of a searchable PDF now uses a tiny font embedded in the file, built
 from code (`GlyphlessFont`): one empty glyph, half an em wide, for every character. Text in any
@@ -628,12 +686,15 @@ with `--flavour 2b`. Run `verapdf --flavour 2b` on a saved file where it is inst
 
 ### Password-protected PDFs
 
-**Protect with a password**, under the archival switch in Output, makes every PDF the app saves
+**Require a password**, under the archival switch in Archive & password, makes every PDF the app saves
 open only with a password (collected pages, pages saved as they are scanned, split documents,
 receipts, the ID card's page, a copy's PDF; the separator sheet is not a saved document). The
 password is asked for when saving, in a dialog that asks for it twice, says how hard it is to
-guess (weak, fair, strong: a rough guess from its length and the kinds of characters in it) and
-offers **Allow printing** and **Allow copying text and images** (both on). It is asked for once
+guess (a bar of four segments with "Weak · use 12+ characters", "Fair · longer is safer" or "Strong"; the full
+advice is the tooltip: a rough guess from its length and the kinds of characters in it), keeps its
+warning in view ("It can't be recovered if forgotten. Every PDF you save now gets it.") and offers
+**Allow printing** and **Allow copying** (text and images; both on). While it is on, the Save
+button carries a lock and the collapsed Archive & password header says "Password on". It is asked for once
 per save and used for every file of that save; the next save asks again. It is never stored:
 settings and presets keep only the switch (`"protect": true`), and nothing about it goes to
 logs, `devices.txt` or the Saved list. The dialog's boxes are emptied when it closes, the
@@ -673,7 +734,7 @@ other apps. Not run here: qpdf (not installed).
 
 ### Add pages to an existing PDF
 
-**Add to existing PDF…**, the button with the file icon between Save and Clear under the queue,
+**Add to existing PDF…**, in the menu of the Save button's ▾,
 picks a PDF (the picker opens in the save folder) and adds the queued pages to its end; so does
 **Add the scanned pages to this PDF** in a PDF's menu in the Saved tab. The pages are the ones
 the queue would save (pages skipped by hand, blank pages and separator sheets stay out; a split
@@ -728,9 +789,8 @@ the known divergences from the macOS app under [Status](#status--whats-verified-
 
 **Not done yet** (from the M21 spec): the Mac's half (`PDFAppender.swift` with PDFKit, which
 builds on the existing `PDFBuilder.swift` and does not wait for the PDF writer's port); the start
-screen's "Add pages to a PDF" task; the picker showing the chosen file's first page; and the
-"Save as new PDF / Add to existing PDF…" split button (an icon button next to Save stands in for
-it).
+screen's "Add pages to a PDF" task; and the picker showing the chosen file's first page. (The
+"Save as new PDF / Add to existing PDF…" split button is there now: Save with its ▾ menu.)
 
 Checked here: `PdfReaderLiteTests` and `PdfAppenderTests` (hand-made fixtures for each
 cross-reference layout, page-tree shape and refusal, and our own plain, PDF/A and
@@ -763,7 +823,7 @@ cards offer the same actions. Nothing leaves the PC without the user choosing wh
 - **Copy** puts the files on the clipboard (pasting into a folder copies them); for one image
   file its picture goes on the clipboard too, for pasting into a document or an image editor.
 
-**After saving** (in the inspector's Output section, and next to the photo review's Save
+**After saving** (in the inspector's More options section, and next to the photo review's Save
 button) runs one of these on its own once a save has finished: **Do nothing** (the default),
 **Open**, **Show in folder** or **Share…**. Several files are shown in their folder rather than
 opened one by one. A cancelled or failed save runs nothing, and a file that has been moved or
@@ -783,10 +843,10 @@ For editable text rather than a picture of the paper:
   becomes **Save Word** or **Save Text** and writes one file with the text of every page; a scan
   saved at once is written as its own Word document or text file. The ID card's page is a PDF or
   an image whatever the format says.
-- **Also save text (.txt)** (inspector, Document) writes a text file with the PDF's name next to
+- **Also save text (.txt)** (inspector, More options) writes a text file with the PDF's name next to
   every PDF of a document saved (the next free name when that one is taken; nothing is ever
-  replaced). It is greyed out, with the reason, when a save writes no PDF, and in the ID card and
-  Copy tasks, whose PDFs are pictures of a card or of a copy. Picking a task turns it off.
+  replaced). It is hidden when a save writes no PDF, and in the ID card and Copy tasks, whose PDFs
+  are pictures of a card or of a copy. Picking a task turns it off.
 - **Scan to Word** on the start screen: 300 dpi, color, pages collected, saved as a Word
   document. Choosing another format ends the task.
 - **Include page images** (inspector, Output, for Word): each page of the Word document starts
@@ -889,7 +949,7 @@ their date: 300 dpi, grayscale, Compact PDFs, searchable, named `Receipt {docdat
   Faded print at 0.62 on paper fading from 0.95 to 0.80 comes out at 0.6 or darker on white.
 - **Review**: the photo review, titled "Found 3 receipts", with Keep, turn and Fix crop (a
   receipt is cut out upright and cleaned up again). **Save 3 Receipts**, or **Save as One PDF**
-  with **One PDF for all receipts** (inspector, Receipts).
+  with **One PDF for all** (inspector, Receipts).
 - **Saving**: each receipt is read with Windows OCR once, as shown (turned), when its date, a
   searchable PDF or the text beside it needs it; the same lines are the PDF's text layer and the
   .txt with **Also save text**. A file each is named by its receipt's date; one PDF for all by the
@@ -923,19 +983,19 @@ OCR reads, with a date each (12.03.2026 and 2026-02-27): the files come out as "
 
 ### Batch of separate documents
 
-**Split into documents** (the inspector's **Output** section, under the crop and straighten
-switches) saves the collected pages as several files: **At separator sheets**, **At blank sheets**
-or **Every N sheets** (with **Sheets per document**, 1 to 99 in the list, up to 999 in a settings
-file). The **Batch of separate documents** task (feeder only; greyed out on a scanner without one)
+**Split into documents** (the inspector's section of that name; its ⓘ says how each way works)
+saves the collected pages as several files: **At separator sheets**, **At blank sheets** or **Every
+N sheets** ("New document every [N] sheets", 1 to 99 in the list, up to 999 in a settings file). The **Batch of separate documents** task (feeder only; greyed out on a scanner without one)
 sets it up: 300 dpi, PDF, split at separator sheets, blank pages skipped, named
 `Document {label} {date} {counter}`. The other tasks do not split; the sheets per document are
 kept. Like the blank-page check, splitting needs the pages collected in the queue, so the choice is
-greyed out, with the reason, when each scan is saved at once, for copies and for receipts.
+greyed out ("Needs Collect pages") when each scan is saved at once; the section is hidden for copies
+and receipts.
 
-- **Separator sheets**: **Save separator sheet (PDF)** (shown with At separator sheets) saves a
+- **Separator sheets**: **Save sheet** (shown with At separator sheets) saves a
   Patch T sheet as a one-page PDF in the scans folder, "Separator sheet (Patch T, Letter).pdf" or
   A4 where that is the usual paper, to print at actual size (100%) on any printer, also on another
-  computer; it needs no printer here, and the saved bar opens it. **Print separator sheet** prints
+  computer; it needs no printer here, and the saved bar opens it. **Print sheet** prints
   the same sheet at once, at real size, with no dialog, on the printer chosen for copies and on the
   paper that printer has (whatever paper size the scan asks for). The sheet: the four bars of the
   code across the sheet 1 in from the top and again, turned half a turn, 1 in from the bottom, so it
@@ -1005,8 +1065,9 @@ a name as a typed one would: invisible format characters (byte-order marks, zero
 bidi overrides that would reorder a file name in Explorer) are dropped, control characters and runs
 of spaces become one space, the characters file names can't have (`/ \ : * ? " < > |`) a hyphen,
 and it is cut at 100 characters; a sheet whose code is the prefix alone only splits. A name typed in
-the page strip wins over the code's, and removing it brings the code's back. **A barcode starts a
-new document and names it** (shown with this split) keeps the pages with a code instead, any code:
+the page strip wins over the code's, and removing it brings the code's back. **Codes are on: First pages** (shown with this split; the
+default is **Separator sheets**, and the line under it says "Sheets are left out" or "Pages are
+kept") keeps the pages with a code instead, any code:
 each starts a new document named after its code (without the prefix when it has it), for documents
 that carry their own code, such as invoices or forms; a click on the gap joins one back. The page
 strip shows all of this before saving, as for patch codes; a separator page's tooltip names the
@@ -1018,8 +1079,8 @@ saved, and a successful save clears the queue and deletes the spool files of eve
 separator pages included: a page wrongly taken for a separator has to be kept in the strip (Keep
 this page) before saving.
 
-**Save QR separator sheet (PDF)** and **Print QR separator sheet** (shown with this split, without
-the switch) make the sheet to print, with the name typed in **Name on the QR sheet** (or none):
+**Save sheet** and **Print sheet** (shown with this split while codes are on separator sheets)
+make the sheet to print, with the name typed in **Name on sheet** (optional):
 "SEPARATOR SHEET", the QR code of the prefix and the name ("CS-SEP Lease 2026"; 2.5 in at most, UTF-8 so names in any script read back, error
 correction level M), "THE NEXT DOCUMENT IS NAMED" and the name in the sheet's dot type (accents
 dropped; characters it does not have show as "?", while the code keeps the name exactly), and how to
@@ -1059,7 +1120,7 @@ other software, small 1D codes below 0.012 in a bar, and the Mac (Vision) with r
 
 ### Book or magazine
 
-**Split facing pages** (the inspector's **Output** section, under Rotate pages upright) cuts each
+**Split facing pages** (the inspector's **Pages** section, under Rotate pages upright) cuts each
 scan of an open book or magazine at the spine into its two pages. The **Book or magazine** task
 (flatbed only; greyed out on a scanner without one) sets it up: 300 dpi, color, searchable PDF,
 each page straightened and turned upright on its own, named `{task} {date} {counter}` ("Book
@@ -1068,9 +1129,11 @@ spine in the middle of the glass and press it gently flat, then scan. Turn the p
 next spread; each one becomes two pages."; the button says **Scan spread**). Color is the default
 because the Standard PDF size already stores pages that are really gray in gray, and magazines keep
 their color. The switch works for any collected document scan of one side of each sheet; with each
-scan saved at once, for copies, for receipts and for two-sided feeder scans (whose pages are paired
-by sheet and side) it is greyed out and says why. While it is on, **Reads right to left**
-(Arabic, Hebrew, manga: the right page first), **Turn the pages** (as scanned, 90° clockwise,
+scan saved at once and for two-sided feeder scans (whose pages are paired by sheet and side) it is
+greyed out with the reason ("Needs Collect pages", "Not with two-sided"); for copies and receipts
+the Pages section is hidden. A spread whose spine was not found is badged **Not split** in the page
+strip, with **Split…** to place the cut by hand. While it is on, **Reads right to left**
+(Arabic, Hebrew, manga: the right page first), **Book rotation** (as scanned, 90° clockwise,
 180°, 90° counterclockwise, for a book lying sideways or upside down) and **Soften spine shadow**
 show beneath it; the first two are kept when a task is picked, and all three apply from the next
 spread on (and to a spread joined or split again).
@@ -1130,7 +1193,7 @@ flattened.
 **Soften spine shadow** (on for the Book or magazine task, off for every other task and for settings
 files written before it existed) lifts the shadow along the spine on each page cut from a spread
 (`SpineShadow`, a step of the clean-up stage after straightening and before the separator check).
-The edge along the spine is the edge of the cut, turned with the page by **Turn the pages**; a
+The edge along the spine is the edge of the cut, turned with the page by **Book rotation**; a
 spread kept whole is left alone. The shadow is measured from the paper itself, on a gray copy at 100
 dpi: in the band up to 1.5 in from the spine (at most half the page), in blocks of rows 0.3 in long,
 the paper's brightness at every distance from the edge (the 90th percentile of three columns, so the

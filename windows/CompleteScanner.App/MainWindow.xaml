@@ -9,10 +9,10 @@
         Icon="{x:Static local:AppIcon.Image}"
         FontFamily="{StaticResource TextFontFamily}"
         AllowDrop="True" PreviewDragEnter="Window_PreviewDragOver" PreviewDragOver="Window_PreviewDragOver"
-        PreviewDrop="Window_PreviewDrop">
+        PreviewDragLeave="Window_PreviewDragLeave" PreviewDrop="Window_PreviewDrop">
     <Window.Resources>
         <Style x:Key="SectionExpanderStyle" TargetType="Expander" BasedOn="{StaticResource {x:Type Expander}}">
-            <Setter Property="IsExpanded" Value="True" />
+            <Setter Property="IsExpanded" Value="False" />
             <Setter Property="Margin" Value="{StaticResource SectionSpacing}" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
         </Style>
@@ -20,6 +20,31 @@
             <Setter Property="TextWrapping" Value="NoWrap" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
+        <!-- The Save button's label: its glyph (a lock for a protected PDF), the label and a badge with
+             the number of pages (the button's Tag; no badge while it is null). -->
+        <DataTemplate x:Key="SaveLabelTemplate">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Left" Style="{StaticResource GlyphText}" Margin="0,0,8,0"
+                           Text="{Binding Path=(local:Icon.Glyph), RelativeSource={RelativeSource AncestorType=ButtonBase}}" />
+                <Border x:Name="Badge" DockPanel.Dock="Right" Margin="8,0,0,0" MinWidth="20" Height="18" Padding="6,0,6,1"
+                        CornerRadius="9" VerticalAlignment="Center"
+                        Background="{DynamicResource TextOnAccentFillColorPrimaryBrush}">
+                    <TextBlock Text="{Binding Tag, RelativeSource={RelativeSource AncestorType=ButtonBase}}"
+                               FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Typography.NumeralAlignment="Tabular"
+                               Foreground="{DynamicResource AccentFillColorDefaultBrush}" />
+                </Border>
+                <TextBlock Text="{Binding}" VerticalAlignment="Center" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource AncestorType=ButtonBase}}" Value="{x:Null}">
+                    <Setter TargetName="Badge" Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsEnabled, RelativeSource={RelativeSource AncestorType=ButtonBase}}" Value="False">
+                    <Setter TargetName="Badge" Property="Opacity" Value="0.5" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
         <Style x:Key="PageActionButtonStyle" TargetType="Button" BasedOn="{StaticResource SmallIconButtonStyle}">
             <Setter Property="Width" Value="24" />
             <Setter Property="Height" Value="24" />
@@ -49,7 +74,7 @@
                     <Button DockPanel.Dock="Right" x:Name="InfoBarTroubleshootButton" Style="{StaticResource SubtleButtonStyle}"
                             local:Icon.Glyph="&#xE9CE;" Content="Troubleshoot" VerticalAlignment="Top" Margin="8,0,4,0"
                             Visibility="Collapsed"
-                            ToolTip="Why isn't my scanner listed or working? Checks what can stop it"
+                            ToolTip="Find out what's stopping the scanner"
                             AutomationProperties.HelpText="Opens the troubleshooter: checks what stops scanners from appearing or connecting"
                             Click="Troubleshoot_Click" />
                     <TextBlock x:Name="InfoBarText" Style="{StaticResource BodyText}" TextWrapping="Wrap"
@@ -81,19 +106,16 @@
                         <Button x:Name="SavedShareButton" Style="{StaticResource SubtleButtonStyle}"
                                 local:Icon.Glyph="&#xE72D;" Content="Share" Tag="Share"
                                 ToolTip="Send with Mail, Outlook, nearby sharing or another app" Click="SavedBarAction_Click" />
-                        <Button x:Name="SavedCopyButton" Style="{StaticResource SubtleButtonStyle}"
-                                local:Icon.Glyph="&#xE8C8;" Content="Copy" Tag="Copy"
-                                ToolTip="Copy to the clipboard" Click="SavedBarAction_Click" />
                         <Button x:Name="SavedMoreButton" Style="{StaticResource SmallIconButtonStyle}" Content="&#xE712;"
                                 Width="32" Height="32"
-                                ToolTip="More: open with, email" AutomationProperties.Name="More actions"
-                                AutomationProperties.HelpText="Opens a menu: open with, email and the other actions"
+                                ToolTip="More" AutomationProperties.Name="More actions"
+                                AutomationProperties.HelpText="Opens a menu: copy, open with, email and the other actions"
                                 Click="SavedBarMore_Click" />
                     </StackPanel>
                     <TextBlock x:Name="SavedBarText" Style="{StaticResource BodyText}" TextWrapping="NoWrap"
                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                                AutomationProperties.LiveSetting="Polite"><Run
-                            Text="Saved" FontWeight="SemiBold" /><Run Text="  " /><Run x:Name="SavedBarMessage" /></TextBlock>
+                            Text="Saved" FontWeight="SemiBold" /><Run Text=" · " /><Run x:Name="SavedBarMessage" /></TextBlock>
                 </DockPanel>
             </Border>
 
@@ -142,8 +164,8 @@
                             Click="Troubleshoot_Click" />
                     <Button DockPanel.Dock="Right" x:Name="AddScannerButton" Style="{StaticResource SmallIconButtonStyle}"
                             Content="&#xE710;" Margin="0,4,2,0" VerticalAlignment="Center"
-                            ToolTip="Add a network scanner by its address"
-                            AutomationProperties.Name="Add scanner by address"
+                            ToolTip="Add a network scanner"
+                            AutomationProperties.Name="Add a network scanner by address"
                             Click="AddScanner_Click" />
                     <TextBlock x:Name="ScannersHeader" Text="Scanners" Style="{StaticResource BodyStrongText}"
                                TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="16,8,16,6"
@@ -161,12 +183,6 @@
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <DockPanel>
-                                <DockPanel.ToolTip>
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Name}" />
-                                        <TextBlock Text="{Binding Caption}" Style="{StaticResource CaptionText}" />
-                                    </StackPanel>
-                                </DockPanel.ToolTip>
                                 <TextBlock x:Name="Glyph" DockPanel.Dock="Left" Style="{StaticResource GlyphText}"
                                            Text="&#xE8FE;" Margin="0,0,12,0" />
                                 <StackPanel x:Name="Texts">
@@ -191,28 +207,30 @@
                                 <DataTrigger Binding="{Binding IsPaneCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}}" Value="True">
                                     <Setter TargetName="Texts" Property="Visibility" Value="Collapsed" />
                                     <Setter TargetName="Glyph" Property="Margin" Value="0" />
+                                    <!-- The icon rail shows no name: the scanner's name is its tooltip there. -->
+                                    <Setter TargetName="Glyph" Property="ToolTip" Value="{Binding Name}" />
                                 </DataTrigger>
                             </DataTemplate.Triggers>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
                 <!-- The empty state while no scanner but the demo scanner is listed (shown from code:
-                     UpdateEmptyDevicesHint); the buttons in the header offer the same. -->
+                     UpdateEmptyDevicesHint); the + in the header adds one by address. -->
                 <TextBlock Grid.Row="2" x:Name="EmptyDevicesHint" Margin="16,4" TextWrapping="Wrap"
                            Style="{StaticResource CaptionText}" Visibility="Collapsed"><Run
-                        Text="No scanner found yet. Check that the scanner is on and connected." /><LineBreak /><Hyperlink
-                        x:Name="EmptyTroubleshootLink" Click="Troubleshoot_Click">Why isn't my scanner listed?</Hyperlink><LineBreak /><Hyperlink
-                        x:Name="EmptyAddScannerLink" Click="AddScanner_Click">Add a network scanner by address…</Hyperlink>
+                        Text="No scanner found" /><LineBreak /><Hyperlink
+                        x:Name="EmptyTroubleshootLink" Click="Troubleshoot_Click"
+                        AutomationProperties.Name="Troubleshoot: why isn't my scanner listed?">Troubleshoot</Hyperlink>
                 </TextBlock>
 
                 <DockPanel Grid.Row="3" x:Name="PresetsHeader" Margin="16,16,8,4">
                     <StackPanel DockPanel.Dock="Right" x:Name="PresetButtons" Orientation="Horizontal">
                         <Button Style="{StaticResource SmallIconButtonStyle}" Content="&#xE710;"
-                                ToolTip="Save the current settings as a preset"
+                                ToolTip="Save settings as a preset"
                                 AutomationProperties.Name="Save the current settings as a preset"
                                 Click="SavePreset_Click" />
                         <Button Style="{StaticResource SmallIconButtonStyle}" Content="&#xE74D;"
-                                ToolTip="Delete the selected preset"
+                                ToolTip="Delete preset"
                                 AutomationProperties.Name="Delete the selected preset"
                                 Click="DeletePreset_Click" />
                     </StackPanel>
@@ -230,7 +248,7 @@
                             <DockPanel>
                                 <DockPanel.ToolTip>
                                     <StackPanel>
-                                        <TextBlock Text="{Binding Name}" />
+                                        <TextBlock Text="{Binding Converter={StaticResource PresetSummaryConverter}}" />
                                         <TextBlock Text="Double-click to apply" Style="{StaticResource CaptionText}" />
                                     </StackPanel>
                                 </DockPanel.ToolTip>
@@ -246,13 +264,10 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
+                                <!-- Up to two lines; the settings it holds are in the tooltip. -->
                                 <StackPanel x:Name="Texts">
-                                    <!-- Up to two lines: one line cut most names to what the caption repeats. -->
                                     <TextBlock Text="{Binding Name}" Style="{StaticResource BodyText}" TextWrapping="Wrap"
                                                TextTrimming="CharacterEllipsis" MaxHeight="40" />
-                                    <TextBlock Text="{Binding Converter={StaticResource PresetSummaryConverter}}"
-                                               Style="{StaticResource CaptionText}" TextWrapping="NoWrap"
-                                               TextTrimming="CharacterEllipsis" />
                                 </StackPanel>
                             </DockPanel>
                             <DataTemplate.Triggers>
@@ -312,22 +327,32 @@
                                     <DockPanel>
                                         <Button DockPanel.Dock="Right" x:Name="ExitTaskButton" Style="{StaticResource SmallIconButtonStyle}"
                                                 Content="&#xE711;" VerticalAlignment="Center" Margin="2,0,0,0"
-                                                ToolTip="Leave the task. Its settings stay, without the guidance."
+                                                ToolTip="Leave the task (settings stay)"
                                                 AutomationProperties.Name="Leave the task"
                                                 Click="ExitTask_Click" />
                                         <Button DockPanel.Dock="Right" x:Name="ChangeTaskButton" Style="{StaticResource SubtleButtonStyle}"
                                                 local:Icon.Glyph="&#xE80F;" Content="Change task" VerticalAlignment="Center"
-                                                Margin="8,0,0,0" ToolTip="Pick another task on the start screen"
+                                                Margin="8,0,0,0" ToolTip="Pick another task"
                                                 Click="ChangeTask_Click" />
                                         <Border DockPanel.Dock="Left" x:Name="TaskBannerBadge" Style="{StaticResource TaskIconBadgeStyle}"
                                                 Width="32" Height="32" VerticalAlignment="Center" CornerRadius="6">
                                             <TextBlock x:Name="TaskBannerGlyph" Style="{StaticResource TaskIconGlyphStyle}" FontSize="16" />
                                         </Border>
                                         <StackPanel x:Name="TaskBannerTexts" VerticalAlignment="Center" Margin="12,0,0,0">
-                                            <TextBlock x:Name="TaskBannerTitle" Style="{StaticResource BodyStrongText}"
-                                                       TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock x:Name="TaskBannerPrompt" Style="{StaticResource SecondaryBodyText}"
-                                                       TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                            <!-- The task, and for a task of several steps where it is: "Front · Back · Check". -->
+                                            <WrapPanel>
+                                                <TextBlock x:Name="TaskBannerTitle" Style="{StaticResource BodyStrongText}"
+                                                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="0,0,12,0" />
+                                                <TextBlock x:Name="TaskBannerSteps" Style="{StaticResource SecondaryBodyText}"
+                                                           TextWrapping="NoWrap" Visibility="Collapsed" />
+                                            </WrapPanel>
+                                            <!-- What to do now, in a line; the fuller guidance behind the ⓘ right after it. -->
+                                            <DockPanel HorizontalAlignment="Left">
+                                                <local:InfoButton x:Name="TaskBannerInfo" DockPanel.Dock="Right" Margin="4,-2,0,-2"
+                                                                  VerticalAlignment="Top" Visibility="Collapsed" />
+                                                <TextBlock x:Name="TaskBannerPrompt" Style="{StaticResource SecondaryBodyText}"
+                                                           TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                                            </DockPanel>
                                             <!-- Turning a stack over by hand: moving on from the fronts, the
                                                  backs' choices, and the count mismatch ("3 fronts but 2 backs")
                                                  when there is one. -->
@@ -393,17 +418,27 @@
                                                    StrokeDashArray="4 3" Fill="{DynamicResource MarqueeFillBrush}"
                                                    Visibility="Collapsed" />
                                     </Canvas>
+                                    <!-- After a preview, until an area is selected: the preview can be dragged over. -->
+                                    <Border x:Name="DragChip" Visibility="Collapsed" IsHitTestVisible="False"
+                                            HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,32,0,0"
+                                            Padding="10,4,12,5" CornerRadius="12" BorderThickness="1"
+                                            Background="{DynamicResource SolidBackgroundFillColorQuarternaryBrush}"
+                                            BorderBrush="{DynamicResource SurfaceStrokeColorDefaultBrush}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource GlyphText}" FontSize="12" Text="&#xE8B3;" Margin="0,1,6,0" />
+                                            <TextBlock Text="{x:Static local:ShortText.DragToSelect}" Style="{StaticResource CaptionText}"
+                                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
                                     <StackPanel x:Name="CanvasHint" Style="{StaticResource EmptyStatePanelStyle}">
                                         <Border x:Name="CanvasHintGlyph" Style="{StaticResource EmptyStateCircleStyle}">
                                             <TextBlock Style="{StaticResource EmptyStateGlyphStyle}" Text="&#xE8FE;" />
                                         </Border>
                                         <TextBlock x:Name="CanvasHintTitle" Text="Ready to scan"
                                                    Style="{StaticResource EmptyStateTitleStyle}" />
-                                        <TextBlock Style="{StaticResource EmptyStateBodyStyle}"
-                                                   Text="Place a document or photos on the glass, then press Preview for a quick look or Scan to capture." />
-                                        <TextBlock x:Name="CanvasHintTip" Style="{StaticResource CaptionText}" TextAlignment="Center"
-                                                   TextWrapping="Wrap" Margin="0,12,0,0"
-                                                   Text="After a preview, drag over it to scan just that area." />
+                                        <!-- Hidden while a task banner says what to do. -->
+                                        <TextBlock x:Name="CanvasHintBody" Style="{StaticResource EmptyStateBodyStyle}"
+                                                   Text="{x:Static local:ShortText.PlaceOriginal}" />
                                         <!-- No scanner needed: photos of documents become pages too (PhotoImport). -->
                                         <StackPanel x:Name="CanvasImport" Margin="0,16,0,0" HorizontalAlignment="Center">
                                             <Button x:Name="CanvasImportButton" Style="{StaticResource SubtleButtonStyle}"
@@ -442,9 +477,9 @@
                                                     <!-- The gap before the page, shown while the strip shows documents:
                                                          one click starts a new document here or joins the page to the
                                                          document before. A document's start is drawn as a bar. -->
-                                                    <Button x:Name="BreakButton" DockPanel.Dock="Left" Width="10" Margin="0,0,3,0" VerticalAlignment="Stretch"
+                                                    <Button x:Name="BreakButton" DockPanel.Dock="Left" Width="18" Margin="0,0,3,0" VerticalAlignment="Stretch"
                                                             MinHeight="0" Padding="0"
-                                                            Cursor="Hand" ToolTip="{Binding BreakLabel}"
+                                                            Cursor="Hand" ToolTip="{Binding BreakToolTip}"
                                                             AutomationProperties.Name="{Binding BreakLabel}"
                                                             Click="PageBreak_Click" Tag="{Binding Page.Id}">
                                                         <Button.Template>
@@ -454,8 +489,18 @@
                                                                 </Border>
                                                             </ControlTemplate>
                                                         </Button.Template>
-                                                        <Rectangle x:Name="BreakLine" Width="1" Margin="0,10,0,10"
-                                                                   Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" Opacity="0" />
+                                                        <Grid>
+                                                            <Rectangle x:Name="BreakLine" Width="1" Margin="0,10,0,10"
+                                                                       Fill="{DynamicResource ControlStrongStrokeColorDefaultBrush}" Opacity="0" />
+                                                            <!-- Scissors to split here, a link to join; shown on hover and focus. -->
+                                                            <Border x:Name="BreakGlyphBack" Width="18" Height="18" CornerRadius="9" Opacity="0"
+                                                                    VerticalAlignment="Center" BorderThickness="1"
+                                                                    Background="{DynamicResource SolidBackgroundFillColorQuarternaryBrush}"
+                                                                    BorderBrush="{DynamicResource SurfaceStrokeColorDefaultBrush}">
+                                                                <TextBlock x:Name="BreakGlyph" Style="{StaticResource GlyphText}" FontSize="10"
+                                                                           HorizontalAlignment="Center" Text="&#xE8C6;" />
+                                                            </Border>
+                                                        </Grid>
                                                     </Button>
                                                 <Grid Width="116" Height="128">
                                                     <!-- The page's text, read with OCR, on the clipboard. -->
@@ -481,7 +526,7 @@
                                                         </ContextMenu>
                                                     </Grid.ContextMenu>
                                                     <Border x:Name="Card" Style="{StaticResource CardStyle}" Padding="6"
-                                                            ToolTip="{Binding SideToolTip}">
+                                                            ToolTip="{Binding SourceToolTip}">
                                                         <Image x:Name="Thumb" Source="{Binding Thumbnail}" MaxHeight="112" MaxWidth="104"
                                                                Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
                                                                RenderOptions.BitmapScalingMode="HighQuality" />
@@ -506,6 +551,21 @@
                                                                 ToolTip="{Binding ToggleLabel}" AutomationProperties.Name="{Binding ToggleLabel}"
                                                                 HorizontalAlignment="Center" Margin="0,4,0,0"
                                                                 Click="PageToggle_Click" Tag="{Binding Page.Id}" />
+                                                    </StackPanel>
+                                                    <!-- A spread whose spine was not found, or that was joined: kept whole, and
+                                                         one click away from the split dialog. -->
+                                                    <StackPanel x:Name="SpreadInfo" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                                Margin="0,0,0,10" Visibility="Collapsed">
+                                                        <Border HorizontalAlignment="Center" Padding="6,1,6,2" CornerRadius="4"
+                                                                Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                                                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                                            <TextBlock Text="{x:Static local:ShortText.NotSplit}" Style="{StaticResource CaptionText}"
+                                                                       TextWrapping="NoWrap" />
+                                                        </Border>
+                                                        <Button x:Name="SplitSpreadButton" Style="{StaticResource PageToggleButtonStyle}"
+                                                                Content="Split…" HorizontalAlignment="Center" Margin="0,4,0,0"
+                                                                AutomationProperties.Name="{Binding SplitSpreadLabel}"
+                                                                Click="PageSplitSpread_Click" Tag="{Binding Page.Id}" />
                                                     </StackPanel>
                                                     <!-- The top row: which side of which sheet on the left, and
                                                          the swap button on the right. The side badge takes the
@@ -544,7 +604,7 @@
                                                                     Padding="5,0,5,1" CornerRadius="4" IsHitTestVisible="False"
                                                                     Background="{DynamicResource SolidBackgroundFillColorQuarternaryBrush}"
                                                                     BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                                                                <TextBlock Text="{Binding SideLabel}" Style="{StaticResource CaptionText}"
+                                                                <TextBlock Text="{Binding BadgeText}" Style="{StaticResource CaptionText}"
                                                                            TextWrapping="Wrap" />
                                                             </Border>
                                                         </StackPanel>
@@ -598,23 +658,32 @@
                                                     <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
                                                         <Setter TargetName="Actions" Property="Opacity" Value="1" />
                                                     </DataTrigger>
-                                                    <DataTrigger Binding="{Binding SideLabel}" Value="{x:Null}">
+                                                    <DataTrigger Binding="{Binding BadgeText}" Value="{x:Null}">
                                                         <Setter TargetName="SideBadge" Property="Visibility" Value="Collapsed" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsNotSplit}" Value="True">
+                                                        <Setter TargetName="SpreadInfo" Property="Visibility" Value="Visible" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding HasSplitSpread}" Value="False">
+                                                        <Setter TargetName="SplitSpreadButton" Property="Visibility" Value="Collapsed" />
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding DividerTitle}" Value="{x:Null}">
                                                         <Setter TargetName="DocumentBadge" Property="Visibility" Value="Collapsed" />
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding IsMouseOver, ElementName=BreakButton}" Value="True">
-                                                        <Setter TargetName="BreakLine" Property="Opacity" Value="1" />
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding IsKeyboardFocused, ElementName=BreakButton}" Value="True">
-                                                        <Setter TargetName="BreakLine" Property="Opacity" Value="1" />
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding StartsDocument}" Value="True">
                                                         <Setter TargetName="BreakLine" Property="Opacity" Value="1" />
                                                         <Setter TargetName="BreakLine" Property="Width" Value="3" />
                                                         <Setter TargetName="BreakLine" Property="Margin" Value="0" />
                                                         <Setter TargetName="BreakLine" Property="Fill" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                        <Setter TargetName="BreakGlyph" Property="Text" Value="&#xE71B;" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsMouseOver, ElementName=BreakButton}" Value="True">
+                                                        <Setter TargetName="BreakLine" Property="Opacity" Value="1" />
+                                                        <Setter TargetName="BreakGlyphBack" Property="Opacity" Value="1" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsKeyboardFocused, ElementName=BreakButton}" Value="True">
+                                                        <Setter TargetName="BreakLine" Property="Opacity" Value="1" />
+                                                        <Setter TargetName="BreakGlyphBack" Property="Opacity" Value="1" />
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding ShowsBreaks}" Value="False">
                                                         <Setter TargetName="BreakButton" Property="Visibility" Value="Collapsed" />
@@ -655,7 +724,11 @@
                         </Grid>
 
                         <!-- Inspector: the settings scroll; the action buttons are pinned below
-                             them so Preview/Scan can never be pushed out of the window. -->
+                             them so Preview/Scan can never be pushed out of the window. The sections
+                             (Expanders, headers built in MainWindow.Inspector.cs) open and close as the
+                             user left them; a collapsed one shows a summary of what is on. Controls that
+                             do nothing for the task or format are hidden; ones that conflict with another
+                             choice are greyed out with a short reason next to them. -->
                         <Grid Grid.Column="1" Width="280">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="*" />
@@ -671,9 +744,11 @@
                                         <UniformGrid Columns="2">
                                             <RadioButton x:Name="ModeDocument" Style="{StaticResource SegmentedItemStyle}"
                                                          Content="Document" local:Icon.Glyph="&#xE8A5;" IsChecked="True"
+                                                         AutomationProperties.HelpText="Document: pages and text. Photos: finds each photo on the glass."
                                                          Checked="Setting_Changed" />
                                             <RadioButton x:Name="ModePhotos" Style="{StaticResource SegmentedItemStyle}"
                                                          Content="Photos" local:Icon.Glyph="&#xEB9F;"
+                                                         AutomationProperties.HelpText="Document: pages and text. Photos: finds each photo on the glass."
                                                          Checked="Setting_Changed" />
                                         </UniformGrid>
                                     </Border>
@@ -681,13 +756,7 @@
                                     <!-- The Copy task only: where and how the copies print. Nothing opens a print
                                          dialog; the printer list and paper are read from Windows. -->
                                     <Expander x:Name="CopyOptions" Style="{StaticResource SectionExpanderStyle}"
-                                              AutomationProperties.Name="Copies" Visibility="Collapsed">
-                                        <Expander.Header>
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Style="{StaticResource GlyphText}" Text="&#xE749;" Margin="0,0,12,0" />
-                                                <TextBlock Text="Copies" Style="{StaticResource BodyStrongText}" TextWrapping="NoWrap" />
-                                            </StackPanel>
-                                        </Expander.Header>
+                                              AutomationProperties.Name="Photocopy" Visibility="Collapsed">
                                         <StackPanel>
                                             <TextBlock Text="Printer" Style="{StaticResource FieldLabelText}" />
                                             <ComboBox x:Name="CopyPrinterBox" HorizontalAlignment="Stretch"
@@ -696,32 +765,42 @@
                                                       SelectionChanged="CopyPrinter_Changed" />
                                             <TextBlock x:Name="CopyPaperText" Style="{StaticResource CaptionText}"
                                                        TextWrapping="Wrap" Margin="0,4,0,0" />
-                                            <TextBlock x:Name="CopyNoPrinterText" Style="{StaticResource CaptionText}"
-                                                       TextWrapping="Wrap" Margin="0,4,0,0" Visibility="Collapsed"
-                                                       Text="No printer is installed. Add one in Windows Settings, then look again." />
+                                            <DockPanel x:Name="CopyNoPrinterNotice" Margin="0,4,0,0" Visibility="Collapsed">
+                                                <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE946;" />
+                                                <TextBlock x:Name="CopyNoPrinterText" Style="{StaticResource ReasonText}"
+                                                           Text="No printer is installed. Add one in Windows Settings, then look again." />
+                                            </DockPanel>
                                             <Button x:Name="CopyLookAgainButton" Style="{StaticResource SubtleButtonStyle}"
                                                     Content="Look again" HorizontalAlignment="Left" Margin="-11,4,0,0"
                                                     Visibility="Collapsed"
                                                     ToolTip="Reads the installed printers again"
                                                     Click="CopyLookAgain_Click" />
-                                            <TextBlock Text="Number of copies" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />
+                                            <TextBlock Text="Copies" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />
                                             <ComboBox x:Name="CopyCountBox" HorizontalAlignment="Stretch"
                                                       AutomationProperties.Name="Number of copies"
                                                       SelectionChanged="CopyCount_Changed" />
                                             <CheckBox x:Name="CopyFitBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,12,0,0"
                                                       Content="Fit to page"
+                                                      ToolTip="Off: real size. On: shrinks to fit the paper."
                                                       Checked="CopyFit_Changed" Unchecked="CopyFit_Changed" />
-                                            <TextBlock x:Name="CopyFitHint" Style="{StaticResource CaptionText}"
-                                                       TextWrapping="Wrap" Margin="0,0,0,4" />
-                                            <TextBlock x:Name="CopyMarginText" Style="{StaticResource CaptionText}"
-                                                       TextWrapping="Wrap" Margin="0,0,0,4" Visibility="Collapsed" />
+                                            <!-- Shown while copies print at real size: edges a printer can't reach are lost. -->
+                                            <DockPanel x:Name="CopyMarginNotice" Margin="0,2,0,4" Visibility="Collapsed">
+                                                <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE7BA;"
+                                                           Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                                                <TextBlock x:Name="CopyMarginText" Style="{StaticResource ReasonText}" />
+                                            </DockPanel>
                                             <CheckBox x:Name="CopyPdfBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,8,0,0"
                                                       Content="Also save a PDF"
-                                                      ToolTip="Each copy is also saved as a PDF in the save folder"
+                                                      ToolTip="Keeps a PDF of each copy in your save folder"
+                                                      AutomationProperties.HelpText="Each copy is also saved as a PDF in the save folder"
                                                       Checked="CopyPdf_Changed" Unchecked="CopyPdf_Changed" />
                                             <Button x:Name="RulerButton" Style="{StaticResource SubtleButtonStyle}"
-                                                    Content="Print ruler test page" HorizontalAlignment="Left" Margin="-11,8,0,0"
-                                                    ToolTip="Prints a 1-inch grid with centimetre ticks: measure it with a ruler to check that copies come out at real size"
+                                                    local:Icon.Glyph="&#xE749;"
+                                                    Content="Print test ruler" HorizontalAlignment="Left" Margin="-11,8,0,0"
+                                                    ToolTip="Prints a ruler to check copies come out at real size"
+                                                    AutomationProperties.Name="Print ruler test page"
+                                                    AutomationProperties.HelpText="Prints a 1-inch grid with centimeter ticks: measure it with a ruler to check that copies come out at real size"
+                                                    ToolTipService.ShowOnDisabled="True"
                                                     Click="RulerPage_Click" />
                                         </StackPanel>
                                     </Expander>
@@ -729,55 +808,51 @@
                                     <!-- The Receipts task only: how the receipts found on the glass are named and saved. -->
                                     <Expander x:Name="ReceiptOptions" Style="{StaticResource SectionExpanderStyle}"
                                               AutomationProperties.Name="Receipts" Visibility="Collapsed">
-                                        <Expander.Header>
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Style="{StaticResource GlyphText}" Text="&#xE7BF;" Margin="0,0,12,0" />
-                                                <TextBlock Text="Receipts" Style="{StaticResource BodyStrongText}" TextWrapping="NoWrap" />
-                                            </StackPanel>
-                                        </Expander.Header>
                                         <StackPanel>
                                             <CheckBox x:Name="ReceiptDateBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                      Content="Name by the receipt's date"
+                                                      Content="Name by receipt date"
+                                                      ToolTip="Uses the date printed on the receipt, or today"
                                                       Checked="ReceiptDate_Changed" Unchecked="ReceiptDate_Changed" />
-                                            <TextBlock x:Name="ReceiptDateHint" Style="{StaticResource CaptionText}"
-                                                       TextWrapping="Wrap" Margin="0,0,0,4" />
-                                            <CheckBox x:Name="ReceiptCombineBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,8,0,0"
-                                                      Content="One PDF for all receipts" ToolTipService.ShowOnDisabled="True"
+                                            <DockPanel x:Name="ReceiptDateReason" Margin="0,0,0,4" Visibility="Collapsed">
+                                                <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE946;" />
+                                                <TextBlock Style="{StaticResource ReasonText}" Text="{x:Static local:ShortText.NeedsDocDate}" />
+                                            </DockPanel>
+                                            <CheckBox x:Name="ReceiptCombineBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,4,0,0"
+                                                      Content="One PDF for all" ToolTipService.ShowOnDisabled="True"
                                                       Checked="ReceiptCombine_Changed" Unchecked="ReceiptCombine_Changed" />
-                                            <TextBlock x:Name="ReceiptCombineHint" Style="{StaticResource CaptionText}"
-                                                       TextWrapping="Wrap" Margin="0,0,0,4" />
+                                            <DockPanel x:Name="ReceiptCombineReason" Margin="0,0,0,4" Visibility="Collapsed">
+                                                <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE946;" />
+                                                <TextBlock Style="{StaticResource ReasonText}" Text="{x:Static local:ShortText.OnlyForPdfs}" />
+                                            </DockPanel>
                                         </StackPanel>
                                     </Expander>
 
-                                    <Expander Style="{StaticResource SectionExpanderStyle}" AutomationProperties.Name="Scanner">
-                                        <Expander.Header>
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Style="{StaticResource GlyphText}" Text="&#xE8FE;" Margin="0,0,12,0" />
-                                                <TextBlock Text="Scanner" Style="{StaticResource BodyStrongText}" TextWrapping="NoWrap" />
-                                            </StackPanel>
-                                        </Expander.Header>
+                                    <!-- Scanner: where the paper is, its sides and size, and how it is read. -->
+                                    <Expander x:Name="ScannerSection" Style="{StaticResource SectionExpanderStyle}" AutomationProperties.Name="Scanner">
                                         <StackPanel>
                                             <TextBlock Text="Source" Style="{StaticResource FieldLabelText}" />
                                             <ComboBox x:Name="SourceBox" Margin="{StaticResource FieldSpacing}"
                                                       HorizontalAlignment="Stretch" AutomationProperties.Name="Source"
                                                       ToolTipService.ShowOnDisabled="True"
                                                       SelectionChanged="Setting_Changed" />
-                                            <!-- Feeder sheets: one side, both, or turned over by hand. Choices the
-                                                 scanner or the settings cannot do are greyed out with the reason;
-                                                 the whole group is left out for a scanner without a feeder. -->
+                                            <!-- Feeder sheets: one side, both, or turned over by hand. Left out for a
+                                                 scanner without a feeder; on its flatbed, greyed out with the reason. -->
                                             <StackPanel x:Name="SidesOptions" Margin="{StaticResource FieldSpacing}">
                                                 <TextBlock Text="Sides" Style="{StaticResource FieldLabelText}" />
                                                 <ComboBox x:Name="SidesBox" HorizontalAlignment="Stretch"
                                                           AutomationProperties.Name="Sides"
                                                           ToolTipService.ShowOnDisabled="True"
                                                           SelectionChanged="Sides_Changed" />
-                                                <TextBlock x:Name="SidesHint" Style="{StaticResource CaptionText}"
-                                                           TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                <DockPanel x:Name="SidesReason" Margin="0,4,0,0" Visibility="Collapsed">
+                                                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE946;" />
+                                                    <TextBlock x:Name="SidesHint" Style="{StaticResource ReasonText}" />
+                                                </DockPanel>
                                                 <StackPanel x:Name="BackBindingOptions" Margin="0,8,0,0">
                                                     <TextBlock Text="Flip on" Style="{StaticResource FieldLabelText}" />
                                                     <ComboBox x:Name="BackBindingBox" HorizontalAlignment="Stretch"
                                                               AutomationProperties.Name="Back sides flip on"
-                                                              ToolTip="How the sheets turn: the backs of short-edge sheets are turned upright."
+                                                              AutomationProperties.HelpText="How the sheets turn: the backs of short-edge sheets are turned upright."
+                                                              ToolTip="Which edge the sheets turn on"
                                                               SelectionChanged="Sides_Changed" />
                                                 </StackPanel>
                                             </StackPanel>
@@ -785,52 +860,100 @@
                                             <ComboBox x:Name="PaperSizeBox" HorizontalAlignment="Stretch"
                                                       AutomationProperties.Name="Paper size"
                                                       SelectionChanged="PaperSize_Changed" />
-                                            <TextBlock x:Name="PaperSizeHint" Style="{StaticResource CaptionText}"
-                                                       TextWrapping="Wrap" Margin="0,4,0,12" />
-                                            <TextBlock Text="Resolution" Style="{StaticResource FieldLabelText}" />
+                                            <!-- Live state: an area selected on the preview is scanned instead of the paper size. -->
+                                            <DockPanel x:Name="SelectedAreaRow" Margin="0,2,0,0" Visibility="Collapsed">
+                                                <Button DockPanel.Dock="Right" x:Name="ClearSelectionButton" Style="{StaticResource SmallIconButtonStyle}"
+                                                        Content="&#xE711;" Width="24" Height="24" FontSize="11"
+                                                        ToolTip="Clear the selection"
+                                                        AutomationProperties.Name="Clear the selected area"
+                                                        Click="ClearSelection_Click" />
+                                                <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE8B3;" />
+                                                <TextBlock x:Name="PaperSizeHint" Style="{StaticResource ReasonText}" VerticalAlignment="Center" />
+                                            </DockPanel>
+                                            <TextBlock Text="Resolution" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />
                                             <ComboBox x:Name="ResolutionBox" HorizontalAlignment="Stretch"
                                                       AutomationProperties.Name="Resolution" ItemStringFormat="{}{0} dpi"
+                                                      ToolTip="Higher is sharper but slower and larger. 300 suits documents."
                                                       SelectionChanged="Setting_Changed" />
+                                            <TextBlock Text="Color" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />
+                                            <ComboBox x:Name="ColorModeBox" HorizontalAlignment="Stretch"
+                                                      AutomationProperties.Name="Color" SelectionChanged="Setting_Changed" />
                                             <!-- TWAIN connections only: scan through the driver's own window. -->
                                             <StackPanel x:Name="DriverWindowOptions" Visibility="Collapsed" Margin="0,8,0,0">
                                                 <CheckBox x:Name="DriverWindowBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                          Content="Use the scanner's own settings window"
+                                                          Content="Use the scanner's own window" ToolTipService.ShowOnDisabled="True"
                                                           Checked="DriverWindow_Changed" Unchecked="DriverWindow_Changed" />
-                                                <TextBlock x:Name="DriverWindowHint" Style="{StaticResource CaptionText}"
-                                                           TextWrapping="Wrap" Margin="0,4,0,0" />
+                                                <DockPanel x:Name="DriverWindowReason" Visibility="Collapsed">
+                                                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE946;" />
+                                                    <TextBlock x:Name="DriverWindowHint" Style="{StaticResource ReasonText}" Text="Always on for this driver" />
+                                                </DockPanel>
                                             </StackPanel>
                                         </StackPanel>
                                     </Expander>
 
-                                    <Expander Style="{StaticResource SectionExpanderStyle}" AutomationProperties.Name="Image">
-                                        <Expander.Header>
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Style="{StaticResource GlyphText}" Text="&#xE790;" Margin="0,0,12,0" />
-                                                <TextBlock Text="Image" Style="{StaticResource BodyStrongText}" TextWrapping="NoWrap" />
-                                            </StackPanel>
-                                        </Expander.Header>
+                                    <!-- Output (Document mode) or Photos (Photos mode): what is saved, and where. -->
+                                    <Expander x:Name="OutputSection" Style="{StaticResource SectionExpanderStyle}" AutomationProperties.Name="Output">
                                         <StackPanel>
-                                            <TextBlock Text="Color" Style="{StaticResource FieldLabelText}" />
-                                            <ComboBox x:Name="ColorModeBox" HorizontalAlignment="Stretch"
-                                                      AutomationProperties.Name="Color" SelectionChanged="Setting_Changed" />
-                                            <StackPanel x:Name="PhotoOptions" Visibility="Collapsed" Margin="0,8,0,0">
+                                            <StackPanel x:Name="PhotoOptions" Visibility="Collapsed" Margin="0,0,0,8">
                                                 <CheckBox x:Name="AutoSplitBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                          Content="Auto-split photos" IsChecked="True"
+                                                          Content="Find each photo" IsChecked="True"
+                                                          ToolTip="Finds each photo on the glass and saves it on its own"
                                                           Checked="Setting_Changed" Unchecked="Setting_Changed" />
                                                 <CheckBox x:Name="DeskewBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                          Content="Auto-straighten (deskew)" IsChecked="True"
+                                                          Content="Straighten photos" IsChecked="True"
+                                                          AutomationProperties.HelpText="Turns each photo found on the glass straight (deskew)"
                                                           Checked="Setting_Changed" Unchecked="Setting_Changed" />
                                             </StackPanel>
+                                            <TextBlock Text="Format" Style="{StaticResource FieldLabelText}" />
+                                            <ComboBox x:Name="FormatBox" HorizontalAlignment="Stretch"
+                                                      AutomationProperties.Name="Format" SelectionChanged="Format_Changed" />
+                                            <!-- Word output only: each page's picture before its text; label and
+                                                 hint (as the tooltip) from DocxWriter in Core. -->
+                                            <StackPanel x:Name="WordOptions" Margin="0,8,0,0" Visibility="Collapsed">
+                                                <CheckBox x:Name="WordPageImagesBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                          Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                                            </StackPanel>
+                                            <!-- PDF output, and the page pictures of a Word document: how small
+                                                 the file is made. The segments (largest first) are added in code
+                                                 from PdfSizePresets; each says what it does on hover. -->
+                                            <StackPanel x:Name="PdfSizeOptions" Margin="0,12,0,0">
+                                                <TextBlock x:Name="PdfSizeLabel" Text="PDF size" Style="{StaticResource FieldLabelText}" />
+                                                <Border x:Name="PdfSizeTrack" Style="{StaticResource SegmentedTrackStyle}"
+                                                        AutomationProperties.Name="PDF size">
+                                                    <UniformGrid x:Name="PdfSizeSegments" Rows="1" />
+                                                </Border>
+                                                <!-- Live state: the size of the last PDF saved. -->
+                                                <TextBlock x:Name="LastPdfSizeText" Style="{StaticResource CaptionText}"
+                                                           TextWrapping="NoWrap" Margin="0,4,0,0"
+                                                           Typography.NumeralAlignment="Tabular" Visibility="Collapsed" />
+                                            </StackPanel>
+                                            <StackPanel x:Name="DocumentOptions" Margin="0,8,0,0">
+                                                <CheckBox x:Name="SearchableBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                          Content="Searchable PDF"
+                                                          ToolTip="Lets you search and copy the text (OCR)"
+                                                          AutomationProperties.HelpText="Text is recognized automatically, nothing to configure: the PDF can be searched and its text copied."
+                                                          Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                                                <CheckBox x:Name="MultiPageBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                          Content="Collect pages before saving"
+                                                          ToolTip="Off: each scan is saved right away"
+                                                          Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                                            </StackPanel>
+                                            <TextBlock Text="Save to" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />
+                                            <DockPanel>
+                                                <Button DockPanel.Dock="Right" Style="{StaticResource IconButtonStyle}" Content="&#xE838;"
+                                                        ToolTip="Choose the save folder"
+                                                        AutomationProperties.Name="Choose the save folder"
+                                                        Click="BrowseDestination_Click" />
+                                                <TextBox x:Name="DestinationBox" Margin="0,0,4,0"
+                                                         ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
+                                                         ScrollViewer.ScrollChanged="DestinationBox_ScrollChanged"
+                                                         LostKeyboardFocus="DestinationBox_LostKeyboardFocus"
+                                                         AutomationProperties.Name="Save to" LostFocus="Setting_Changed" />
+                                            </DockPanel>
                                         </StackPanel>
                                     </Expander>
 
-                                    <Expander Style="{StaticResource SectionExpanderStyle}" AutomationProperties.Name="Adjustments">
-                                        <Expander.Header>
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Style="{StaticResource GlyphText}" Text="&#xE9E9;" Margin="0,0,12,0" />
-                                                <TextBlock Text="Adjustments" Style="{StaticResource BodyStrongText}" TextWrapping="NoWrap" />
-                                            </StackPanel>
-                                        </Expander.Header>
+                                    <Expander x:Name="AdjustmentsSection" Style="{StaticResource SectionExpanderStyle}" AutomationProperties.Name="Adjustments">
                                         <StackPanel>
                                             <CheckBox x:Name="AutoEnhanceBox" Style="{StaticResource ToggleSwitchStyle}"
                                                       Content="Auto enhance"
@@ -878,11 +1001,13 @@
                                                            Style="{StaticResource ReadoutText}" />
                                             </Grid>
                                             <Button x:Name="ResetSlidersButton" Style="{StaticResource SubtleButtonStyle}"
-                                                    local:Icon.Glyph="&#xE7A7;" Content="Reset sliders"
+                                                    local:Icon.Glyph="&#xE7A7;" Content="Reset"
+                                                    AutomationProperties.Name="Reset sliders"
                                                     HorizontalAlignment="Left" Margin="-11,4,0,4"
                                                     Click="ResetSliders_Click" />
                                             <CheckBox x:Name="DescreenBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                      Content="Descreen (printed material)"
+                                                      Content="Remove print dots"
+                                                      ToolTip="Smooths the dot pattern of magazines and printed photos (descreen)"
                                                       Checked="Setting_Changed" Unchecked="Setting_Changed" />
                                             <CheckBox x:Name="RestoreBox" Style="{StaticResource ToggleSwitchStyle}"
                                                       Content="Restore faded colors"
@@ -890,194 +1015,210 @@
                                         </StackPanel>
                                     </Expander>
 
-                                    <Expander Style="{StaticResource SectionExpanderStyle}" AutomationProperties.Name="Output">
-                                        <Expander.Header>
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Style="{StaticResource GlyphText}" Text="&#xE74E;" Margin="0,0,12,0" />
-                                                <TextBlock Text="Output" Style="{StaticResource BodyStrongText}" TextWrapping="NoWrap" />
-                                            </StackPanel>
-                                        </Expander.Header>
-                                        <StackPanel>
-                                            <TextBlock Text="Format" Style="{StaticResource FieldLabelText}" />
-                                            <ComboBox x:Name="FormatBox" HorizontalAlignment="Stretch"
-                                                      AutomationProperties.Name="Format" SelectionChanged="Format_Changed" />
-                                            <!-- Word output only: each page's picture before its text; label and
-                                                 hint from DocxWriter in Core. -->
-                                            <StackPanel x:Name="WordOptions" Margin="0,12,0,0" Visibility="Collapsed">
-                                                <CheckBox x:Name="WordPageImagesBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                          Checked="Setting_Changed" Unchecked="Setting_Changed" />
-                                                <TextBlock x:Name="WordPageImagesHint" Style="{StaticResource CaptionText}"
-                                                           TextWrapping="Wrap" />
-                                            </StackPanel>
-                                            <!-- PDF output, and the page pictures of a Word document: how small
-                                                 the file is made. The segments (largest first) are added in code
-                                                 from PdfSizePresets. -->
-                                            <StackPanel x:Name="PdfSizeOptions" Margin="0,12,0,0">
-                                                <TextBlock x:Name="PdfSizeLabel" Text="PDF size" Style="{StaticResource FieldLabelText}" />
-                                                <Border x:Name="PdfSizeTrack" Style="{StaticResource SegmentedTrackStyle}"
-                                                        AutomationProperties.Name="PDF size">
-                                                    <UniformGrid x:Name="PdfSizeSegments" Rows="1" />
+                                    <!-- Pages: clean-up of the pages collected in the queue. -->
+                                    <Expander x:Name="PagesSection" Style="{StaticResource SectionExpanderStyle}" AutomationProperties.Name="Pages">
+                                        <StackPanel x:Name="PageOptions">
+                                            <DockPanel x:Name="PagesReason" Margin="0,0,0,6" Visibility="Collapsed">
+                                                <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE946;" />
+                                                <TextBlock Style="{StaticResource ReasonText}" Text="{x:Static local:ShortText.NeedsCollectPages}" />
+                                            </DockPanel>
+                                            <!-- Blank pages: flagged in the page strip, left out when saving. The
+                                                 sensitivity segments (least first) are added in code. -->
+                                            <CheckBox x:Name="SkipBlankBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                      Content="Skip blank pages" ToolTipService.ShowOnDisabled="True"
+                                                      Checked="BlankPages_Changed" Unchecked="BlankPages_Changed" />
+                                            <DockPanel x:Name="SkipBlankReason" Margin="0,0,0,4" Visibility="Collapsed">
+                                                <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE946;" />
+                                                <TextBlock Style="{StaticResource ReasonText}" Text="{x:Static local:ShortText.BlankSheetsSplit}" />
+                                            </DockPanel>
+                                            <StackPanel x:Name="BlankSensitivityOptions" Margin="16,4,0,4">
+                                                <TextBlock Text="What counts as blank" Style="{StaticResource FieldLabelText}" />
+                                                <Border Style="{StaticResource SegmentedTrackStyle}"
+                                                        AutomationProperties.Name="What counts as blank">
+                                                    <UniformGrid x:Name="BlankSensitivitySegments" Rows="1" />
                                                 </Border>
-                                                <TextBlock x:Name="PdfSizeHint" Style="{StaticResource CaptionText}"
-                                                           TextWrapping="Wrap" Margin="0,4,0,0" />
-                                                <!-- What only a PDF has: its last size, PDF/A and the password. -->
-                                                <StackPanel x:Name="PdfOnlyOptions">
-                                                    <TextBlock x:Name="LastPdfSizeText" Style="{StaticResource CaptionText}"
-                                                               TextWrapping="NoWrap" Margin="0,2,0,0"
-                                                               Typography.NumeralAlignment="Tabular" Visibility="Collapsed" />
-                                                    <!-- PDF/A-2b for keeping; label and hint from PdfA in Core. A PDF/A file
-                                                         cannot have a password: while one switch is on the other is greyed
-                                                         out, and the note under them says why. -->
-                                                    <CheckBox x:Name="ArchivalBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                              Margin="0,8,0,0" ToolTipService.ShowOnDisabled="True"
-                                                              Checked="Setting_Changed" Unchecked="Setting_Changed" />
-                                                    <!-- The password is asked for at each save and never stored; label and
-                                                         hint from PdfProtection in Core. -->
-                                                    <CheckBox x:Name="ProtectBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                              Margin="0,4,0,0" ToolTipService.ShowOnDisabled="True"
-                                                              Checked="Setting_Changed" Unchecked="Setting_Changed" />
-                                                    <TextBlock x:Name="PdfExclusionNote" Style="{StaticResource CaptionText}"
-                                                               TextWrapping="Wrap" Margin="0,2,0,0" Visibility="Collapsed" />
-                                                </StackPanel>
+                                                <DockPanel x:Name="BlankHighNotice" Margin="0,4,0,0" Visibility="Collapsed">
+                                                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE7BA;"
+                                                               Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                                                    <TextBlock Style="{StaticResource ReasonText}" Text="{x:Static local:ShortText.CheckFlaggedPages}" />
+                                                </DockPanel>
                                             </StackPanel>
-                                            <StackPanel x:Name="DocumentOptions" Margin="0,8,0,0">
-                                                <CheckBox x:Name="MultiPageBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                          Content="Collect pages, then Save PDF"
-                                                          Checked="Setting_Changed" Unchecked="Setting_Changed" />
-                                                <CheckBox x:Name="SearchableBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                          Content="Searchable PDF (OCR)"
-                                                          ToolTip="Text is recognized automatically — nothing to configure."
-                                                          Checked="Setting_Changed" Unchecked="Setting_Changed" />
-                                                <!-- The text of the pages in a .txt file beside each PDF; OCR reads each page once for both. -->
-                                                <CheckBox x:Name="AlsoSaveTextBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                          Content="Also save text (.txt)" ToolTipService.ShowOnDisabled="True"
-                                                          Checked="Setting_Changed" Unchecked="Setting_Changed" />
-                                                <!-- Blank pages: flagged in the page strip, left out when saving. The
-                                                     sensitivity segments (least first) are added in code. -->
-                                                <CheckBox x:Name="SkipBlankBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                          Content="Skip blank pages" ToolTipService.ShowOnDisabled="True"
-                                                          Checked="BlankPages_Changed" Unchecked="BlankPages_Changed" />
-                                                <TextBlock x:Name="SkipBlankHint" Style="{StaticResource CaptionText}"
-                                                           TextWrapping="Wrap" Margin="0,0,0,4" />
-                                                <StackPanel x:Name="BlankSensitivityOptions" Margin="0,4,0,0">
-                                                    <TextBlock Text="What counts as blank" Style="{StaticResource FieldLabelText}" />
-                                                    <Border Style="{StaticResource SegmentedTrackStyle}"
-                                                            AutomationProperties.Name="What counts as blank">
-                                                        <UniformGrid x:Name="BlankSensitivitySegments" Rows="1" />
-                                                    </Border>
-                                                    <TextBlock x:Name="BlankSensitivityHint" Style="{StaticResource CaptionText}"
-                                                               TextWrapping="Wrap" Margin="0,4,0,0" />
-                                                </StackPanel>
-                                                <!-- Crop and straighten: changed pages carry a swap button in the page strip. -->
-                                                <CheckBox x:Name="AutoCropBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,8,0,0"
-                                                          Content="Crop to page" ToolTipService.ShowOnDisabled="True"
-                                                          Checked="Geometry_Changed" Unchecked="Geometry_Changed" />
-                                                <CheckBox x:Name="AutoStraightenBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                          Content="Straighten pages" ToolTipService.ShowOnDisabled="True"
-                                                          Checked="Geometry_Changed" Unchecked="Geometry_Changed" />
-                                                <TextBlock x:Name="GeometryHint" Style="{StaticResource CaptionText}"
-                                                           TextWrapping="Wrap" Margin="0,0,0,4" />
-                                                <!-- Turn pages upright by reading their text: a turned page carries an
-                                                     undo button in the page strip. -->
-                                                <CheckBox x:Name="AutoRotateBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,8,0,0"
-                                                          Content="Rotate pages upright" ToolTipService.ShowOnDisabled="True"
-                                                          Checked="AutoRotate_Changed" Unchecked="AutoRotate_Changed" />
-                                                <TextBlock x:Name="AutoRotateHint" Style="{StaticResource CaptionText}"
-                                                           TextWrapping="Wrap" Margin="0,0,0,4" />
-                                                <!-- Books and magazines: each spread is cut at the spine into its two pages;
-                                                     a page's menu joins them again or moves the cut. -->
-                                                <CheckBox x:Name="SplitFacingPagesBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,8,0,0"
-                                                          Content="Split facing pages" ToolTipService.ShowOnDisabled="True"
-                                                          Checked="SplitFacingPages_Changed" Unchecked="SplitFacingPages_Changed" />
-                                                <TextBlock x:Name="SplitFacingPagesHint" Style="{StaticResource CaptionText}"
-                                                           TextWrapping="Wrap" Margin="0,0,0,4" />
-                                                <StackPanel x:Name="BookOptions" Margin="0,4,0,0">
-                                                    <CheckBox x:Name="BookRightToLeftBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                              Content="Reads right to left"
-                                                              ToolTip="Arabic, Hebrew, manga: the right page of each spread comes first."
-                                                              AutomationProperties.HelpText="Arabic, Hebrew, manga: the right page of each spread comes first."
-                                                              Checked="BookRightToLeft_Changed" Unchecked="BookRightToLeft_Changed" />
-                                                    <TextBlock Text="Turn the pages" Style="{StaticResource FieldLabelText}" Margin="0,8,0,4" />
-                                                    <ComboBox x:Name="BookRotationBox" HorizontalAlignment="Stretch"
-                                                              AutomationProperties.Name="Turn the pages"
-                                                              AutomationProperties.HelpText="For a book lying sideways or upside down on the glass, from the next spread on."
-                                                              ToolTip="For a book lying sideways or upside down on the glass, from the next spread on."
-                                                              SelectionChanged="BookRotation_Changed" />
-                                                    <!-- The spine's shadow lightened on each page; the page strip's arrow shows a page as scanned. -->
-                                                    <CheckBox x:Name="SoftenSpineShadowBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,8,0,0"
-                                                              Content="Soften spine shadow"
-                                                              Checked="SoftenSpineShadow_Changed" Unchecked="SoftenSpineShadow_Changed" />
-                                                    <TextBlock x:Name="SoftenSpineShadowHint" Style="{StaticResource CaptionText}"
-                                                               TextWrapping="Wrap" Margin="0,0,0,4" />
-                                                </StackPanel>
-                                                <!-- Split the stack into documents: the page strip shows where before
-                                                     saving, and one click on the gap between two pages splits or joins. -->
-                                                <TextBlock Text="Split into documents" Style="{StaticResource FieldLabelText}" Margin="0,8,0,4" />
-                                                <ComboBox x:Name="SplitModeBox" HorizontalAlignment="Stretch"
-                                                          AutomationProperties.Name="Split into documents"
-                                                          ToolTipService.ShowOnDisabled="True"
-                                                          SelectionChanged="SplitMode_Changed" />
-                                                <StackPanel x:Name="SplitCountRow" Margin="0,8,0,0">
-                                                    <TextBlock Text="Sheets per document" Style="{StaticResource FieldLabelText}" />
-                                                    <ComboBox x:Name="SplitCountBox" HorizontalAlignment="Stretch"
-                                                              AutomationProperties.Name="Sheets per document"
-                                                              SelectionChanged="SplitCount_Changed" />
-                                                </StackPanel>
-                                                <TextBlock x:Name="SplitHint" Style="{StaticResource CaptionText}"
-                                                           TextWrapping="Wrap" Margin="0,4,0,0" />
-                                                <!-- At barcode or QR sheets: the page with a code kept as its document's first page, or the sheet left out. -->
-                                                <StackPanel x:Name="BarcodeOptions" Margin="0,8,0,0">
-                                                    <CheckBox x:Name="BarcodeStartsDocumentBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                              Content="A barcode starts a new document and names it"
-                                                              Checked="BarcodeStartsDocument_Changed" Unchecked="BarcodeStartsDocument_Changed" />
-                                                    <TextBlock x:Name="BarcodeStartsDocumentHint" Style="{StaticResource CaptionText}"
-                                                               TextWrapping="Wrap" Margin="0,0,0,4" />
-                                                    <!-- The name the QR separator sheet carries; empty: a sheet that only splits. -->
-                                                    <StackPanel x:Name="QrSheetNameRow" Margin="0,4,0,0">
-                                                        <TextBlock Text="Name on the QR sheet (optional)" Style="{StaticResource FieldLabelText}" Margin="0,0,0,4" />
+                                            <!-- Crop and straighten: changed pages carry a swap button in the page strip. -->
+                                            <CheckBox x:Name="AutoCropBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                      Content="Crop to page" ToolTipService.ShowOnDisabled="True"
+                                                      ToolTip="Cut away the scanner background"
+                                                      Checked="Geometry_Changed" Unchecked="Geometry_Changed" />
+                                            <CheckBox x:Name="AutoStraightenBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                      Content="Straighten pages" ToolTipService.ShowOnDisabled="True"
+                                                      ToolTip="Straighten slanted pages"
+                                                      Checked="Geometry_Changed" Unchecked="Geometry_Changed" />
+                                            <!-- Turn pages upright by reading their text: a turned page carries an
+                                                 undo button in the page strip. -->
+                                            <CheckBox x:Name="AutoRotateBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                      Content="Rotate pages upright" ToolTipService.ShowOnDisabled="True"
+                                                      Checked="AutoRotate_Changed" Unchecked="AutoRotate_Changed" />
+                                            <DockPanel x:Name="AutoRotateReason" Margin="0,0,0,4" Visibility="Collapsed">
+                                                <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE946;" />
+                                                <TextBlock x:Name="AutoRotateHint" Style="{StaticResource ReasonText}" />
+                                            </DockPanel>
+                                            <!-- Books and magazines: each spread is cut at the spine into its two pages;
+                                                 a page's Split… button or menu joins them again or moves the cut. -->
+                                            <CheckBox x:Name="SplitFacingPagesBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                      Content="Split facing pages" ToolTipService.ShowOnDisabled="True"
+                                                      Checked="SplitFacingPages_Changed" Unchecked="SplitFacingPages_Changed" />
+                                            <DockPanel x:Name="SplitFacingPagesReason" Margin="0,0,0,4" Visibility="Collapsed">
+                                                <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE946;" />
+                                                <TextBlock x:Name="SplitFacingPagesHint" Style="{StaticResource ReasonText}" />
+                                            </DockPanel>
+                                            <StackPanel x:Name="BookOptions" Margin="16,4,0,0">
+                                                <CheckBox x:Name="BookRightToLeftBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                          Content="Reads right to left"
+                                                          ToolTip="Arabic, Hebrew, manga: the right page of each spread comes first."
+                                                          Checked="BookRightToLeft_Changed" Unchecked="BookRightToLeft_Changed" />
+                                                <TextBlock Text="Book rotation" Style="{StaticResource FieldLabelText}" Margin="0,8,0,4" />
+                                                <ComboBox x:Name="BookRotationBox" HorizontalAlignment="Stretch"
+                                                          AutomationProperties.Name="Book rotation"
+                                                          AutomationProperties.HelpText="For a book lying sideways or upside down on the glass, from the next spread on."
+                                                          ToolTip="For a book lying sideways or upside down on the glass"
+                                                          SelectionChanged="BookRotation_Changed" />
+                                                <!-- The spine's shadow lightened on each page; the page strip's arrow shows a page as scanned. -->
+                                                <CheckBox x:Name="SoftenSpineShadowBox" Style="{StaticResource ToggleSwitchStyle}" Margin="0,8,0,0"
+                                                          Content="Soften spine shadow"
+                                                          Checked="SoftenSpineShadow_Changed" Unchecked="SoftenSpineShadow_Changed" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Expander>
+
+                                    <!-- Split the stack into documents: the page strip shows where before saving,
+                                         with a divider at each split; the gap between two pages splits or joins. -->
+                                    <Expander x:Name="SplitSection" Style="{StaticResource SectionExpanderStyle}" AutomationProperties.Name="Split into documents">
+                                        <StackPanel x:Name="SplitOptions">
+                                            <DockPanel x:Name="SplitReason" Margin="0,0,0,6" Visibility="Collapsed">
+                                                <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE946;" />
+                                                <TextBlock Style="{StaticResource ReasonText}" Text="{x:Static local:ShortText.NeedsCollectPages}" />
+                                            </DockPanel>
+                                            <DockPanel Margin="{StaticResource LabelSpacing}">
+                                                <local:InfoButton x:Name="SplitInfoButton" DockPanel.Dock="Right" Label="Split into documents"
+                                                                  Heading="How it works" Margin="4,-4,0,-4" />
+                                                <TextBlock Text="Split" Style="{StaticResource FieldLabelText}" Margin="0" VerticalAlignment="Center" />
+                                            </DockPanel>
+                                            <ComboBox x:Name="SplitModeBox" HorizontalAlignment="Stretch"
+                                                      AutomationProperties.Name="Split into documents"
+                                                      ToolTipService.ShowOnDisabled="True"
+                                                      SelectionChanged="SplitMode_Changed" />
+                                            <!-- One line: what happens to the sheets that split. -->
+                                            <TextBlock x:Name="SplitHint" Style="{StaticResource CaptionText}"
+                                                       TextWrapping="Wrap" Margin="0,4,0,0" />
+                                            <WrapPanel x:Name="SplitCountRow" Margin="0,8,0,0">
+                                                <TextBlock Text="New document every" Style="{StaticResource BodyText}"
+                                                           VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                <ComboBox x:Name="SplitCountBox" Width="72"
+                                                          AutomationProperties.Name="Sheets per document"
+                                                          SelectionChanged="SplitCount_Changed" />
+                                                <TextBlock x:Name="SplitCountUnit" Text="sheets" Style="{StaticResource BodyText}"
+                                                           VerticalAlignment="Center" Margin="8,0,0,0" />
+                                            </WrapPanel>
+                                            <!-- At barcode or QR sheets: a page with a code kept as its document's first
+                                                 page, or a separator sheet left out. -->
+                                            <StackPanel x:Name="BarcodeOptions" Margin="0,8,0,0">
+                                                <TextBlock Text="Codes are on" Style="{StaticResource FieldLabelText}" />
+                                                <Border Style="{StaticResource SegmentedTrackStyle}" AutomationProperties.Name="Codes are on">
+                                                    <UniformGrid Rows="1">
+                                                        <RadioButton x:Name="CodesOnSeparatorsButton" Style="{StaticResource SegmentedTextItemStyle}"
+                                                                     Content="Separator sheets" GroupName="CodesOn"
+                                                                     AutomationProperties.Name="Codes are on separator sheets"
+                                                                     Checked="CodesOn_Changed" />
+                                                        <RadioButton x:Name="CodesOnFirstPagesButton" Style="{StaticResource SegmentedTextItemStyle}"
+                                                                     Content="First pages" GroupName="CodesOn"
+                                                                     AutomationProperties.Name="Codes are on the documents' first pages"
+                                                                     Checked="CodesOn_Changed" />
+                                                    </UniformGrid>
+                                                </Border>
+                                                <TextBlock x:Name="BarcodeStartsDocumentHint" Style="{StaticResource CaptionText}"
+                                                           TextWrapping="Wrap" Margin="0,4,0,4" />
+                                                <!-- The name the QR separator sheet carries; empty: a sheet that only splits. -->
+                                                <StackPanel x:Name="QrSheetNameRow" Margin="0,4,0,0">
+                                                    <TextBlock Text="Name on sheet" Style="{StaticResource FieldLabelText}" />
+                                                    <Grid>
                                                         <TextBox x:Name="QrSheetNameBox"
                                                                  MaxLength="{x:Static core:DocumentSplitter.MaxLabelLength}"
                                                                  AutomationProperties.Name="Name on the QR sheet"
+                                                                 ToolTip="Names the document that follows the sheet"
                                                                  TextChanged="QrSheetName_Changed" />
-                                                    </StackPanel>
+                                                        <TextBlock x:Name="QrSheetNamePlaceholder" Text="Optional" Style="{StaticResource PlaceholderText}" />
+                                                    </Grid>
                                                 </StackPanel>
-                                                <!-- The separator sheet: a PDF to print anywhere, or printed here. -->
+                                            </StackPanel>
+                                            <!-- The separator sheet: a PDF to print anywhere, or printed here. -->
+                                            <WrapPanel Margin="-11,6,0,0">
                                                 <Button x:Name="SaveSeparatorButton" Style="{StaticResource SubtleButtonStyle}"
-                                                        Content="Save separator sheet (PDF)" HorizontalAlignment="Left" Margin="-11,4,0,0"
+                                                        local:Icon.Glyph="&#xE74E;" Content="Save sheet" Margin="0,0,4,0"
                                                         ToolTipService.ShowOnDisabled="True"
                                                         Click="SaveSeparator_Click" />
                                                 <Button x:Name="PrintSeparatorButton" Style="{StaticResource SubtleButtonStyle}"
-                                                        Content="Print separator sheet" HorizontalAlignment="Left" Margin="-11,0,0,4"
+                                                        local:Icon.Glyph="&#xE749;" Content="Print sheet"
                                                         ToolTipService.ShowOnDisabled="True"
                                                         Click="PrintSeparator_Click" />
-                                            </StackPanel>
-                                            <TextBlock Text="After saving" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />
+                                            </WrapPanel>
+                                        </StackPanel>
+                                    </Expander>
+
+                                    <!-- Archive & password (PDFs): the two exclude each other; while one is on the
+                                         other is greyed out with the reason next to it. -->
+                                    <Expander x:Name="ArchiveSection" Style="{StaticResource SectionExpanderStyle}" AutomationProperties.Name="Archive &amp; password">
+                                        <StackPanel x:Name="PdfOnlyOptions">
+                                            <!-- PDF/A-2b for keeping; label and hints from PdfA in Core. -->
+                                            <CheckBox x:Name="ArchivalBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                      ToolTipService.ShowOnDisabled="True"
+                                                      Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                                            <DockPanel x:Name="ArchivalReason" Margin="0,0,0,4" Visibility="Collapsed">
+                                                <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE72E;" />
+                                                <TextBlock Style="{StaticResource ReasonText}" Text="{x:Static core:PdfA.NotWithPasswordReason}" />
+                                            </DockPanel>
+                                            <!-- The password is asked for at each save and never stored; label and
+                                                 hints from PdfProtection in Core. -->
+                                            <CheckBox x:Name="ProtectBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                      Margin="0,4,0,0" ToolTipService.ShowOnDisabled="True"
+                                                      Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                                            <DockPanel x:Name="ProtectReason" Margin="0,0,0,4" Visibility="Collapsed">
+                                                <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE72E;" />
+                                                <TextBlock Style="{StaticResource ReasonText}" Text="{x:Static core:PdfProtection.NotWithArchivalReason}" />
+                                            </DockPanel>
+                                        </StackPanel>
+                                    </Expander>
+
+                                    <!-- More options: the text beside a PDF, after saving and the file name. -->
+                                    <Expander x:Name="MoreSection" Style="{StaticResource SectionExpanderStyle}" AutomationProperties.Name="More options">
+                                        <StackPanel>
+                                            <!-- The text of the pages in a .txt file beside each PDF; OCR reads each page once for both. -->
+                                            <CheckBox x:Name="AlsoSaveTextBox" Style="{StaticResource ToggleSwitchStyle}"
+                                                      Content="Also save text (.txt)" Margin="0,0,0,8"
+                                                      ToolTip="Saves the text in a .txt file next to the PDF"
+                                                      Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                                            <TextBlock Text="After saving" Style="{StaticResource FieldLabelText}" />
                                             <ComboBox x:Name="AfterSaveBox" HorizontalAlignment="Stretch"
                                                       AutomationProperties.Name="After saving"
                                                       SelectionChanged="AfterSave_Changed" />
-                                            <TextBlock Text="Save to" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />
-                                            <DockPanel Margin="{StaticResource FieldSpacing}">
-                                                <Button DockPanel.Dock="Right" Style="{StaticResource IconButtonStyle}" Content="&#xE838;"
-                                                        ToolTip="Choose the save folder"
-                                                        AutomationProperties.Name="Choose the save folder"
-                                                        Click="BrowseDestination_Click" />
-                                                <TextBox x:Name="DestinationBox" Margin="0,0,4,0"
-                                                         ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
-                                                         ScrollViewer.ScrollChanged="DestinationBox_ScrollChanged"
-                                                         LostKeyboardFocus="DestinationBox_LostKeyboardFocus"
-                                                         AutomationProperties.Name="Save to" LostFocus="Setting_Changed" />
+                                            <TextBlock Text="File name" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />
+                                            <DockPanel>
+                                                <Button x:Name="InsertTokenButton" DockPanel.Dock="Right" Style="{StaticResource SubtleButtonStyle}"
+                                                        Content="Insert" Margin="4,0,0,0" Padding="8,5,8,6"
+                                                        ToolTip="Insert the date, a number or another part"
+                                                        AutomationProperties.Name="Insert into the file name"
+                                                        Click="InsertToken_Click" />
+                                                <TextBox x:Name="TemplateBox" AutomationProperties.Name="File name"
+                                                         TextChanged="TemplateBox_TextChanged"
+                                                         LostFocus="Setting_Changed" />
                                             </DockPanel>
-                                            <TextBlock Text="File name" Style="{StaticResource FieldLabelText}" />
-                                            <TextBox x:Name="TemplateBox" AutomationProperties.Name="File name"
-                                                     LostFocus="Setting_Changed" />
-                                            <TextBlock Text="Tokens: {date} {time} {counter} {intent} {task} {label}"
-                                                       Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                            <!-- Live state: the name the next file gets. -->
+                                            <TextBlock x:Name="FileNamePreview" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                                                       Margin="0,4,0,0" Typography.NumeralAlignment="Tabular" />
                                         </StackPanel>
                                     </Expander>
                                 </StackPanel>
                             </ScrollViewer>
 
-                            <!-- Pinned actions: Scan is the primary action. -->
+                            <!-- Pinned actions: Scan is the primary action; Save with its menu below. -->
                             <Border Grid.Row="1" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
                                     BorderThickness="1,1,0,0" Padding="12">
                                 <StackPanel>
@@ -1090,36 +1231,56 @@
                                         <Button x:Name="PreviewButton" Style="{StaticResource IconTextButtonStyle}"
                                                 local:Icon.Glyph="&#xE8FF;" Content="Preview"
                                                 HorizontalAlignment="Stretch" MinHeight="36"
-                                                ToolTip="Quick low-resolution scan of the whole glass"
+                                                ToolTip="Quick look at the whole glass"
+                                                ToolTipService.ShowOnDisabled="True"
                                                 Click="Preview_Click" />
                                         <Button Grid.Column="2" x:Name="ScanButton" Style="{StaticResource AccentIconTextButtonStyle}"
                                                 local:Icon.Glyph="&#xE8FE;" Content="Scan" MinHeight="36"
                                                 Click="Scan_Click" />
                                     </Grid>
-                                    <!-- Pages from photos of documents, no scanner needed (PhotoImport): a row of its
-                                         own under Preview and Scan, as on the Mac, so Scan and Save keep their width. -->
-                                    <Button x:Name="ImportPhotosButton" Style="{StaticResource IconTextButtonStyle}"
-                                            local:Icon.Glyph="&#xEB9F;" HorizontalAlignment="Stretch" MinHeight="36"
-                                            Margin="0,8,0,0" Click="ImportPhotos_Click" />
+                                    <!-- Save (with the page count and, for a protected PDF, a lock) and its menu;
+                                         importing photos of documents; clearing the queue. -->
                                     <Grid x:Name="QueueButtons" Margin="0,8,0,0">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="1" />
+                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="4" />
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="4" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <Button x:Name="SavePdfButton" Style="{StaticResource AccentIconTextButtonStyle}"
-                                                local:Icon.Glyph="&#xEA90;" Content="Save PDF" ToolTip="Save PDF" MinHeight="36"
+                                                ContentTemplate="{StaticResource SaveLabelTemplate}"
+                                                local:Icon.Glyph="&#xEA90;" Content="Save PDF" MinHeight="36"
                                                 Click="SavePdf_Click" />
-                                        <!-- Add the pages to the end of a PDF the user picks (PdfAppender). -->
-                                        <Button Grid.Column="2" x:Name="AddToPdfButton" Style="{StaticResource IconButtonStyle}"
-                                                Content="&#xE8E5;" Width="36" Height="36"
-                                                Click="AddToPdf_Click" />
-                                        <Button Grid.Column="4" x:Name="ClearButton" Style="{StaticResource IconButtonStyle}"
+                                        <!-- The split part: the other ways to save the queue. -->
+                                        <Button Grid.Column="2" x:Name="SaveMenuButton" Style="{StaticResource AccentButtonStyle}"
+                                                FontFamily="{StaticResource IconFontFamily}" FontSize="10" Content="&#xE70D;"
+                                                MinHeight="36" Width="30" Padding="0"
+                                                ToolTip="More ways to save"
+                                                AutomationProperties.Name="More ways to save"
+                                                Click="SaveMenu_Click">
+                                            <Button.ContextMenu>
+                                                <ContextMenu x:Name="SaveMenu">
+                                                    <!-- Add the pages to the end of a PDF the user picks (PdfAppender). -->
+                                                    <MenuItem x:Name="AddToPdfButton" Click="AddToPdf_Click" ToolTipService.ShowOnDisabled="True">
+                                                        <MenuItem.Icon>
+                                                            <TextBlock Style="{StaticResource GlyphText}" Text="&#xE8E5;" />
+                                                        </MenuItem.Icon>
+                                                    </MenuItem>
+                                                </ContextMenu>
+                                            </Button.ContextMenu>
+                                        </Button>
+                                        <!-- Pages from photos of documents, no scanner needed (PhotoImport). -->
+                                        <Button Grid.Column="4" x:Name="ImportPhotosButton" Style="{StaticResource IconButtonStyle}"
+                                                Content="&#xEB9F;" Width="36" Height="36"
+                                                Click="ImportPhotos_Click" />
+                                        <Button Grid.Column="6" x:Name="ClearButton" Style="{StaticResource IconButtonStyle}"
                                                 Content="&#xE74D;" Width="36" Height="36"
-                                                ToolTip="Remove every page from the queue"
-                                                AutomationProperties.Name="Clear"
+                                                ToolTip="Remove all pages"
+                                                AutomationProperties.Name="Remove every page from the queue"
+                                                ToolTipService.ShowOnDisabled="True"
                                                 Click="ClearPages_Click" />
                                     </Grid>
                                 </StackPanel>
@@ -1170,14 +1331,13 @@
                             CornerRadius="8,8,0,0" Padding="24,20,24,12">
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                                <TextBlock x:Name="ReviewTitle" Text="Detected photos" Style="{StaticResource SubtitleText}" />
-                                <TextBlock Text="Untick any false positives, or fix a crop."
-                                           Style="{StaticResource SecondaryBodyText}" Margin="0,4,0,0" />
+                                <TextBlock x:Name="ReviewTitle" Text="Found photos" Style="{StaticResource SubtitleText}" />
                             </StackPanel>
                             <!-- The right margin puts the scrollbar in the dialog's padding, clear of the cards. -->
                             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                           Margin="-6,0,-18,0">
-                                <ItemsControl x:Name="PhotoGrid" Margin="0,0,12,0">
+                                <ItemsControl x:Name="PhotoGrid" Margin="0,0,12,0"
+                                              AutomationProperties.HelpText="Untick a photo to leave it out, or fix its crop.">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <WrapPanel />
@@ -1200,11 +1360,11 @@
                                                         </Border>
                                                         <DockPanel Margin="0,8,0,0">
                                                             <Button DockPanel.Dock="Right" Style="{StaticResource SmallIconButtonStyle}"
-                                                                    Content="&#xE7AD;" ToolTip="Rotate 90° clockwise"
+                                                                    Content="&#xE7AD;" ToolTip="Rotate"
                                                                     AutomationProperties.Name="Rotate 90° clockwise"
                                                                     Click="ReviewRotate_Click" />
                                                             <Button DockPanel.Dock="Right" Style="{StaticResource SmallIconButtonStyle}"
-                                                                    Content="&#xE7A8;" ToolTip="Adjust the crop manually"
+                                                                    Content="&#xE7A8;" ToolTip="Fix crop"
                                                                     AutomationProperties.Name="Adjust the crop manually"
                                                                     Click="ReviewCrop_Click" />
                                                             <CheckBox Content="Keep" IsChecked="{Binding Included}" Click="ReviewKeep_Click"
@@ -1250,7 +1410,7 @@
                                         Click="IdCardPrint_Click" />
                                 <Button x:Name="IdCardDiscardButton" Style="{StaticResource IconTextButtonStyle}"
                                         local:Icon.Glyph="&#xE74D;" Content="Discard" MinWidth="110"
-                                        ToolTip="Drop both sides without saving them"
+                                        ToolTip="Delete both sides; can't be undone"
                                         Click="IdCardDiscard_Click" />
                                 <Button x:Name="IdCardSaveButton" Style="{StaticResource AccentIconTextButtonStyle}"
                                         local:Icon.Glyph="&#xE74E;" Content="Save" MinWidth="110" Margin="8,0,0,0"
@@ -1261,7 +1421,7 @@
                                     <TextBlock x:Name="IdCardPaperLabel" Text="Paper" Style="{StaticResource BodyText}"
                                                VerticalAlignment="Center" Margin="0,0,8,0" />
                                     <ComboBox x:Name="IdCardPaperBox" MinWidth="150" AutomationProperties.Name="Paper"
-                                              ToolTip="The page both sides are laid out on"
+                                              AutomationProperties.HelpText="The page both sides are laid out on"
                                               SelectionChanged="IdCardPaper_Changed" />
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Margin="0,0,16,6">
@@ -1270,9 +1430,9 @@
                                     <ComboBox x:Name="IdCardFormatBox" MinWidth="90" AutomationProperties.Name="Save as"
                                               SelectionChanged="IdCardFormat_Changed" />
                                 </StackPanel>
-                                <CheckBox x:Name="IdCardSidesBox" Content="Also save each side as an image"
+                                <CheckBox x:Name="IdCardSidesBox" Content="Also save sides as images"
                                           VerticalAlignment="Center" Margin="0,0,0,6"
-                                          ToolTip="Each side is saved as a picture of its own too, next to the page"
+                                          AutomationProperties.HelpText="Each side is saved as a picture of its own too, next to the page"
                                           Click="IdCardSides_Click" />
                             </WrapPanel>
                         </DockPanel>
@@ -1283,8 +1443,14 @@
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
                                 <TextBlock x:Name="IdCardReviewTitle" Text="Check the ID card" Style="{StaticResource SubtitleText}" />
-                                <TextBlock Text="Both sides go on one page at their real size. The scans stay on this PC: they are not kept in the Scans tab, and are cleared once you save or discard them."
-                                           Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                                <!-- Privacy: always shown. -->
+                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0" Background="Transparent"
+                                            ToolTip="The scans stay on this PC and are cleared once you save or discard them."
+                                            AutomationProperties.HelpText="The scans stay on this PC and are cleared once you save or discard them.">
+                                    <TextBlock Style="{StaticResource GlyphText}" FontSize="12" Text="&#xEA18;" Margin="0,1,6,0"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock Text="{x:Static local:ShortText.NotKeptInHistory}" Style="{StaticResource SecondaryBodyText}" />
+                                </StackPanel>
                             </StackPanel>
                             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                           Margin="0,0,-18,0">
@@ -1296,15 +1462,15 @@
                                             <StackPanel>
                                                 <DockPanel>
                                                     <Button DockPanel.Dock="Right" Style="{StaticResource SmallIconButtonStyle}"
-                                                            Content="&#xE72C;" Tag="front" ToolTip="Scan the front again"
+                                                            Content="&#xE72C;" Tag="front" ToolTip="Scan again"
                                                             AutomationProperties.Name="Scan the front again"
                                                             Click="IdCardRetake_Click" />
                                                     <Button DockPanel.Dock="Right" x:Name="IdCardFrontCropButton" Style="{StaticResource SmallIconButtonStyle}"
-                                                            Content="&#xE7A8;" Tag="front" ToolTip="Fix the crop of the front"
+                                                            Content="&#xE7A8;" Tag="front" ToolTip="Fix crop"
                                                             AutomationProperties.Name="Fix the crop of the front"
                                                             Click="IdCardCrop_Click" />
                                                     <Button DockPanel.Dock="Right" Style="{StaticResource SmallIconButtonStyle}"
-                                                            Content="&#xE7AD;" Tag="front" ToolTip="Turn the front 90° clockwise"
+                                                            Content="&#xE7AD;" Tag="front" ToolTip="Rotate"
                                                             AutomationProperties.Name="Turn the front 90° clockwise"
                                                             Click="IdCardRotate_Click" />
                                                     <TextBlock Text="Front" Style="{StaticResource BodyStrongText}" VerticalAlignment="Center" />
@@ -1329,15 +1495,15 @@
                                             <StackPanel>
                                                 <DockPanel>
                                                     <Button DockPanel.Dock="Right" x:Name="IdCardBackRetakeButton" Style="{StaticResource SmallIconButtonStyle}"
-                                                            Content="&#xE72C;" Tag="back" ToolTip="Scan the back again"
+                                                            Content="&#xE72C;" Tag="back" ToolTip="Scan again"
                                                             AutomationProperties.Name="Scan the back again"
                                                             Click="IdCardRetake_Click" />
                                                     <Button DockPanel.Dock="Right" x:Name="IdCardBackCropButton" Style="{StaticResource SmallIconButtonStyle}"
-                                                            Content="&#xE7A8;" Tag="back" ToolTip="Fix the crop of the back"
+                                                            Content="&#xE7A8;" Tag="back" ToolTip="Fix crop"
                                                             AutomationProperties.Name="Fix the crop of the back"
                                                             Click="IdCardCrop_Click" />
                                                     <Button DockPanel.Dock="Right" x:Name="IdCardBackRotateButton" Style="{StaticResource SmallIconButtonStyle}"
-                                                            Content="&#xE7AD;" Tag="back" ToolTip="Turn the back 90° clockwise"
+                                                            Content="&#xE7AD;" Tag="back" ToolTip="Rotate"
                                                             AutomationProperties.Name="Turn the back 90° clockwise"
                                                             Click="IdCardRotate_Click" />
                                                     <TextBlock Text="Back" Style="{StaticResource BodyStrongText}" VerticalAlignment="Center" />
@@ -1367,19 +1533,20 @@
                                             </StackPanel>
                                         </Border>
                                         <Button x:Name="IdCardSwapButton" Style="{StaticResource SubtleButtonStyle}"
-                                                local:Icon.Glyph="&#xE8AB;" Content="Swap front and back"
+                                                local:Icon.Glyph="&#xE8AB;" Content="Swap sides"
+                                                AutomationProperties.Name="Swap front and back"
                                                 HorizontalAlignment="Left" Margin="-11,8,0,0"
                                                 ToolTip="The sides were scanned the other way round"
                                                 Click="IdCardSwap_Click" />
                                     </StackPanel>
                                     <!-- The page both sides go on, drawn small. -->
                                     <StackPanel Width="300" Margin="0,0,0,12">
-                                        <TextBlock Text="The page" Style="{StaticResource BodyStrongText}" Margin="0,0,0,8" />
                                         <Border HorizontalAlignment="Left" Background="White" Effect="{DynamicResource PageShadow}"
                                                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="1">
                                             <Image x:Name="IdCardPageImage" Height="380" Stretch="Uniform"
                                                    RenderOptions.BitmapScalingMode="HighQuality"
-                                                   AutomationProperties.Name="The page both sides are saved on" />
+                                                   AutomationProperties.Name="Page preview"
+                                                   AutomationProperties.HelpText="The page both sides are saved on" />
                                         </Border>
                                         <TextBlock x:Name="IdCardLayoutText" Style="{StaticResource CaptionText}" TextWrapping="Wrap"
                                                    Margin="0,10,0,0" AutomationProperties.LiveSetting="Polite" />
@@ -1399,6 +1566,21 @@
             </Border>
         </Grid>
 
+        <!-- While photo files the window takes are dragged over it: where they go. -->
+        <Border Grid.Row="1" x:Name="DropOverlay" Visibility="Collapsed" IsHitTestVisible="False" Margin="8"
+                CornerRadius="8" BorderThickness="2"
+                BorderBrush="{DynamicResource AccentFillColorDefaultBrush}"
+                Background="{DynamicResource SmokeFillColorDefaultBrush}">
+            <Border Style="{StaticResource DialogCardStyle}" Padding="24,16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Style="{StaticResource GlyphText}" FontSize="24" Text="&#xEB9F;" Margin="0,0,12,0"
+                               Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                    <TextBlock Text="{x:Static local:ShortText.DropToAddPages}" Style="{StaticResource SubtitleText}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
+        </Border>
+
         <!-- Status bar -->
         <StatusBar Grid.Row="2" Background="Transparent" BorderThickness="0,1,0,0"
                    BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" MinHeight="36" Padding="8,0">
@@ -1417,6 +1599,7 @@
                 </StackPanel>
             </StatusBarItem>
             <StatusBarItem>
+                <!-- A short line on screen; its name is the whole sentence, read out as it changes. -->
                 <TextBlock x:Name="StatusText" Text="Looking for scanners…" Style="{StaticResource CaptionText}"
                            FontSize="13" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
                            AutomationProperties.LiveSetting="Polite" />

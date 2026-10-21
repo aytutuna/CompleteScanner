@@ -8,7 +8,7 @@ using Microsoft.Win32;
 namespace CompleteScanner.App;
 
 /// <summary>
-/// Add to existing PDF…: the button under the queue picks a PDF and the view model adds the pages
+/// Add to existing PDF…: the item in the Save button's menu picks a PDF and the view model adds the pages
 /// to its end (<see cref="AppViewModel.AppendToPdf"/>); a question first when the file is signed or
 /// is a PDF/A file the pages may not keep so.
 /// </summary>
@@ -16,9 +16,10 @@ public partial class MainWindow
 {
     private void SetUpAddToPdf()
     {
-        AddToPdfButton.ToolTip = PdfAppender.ButtonLabel;
+        AddToPdfButton.Header = PdfAppender.ButtonLabel;
+        AddToPdfButton.ToolTip = PdfAppender.ButtonHint;
         ToolTipService.SetShowOnDisabled(AddToPdfButton, true);
-        AutomationProperties.SetName(AddToPdfButton, PdfAppender.ButtonLabel.TrimEnd('…'));
+        AutomationProperties.SetName(AddToPdfButton, PdfAppender.ButtonLabel);
         AutomationProperties.SetHelpText(AddToPdfButton, PdfAppender.ButtonHint);
         ViewModel.ConfirmAppend = message =>
             MessageBox.Show(this, message, "CompleteScanner", MessageBoxButton.YesNo, MessageBoxImage.Warning,

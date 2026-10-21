@@ -2,118 +2,116 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:CompleteScanner.App">
-    <!-- The start screen: what are you scanning? One card per task, then the user's own presets.
-         Each group of cards is one Tab stop; the arrow keys move between its cards and Enter or
-         Space opens one. The header and the grids share side insets that centre the grid
-         (see UpdateInsets), like the Scans and Saved tabs. -->
+    <!-- The start screen: what are you scanning? The user's presets first (only when there are some),
+         then the tasks in three groups. Each tile is an icon and a title; what a task does and what it
+         sets are its tooltip, shown on hover and on keyboard focus, and its help text for screen
+         readers. All the task tiles are one Tab stop: the arrow keys move between them and Enter or
+         Space opens one. The header and the groups share side insets that centre the tiles (see
+         UpdateInsets), like the Scans and Saved tabs. -->
+    <UserControl.Resources>
+        <DataTemplate x:Key="TaskTileTemplate">
+            <Button x:Name="Card" Style="{StaticResource TaskTileButtonStyle}" Click="TaskCard_Click"
+                    IsEnabled="{Binding IsAvailable}"
+                    AutomationProperties.Name="{Binding Title}"
+                    AutomationProperties.HelpText="{Binding HelpText}">
+                <Button.ToolTip>
+                    <StackPanel MaxWidth="280">
+                        <TextBlock Text="{Binding Subtitle}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding TipDetail}" TextWrapping="Wrap" Margin="0,2,0,0" Opacity="0.75"
+                                   Typography.NumeralAlignment="Tabular" />
+                    </StackPanel>
+                </Button.ToolTip>
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top">
+                        <Border x:Name="CurrentTag" DockPanel.Dock="Right" Style="{StaticResource AccentTagStyle}"
+                                Visibility="Collapsed">
+                            <TextBlock Text="Current" Style="{StaticResource AccentTagText}" />
+                        </Border>
+                        <TextBlock x:Name="TileGlyph" Text="{Binding Glyph}" Style="{StaticResource TaskTileGlyphStyle}" />
+                    </DockPanel>
+                    <!-- Only an unavailable task has a second line: why. -->
+                    <TextBlock x:Name="Reason" DockPanel.Dock="Bottom" Text="{Binding ShortReason}" Style="{StaticResource ReasonText}"
+                               Visibility="Collapsed" />
+                    <TextBlock Text="{Binding Title}" Style="{StaticResource BodyStrongText}" TextWrapping="Wrap"
+                               Margin="0,6,0,0" VerticalAlignment="Top" />
+                </DockPanel>
+            </Button>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                    <Setter TargetName="CurrentTag" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsAvailable}" Value="False">
+                    <Setter TargetName="Reason" Property="Visibility" Value="Visible" />
+                    <Setter TargetName="TileGlyph" Property="Opacity" Value="0.4" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+    </UserControl.Resources>
+
     <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                   Focusable="False" ScrollChanged="Scroller_ScrollChanged">
         <StackPanel Margin="0,0,0,16">
             <DockPanel x:Name="Header" Margin="16,20,16,4">
                 <Button DockPanel.Dock="Right" x:Name="GoToScanButton" Style="{StaticResource IconTextButtonStyle}"
-                        local:Icon.Glyph="&#xE8FE;" Content="Go to Scan" VerticalAlignment="Top" Margin="16,4,0,0"
-                        ToolTip="Open the scan screen with the settings as they are"
+                        local:Icon.Glyph="&#xE8FE;" Content="Go to Scan" VerticalAlignment="Center" Margin="16,0,0,0"
+                        ToolTip="Scan with your current settings"
                         Click="GoToScan_Click" />
-                <StackPanel>
-                    <TextBlock Text="What are you scanning?" Style="{StaticResource TitleText}"
-                               TextWrapping="Wrap" />
-                    <TextBlock Text="Pick a task and everything is set up for it. Every setting can still be changed on the Scan screen."
-                               Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" Margin="0,4,0,0" />
-                </StackPanel>
+                <TextBlock Text="What are you scanning?" Style="{StaticResource TitleText}" TextWrapping="Wrap"
+                           VerticalAlignment="Center" />
             </DockPanel>
 
-            <TextBlock x:Name="TasksHeader" Text="Tasks" Style="{StaticResource SectionHeaderText}" Margin="16,16,16,2" />
-            <ItemsControl x:Name="TaskGrid" Margin="10,0,10,0" Focusable="False"
-                          AutomationProperties.Name="Tasks"
-                          KeyboardNavigation.TabNavigation="Once"
-                          KeyboardNavigation.DirectionalNavigation="Contained">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Button x:Name="Card" Style="{StaticResource TaskCardButtonStyle}" Click="TaskCard_Click"
-                                IsEnabled="{Binding IsAvailable}"
-                                AutomationProperties.Name="{Binding Title}"
-                                AutomationProperties.HelpText="{Binding HelpText}">
-                            <Button.ToolTip>
-                                <TextBlock x:Name="TipText" Text="{Binding Subtitle}" TextWrapping="Wrap" MaxWidth="280" />
-                            </Button.ToolTip>
-                            <DockPanel>
-                                <DockPanel DockPanel.Dock="Top">
-                                    <Border x:Name="CurrentTag" DockPanel.Dock="Right" Style="{StaticResource AccentTagStyle}"
-                                            Visibility="Collapsed">
-                                        <TextBlock Text="Current" Style="{StaticResource AccentTagText}" />
-                                    </Border>
-                                    <Border Style="{StaticResource TaskIconBadgeStyle}">
-                                        <TextBlock Text="{Binding Glyph}" Style="{StaticResource TaskIconGlyphStyle}" />
-                                    </Border>
+            <!-- The user's presets: shown only when there are some. -->
+            <StackPanel x:Name="PresetsPanel" Visibility="Collapsed">
+                <TextBlock x:Name="PresetsHeader" Text="My presets" Style="{StaticResource SectionHeaderText}" Margin="16,16,16,2" />
+                <ItemsControl x:Name="PresetGrid" Margin="10,0,10,0" Focusable="False"
+                              AutomationProperties.Name="My presets"
+                              KeyboardNavigation.TabNavigation="Once"
+                              KeyboardNavigation.DirectionalNavigation="Contained">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource TaskTileButtonStyle}" Click="PresetCard_Click"
+                                    ToolTip="{Binding Summary}"
+                                    AutomationProperties.Name="{Binding AccessibleName}"
+                                    AutomationProperties.HelpText="{Binding HelpText}">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Top" Text="{Binding Glyph}" Style="{StaticResource TaskTileGlyphStyle}" />
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource BodyStrongText}" TextWrapping="Wrap"
+                                               TextTrimming="CharacterEllipsis" MaxHeight="40" Margin="0,6,0,0"
+                                               VerticalAlignment="Top" />
                                 </DockPanel>
-                                <TextBlock DockPanel.Dock="Top" Text="{Binding Title}" Style="{StaticResource BodyStrongText}"
-                                           TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="40" Margin="0,12,0,2" />
-                                <!-- Footer: what the task sets, or why it cannot be started. -->
-                                <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
-                                    <TextBlock x:Name="FooterGlyph" DockPanel.Dock="Left" Style="{StaticResource GlyphText}"
-                                               FontSize="12" Text="&#xE946;" Margin="0,1,6,0" VerticalAlignment="Top"
-                                               Visibility="Collapsed" />
-                                    <!-- Up to two lines, as on macOS: two-sided scanning by hand makes the line long. -->
-                                    <TextBlock x:Name="Footer" Text="{Binding Summary}" Style="{StaticResource CaptionText}"
-                                               TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="34"
-                                               Typography.NumeralAlignment="Tabular" />
-                                </DockPanel>
-                                <TextBlock Text="{Binding Subtitle}" Style="{StaticResource CaptionText}"
-                                           TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
-                            </DockPanel>
-                        </Button>
-                        <DataTemplate.Triggers>
-                            <DataTrigger Binding="{Binding IsCurrent}" Value="True">
-                                <Setter TargetName="CurrentTag" Property="Visibility" Value="Visible" />
-                            </DataTrigger>
-                            <DataTrigger Binding="{Binding IsAvailable}" Value="False">
-                                <Setter TargetName="Footer" Property="Text" Value="{Binding Reason}" />
-                                <Setter TargetName="Footer" Property="TextWrapping" Value="Wrap" />
-                                <Setter TargetName="FooterGlyph" Property="Visibility" Value="Visible" />
-                                <Setter TargetName="TipText" Property="Text" Value="{Binding Reason}" />
-                            </DataTrigger>
-                        </DataTemplate.Triggers>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
 
-            <TextBlock x:Name="PresetsHeader" Text="My presets" Style="{StaticResource SectionHeaderText}" Margin="16,16,16,2" />
-            <TextBlock x:Name="NoPresetsText" Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap"
-                       Margin="16,4,16,0"
-                       Text="Settings you save as a preset (the + next to Presets in the side pane) appear here." />
-            <ItemsControl x:Name="PresetGrid" Margin="10,0,10,0" Focusable="False"
-                          AutomationProperties.Name="My presets"
+            <!-- The tasks, in their groups (TaskGroups): one Tab stop for all the tiles. -->
+            <ItemsControl x:Name="TaskGrid" Focusable="False"
+                          AutomationProperties.Name="Tasks"
+                          AutomationProperties.HelpText="Picking a task sets everything up. You can change any setting later."
                           KeyboardNavigation.TabNavigation="Once"
                           KeyboardNavigation.DirectionalNavigation="Contained">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Button Style="{StaticResource TaskCardButtonStyle}" Height="148" Click="PresetCard_Click"
-                                ToolTip="{Binding Name}"
-                                AutomationProperties.Name="{Binding Name}"
-                                AutomationProperties.HelpText="{Binding HelpText}">
-                            <DockPanel>
-                                <Border DockPanel.Dock="Top" Style="{StaticResource TaskIconBadgeStyle}">
-                                    <TextBlock Text="{Binding Glyph}" Style="{StaticResource TaskIconGlyphStyle}" />
-                                </Border>
-                                <TextBlock DockPanel.Dock="Top" Text="{Binding Name}" Style="{StaticResource BodyStrongText}"
-                                           TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="40" Margin="0,12,0,2" />
-                                <TextBlock DockPanel.Dock="Bottom" Text="{Binding Summary}" Style="{StaticResource CaptionText}"
-                                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
-                                           Typography.NumeralAlignment="Tabular" />
-                                <TextBlock Text="{Binding TaskTitle}" Style="{StaticResource CaptionText}"
-                                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-                            </DockPanel>
-                        </Button>
+                        <StackPanel>
+                            <TextBlock Text="{Binding Title}" Style="{StaticResource SectionHeaderText}"
+                                       Margin="{Binding HeaderMargin, RelativeSource={RelativeSource AncestorType=local:TaskStartView}}" />
+                            <ItemsControl ItemsSource="{Binding Cards}" Focusable="False"
+                                          AutomationProperties.Name="{Binding Title}"
+                                          Margin="{Binding GridMargin, RelativeSource={RelativeSource AncestorType=local:TaskStartView}}"
+                                          ItemTemplate="{StaticResource TaskTileTemplate}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                        </StackPanel>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>

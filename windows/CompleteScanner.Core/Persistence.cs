@@ -107,6 +107,14 @@ public sealed class AppPreferences
     /// settings. Windows only: the Mac has no TWAIN.
     /// </summary>
     public List<string> TwainDriverWindow { get; set; } = [];
+
+    /// <summary>
+    /// Which sections of the scan screen's inspector the user left open or closed: section id
+    /// ("scanner", "output", "adjustments", "pages", "split", "archive", "more", "task") → open.
+    /// A section without an entry uses its default. Kept per user, not in presets. Windows only:
+    /// the Mac app lays out its settings its own way.
+    /// </summary>
+    public Dictionary<string, bool> InspectorSections { get; set; } = [];
 }
 
 public static class AppPreferencesStore

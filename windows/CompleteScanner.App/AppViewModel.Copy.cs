@@ -54,12 +54,12 @@ public sealed partial class AppViewModel
     public string CopyPaperText => _copySetup?.Paper.Description ?? "";
 
     /// <summary>
-    /// "Edges may be cut by up to 5 mm (printer margins)." when copies at real size from the corner of
-    /// the paper lose an edge to the chosen printer's margins; null otherwise.
+    /// "Edges may lose up to 5 mm" when copies at real size from the corner of the paper lose an edge
+    /// to the chosen printer's margins; null otherwise (and while Fit to page is on).
     /// </summary>
     public string? CopyMarginWarning =>
         _copySetup is { } setup && !Settings.TaskOptions.CopyFitToPage && setup.Paper.LargestMargin > PrintLayout.ClipWarningInches
-            ? $"Edges may be cut by up to {PrintLayout.Millimetres(setup.Paper.LargestMargin)} mm (printer margins)."
+            ? $"Edges may lose up to {PrintLayout.Millimetres(setup.Paper.LargestMargin)} mm"
             : null;
 
     private static bool SameName(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);

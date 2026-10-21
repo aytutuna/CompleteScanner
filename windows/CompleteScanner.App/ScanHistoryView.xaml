@@ -44,9 +44,12 @@
                             <DataTemplate>
                                 <!-- Exactly one Button per card, so the card is a single Tab stop opened with
                                      Enter/Space; the zoom badge below is decoration only. -->
+                                <!-- The tooltip (made as it opens: "Just now" ages) holds what the card does not show. -->
                                 <Button x:Name="Card" Style="{StaticResource CardButtonStyle}" Width="200" Margin="6"
-                                        Click="Thumbnail_Click" Cursor="Hand" ToolTip="Enlarge"
-                                        AutomationProperties.Name="{Binding DetailText}">
+                                        Click="Thumbnail_Click" Cursor="Hand" ToolTip=""
+                                        ToolTipOpening="Card_ToolTipOpening"
+                                        AutomationProperties.Name="{Binding AccessibleName}"
+                                        AutomationProperties.HelpText="Opens the scan larger">
                                     <StackPanel>
                                         <Grid Height="156">
                                             <Border Style="{StaticResource ImageWellStyle}">
@@ -60,38 +63,26 @@
                                             </Border>
                                         </Grid>
     
+                                        <!-- The mode as an icon (the name says it), then when it was scanned. -->
                                         <DockPanel Margin="2,10,2,0">
                                             <TextBlock x:Name="IntentGlyph" DockPanel.Dock="Left" Text="&#xE8A5;"
                                                        Style="{StaticResource GlyphText}" Margin="0,0,8,0"
                                                        Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
-                                            <TextBlock x:Name="IntentLabel" Text="Document" Style="{StaticResource BodyStrongText}"
-                                                       TextWrapping="NoWrap" VerticalAlignment="Center" />
+                                            <TextBlock Style="{StaticResource BodyText}" TextWrapping="NoWrap" VerticalAlignment="Center"
+                                                       Typography.NumeralAlignment="Tabular">
+                                                <TextBlock.Text>
+                                                    <MultiBinding Converter="{StaticResource ScanTimeConverter}">
+                                                        <Binding Path="Entry.Date" />
+                                                        <Binding Path="Now" ElementName="Root" />
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
                                         </DockPanel>
-    
-                                        <WrapPanel Margin="2,8,0,0">
-                                            <Border Style="{StaticResource ChipStyle}">
-                                                <TextBlock Style="{StaticResource ChipText}"
-                                                           Text="{Binding Entry.Dpi, StringFormat='{}{0} dpi'}" />
-                                            </Border>
-                                            <Border Style="{StaticResource ChipStyle}">
-                                                <TextBlock Style="{StaticResource ChipText}" Text="{Binding PixelSizeText}" />
-                                            </Border>
-                                        </WrapPanel>
-    
-                                        <TextBlock Style="{StaticResource CaptionText}" Margin="2,2,2,0" TextWrapping="NoWrap">
-                                            <TextBlock.Text>
-                                                <MultiBinding Converter="{StaticResource ScanTimeConverter}">
-                                                    <Binding Path="Entry.Date" />
-                                                    <Binding Path="Now" ElementName="Root" />
-                                                </MultiBinding>
-                                            </TextBlock.Text>
-                                        </TextBlock>
                                     </StackPanel>
                                 </Button>
                                 <DataTemplate.Triggers>
                                     <DataTrigger Binding="{Binding Entry.Intent}" Value="Photo">
                                         <Setter TargetName="IntentGlyph" Property="Text" Value="&#xEB9F;" />
-                                        <Setter TargetName="IntentLabel" Property="Text" Value="Photos" />
                                     </DataTrigger>
                                     <Trigger SourceName="Card" Property="IsMouseOver" Value="True">
                                         <Setter TargetName="ZoomBadge" Property="Opacity" Value="1" />

@@ -64,31 +64,28 @@
                                             Click="Open_Click" ToolTip="Open with the default app"
                                             AutomationProperties.Name="{Binding Name, StringFormat='Open {0}'}" />
                                     <Button Style="{StaticResource SmallIconButtonStyle}" Content="&#xE72D;"
-                                            Click="Share_Click" ToolTip="Share: send with Mail, Outlook, nearby sharing or another app"
+                                            Click="Share_Click" ToolTip="Send by email or to an app"
                                             AutomationProperties.Name="{Binding Name, StringFormat='Share {0}'}" />
                                     <Button Style="{StaticResource SmallIconButtonStyle}" Content="&#xE838;"
                                             Click="Reveal_Click" ToolTip="Show in File Explorer"
                                             AutomationProperties.Name="{Binding Name, StringFormat='Show {0} in File Explorer'}" />
                                     <Button Style="{StaticResource SmallIconButtonStyle}" Content="&#xE7AD;"
-                                            Click="Rotate_Click" ToolTip="Rotate the saved file 90° clockwise"
+                                            Click="Rotate_Click" ToolTip="Rotate"
                                             AutomationProperties.Name="{Binding Name, StringFormat='Rotate {0} 90° clockwise'}"
                                             Visibility="{Binding RotateVisibility}"
                                             IsEnabled="{Binding CanRotate}" />
                                     <Button Style="{StaticResource SmallIconButtonStyle}" Content="&#xE712;"
-                                            Click="More_Click" ToolTip="More: open with, email, copy"
+                                            Click="More_Click" ToolTip="More"
                                             AutomationProperties.Name="{Binding Name, StringFormat='More actions for {0}'}"
                                             AutomationProperties.HelpText="Opens a menu: open, open with, show in folder, share, email, copy" />
                                 </StackPanel>
                             </Border>
                         </Grid>
+                        <!-- The name and the date; the size (and the whole name, when it is cut) is the tooltip. -->
                         <TextBlock Text="{Binding Name}" Style="{StaticResource BodyText}" Margin="2,8,2,0"
-                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}" />
-                        <DockPanel Margin="2,2,2,0">
-                            <TextBlock DockPanel.Dock="Right" Text="{Binding SizeText}" Style="{StaticResource CaptionText}"
-                                       Margin="8,0,0,0" TextWrapping="NoWrap" Typography.NumeralAlignment="Tabular" />
-                            <TextBlock Text="{Binding DateText}" Style="{StaticResource CaptionText}"
-                                       TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-                        </DockPanel>
+                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding ToolTipText}" />
+                        <TextBlock Text="{Binding DateText}" Style="{StaticResource CaptionText}" Margin="2,2,2,0"
+                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding ToolTipText}" />
                     </StackPanel>
                 </Border>
             </Grid>
@@ -117,20 +114,17 @@
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"
                         Margin="8,0,-11,0">
                 <Button Style="{StaticResource SubtleButtonStyle}" local:Icon.Glyph="&#xE838;"
-                        Content="Show in Explorer" ToolTip="Open the destination folder in File Explorer"
+                        Content="Open folder"
+                        AutomationProperties.HelpText="Opens the save folder in File Explorer"
                         Click="RevealFolder_Click" />
-                <Button Style="{StaticResource SubtleButtonStyle}" local:Icon.Glyph="&#xE72C;"
-                        Content="Refresh" Margin="4,0,0,0" ToolTip="Re-read the destination folder"
+                <Button Style="{StaticResource IconButtonStyle}" Content="&#xE72C;" Margin="4,0,0,0"
+                        ToolTip="Refresh" AutomationProperties.Name="Refresh"
+                        AutomationProperties.HelpText="Reads the save folder again"
                         Click="Refresh_Click" />
             </StackPanel>
-            <StackPanel VerticalAlignment="Center">
-                <TextBlock x:Name="FolderName" Style="{StaticResource SubtitleText}"
-                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
-                <!-- The full path, shortened in the middle to fit (see FitFolderText). -->
-                <TextBlock x:Name="FolderText" Style="{StaticResource CaptionText}" Margin="0,2,0,0"
-                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
-                           SizeChanged="FolderText_SizeChanged" />
-            </StackPanel>
+            <!-- The folder's name; its full path is the tooltip. -->
+            <TextBlock x:Name="FolderName" Style="{StaticResource SubtitleText}" VerticalAlignment="Center"
+                       Background="Transparent" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
         </DockPanel>
 
         <Grid>

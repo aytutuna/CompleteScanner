@@ -55,12 +55,10 @@ public partial class MainWindow : Window
         BuildPdfSizeSegments();
         ArchivalBox.Content = PdfA.OptionLabel;
         ArchivalBox.ToolTip = PdfA.OptionHint;
-        AutomationProperties.SetHelpText(ArchivalBox, PdfA.OptionHint);
         ProtectBox.Content = PdfProtection.OptionLabel;
         ProtectBox.ToolTip = PdfProtection.OptionHint;
-        AutomationProperties.SetHelpText(ProtectBox, PdfProtection.OptionHint);
-        PdfExclusionNote.Text = PdfA.CannotProtectNote;
         WordPageImagesBox.Content = DocxWriter.PageImagesLabel;
+        SetUpInspectorSections();
         // A protected PDF's password is asked for at save time, over this window.
         ViewModel.AskPdfPassword = () => PdfPasswordWindow.Ask(this);
         SetUpAddToPdf();
@@ -280,8 +278,7 @@ public partial class MainWindow : Window
 
     private void RefreshFromViewModel()
     {
-        StatusText.Text = ViewModel.StatusMessage;
-        StatusText.ToolTip = ViewModel.StatusMessage;
+        SyncStatusLine();
 
         // Cancel is offered in every busy phase: scanning, processing, detection, OCR,
         // PDF writing and exports.
@@ -300,6 +297,10 @@ public partial class MainWindow : Window
 
         CanvasImage.Source = ViewModel.CanvasBitmap;
         CanvasHint.Visibility = ViewModel.CanvasBitmap is null ? Visibility.Visible : Visibility.Collapsed;
+        // After a preview, until an area is selected: the preview can be dragged over.
+        DragChip.Visibility = ViewModel.OverviewImage is not null && ViewModel.SelectionRect is null && !ViewModel.IsBusy
+                              && ViewModel.CanvasBitmap is not null
+            ? Visibility.Visible : Visibility.Collapsed;
 
         int pageCount = ViewModel.ScannedPages.Count;
         var queued = ViewModel.ScannedPages.Select(item => item.Page).ToList();
@@ -309,16 +310,7 @@ public partial class MainWindow : Window
         int saveCount = savePlan.PageCount;
         PageStrip.Visibility = pageCount > 0 ? Visibility.Visible : Visibility.Collapsed;
         PageStripLabel.Text = DocumentSplitter.QueueSummary(queued, ViewModel.Settings.Document);
-        SavePdfButton.Content = savePlan.SaveTitle(ViewModel.Settings.Format);
-        // The PDF glyph for a PDF, a plain document for a Word document or text file.
-        global::CompleteScanner.App.Icon.SetGlyph(SavePdfButton,
-            OutputFormats.QueueFormat(ViewModel.Settings.Format) == OutputFormat.Pdf ? "" : "");
-        // A narrow inspector trims the label; the tooltip keeps the full text.
-        SavePdfButton.ToolTip = pageCount > 0 && saveCount == 0 ? PageFilter.NothingToSaveMessage : SavePdfButton.Content;
-        ToolTipService.SetShowOnDisabled(SavePdfButton, true);
-        SavePdfButton.IsEnabled = saveCount > 0 && !ViewModel.IsBusy;
-        AddToPdfButton.IsEnabled = saveCount > 0 && !ViewModel.IsBusy;
-        AddToPdfButton.ToolTip = pageCount > 0 && saveCount == 0 ? PageFilter.NothingToSaveMessage : PdfAppender.ButtonLabel;
+        SyncSaveButton(savePlan, pageCount);
         LastPdfSizeText.Text = ViewModel.LastPdfSizeText;
         LastPdfSizeText.Visibility = ViewModel.LastPdfSizeText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         ClearButton.IsEnabled = pageCount > 0 && !ViewModel.IsBusy;
@@ -340,6 +332,8 @@ public partial class MainWindow : Window
         SyncSplitOptions();
         SyncBookOptions();
         SyncImportOptions();
+        SyncInspectorSections();
+        SyncSelectedArea();
         StartView.Refresh();
         // As on macOS, the settings (and presets, which replace them) are frozen while an
         // operation runs: it works from a snapshot, and edits made meanwhile would not apply.
@@ -420,7 +414,6 @@ public partial class MainWindow : Window
     private void UpdateEmptyDevicesHint()
     {
         EmptyDevicesHint.Visibility = !ViewModel.HasRealDevices && !IsPaneCompact ? Visibility.Visible : Visibility.Collapsed;
-        EmptyAddScannerLink.IsEnabled = ViewModel.NetworkScanners is not null;
     }
 
     /// <summary>
@@ -459,15 +452,19 @@ public partial class MainWindow : Window
         }
         bool isNew = !ReferenceEquals(paths, _shownSavedPaths);
         _shownSavedPaths = paths;
-        SavedBarMessage.Text = ViewModel.SavedBarText;
-        SavedBarText.ToolTip = string.Join(Environment.NewLine, paths);
+        // The file (or how many and where); its size and the full paths are the tooltip.
+        SavedBarMessage.Text = SavedBarLine(paths, ViewModel.SavedBarNoun);
+        SavedBarText.ToolTip = paths.Count == 1
+            ? $"{ViewModel.SavedBarText}{Environment.NewLine}{paths[0]}"
+            : string.Join(Environment.NewLine, paths);
+        AutomationProperties.SetName(SavedBarText, $"Saved {ViewModel.SavedBarText}");
         var offered = ViewModel.SavedBarActions;
         foreach (var button in SavedBarButtons.Children.OfType<Button>())
         {
             if (button.Tag is not string tag) continue;
             var action = Enum.Parse<FileAction>(tag);
             button.Visibility = offered.Contains(action) ? Visibility.Visible : Visibility.Collapsed;
-            button.ToolTip = FileActionMenu.Hint(action, paths.Count);
+            button.ToolTip = action == FileAction.Share ? "Send by email or to an app" : FileActionMenu.Hint(action, paths.Count);
         }
         SavedBar.Visibility = Visibility.Visible;
         if (isNew) AnnounceWhenShown(SavedBarText);
@@ -501,8 +498,23 @@ public partial class MainWindow : Window
         ViewModel.DismissSavedBar();
     }
 
-    /// <summary>Below this bar width the action buttons show only their glyphs.</summary>
-    private const double SavedBarCompactBelowWidth = 760;
+    /// <summary>
+    /// The bar's line after "Saved ·": the file's name, or "3 photos · Scans" for several, named by
+    /// what was saved (<paramref name="noun"/>: "photos" only when every file is an image).
+    /// </summary>
+    /// <param name="noun">What the save wrote: "photos", "receipts" or "files".</param>
+    internal static string SavedBarLine(IReadOnlyList<string> paths, string noun = "files")
+    {
+        if (paths.Count == 1) return System.IO.Path.GetFileName(paths[0]);
+        bool images = paths.All(p => System.IO.Path.GetExtension(p).ToLowerInvariant() is ".jpg" or ".jpeg" or ".png" or ".tif" or ".tiff");
+        if (noun == "photos" && !images) noun = "files";
+        string folder = paths.Count > 0 ? System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(paths[0]) ?? "") : "";
+        string what = $"{paths.Count} {noun}";
+        return folder.Length > 0 ? $"{what} · {folder}" : what;
+    }
+
+    /// <summary>Below this bar width (a window under about 1000 DIPs) the action buttons show only their glyphs.</summary>
+    private const double SavedBarCompactBelowWidth = 984;
 
     private void SavedBar_SizeChanged(object sender, SizeChangedEventArgs e)
     {
@@ -514,6 +526,7 @@ public partial class MainWindow : Window
             {
                 button.ContentTemplate = (DataTemplate)FindResource("IconOnlyTemplate");
                 button.Padding = new Thickness(8, 5, 8, 6);
+                AutomationProperties.SetName(button, button.Content as string ?? "");
             }
             else
             {
@@ -543,7 +556,7 @@ public partial class MainWindow : Window
     private static void SelectAfterSave(ComboBox box, AfterSaveAction action)
     {
         box.SelectedItem = box.Items.OfType<ComboBoxItem>().FirstOrDefault(item => (AfterSaveAction)item.Tag == action);
-        box.ToolTip = action.Hint();
+        AutomationProperties.SetHelpText(box, action.Hint());
     }
 
     /// <summary>The inspector's and the photo review's "After saving": one setting, two places.</summary>
@@ -584,6 +597,7 @@ public partial class MainWindow : Window
         if (task is null && !turningOver)
         {
             TaskBanner.Visibility = Visibility.Collapsed;
+            CanvasHintBody.Visibility = Visibility.Visible;
             return;
         }
         string title = task?.Title ?? TurningOverTitle;
@@ -593,13 +607,30 @@ public partial class MainWindow : Window
         TaskBannerGlyph.Text = TaskIcons.Glyph(task?.IconKey ?? "twoSided");
         var flow = ViewModel.Flow;
         var step = flow?.Current;
-        TaskBannerTitle.Text = flow is { StepCount: > 1 } && step is not null
-            ? $"{title} · Step {flow.StepIndex + 1} of {flow.StepCount}: {step.Title}"
-            : title;
+        TaskBannerTitle.Text = title;
+        // A task of several steps: where it is, as "Front · Back · Check" with the current step stressed.
+        if (flow is { StepCount: > 1 } && step is not null)
+        {
+            SetStepIndicator(flow);
+            TaskBannerSteps.Visibility = Visibility.Visible;
+            AutomationProperties.SetName(TaskBannerSteps,
+                $"{title}, step {flow.StepIndex + 1} of {flow.StepCount}: {step.Title.ToLowerInvariant()}");
+        }
+        else
+        {
+            TaskBannerSteps.Visibility = Visibility.Collapsed;
+        }
+        // The first sentence on screen; the rest behind the ⓘ. Screen readers get all of it.
         string prompt = step?.Prompt ?? task?.Subtitle ?? DuplexMode.Manual.Hint();
-        bool promptChanged = TaskBannerPrompt.Text != prompt;
-        TaskBannerPrompt.Text = prompt;
+        var (lead, rest) = TextSplit.Lead(prompt);
+        bool promptChanged = TaskBannerPrompt.Text != lead;
+        TaskBannerPrompt.Text = lead;
+        AutomationProperties.SetName(TaskBannerPrompt, prompt);
+        TaskBannerInfo.Label = title;
+        TaskBannerInfo.InfoText = rest;
+        TaskBannerInfo.Visibility = rest.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         AutomationProperties.SetName(TaskBannerGroup, name);
+        AutomationProperties.SetHelpText(TaskBannerGroup, prompt);
         // A new step of the same task (the backs after the fronts) is read out.
         if (sameTaskShown && promptChanged) AnnounceWhenShown(TaskBannerPrompt);
 
@@ -607,8 +638,8 @@ public partial class MainWindow : Window
         string exitName = task is not null ? "Leave the task" : "Scan one side only";
         AutomationProperties.SetName(ExitTaskButton, exitName);
         ExitTaskButton.ToolTip = task is not null
-            ? "Leave the task. Its settings stay, without the guidance."
-            : "Stop turning stacks over by hand: scan one side of each sheet.";
+            ? "Leave the task (settings stay)"
+            : "Scan one side of each sheet";
         // Not while a scan runs: its result belongs to the task's steps.
         ExitTaskButton.IsEnabled = !ViewModel.IsBusy;
 
@@ -637,8 +668,31 @@ public partial class MainWindow : Window
         StepActions.IsEnabled = !ViewModel.IsBusy;
         if (skippable)
         {
-            SkipStepButton.Content = $"Skip {step!.Title.ToLowerInvariant()}";
+            SkipStepButton.Content = step!.Id == IdCardSteps.BackStepId ? "No back side" : $"Skip {step.Title.ToLowerInvariant()}";
             SkipStepButton.ToolTip = "Nothing is printed on the back: save the front only";
+        }
+        // The empty stage's line says what the banner says: hidden while it shows.
+        CanvasHintBody.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>
+    /// "Front · Back · Check": each step in a word (its title's first word, after a leading "Scan the":
+    /// "Scan the front sides" is "Front"), the current one bold in the accent color.
+    /// </summary>
+    private void SetStepIndicator(TaskFlow flow)
+    {
+        TaskBannerSteps.Inlines.Clear();
+        for (int i = 0; i < flow.StepCount; i++)
+        {
+            if (i > 0) TaskBannerSteps.Inlines.Add(new System.Windows.Documents.Run(" · "));
+            string word = StepWords.Of(flow.Steps[i].Title);
+            var run = new System.Windows.Documents.Run(word);
+            if (i == flow.StepIndex)
+            {
+                run.FontWeight = FontWeights.SemiBold;
+                run.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "AccentTextFillColorPrimaryBrush");
+            }
+            TaskBannerSteps.Inlines.Add(run);
         }
     }
 
@@ -715,7 +769,8 @@ public partial class MainWindow : Window
         }
         var savedAs = OutputFormats.PageFormat(s.Format);
         IdCardSaveButton.Content = savedAs == OutputFormat.Pdf ? "Save PDF" : $"Save {savedAs.Label()}";
-        IdCardSaveButton.ToolTip = $"Save {(back is null ? "the front" : "both sides")} on one {ViewModel.IdCardPaperSize.Label()} page";
+        AutomationProperties.SetHelpText(IdCardSaveButton,
+            $"Save {(back is null ? "the front" : "both sides")} on one {ViewModel.IdCardPaperSize.Label()} page");
 
         bool busy = ViewModel.IsBusy;
         IdCardSaveButton.IsEnabled = !busy && front is not null;
@@ -898,6 +953,7 @@ public partial class MainWindow : Window
     {
         if (ViewModel.IsBusy || !ConfirmDropIdCard()) return;
         if (!ViewModel.StartTask(task)) return;
+        OpenSectionFor(task);
         PushSettingsToUi();
         ShowScanScreen();
     }
@@ -1040,11 +1096,14 @@ public partial class MainWindow : Window
         {
             DriverWindowBox.IsChecked = ViewModel.UseDriverWindow;
             DriverWindowBox.IsEnabled = !ViewModel.DriverWindowRequired;
-            DriverWindowHint.Text = ViewModel.DriverWindowRequired
+            DriverWindowReason.Visibility = ViewModel.DriverWindowRequired ? Visibility.Visible : Visibility.Collapsed;
+            string hint = ViewModel.DriverWindowRequired
                 ? "This scanner's driver always shows its own window; resolution, color and area are chosen there."
                 : ViewModel.UseDriverWindow
                     ? "Scan opens the driver's window; resolution, color and area are chosen there."
                     : "Scan with the settings above, without the driver's window.";
+            DriverWindowBox.ToolTip = "Resolution, color and area are chosen in the driver's window";
+            AutomationProperties.SetHelpText(DriverWindowBox, hint);
         }
         finally
         {
@@ -1138,10 +1197,15 @@ public partial class MainWindow : Window
         }
         SidesBox.SelectedItem = SidesBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (DuplexMode)i.Tag == s.Duplex);
         SidesBox.IsEnabled = feeder;
-        SidesHint.Text = !feeder ? DocumentSides.FeederOnlyReason
+        // On the flatbed of a scanner with a feeder: greyed out, with the reason next to it.
+        SidesHint.Text = feeder ? "" : ShortText.NeedsFeeder;
+        SidesReason.Visibility = feeder ? Visibility.Collapsed : Visibility.Visible;
+        string sidesHelp = !feeder ? DocumentSides.FeederOnlyReason
             : s.Duplex == DuplexMode.Manual && manualReason is not null ? manualReason
             : s.Duplex == DuplexMode.Off && bothReason is not null ? $"{s.Duplex.Hint()} {bothReason}"
             : s.Duplex.Hint();
+        SidesBox.ToolTip = sidesHelp;
+        AutomationProperties.SetHelpText(SidesBox, feeder ? sidesHelp : $"{ShortText.NeedsFeeder}. {sidesHelp}");
         BackBindingOptions.Visibility = feeder && s.Duplex != DuplexMode.Off ? Visibility.Visible : Visibility.Collapsed;
         BackBindingBox.SelectedItem = BackBindingBox.Items.OfType<ComboBoxItem>()
             .FirstOrDefault(i => (DuplexBinding)i.Tag == s.BackBinding);
@@ -1158,7 +1222,7 @@ public partial class MainWindow : Window
         var caps = ViewModel.Capabilities;
         SizeD? area = caps is null ? null
             : s.Source == ScanSource.DocumentFeeder ? caps.FeederSizeInches : caps.FlatbedSizeInches;
-        string signature = $"{s.Source}\u001f{area}";
+        string signature = $"{s.Source}\u001f{area}\u001f{ViewModel.IsCopyFlow}";
         if (signature != _paperSignature)
         {
             _paperSignature = signature;
@@ -1166,7 +1230,9 @@ public partial class MainWindow : Window
             foreach (var size in PaperSizes.DisplayOrder(RegionInfo.CurrentRegion.TwoLetterISORegionName))
             {
                 bool fits = PaperSizes.Fits(size, area);
-                string tip = fits ? PaperSizes.Hint(size, s.Source) : PaperSizes.DoesNotFitReason(s.Source);
+                string tip = !fits ? PaperSizes.DoesNotFitReason(s.Source)
+                    : size == PaperSize.Auto && ViewModel.IsCopyFlow ? PrintText.CopyPaperHint(size, s.Source)
+                    : PaperSizes.Hint(size, s.Source);
                 var item = new ComboBoxItem
                 {
                     Content = size == PaperSize.Auto ? size.Label() : $"{size.Label()}  ({size.Detail()})",
@@ -1180,7 +1246,8 @@ public partial class MainWindow : Window
             }
         }
         PaperSizeBox.SelectedItem = PaperSizeBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (PaperSize)i.Tag == s.PaperSize);
-        PaperSizeHint.Text = ViewModel.IsCopyFlow ? PrintText.CopyPaperHint(s.PaperSize, s.Source) : PaperSizes.Hint(s.PaperSize, s.Source);
+        AutomationProperties.SetHelpText(PaperSizeBox,
+            ViewModel.IsCopyFlow ? PrintText.CopyPaperHint(s.PaperSize, s.Source) : PaperSizes.Hint(s.PaperSize, s.Source));
     }
 
     private void Sides_Changed(object sender, SelectionChangedEventArgs e)
@@ -1343,6 +1410,8 @@ public partial class MainWindow : Window
         // One-sided at blank sheets, every blank page is a separator: the switch has no say.
         bool separators = collecting && DocumentSplitter.BlankPagesAreSeparators(s.Document, ViewModel.EffectiveDuplex);
         SkipBlankBox.IsEnabled = collecting && !separators;
+        PagesReason.Visibility = collecting || copy || receipts ? Visibility.Collapsed : Visibility.Visible;
+        SkipBlankReason.Visibility = separators ? Visibility.Visible : Visibility.Collapsed;
         string hint = copy
             ? "Copies print every page as scanned: blank pages are not left out."
             : receipts
@@ -1354,12 +1423,23 @@ public partial class MainWindow : Window
                 ? "Blank pages are marked in the page strip and left out when you save. Click Keep on a page to save it."
                 : "Blank pages are marked in the page strip. Click Skip on a page to leave it out."
             : "Only for pages collected before saving: a scan saved at once keeps every page.";
-        SkipBlankHint.Text = hint;
-        SkipBlankBox.ToolTip = hint;
+        // What the switch does is its tooltip; the full explanation (and why it is greyed out) its help text.
+        SkipBlankBox.ToolTip = separators ? DocumentSplitter.BlankPagesAreSeparatorsHint
+            : "Blank pages are left out. Click Keep on a page to save it.";
         AutomationProperties.SetHelpText(SkipBlankBox, hint);
-        BlankSensitivityOptions.Visibility = collecting ? Visibility.Visible : Visibility.Collapsed;
-        BlankSensitivityHint.Text = s.Document.BlankSensitivity.Hint();
+        // What counts as blank shows while it decides something: whenever collected pages are checked
+        // for blanks. High warns to check the flagged pages.
+        BlankSensitivityOptions.Visibility = BlankSensitivityApplies(s) ? Visibility.Visible : Visibility.Collapsed;
+        BlankHighNotice.Visibility = s.Document.BlankSensitivity == BlankSensitivity.High ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    /// <summary>
+    /// What counts as blank matters whenever pages collected in the queue are checked for blanks
+    /// (<see cref="PageProcessor.ChecksBlankPages"/>), Skip blank on or off: it decides which pages the
+    /// strip flags "Looks blank" (and offers to skip), which are left out while blank pages are skipped,
+    /// and which sheets split the stack at blank sheets.
+    /// </summary>
+    internal static bool BlankSensitivityApplies(ScanSettings settings) => PageProcessor.ChecksBlankPages(settings);
 
     private void BlankPages_Changed(object sender, RoutedEventArgs e)
     {
@@ -1401,10 +1481,8 @@ public partial class MainWindow : Window
                 (false, true) => "Pages that lie at a slant are turned straight when that is clear. Click the arrow on a page to see it as scanned.",
                 _ => "Cut each page out of the scanner background, and turn pages that lie at a slant.",
             };
-        GeometryHint.Text = hint;
         foreach (var box in new[] { AutoCropBox, AutoStraightenBox })
         {
-            box.ToolTip = hint;
             AutomationProperties.SetHelpText(box, hint);
         }
     }
@@ -1432,7 +1510,10 @@ public partial class MainWindow : Window
         bool available = ViewModel.CanTurnPagesUpright;
         AutoRotateBox.IsEnabled = collecting && available;
         string hint = PageTurns.Hint(s, available);
-        AutoRotateHint.Text = hint;
+        // Greyed out for want of a text recognition language: the reason shows next to it.
+        bool missingLanguage = collecting && !available;
+        AutoRotateHint.Text = missingLanguage ? hint : "";
+        AutoRotateReason.Visibility = missingLanguage ? Visibility.Visible : Visibility.Collapsed;
         AutoRotateBox.ToolTip = hint;
         AutomationProperties.SetHelpText(AutoRotateBox, hint);
     }
@@ -1536,20 +1617,23 @@ public partial class MainWindow : Window
         bool word = documents && shownFormat == OutputFormat.Word;
         bool pdf = documents && shownFormat == OutputFormat.Pdf;
         WordOptions.Visibility = word ? Visibility.Visible : Visibility.Collapsed;
-        WordPageImagesHint.Text = DocxWriter.PageImagesHint(s.Output.WordPageImages);
-        AutomationProperties.SetHelpText(WordPageImagesBox, WordPageImagesHint.Text);
+        string pageImagesHint = DocxWriter.PageImagesHint(s.Output.WordPageImages);
+        WordPageImagesBox.ToolTip = pageImagesHint;
+        AutomationProperties.SetHelpText(WordPageImagesBox, pageImagesHint);
         PdfSizeOptions.Visibility = pdf || (word && s.Output.WordPageImages) ? Visibility.Visible : Visibility.Collapsed;
-        PdfOnlyOptions.Visibility = pdf ? Visibility.Visible : Visibility.Collapsed;
         PdfSizeLabel.Text = pdf ? "PDF size" : "Page image size";
         AutomationProperties.SetName(PdfSizeTrack, PdfSizeLabel.Text);
-        PdfSizeHint.Text = s.Output.PdfSize.Hint();
-        MultiPageBox.Content = $"Collect pages, then {OutputFormats.SaveTitle(shownFormat)}";
+        AutomationProperties.SetHelpText(PdfSizeTrack, s.Output.PdfSize.Hint());
         bool savesPdf = receipts ? OutputFormats.PageFormat(s.Format) == OutputFormat.Pdf : OutputFormats.SavesPdf(s.Format, s.DocumentMultiPage);
         AlsoSaveTextBox.IsEnabled = savesPdf && (flow == TaskFlowKind.DocumentQueue || receipts);
-        // Receipts are saved from their review, never collected in the queue.
-        MultiPageBox.IsEnabled = !receipts;
-        MultiPageBox.ToolTip = receipts ? "Receipts are checked in a review, then saved: a file each, or one PDF." : null;
-        ToolTipService.SetShowOnDisabled(MultiPageBox, true);
+        // Receipts are saved from their review, and the ID card from its own: collecting pages does
+        // nothing for them. The text layer of the copy's and the ID card's PDF is never made.
+        bool idCard = flow == TaskFlowKind.IdCard;
+        MultiPageBox.Visibility = receipts || idCard ? Visibility.Collapsed : Visibility.Visible;
+        AutomationProperties.SetHelpText(MultiPageBox,
+            $"On: pages are collected until you {OutputFormats.SaveTitle(shownFormat)}. Off: each scan is saved right away.");
+        // Shown whenever the save writes a PDF that can carry text: a queue of JPEG pages saves one too.
+        SearchableBox.Visibility = WritesPdf(s) && flow != TaskFlowKind.Copy && !idCard ? Visibility.Visible : Visibility.Collapsed;
         string hint = flow switch
         {
             TaskFlowKind.IdCard => "Not for ID cards: the card is saved as a picture, without its text.",
@@ -1558,9 +1642,7 @@ public partial class MainWindow : Window
             _ when savesPdf => "Writes the text of the pages beside each PDF, in a .txt file with the same name.",
             _ => "Only for PDFs: Word and text files are the text already, and images have none.",
         };
-        AlsoSaveTextBox.ToolTip = hint;
         AutomationProperties.SetHelpText(AlsoSaveTextBox, hint);
-        ToolTipService.SetShowOnDisabled(AlsoSaveTextBox, true);
         SyncPdfProtectionOptions();
     }
 
@@ -1574,13 +1656,13 @@ public partial class MainWindow : Window
         bool protect = output.Protect, archival = output.Archival && !protect;
         ArchivalBox.IsEnabled = !protect;
         ProtectBox.IsEnabled = !archival;
-        string archivalHint = protect ? PdfA.CannotProtectNote : PdfA.OptionHint;
-        string protectHint = archival ? PdfA.CannotProtectNote : PdfProtection.OptionHint;
-        ArchivalBox.ToolTip = archivalHint;
-        ProtectBox.ToolTip = protectHint;
-        AutomationProperties.SetHelpText(ArchivalBox, archivalHint);
-        AutomationProperties.SetHelpText(ProtectBox, protectHint);
-        PdfExclusionNote.Visibility = protect || archival ? Visibility.Visible : Visibility.Collapsed;
+        // The greyed-out one shows why next to it, with a lock; screen readers hear the reason first.
+        ArchivalReason.Visibility = protect ? Visibility.Visible : Visibility.Collapsed;
+        ProtectReason.Visibility = archival ? Visibility.Visible : Visibility.Collapsed;
+        AutomationProperties.SetHelpText(ArchivalBox,
+            protect ? $"{PdfA.NotWithPasswordReason}. {PdfA.CannotProtectNote}" : PdfA.OptionHelp);
+        AutomationProperties.SetHelpText(ProtectBox,
+            archival ? $"{PdfProtection.NotWithArchivalReason}. {PdfA.CannotProtectNote}" : PdfProtection.OptionHelp);
     }
 
     /// <summary>
@@ -1831,7 +1913,7 @@ public partial class MainWindow : Window
 
     private void SavePreset_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new PromptWindow("Save Preset", "Name for the current settings:") { Owner = this };
+        var dialog = new PromptWindow("Save preset", placeholder: "Preset name", okLabel: "Save") { Owner = this };
         if (dialog.ShowDialog() == true && dialog.Value.Trim().Length > 0)
         {
             ViewModel.SaveCurrentAsPreset(dialog.Value);
@@ -2012,7 +2094,6 @@ public partial class MainWindow : Window
         // In a small stage the full empty state would wrap and clip: keep just the title and text.
         bool compact = CanvasHost.ActualWidth < 300 || CanvasHost.ActualHeight < 300;
         CanvasHintGlyph.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
-        CanvasHintTip.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
         CanvasHintTitle.SetResourceReference(StyleProperty, compact ? "BodyStrongText" : "EmptyStateTitleStyle");
         CanvasHintTitle.HorizontalAlignment = HorizontalAlignment.Center;
     }
@@ -2056,6 +2137,7 @@ public partial class MainWindow : Window
         {
             SelectionMarquee.Visibility = Visibility.Collapsed;
             ViewModel.SelectionRect = null;
+            RefreshFromViewModel();
             return;
         }
         ViewModel.SelectionRect = new RectD(
@@ -2063,6 +2145,7 @@ public partial class MainWindow : Window
             (rect.Y - imageRect.Y) / imageRect.Height,
             rect.Width / imageRect.Width,
             rect.Height / imageRect.Height);
+        RefreshFromViewModel();
     }
 
     /// <summary>
@@ -2083,11 +2166,15 @@ public partial class MainWindow : Window
 /// <summary>Minimal modal text prompt (used for naming presets).</summary>
 public sealed class PromptWindow : Window
 {
-    private readonly TextBox _textBox = new() { Margin = new Thickness(0, 8, 0, 16) };
+    private readonly TextBox _textBox = new();
 
     public string Value => _textBox.Text;
 
-    public PromptWindow(string title, string message)
+    /// <param name="title">The window's title.</param>
+    /// <param name="message">A line above the box; none when null.</param>
+    /// <param name="placeholder">What the empty box says (and its accessible name).</param>
+    /// <param name="okLabel">The default button's label.</param>
+    public PromptWindow(string title, string? message = null, string? placeholder = null, string okLabel = "OK")
     {
         Title = title;
         Icon = AppIcon.Image;
@@ -2097,7 +2184,7 @@ public sealed class PromptWindow : Window
         ResizeMode = ResizeMode.NoResize;
         SetResourceReference(FontFamilyProperty, "TextFontFamily");
 
-        var ok = new Button { Content = "OK", IsDefault = true, MinWidth = 88 };
+        var ok = new Button { Content = okLabel, IsDefault = true, MinWidth = 88 };
         ok.SetResourceReference(StyleProperty, "AccentButtonStyle");
         ok.Click += (_, _) => DialogResult = true;
         var cancel = new Button
@@ -2115,10 +2202,23 @@ public sealed class PromptWindow : Window
         buttons.Children.Add(cancel);
 
         var panel = new StackPanel { Margin = new Thickness(24) };
-        var text = new TextBlock { Text = message };
-        text.SetResourceReference(StyleProperty, "BodyText");
-        panel.Children.Add(text);
-        panel.Children.Add(_textBox);
+        if (message is not null)
+        {
+            var text = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8) };
+            text.SetResourceReference(StyleProperty, "BodyText");
+            panel.Children.Add(text);
+        }
+        var box = new Grid { Margin = new Thickness(0, 0, 0, 16) };
+        box.Children.Add(_textBox);
+        if (placeholder is not null)
+        {
+            var hint = new TextBlock { Text = placeholder };
+            hint.SetResourceReference(StyleProperty, "PlaceholderText");
+            box.Children.Add(hint);
+            Placeholders.Attach(_textBox, hint);
+            System.Windows.Automation.AutomationProperties.SetName(_textBox, placeholder);
+        }
+        panel.Children.Add(box);
         panel.Children.Add(buttons);
         Content = panel;
 

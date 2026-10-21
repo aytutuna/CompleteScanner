@@ -20,16 +20,17 @@ public partial class MainWindow
 
     /// <summary>
     /// Splitting facing pages works on pages collected in the queue only, where the strip shows the
-    /// pages, scanned one side of each sheet: with each scan saved at once, for copies, receipts and
-    /// two-sided scans, the switch is off and says why. The reading order, the rotation and softening the
-    /// spine's shadow show while spreads are split.
+    /// pages, scanned one side of each sheet: with two-sided scanning the switch is greyed out with
+    /// "Not with two-sided" next to it (with each scan saved at once the section says so once). The
+    /// reading order, the rotation and softening the spine's shadow show, indented, while spreads are split.
     /// </summary>
     private void SyncBookOptions()
     {
         var s = ViewModel.Settings;
         var flow = TaskCatalog.FlowOf(s);
-        bool collecting = s.DocumentMultiPage && flow != TaskFlowKind.Copy && flow != TaskFlowKind.ReceiptSplit
-                          && BookPages.ScansOneSide(s);
+        bool queue = s.DocumentMultiPage && flow != TaskFlowKind.Copy && flow != TaskFlowKind.ReceiptSplit;
+        bool oneSide = BookPages.ScansOneSide(s);
+        bool collecting = queue && oneSide;
         bool wasUpdating = _updatingUi;
         _updatingUi = true;
         try
@@ -47,11 +48,12 @@ public partial class MainWindow
         SplitFacingPagesBox.IsEnabled = collecting && !ViewModel.IsBusy;
         BookOptions.Visibility = collecting && s.Document.SplitFacingPages ? Visibility.Visible : Visibility.Collapsed;
         string hint = BookPages.Hint(s);
-        SplitFacingPagesHint.Text = hint;
+        bool twoSided = queue && !oneSide;
+        SplitFacingPagesHint.Text = twoSided ? ShortText.NotWithTwoSided : "";
+        SplitFacingPagesReason.Visibility = twoSided ? Visibility.Visible : Visibility.Collapsed;
         SplitFacingPagesBox.ToolTip = hint;
-        AutomationProperties.SetHelpText(SplitFacingPagesBox, hint);
+        AutomationProperties.SetHelpText(SplitFacingPagesBox, twoSided ? $"{ShortText.NotWithTwoSided}. {hint}" : hint);
         string shadowHint = SpineShadow.Hint(s.Document.SoftenSpineShadow);
-        SoftenSpineShadowHint.Text = shadowHint;
         SoftenSpineShadowBox.ToolTip = shadowHint;
         AutomationProperties.SetHelpText(SoftenSpineShadowBox, shadowHint);
     }

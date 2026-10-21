@@ -20,12 +20,14 @@ public partial class MainWindow
             SplitModeBox.Items.Add(new ComboBoxItem { Content = mode.Label(), Tag = mode, ToolTip = mode.Hint() });
         }
         SplitCountBox.ItemsSource = Enumerable.Range(1, 99).ToList();
+        Placeholders.Attach(QrSheetNameBox, QrSheetNamePlaceholder);
     }
 
     /// <summary>
     /// Splitting works on pages collected in the queue only, where the strip shows the documents
-    /// before saving: with each scan saved at once, for copies and receipts, the choice is off and
-    /// says why.
+    /// before saving: with each scan saved at once the choice is greyed out with the reason (the
+    /// section is hidden for copies and receipts). Under the choice, one line says what happens to the
+    /// sheets that split; the ⓘ holds how it works.
     /// </summary>
     private void SyncSplitOptions()
     {
@@ -34,18 +36,20 @@ public partial class MainWindow
         bool copy = flow == TaskFlowKind.Copy;
         bool receipts = flow == TaskFlowKind.ReceiptSplit;
         bool collecting = s.DocumentMultiPage && !copy && !receipts;
+        var mode = s.Document.SplitMode;
+        int count = DocumentSplitter.ClampSheetCount(s.Document.SplitSheetCount);
         bool wasUpdating = _updatingUi;
         _updatingUi = true;
         try
         {
-            SplitModeBox.SelectedItem = SplitModeBox.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (SplitMode)i.Tag == s.Document.SplitMode);
-            int count = DocumentSplitter.ClampSheetCount(s.Document.SplitSheetCount);
+            SplitModeBox.SelectedItem = SplitModeBox.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (SplitMode)i.Tag == mode);
             if (SplitCountBox.ItemsSource is List<int> counts && !counts.Contains(count))
             {
                 SplitCountBox.ItemsSource = counts.Append(count).Order().ToList();
             }
             SplitCountBox.SelectedItem = count;
-            BarcodeStartsDocumentBox.IsChecked = s.Document.BarcodeStartsDocument;
+            CodesOnFirstPagesButton.IsChecked = s.Document.BarcodeStartsDocument;
+            CodesOnSeparatorsButton.IsChecked = !s.Document.BarcodeStartsDocument;
             if (QrSheetNameBox.Text != ViewModel.QrSheetName) QrSheetNameBox.Text = ViewModel.QrSheetName;
         }
         finally
@@ -53,54 +57,67 @@ public partial class MainWindow
             _updatingUi = wasUpdating;
         }
         SplitModeBox.IsEnabled = collecting && !ViewModel.IsBusy;
-        SplitCountRow.Visibility = collecting && s.Document.SplitMode == SplitMode.SheetCount ? Visibility.Visible : Visibility.Collapsed;
-        string hint = copy
+        SplitReason.Visibility = !collecting && !copy && !receipts ? Visibility.Visible : Visibility.Collapsed;
+        SplitCountRow.Visibility = collecting && mode == SplitMode.SheetCount ? Visibility.Visible : Visibility.Collapsed;
+        SplitCountUnit.Text = count == 1 ? "sheet" : "sheets";
+
+        // The full explanation: how it works (the ⓘ), and the choice's help text.
+        string help = copy
             ? "Copies print every page as scanned: nothing is split."
             : receipts
             ? "Each receipt is saved on its own."
             : !collecting
             ? "Only for pages collected before saving: a scan saved at once is one file."
-            : s.Document.SplitMode == SplitMode.None
-            ? s.Document.SplitMode.Hint() + " Right-click a page to start a new document there."
-            : s.Document.SplitMode.Hint() + " Check the page strip before saving: click the gap between two pages to split or join there.";
-        SplitHint.Text = hint;
-        SplitModeBox.ToolTip = hint;
-        AutomationProperties.SetHelpText(SplitModeBox, hint);
+            : mode == SplitMode.None
+            ? mode.Hint() + " Right-click a page to start a new document there."
+            : mode.Hint() + " Check the page strip before saving: click the gap between two pages to split or join there.";
+        SplitInfoButton.InfoText = help;
+        AutomationProperties.SetHelpText(SplitModeBox, help);
+        // One line: what happens to the sheets that split.
+        string line = !collecting ? "" : mode switch
+        {
+            SplitMode.SeparatorSheet => ShortText.SeparatorSheetsLeftOut,
+            SplitMode.BlankSheet => ShortText.BlankSheetsLeftOut,
+            _ => "",
+        };
+        SplitHint.Text = line;
+        SplitHint.Visibility = line.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+
         // At barcode or QR sheets: the page with a code kept as its document's first page, or the
         // sheet left out; then the name the QR separator sheet carries.
-        bool barcodes = collecting && s.Document.SplitMode == SplitMode.Barcode;
+        bool barcodes = collecting && mode == SplitMode.Barcode;
         BarcodeOptions.Visibility = barcodes ? Visibility.Visible : Visibility.Collapsed;
-        BarcodeStartsDocumentBox.IsEnabled = !ViewModel.IsBusy;
+        CodesOnSeparatorsButton.IsEnabled = CodesOnFirstPagesButton.IsEnabled = !ViewModel.IsBusy;
         string startsHint = BarcodeSeparators.StartsDocumentHint(s.Document.BarcodeStartsDocument, s.Document.SplitBarcodePrefix);
-        BarcodeStartsDocumentHint.Text = startsHint;
-        BarcodeStartsDocumentBox.ToolTip = startsHint;
-        AutomationProperties.SetHelpText(BarcodeStartsDocumentBox, startsHint);
+        BarcodeStartsDocumentHint.Text = s.Document.BarcodeStartsDocument ? ShortText.CodePagesKept : ShortText.CodeSheetsLeftOut;
+        BarcodeStartsDocumentHint.ToolTip = startsHint;
+        AutomationProperties.SetHelpText(CodesOnSeparatorsButton, startsHint);
+        AutomationProperties.SetHelpText(CodesOnFirstPagesButton, startsHint);
         bool qrSheets = barcodes && !s.Document.BarcodeStartsDocument;
         QrSheetNameRow.Visibility = qrSheets ? Visibility.Visible : Visibility.Collapsed;
-        string nameHint = "The QR code holds this name and the document after the sheet is named by it ({label}). Leave it empty for a sheet that only splits.";
-        QrSheetNameBox.ToolTip = nameHint;
-        AutomationProperties.SetHelpText(QrSheetNameBox, nameHint);
+        AutomationProperties.SetHelpText(QrSheetNameBox,
+            "The QR code holds this name and the document after the sheet is named by it ({label}). Leave it empty for a sheet that only splits.");
+
         // The separator sheet: a PDF in the scans folder, to print on any printer; or printed at
         // once on the printer chosen for copies.
-        bool separators = (collecting && s.Document.SplitMode == SplitMode.SeparatorSheet) || qrSheets;
+        bool separators = (collecting && mode == SplitMode.SeparatorSheet) || qrSheets;
         var sheetPaper = SeparatorSheet.Paper(AppViewModel.RegionCode);
-        SaveSeparatorButton.Content = qrSheets ? "Save QR separator sheet (PDF)" : "Save separator sheet (PDF)";
-        PrintSeparatorButton.Content = qrSheets ? "Print QR separator sheet" : "Print separator sheet";
         SaveSeparatorButton.Visibility = separators ? Visibility.Visible : Visibility.Collapsed;
         SaveSeparatorButton.IsEnabled = !ViewModel.IsBusy;
-        string saveHint = qrSheets
+        SaveSeparatorButton.ToolTip = "Saves a PDF of the sheet; print it at 100%";
+        AutomationProperties.SetName(SaveSeparatorButton, qrSheets ? "Save QR separator sheet as PDF" : "Save separator sheet as PDF");
+        AutomationProperties.SetHelpText(SaveSeparatorButton, qrSheets
             ? $"Saves a QR separator sheet ({sheetPaper.Label()}) carrying the name above as a PDF in the scans folder, to print on any printer."
-            : $"Saves a Patch T separator sheet ({sheetPaper.Label()}) as a PDF in the scans folder. Print it at actual size (100%) on any printer.";
-        SaveSeparatorButton.ToolTip = saveHint;
-        AutomationProperties.SetHelpText(SaveSeparatorButton, saveHint);
+            : $"Saves a Patch T separator sheet ({sheetPaper.Label()}) as a PDF in the scans folder. Print it at actual size (100%) on any printer.");
         PrintSeparatorButton.Visibility = separators ? Visibility.Visible : Visibility.Collapsed;
         PrintSeparatorButton.IsEnabled = ViewModel.HasPrinter && !ViewModel.IsBusy;
+        string printer = ViewModel.CopyPrinterName ?? "the default printer";
+        PrintSeparatorButton.ToolTip = ViewModel.HasPrinter ? $"Prints one now on {printer}, at actual size" : PrintText.NoPrinterReason;
+        AutomationProperties.SetName(PrintSeparatorButton, qrSheets ? "Print QR separator sheet" : "Print separator sheet");
         string sheetName = qrSheets ? "a QR separator sheet carrying the name above" : "a Patch T separator sheet";
-        string printHint = ViewModel.HasPrinter
-            ? $"Prints {sheetName} at actual size on {ViewModel.CopyPrinterName ?? "the default printer"}, on the paper it has, with no print dialog. Print as many as you need."
-            : PrintText.NoPrinterReason + " Save the separator sheet as a PDF to print it elsewhere.";
-        PrintSeparatorButton.ToolTip = printHint;
-        AutomationProperties.SetHelpText(PrintSeparatorButton, printHint);
+        AutomationProperties.SetHelpText(PrintSeparatorButton, ViewModel.HasPrinter
+            ? $"Prints {sheetName} at actual size on {printer}, on the paper it has, with no print dialog. Print as many as you need."
+            : PrintText.NoPrinterReason + " Save the separator sheet as a PDF to print it elsewhere.");
         // At blank sheets one-sided, Skip blank pages has no say.
         SyncBlankPageOptions();
     }
@@ -109,14 +126,6 @@ public partial class MainWindow
     {
         if (_updatingUi || !IsLoaded || SplitModeBox.SelectedItem is not ComboBoxItem { Tag: SplitMode mode }) return;
         ViewModel.SetSplitMode(mode);
-        SyncSplitOptions();
-        RefreshFromViewModel();
-    }
-
-    private void BarcodeStartsDocument_Changed(object sender, RoutedEventArgs e)
-    {
-        if (_updatingUi || !IsLoaded) return;
-        ViewModel.SetBarcodeStartsDocument(BarcodeStartsDocumentBox.IsChecked == true);
         SyncSplitOptions();
         RefreshFromViewModel();
     }

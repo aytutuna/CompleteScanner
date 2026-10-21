@@ -26,13 +26,15 @@ public sealed class SavedFileItem(SavedFile file) : INotifyPropertyChanged
         {
             _file = value;
             Changed(nameof(File)); Changed(nameof(Name)); Changed(nameof(Caption));
-            Changed(nameof(DateText)); Changed(nameof(SizeText));
+            Changed(nameof(DateText)); Changed(nameof(SizeText)); Changed(nameof(ToolTipText));
         }
     }
     public string Name => File.Name;
     public string Caption => $"{DateText} · {SizeText}";
     public string DateText => File.Modified.ToString("g");
     public string SizeText => SavedFiles.SizeText(File.Size);
+    /// <summary>The card's tooltip: the whole name (it may be cut on the card) and the size.</summary>
+    public string ToolTipText => $"{Name} · {SizeText}";
     /// <summary>Short file type label shown on the card (PDF, JPG, PNG, TIFF).</summary>
     public string TypeText => Path.GetExtension(File.Path).ToLowerInvariant() switch
     {
@@ -101,8 +103,6 @@ public partial class SavedFilesView : UserControl
     }
 
     private List<SavedFileItem> _items = [];
-    /// <summary>The destination folder last listed; FolderText shows it shortened to fit.</summary>
-    private string _folder = "";
     private int _columns;
     private AppViewModel? _viewModel;
     private Action<string>? _showError;
@@ -165,60 +165,10 @@ public partial class SavedFilesView : UserControl
 
     private void ShowFolder(string folder)
     {
-        _folder = folder;
         string name = Path.GetFileName(folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         FolderName.Text = name.Length > 0 ? name : folder;
-        FolderText.ToolTip = folder;
-        AutomationProperties.SetName(FolderText, folder);
-        FitFolderText();
-    }
-
-    private void FolderText_SizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        if (e.WidthChanged) FitFolderText();
-    }
-
-    /// <summary>Show the folder path, eliding middle folders when it is too wide.</summary>
-    private void FitFolderText()
-    {
-        double width = FolderText.ActualWidth;
-        FolderText.Text = width > 0 ? ShortenPath(_folder, width, MeasureFolderText) : _folder;
-    }
-
-    private double MeasureFolderText(string text) =>
-        new FormattedText(text, CultureInfo.CurrentUICulture, FolderText.FlowDirection,
-                          new Typeface(FolderText.FontFamily, FolderText.FontStyle, FolderText.FontWeight, FolderText.FontStretch),
-                          FolderText.FontSize, FolderText.Foreground,
-                          VisualTreeHelper.GetDpi(FolderText).PixelsPerDip).WidthIncludingTrailingWhitespace;
-
-    /// <summary>
-    /// <paramref name="path"/> if it fits in <paramref name="width"/>; otherwise its root, an
-    /// ellipsis and as many trailing folders as fit (then as many leading ones), such as
-    /// "C:\Users\…\Documents\Scans". When even the last folder does not fit, the root, ellipsis
-    /// and last folder are returned and the text block's end ellipsis trims the rest.
-    /// </summary>
-    internal static string ShortenPath(string path, double width, Func<string, double> measure)
-    {
-        if (path.Length == 0 || measure(path) <= width) return path;
-        string root = Path.GetPathRoot(path) ?? "";
-        string[] parts = path[root.Length..].Split(
-            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2) return path;
-        string sep = Path.DirectorySeparatorChar.ToString();
-        string prefix = root.Length == 0 || root.EndsWith(Path.DirectorySeparatorChar) || root.EndsWith(Path.AltDirectorySeparatorChar)
-            ? root
-            : root + sep;
-        for (int tail = parts.Length - 1; tail >= 1; tail--)
-        {
-            for (int head = parts.Length - 1 - tail; head >= 0; head--)
-            {
-                string candidate = prefix
-                    + (head > 0 ? string.Join(sep, parts[..head]) + sep : "")
-                    + "\u2026" + sep + string.Join(sep, parts[^tail..]);
-                if (measure(candidate) <= width) return candidate;
-            }
-        }
-        return prefix + "\u2026" + sep + parts[^1];
+        FolderName.ToolTip = folder;
+        AutomationProperties.SetHelpText(FolderName, folder);
     }
 
     // MARK: - Rows and thumbnails

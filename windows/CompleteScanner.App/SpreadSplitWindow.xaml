@@ -11,8 +11,12 @@
         <!-- Header: title and what to do. -->
         <StackPanel DockPanel.Dock="Top" Margin="20,14,20,12">
             <TextBlock x:Name="TitleText" Text="Split the spread" Style="{StaticResource SubtitleText}" TextWrapping="NoWrap" />
-            <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0"
-                       Text="Click or drag on the spread to place the cut at the spine, or use the slider; the arrow keys move it, Shift takes bigger steps. Choose how the pages lie if the book was on its side." />
+            <DockPanel Margin="0,4,0,0" HorizontalAlignment="Left">
+                <ui:InfoButton DockPanel.Dock="Right" Label="keyboard use" Heading="Keyboard" Margin="4,-4,0,-4"
+                               InfoText="Arrow keys move the cut; Shift takes bigger steps. If the book lay on its side, choose Stacked." />
+                <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" VerticalAlignment="Center"
+                           Text="Drag to place the cut at the spine." />
+            </DockPanel>
         </StackPanel>
 
         <!-- Footer: how the pages lie and the slider; keep as one page on the left, Cancel and the primary Split on the right. -->
@@ -22,10 +26,11 @@
                 <UniformGrid Rows="1" Columns="2">
                     <RadioButton x:Name="SideBySideButton" Style="{StaticResource SegmentedTextItemStyle}"
                                  Content="Side by side" Padding="12,4,12,5"
-                                 ToolTip="The spine runs up and down the scan." Checked="Axis_Changed" />
+                                 ToolTip="Spine runs up and down" Checked="Axis_Changed" />
                     <RadioButton x:Name="StackedButton" Style="{StaticResource SegmentedTextItemStyle}"
-                                 Content="One above the other" Padding="12,4,12,5"
-                                 ToolTip="The book lay on its side: the spine runs across the scan." Checked="Axis_Changed" />
+                                 Content="Stacked" Padding="12,4,12,5"
+                                 AutomationProperties.Name="One above the other"
+                                 ToolTip="Spine runs across (book on its side)" Checked="Axis_Changed" />
                 </UniformGrid>
             </Border>
             <Slider x:Name="CutSlider" Minimum="0.05" Maximum="0.95" SmallChange="0.002" LargeChange="0.02"
@@ -33,7 +38,7 @@
             <DockPanel Margin="0,12,0,0" LastChildFill="False">
                 <Button x:Name="KeepWholeButton" DockPanel.Dock="Left" Content="Keep as one page" Style="{StaticResource SubtleButtonStyle}"
                         ui:Icon.Glyph="&#xE8A5;" Margin="-11,0,0,0" Click="KeepWhole_Click"
-                        ToolTip="Join the two pages: the spread is saved as one page." />
+                        AutomationProperties.HelpText="Join the two pages: the spread is saved as one page." />
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button Content="Cancel" IsCancel="True" MinWidth="96" />
                     <Button x:Name="SplitButton" Content="Split" IsDefault="True" MinWidth="96" Margin="8,0,0,0"
@@ -48,7 +53,7 @@
                     Focusable="True" KeyDown="Host_KeyDown"
                     FocusVisualStyle="{DynamicResource DefaultControlFocusVisualStyle}"
                     AutomationProperties.Name="Spread"
-                    AutomationProperties.HelpText="The left and right arrow keys move the cut (up and down for a book on its side); Shift takes bigger steps."
+                    AutomationProperties.HelpText="Arrow keys move the cut; Shift takes bigger steps. If the book lay on its side, choose Stacked."
                     MouseLeftButtonDown="Host_MouseDown" MouseMove="Host_MouseMove"
                     MouseLeftButtonUp="Host_MouseUp" LostMouseCapture="Host_LostMouseCapture"
                     SizeChanged="Host_SizeChanged">

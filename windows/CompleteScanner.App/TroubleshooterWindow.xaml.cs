@@ -97,9 +97,10 @@ public partial class TroubleshooterWindow : Window
     {
         Snapshot = snapshot;
         var checks = Troubleshooter.Diagnose(snapshot);
-        HeadlineText.Text = Troubleshooter.Headline(snapshot);
-        string summary = Troubleshooter.Summary(checks);
-        if (SummaryText.Text != summary && _refreshes == 0) Announce(SummaryText, summary);
+        // One line: "No scanner found yet · 1 warning found".
+        string headline = HeadlineLine(Troubleshooter.Headline(snapshot), Troubleshooter.Summary(checks));
+        if (HeadlineText.Text != headline && _refreshes == 0) Announce(HeadlineText, headline);
+        else HeadlineText.Text = headline;
         if (checks.SequenceEqual(_shownChecks)) return;
 
         // Where keyboard focus was: the check and the action of the focused button.
@@ -140,9 +141,19 @@ public partial class TroubleshooterWindow : Window
         else RefreshButton.Focus();
     }
 
+    /// <summary>The headline and the summary in one line: "No scanner found yet · 1 warning found".</summary>
+    internal static string HeadlineLine(string headline, string summary)
+    {
+        string count = summary.Trim().TrimEnd('.');
+        return count.Length == 0 ? headline : $"{headline} · {count}";
+    }
+
     /// <summary>
-    /// One check as a card: the status glyph (named for screen readers), the title, the detail
-    /// and its buttons. Screen readers see the card as a group named with the status and title.
+    /// One check: a passed one with nothing to do as a compact row (its title; what it found is the
+    /// tooltip), any other (a passed one that offers an action too) as a card with the status glyph (named for screen readers), the title, the detail's first
+    /// sentence, its buttons and a "More help" expander with the rest. Refresh is the footer's, not
+    /// repeated in a card. Screen readers see the card as a group named with the status and title,
+    /// with the whole detail as its help text.
     /// </summary>
     private Border Card(TroubleshootCheck check)
     {
@@ -166,9 +177,31 @@ public partial class TroubleshooterWindow : Window
         DockPanel.SetDock(icon, Dock.Left);
 
         var title = new TextBlock { Text = check.Title, Style = (Style)FindResource("BodyStrongText"), TextWrapping = TextWrapping.Wrap };
+        var actions = check.Actions.Where(a => a != TroubleshootAction.Refresh).ToList();
+        if (check.Status == CheckStatus.Ok && actions.Count == 0)
+        {
+            // Passed: a compact row with the title; what was found is the tooltip.
+            icon.Margin = new Thickness(0, 1, 10, 0);
+            var okRow = new DockPanel();
+            okRow.Children.Add(icon);
+            okRow.Children.Add(title);
+            var row = new CheckCard
+            {
+                Padding = new Thickness(16, 6, 16, 6),
+                Margin = new Thickness(0, 0, 0, 4),
+                Background = System.Windows.Media.Brushes.Transparent,
+                Child = okRow,
+                ToolTip = check.Detail,
+            };
+            AutomationProperties.SetName(row, $"{status}: {check.Title}");
+            AutomationProperties.SetHelpText(row, check.Detail);
+            AutomationProperties.SetAutomationId(row, check.Id);
+            return row;
+        }
+        var (lead, more) = TextSplit.Lead(check.Detail);
         var detail = new TextBlock
         {
-            Text = check.Detail,
+            Text = lead,
             Style = (Style)FindResource("BodyText"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 2, 0, 0),
@@ -176,10 +209,10 @@ public partial class TroubleshooterWindow : Window
         var texts = new StackPanel();
         texts.Children.Add(title);
         texts.Children.Add(detail);
-        if (check.Actions.Count > 0)
+        if (actions.Count > 0)
         {
             var buttons = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
-            foreach (var action in check.Actions)
+            foreach (var action in actions)
             {
                 var button = new Button
                 {
@@ -196,18 +229,37 @@ public partial class TroubleshooterWindow : Window
             }
             texts.Children.Add(buttons);
         }
+        if (more.Length > 0)
+        {
+            var moreText = new TextBlock { Text = more, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) };
+            moreText.SetResourceReference(StyleProperty, "SecondaryBodyText");
+            var expander = new Expander
+            {
+                Header = "More help",
+                Content = moreText,
+                Margin = new Thickness(0, 6, 0, 0),
+                Padding = new Thickness(0),
+                // A light disclosure inside the card, not a card of its own.
+                Background = System.Windows.Media.Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+            };
+            AutomationProperties.SetName(expander, $"More help: {check.Title}");
+            texts.Children.Add(expander);
+        }
 
-        var row = new DockPanel();
-        row.Children.Add(icon);
-        row.Children.Add(texts);
+        var cardRow = new DockPanel();
+        cardRow.Children.Add(icon);
+        cardRow.Children.Add(texts);
         var card = new CheckCard
         {
             Style = (Style)FindResource("CardStyle"),
             Padding = new Thickness(16, 12, 16, 12),
             Margin = new Thickness(0, 0, 0, 8),
-            Child = row,
+            Child = cardRow,
         };
         AutomationProperties.SetName(card, $"{status}: {check.Title}");
+        AutomationProperties.SetHelpText(card, check.Detail);
         AutomationProperties.SetAutomationId(card, check.Id);
         return card;
     }
@@ -261,6 +313,7 @@ public partial class TroubleshooterWindow : Window
     {
         if (_refreshes > 0) return;
         _refreshes++;
+        SummaryText.Visibility = Visibility.Visible;
         Announce(SummaryText, "Looking for scanners…");
         try
         {
@@ -272,6 +325,7 @@ public partial class TroubleshooterWindow : Window
             _refreshes--;
         }
         SummaryText.Text = "";
+        SummaryText.Visibility = Visibility.Collapsed;
         await UpdateAsync();
     }
 

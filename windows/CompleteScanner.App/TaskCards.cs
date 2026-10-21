@@ -49,6 +49,20 @@ public sealed class TaskCardItem(TaskDefinition definition, TaskAvailability ava
             ? $"{Subtitle} {Summary}.{(IsCurrent ? " Current task." : "")}"
             : $"{Subtitle} Not available: {Reason}";
 
+    /// <summary>The tooltip's second line: what the task sets, or the full reason it can't be started.</summary>
+    public string TipDetail => IsAvailable ? Summary : Reason ?? "";
+
+    /// <summary>
+    /// The tile's one visible line when the task can't be started: "Needs a document feeder" or
+    /// "Needs a printer" (the full reason is the tooltip); null while it can be started.
+    /// </summary>
+    public string? ShortReason => IsAvailable ? null : ShortReasonFor(Definition, Reason);
+
+    internal static string ShortReasonFor(TaskDefinition definition, string? reason) =>
+        definition.RequiredSource == ScanSource.DocumentFeeder ? ShortText.NeedsDocumentFeeder
+        : definition.Flow == TaskFlowKind.Copy ? ShortText.NeedsPrinter
+        : reason ?? "";
+
     /// <summary>Equal for cards that look and behave the same, so an unchanged grid is not rebuilt (and keeps focus).</summary>
     internal string Signature => string.Join('\u001f', Task, IsAvailable, Reason ?? "", IsCurrent, Summary);
 }
@@ -63,6 +77,8 @@ public sealed class PresetCardItem(Preset preset)
     public string Glyph => TaskIcons.Glyph(Task);
     public string Summary => TaskCatalog.Summary(Preset.Settings);
     public string HelpText => $"Preset for {TaskTitle}. {Summary}.";
+    /// <summary>"Invoices preset".</summary>
+    public string AccessibleName => $"{Name} preset";
 
     internal string Signature => string.Join('\u001f', Preset.Id, Name, Task, Summary);
 }

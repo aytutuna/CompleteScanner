@@ -25,23 +25,38 @@ public sealed class PdfProtection : IDisposable
     /// <summary>A password is at most this many bytes once prepared; readers cut a longer one the same way.</summary>
     public const int MaxPasswordBytes = 127;
 
-    /// <summary>The password switch in Output.</summary>
-    public const string OptionLabel = "Protect with a password";
+    /// <summary>The password switch in the inspector's Archive &amp; password section.</summary>
+    public const string OptionLabel = "Require a password";
 
-    /// <summary>What the switch does, on hover and for screen readers.</summary>
-    public const string OptionHint =
+    /// <summary>What the switch does, on hover.</summary>
+    public const string OptionHint = "PDFs open only with the password. You type it when saving.";
+
+    /// <summary>What the switch does, for screen readers: the hover text with what can't be undone.</summary>
+    public const string OptionHelp =
         "Saved PDFs open only with a password. You type it each time you save: it is never stored, and a forgotten password can't be recovered.";
 
-    /// <summary>The dialog's title and heading.</summary>
-    public const string DialogTitle = "Protect the PDF with a password";
+    /// <summary>Why the switch is greyed out while archival PDF (PDF/A) is on, shown next to it.</summary>
+    public const string NotWithArchivalReason = "Not with PDF/A";
 
-    /// <summary>What the dialog says under its heading.</summary>
-    public const string DialogMessage =
+    /// <summary>The dialog's title and heading.</summary>
+    public const string DialogTitle = "Set a PDF password";
+
+    /// <summary>
+    /// The warning the dialog shows under its heading: what can't be undone, and that it applies to
+    /// every save from now on.
+    /// </summary>
+    public const string DialogMessage = "It can't be recovered if forgotten. Every PDF you save now gets it.";
+
+    /// <summary>The dialog's whole explanation, for screen readers.</summary>
+    public const string DialogHelp =
         "Anyone who opens the file will need this password. It isn't saved anywhere, and it can't be recovered if it's forgotten. Every PDF saved now gets it.";
 
-    /// <summary>The permissions are requests that PDF apps honor, not locks; the dialog says so.</summary>
+    /// <summary>The permissions are requests that PDF apps honor, not locks; the dialog says so (on hover and for screen readers).</summary>
     public const string PermissionsNote =
         "Most PDF apps respect these choices, but they are a request, not a lock: someone with the password can get around them with other software.";
+
+    /// <summary>The line under the permissions: short, and always shown, so they are not taken for a lock.</summary>
+    public const string PermissionsShortNote = "Some apps ignore these settings.";
 
     /// <summary>The status when a save that needs a password got none (the dialog was cancelled).</summary>
     public const string NotSavedMessage = "Not saved: no password was given for the protected PDF.";
@@ -147,7 +162,7 @@ public sealed class PdfProtection : IDisposable
         bool empty = prepared.Length == 0;
         CryptographicOperations.ZeroMemory(prepared);
         if (empty) return "Type a password.";
-        if (!string.Equals(password, confirmation, StringComparison.Ordinal)) return "The two passwords don't match.";
+        if (!string.Equals(password, confirmation, StringComparison.Ordinal)) return "Passwords don't match";
         return null;
     }
 
@@ -190,7 +205,25 @@ public sealed class PdfProtection : IDisposable
         return bits < 64 ? PasswordStrength.Fair : PasswordStrength.Strong;
     }
 
-    /// <summary>The dialog's line about a password's strength ("" when nothing is typed).</summary>
+    /// <summary>The dialog's short line next to the strength bar ("" when nothing is typed).</summary>
+    public static string StrengthLabel(PasswordStrength strength) => strength switch
+    {
+        PasswordStrength.Weak => "Weak · use 12+ characters",
+        PasswordStrength.Fair => "Fair · longer is safer",
+        PasswordStrength.Strong => "Strong",
+        _ => "",
+    };
+
+    /// <summary>How many of the strength bar's four segments are filled.</summary>
+    public static int StrengthSegments(PasswordStrength strength) => strength switch
+    {
+        PasswordStrength.Weak => 1,
+        PasswordStrength.Fair => 2,
+        PasswordStrength.Strong => 4,
+        _ => 0,
+    };
+
+    /// <summary>The full advice about a password's strength, on hover and for screen readers ("" when nothing is typed).</summary>
     public static string StrengthHint(PasswordStrength strength) => strength switch
     {
         PasswordStrength.Weak => "Weak: easy to guess. Longer is stronger: use 12 or more characters, or a few unrelated words.",

@@ -36,14 +36,31 @@ public partial class PdfPasswordWindow : Window
 
     private void Password_Changed(object sender, RoutedEventArgs e) => Refresh();
 
-    /// <summary>The strength hint, and Save enabled once the password can be used.</summary>
+    /// <summary>The strength bar and its words, and Save enabled once the password can be used.</summary>
     internal void Refresh()
     {
         string password = PasswordInput.Password, confirmation = ConfirmInput.Password;
-        string hint = PdfProtection.StrengthHint(PdfProtection.StrengthOf(password));
-        bool hintChanged = StrengthText.Text != hint;
-        StrengthText.Text = hint;
-        StrengthText.Visibility = hint.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        var strength = PdfProtection.StrengthOf(password);
+        string label = PdfProtection.StrengthLabel(strength);
+        string hint = PdfProtection.StrengthHint(strength);
+        bool hintChanged = StrengthText.Text != label;
+        StrengthText.Text = label;
+        StrengthPanel.ToolTip = hint.Length == 0 ? null : hint;
+        System.Windows.Automation.AutomationProperties.SetName(StrengthText, hint);
+        StrengthPanel.Visibility = label.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        int filled = PdfProtection.StrengthSegments(strength);
+        string brush = strength switch
+        {
+            PasswordStrength.Weak => "SystemFillColorCriticalBrush",
+            PasswordStrength.Fair => "SystemFillColorCautionBrush",
+            _ => "SystemFillColorSuccessBrush",
+        };
+        var segments = StrengthBar.Children.OfType<System.Windows.Controls.Border>().ToList();
+        for (int i = 0; i < segments.Count; i++)
+        {
+            segments[i].SetResourceReference(System.Windows.Controls.Border.BackgroundProperty,
+                                             i < filled ? brush : "ControlStrongFillColorDisabledBrush");
+        }
         // Screen readers hear a new hint (when the strength changes, not at every key).
         if (hintChanged && hint.Length > 0) Announce(StrengthText);
         string? problem = PdfProtection.Problem(password, confirmation);
