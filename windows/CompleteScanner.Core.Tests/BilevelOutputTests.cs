@@ -141,8 +141,8 @@ public class BilevelOutputTests
             new PdfPageInput(new PdfCcittImage(checker, 37, 23), 37, 23, 100, [line]),
             new PdfPageInput(PdfBuilderTests.TinyJpeg, 850, 1100, 100, null),
         ]);
-        Assert.Equal(9891, pdf.Length);
-        Assert.Equal("702D8A5F1AE3DF27F8B7CD5B18DF6C5585D9E3406AAE53880C0274C6A14EFB14", Convert.ToHexString(SHA256.HashData(pdf)));
+        Assert.Equal(9892, pdf.Length);
+        Assert.Equal("75ED330CDE6CE4BA0D554F7F9C17EA81D2648A3C39E3C5141EBAA73138D4EF29", Convert.ToHexString(SHA256.HashData(pdf)));
     }
 
     [Fact]

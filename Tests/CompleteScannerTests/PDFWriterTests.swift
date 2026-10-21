@@ -455,9 +455,9 @@ final class PDFWriterTests: XCTestCase {
         // PdfATests.Standard_GoldenBytes: a Letter page with a Turkish line, then a plain one.
         let line = Self.line("Çağrı Işık İzmir'de öğün şüpheli", 0.1, 0.8, 0.6, 0.04)
         let pdf = try PDFWriter.make([Self.letterPage([line]), Self.letterPage()])
-        XCTAssertEqual(pdf.count, 9865)
+        XCTAssertEqual(pdf.count, 9866)
         XCTAssertEqual(CompanionPackage.sha256Hex(pdf).uppercased(),
-                       "BC4C14E0219F0842DD5DCCF79918C9C5CC4B634954C927C3783635249FA3A779")
+                       "7364F91269282507EE7AAE7006D38A735F96277719C074EE2476BA2D6D3E2594")
     }
 
     func test_g4AndJpegPages_goldenBytes() throws {
@@ -470,8 +470,8 @@ final class PDFWriterTests: XCTestCase {
                               pixelHeight: 23, dpi: 100, ocrLines: [line])
         let jpeg = PDFPageInput(jpegData: Self.tinyJPEGData, pixelWidth: 850, pixelHeight: 1100, dpi: 100, ocrLines: nil)
         let pdf = try PDFWriter.make([g4, jpeg])
-        XCTAssertEqual(pdf.count, 9891)
+        XCTAssertEqual(pdf.count, 9892)
         XCTAssertEqual(CompanionPackage.sha256Hex(pdf).uppercased(),
-                       "702D8A5F1AE3DF27F8B7CD5B18DF6C5585D9E3406AAE53880C0274C6A14EFB14")
+                       "75ED330CDE6CE4BA0D554F7F9C17EA81D2648A3C39E3C5141EBAA73138D4EF29")
     }
 }

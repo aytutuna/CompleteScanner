@@ -223,7 +223,9 @@ public enum PDFWriter {
     /// The text layer's font, objects `first` to first + 5: a Type0 font with Identity-H encoding
     /// (two-byte codes, see `GlyphlessCodes`) over a CIDFontType2 whose every glyph is
     /// `GlyphlessFont`'s empty, half-em-wide glyph 1, embedded, with a ToUnicode map giving each
-    /// code back as its character (`codes`).
+    /// code back as its character (`codes`). The descriptor's /Descent is -1, not the program's 0:
+    /// PDFKit reads no text at all from a font whose descriptor and hhea table both give a descent
+    /// of 0.
     static func writeTextFont(_ w: PDFObjectWriter, first: Int, codes: GlyphlessCodes) throws {
         let cidFont = first + 1
         let descriptor = first + 2
@@ -247,7 +249,7 @@ public enum PDFWriter {
 
         var fontDescriptor = "<</Type /FontDescriptor /FontName /\(name) /Flags 5 "
         fontDescriptor += "/FontBBox [0 0 \(width) \(em)] /ItalicAngle 0 "
-        fontDescriptor += "/Ascent \(em) /Descent 0 /CapHeight \(em) /StemV 80 "
+        fontDescriptor += "/Ascent \(em) /Descent -1 /CapHeight \(em) /StemV 80 "
         fontDescriptor += "/FontFile2 \(program) 0 R>>"
         try w.writeObject(descriptor, fontDescriptor)
 

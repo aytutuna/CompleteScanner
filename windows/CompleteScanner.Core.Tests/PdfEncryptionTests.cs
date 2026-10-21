@@ -420,8 +420,8 @@ public class PdfEncryptionTests
         // writer port must match.
         using var protection = new PdfProtection("Şifre 2026");
         byte[] pdf = PdfBuilder.Make([Page([Line])], options: Protected(protection));
-        Assert.Equal(10029, pdf.Length);
-        Assert.Equal("F975D734BEE2330534E4B25E6EDF32DE3B4C03A39BF8AB3DC4F0692B6EB92EC8", Convert.ToHexString(SHA256.HashData(pdf)));
+        Assert.Equal(10030, pdf.Length);
+        Assert.Equal("A665F1906B163D10C82CAE43433433163651DCD1CFE79F8702B4C4A660DACB8A", Convert.ToHexString(SHA256.HashData(pdf)));
     }
 
     [Fact]

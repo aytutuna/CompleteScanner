@@ -386,6 +386,8 @@ public static class PdfBuilder
     /// Identity-H encoding (two-byte codes, see <see cref="GlyphlessCodes"/>) over a CIDFontType2
     /// whose every glyph is <see cref="GlyphlessFont"/>'s empty, half-em-wide glyph 1, embedded,
     /// with a ToUnicode map giving each code back as its character (<paramref name="codes"/>).
+    /// The descriptor's /Descent is -1, not the program's 0: macOS' PDFKit reads no text at all
+    /// from a font whose descriptor and hhea table both give a descent of 0.
     /// </summary>
     internal static void WriteTextFont(PdfObjectWriter w, int first, GlyphlessCodes codes)
     {
@@ -401,7 +403,7 @@ public static class PdfBuilder
         w.WriteObject(descriptor,
             $"<</Type /FontDescriptor /FontName /{name} /Flags 5 " +
             $"/FontBBox [0 0 {GlyphlessFont.GlyphWidth} {GlyphlessFont.UnitsPerEm}] /ItalicAngle 0 " +
-            $"/Ascent {GlyphlessFont.UnitsPerEm} /Descent 0 /CapHeight {GlyphlessFont.UnitsPerEm} /StemV 80 " +
+            $"/Ascent {GlyphlessFont.UnitsPerEm} /Descent -1 /CapHeight {GlyphlessFont.UnitsPerEm} /StemV 80 " +
             $"/FontFile2 {program} 0 R>>");
         byte[] font = GlyphlessFont.Program;
         w.WriteStream(program, $"/Length1 {font.Length}", font);

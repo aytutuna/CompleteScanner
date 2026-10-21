@@ -177,7 +177,7 @@ public class PdfATests
                         "/CIDSystemInfo <</Registry (Adobe) /Ordering (Identity) /Supplement 0>> " +
                         "/FontDescriptor 5 0 R /DW 500 /CIDToGIDMap 7 0 R>>", text);
         Assert.Contains("5 0 obj\n<</Type /FontDescriptor /FontName /GlyphLessFont /Flags 5 /FontBBox [0 0 500 1000] " +
-                        "/ItalicAngle 0 /Ascent 1000 /Descent 0 /CapHeight 1000 /StemV 80 /FontFile2 6 0 R>>", text);
+                        "/ItalicAngle 0 /Ascent 1000 /Descent -1 /CapHeight 1000 /StemV 80 /FontFile2 6 0 R>>", text);
         Assert.Contains($"6 0 obj\n<</Length1 {GlyphlessFont.Program.Length} /Length {GlyphlessFont.Program.Length}>>\nstream\n", text);
         Assert.Contains($"7 0 obj\n<</Filter /FlateDecode /Length {GlyphlessFont.CidToGidMap.Length}>>\nstream\n", text);
         Assert.Contains("9 0 obj\n<</Title <FEFF", text);
@@ -321,8 +321,8 @@ public class PdfATests
         // One Letter page with a Turkish line, dated and identified: the Mac's writer port must match.
         var line = new OcrLine("Çağrı Işık İzmir'de öğün şüpheli", new RectD(0.1, 0.8, 0.6, 0.04), 0.9f);
         byte[] pdf = PdfBuilder.Make([Page([line])], options: Archival("Tapu belgesi — Çağrı"));
-        Assert.Equal(11496, pdf.Length);
-        Assert.Equal("6A264EF615EC82AFF45E74066288D6AD2274B83A6529B02F914E5D074954AA33", Convert.ToHexString(SHA256.HashData(pdf)));
+        Assert.Equal(11497, pdf.Length);
+        Assert.Equal("D643A7AA9B4C152F00054009074EF194586428938319BA9DB70EC5F96D2B6370", Convert.ToHexString(SHA256.HashData(pdf)));
     }
 
     [Fact]
@@ -330,8 +330,8 @@ public class PdfATests
     {
         var line = new OcrLine("Çağrı Işık İzmir'de öğün şüpheli", new RectD(0.1, 0.8, 0.6, 0.04), 0.9f);
         byte[] pdf = PdfBuilder.Make([Page([line]), Page()]);
-        Assert.Equal(9865, pdf.Length);
-        Assert.Equal("BC4C14E0219F0842DD5DCCF79918C9C5CC4B634954C927C3783635249FA3A779", Convert.ToHexString(SHA256.HashData(pdf)));
+        Assert.Equal(9866, pdf.Length);
+        Assert.Equal("7364F91269282507EE7AAE7006D38A735F96277719C074EE2476BA2D6D3E2594", Convert.ToHexString(SHA256.HashData(pdf)));
     }
 
     // MARK: - Files
