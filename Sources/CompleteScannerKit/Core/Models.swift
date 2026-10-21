@@ -425,14 +425,13 @@ public struct OutputOptions: Codable, Equatable, Sendable {
     /// A saved PDF gets a text file beside it with the same name (`TextExport`): the recognized
     /// text of its pages, read once for both. Settings without it get false.
     public var alsoSaveText: Bool = false
-    /// Saved PDFs are PDF/A-2b, made for keeping. Stored so settings files stay the same on both
-    /// platforms; only the Windows PDF writer acts on it until the Mac's PDF writer port (M19, see
-    /// CONTRACTS.md). Settings without it get false.
+    /// Saved PDFs are PDF/A-2b, made for keeping (`PDFWriteOptions.forOutput`). A PDF/A file cannot
+    /// have a password, so the password option (`protect`) and this one exclude each other. Settings
+    /// without it get false.
     public var archival: Bool = false
-    /// Saved PDFs open only with a password asked for at each save (AES-256); only this switch is
-    /// stored, never the password. Stored so settings files stay the same on both platforms; only
-    /// the Windows PDF writer acts on it until the Mac's PDF writer port (M20, see CONTRACTS.md).
-    /// Settings without it get false.
+    /// Saved PDFs open only with a password (AES-256, `PDFEncryption`), asked for at each save: only
+    /// this switch is stored, never the password. Excludes `archival`; when a settings file has both
+    /// on, the password wins. Settings without it get false.
     public var protect: Bool = false
     /// A Word document shows each page as scanned, fitted to the paper, before the page's text
     /// (`DocxWriter`), stored as `pdfSize` stores a PDF page. On by default, also for settings

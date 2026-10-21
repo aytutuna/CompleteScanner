@@ -1,25 +1,32 @@
 import Foundation
 
 // Twin of windows/CompleteScanner.Core/PdfObjectWriter.cs: the same header, objects, streams, table
-// and trailer, byte for byte. The C# writer's encryption (M20) arrives here with the Swift
-// PdfEncryption (I5); its incremental-update members (M21) have no twin, since the Mac adds pages to
-// an existing PDF with PDFKit (see CONTRACTS.md).
+// and trailer, byte for byte, and the same encryption of strings and streams (`PDFEncryption`). Its
+// incremental-update members (M21) have no twin, since the Mac adds pages to an existing PDF with
+// PDFKit (see CONTRACTS.md).
 
 /// The byte-level layer of the PDF writer: the header, numbered objects with their byte offsets,
 /// streams, and the classic cross-reference table and trailer. It knows nothing about pages or
 /// fonts (`PDFWriter` decides what the objects are and how they are numbered), and it never holds
 /// more than one object in memory: everything goes straight to `output`. Objects may be written in
 /// any order, but every number from 1 to the highest one used must be written before `finish(_:)`.
-/// Misuse (a number below 1, a number written twice, a gap at the end, a string that is not ASCII)
+/// With an `encryption`, every stream's data and every string made by `asciiString(_:)` is encrypted
+/// as it is written; the dictionaries themselves (and so the /Encrypt dictionary, written as a plain
+/// object) are not. Misuse (a number below 1, a number written twice, a gap at the end, a string that is not ASCII)
 /// throws `ScanError.exportFailed`, where C# throws an argument or invalid-operation exception.
 public final class PDFObjectWriter {
     private let output: (Data) throws -> Void
     private var offsets: [Int] = [] // offsets[i] = byte offset of object i + 1; -1 = not written yet
 
-    /// Every byte goes to `output`, in order, as it is written.
-    public init(output: @escaping (Data) throws -> Void) {
+    /// Every byte goes to `output`, in order, as it is written; `encryption` encrypts the strings and
+    /// streams (nil: they are not).
+    public init(encryption: PDFEncryption? = nil, output: @escaping (Data) throws -> Void) {
         self.output = output
+        self.encryption = encryption
     }
+
+    /// What encrypts the file's strings and streams; nil for an open file.
+    public let encryption: PDFEncryption?
 
     /// Bytes written so far: the offset the next byte lands at.
     public private(set) var position = 0
@@ -58,23 +65,34 @@ public final class PDFObjectWriter {
 
     /// A stream object: "<<{entries} /Length n>>", the data between "stream" and "endstream", each
     /// keyword on a line of its own. `entries` are the dictionary's other entries ("" for none); the
-    /// length is always added last.
+    /// length is always added last. The data is encrypted first when the file is (the length is then
+    /// the encrypted data's).
     public func writeStream(_ number: Int, _ entries: String, _ data: Data) throws {
+        var stored: Data = data
+        if let encryption {
+            let encrypted: [UInt8] = try encryption.encrypt([UInt8](data))
+            stored = Data(encrypted)
+        }
         try beginObject(number)
         let separator = entries.isEmpty ? "" : " "
-        try writeASCII("<<\(entries)\(separator)/Length \(data.count)>>\nstream\n")
-        try writeBytes(data)
+        try writeASCII("<<\(entries)\(separator)/Length \(stored.count)>>\nstream\n")
+        try writeBytes(stored)
         try writeASCII("\nendstream\n")
         try endObject()
     }
 
-    /// A string in an object's dictionary: "(text)" with \, ( and ) escaped. `text` is ASCII.
+    /// A string in an object's dictionary: "(text)" with \, ( and ) escaped in an open file, the
+    /// encrypted bytes as a hex string in an encrypted one. `text` is ASCII.
     public func asciiString(_ text: String) throws -> String {
+        for scalar in text.unicodeScalars where scalar.value >= 0x80 {
+            throw ScanError.exportFailed("PDF syntax strings are ASCII.")
+        }
+        if let encryption {
+            let encrypted: [UInt8] = try encryption.encrypt(Array(text.utf8))
+            return "<" + PDFEncryption.hex(encrypted) + ">"
+        }
         var result = "("
         for scalar in text.unicodeScalars {
-            guard scalar.value < 0x80 else {
-                throw ScanError.exportFailed("PDF syntax strings are ASCII.")
-            }
             if scalar == "\\" || scalar == "(" || scalar == ")" { result += "\\" }
             result.unicodeScalars.append(scalar)
         }

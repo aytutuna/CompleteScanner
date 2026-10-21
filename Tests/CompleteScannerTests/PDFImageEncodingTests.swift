@@ -293,9 +293,9 @@ final class PDFImageEncodingTests: XCTestCase {
                                                               size: .best))
         XCTAssertEqual(PDFImageEncoding.readJPEGHeader(best.jpegData), JPEGHeader(width: 300, height: 200, components: 3))
 
-        // A black & white page is planned as G4, which CoreGraphics cannot store: encodedPage (what
-        // the CoreGraphics path draws) gives it as a gray JPEG, planned as a gray page is (300 dpi at
-        // Standard, not G4's 600). PDFBuilder writes such pages through PDFWriter as G4 instead.
+        // A black & white page is planned as G4, which a JPEG cannot carry: encodedPage gives it as a
+        // gray JPEG, planned as a gray page is (300 dpi at Standard, not G4's 600). PDFBuilder stores
+        // such pages through PDFWriter as G4 instead.
         let blackWhite = try XCTUnwrap(PDFImageEncoding.encodedPage(page, imageDPI: 600, mode: .blackWhite,
                                                                     size: .standard))
         XCTAssertEqual(blackWhite.plan, PDFImagePlan(targetDPI: 300, kind: .jpegGray, quality: 0.8))

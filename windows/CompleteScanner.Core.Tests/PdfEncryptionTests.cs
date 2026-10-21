@@ -9,9 +9,9 @@ using Xunit;
 namespace CompleteScanner.Core.Tests;
 
 // Password-protected PDFs: the standard security handler V5 R6 (AES-256) checked against known
-// answers, then whole files read back with the password by PdfPig (a test-only package). No Swift
-// twin yet: the Mac's port of the PDF writer (CONTRACTS.md, M20) brings one, which must write the
-// same bytes (the pinned SHA-256 below).
+// answers, then whole files read back with the password by PdfPig (a test-only package). Mirrored by
+// Tests/CompleteScannerTests/PDFEncryptionTests.swift: the same cases and the same bytes (the pinned
+// values and SHA-256 below), the files opened there with PDFKit.
 
 public class PdfEncryptionTests
 {

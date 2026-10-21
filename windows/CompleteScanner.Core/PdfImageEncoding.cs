@@ -3,9 +3,8 @@ namespace CompleteScanner.Core;
 // Twin of Sources/CompleteScannerKit/Output/PDFImageEncoding.swift: the same table, the same
 // rules and the same rounding. Windows encodes the planned JPEG with WIC
 // (WpfImageCodec.EncodeJpeg), or black & white pages as CCITT G4 (PdfCcittImage), and embeds
-// them through PdfBuilder; macOS encodes the JPEG with ImageIO and hands CoreGraphics a
-// JPEG-backed image, and writes a document with black & white pages through its port of this
-// writer (PDFWriter), with those pages as G4.
+// them through PdfBuilder; macOS encodes the JPEG with ImageIO and embeds it, like black & white
+// pages as G4, through its port of this writer (PDFWriter).
 
 /// <summary>How a page image is stored in the PDF.</summary>
 public enum PdfImageKind

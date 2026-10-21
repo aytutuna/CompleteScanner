@@ -5,7 +5,8 @@ import SwiftUI
 
 /// Right column: the scan settings in sections (`InspectorSections`), presets, and the Preview / Scan /
 /// Cancel actions pinned at the bottom. The task's own section (Photocopy or Receipts), Scanner and
-/// Output start open; Adjustments, Pages, Split into documents and More options start collapsed, and a
+/// Output start open; Adjustments, Pages, Split into documents, Archive & password and More options
+/// start collapsed, and a
 /// collapsed header shows what is on in it (with a dot when something differs from the default), so a
 /// setting is never out of sight. What a control does is its help (tooltip and VoiceOver); a line under
 /// a control stays only for why it is greyed out, for what cannot be undone, or for live state. Which
@@ -25,6 +26,7 @@ struct InspectorView: View {
     @AppStorage("inspector.section.adjustments") private var adjustmentsOpen: Bool = InspectorSections.openByDefault(InspectorSections.adjustments)
     @AppStorage("inspector.section.pages") private var pagesOpen: Bool = InspectorSections.openByDefault(InspectorSections.pages)
     @AppStorage("inspector.section.split") private var splitOpen: Bool = InspectorSections.openByDefault(InspectorSections.split)
+    @AppStorage("inspector.section.archive") private var archiveOpen: Bool = InspectorSections.openByDefault(InspectorSections.archive)
     @AppStorage("inspector.section.more") private var moreOpen: Bool = InspectorSections.openByDefault(InspectorSections.more)
 
     var body: some View {
@@ -74,6 +76,9 @@ struct InspectorView: View {
                 pagesSection
                 splitSection
             }
+            if archiveShown {
+                archiveSection
+            }
             moreSection
             presetsSection
         }
@@ -113,6 +118,7 @@ struct InspectorView: View {
         case InspectorSections.adjustments: return adjustmentsOpen
         case InspectorSections.pages: return pagesOpen
         case InspectorSections.split: return splitOpen
+        case InspectorSections.archive: return archiveOpen
         default: return moreOpen
         }
     }
@@ -125,6 +131,7 @@ struct InspectorView: View {
         case InspectorSections.adjustments: adjustmentsOpen = open
         case InspectorSections.pages: pagesOpen = open
         case InspectorSections.split: splitOpen = open
+        case InspectorSections.archive: archiveOpen = open
         default: moreOpen = open
         }
     }
@@ -406,6 +413,71 @@ struct InspectorView: View {
                     .help(PaperSizes.doesNotFitReason(source: state.settings.source))
             }
         }
+    }
+
+    // MARK: Archive & password
+
+    /// Archive & password apply whenever the save writes a PDF (a queue of image pages too, and a copy
+    /// also saved as a PDF), not only when PDF is the format shown. Twin of the Windows `WritesPdf`.
+    private var archiveShown: Bool {
+        let s: ScanSettings = state.settings
+        guard s.intent == .document else { return false }
+        if state.isCopyFlow { return s.taskOptions.copyAlsoSavePdf }
+        if state.isReceiptFlow || state.isIdCardFlow { return s.format.pageFormat == .pdf }
+        return s.format.savesPDF(collectsPages: s.documentMultiPage)
+    }
+
+    /// Archival PDF (PDF/A) and the password, which exclude each other: while one is on, the other is
+    /// greyed out with why next to it (`PDFA.notWithPasswordReason`, `PDFProtection.notWithArchivalReason`).
+    /// The password is asked for at each save and never stored. Twin of the Windows "Archive & password".
+    private var archiveSection: some View {
+        let output: OutputOptions = state.settings.output
+        let protect: Bool = output.protect
+        let archival: Bool = output.archival && !protect
+        let archivalHelp: String = protect ? "\(PDFA.notWithPasswordReason). \(PDFA.cannotProtectNote)" : PDFA.optionHelp
+        let protectHelp: String = archival
+            ? "\(PDFProtection.notWithArchivalReason). \(PDFA.cannotProtectNote)"
+            : PDFProtection.optionHelp
+        return section(InspectorSections.archive, title: InspectorSections.title(InspectorSections.archive),
+                       summary: InspectorSections.archiveSummary(output),
+                       changed: output.protect || output.archival, locked: output.protect) {
+            Toggle(PDFA.optionLabel, isOn: archivalBinding)
+                .disabled(protect)
+                .help(protect ? PDFA.cannotProtectNote : PDFA.optionHint)
+                .accessibilityHint(Text(archivalHelp))
+            if protect {
+                reasonLine(PDFA.notWithPasswordReason, systemImage: "lock")
+                    .help(PDFA.cannotProtectNote)
+            }
+            Toggle(PDFProtection.optionLabel, isOn: protectBinding)
+                .disabled(archival)
+                .help(archival ? PDFA.cannotProtectNote : PDFProtection.optionHint)
+                .accessibilityHint(Text(protectHelp))
+            if archival {
+                reasonLine(PDFProtection.notWithArchivalReason, systemImage: "lock")
+                    .help(PDFA.cannotProtectNote)
+            }
+        }
+    }
+
+    /// On while the archival option is (and the password is not: a settings file with both on gets
+    /// the password).
+    private var archivalBinding: Binding<Bool> {
+        Binding(get: { state.settings.output.archival && !state.settings.output.protect },
+                set: { (on: Bool) in state.settings.output.archival = on && !state.settings.output.protect })
+    }
+
+    /// Turning the password on turns archival PDF off. Archival keeps only what its switch showed
+    /// (`archivalBinding`), as Windows writes `Archival = ArchivalBox.IsChecked && !Protect`: an
+    /// archival setting hidden under the password (a settings file with both on) is cleared, so
+    /// turning the password off later leaves archival off.
+    private var protectBinding: Binding<Bool> {
+        Binding(get: { state.settings.output.protect },
+                set: { (on: Bool) in
+                    let shownArchival = state.settings.output.archival && !state.settings.output.protect
+                    state.settings.output.archival = shownArchival && !on
+                    state.settings.output.protect = on
+                })
     }
 
     // MARK: Output

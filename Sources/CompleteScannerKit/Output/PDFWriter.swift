@@ -3,11 +3,10 @@ import Foundation
 
 // Twin of the object-level parts of windows/CompleteScanner.Core/PdfBuilder.cs (PdfImageData,
 // PdfJpegImage, PdfCcittImage, PdfPageInput, Make, Write, WritePage, ImageEntries, WriteTextFont,
-// TextLayerLine, F): the same objects, numbering, content streams and number formatting, so a plain
-// PDF is the same file on both platforms (the golden values in PDFWriterTests, pinned in C#). PDF/A
-// and protected files (PdfWriteOptions, PdfA, PdfEncryption) arrive with I5. The Mac's PDFBuilder
-// writes a document with a black & white page through this writer (G4) and every other document
-// with CoreGraphics' PDF context.
+// TextLayerLine, F): the same objects, numbering, content streams and number formatting, for plain,
+// PDF/A-2b and password-protected files (`PDFWriteOptions`, `PDFA`, `PDFEncryption`), so each is the
+// same file on both platforms (the golden values in PDFWriterTests, PDFATests and PDFEncryptionTests,
+// pinned in C#). The Mac's and the iPhone's PDFBuilder write every PDF through this writer.
 
 /// A page image as a PDF stores it (C# `PdfImageData`, `PdfJpegImage`, `PdfCcittImage`). The image
 /// may be smaller than the page (a downsampled image, or a preview used when the full-resolution
@@ -71,7 +70,9 @@ public struct PDFPageInput {
     public var jpegData: Data { image.data }
 }
 
-/// The dependency-free PDF writer of scanned pages, ported from C# `PdfBuilder`. It writes PDF 1.4.
+/// The dependency-free PDF writer of scanned pages, ported from C# `PdfBuilder`. It writes PDF 1.4,
+/// PDF/A-2b for keeping, or a PDF 1.7 file that opens only with a password (AES-256), as
+/// `PDFWriteOptions` ask.
 ///
 /// Each page carries one full-page image XObject: a JPEG (/DeviceRGB, or /DeviceGray for a
 /// one-component JPEG) or, for black & white pages, a 1-bit /DeviceGray CCITT G4 image; when OCR
@@ -81,13 +82,18 @@ public struct PDFPageInput {
 ///
 /// Objects are numbered in a fixed order: 1 Catalog, 2 Pages; when any page has text, the six
 /// objects of the text layer's font (Type0 font, CIDFont, FontDescriptor, FontFile2, CIDToGIDMap,
-/// ToUnicode); then Page, Image and Contents for each page.
+/// ToUnicode); for PDF/A, the Info dictionary, the XMP Metadata and the sRGB profile; for a protected
+/// file, the Encrypt dictionary; then Page, Image and Contents for each page.
+///
+/// A protected file is PDF 1.7 with Adobe's extension level 8 declared in the catalog (what AES-256
+/// readers look for), every stream and string encrypted with its own random file key
+/// (`PDFEncryption`), and /Encrypt and /ID in the trailer.
 public enum PDFWriter {
-    /// Build the PDF in memory (see `write(_:progress:shouldContinue:to:)`).
+    /// Build the PDF in memory (`options`: see `write(_:progress:shouldContinue:options:to:)`).
     public static func make(_ pages: [PDFPageInput], progress: ((String) -> Void)? = nil,
-                            shouldContinue: (() -> Bool)? = nil) throws -> Data {
+                            shouldContinue: (() -> Bool)? = nil, options: PDFWriteOptions? = nil) throws -> Data {
         var result = Data()
-        try write(pages, progress: progress, shouldContinue: shouldContinue) { chunk in
+        try write(pages, progress: progress, shouldContinue: shouldContinue, options: options) { chunk in
             result.append(chunk)
         }
         return result
@@ -97,7 +103,7 @@ public enum PDFWriter {
     /// never held in memory. Errors are `ScanError`s; a failed or cancelled write leaves an
     /// incomplete file, so callers write to a temporary file and move it into place.
     public static func writeFile(_ pages: [PDFPageInput], to url: URL, progress: ((String) -> Void)? = nil,
-                                 shouldContinue: (() -> Bool)? = nil) throws {
+                                 shouldContinue: (() -> Bool)? = nil, options: PDFWriteOptions? = nil) throws {
         guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
             throw ScanError.exportFailed("Could not write to \(url.path).")
         }
@@ -109,7 +115,7 @@ public enum PDFWriter {
         }
         defer { try? handle.close() }
         do {
-            try write(pages, progress: progress, shouldContinue: shouldContinue) { chunk in
+            try write(pages, progress: progress, shouldContinue: shouldContinue, options: options) { chunk in
                 try handle.write(contentsOf: chunk)
             }
         } catch let error as ScanError {
@@ -121,10 +127,16 @@ public enum PDFWriter {
 
     /// Stream the PDF to `output`, never holding the whole document. `shouldContinue` is polled
     /// before each page; returning false aborts with `ScanError.cancelled`, leaving `output` with an
-    /// incomplete document. `progress` hears "Writing page n of m…" before each page.
+    /// incomplete document. `progress` hears "Writing page n of m…" before each page. `options` (nil:
+    /// a plain PDF) choose PDF/A-2b and carry its title, date and file identifier, or protect the file
+    /// with a password; options asking for both are refused (`ScanError.exportFailed` with
+    /// `PDFA.cannotProtectNote`): PDF/A forbids encryption. So is a protection already disposed.
     public static func write(_ pages: [PDFPageInput], progress: ((String) -> Void)? = nil,
-                             shouldContinue: (() -> Bool)? = nil,
+                             shouldContinue: (() -> Bool)? = nil, options: PDFWriteOptions? = nil,
                              to output: @escaping (Data) throws -> Void) throws {
+        let settings: PDFWriteOptions = options ?? PDFWriteOptions.standard
+        let archival: Bool = settings.isArchival
+        if archival && settings.isProtected { throw ScanError.exportFailed(PDFA.cannotProtectNote) }
         var hasText = false
         var texts: [String] = []
         for page in pages {
@@ -134,16 +146,38 @@ public enum PDFWriter {
         }
         // The text layer's character codes: characters beyond the BMP get theirs from every line.
         let codes = GlyphlessCodes.of(texts)
-        let w = PDFObjectWriter(output: output)
-        try w.writeHeader("1.4")
+        // A protected file gets its own random file key; it is wiped once the file is written.
+        var encryption: PDFEncryption? = nil
+        if let protection = settings.protection {
+            encryption = try PDFEncryption.create(protection, random: settings.random)
+        }
+        defer { encryption?.dispose() }
+        let w = PDFObjectWriter(encryption: encryption, output: output)
+        try w.writeHeader(archival || encryption != nil ? "1.7" : "1.4")
 
         var next = 3
         let fontObject = hasText ? next : 0
         if hasText { next += 6 }
+        let infoObject = archival ? next : 0
+        let metadataObject = infoObject + 1
+        let profileObject = infoObject + 2
+        if archival { next += 3 }
+        var encryptObject = 0
+        if encryption != nil {
+            encryptObject = next
+            next += 1
+        }
         let firstPageObject = next
 
         // 1: Catalog
-        try w.writeObject(1, "<</Type /Catalog /Pages 2 0 R>>")
+        if archival {
+            let intents: String = PDFA.outputIntents(profileObject)
+            try w.writeObject(1, "<</Type /Catalog /Pages 2 0 R /Metadata \(metadataObject) 0 R /OutputIntents \(intents)>>")
+        } else if encryption != nil {
+            try w.writeObject(1, "<</Type /Catalog /Pages 2 0 R /Extensions <</ADBE <</BaseVersion /1.7 /ExtensionLevel 8>>>>>>")
+        } else {
+            try w.writeObject(1, "<</Type /Catalog /Pages 2 0 R>>")
+        }
 
         // 2: Pages
         var kids = ""
@@ -155,6 +189,22 @@ public enum PDFWriter {
 
         if hasText { try writeTextFont(w, first: fontObject, codes: codes) }
 
+        if archival {
+            // Whole seconds, as both dates are written.
+            let made: Date = settings.creationDate ?? Date()
+            let date = Date(timeIntervalSince1970: made.timeIntervalSince1970.rounded(.down))
+            let zone: TimeZone = settings.timeZone ?? TimeZone.current
+            var title: String? = nil
+            if let requested = settings.title { title = PDFA.cleanTitle(requested) }
+            let info: String = PDFA.infoDictionary(title: title, date: date, timeZone: zone)
+            let metadata: Data = PDFA.xmp(title: title, date: date, timeZone: zone)
+            try w.writeObject(infoObject, info)
+            try w.writeStream(metadataObject, "/Type /Metadata /Subtype /XML", metadata)
+            try w.writeStream(profileObject, "/N 3", Data(PDFA.srgbProfile))
+        }
+
+        if let encryption { try w.writeObject(encryptObject, encryption.dictionary) }
+
         for i in 0..<pages.count {
             if shouldContinue?() == false { throw ScanError.cancelled }
             progress?("Writing page \(i + 1) of \(pages.count)…")
@@ -163,7 +213,33 @@ public enum PDFWriter {
                           parent: "2 0 R", index: i, page: pages[i], fontObject: fontObject, codes: codes,
                           extraEntries: "")
         }
-        try w.finish("/Root 1 0 R")
+
+        var trailer = "/Root 1 0 R"
+        if archival {
+            let id: [UInt8] = settings.documentId?.count == 16 ? (settings.documentId ?? []) : uuidBytes()
+            let hex: String = PDFEncryption.hex(id)
+            trailer += " /Info \(infoObject) 0 R /ID [<\(hex)> <\(hex)>]"
+        } else if encryption != nil {
+            // PDF 2.0 asks for the identifier whenever a file is encrypted.
+            var id: [UInt8] = []
+            if let given = settings.documentId, given.count == 16 {
+                id = given
+            } else {
+                id = try PDFEncryption.randomBytes(settings.random ?? PDFEncryption.systemRandom, 16)
+            }
+            let hex: String = PDFEncryption.hex(id)
+            trailer += " /Encrypt \(encryptObject) 0 R /ID [<\(hex)> <\(hex)>]"
+        }
+        try w.finish(trailer)
+    }
+
+    /// Sixteen random bytes from a new UUID (C#'s `Guid.NewGuid().ToByteArray()`): a PDF/A file's
+    /// identifier when none is given.
+    private static func uuidBytes() -> [UInt8] {
+        let uuid: uuid_t = UUID().uuid
+        let bytes: [UInt8] = [uuid.0, uuid.1, uuid.2, uuid.3, uuid.4, uuid.5, uuid.6, uuid.7,
+                              uuid.8, uuid.9, uuid.10, uuid.11, uuid.12, uuid.13, uuid.14, uuid.15]
+        return bytes
     }
 
     /// One page's three objects: the page (child of `parent`, its image named "Im{index}", the font

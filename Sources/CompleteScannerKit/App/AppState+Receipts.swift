@@ -100,6 +100,9 @@ extension AppState {
         runExclusive { flag in
             let receipts = self.detectedPhotos.filter(\.included)
             guard !receipts.isEmpty else { return }
+            // A protected PDF's password is asked for before the receipts are read.
+            var protection: PDFProtection? = nil
+            if format == .pdf { protection = try await self.protectionFor(s) }
             let combine = Receipts.combines(s.taskOptions.receiptCombine, format: s.format, count: receipts.count)
             let today = DocumentDate(date: Date())
 
@@ -143,8 +146,10 @@ extension AppState {
                 if combine {
                     let url = try self.outputURL(fileExtension: "pdf", documentDate: Receipts.combinedDate(read.map(\.date)))
                     self.statusMessage = "Writing the PDF\u{2026}"
+                    let options: PDFWriteOptions = try await self.pdfOptions(s, for: url)
                     let text = try await Task.detached(priority: .userInitiated) { () throws -> (url: URL?, problem: String?) in
-                        try Self.writeReceiptsPDF(read, settings: s, to: url, shouldContinue: { !flag.isCancelled })
+                        try Self.writeReceiptsPDF(read, settings: s, to: url, options: options,
+                                                  shouldContinue: { !flag.isCancelled })
                     }.value
                     saved.append(url)
                     written.append(url)
@@ -156,8 +161,10 @@ extension AppState {
                         self.statusMessage = "Saving receipt \(index + 1) of \(read.count)\u{2026}"
                         let url = try self.outputURL(fileExtension: format.fileExtension, documentDate: receipt.date)
                         if format == .pdf {
+                            let options: PDFWriteOptions = try await self.pdfOptions(s, for: url)
                             let text = try await Task.detached(priority: .userInitiated) { () throws -> (url: URL?, problem: String?) in
-                                try Self.writeReceiptsPDF([receipt], settings: s, to: url, shouldContinue: { !flag.isCancelled })
+                                try Self.writeReceiptsPDF([receipt], settings: s, to: url, options: options,
+                                                          shouldContinue: { !flag.isCancelled })
                             }.value
                             saved.append(url)
                             written.append(url)
@@ -178,7 +185,8 @@ extension AppState {
                 throw error
             }
             self.lastSavedURLs = saved
-            if let url = saved.first, format == .pdf, saved.count == 1 { self.notePDFSize(of: url) }
+            let pdfs: Bool = combine || format == .pdf
+            if let url = saved.first, pdfs, saved.count == 1 { self.notePDFSize(of: url, protected: protection != nil) }
             self.detectedPhotos = []
             self.showPhotoReview = false
             self.isReceiptReview = false
@@ -186,7 +194,12 @@ extension AppState {
             self.resetFlow()
             if let textProblem { self.errorMessage = TextExport.sidecarFailed(textProblem) }
             let undated = byDate ? read.filter { $0.date == nil }.count : 0
-            self.statusMessage = Receipts.savedMessage(count: read.count, fileNames: saved.map(\.lastPathComponent),
+            var names: [String] = saved.map(\.lastPathComponent)
+            // Protected PDFs say so after their names: "a.pdf, b.pdf (password-protected)".
+            if pdfs, !names.isEmpty, let note = Self.pdfNote(size: nil, isProtected: protection != nil) {
+                names[names.count - 1] += " (\(note))"
+            }
+            self.statusMessage = Receipts.savedMessage(count: read.count, fileNames: names,
                                                        combined: combine, undated: undated)
             self.runAfterSave(s.output.afterSave, saved: saved)
         }
@@ -196,6 +209,7 @@ extension AppState {
     /// its layer when searchable, and the text beside it when asked for. Returns the text file written
     /// (the next free name when the PDF's is taken; nil when none was), else why it was not (the PDF is kept).
     nonisolated static func writeReceiptsPDF(_ receipts: [ReadReceipt], settings s: ScanSettings, to url: URL,
+                                             options: PDFWriteOptions?,
                                              shouldContinue: @escaping () -> Bool) throws -> (url: URL?, problem: String?) {
         let pages = receipts.map { ScannedPage(image: $0.image, dpi: $0.dpi, colorMode: .grayscale) }
         let lines = receipts.map(\.lines)
@@ -203,7 +217,7 @@ extension AppState {
         if s.pdfSearchable {
             layer = { index, _ in index < lines.count ? lines[index] : nil }
         }
-        try writePDFAtomically(pages: pages, pdfSize: s.output.pdfSize, to: url, textLayer: layer,
+        try writePDFAtomically(pages: pages, pdfSize: s.output.pdfSize, to: url, textLayer: layer, options: options,
                                shouldContinue: shouldContinue, progress: nil)
         guard s.output.alsoSaveText else { return (nil, nil) }
         let text = PDFTextCollector()

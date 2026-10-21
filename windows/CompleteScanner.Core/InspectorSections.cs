@@ -6,9 +6,9 @@ namespace CompleteScanner.Core;
 
 /// <summary>
 /// The settings column's sections, in order: the task's own section (Photocopy or Receipts), Scanner,
-/// Output, Adjustments, Pages, Split into documents, Archive &amp; password (Windows only until the
-/// Mac's PDF writer port) and More options. The task's section, Scanner and Output start open; a
-/// collapsed header shows what is on in it, so a setting other than the default is never out of sight.
+/// Output, Adjustments, Pages, Split into documents, Archive &amp; password and More options. The
+/// task's section, Scanner and Output start open; a collapsed header shows what is on in it, so a
+/// setting other than the default is never out of sight.
 /// </summary>
 public static class InspectorSections
 {

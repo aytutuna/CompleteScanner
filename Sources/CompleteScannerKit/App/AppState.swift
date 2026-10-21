@@ -236,6 +236,16 @@ public final class AppState: ObservableObject {
     /// Size of the PDF saved last in this session, in bytes; nil before the first one. Shown
     /// under the PDF size choice.
     @Published public private(set) var lastPDFByteCount: Int64?
+    /// The PDF saved last was password-protected: its status says so after its size.
+    @Published public private(set) var lastPDFProtected = false
+
+    /// Asks for the password of a protected PDF (`OutputOptions.protect`) when a save needs one: the
+    /// Mac's window shows its dialog; nil (cancelled, or nobody to ask) saves nothing. Asked once per
+    /// save; the answer is used for every PDF of that save and wiped when it ends
+    /// (AppState+Protection.swift). Twin of the Windows view model's `AskPdfPassword`.
+    public var askPDFPassword: (@MainActor () async -> PDFProtection?)?
+    /// The password of the save running now (`protectionFor`); nil between saves.
+    var savePassword: PDFProtection?
 
     @Published public private(set) var presets: [Preset] = []
 
@@ -1143,19 +1153,23 @@ public final class AppState: ObservableObject {
                 return
             }
             let text = s.output.alsoSaveText ? PDFTextCollector() : nil
-            self.statusMessage = s.pdfSearchable || text != nil ? "Running OCR and building PDF…" : "Building PDF…"
             let url = try self.outputURL(fileExtension: "pdf", label: document.label)
+            // A protected PDF's password is asked for before any page is read or written; without
+            // it the pages stay collected.
+            let options: PDFWriteOptions = try await self.pdfOptions(s, for: url)
+            self.statusMessage = s.pdfSearchable || text != nil ? "Running OCR and building PDF…" : "Building PDF…"
             let textResult = try await Task.detached(priority: .userInitiated) { () throws -> (url: URL?, problem: String?)? in
                 try Self.writePDFAtomically(pages: pages, pdfSize: s.output.pdfSize, to: url,
                                             textLayer: Self.textLayer(searchable: s.pdfSearchable, collecting: text,
                                                                       pages: pages),
+                                            options: options,
                                             shouldContinue: { !flag.isCancelled }) { [weak self] msg in
                     Task { @MainActor in self?.statusMessage = msg }
                 }
                 return text.map { Self.writeTextBeside(pdf: url, text: $0) }
             }.value
             self.lastSavedURLs = [url]
-            self.notePDFSize(of: url)
+            self.notePDFSize(of: url, protected: options.isProtected)
             self.deleteSpoolFiles(of: queued)
             self.scannedPages = []
             self.resetFlow()
@@ -1214,19 +1228,33 @@ public final class AppState: ObservableObject {
             return
         }
         if s.format == .pdf {
+            // These pages are held nowhere else: without the password they wait in the queue.
+            do {
+                _ = try await protectionFor(s)
+            } catch is PDFPasswordNotGiven {
+                let spool = spoolDirectory
+                let spooled = await Task.detached(priority: .userInitiated) {
+                    Self.spoolPages(pages, to: spool)
+                }.value
+                scannedPages.append(contentsOf: spooled)
+                statusMessage = PDFProtection.keptInQueueMessage(pages.count)
+                return
+            }
             let url = try outputURL(fileExtension: "pdf")
+            let options: PDFWriteOptions = try await pdfOptions(s, for: url)
             let text = s.output.alsoSaveText ? PDFTextCollector() : nil
             let textResult = try await Task.detached(priority: .userInitiated) { () throws -> (url: URL?, problem: String?)? in
                 try Self.writePDFAtomically(pages: pages, pdfSize: s.output.pdfSize, to: url,
                                             textLayer: Self.textLayer(searchable: s.pdfSearchable, collecting: text,
                                                                       pages: pages),
+                                            options: options,
                                             shouldContinue: { !flag.isCancelled }) { [weak self] msg in
                     Task { @MainActor in self?.statusMessage = msg }
                 }
                 return text.map { Self.writeTextBeside(pdf: url, text: $0) }
             }.value
             saved = [url]
-            notePDFSize(of: url)
+            notePDFSize(of: url, protected: options.isProtected)
             if let problem = textResult?.problem { errorMessage = TextExport.sidecarFailed(problem) }
             note = pdfSizeSuffix + (textResult?.url.map { TextExport.sidecarSuffix($0.lastPathComponent) } ?? "")
         } else {
@@ -1826,41 +1854,47 @@ public final class AppState: ObservableObject {
         return ctx.makeImage()
     }
 
-    /// Remember the size of the PDF just written at `url` (nil when it cannot be read).
-    func notePDFSize(of url: URL) {
+    /// Remember the size of the PDF just written at `url` (nil when it cannot be read) and whether it
+    /// is password-protected.
+    func notePDFSize(of url: URL, protected: Bool) {
         let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber
         lastPDFByteCount = size?.int64Value
+        lastPDFProtected = protected
     }
 
-    /// " (412 KB)" after the name of the PDF just saved, or nothing when its size is unknown.
+    /// " (412 KB)" after the name of the PDF just saved, " (412 KB, password-protected)" when it is
+    /// protected; without a known size, " (password-protected)" or nothing.
     var pdfSizeSuffix: String {
-        guard let bytes = lastPDFByteCount else { return "" }
-        return " (\(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)))"
+        let size: String? = lastPDFByteCount.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) }
+        guard let note = Self.pdfNote(size: size, isProtected: lastPDFProtected) else { return "" }
+        return " (\(note))"
     }
 
     /// Write the PDF to a hidden temp name and move it into place, so a failed
-    /// or interrupted build never leaves a truncated PDF at the destination.
+    /// or interrupted build never leaves a truncated PDF at the destination. `options`: PDF/A or a
+    /// password (`pdfOptions`); nil writes a plain PDF.
     nonisolated static func writePDFAtomically(pages: [ScannedPage], searchable: Bool,
                                                        languages: [String], pdfSize: PDFSizePreset,
-                                                       to url: URL,
+                                                       to url: URL, options: PDFWriteOptions? = nil,
                                                        shouldContinue: (() -> Bool)? = nil,
                                                        progress: ((String) -> Void)?) throws {
         let layer: PDFTextLayer? = searchable
             ? { _, page in try? OCRService.recognizeLines(in: page.image, languages: languages) }
             : nil
-        try writePDFAtomically(pages: pages, pdfSize: pdfSize, to: url, textLayer: layer,
+        try writePDFAtomically(pages: pages, pdfSize: pdfSize, to: url, textLayer: layer, options: options,
                                shouldContinue: shouldContinue, progress: progress)
     }
 
     /// The same, with each page's text layer from `textLayer` (none when nil).
     nonisolated static func writePDFAtomically(pages: [ScannedPage], pdfSize: PDFSizePreset, to url: URL,
-                                               textLayer: PDFTextLayer?, shouldContinue: (() -> Bool)? = nil,
+                                               textLayer: PDFTextLayer?, options: PDFWriteOptions? = nil,
+                                               shouldContinue: (() -> Bool)? = nil,
                                                progress: ((String) -> Void)?) throws {
         let tmp = url.deletingLastPathComponent()
             .appendingPathComponent(".\(UUID().uuidString).pdf.tmp")
         do {
             try PDFBuilder.writePDF(pages: pages, pdfSize: pdfSize, to: tmp, progress: progress,
-                                    shouldContinue: shouldContinue, textLayer: textLayer)
+                                    shouldContinue: shouldContinue, textLayer: textLayer, options: options)
             try? FileManager.default.removeItem(at: url)
             try FileManager.default.moveItem(at: tmp, to: url)
         } catch {
@@ -2040,6 +2074,8 @@ public final class AppState: ObservableObject {
         Task { @MainActor in
             do {
                 try await operation(flag)
+            } catch is PDFPasswordNotGiven {
+                statusMessage = PDFProtection.notSavedMessage
             } catch ScanError.cancelled {
                 statusMessage = "Cancelled."
             } catch is CancellationError {
@@ -2052,6 +2088,8 @@ public final class AppState: ObservableObject {
                     self.recordFailure(deviceName: session.info.name, error: error)
                 }
             }
+            // The save's password is wiped however the operation ended.
+            forgetPDFPassword()
             currentCancelFlag = nil
             progress = nil
             isBusy = false

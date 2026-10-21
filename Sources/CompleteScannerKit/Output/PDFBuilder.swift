@@ -1,15 +1,20 @@
 import CoreGraphics
-import CoreText
 import Foundation
 import ImageIO
 
 /// The text layer of one page of a PDF being built: called with the page's index and its full
 /// pixels (the user's rotation applied, with the page's full-resolution size) before the page is
-/// drawn; the lines it returns are drawn as invisible text over the words, nil draws none. The app
-/// reads each page with OCR here once, and keeps the lines for the text file beside the PDF
+/// stored; the lines it returns are written as invisible text over the words, nil writes none. The
+/// app reads each page with OCR here once, and keeps the lines for the text file beside the PDF
 /// (`OutputOptions.alsoSaveText`).
 public typealias PDFTextLayer = (_ index: Int, _ page: PDFBuilder.PreparedPage) -> [OCRLine]?
 
+/// Saves scanned pages as a PDF. Every document goes through `PDFWriter`, the port of the Windows
+/// writer, so a PDF has the same structure on every platform: each page one stored image (the JPEG
+/// its PDF size plans, or CCITT G4 for a page scanned in black & white), the text layer in the
+/// embedded `GlyphlessFont`, and PDF/A-2b or a password when `PDFWriteOptions` ask for it. The
+/// pages are prepared, read and encoded one at a time (`pageInputs`), as the Windows view model does,
+/// then written.
 public enum PDFBuilder {
     /// The pixels and media-box size of one queued page, with the user's page rotation applied
     /// (twin of C# `PdfBuilder.PreparedPage`). `pixelWidth` × `pixelHeight` is the full-resolution
@@ -21,15 +26,11 @@ public enum PDFBuilder {
     }
 
     /// Multi-page PDF; each page sized pixels/dpi*72 points. When `searchable`, run OCR per page
-    /// and draw an invisible text layer aligned with the words. Each page image is stored as
-    /// `pdfSize` plans it (`PDFImageEncoding`): a JPEG at the size's quality, downsampled and
-    /// gray where the size says so; OCR reads the full pixels first. `shouldContinue` is polled
-    /// before each page; returning false aborts with ScanError.cancelled.
-    ///
-    /// A document with a black & white page (`writesG4(_:)`) is written by `PDFWriter`, the port of
-    /// the Windows writer: its black & white pages are 1-bit CCITT G4 images, its other pages the
-    /// planned JPEGs, and its text layer the embedded `GlyphlessFont`. Every other document is
-    /// drawn by CoreGraphics' PDF context, with a CoreText text layer.
+    /// and write an invisible text layer aligned with the words. Each page image is stored as
+    /// `pdfSize` plans it (`PDFImageEncoding`): a JPEG at the size's quality, downsampled and gray
+    /// where the size says so, or CCITT G4 for a black & white page; OCR reads the full pixels
+    /// first. `shouldContinue` is polled before each page; returning false aborts with
+    /// ScanError.cancelled.
     public static func makePDF(pages: [ScannedPage], searchable: Bool, ocrLanguages: [String],
                                pdfSize: PDFSizePreset = .best, progress: ((String) -> Void)?,
                                shouldContinue: (() -> Bool)? = nil) throws -> Data {
@@ -37,7 +38,7 @@ public enum PDFBuilder {
                     textLayer: ocrTextLayer(searchable: searchable, languages: ocrLanguages))
     }
 
-    /// The same, with the text layer read beforehand: `ocrLines[i]` is drawn on page `i` (nil, or
+    /// The same, with the text layer read beforehand: `ocrLines[i]` is written on page `i` (nil, or
     /// a page past the end of the list, gets none). OCR does not run.
     public static func makePDF(pages: [ScannedPage], ocrLines: [[OCRLine]?], pdfSize: PDFSizePreset = .best,
                                progress: ((String) -> Void)?, shouldContinue: (() -> Bool)? = nil) throws -> Data {
@@ -45,24 +46,19 @@ public enum PDFBuilder {
                     textLayer: { index, _ in index < ocrLines.count ? ocrLines[index] : nil })
     }
 
-    /// The same, with each page's text layer from `textLayer` (no text layer when nil).
+    /// The same, with each page's text layer from `textLayer` (no text layer when nil), written as
+    /// `options` ask (nil: a plain PDF; see `PDFWriter.write`).
     public static func makePDF(pages: [ScannedPage], pdfSize: PDFSizePreset = .best, progress: ((String) -> Void)?,
-                               shouldContinue: (() -> Bool)? = nil, textLayer: PDFTextLayer?) throws -> Data {
-        if writesG4(pages) {
-            let inputs = try pageInputs(pages, pdfSize: pdfSize, progress: progress, shouldContinue: shouldContinue,
-                                        textLayer: textLayer)
-            return try PDFWriter.make(inputs, progress: progress, shouldContinue: shouldContinue)
-        }
-        let output = NSMutableData()
-        guard let consumer = CGDataConsumer(data: output as CFMutableData) else {
-            throw ScanError.exportFailed("Could not create a PDF data consumer.")
-        }
-        try write(pages: pages, pdfSize: pdfSize, progress: progress, shouldContinue: shouldContinue,
-                  textLayer: textLayer, consumer: consumer)
-        return output as Data
+                               shouldContinue: (() -> Bool)? = nil, textLayer: PDFTextLayer?,
+                               options: PDFWriteOptions? = nil) throws -> Data {
+        let inputs = try pageInputs(pages, pdfSize: pdfSize, progress: progress, shouldContinue: shouldContinue,
+                                    textLayer: textLayer)
+        return try PDFWriter.make(inputs, progress: progress, shouldContinue: shouldContinue, options: options)
     }
 
-    /// Stream the PDF straight to `url` — never holds the whole document in memory.
+    /// The same, written to the file at `url` (created or replaced). A failed or cancelled write
+    /// leaves an incomplete file: callers write to a temporary file and move it into place
+    /// (`AppState.writePDFAtomically`).
     public static func writePDF(pages: [ScannedPage], searchable: Bool, ocrLanguages: [String],
                                 pdfSize: PDFSizePreset = .best, to url: URL, progress: ((String) -> Void)?,
                                 shouldContinue: (() -> Bool)? = nil) throws {
@@ -79,21 +75,13 @@ public enum PDFBuilder {
     }
 
     /// The same, with each page's text layer from `textLayer` (no text layer when nil): the app's
-    /// one OCR pass per save runs there.
+    /// one OCR pass per save runs there. Written as `options` ask (nil: a plain PDF).
     public static func writePDF(pages: [ScannedPage], pdfSize: PDFSizePreset = .best, to url: URL,
                                 progress: ((String) -> Void)?, shouldContinue: (() -> Bool)? = nil,
-                                textLayer: PDFTextLayer?) throws {
-        if writesG4(pages) {
-            let inputs = try pageInputs(pages, pdfSize: pdfSize, progress: progress, shouldContinue: shouldContinue,
-                                        textLayer: textLayer)
-            try PDFWriter.writeFile(inputs, to: url, progress: progress, shouldContinue: shouldContinue)
-            return
-        }
-        guard let consumer = CGDataConsumer(url: url as CFURL) else {
-            throw ScanError.exportFailed("Could not write to \(url.path).")
-        }
-        try write(pages: pages, pdfSize: pdfSize, progress: progress, shouldContinue: shouldContinue,
-                  textLayer: textLayer, consumer: consumer)
+                                textLayer: PDFTextLayer?, options: PDFWriteOptions? = nil) throws {
+        let inputs = try pageInputs(pages, pdfSize: pdfSize, progress: progress, shouldContinue: shouldContinue,
+                                    textLayer: textLayer)
+        try PDFWriter.writeFile(inputs, to: url, progress: progress, shouldContinue: shouldContinue, options: options)
     }
 
     /// The image and media-box size of one queued page: the full-resolution pixels from its spill
@@ -125,11 +113,10 @@ public enum PDFBuilder {
         return PreparedPage(image: page.image, pixelWidth: page.image.width, pixelHeight: page.image.height)
     }
 
-    // MARK: - Documents with black & white pages (PDFWriter, CCITT G4)
+    // MARK: - The pages as PDFWriter stores them
 
-    /// Whether the document has a black & white page: such a document is written by `PDFWriter`,
-    /// which stores those pages as CCITT G4 (the plan's `.bilevelG4`); CoreGraphics' PDF context
-    /// cannot embed G4 data. The mode a page was scanned in decides, never the color mode set now.
+    /// Whether the document has a black & white page: those pages are stored as CCITT G4 (the plan's
+    /// `.bilevelG4`). The mode a page was scanned in decides, never the color mode set now.
     static func writesG4(_ pages: [ScannedPage]) -> Bool {
         for page in pages where page.colorMode == .blackWhite {
             return true
@@ -198,51 +185,11 @@ public enum PDFBuilder {
         return .jpeg(jpeg)
     }
 
-    // MARK: - CoreGraphics
-
     /// The text layer of the older overloads: OCR on every page when `searchable` (a page whose OCR
     /// fails gets none), else none.
     private static func ocrTextLayer(searchable: Bool, languages: [String]) -> PDFTextLayer? {
         guard searchable else { return nil }
         return { _, page in try? OCRService.recognizeLines(in: page.image, languages: languages) }
-    }
-
-    private static func write(pages: [ScannedPage], pdfSize: PDFSizePreset, progress: ((String) -> Void)?,
-                              shouldContinue: (() -> Bool)?, textLayer: PDFTextLayer?,
-                              consumer: CGDataConsumer) throws {
-        var defaultBox = CGRect(x: 0, y: 0, width: 612, height: 792)
-        guard let context = CGContext(consumer: consumer, mediaBox: &defaultBox, nil) else {
-            throw ScanError.exportFailed("Could not create a PDF context.")
-        }
-
-        for (index, page) in pages.enumerated() {
-            if shouldContinue?() == false { throw ScanError.cancelled }
-            let prepared = preparePage(page)
-            let image = prepared.image
-            let pixelWidth = prepared.pixelWidth
-            let pixelHeight = prepared.pixelHeight
-            var box = mediaBox(width: pixelWidth, height: pixelHeight, dpi: page.dpi)
-            let boxData = Data(bytes: &box, count: MemoryLayout<CGRect>.size)
-            let pageInfo = [kCGPDFContextMediaBox as String: boxData] as CFDictionary
-            context.beginPDFPage(pageInfo)
-            // The stored image follows the PDF size; the page keeps its physical size. When the
-            // page cannot be encoded, its pixels are drawn as they are (CoreGraphics compresses them).
-            let imageDPI = PDFImageEncoding.effectiveDPI(imageWidth: image.width, pagePixelWidth: pixelWidth,
-                                                         pageDPI: page.dpi)
-            let stored = PDFImageEncoding.encodedPage(image, imageDPI: imageDPI, mode: page.colorMode, size: pdfSize)
-            context.draw(stored?.image ?? image, in: box)
-
-            if let textLayer {
-                progress?("OCR page \(index + 1) of \(pages.count)…")
-                // A page without lines (OCR failed or found nothing) is still drawn, without a text layer.
-                if let lines = textLayer(index, prepared) {
-                    drawInvisibleTextLayer(lines, in: context, pageSize: box.size)
-                }
-            }
-
-            context.endPDFPage()
-        }
-        context.closePDF()
     }
 
     /// The full-resolution UNROTATED pixels from the page's spill file, or nil when the
@@ -255,56 +202,5 @@ public enum PDFBuilder {
             return nil
         }
         return image
-    }
-
-    /// PDF media box in points: pixels / dpi × 72.
-    private static func mediaBox(width: Int, height: Int, dpi: Int) -> CGRect {
-        let dpi = Double(max(dpi, 1))
-        return CGRect(x: 0, y: 0,
-                      width: Double(width) / dpi * 72.0,
-                      height: Double(height) / dpi * 72.0)
-    }
-
-    /// Draw each OCR line as invisible text positioned over the word image.
-    /// Vision boxes are normalized with a bottom-left origin — the same origin as
-    /// PDF user space — so they map straight into points with no flip.
-    private static func drawInvisibleTextLayer(_ lines: [OCRLine], in context: CGContext, pageSize: CGSize) {
-        let pageWidth = pageSize.width
-        let pageHeight = pageSize.height
-
-        for line in lines {
-            guard !line.text.isEmpty else { continue }
-            let box = line.boundingBox
-            let x = box.minX * pageWidth
-            let y = box.minY * pageHeight
-            let targetWidth = box.width * pageWidth
-            let boxHeightPts = box.height * pageHeight
-
-            let fontSize = boxHeightPts * 0.85
-            guard fontSize > 0, targetWidth > 0 else { continue }
-
-            let font = CTFontCreateWithName("Helvetica" as CFString, fontSize, nil)
-            let attributed = NSAttributedString(
-                string: line.text,
-                attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]
-            )
-            let ctLine = CTLineCreateWithAttributedString(attributed)
-
-            var ascent: CGFloat = 0
-            var descent: CGFloat = 0
-            var leading: CGFloat = 0
-            let measuredWidth = CGFloat(CTLineGetTypographicBounds(ctLine, &ascent, &descent, &leading))
-            guard measuredWidth > 0 else { continue }
-
-            let scaleX = min(max(targetWidth / measuredWidth, 0.2), 5.0)
-
-            context.saveGState()
-            context.setTextDrawingMode(.invisible)
-            context.textMatrix = CGAffineTransform(scaleX: scaleX, y: 1)
-            // Baseline sits a little above the box bottom so descenders line up.
-            context.textPosition = CGPoint(x: x, y: y + descent)
-            CTLineDraw(ctLine, context)
-            context.restoreGState()
-        }
     }
 }

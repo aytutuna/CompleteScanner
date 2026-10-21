@@ -3,9 +3,8 @@ using Xunit;
 
 namespace CompleteScanner.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/ScanTaskTests.swift: the same cases, except for the Archive
-// document task, which only Windows has until the Mac's PDF writer port (CONTRACTS.md): the Swift
-// lists end at "book", and Archive_IsABestSizeSearchablePdfA_AndEndsWithAPlainPdf has no twin.
+// Mirrored by Tests/CompleteScannerTests/ScanTaskTests.swift: the same cases, the Archive document
+// task included.
 
 public class ScanTaskTests
 {

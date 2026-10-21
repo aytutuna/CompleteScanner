@@ -2,8 +2,7 @@ import XCTest
 @testable import CompleteScannerKit
 
 // Mirrors windows/CompleteScanner.Core.Tests/InspectorSectionsTests.cs: the settings column's sections
-// and the summaries their collapsed headers show. Windows-only case: its Archive document task opens
-// Archive & password (the Mac has no such task until its PDF writer port).
+// and the summaries their collapsed headers show.
 
 final class InspectorSectionsTests: XCTestCase {
 
@@ -20,6 +19,7 @@ final class InspectorSectionsTests: XCTestCase {
         XCTAssertEqual(InspectorSections.openedBy(.photoRestore), InspectorSections.adjustments)
         XCTAssertEqual(InspectorSections.openedBy(.book), InspectorSections.pages)
         XCTAssertEqual(InspectorSections.openedBy(.batch), InspectorSections.split)
+        XCTAssertEqual(InspectorSections.openedBy(.archive), InspectorSections.archive)
         XCTAssertNil(InspectorSections.openedBy(.document))
     }
 

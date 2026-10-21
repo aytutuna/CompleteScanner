@@ -57,11 +57,11 @@ public sealed record PdfPageInput(PdfImageData Image, int PixelWidth, int PixelH
 }
 
 /// <summary>
-/// Minimal, dependency-free PDF writer for scanned pages (its object level has a Swift twin,
-/// Sources/CompleteScannerKit/Output/PDFWriter.swift, which the Mac uses for documents with black
-/// &amp; white pages; it draws its other PDFs with CGContext's PDF engine in PDFBuilder.swift). It
-/// writes PDF 1.4, PDF/A-2b for keeping, or a PDF 1.7 file that opens only with a password
-/// (AES-256), as <see cref="PdfWriteOptions"/> ask.
+/// Minimal, dependency-free PDF writer for scanned pages (its object level, with PDF/A and the
+/// password, has a Swift twin, Sources/CompleteScannerKit/Output/PDFWriter.swift, through which the
+/// Mac and the iPhone write every PDF, byte for byte as here). It writes PDF 1.4, PDF/A-2b for
+/// keeping, or a PDF 1.7 file that opens only with a password (AES-256), as
+/// <see cref="PdfWriteOptions"/> ask.
 ///
 /// Each page carries one full-page image XObject: a JPEG (/DeviceRGB, or /DeviceGray for a
 /// one-component JPEG) or, for black &amp; white pages, a 1-bit /DeviceGray CCITT G4 image

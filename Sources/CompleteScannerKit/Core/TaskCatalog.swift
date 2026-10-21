@@ -51,7 +51,8 @@ public struct TaskDefinition: Equatable, Sendable {
     /// What the task does, in one short line: the tile's tooltip, not shown on the tile.
     public let subtitle: String
     /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
-    /// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book".
+    /// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book",
+    /// "archive".
     public let iconKey: String
     public let flow: TaskFlowKind
     /// The scan mode the task uses.
@@ -211,16 +212,25 @@ public enum TaskCatalog {
                              primaryActionLabel: "Scan spread", repeats: true,
                              help: "Press it gently flat. Turn the page and scan the next spread; each one becomes two pages.")],
             group: .other),
+        TaskDefinition(
+            task: .archive, title: "Archive document",
+            subtitle: "A searchable PDF/A, made to be kept.",
+            iconKey: "archive", flow: .documentQueue, intent: .document, requiredSource: nil,
+            fileLabel: "Document",
+            steps: [TaskStep(id: "scan", title: "Scan each page",
+                             prompt: "Scan each page, then save as PDF/A.",
+                             primaryActionLabel: "Scan page", repeats: true,
+                             help: "The PDF keeps its best quality, made to be kept for years.")],
+            group: .documents),
     ]
 
     /// The tasks in the order the start screen shows them, group by group: Documents (Document to
     /// PDF, Stack from feeder, Two-sided document, Separate documents, Scan to Word, Email a
-    /// document), Photos & images (Photos, Restore old photos, Quick scan), Other (ID card,
-    /// Photocopy, Receipts, Book or magazine). Windows lists its Archive document task last under
-    /// Documents.
+    /// document, Archive document), Photos & images (Photos, Restore old photos, Quick scan), Other
+    /// (ID card, Photocopy, Receipts, Book or magazine).
     public static let startOrder: [ScanTask] = [
         .document, .feeder, .twoSided, .batch, .word, .email,
-        .photos, .photoRestore, .quickScan, .idCard,
+        .archive, .photos, .photoRestore, .quickScan, .idCard,
         .copy, .receipt, .book,
     ]
 
@@ -258,8 +268,8 @@ public enum TaskCatalog {
 
     /// `current` with the task's settings laid over it: mode, source, resolution, color,
     /// format, JPEG quality, PDF size, the after-save action, the text beside a PDF (off: only the
-    /// Scan to Word task saves text), archival PDF (off: Windows' Archive document task is the only
-    /// one that turns it on, and the Mac has no such task until its PDF writer port), the photo and document switches,
+    /// Scan to Word task saves text), archival PDF (only the Archive document task, at the Best size,
+    /// which turns the password off), the photo and document switches,
     /// searchable PDF, adjustments, two-sided scanning, skipping blank pages, crop and straighten,
     /// turning pages upright, splitting facing pages, softening the spine's shadow, file name and the task itself. The password
     /// option (`output.protect`), the page pictures of a Word document (`output.wordPageImages`), the destination folder, the photo detection tuning, the
@@ -290,7 +300,9 @@ public enum TaskCatalog {
         s.output.pdfSize = .standard
         s.output.afterSave = AfterSaveAction.none
         s.output.alsoSaveText = false
-        s.output.archival = false
+        s.output.archival = task == .archive
+        // The password is the user's choice for every task; a PDF/A file can't have one.
+        if task == .archive { s.output.protect = false }
         s.duplex = .off
         s.document.removeBlankPages = task == .twoSided || task == .batch
         s.document.autoCrop = false
@@ -376,6 +388,12 @@ public enum TaskCatalog {
             s.resolution = 300
             s.format = .pdf
             s.namingTemplate = "{task} {date} {counter}"
+        case .archive:
+            s.intent = .document
+            s.resolution = 300
+            s.format = .pdf
+            s.output.pdfSize = .best
+            s.namingTemplate = "Scan {date} {counter}"
         }
         s.taskId = task.rawValue
         return s
@@ -415,8 +433,9 @@ public enum TaskCatalog {
 
     /// The settings still do what the task is for: the same scan mode, and the task's required
     /// source; for the two-sided task, both sides; for Scan to Word, a Word document; for the Batch
-    /// task, a split; for the Book or magazine task, splitting facing pages. Changing the mode by hand
-    /// (or choosing one side, another format or no split), or a scanner without that source, ends the task.
+    /// task, a split; for the Book or magazine task, splitting facing pages; for the Archive document
+    /// task, an archival PDF. Changing the mode by hand (or choosing one side, another format, no split
+    /// or a plain PDF), or a scanner without that source, ends the task.
     public static func fits(_ task: ScanTask, _ settings: ScanSettings) -> Bool {
         let taskDefinition = TaskCatalog.definition(task)
         guard settings.intent == taskDefinition.intent else { return false }
@@ -424,6 +443,7 @@ public enum TaskCatalog {
         if task == .word && settings.format != .word { return false }
         if task == .batch && settings.document.splitMode == SplitMode.none { return false }
         if task == .book && !settings.document.splitFacingPages { return false }
+        if task == .archive && !(settings.output.archival && settings.format == .pdf) { return false }
         if let source = taskDefinition.requiredSource { return settings.source == source }
         return true
     }

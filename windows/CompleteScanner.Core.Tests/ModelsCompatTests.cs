@@ -588,8 +588,8 @@ public class ModelsCompatTests
     [Fact]
     public void ArchiveTaskSettings_RoundTrip_AsTheMacReadsThem()
     {
-        // What Windows writes for the Archive document task; the Mac keeps the task id it does not
-        // know (the task id is text) and the archival flag, so the file comes back unchanged.
+        // What the Archive document task writes: both platforms read it as that task with the
+        // archival flag on, and write it back unchanged.
         const string json = """{"resolution": 300, "taskId": "archive", "output": {"pdfSize": "best", "archival": true}}""";
         var settings = Decode<ScanSettings>(json);
         Assert.Equal(ScanTask.Archive, settings.Task);

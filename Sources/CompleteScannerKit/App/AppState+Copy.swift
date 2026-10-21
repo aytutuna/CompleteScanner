@@ -131,6 +131,16 @@ extension AppState {
         }.value
         guard let document else { throw PrintError.failed("The copy could not be prepared for printing.") }
         if flag.isCancelled { throw ScanError.cancelled }
+        // A protected PDF's password is asked for before printing. No answer still prints the copy;
+        // the PDF is then not written.
+        var noPassword = false
+        if options.copyAlsoSavePdf {
+            do {
+                _ = try await protectionFor(s)
+            } catch is PDFPasswordNotGiven {
+                noPassword = true
+            }
+        }
         let copies = PrintCopies.clamp(options.copyCount)
         statusMessage = "Printing on \(setup.printerName)\u{2026}"
         let job = PrintJob(printerName: setup.printerName, jobName: "Copy", paper: setup.paper, copies: copies)
@@ -152,24 +162,43 @@ extension AppState {
             statusMessage = sent + warningNote
             return
         }
+        if noPassword {
+            guard let printError else {
+                statusMessage = "\(sent) \(PDFProtection.notSavedMessage)\(warningNote)"
+                return
+            }
+            // Neither printed nor saved: the pages wait in the queue rather than being lost.
+            let spool = spoolDirectory
+            let spooled: [ScannedPage] = await Task.detached(priority: .userInitiated) {
+                AppState.spoolPages(pages, to: spool)
+            }.value
+            scannedPages.append(contentsOf: spooled)
+            throw AppState.copyNotPrinted(printError, setup: setup,
+                                          pdfNote: " \(PDFProtection.keptInQueueMessage(pages.count))")
+        }
         statusMessage = "Saving the PDF\u{2026}"
         // After a copy went to the printer, a PDF that cannot be written is reported, not undone.
         let url: URL
+        var protected = false
         do {
             let target = try outputURL(fileExtension: "pdf")
+            let writeOptions: PDFWriteOptions = try await self.pdfOptions(s, for: target)
+            protected = writeOptions.isProtected
             try await Task.detached(priority: .userInitiated) {
                 try AppState.writePDFAtomically(pages: pages, searchable: s.pdfSearchable, languages: s.ocrLanguages,
-                                                pdfSize: s.output.pdfSize, to: target,
+                                                pdfSize: s.output.pdfSize, to: target, options: writeOptions,
                                                 shouldContinue: { !flag.isCancelled }, progress: nil)
             }.value
             url = target
         } catch {
-            if AppState.isCancellation(error) {
+            if AppState.isCancellation(error) || AppState.isPasswordNotGiven(error) {
                 if let printError {
                     throw AppState.copyNotPrinted(printError, setup: setup, pdfNote: " The PDF was not saved (cancelled).")
                 }
                 // The copy has gone to the printer: only the PDF was cancelled.
-                statusMessage = "\(sent) PDF not saved (cancelled)."
+                statusMessage = AppState.isPasswordNotGiven(error)
+                    ? "\(sent) \(PDFProtection.notSavedMessage)"
+                    : "\(sent) PDF not saved (cancelled)."
                 return
             }
             guard let printError else { throw error }
@@ -177,7 +206,7 @@ extension AppState {
                                           pdfNote: " The PDF could not be saved either: \(error.localizedDescription)")
         }
         lastSavedURLs = [url]
-        notePDFSize(of: url)
+        notePDFSize(of: url, protected: protected)
         if let printError {
             throw AppState.copyNotPrinted(printError, setup: setup, pdfNote: " The scan was saved as \(url.lastPathComponent).")
         }

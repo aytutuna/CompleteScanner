@@ -37,9 +37,10 @@ public enum IOSShell {
 
     /// Whether this app offers a task yet: the tasks whose pages are collected and saved, without a
     /// review screen of their own. Photos, receipts and the ID card need their review screens, the
-    /// photocopy a printer, and Quick scan an area chosen on the preview, which come later.
+    /// photocopy a printer, Quick scan an area chosen on the preview, and the Archive document task
+    /// the Archive & password settings (the PDF/A writer is shared already), which come later.
     public static func offers(_ task: ScanTask) -> Bool {
-        if task == .quickScan { return false }
+        if task == .quickScan || task == .archive { return false }
         return TaskCatalog.definition(task).flow == .documentQueue
     }
 
@@ -87,6 +88,7 @@ public enum IOSShell {
         case "receipt": return "receipt"
         case "batch": return "square.stack.3d.down.right"
         case "book": return "book"
+        case "archive": return "archivebox"
         default: return "scanner"
         }
     }

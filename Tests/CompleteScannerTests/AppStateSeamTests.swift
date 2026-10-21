@@ -1,5 +1,6 @@
 import Combine
 import CoreGraphics
+import PDFKit
 import XCTest
 @testable import CompleteScannerKit
 
@@ -9,6 +10,7 @@ import XCTest
 // its settings and presets, spools its pages and writes its devices.txt in a folder of its own
 // (`AppStateFiles.all(in:)`) and is given stand-ins for the system, so nothing of the user's is read,
 // opened, removed or overwritten: not the settings, not the pages a running app keeps in its spool.
+// The password of a protected PDF is the shell's dialog (`askPDFPassword`); here a stand-in answers it.
 
 /// Sends the app's lifecycle events by hand.
 @MainActor
@@ -79,6 +81,23 @@ private final class SeamPrintService: PrintService {
 
     func print(_ document: Data, job: PrintJob) throws -> Bool {
         throw PrintError.noPrinter
+    }
+}
+
+/// Answers the password dialog with `answer` (nil: the dialog was cancelled) and counts the questions.
+@MainActor
+private final class SeamPasswordAsker {
+    let answer: String?
+    private(set) var asked = 0
+
+    init(answer: String?) {
+        self.answer = answer
+    }
+
+    func ask() -> PDFProtection? {
+        asked += 1
+        guard let answer else { return nil }
+        return try? PDFProtection(answer)
     }
 }
 
@@ -404,5 +423,124 @@ final class AppStateSeamTests: XCTestCase {
         XCTAssertTrue(state.statusMessage.hasPrefix("Added 4 pages from 2 sheets, both sides — 4 in queue."),
                       state.statusMessage)
         XCTAssertEqual(state.errorMessage, ScanStop.from(ScanError.scannerProblem(.paperJam)).message(pagesKept: 4))
+    }
+
+    // MARK: PDF/A and the password (AppState+Protection.swift)
+
+    /// The PDFs in the test's folder.
+    private func savedPDFs() throws -> [String] {
+        var names: [String] = []
+        for name in try FileManager.default.contentsOfDirectory(atPath: folder.path) where name.hasSuffix(".pdf") {
+            names.append(name)
+        }
+        return names
+    }
+
+    /// `count` pages collected in `state`'s queue.
+    @MainActor
+    private func collect(_ state: AppState, pages count: Int) async throws {
+        var pages: [ScannedPage] = []
+        for _ in 0..<count {
+            pages.append(seamPage(width: 400, height: 520, dpi: 50))
+        }
+        XCTAssertTrue(state.ingest(pages, source: .photo))
+        try await waitUntil(timeout: 60) { !state.isBusy }
+        XCTAssertEqual(state.scannedPages.count, count)
+    }
+
+    @MainActor
+    func test_savePDF_withThePasswordOption_asksOnce_andWritesAProtectedFile() async throws {
+        let state = makeState()
+        state.settings.format = .pdf
+        state.settings.pdfSearchable = false
+        state.settings.output.protect = true
+        let asker = SeamPasswordAsker(answer: "Şifre 2026")
+        state.askPDFPassword = { asker.ask() }
+        try await collect(state, pages: 2)
+        state.savePDF()
+        try await waitUntil(timeout: 60) { !state.isBusy }
+        XCTAssertNil(state.errorMessage)
+        XCTAssertEqual(asker.asked, 1)
+        XCTAssertTrue(state.scannedPages.isEmpty)
+        XCTAssertTrue(state.lastPDFProtected)
+        XCTAssertTrue(state.statusMessage.contains(", password-protected)"), state.statusMessage)
+        // The password is wiped when the save ends; nothing keeps it.
+        XCTAssertNil(state.savePassword)
+        let url = try XCTUnwrap(state.lastSavedURLs.first)
+        XCTAssertEqual(try savedPDFs(), [url.lastPathComponent])
+        let document = try XCTUnwrap(PDFDocument(url: url))
+        XCTAssertTrue(document.isEncrypted)
+        XCTAssertTrue(document.isLocked)
+        XCTAssertFalse(document.unlock(withPassword: "Sifre 2026"))
+        XCTAssertTrue(document.unlock(withPassword: "Şifre 2026"))
+        XCTAssertEqual(document.pageCount, 2)
+    }
+
+    @MainActor
+    func test_savePDF_withoutAnAnswer_savesNothing_andKeepsThePages() async throws {
+        let state = makeState()
+        state.settings.format = .pdf
+        state.settings.pdfSearchable = false
+        state.settings.output.protect = true
+        let asker = SeamPasswordAsker(answer: nil)
+        state.askPDFPassword = { asker.ask() }
+        try await collect(state, pages: 1)
+        defer { state.deleteSpoolFiles(of: state.scannedPages) }
+        state.savePDF()
+        try await waitUntil(timeout: 60) { !state.isBusy }
+        XCTAssertEqual(asker.asked, 1)
+        XCTAssertEqual(state.statusMessage, PDFProtection.notSavedMessage)
+        XCTAssertNil(state.errorMessage)
+        XCTAssertEqual(state.scannedPages.count, 1)
+        XCTAssertEqual(try savedPDFs(), [])
+        // Nobody to ask (a shell without the dialog): the same.
+        state.askPDFPassword = nil
+        state.savePDF()
+        try await waitUntil(timeout: 60) { !state.isBusy }
+        XCTAssertEqual(state.statusMessage, PDFProtection.notSavedMessage)
+        XCTAssertEqual(state.scannedPages.count, 1)
+        XCTAssertEqual(try savedPDFs(), [])
+    }
+
+    @MainActor
+    func test_pagesSavedAsTheyAreScanned_withoutAPassword_waitInTheQueue() async throws {
+        let state = makeState()
+        state.settings.format = .pdf
+        state.settings.pdfSearchable = false
+        state.settings.documentMultiPage = false
+        state.settings.output.protect = true
+        XCTAssertTrue(state.ingest([seamPage(width: 400, height: 520, dpi: 50)], source: .photo))
+        try await waitUntil(timeout: 60) { !state.isBusy }
+        defer { state.deleteSpoolFiles(of: state.scannedPages) }
+        XCTAssertEqual(state.statusMessage, PDFProtection.keptInQueueMessage(1))
+        XCTAssertEqual(state.scannedPages.count, 1)
+        XCTAssertEqual(try savedPDFs(), [])
+    }
+
+    @MainActor
+    func test_savePDF_withTheArchivalOption_writesPDFA_titledWithItsName() async throws {
+        let state = makeState()
+        state.settings.format = .pdf
+        state.settings.pdfSearchable = false
+        state.settings.output.archival = true
+        try await collect(state, pages: 1)
+        state.savePDF()
+        try await waitUntil(timeout: 60) { !state.isBusy }
+        XCTAssertNil(state.errorMessage)
+        XCTAssertFalse(state.lastPDFProtected)
+        let url = try XCTUnwrap(state.lastSavedURLs.first)
+        let pdf = try Data(contentsOf: url)
+        XCTAssertEqual(PDFWriterTests.text(pdf, at: 0, count: 9), "%PDF-1.7\n")
+        XCTAssertTrue(PDFWriterTests.has(pdf, "/S /GTS_PDFA1"))
+        XCTAssertTrue(PDFWriterTests.has(pdf, "/Title " + PDFA.textString(url.deletingPathExtension().lastPathComponent) + " "))
+        XCTAssertFalse(PDFWriterTests.has(pdf, "/Encrypt"))
+        XCTAssertEqual(PDFDocument(url: url)?.pageCount, 1)
+    }
+
+    func test_pdfNote_saysTheSizeAndThePassword() {
+        XCTAssertNil(AppState.pdfNote(size: nil, isProtected: false))
+        XCTAssertEqual(AppState.pdfNote(size: nil, isProtected: true), "password-protected")
+        XCTAssertEqual(AppState.pdfNote(size: "412 KB", isProtected: false), "412 KB")
+        XCTAssertEqual(AppState.pdfNote(size: "412 KB", isProtected: true), "412 KB, password-protected")
     }
 }

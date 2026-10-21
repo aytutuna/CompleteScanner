@@ -10,9 +10,10 @@ import PDFKit
 // one or several pages, field by field, with the C#-pinned golden file. The C# case builds its page
 // with its own image pipeline; the gray text page thresholded at 128 has the same bits (C# checks
 // that too), so the same file comes from `TestPages.textPage()` here. Decoding is ImageIO's (TIFF)
-// and CoreGraphics' (PDF) where C# uses PdfPig; the PDF/A, protected and appended cases wait for
-// I5 or stay C#-only. The cases of the Mac's own paths (PDFBuilder's documents with black & white
-// pages, ImageExporter's black & white TIFFs) have no C# twin: the Windows view model is not in Core.
+// and CoreGraphics' (PDF) where C# uses PdfPig; a G4 page in a PDF/A file is in PDFATests' validation
+// samples, and the appended cases stay C#-only. The cases of PDFBuilder (the scanned pages as PDFWriter
+// stores them) and ImageExporter's black & white TIFFs have no C# twin: the Windows view model is not
+// in Core.
 
 final class BilevelOutputTests: XCTestCase {
     /// The blank-page tests' text page (850 × 1100 at 100 dpi) as black & white pixels.
@@ -189,14 +190,39 @@ final class BilevelOutputTests: XCTestCase {
         XCTAssertTrue(text.contains("Çağrı"), "PDFKit read: \(text)")
     }
 
-    func test_pdfBuilder_documentWithoutBlackAndWhitePages_staysWithCoreGraphics() throws {
+    func test_pdfBuilder_documentWithoutBlackAndWhitePages_isWrittenByPDFWriterToo() throws {
         let gray = try XCTUnwrap(RgbaImage.filled(width: 200, height: 100, r: 128, g: 128, b: 128).makeCGImage())
         let pages = [ScannedPage(image: gray, dpi: 100, colorMode: .grayscale)]
         XCTAssertFalse(PDFBuilder.writesG4(pages))
         let pdf = try PDFBuilder.makePDF(pages: pages, pdfSize: .standard, progress: nil, textLayer: nil)
+        XCTAssertEqual(PDFWriterTests.text(pdf, at: 0, count: 9), "%PDF-1.4\n")
         XCTAssertFalse(PDFWriterTests.has(pdf, "/CCITTFaxDecode"))
         XCTAssertFalse(PDFWriterTests.has(pdf, "/GlyphLessFont"))
+        // The gray page is a one-component JPEG on a page of its size, as Windows stores it.
+        XCTAssertTrue(PDFWriterTests.has(pdf, "/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /DCTDecode"))
+        XCTAssertTrue(PDFWriterTests.has(pdf, "/MediaBox [0 0 144 72]"))
+        XCTAssertTrue(PDFWriterTests.has(pdf, "1 0 obj\n<</Type /Catalog /Pages 2 0 R>>"))
         XCTAssertEqual(PDFDocument(data: pdf)?.pageCount, 1)
+    }
+
+    func test_pdfBuilder_writesPDFAAndProtectedFiles_asTheOptionsAsk() throws {
+        let gray = try XCTUnwrap(RgbaImage.filled(width: 200, height: 100, r: 128, g: 128, b: 128).makeCGImage())
+        let pages = [ScannedPage(image: gray, dpi: 100, colorMode: .grayscale)]
+        let line = OCRLine(text: "Arşiv", boundingBox: CGRect(x: 0.1, y: 0.4, width: 0.5, height: 0.2), confidence: 0.9)
+        let layer: PDFTextLayer = { _, _ in [line] }
+        let archival = try PDFBuilder.makePDF(pages: pages, pdfSize: .best, progress: nil, textLayer: layer,
+                                              options: PDFWriteOptions(conformance: .pdfA2b, title: "Arşiv"))
+        XCTAssertEqual(PDFWriterTests.text(archival, at: 0, count: 9), "%PDF-1.7\n")
+        XCTAssertTrue(PDFWriterTests.has(archival, "/S /GTS_PDFA1"))
+        XCTAssertTrue(PDFWriterTests.has(archival, "<pdfaid:part>2</pdfaid:part>"))
+        let protection = try PDFProtection("Şifre 2026")
+        let locked = try PDFBuilder.makePDF(pages: pages, pdfSize: .best, progress: nil, textLayer: layer,
+                                            options: PDFWriteOptions(protection: protection))
+        XCTAssertTrue(PDFWriterTests.has(locked, "/Filter /Standard /V 5 /R 6"))
+        let document = try XCTUnwrap(PDFDocument(data: locked))
+        XCTAssertTrue(document.isLocked)
+        XCTAssertTrue(document.unlock(withPassword: "Şifre 2026"))
+        XCTAssertTrue((document.page(at: 0)?.string ?? "").contains("Arşiv"))
     }
 
     func test_pdfBuilder_g4Path_isCancelledBeforeEachPage() throws {

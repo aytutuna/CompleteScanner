@@ -4,13 +4,12 @@ import ImageIO
 import UniformTypeIdentifiers
 
 // Twin of windows/CompleteScanner.Core/PdfImageEncoding.cs: the same table, the same rules and
-// the same rounding. The Mac part (`encodedPage`, `encodeJPEG`) has no C# counterpart: Windows
-// encodes with WIC in the app (black & white pages as CCITT G4) and embeds the image through its
-// own PDF writer, while the Mac hands CoreGraphics a JPEG-backed image, which its PDF context
-// stores as that JPEG. A document with a black & white page is written by the port of the C#
-// writer instead (`PDFWriter`, through `PDFBuilder.storedImage`), with those pages as CCITT G4;
-// `encodedPage` still gives a page planned as G4 as a gray JPEG, planned as a gray page is, for a
-// caller that cannot store G4 (see CONTRACTS.md, "CCITT G4 for black & white pages").
+// the same rounding. The Apple part (`encodedPage`, `encodeJPEG`) has no C# counterpart: Windows
+// encodes with WIC in the app (black & white pages as CCITT G4), here ImageIO encodes the JPEG, and
+// both embed the image through the same PDF writer (`PDFWriter`, here through
+// `PDFBuilder.storedImage`), black & white pages as CCITT G4. `encodedPage` still gives a page
+// planned as G4 as a gray JPEG, planned as a gray page is, for a caller that cannot store G4 (see
+// CONTRACTS.md, "CCITT G4 for black & white pages").
 
 /// How a page image is stored in the PDF.
 public enum PDFImageKind: Equatable, Sendable {
@@ -82,8 +81,8 @@ public struct JPEGHeader: Equatable, Sendable {
 public struct PDFPageImage {
     public let plan: PDFImagePlan
     public let jpegData: Data
-    /// Created from `jpegData` (`CGImage(jpegDataProviderSource:...)`), so the PDF context can
-    /// store the JPEG as it is.
+    /// Created from `jpegData` (`CGImage(jpegDataProviderSource:...)`): the JPEG-backed image, for
+    /// callers that draw the stored pixels. `PDFBuilder` embeds `jpegData` itself.
     public let image: CGImage
 }
 
@@ -205,10 +204,9 @@ public enum PDFImageEncoding {
     /// The page as it goes into the PDF: planned (`plan(mode:...:image:)`), downsampled with the
     /// box filter, converted to gray when planned, JPEG-encoded at the planned quality and
     /// turned back into a JPEG-backed image. The pixels are read once. Nil when the image
-    /// cannot be read or encoded; the caller then draws the page as it is. A page planned as G4
-    /// (black & white), which a JPEG-backed image cannot carry, is given as a gray JPEG, planned as a
-    /// gray page is; the returned plan is that gray plan. `PDFBuilder` never draws such a page: a
-    /// document with one is written by `PDFWriter`, with the page as G4.
+    /// cannot be read or encoded. A page planned as G4 (black & white), which a JPEG cannot carry, is
+    /// given as a gray JPEG, planned as a gray page is; the returned plan is that gray plan.
+    /// `PDFBuilder` never stores such a page this way: it stores it as G4 (`PDFBuilder.storedImage`).
     public static func encodedPage(_ image: CGImage, imageDPI: Int, mode: ColorMode,
                                    size: PDFSizePreset) -> PDFPageImage? {
         guard var rgba = ColorAnalysis.rgbaPixels(of: image) else { return nil }

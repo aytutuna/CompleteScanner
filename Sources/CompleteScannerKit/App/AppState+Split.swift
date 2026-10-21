@@ -218,6 +218,8 @@ extension AppState {
         var textFiles: [String] = []
         var noText: [String] = []
         var textProblem: String?
+        // The PDFs carry the save's password when the option is on (asked for before the first one).
+        var protectedPDFs = false
         // All or nothing (`SavePlan.writeAllOrNothing`, written out here so the work stays on the main actor).
         do {
             for document in plan.documents {
@@ -241,10 +243,13 @@ extension AppState {
                     continue
                 }
                 let text = s.output.alsoSaveText ? PDFTextCollector() : nil
+                let options: PDFWriteOptions = try await self.pdfOptions(s, for: url)
+                protectedPDFs = options.isProtected
                 let textResult = try await Task.detached(priority: .userInitiated) { () throws -> (url: URL?, problem: String?)? in
                     try Self.writePDFAtomically(pages: pages, pdfSize: s.output.pdfSize, to: url,
                                                 textLayer: Self.textLayer(searchable: s.pdfSearchable, collecting: text,
                                                                           pages: pages),
+                                                options: options,
                                                 shouldContinue: { !flag.isCancelled }) { [weak self] msg in
                         Task { @MainActor in self?.statusMessage = msg }
                     }
@@ -263,18 +268,24 @@ extension AppState {
             switch error {
             case ScanError.cancelled, is CancellationError:
                 throw ScanError.cancelled
+            case is PDFPasswordNotGiven:
+                // No password: no document is written, and the queue stays.
+                throw error
             default:
                 throw NotSavedError(SavePlan.notSavedMessage(SavePlan.failureReason(error)))
             }
         }
         lastSavedURLs = saved
         // The last PDF's size, as after any save (the Windows inspector shows the same).
-        if format == .pdf, let last = saved.last { notePDFSize(of: last) }
+        if format == .pdf, let last = saved.last { notePDFSize(of: last, protected: protectedPDFs) }
         deleteSpoolFiles(of: queued)
         scannedPages = []
         resetFlow()
         if let textProblem { errorMessage = TextExport.sidecarFailed(textProblem) }
-        let size: String? = format == .pdf ? Self.totalSizeText(of: saved) : nil
+        // The PDFs' size together, and "password-protected" when they are, in the brackets after the page count.
+        let size: String? = format == .pdf
+            ? Self.pdfNote(size: Self.totalSizeText(of: saved), isProtected: protectedPDFs)
+            : nil
         statusMessage = plan.savedMessage(format, fileNames: saved.map(\.lastPathComponent), size: size,
                                           textFileNames: textFiles, noTextFound: noText)
         runAfterSave(s.output.afterSave, saved: saved)
@@ -311,12 +322,15 @@ extension AppState {
             let document: Data? = await Task.detached(priority: .userInitiated) { () -> Data? in
                 let sheet = Self.renderSeparatorSheet(code: code, name: name, widthInches: Double(inches.width),
                                                       heightInches: Double(inches.height))
-                guard let image = sheet.makeCGImage() else { return nil }
-                let paper = PrinterPaper.make(paper: inches, printable: nil)
-                let placement = PrintLayout.place(pixelWidth: sheet.width, pixelHeight: sheet.height, dpi: dpi,
-                                                  on: paper, mode: .actualSize, align: .paperOrigin)
-                return PrintDocument.makePDF(pages: [PrintPage(image: image, dpi: dpi, placement: placement)],
-                                             paper: inches)
+                // A gray JPEG at quality 0.9 (the Best size's gray page), in a plain PDF the size of the
+                // paper, as Windows writes it: never archival or protected, the sheet is printed, not kept.
+                guard let image = sheet.makeCGImage(),
+                      let stored = PDFImageEncoding.encodedPage(image, imageDPI: dpi, mode: .grayscale, size: .best) else {
+                    return nil
+                }
+                let page = PDFPageInput(jpegData: stored.jpegData, pixelWidth: sheet.width, pixelHeight: sheet.height,
+                                        dpi: dpi, ocrLines: nil)
+                return try? PDFWriter.make([page])
             }.value
             guard let document else { throw NotSavedError("The separator sheet could not be drawn.") }
             if flag.isCancelled { throw ScanError.cancelled }
@@ -326,7 +340,8 @@ extension AppState {
                 throw NotSavedError("The separator sheet could not be saved: \(error.localizedDescription)")
             }
             self.lastSavedURLs = [url]
-            self.notePDFSize(of: url)
+            // The sheet is never protected, whatever the last PDF saved was.
+            self.notePDFSize(of: url, protected: false)
             self.statusMessage = qr
                 ? QrSeparatorSheet.savedMessage(url.lastPathComponent, name: name)
                 : SeparatorSheet.savedMessage(url.lastPathComponent)

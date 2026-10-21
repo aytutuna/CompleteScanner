@@ -243,16 +243,18 @@ extension AppState {
                 let url: URL
                 if pageFormat == .pdf {
                     url = try self.outputURL(fileExtension: "pdf")
+                    let options: PDFWriteOptions = try await self.pdfOptions(s, for: url)
                     let page = ScannedPage(image: composed.page, dpi: pageDPI, colorMode: pageMode)
                     try await Task.detached(priority: .userInitiated) {
                         try AppState.writePDFAtomically(pages: [page], searchable: s.pdfSearchable,
                                                         languages: s.ocrLanguages, pdfSize: s.output.pdfSize, to: url,
+                                                        options: options,
                                                         shouldContinue: { !flag.isCancelled }) { [weak self] msg in
                             Task { @MainActor in self?.statusMessage = msg }
                         }
                     }.value
                     saved.append(url)
-                    self.notePDFSize(of: url)
+                    self.notePDFSize(of: url, protected: options.isProtected)
                 } else {
                     url = try self.outputURL(fileExtension: pageFormat.fileExtension)
                     let image = composed.page

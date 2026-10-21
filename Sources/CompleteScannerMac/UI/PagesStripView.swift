@@ -20,6 +20,11 @@ struct PagesStripView: View {
     /// The spread being split by hand (the split sheet).
     @State private var editingSpread: SpreadEditorSource?
 
+    /// The pages are saved as a PDF that gets a password (`OutputOptions.protect`).
+    private var lockedSave: Bool {
+        state.settings.format.queueFormat == .pdf && state.settings.output.protect
+    }
+
     var body: some View {
         let options = state.settings.document
         let plan = DocumentSplitter.plan(state.scannedPages, options: options)
@@ -84,11 +89,19 @@ struct PagesStripView: View {
                 Button {
                     state.savePDF()
                 } label: {
-                    Text(saveTitle)
+                    // A lock while the PDF gets a password (asked for when saving), as on Windows.
+                    if lockedSave {
+                        Label(saveTitle, systemImage: "lock.fill")
+                    } else {
+                        Text(saveTitle)
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(state.isBusy || saveCount == 0)
                 .help(saveHelp)
+                .accessibilityLabel(Text(lockedSave
+                    ? saveTitle.replacingOccurrences(of: "PDF", with: "password-protected PDF")
+                    : saveTitle))
 
                 Button("Clear") {
                     state.clearPages()

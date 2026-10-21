@@ -31,7 +31,7 @@ public static class ScanTasks
     /// <summary>Every task, in start-screen order.</summary>
     public static IReadOnlyList<ScanTask> All { get; } = Enum.GetValues<ScanTask>();
 
-    /// <summary>The stored form: "document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book" (the Swift raw values), and "archive" (Windows only until the Mac's PDF writer port).</summary>
+    /// <summary>The stored form: "document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book", "archive" (the Swift raw values).</summary>
     public static string RawValue(this ScanTask task) => task switch
     {
         ScanTask.Document => "document",

@@ -126,7 +126,10 @@ final class OutputTests: XCTestCase {
         let data = try PDFBuilder.makePDF(pages: [page, page], ocrLines: [[line]], progress: nil)
         let document = try XCTUnwrap(PDFDocument(data: data))
         XCTAssertEqual(document.pageCount, 2)
-        XCTAssertTrue((document.page(at: 0)?.string ?? "").contains("Given words here"))
+        // The words, in the embedded glyphless font; how PDFKit spaces them is its own.
+        let read = (document.page(at: 0)?.string ?? "").filter { !$0.isWhitespace }
+        XCTAssertTrue(read.contains("Givenwordshere"), read)
+        XCTAssertTrue(PDFWriterTests.has(data, "/BaseFont /GlyphLessFont"))
         // A page past the end of the list gets no text layer.
         XCTAssertEqual((document.page(at: 1)?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines), "")
     }

@@ -141,6 +141,71 @@ jobs:
       # --parallel runs the test classes in several processes at once.
       - name: Test
         run: swift test -c release -Xswiftc -enable-testing --parallel
+        env:
+          # PDFATests.test_archival_validationSamples keeps the PDF/A files the Swift writer makes here,
+          # for veraPDF below.
+          COMPLETESCANNER_PDFA_SAMPLES: ${{ runner.temp }}/pdfa-samples
+      # The same pinned veraPDF as the Windows job checks the Swift writer's PDF/A files. It is
+      # downloaded here only, pinned to one release and its SHA-256, and never shipped; installed from
+      # its release installer the way the official Docker image's Dockerfile does it.
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Validate PDF/A samples (veraPDF)
+        env:
+          VERAPDF_VERSION: 1.30.3
+          VERAPDF_SHA256: B512BF24945503A33FC10738ECFFC1F2DCCAAF8593A448E94EE9AC86A9559A59
+        run: |
+          set -euo pipefail
+          version="$VERAPDF_VERSION"
+          series="${version%.*}"
+          zip="$RUNNER_TEMP/verapdf-installer.zip"
+          curl -fsSL -o "$zip" "https://software.verapdf.org/releases/$series/verapdf-greenfield-$version-installer.zip"
+          hash=$(shasum -a 256 "$zip" | cut -d ' ' -f 1 | tr '[:lower:]' '[:upper:]')
+          if [ "$hash" != "$VERAPDF_SHA256" ]; then
+            echo "veraPDF installer checksum mismatch: $hash"
+            exit 1
+          fi
+          unzip -q "$zip" -d "$RUNNER_TEMP"
+          target="$RUNNER_TEMP/verapdf"
+          config="$RUNNER_TEMP/verapdf-install.xml"
+          cat > "$config" <<XML
+          <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+          <AutomatedInstallation langpack="eng">
+              <com.izforge.izpack.panels.htmlhello.HTMLHelloPanel id="welcome"/>
+              <com.izforge.izpack.panels.target.TargetPanel id="install_dir">
+                  <installpath>$target</installpath>
+              </com.izforge.izpack.panels.target.TargetPanel>
+              <com.izforge.izpack.panels.packs.PacksPanel id="sdk_pack_select">
+                  <pack index="0" name="veraPDF GUI" selected="false"/>
+                  <pack index="1" name="veraPDF CLI" selected="true"/>
+                  <pack index="2" name="veraPDF Documentation" selected="false"/>
+                  <pack index="3" name="veraPDF Sample Plugins" selected="false"/>
+              </com.izforge.izpack.panels.packs.PacksPanel>
+              <com.izforge.izpack.panels.install.InstallPanel id="install"/>
+              <com.izforge.izpack.panels.finish.FinishPanel id="finish"/>
+          </AutomatedInstallation>
+          XML
+          java -jar "$RUNNER_TEMP/verapdf-greenfield-$version/verapdf-izpack-installer-$version.jar" "$config"
+          shopt -s nullglob
+          samples=("$RUNNER_TEMP"/pdfa-samples/*.pdf)
+          if [ "${#samples[@]}" -lt 3 ]; then
+            echo "Expected the Swift tests' PDF/A samples, found ${#samples[@]}"
+            exit 1
+          fi
+          # Machine-readable report: one validationReport per file, isCompliant="true" when it passes.
+          set +e
+          report=$("$target/verapdf" --flavour 2b --format mrr "${samples[@]}")
+          code=$?
+          set -e
+          echo "$report"
+          passed=$( (printf '%s' "$report" | grep -o '<validationReport[^>]*isCompliant="true"' || true) | wc -l | tr -d ' ')
+          if [ "$code" -ne 0 ] || [ "$passed" -ne "${#samples[@]}" ]; then
+            echo "veraPDF: exit code $code, $passed of ${#samples[@]} files are PDF/A-2b"
+            exit 1
+          fi
+          echo "veraPDF $version: all $passed samples from the Swift writer are PDF/A-2b."
 
   ios:
     # The shared Swift suite (CompleteScannerKit's tests) and the iPhone's own tests on the iOS
@@ -196,6 +261,8 @@ jobs:
           PY
       # Optimized, as the macOS job's tests are (a debug build takes many times longer), with
       # testability on for the tests' @testable imports. The result bundle is kept for a failure.
+      # The shared suite includes the protected PDFs' round trip through PDFKit (PDFEncryptionTests:
+      # PDFDocument.unlock with the user's and the owner password), so it runs here as on the Mac.
       - name: Test on the iOS Simulator
         run: |
           set -o pipefail

@@ -10,8 +10,9 @@ import PDFKit
 // and the golden files are the C# tests' (PdfATests.Standard_GoldenBytes and
 // BilevelOutputTests.Pdf_G4AndJpegPages_GoldenBytes), compared byte for byte through their pinned
 // length and SHA-256. The JPEGs are fixed bytes, never encoded here, so WIC and ImageIO play no part.
-// C# reads the files back with PdfPig; here PDFKit opens them. PDF/A, protected files and the file
-// helpers (WriteFile, WriteNewFile) are C#-only until I5.
+// C# reads the files back with PdfPig; here PDFKit opens them. PDF/A and protected files are
+// PDFATests' and PDFEncryptionTests'; C#'s helpers that move the file into place (WriteFile,
+// WriteNewFile) stay C#-only (the Mac's is AppState.writePDFAtomically).
 
 final class PDFWriterTests: XCTestCase {
     /// A tiny valid baseline JPEG (1 × 1, one component) for structure tests: C#'s TinyJpeg.
@@ -196,6 +197,7 @@ final class PDFWriterTests: XCTestCase {
 
     func test_objectWriter_asciiString_isALiteralInAnOpenFile() throws {
         let w = PDFObjectWriter { _ in }
+        XCTAssertNil(w.encryption)
         XCTAssertEqual(try w.asciiString("Adobe"), "(Adobe)")
         XCTAssertEqual(try w.asciiString("a(b)\\c"), "(a\\(b\\)\\\\c)")
         XCTAssertThrowsError(try w.asciiString("Çağrı"))

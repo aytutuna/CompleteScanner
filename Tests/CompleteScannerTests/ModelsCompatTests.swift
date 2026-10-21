@@ -499,14 +499,13 @@ final class ModelsCompatTests: XCTestCase {
         XCTAssertNotEqual(settings.output, copy.output)
     }
 
-    /// Twin of `ArchiveTaskSettings_RoundTrip_AsTheMacReadsThem`: what Windows writes for its Archive
-    /// document task. The Mac has no such task yet; it keeps the task id as text and the archival
-    /// flag, so the file comes back unchanged.
+    /// Twin of `ArchiveTaskSettings_RoundTrip_AsTheMacReadsThem`: what the Archive document task
+    /// writes reads as that task with the archival flag on both platforms, and comes back unchanged.
     func test_archiveTaskSettings_roundTrip() throws {
         let json = #"{"resolution": 300, "taskId": "archive", "output": {"pdfSize": "best", "archival": true}}"#
         let settings = try decode(ScanSettings.self, json)
         XCTAssertEqual(settings.taskId, "archive")
-        XCTAssertNil(settings.task)
+        XCTAssertEqual(settings.task, .archive)
         XCTAssertTrue(settings.output.archival)
         XCTAssertEqual(settings.output.pdfSize, .best)
         let written = try jsonObject(encode(settings))

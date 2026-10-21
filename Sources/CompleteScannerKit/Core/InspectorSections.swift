@@ -5,10 +5,9 @@ import Foundation
 // windows/CompleteScanner.Core/InspectorSections.cs (same rules, same tests).
 
 /// The settings column's sections, in order: the task's own section (Photocopy or Receipts), Scanner,
-/// Output, Adjustments, Pages, Split into documents, Archive & password (Windows only until the Mac's
-/// PDF writer port) and More options. The task's section, Scanner and Output start open; a collapsed
-/// header shows what is on in it, so a setting other than the default is never out of sight. Twin of
-/// C# `InspectorSections`.
+/// Output, Adjustments, Pages, Split into documents, Archive & password and More options. The task's
+/// section, Scanner and Output start open; a collapsed header shows what is on in it, so a setting
+/// other than the default is never out of sight. Twin of C# `InspectorSections`.
 public enum InspectorSections {
     public static let task = "task"
     public static let scanner = "scanner"
@@ -48,6 +47,7 @@ public enum InspectorSections {
         case .photoRestore: return adjustments
         case .book: return pages
         case .batch: return split
+        case .archive: return archive
         default: return nil
         }
     }

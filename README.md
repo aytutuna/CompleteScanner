@@ -44,30 +44,28 @@ scanners** — including the Epson Perfection V39 II.
   the JPEG quality setting is for JPEG files.
   **Behavior change:** Standard is the new default for everyone, including existing settings
   and presets; earlier versions always wrote full-resolution color JPEGs (choose Best for
-  that). On the Mac each page is encoded as a JPEG with ImageIO and handed to the CoreGraphics
-  PDF writer as a JPEG-backed image, which stores it unchanged; that the files come out as
-  small as on Windows still has to be confirmed on a Mac.
+  that). On the Mac each page is encoded as a JPEG with ImageIO and stored unchanged by the
+  same PDF writer Windows uses (ported to Swift); that the files come out as small as on Windows
+  still has to be confirmed on a Mac.
 - **Black & white as CCITT G4**: black & white pages are stored as lossless 1-bit CCITT Group 4
   images, in every PDF (at every size, up to 600 dpi at Standard and 300 dpi at Compact and
-  Smallest; on Windows also PDF/A, password-protected and added pages) and in TIFF files
+  Smallest; PDF/A and password-protected ones too, and on Windows added pages) and in TIFF files
   (compression 4, one page or several). A 300 dpi letter page is 33 KB instead of a 527 KB gray
   JPEG at Standard. The encoder is the app's own code, with no library, and writes the same bytes
-  on both platforms. On the Mac a PDF with a black & white page is written by the port of the
-  Windows PDF writer (`PDFWriter`), so its text layer is the embedded Unicode one too; other Mac
-  PDFs still come from CoreGraphics.
-- **Archival PDF (PDF/A)** (Windows for now): a switch under the PDF size, and an **Archive
-  document** task, save PDF/A-2b files for long-term keeping, with their color profile, fonts and
-  description inside. On Windows the invisible text layer is now written in a small font
-  embedded in the file, so text in any script (Turkish, Greek, Cyrillic, Arabic, Chinese, …)
-  can be selected and searched. The Mac has the writer and its Unicode text layer for PDFs with
-  black & white pages; PDF/A comes with the rest of the port, and until then its other PDFs keep
-  their CoreText text layer, and the setting is kept in its settings file.
-- **Password-protected PDFs** (Windows for now): **Require a password** encrypts saved PDFs
-  with AES-256 (the PDF 2.0 standard security handler). The password is asked for at each save,
-  typed twice, with a hint about its strength, and never stored; printing and copying can be
-  disallowed, which PDF apps honor as a request, not a lock. A PDF/A file can't have a password,
-  so the two switches exclude each other. The Mac gets it with the port of the Windows PDF
-  writer; until then it keeps the switch in its settings file and writes no protected PDFs.
+  on both platforms.
+- **One PDF writer on both platforms**: the Mac writes every PDF with the Windows PDF writer,
+  ported to Swift, so the same pages give the same file, byte for byte, on both (checked against
+  the same pinned files). The invisible text layer is written in a small font embedded in the
+  file, so text in any script (Turkish, Greek, Cyrillic, Arabic, Chinese, …) can be selected and
+  searched.
+- **Archival PDF (PDF/A)**: a switch in **Archive & password**, and an **Archive document**
+  task, save PDF/A-2b files for long-term keeping, with their color profile, fonts and
+  description inside. CI checks the files of both writers with veraPDF.
+- **Password-protected PDFs**: **Require a password** encrypts saved PDFs with AES-256 (the PDF
+  2.0 standard security handler). The password is asked for at each save, typed twice, with a
+  hint about its strength, and never stored; printing and copying can be disallowed, which PDF
+  apps honor as a request, not a lock. A PDF/A file can't have a password, so the two switches
+  exclude each other. The iPhone app has the same writer; its switches come later.
 - **Add pages to an existing PDF** (Windows for now): **Add to existing PDF…** under the queue,
   or a PDF's menu in the Saved tab, adds the scanned pages to the end of a PDF you pick, such as
   a signature page for a contract. The file's existing bytes are kept as they are (the pages are
@@ -205,8 +203,8 @@ scanners** — including the Epson Perfection V39 II.
   remove print dots (descreen, moiré reduction for printed material), faded-color restoration for
   old photos, black-and-white threshold.
 - **Start screen**: pick what you are scanning, in three groups: **Documents** (Document to PDF,
-  Stack from feeder, Two-sided document, Separate documents, Scan to Word, Email a document; on
-  Windows also Archive document), **Photos & images** (Photos, Restore old photos, Quick scan) and
+  Stack from feeder, Two-sided document, Separate documents, Scan to Word, Email a document,
+  Archive document), **Photos & images** (Photos, Restore old photos, Quick scan) and
   **Other** (ID card, Photocopy, Receipts, Book or magazine). A tile is an icon and a title; what
   the task does and what it sets are its help. Picking one sets everything up for it, with a one-line
   guide on the scan screen and the fuller guidance behind its info button. Tasks the connected

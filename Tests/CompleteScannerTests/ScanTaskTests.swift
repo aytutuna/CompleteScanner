@@ -2,8 +2,8 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/ScanTaskTests.cs: the same cases, except for the Archive
-// document task, which only Windows has until this platform's PDF writer port (CONTRACTS.md).
+// Mirrors windows/CompleteScanner.Core.Tests/ScanTaskTests.cs: the same cases, the Archive document
+// task included (CONTRACTS.md).
 
 private func customized() -> ScanSettings {
     var s = ScanSettings()
@@ -46,7 +46,7 @@ final class ScanTaskTests: XCTestCase {
     func test_rawValues_areTheStoredNames() {
         XCTAssertEqual(ScanTask.allCases.map(\.rawValue),
                        ["document", "feeder", "photos", "photoRestore", "quickScan", "email", "twoSided", "idCard", "copy", "word",
-                        "receipt", "batch", "book"])
+                        "receipt", "batch", "book", "archive"])
     }
 
     func test_tryParse_isExact() {
@@ -65,10 +65,10 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertEqual(TaskCatalog.all.map(\.title),
                        ["Document to PDF", "Stack from feeder", "Photos", "Restore old photos", "Quick scan",
                         "Email a document", "Two-sided document", "ID card", "Photocopy", "Scan to Word", "Receipts",
-                        "Separate documents", "Book or magazine"])
+                        "Separate documents", "Book or magazine", "Archive document"])
         XCTAssertEqual(TaskCatalog.all.map(\.iconKey),
                        ["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word",
-                        "receipt", "batch", "book"])
+                        "receipt", "batch", "book", "archive"])
         for definition in TaskCatalog.all {
             XCTAssertEqual(TaskCatalog.definition(definition.task), definition)
             XCTAssertFalse(definition.subtitle.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -94,7 +94,7 @@ final class ScanTaskTests: XCTestCase {
                         "Both sides of every sheet, in page order.", "Both sides on one page, at real size.",
                         "Prints at real size, like a photocopier.", "Printed pages into an editable Word file.",
                         "Several at once, small files named by date.", "One stack, a PDF for each document.",
-                        "Two pages per scan, split at the spine."])
+                        "Two pages per scan, split at the spine.", "A searchable PDF/A, made to be kept."])
         XCTAssertEqual(TaskCatalog.all.map { $0.steps[0].prompt },
                        ["Place each page face down and scan, then save.", "Load the pages in the feeder and scan.",
                         "Lay the photos on the glass, apart, and scan.", "Lay the photos on the glass, apart, and scan.",
@@ -102,7 +102,7 @@ final class ScanTaskTests: XCTestCase {
                         "Load the pages in the feeder and scan.", "Place the card face down near a corner and scan.",
                         "Place the original face down, then copy.", "Scan each page, then save as Word.",
                         "Lay up to six receipts apart and scan.", "Put a separator sheet before each document, then scan.",
-                        "Open the book face down, spine centered, and scan."])
+                        "Open the book face down, spine centered, and scan.", "Scan each page, then save as PDF/A."])
         for definition in TaskCatalog.all {
             XCTAssertTrue((1...3).contains(StatusLine.words(definition.title)), definition.title)
             XCTAssertTrue((1...10).contains(StatusLine.words(definition.subtitle)), definition.subtitle)
@@ -126,7 +126,7 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertEqual(TaskCatalog.startOrder.count, ScanTask.allCases.count)
         let sections: [TaskGroupSection] = TaskCatalog.sections
         XCTAssertEqual(sections.map(\.group), TaskGroup.allCases)
-        XCTAssertEqual(sections[0].definitions.map(\.task), [.document, .feeder, .twoSided, .batch, .word, .email])
+        XCTAssertEqual(sections[0].definitions.map(\.task), [.document, .feeder, .twoSided, .batch, .word, .email, .archive])
         XCTAssertEqual(sections[1].definitions.map(\.task), [.photos, .photoRestore, .quickScan])
         XCTAssertEqual(sections[2].definitions.map(\.task), [.idCard, .copy, .receipt, .book])
         XCTAssertEqual(sections.flatMap { $0.definitions.map(\.task) }, TaskCatalog.startOrder)
@@ -140,13 +140,14 @@ final class ScanTaskTests: XCTestCase {
     func test_definitions_flowIntentAndRequiredSource() {
         XCTAssertEqual(TaskCatalog.all.map(\.flow),
                        [.documentQueue, .documentQueue, .photoSplit, .photoSplit, .documentQueue, .documentQueue,
-                        .documentQueue, .idCard, .copy, .documentQueue, .receiptSplit, .documentQueue, .documentQueue])
+                        .documentQueue, .idCard, .copy, .documentQueue, .receiptSplit, .documentQueue, .documentQueue,
+                        .documentQueue])
         XCTAssertEqual(TaskCatalog.all.map(\.intent),
                        [.document, .document, .photo, .photo, .document, .document, .document, .document, .document,
-                        .document, .document, .document, .document])
+                        .document, .document, .document, .document, .document])
         XCTAssertEqual(TaskCatalog.all.map(\.requiredSource),
                        [nil, .documentFeeder, nil, nil, .flatbed, nil, .documentFeeder, .flatbed, nil, nil, nil, .documentFeeder,
-                        .flatbed])
+                        .flatbed, nil])
     }
 
     func test_apply_keepsDestinationAndDetectionTuning_andLeavesTheInputAlone() {
@@ -204,6 +205,7 @@ final class ScanTaskTests: XCTestCase {
             "document flatbed 300 pdf true Receipt {docdate} {counter} false false compact none",
             "document documentFeeder 300 pdf true Document {label} {date} {counter} false false standard separatorSheet",
             "document flatbed 300 pdf true {task} {date} {counter} false false standard none",
+            "document flatbed 300 pdf true Scan {date} {counter} false false best none",
         ])
     }
 
@@ -677,25 +679,25 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertTrue(TaskCatalog.availability(of: .receipt, capabilities: ScannerCapabilities(sources: [.documentFeeder])).isAvailable)
     }
 
-    /// Twin of `Apply_OnlyTheArchiveTaskMakesArchivalPdfs`: the Mac has no Archive document task yet,
-    /// so every task turns the archival option off.
-    func test_apply_turnsArchivalOff() {
+    /// Twin of `Apply_OnlyTheArchiveTaskMakesArchivalPdfs`.
+    func test_apply_onlyTheArchiveTaskMakesArchivalPdfs() {
         var current = customized()
         current.output.archival = true
         for task in ScanTask.allCases {
-            XCTAssertFalse(TaskCatalog.apply(task, to: current).output.archival, task.rawValue)
+            XCTAssertEqual(TaskCatalog.apply(task, to: current).output.archival, task == .archive, task.rawValue)
         }
         XCTAssertTrue(current.output.archival)
+        current.output.archival = false
+        XCTAssertTrue(TaskCatalog.apply(.archive, to: current).output.archival)
     }
 
-    /// Twin of `Apply_KeepsThePasswordOption_TheArchiveTaskTurnsItOff`: the Mac has no Archive
-    /// document task yet, so every task keeps the password option as it is.
-    func test_apply_keepsThePasswordOption() {
+    /// Twin of `Apply_KeepsThePasswordOption_TheArchiveTaskTurnsItOff`.
+    func test_apply_keepsThePasswordOption_theArchiveTaskTurnsItOff() {
         var current = customized()
         current.output.protect = true
         for task in ScanTask.allCases {
             let s = TaskCatalog.apply(task, to: current)
-            XCTAssertTrue(s.output.protect, task.rawValue)
+            XCTAssertEqual(s.output.protect, task != .archive, task.rawValue)
             XCTAssertFalse(s.output.protect && s.output.archival, task.rawValue)
         }
         XCTAssertTrue(current.output.protect)
@@ -715,6 +717,42 @@ final class ScanTaskTests: XCTestCase {
             XCTAssertFalse(TaskCatalog.apply(task, to: current).output.wordPageImages, task.rawValue)
         }
         XCTAssertFalse(current.output.wordPageImages)
+    }
+
+    /// Twin of `Archive_IsABestSizeSearchablePdfA_AndEndsWithAPlainPdf`.
+    func test_archive_isABestSizeSearchablePdfA_andEndsWithAPlainPdf() throws {
+        let definition = TaskCatalog.definition(.archive)
+        XCTAssertEqual(definition.title, "Archive document")
+        XCTAssertEqual(definition.steps[0].primaryActionLabel, "Scan page")
+        XCTAssertEqual(definition.iconKey, "archive")
+        XCTAssertEqual(definition.fileLabel, "Document")
+        var s = TaskCatalog.apply(.archive, to: ScanSettings())
+        XCTAssertEqual(s.intent, .document)
+        XCTAssertEqual(s.source, .flatbed)
+        XCTAssertEqual(s.format, .pdf)
+        XCTAssertEqual(s.resolution, 300)
+        XCTAssertEqual(s.colorMode, .color)
+        XCTAssertEqual(s.output.pdfSize, .best)
+        XCTAssertTrue(s.pdfSearchable && s.documentMultiPage && s.output.archival)
+        XCTAssertEqual(try PDFWriteOptions.forOutput(s.output, title: "Scan").conformance, .pdfA2b)
+        XCTAssertEqual(TaskCatalog.flow(of: s), .documentQueue)
+        XCTAssertEqual(TaskCatalog.summary(s), "300 dpi \u{00B7} Color \u{00B7} Best PDF")
+        XCTAssertTrue(TaskCatalog.fits(.archive, s))
+        // Any source and size will do; a plain PDF or another format ends the task.
+        s.source = .documentFeeder
+        s.output.pdfSize = .compact
+        XCTAssertTrue(TaskCatalog.fits(.archive, s))
+        s.format = .word
+        XCTAssertFalse(TaskCatalog.fits(.archive, s))
+        s.format = .pdf
+        s.output.archival = false
+        XCTAssertFalse(TaskCatalog.fits(.archive, s))
+        XCTAssertEqual(TaskCatalog.availability(of: .archive, capabilities: ScannerCapabilities(sources: [.documentFeeder])),
+                       .available)
+        // Without a stored task an archival PDF is still a plain document.
+        var untagged = TaskCatalog.apply(.archive, to: ScanSettings())
+        untagged.taskId = nil
+        XCTAssertEqual(TaskCatalog.infer(untagged), .document)
     }
 
     func test_apply_turnsTheTextBesideAPDFOff() {
