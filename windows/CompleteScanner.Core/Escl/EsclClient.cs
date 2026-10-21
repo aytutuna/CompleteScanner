@@ -4,6 +4,10 @@ using System.Text;
 
 namespace CompleteScanner.Core;
 
+// Twin of Sources/CompleteScannerKit/Escl/EsclClient.swift (URLSession there: the same job rules and
+// tests on both platforms; the Swift one downloads each page to a file and also stops for the app
+// being suspended, which only the iPhone has).
+
 /// <summary>Timeouts and retry timing of an <see cref="EsclClient"/>.</summary>
 public sealed class EsclClientOptions
 {

@@ -25,6 +25,12 @@ public enum ScannerProblem
     /// <summary>The scanner wants someone at its panel (lamp off, a message on its display, ...).</summary>
     NeedsAttention,
     CommunicationError,
+    /// <summary>
+    /// The system suspended the app in the background before the scanner had finished (the pages
+    /// received are kept). Only the iPhone and iPad produce it, through their eSCL connection; the
+    /// Windows app never does, but knows its text.
+    /// </summary>
+    AppSuspended,
 }
 
 /// <summary>An error as the error bar shows it: what went wrong in a few words, and what to do.</summary>
@@ -45,6 +51,7 @@ public static class ScannerProblems
         ScannerProblem.WarmingUp => "The scanner is warming up. Try again in a moment.",
         ScannerProblem.NeedsAttention => "The scanner needs attention. Check its display or control panel.",
         ScannerProblem.CommunicationError => "The connection to the scanner was interrupted. Check the cable or network, then try again.",
+        ScannerProblem.AppSuspended => "The system suspended CompleteScanner in the background before the scan finished. Keep the app open while scanning, then scan again.",
         _ => "The scanner reported a problem. Check the scanner, then try again.",
     };
 
@@ -64,6 +71,7 @@ public static class ScannerProblems
         ScannerProblem.WarmingUp => "Warming up",
         ScannerProblem.NeedsAttention => "Needs attention",
         ScannerProblem.CommunicationError => "Connection lost",
+        ScannerProblem.AppSuspended => "App suspended",
         _ => GenericTitle,
     };
 
@@ -83,6 +91,7 @@ public static class ScannerProblems
         ScannerProblem.WarmingUp => "Try again in a moment.",
         ScannerProblem.NeedsAttention => "Check its display or control panel.",
         ScannerProblem.CommunicationError => "Check the cable or network, then try again.",
+        ScannerProblem.AppSuspended => "Keep the app open while scanning, then scan again.",
         _ => "Check the scanner, then try again.",
     };
 

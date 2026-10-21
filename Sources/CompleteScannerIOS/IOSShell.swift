@@ -49,13 +49,34 @@ public struct IOSLaunchOptions: Equatable, Sendable {
 /// actions and its lifecycle. Printing and the troubleshooter's links are not passed yet, so the
 /// Kit's stand-ins refuse them (no printer, nothing opened or copied).
 public enum IOSShell {
-    /// The scanner connections: the demo scanner, whatever `options` say, since it is the only one
-    /// the iPhone has so far.
+    /// The scanner connections: the demo scanner, whatever `options` say, since the app does not offer
+    /// network scanners yet (they come with finding them and adding them by address, I12).
     @MainActor
     public static func backends(options: IOSLaunchOptions) -> [any ScannerBackend] {
+        backends(options: options, network: nil)
+    }
+
+    /// The scanner connections with a network scanner connection (eSCL) beside the demo scanner, unless
+    /// `options` keep the demo scanner alone. Internal until the app finds network scanners (I12): the
+    /// connection lists only the scanners it was made with (`networkBackend`), and tests are its only
+    /// callers.
+    @MainActor
+    static func backends(options: IOSLaunchOptions, network: EsclScannerBackend?) -> [any ScannerBackend] {
         let demo: MockScannerBackend = AppState.makeDemoBackend()
-        let backends: [any ScannerBackend] = [demo]
+        var backends: [any ScannerBackend] = [demo]
+        if let network, !options.demoScannerOnly {
+            backends.append(network)
+        }
         return backends
+    }
+
+    /// A network scanner connection to `endpoints`, its certificates pinned in `trust`, each job covered
+    /// by UIKit's background time (`UIKitBackgroundActivity`).
+    @MainActor
+    static func networkBackend(endpoints: [EsclEndpoint], trust: EsclTrustStore,
+                               clientOptions: EsclClientOptions = EsclClientOptions()) -> EsclScannerBackend {
+        EsclScannerBackend(trust: trust, endpoints: endpoints, clientOptions: clientOptions,
+                           background: UIKitBackgroundActivity())
     }
 
     /// Whether this app offers a task yet: the tasks whose pages are collected and saved, without a

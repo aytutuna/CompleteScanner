@@ -5,9 +5,10 @@ using Xunit;
 
 namespace CompleteScanner.Core.Tests;
 
-// eSCL only (see EsclTests): no Swift counterpart. EsclClient and EsclScannerSession against
-// a stub HttpMessageHandler that plays a device; retry waits run on a fake clock. Pages are
-// "decoded" by a stub decoder: "PAGE w h" becomes a w×h image, anything else is unreadable.
+// Mirrored by Tests/CompleteScannerTests/EsclClientTests.swift (same cases; there a URLProtocol stub
+// plays the device). EsclClient and EsclScannerSession against a stub HttpMessageHandler that plays a
+// device; retry waits run on a fake clock. Pages are "decoded" by a stub decoder: "PAGE w h" becomes a
+// w×h image, anything else is unreadable.
 
 [Collection(WallClockCollection.Name)]
 public class EsclClientTests

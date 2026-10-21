@@ -35,6 +35,20 @@ internal static class EsclFixtures
          "CN=CompleteScanner test scanner P-384"),
     ];
 
+    /// <summary>
+    /// Two self-signed identities (certificate and private key, PKCS #12, password
+    /// <see cref="LoopbackPassword"/>) and the SHA-256 of their SubjectPublicKeyInfo: the Swift suite's
+    /// loopback HTTPS scanner serves them (EsclLoopbackTests.swift). Test fixtures only; no app ships a key.
+    /// </summary>
+    public static readonly (string File, string Fingerprint)[] LoopbackIdentities =
+    [
+        ("tls-scanner-a.p12", "68046922b1fd313907e2971191b98293b5bc61bd6e85a4b1cd03b679bb8883eb"),
+        ("tls-scanner-b.p12", "db3aaa683e331d9399fc88ea6b47cf91ba78becdfd5e00e8d61a2b63e5faa5dd"),
+    ];
+
+    /// <summary>The password of the <see cref="LoopbackIdentities"/> files.</summary>
+    public const string LoopbackPassword = "CompleteScanner-test";
+
     /// <summary>The folder the fixtures are copied to.</summary>
     public static string Directory => Path.Combine(AppContext.BaseDirectory, "Fixtures", "Escl");
 

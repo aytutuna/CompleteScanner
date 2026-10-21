@@ -25,7 +25,7 @@ final class TroubleshootingTests: XCTestCase {
     func test_everyProblem_hasATitleOfThreeWords_andAdviceOfTen() {
         XCTAssertEqual(ScannerProblem.allCases.map { ScannerProblems.title($0) },
                        ["Something went wrong", "Feeder empty", "Paper jam", "Paper problem", "Several sheets fed", "Cover open",
-                        "Scanner offline", "Scanner busy", "Warming up", "Needs attention", "Connection lost"])
+                        "Scanner offline", "Scanner busy", "Warming up", "Needs attention", "Connection lost", "App suspended"])
         XCTAssertEqual(ScannerProblems.advice(.offline), "Turn it on and check the cable or network.")
         XCTAssertEqual(ScannerProblems.advice(.paperJam), "Clear the jam, then scan again.")
         for problem in ScannerProblem.allCases {
@@ -75,6 +75,19 @@ final class TroubleshootingTests: XCTestCase {
         XCTAssertEqual(stop.message(pagesKept: 1),
                        "Scanning stopped after 1 page; it was kept. "
                        + "Paper is jammed in the scanner. Clear the jam, then scan again.")
+    }
+
+    func test_anAppSuspendedMidBatchKeepsThePagesAndSaysToStayInTheApp() {
+        // Only the iPhone's eSCL connection stops a batch this way; the text is the same everywhere.
+        XCTAssertEqual(ScannerProblem.allCases.last, ScannerProblem.appSuspended)
+        let stop: ScanStop = ScanStop.from(ScanError.scannerProblem(.appSuspended))
+        XCTAssertEqual(stop.problem, ScannerProblem.appSuspended)
+        XCTAssertEqual(stop.message(pagesKept: 2),
+                       "Scanning stopped after 2 pages; they were kept. The system suspended CompleteScanner in the "
+                       + "background before the scan finished. Keep the app open while scanning, then scan again.")
+        XCTAssertEqual(ScannerProblems.notice(stop.message(pagesKept: 2)),
+                       ProblemNotice(title: "App suspended",
+                                     message: "Scanning stopped after 2 pages; they were kept. Keep the app open while scanning, then scan again."))
     }
 
     func test_scanStopWithoutAReasonStillSaysPagesWereKept() {

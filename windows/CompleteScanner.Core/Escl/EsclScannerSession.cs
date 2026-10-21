@@ -1,5 +1,8 @@
 namespace CompleteScanner.Core;
 
+// Twin of Sources/CompleteScannerKit/Escl/EsclScannerSession.swift: the same rules and tests on both
+// platforms (the Swift one also asks the iPhone for background time while a job runs).
+
 /// <summary>
 /// An open eSCL scanner: the app's scan calls turned into eSCL jobs on an
 /// <see cref="EsclClient"/> (which it owns). The capabilities were read when it was opened.

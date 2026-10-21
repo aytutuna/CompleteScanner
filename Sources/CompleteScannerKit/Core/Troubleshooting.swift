@@ -22,6 +22,10 @@ public enum ScannerProblem: String, CaseIterable, Sendable {
     /// The scanner wants someone at its panel (lamp off, a message on its display, ...).
     case needsAttention
     case communicationError
+    /// The system suspended the app in the background before the scanner had finished (the pages
+    /// received are kept). Only the iPhone and iPad produce it, through their eSCL connection; the
+    /// Windows app never does, but knows its text.
+    case appSuspended
 }
 
 /// An error as the error bar or alert shows it: what went wrong in a few words, and what to do.
@@ -60,6 +64,8 @@ public enum ScannerProblems {
             return "The scanner needs attention. Check its display or control panel."
         case .communicationError:
             return "The connection to the scanner was interrupted. Check the cable or network, then try again."
+        case .appSuspended:
+            return "The system suspended CompleteScanner in the background before the scan finished. Keep the app open while scanning, then scan again."
         case .unknown:
             return "The scanner reported a problem. Check the scanner, then try again."
         }
@@ -81,6 +87,7 @@ public enum ScannerProblems {
         case .warmingUp: return "Warming up"
         case .needsAttention: return "Needs attention"
         case .communicationError: return "Connection lost"
+        case .appSuspended: return "App suspended"
         case .unknown: return genericTitle
         }
     }
@@ -99,6 +106,7 @@ public enum ScannerProblems {
         case .warmingUp: return "Try again in a moment."
         case .needsAttention: return "Check its display or control panel."
         case .communicationError: return "Check the cable or network, then try again."
+        case .appSuspended: return "Keep the app open while scanning, then scan again."
         case .unknown: return "Check the scanner, then try again."
         }
     }

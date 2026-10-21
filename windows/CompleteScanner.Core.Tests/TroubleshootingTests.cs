@@ -31,7 +31,7 @@ public class TroubleshootingTests
     public void EveryProblem_HasATitleOfThreeWords_AndAdviceOfTen()
     {
         Assert.Equal(["Something went wrong", "Feeder empty", "Paper jam", "Paper problem", "Several sheets fed", "Cover open",
-                      "Scanner offline", "Scanner busy", "Warming up", "Needs attention", "Connection lost"],
+                      "Scanner offline", "Scanner busy", "Warming up", "Needs attention", "Connection lost", "App suspended"],
                      Enum.GetValues<ScannerProblem>().Select(ScannerProblems.Title));
         Assert.Equal("Turn it on and check the cable or network.", ScannerProblems.Advice(ScannerProblem.Offline));
         Assert.Equal("Clear the jam, then scan again.", ScannerProblems.Advice(ScannerProblem.PaperJam));
@@ -103,6 +103,22 @@ public class TroubleshootingTests
                      + "Paper is jammed in the scanner. Clear the jam, then scan again.", stop.Message(3));
         Assert.Equal("Scanning stopped after 1 page; it was kept. "
                      + "Paper is jammed in the scanner. Clear the jam, then scan again.", stop.Message(1));
+    }
+
+    [Fact]
+    public void AnAppSuspendedMidBatchKeepsThePagesAndSaysToStayInTheApp()
+    {
+        // Only the iPhone's eSCL connection stops a batch this way; the text is the same everywhere.
+        Assert.Equal(ScannerProblem.AppSuspended, Enum.GetValues<ScannerProblem>()[^1]);
+        var stop = ScanStop.From(ScanException.ForProblem(ScannerProblem.AppSuspended));
+        Assert.Equal(ScannerProblem.AppSuspended, stop.Problem);
+        Assert.Equal("Scanning stopped after 2 pages; they were kept. The system suspended CompleteScanner in the "
+                     + "background before the scan finished. Keep the app open while scanning, then scan again.",
+                     stop.Message(2));
+        Assert.Equal(new ProblemNotice("App suspended",
+                                       "Scanning stopped after 2 pages; they were kept. Keep the app open while scanning, then scan again."),
+                     ScannerProblems.Notice(stop.Message(2)));
+        Assert.Equal(ScanErrorKind.ScanFailed, ScanException.ForProblem(ScannerProblem.AppSuspended).Kind);
     }
 
     [Fact]

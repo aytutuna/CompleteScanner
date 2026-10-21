@@ -10,9 +10,11 @@ using Xunit;
 namespace CompleteScanner.Core.Tests;
 
 // Mirrored by Tests/CompleteScannerTests/EsclTrustTests.swift (same cases), except the two checks
-// through a real TLS connection to a loopback server, which belong to the client (EsclClient) and get
-// their Swift twins with it. Certificate pinning for eSCL over HTTPS and the escl-trust.json and
-// escl-hosts.json files, including trust files written by either platform (Tests/Fixtures/Escl).
+// through a real TLS connection to a loopback server, whose Swift twins are in
+// Tests/CompleteScannerTests/EsclLoopbackTests.swift with the client (an NWListener serving the
+// fixtures' PKCS #12 identities, where this suite makes its certificates as it runs). Certificate
+// pinning for eSCL over HTTPS and the escl-trust.json and escl-hosts.json files, including trust files
+// written by either platform (Tests/Fixtures/Escl).
 
 [Collection(WallClockCollection.Name)]
 public sealed class EsclTrustTests : IDisposable
@@ -377,6 +379,19 @@ public sealed class EsclTrustTests : IDisposable
     }
 
     // MARK: - Through a real TLS connection
+
+    [Fact]
+    public void TheLoopbackIdentitiesHaveTheirFingerprints()
+    {
+        // The identities the Swift suite's loopback scanner serves: the fingerprints its tests expect.
+        foreach (var (file, fingerprint) in EsclFixtures.LoopbackIdentities)
+        {
+            using var identity = X509CertificateLoader.LoadPkcs12FromFile(
+                EsclFixtures.PathOf(file), EsclFixtures.LoopbackPassword, X509KeyStorageFlags.EphemeralKeySet);
+            Assert.True(identity.HasPrivateKey);
+            Assert.Equal(fingerprint, EsclCertificates.Fingerprint(identity));
+        }
+    }
 
     /// <summary>A loopback HTTPS server that answers every request with the capabilities fixture.</summary>
     private sealed class TlsScanner : IDisposable

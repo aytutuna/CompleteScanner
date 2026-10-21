@@ -345,17 +345,23 @@ target for each platform's own parts:
     capabilities parser, the scan request (the same XML bytes as Windows), the scanner's status,
     retrying while it is busy, DNS-SD TXT records, scanner addresses, one entry per scanner from
     its services, the scanners added by address (`escl-hosts.json`) and certificate pinning for
-    HTTPS (`escl-trust.json`, with `SpkiFingerprint` from `Companion`). It has no network code:
-    the iPhone's eSCL connection (URLSession, discovery, the Local Network permission) builds on
-    it next, and the Mac, which reaches these scanners through ImageCaptureCore, could use it later
+    HTTPS (`escl-trust.json`, with `SpkiFingerprint` from `Companion`); and the connection, also
+    shared with Windows: `EsclClient` on URLSession (an ephemeral configuration, 10 s requests and
+    2-minute job requests, each page downloaded to the page spool, the job deleted on the scanner
+    whenever it is cut short, the trust rules applied to each TLS connection), `EsclScannerSession`
+    (on the iPhone, a job keeps the system's background time while it runs, and a job the system
+    suspends keeps its pages) and `EsclScannerBackend`. The iPhone app does not offer network
+    scanners yet: finding them, adding them by address and the Local Network permission come
+    next; the Mac, which reaches these scanners through ImageCaptureCore, could use it later
   - `App` — `AppState`, which every view binds to, and the protocols of the system services each
     app passes in (`FileActionService`, `PrintService`, `TroubleshooterService`,
-    `PlatformLifecycle`); pages from a scan or any other source come in through `AppState.ingest`
+    `PlatformLifecycle`, `BackgroundActivity`); pages from a scan or any other source come in through `AppState.ingest`
 - `Sources/CompleteScannerMac` — the Mac only (each file inside `#if os(macOS)`): the SwiftUI views,
   the ImageCaptureCore backend, the system services (`SystemFileActions`, `SystemPrintService`,
   `SystemTroubleshooterService`, `AppKitLifecycle`) and `CompleteScannerApp`
 - `Sources/CompleteScannerIOS` — the iPhone and iPad only (each file inside `#if os(iOS)`):
-  `UIKitLifecycle`, the app shell's services (`IOSShell`, `IOSFileActions`: Quick Look, the share
+  `UIKitLifecycle`, `UIKitBackgroundActivity` (the system's background time for a network scan),
+  the app shell's services (`IOSShell`, `IOSFileActions`: Quick Look, the share
   sheet, the Files app), Apple's document scanner and our own camera (`Camera/`: the capture session,
   the lens choice, the live page outline, the automatic shutter, when the camera runs), importing photos and PDFs with the
   corner editor (`Import/`: decoding with the EXIF turn, PDF pages at 300 dpi, Vision's page search,
@@ -368,5 +374,6 @@ target for each platform's own parts:
 - `Tests/CompleteScannerTests` — unit tests (synthetic-image based), run on macOS and on the iOS
   Simulator; `Tests/CompleteScannerMacTests` and `Tests/CompleteScannerIOSTests` — each platform's own;
   `Tests/Fixtures/Escl` — the eSCL fixtures this suite and the Windows one both read (capability
-  documents, request snapshots, a TXT record, RSA-2048, P-256 and P-384 scanner certificates and a
-  trust file written by each platform)
+  documents, request snapshots, a TXT record, RSA-2048, P-256 and P-384 scanner certificates, a
+  trust file written by each platform, and two test-only identities with their keys that the
+  loopback HTTPS scanner of `EsclLoopbackTests` serves)

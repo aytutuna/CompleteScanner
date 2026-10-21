@@ -3,9 +3,9 @@ import Foundation
 @testable import CompleteScannerKit
 
 // Mirrors windows/CompleteScanner.Core.Tests/EsclTrustTests.cs (same cases), except the C# suite's two
-// checks through a real TLS connection to a loopback server, which belong to the client and come with
-// it. Certificate pinning for eSCL over HTTPS and the escl-trust.json and escl-hosts.json files,
-// including trust files written by either platform. The certificates are the shared fixtures in
+// checks through a real TLS connection to a loopback server and its check of the loopback identities,
+// whose twins are in EsclLoopbackTests with the client. Certificate pinning for eSCL over HTTPS and the
+// escl-trust.json and escl-hosts.json files, including trust files written by either platform. The certificates are the shared fixtures in
 // Tests/Fixtures/Escl; the validator gets a certificate's DER, its subject and the system's verdict,
 // where the C# one gets an X509Certificate2 and SslPolicyErrors.
 

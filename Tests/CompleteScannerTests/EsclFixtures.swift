@@ -41,6 +41,25 @@ enum EsclFixtures {
                           subject: "CN=CompleteScanner test scanner P-384"),
     ]
 
+    /// A self-signed identity (certificate and private key, PKCS #12) and the SHA-256 of its
+    /// SubjectPublicKeyInfo.
+    struct IdentityVector {
+        let file: String
+        let fingerprint: String
+    }
+
+    /// The identities the loopback HTTPS scanner serves (EsclLoopbackTests): test fixtures only, no key
+    /// ships in the app. C#'s EsclTrustTests checks the same fingerprints.
+    static let loopbackIdentities: [IdentityVector] = [
+        IdentityVector(file: "tls-scanner-a.p12",
+                       fingerprint: "68046922b1fd313907e2971191b98293b5bc61bd6e85a4b1cd03b679bb8883eb"),
+        IdentityVector(file: "tls-scanner-b.p12",
+                       fingerprint: "db3aaa683e331d9399fc88ea6b47cf91ba78becdfd5e00e8d61a2b63e5faa5dd"),
+    ]
+
+    /// The password of the `loopbackIdentities` files.
+    static let loopbackPassword: String = "CompleteScanner-test"
+
     /// Tests/Fixtures/Escl in the repository.
     static var directory: URL {
         URL(fileURLWithPath: #filePath)
