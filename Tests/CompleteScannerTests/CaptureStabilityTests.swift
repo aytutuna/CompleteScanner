@@ -42,7 +42,15 @@ private func feedFrames(_ stability: inout CaptureStability, _ start: Int, _ fra
 
 /// The page held with a tremor of ±1 px (0.1 % of the diagonal), `count` frames.
 private func held(_ q: Quad, _ count: Int, _ confidence: Double = 0.9) -> [Step] {
-    (0..<count).map { i in (shifted(q, i % 2 == 0 ? 1 : -1, Double(i % 3 - 1)), confidence) }
+    var steps: [Step] = []
+    steps.reserveCapacity(count)
+    for i in 0..<count {
+        let dx: Double = (i % 2 == 0) ? 1 : -1
+        let dy: Double = Double(i % 3 - 1)
+        let quad: Quad = shifted(q, dx, dy)
+        steps.append((quad: quad, confidence: confidence))
+    }
+    return steps
 }
 
 private func missing(_ count: Int) -> [Step] {
@@ -66,7 +74,11 @@ final class CaptureStabilityTests: XCTestCase {
     func testNeverFiresWhileThePageMoves() {
         var stability = CaptureStability()
         // 20 px per frame (1.6 % of the diagonal) for 3 s.
-        let frames: [Step] = (0..<90).map { i in (shifted(page, Double(20 * (i % 10)), 0), 0.9) }
+        var frames: [Step] = []
+        for i in 0..<90 {
+            let dx: Double = Double(20 * (i % 10))
+            frames.append((quad: shifted(page, dx, 0), confidence: 0.9))
+        }
         XCTAssertEqual(feedFrames(&stability, 0, frames), [])
         XCTAssertEqual(stability.state, .moving)
     }
@@ -95,7 +107,10 @@ final class CaptureStabilityTests: XCTestCase {
     func testSmallDriftIsToleratedButAJumpStartsOver() {
         var drift = CaptureStability()
         // Drifting 1 px per frame: after 20 frames the page is 20 px (1.6 %) from where it was, within the 2.5 % to stay.
-        let slow: [Step] = (0..<40).map { i in (shifted(page, Double(i), 0), 0.9) }
+        var slow: [Step] = []
+        for i in 0..<40 {
+            slow.append((quad: shifted(page, Double(i), 0), confidence: 0.9))
+        }
         XCTAssertEqual(feedFrames(&drift, 0, slow), [20])
 
         var jump = CaptureStability()
@@ -164,7 +179,11 @@ final class CaptureStabilityTests: XCTestCase {
         XCTAssertGreaterThan(a.maxCornerDistance(b), 200, "the names did not change: \(a) \(b)")
         XCTAssertLessThan(CaptureStability.movement(a, b), 3)
         var stability = CaptureStability()
-        let frames: [Step] = (0..<61).map { i in (quad: i % 2 == 0 ? a : b, confidence: 0.9) }
+        var frames: [Step] = []
+        for i in 0..<61 {
+            let quad: Quad = (i % 2 == 0) ? a : b
+            frames.append((quad: quad, confidence: 0.9))
+        }
         XCTAssertEqual(feedFrames(&stability, 0, frames), [20])
     }
 
