@@ -48,15 +48,20 @@ public struct CompanionPage {
     public var ocrLines: [OCRLine]?
     /// The page as scanned, before crop, clean-up and the like; nil when there is no other version.
     public var original: CompanionImage?
+    /// What the camera recorded about the page (`ScannedPage.capture`), its corners in the pixels of
+    /// `original` as stored; nil for a page not taken by a camera, and when a package's record of it
+    /// cannot be read.
+    public var capture: CaptureFacts?
 
     public init(image: CompanionImage, rotationQuarterTurns: Int = 0, side: PageSide? = nil, sheetIndex: Int? = nil,
-                ocrLines: [OCRLine]? = nil, original: CompanionImage? = nil) {
+                ocrLines: [OCRLine]? = nil, original: CompanionImage? = nil, capture: CaptureFacts? = nil) {
         self.image = image
         self.rotationQuarterTurns = rotationQuarterTurns
         self.side = side
         self.sheetIndex = sheetIndex
         self.ocrLines = ocrLines
         self.original = original
+        self.capture = capture
     }
 }
 
@@ -150,8 +155,8 @@ public enum CompanionPackage {
     public static let formatName = "csdoc"
     /// The major version: a reader refuses a larger one.
     public static let formatVersion = 1
-    /// The minor version: raised for additions older readers can ignore.
-    public static let formatMinor = 0
+    /// The minor version: raised for additions older readers can ignore (1: the pages' capture facts).
+    public static let formatMinor = 1
     public static let manifestName = "manifest.json"
     public static let maxPages = 2000
     public static let maxManifestBytes = 16 * 1024 * 1024
@@ -236,6 +241,7 @@ public enum CompanionPackage {
                 }
                 json += "]"
             }
+            if let capture = page.capture { json += captureJSON(capture) }
             if let original = page.original {
                 json += ",\"original\":"
                 json += imageJSON(original, file: imageEntryName(index + 1, format: original.format, original: true))
@@ -409,6 +415,33 @@ public enum CompanionPackage {
         }
     }
 
+    /// ,"capture":{"quad":[x, y of the four corners clockwise from the top-left],"sourceWidth",
+    /// "sourceHeight","kind"[,"focalLength"][,"scale":{"basis"[,"size"],"dpi","pixelWidth",
+    /// "pixelHeight","widthInches","heightInches"}]}.
+    private static func captureJSON(_ capture: CaptureFacts) -> String {
+        var json = ",\"capture\":{\"quad\":["
+        for i in 0..<4 {
+            if i > 0 { json += "," }
+            let corner = capture.quad[i]
+            json += number(Double(corner.x)) + "," + number(Double(corner.y))
+        }
+        json += "],\"sourceWidth\":" + String(capture.sourceWidth)
+        json += ",\"sourceHeight\":" + String(capture.sourceHeight)
+        json += ",\"kind\":" + quote(capture.kind.rawValue)
+        if let focalLength = capture.focalLength { json += ",\"focalLength\":" + number(focalLength) }
+        if let scale = capture.scale {
+            json += ",\"scale\":{\"basis\":" + quote(scale.basis.rawValue)
+            if let size = scale.size { json += ",\"size\":" + quote(size) }
+            json += ",\"dpi\":" + String(scale.dpi)
+            json += ",\"pixelWidth\":" + String(scale.pixelWidth)
+            json += ",\"pixelHeight\":" + String(scale.pixelHeight)
+            json += ",\"widthInches\":" + number(scale.widthInches)
+            json += ",\"heightInches\":" + number(scale.heightInches) + "}"
+        }
+        json += "}"
+        return json
+    }
+
     private static func imageJSON(_ image: CompanionImage, file: String) -> String {
         var json = "{\"file\":" + quote(file)
         json += ",\"format\":" + quote(formatValue(image.format))
@@ -500,7 +533,7 @@ public enum CompanionPackage {
             }
             let rotation = dto.rotationQuarterTurns >= 0 && dto.rotationQuarterTurns <= 3 ? Int(dto.rotationQuarterTurns) : 0
             pages.append(CompanionPage(image: image, rotationQuarterTurns: rotation, side: side, sheetIndex: sheet,
-                                       ocrLines: lines, original: original))
+                                       ocrLines: lines, original: original, capture: readCapture(dto.capture)))
         }
         return CompanionDocument(
             title: manifest.title, pages: pages,
@@ -508,6 +541,29 @@ public enum CompanionPackage {
                                         platform: manifest.writer.platform),
             created: parseDate(manifest.created), taskId: manifest.taskId,
             suggestedName: manifest.naming.suggestedName, namingTemplate: manifest.naming.template)
+    }
+
+    /// The capture facts as a package records them; nil when missing or unusable (not four finite
+    /// corners, no photo size), so a damaged record costs the page only them. An unknown kind reads as a
+    /// document; an unusable scale (no resolution or size) is left out, an unknown basis reads as nominal.
+    private static func readCapture(_ dto: CaptureDTO?) -> CaptureFacts? {
+        guard let dto = dto, let q = dto.quad, q.count == 8, dto.sourceWidth > 0, dto.sourceHeight > 0 else { return nil }
+        for value in q where !value.isFinite { return nil }
+        let quad = Quad(topLeft: CGPoint(x: q[0], y: q[1]), topRight: CGPoint(x: q[2], y: q[3]),
+                        bottomRight: CGPoint(x: q[4], y: q[5]), bottomLeft: CGPoint(x: q[6], y: q[7]))
+        let kind: CaptureKind = dto.kind.flatMap { CaptureKind(rawValue: $0) } ?? .document
+        var focalLength: Double?
+        if let f = dto.focalLength, f > 0, f.isFinite { focalLength = f }
+        var scale: CaptureScaleResult?
+        if let s = dto.scale, s.dpi > 0, s.pixelWidth > 0, s.pixelHeight > 0,
+           s.widthInches > 0, s.widthInches.isFinite, s.heightInches > 0, s.heightInches.isFinite {
+            let basis: CaptureScaleBasis = s.basis.flatMap { CaptureScaleBasis(rawValue: $0) } ?? .nominal
+            scale = CaptureScaleResult(basis: basis, size: s.size, dpi: Int(s.dpi), pixelWidth: Int(s.pixelWidth),
+                                       pixelHeight: Int(s.pixelHeight), widthInches: s.widthInches,
+                                       heightInches: s.heightInches)
+        }
+        return CaptureFacts(quad: quad, sourceWidth: Int(dto.sourceWidth), sourceHeight: Int(dto.sourceHeight),
+                            kind: kind, focalLength: focalLength, scale: scale)
     }
 
     /// The manifest as the C# twin reads it (`StoreFiles.Decode`), through the same settings-file
@@ -621,8 +677,9 @@ private struct PageDTO: Decodable {
     var sheetIndex: Int32?
     var ocrLines: [OCRLineDTO]?
     var original: ImageDTO?
+    var capture: CaptureDTO?
 
-    enum CodingKeys: String, CodingKey { case image, rotationQuarterTurns, side, sheetIndex, ocrLines, original }
+    enum CodingKeys: String, CodingKey { case image, rotationQuarterTurns, side, sheetIndex, ocrLines, original, capture }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -632,6 +689,51 @@ private struct PageDTO: Decodable {
         sheetIndex = c.decodeLenient(forKey: .sheetIndex, default: sheetIndex)
         ocrLines = c.decodeLenient(forKey: .ocrLines, default: ocrLines)
         original = c.decodeLenient(forKey: .original, default: original)
+        capture = c.decodeLenient(forKey: .capture, default: capture)
+    }
+}
+
+private struct CaptureDTO: Decodable {
+    var quad: [Double]?
+    var sourceWidth: Int32 = 0
+    var sourceHeight: Int32 = 0
+    var kind: String?
+    var focalLength: Double?
+    var scale: ScaleDTO?
+
+    enum CodingKeys: String, CodingKey { case quad, sourceWidth, sourceHeight, kind, focalLength, scale }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        quad = c.decodeLenient(forKey: .quad, default: quad)
+        sourceWidth = c.decodeLenient(forKey: .sourceWidth, default: sourceWidth)
+        sourceHeight = c.decodeLenient(forKey: .sourceHeight, default: sourceHeight)
+        kind = c.decodeLenient(forKey: .kind, default: kind)
+        focalLength = c.decodeLenient(forKey: .focalLength, default: focalLength)
+        scale = c.decodeLenient(forKey: .scale, default: scale)
+    }
+}
+
+private struct ScaleDTO: Decodable {
+    var basis: String?
+    var size: String?
+    var dpi: Int32 = 0
+    var pixelWidth: Int32 = 0
+    var pixelHeight: Int32 = 0
+    var widthInches = 0.0
+    var heightInches = 0.0
+
+    enum CodingKeys: String, CodingKey { case basis, size, dpi, pixelWidth, pixelHeight, widthInches, heightInches }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        basis = c.decodeLenient(forKey: .basis, default: basis)
+        size = c.decodeLenient(forKey: .size, default: size)
+        dpi = c.decodeLenient(forKey: .dpi, default: dpi)
+        pixelWidth = c.decodeLenient(forKey: .pixelWidth, default: pixelWidth)
+        pixelHeight = c.decodeLenient(forKey: .pixelHeight, default: pixelHeight)
+        widthInches = c.decodeLenient(forKey: .widthInches, default: widthInches)
+        heightInches = c.decodeLenient(forKey: .heightInches, default: heightInches)
     }
 }
 

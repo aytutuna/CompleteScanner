@@ -4,7 +4,7 @@ namespace CompleteScanner.Core;
 // on doubles in the same order, rounding halves to even as RgbaImage's bilinear sampler does, so
 // the same photo and quad give the same bytes on both platforms.
 
-/// <summary>The shape of the sheet a quad shows, worked out from the photo (<see cref="PerspectiveCorrector.EstimateAspect"/>).</summary>
+/// <summary>The shape of the sheet a quad shows, worked out from the photo (<see cref="PerspectiveCorrector.EstimateAspect(Quad, double, double)"/>).</summary>
 /// <param name="WidthOverHeight">The sheet's width (top edge) over its height (left edge), as it lies in the photo.</param>
 /// <param name="FocalLength">
 /// The camera's focal length in pixels that explains the quad, when the quad says (a sheet seen
@@ -114,26 +114,9 @@ public static class PerspectiveCorrector
     /// </summary>
     public static AspectEstimate EstimateAspect(Quad quad, double imageWidth, double imageHeight)
     {
-        double cx = imageWidth / 2, cy = imageHeight / 2;
-        // m1 top-left, m2 top-right, m3 bottom-left, m4 bottom-right, centered, homogeneous.
-        double m1x = quad.TopLeft.X - cx, m1y = quad.TopLeft.Y - cy;
-        double m2x = quad.TopRight.X - cx, m2y = quad.TopRight.Y - cy;
-        double m3x = quad.BottomLeft.X - cx, m3y = quad.BottomLeft.Y - cy;
-        double m4x = quad.BottomRight.X - cx, m4y = quad.BottomRight.Y - cy;
-        double top = quad.EdgeLength(0), right = quad.EdgeLength(1), bottom = quad.EdgeLength(2), left = quad.EdgeLength(3);
-        double sides = (left + right) / 2;
-        double fallback = sides > 0 ? (top + bottom) / 2 / sides : 1;
-
-        // (m1 × m4): the cross product of (m1x, m1y, 1) and (m4x, m4y, 1).
-        var c14 = Cross(m1x, m1y, 1, m4x, m4y, 1);
-        var c24 = Cross(m2x, m2y, 1, m4x, m4y, 1);
-        var c34 = Cross(m3x, m3y, 1, m4x, m4y, 1);
-        double k2den = Dot(c24, m3x, m3y, 1), k3den = Dot(c34, m2x, m2y, 1);
-        if (k2den == 0 || k3den == 0) return new AspectEstimate(fallback, null);
-        double k2 = Dot(c14, m3x, m3y, 1) / k2den;
-        double k3 = Dot(c14, m2x, m2y, 1) / k3den;
-        double n2x = k2 * m2x - m1x, n2y = k2 * m2y - m1y, n2z = k2 - 1;
-        double n3x = k3 * m3x - m1x, n3y = k3 * m3y - m1y, n3z = k3 - 1;
+        double fallback = EdgeAspect(quad);
+        if (Rays(quad, imageWidth, imageHeight) is not { } r) return new AspectEstimate(fallback, null);
+        double n2x = r.N2X, n2y = r.N2Y, n2z = r.N2Z, n3x = r.N3X, n3y = r.N3Y, n3z = r.N3Z;
         double diagonal = Math.Sqrt(imageWidth * imageWidth + imageHeight * imageHeight);
         double zz = n2z * n3z;
         // Seen straight on (opposite edges parallel), the camera's distance cannot be told.
@@ -152,6 +135,27 @@ public static class PerspectiveCorrector
                 }
             }
         }
+        return new AspectEstimate(fallback, null);
+    }
+
+    /// <summary>
+    /// The shape of the flat rectangle seen as <paramref name="quad"/> by a camera of known
+    /// <paramref name="focalLength"/> (in pixels of this photo) centered on the photo with square
+    /// pixels: the construction of <see cref="EstimateAspect(Quad, double, double)"/> with the focal
+    /// length given rather than worked out, so a sheet tilted about an axis along one of its edges
+    /// (where the quad alone tells no focal length) gets its shape as well. A focal length that is not
+    /// a positive number gives <see cref="EstimateAspect(Quad, double, double)"/>; a quad that gives
+    /// no shape the mean of the opposite edge lengths' ratio (with no focal length).
+    /// </summary>
+    public static AspectEstimate EstimateAspect(Quad quad, double imageWidth, double imageHeight, double focalLength)
+    {
+        if (!(focalLength > 0) || !double.IsFinite(focalLength)) return EstimateAspect(quad, imageWidth, imageHeight);
+        double fallback = EdgeAspect(quad);
+        if (Rays(quad, imageWidth, imageHeight) is not { } r) return new AspectEstimate(fallback, null);
+        double f2 = focalLength * focalLength;
+        double num = r.N2X * r.N2X + r.N2Y * r.N2Y + f2 * r.N2Z * r.N2Z;
+        double den = r.N3X * r.N3X + r.N3Y * r.N3Y + f2 * r.N3Z * r.N3Z;
+        if (num > 0 && den > 0 && double.IsFinite(num / den)) return new AspectEstimate(Math.Sqrt(num / den), focalLength);
         return new AspectEstimate(fallback, null);
     }
 
@@ -341,6 +345,40 @@ public static class PerspectiveCorrector
 
     /// <summary>Rounded to the nearest byte, halves to even (as <see cref="RgbaImage"/>'s sampler), clamped.</summary>
     private static byte RoundByte(double value) => (byte)Math.Clamp(Math.Round(value, MidpointRounding.ToEven), 0, 255);
+
+    /// <summary>Zhang and He's n2 and n3: the directions of the rectangle's top and left edges in camera space.</summary>
+    private readonly record struct PlaneRays(double N2X, double N2Y, double N2Z, double N3X, double N3Y, double N3Z);
+
+    /// <summary>
+    /// The edge directions (<see cref="PlaneRays"/>) of the rectangle seen as <paramref name="quad"/>,
+    /// up to the focal length, for a camera centered on the photo; null when the quad gives none.
+    /// </summary>
+    private static PlaneRays? Rays(Quad quad, double imageWidth, double imageHeight)
+    {
+        double cx = imageWidth / 2, cy = imageHeight / 2;
+        // m1 top-left, m2 top-right, m3 bottom-left, m4 bottom-right, centered, homogeneous.
+        double m1x = quad.TopLeft.X - cx, m1y = quad.TopLeft.Y - cy;
+        double m2x = quad.TopRight.X - cx, m2y = quad.TopRight.Y - cy;
+        double m3x = quad.BottomLeft.X - cx, m3y = quad.BottomLeft.Y - cy;
+        double m4x = quad.BottomRight.X - cx, m4y = quad.BottomRight.Y - cy;
+        // (m1 × m4): the cross product of (m1x, m1y, 1) and (m4x, m4y, 1).
+        var c14 = Cross(m1x, m1y, 1, m4x, m4y, 1);
+        var c24 = Cross(m2x, m2y, 1, m4x, m4y, 1);
+        var c34 = Cross(m3x, m3y, 1, m4x, m4y, 1);
+        double k2den = Dot(c24, m3x, m3y, 1), k3den = Dot(c34, m2x, m2y, 1);
+        if (k2den == 0 || k3den == 0) return null;
+        double k2 = Dot(c14, m3x, m3y, 1) / k2den;
+        double k3 = Dot(c14, m2x, m2y, 1) / k3den;
+        return new PlaneRays(k2 * m2x - m1x, k2 * m2y - m1y, k2 - 1, k3 * m3x - m1x, k3 * m3y - m1y, k3 - 1);
+    }
+
+    /// <summary>The mean of the top and bottom edges over the mean of the left and right edges (1 for a quad without height).</summary>
+    private static double EdgeAspect(Quad quad)
+    {
+        double top = quad.EdgeLength(0), right = quad.EdgeLength(1), bottom = quad.EdgeLength(2), left = quad.EdgeLength(3);
+        double sides = (left + right) / 2;
+        return sides > 0 ? (top + bottom) / 2 / sides : 1;
+    }
 
     private static (double X, double Y, double Z) Cross(double ax, double ay, double az, double bx, double by, double bz) =>
         (ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx);

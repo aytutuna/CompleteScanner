@@ -54,10 +54,17 @@ public class CompanionAppTests
         "Receipt",
         [
             new CompanionPage(Jpeg(40, 60)) { RotationQuarterTurns = 1, Side = PageSide.Front, SheetIndex = 0 },
-            new CompanionPage(Jpeg(40, 60)) { Side = PageSide.Back, SheetIndex = 0, Original = Jpeg(80, 100) },
+            new CompanionPage(Jpeg(40, 60)) { Side = PageSide.Back, SheetIndex = 0, Original = Jpeg(80, 100), Capture = Capture },
         ])
     {
         SuggestedName = "Lunch 2026-10-20",
+    };
+
+    /// <summary>What the phone's camera recorded about the second page: its corners in the 80 × 100 photo, an A4 scale.</summary>
+    private static CaptureFacts Capture => new(
+        new Quad(new PointD(10, 12), new PointD(70, 14), new PointD(68, 95), new PointD(8, 92)), 80, 100)
+    {
+        Scale = new CaptureScaleResult(CaptureScaleBasis.Paper, "a4", 5, 40, 60, 8.2677, 11.6929),
     };
 
     [Fact]
@@ -85,6 +92,9 @@ public class CompanionAppTests
         Assert.Equal((80, 100), (pages[1].Alternate!.Image!.Width, pages[1].Alternate!.Image!.Height));
         Assert.Equal((40, 60), (pages[1].Image.Width, pages[1].Image.Height));
         Assert.Null(pages[0].Alternate);
+        // What the phone's camera recorded comes with the page.
+        Assert.Equal(Capture, pages[1].Capture);
+        Assert.Null(pages[0].Capture);
     }
 
     [Fact]

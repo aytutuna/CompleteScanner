@@ -69,6 +69,7 @@ public class CompanionPackageTests
             },
             first.OcrLines!);
         AssertImage(first.Original!, DocxFixtures.Png, CompanionImageFormat.Png, 16, 12, 300, ColorMode.BlackWhite);
+        Assert.Equal(CompanionFixtures.SampleCapture, first.Capture);
 
         var second = document.Pages[1];
         AssertImage(second.Image, DocxFixtures.Png, CompanionImageFormat.Png, 16, 12, 200, ColorMode.BlackWhite);
@@ -78,6 +79,63 @@ public class CompanionPackageTests
         Assert.NotNull(second.OcrLines);
         Assert.Empty(second.OcrLines!);
         Assert.Null(second.Original);
+        Assert.Null(second.Capture);
+    }
+
+    [Fact]
+    public void Capture_RoundTripsEveryKindAndBasis()
+    {
+        foreach (var kind in Enum.GetValues<CaptureKind>())
+        {
+            foreach (var basis in Enum.GetValues<CaptureScaleBasis>())
+            {
+                var capture = CompanionFixtures.SampleCapture with
+                {
+                    Kind = kind,
+                    FocalLength = null,
+                    Scale = new CaptureScaleResult(basis, basis == CaptureScaleBasis.Nominal ? null : "x", 200, 900, 600, 4.5, 3),
+                };
+                var document = CompanionFixtures.Minimal with
+                {
+                    Pages = [CompanionFixtures.Minimal.Pages[0] with { Capture = capture }],
+                };
+                Assert.Equal(capture, CompanionPackage.Read(CompanionPackage.Make(document)).Pages[0].Capture);
+            }
+        }
+        var unmeasured = CompanionFixtures.SampleCapture with { Scale = null, Kind = CaptureKind.IdCard };
+        var plain = CompanionFixtures.Minimal with { Pages = [CompanionFixtures.Minimal.Pages[0] with { Capture = unmeasured }] };
+        Assert.Contains("\"capture\":{\"quad\":[12.5,8.25,1500,20,1490.75,2010.125,3,1998],\"sourceWidth\":1512,\"sourceHeight\":2016,\"kind\":\"idCard\",\"focalLength\":1234.567891}}",
+                        CompanionPackage.ManifestJson(plain));
+        Assert.Equal(unmeasured, CompanionPackage.Read(CompanionPackage.Make(plain)).Pages[0].Capture);
+    }
+
+    [Fact]
+    public void Capture_ReadsLenientlyAndOldPackagesHaveNone()
+    {
+        string m = CompanionFixtures.MinimalManifest;
+        const string Facts = "\"capture\":{\"quad\":[1,2,30,2,30,40,1,40],\"sourceWidth\":64,\"sourceHeight\":48,\"kind\":\"receipt\"";
+        CaptureFacts? Read(string capture) =>
+            ReadManifest(m.Replace("\"rotationQuarterTurns\":0", "\"rotationQuarterTurns\":0," + capture)).Pages[0].Capture;
+
+        // A package written before capture facts existed reads with none.
+        Assert.Null(ReadManifest(m.Replace("\"formatMinor\":1", "\"formatMinor\":0")).Pages[0].Capture);
+        var quad = new Quad(new PointD(1, 2), new PointD(30, 2), new PointD(30, 40), new PointD(1, 40));
+        Assert.Equal(new CaptureFacts(quad, 64, 48) { Kind = CaptureKind.Receipt }, Read(Facts + "}"));
+        // Unknown and wrong-typed values fall back; unknown keys are ignored.
+        Assert.Equal(CaptureKind.Document, Read(Facts.Replace("receipt", "poster") + ",\"glare\":true}")!.Kind);
+        Assert.Null(Read(Facts + ",\"focalLength\":\"wide\"}")!.FocalLength);
+        Assert.Null(Read(Facts + ",\"focalLength\":-3}")!.FocalLength);
+        Assert.Equal(CaptureScaleBasis.Nominal,
+                     Read(Facts + ",\"scale\":{\"basis\":\"moon\",\"dpi\":200,\"pixelWidth\":29,\"pixelHeight\":38,\"widthInches\":0.145,\"heightInches\":0.19}}")!.Scale!.Basis);
+        Assert.Null(Read(Facts + ",\"scale\":{\"basis\":\"paper\",\"dpi\":0,\"pixelWidth\":29,\"pixelHeight\":38,\"widthInches\":1,\"heightInches\":1}}")!.Scale);
+        Assert.Null(Read(Facts + ",\"scale\":\"a4\"}")!.Scale);
+        // Facts that cannot be used are left out, and the page still reads.
+        Assert.Null(Read(Facts.Replace("[1,2,30,2,30,40,1,40]", "[1,2,30,2,30,40,1]") + "}"));
+        Assert.Null(Read(Facts.Replace("[1,2,30,2,30,40,1,40]", "[1,2,30,2,30,40,1,\"x\"]") + "}"));
+        Assert.Null(Read(Facts.Replace("\"sourceWidth\":64", "\"sourceWidth\":0") + "}"));
+        Assert.Null(Read(Facts.Replace(",\"sourceHeight\":48", "") + "}"));
+        Assert.Null(Read("\"capture\":[1,2]"));
+        Assert.Null(Read("\"capture\":null"));
     }
 
     [Fact]
@@ -157,7 +215,7 @@ public class CompanionPackageTests
         // Unknown keys anywhere are ignored; a newer minor version reads.
         var document = ReadManifest(m.Replace("\"title\":", "\"future\":{\"x\":[1,2]},\"title\":")
                                      .Replace("\"rotationQuarterTurns\":0", "\"rotationQuarterTurns\":0,\"stamp\":\"x\"")
-                                     .Replace("\"formatMinor\":0", "\"formatMinor\":9"));
+                                     .Replace("\"formatMinor\":1", "\"formatMinor\":9"));
         Assert.Equal("Scan", document.Title);
         // Unknown and wrong-typed values fall back.
         var page = ReadManifest(m.Replace("\"colorMode\":\"color\"", "\"colorMode\":\"sepia\"")
@@ -207,7 +265,7 @@ public class CompanionPackageTests
 
         // Whole numbers written with a fraction or an exponent read as JSONDecoder reads them;
         // a fraction that is not whole falls back.
-        document = ReadManifest(m.Replace("\"formatVersion\":1", "\"formatVersion\":1.0").Replace("\"formatMinor\":0", "\"formatMinor\":0e5"));
+        document = ReadManifest(m.Replace("\"formatVersion\":1", "\"formatVersion\":1.0").Replace("\"formatMinor\":1", "\"formatMinor\":1e0"));
         Assert.Equal("Scan", document.Title);
         Assert.Equal("Scan", ReadManifest(m.Replace("\"formatVersion\":1", "\"formatVersion\":1e0")).Title);
         page = ReadManifest(m.Replace("\"pixelWidth\":16", "\"pixelWidth\":16.0").Replace("\"pixelHeight\":12", "\"pixelHeight\":1.2e1")
@@ -471,6 +529,7 @@ internal static class CompanionFixtures
                     new OcrLine("naïve 日本", new RectD(0.0001234567, 0.75, 0.333333333, 0.05), 0.5f),
                 ],
                 Original = new CompanionImage(DocxFixtures.Png, CompanionImageFormat.Png, 16, 12, 300, ColorMode.BlackWhite),
+                Capture = SampleCapture,
             },
             new CompanionPage(new CompanionImage(DocxFixtures.Png, CompanionImageFormat.Png, 16, 12, 200, ColorMode.BlackWhite))
             {
@@ -487,22 +546,31 @@ internal static class CompanionFixtures
         NamingTemplate = "{date} {title}",
     };
 
+    /// <summary>The first sample page's capture facts: corners with fractions, a focal length, an A4 scale.</summary>
+    public static CaptureFacts SampleCapture => new(
+        new Quad(new PointD(12.5, 8.25), new PointD(1500, 20), new PointD(1490.75, 2010.125), new PointD(3, 1998)), 1512, 2016)
+    {
+        Kind = CaptureKind.Document,
+        FocalLength = 1234.567891,
+        Scale = new CaptureScaleResult(CaptureScaleBasis.Paper, "a4", 300, 2480, 3508, 8.2677, 11.6929),
+    };
+
     public static CompanionDocument Minimal => new(
         "Scan", [new CompanionPage(new CompanionImage(DocxFixtures.Jpeg, CompanionImageFormat.Jpeg, 16, 12, 300, ColorMode.Color))]);
 
     public const string GoldenManifest =
-        """{"format":"csdoc","formatVersion":1,"formatMinor":0,"writer":{"app":"CompleteScanner","appVersion":"1.0","platform":"test"},"created":"2026-10-20T08:30:00Z","title":"Résumé \"draft\" \\ 1\t\u0001","taskId":"receipts","naming":{"suggestedName":"Scan 1","template":"{date} {title}"},"pages":[{"image":{"file":"pages/0001.jpg","format":"jpeg","byteCount":421,"sha256":"f1794218ec714df25067c3eb5ac220220d81e9eaaaac9535d5dfb163c87503b7","pixelWidth":16,"pixelHeight":12,"dpi":300,"colorMode":"grayscale"},"rotationQuarterTurns":1,"side":"front","sheetIndex":0,"ocrLines":[{"text":"Hello","x":0.1,"y":0.2,"width":0.5,"height":0.125,"confidence":0.98},{"text":"naïve 日本","x":0.000123,"y":0.75,"width":0.333333,"height":0.05,"confidence":0.5}],"original":{"file":"pages/0001-original.png","format":"png","byteCount":127,"sha256":"f45eb33d36e152c974c50a807e04f6e45b357376a1f584016f27ef19829b5861","pixelWidth":16,"pixelHeight":12,"dpi":300,"colorMode":"blackWhite"}},{"image":{"file":"pages/0002.png","format":"png","byteCount":127,"sha256":"f45eb33d36e152c974c50a807e04f6e45b357376a1f584016f27ef19829b5861","pixelWidth":16,"pixelHeight":12,"dpi":200,"colorMode":"blackWhite"},"rotationQuarterTurns":0,"side":"back","sheetIndex":0,"ocrLines":[]}]}"""
+        """{"format":"csdoc","formatVersion":1,"formatMinor":1,"writer":{"app":"CompleteScanner","appVersion":"1.0","platform":"test"},"created":"2026-10-20T08:30:00Z","title":"Résumé \"draft\" \\ 1\t\u0001","taskId":"receipts","naming":{"suggestedName":"Scan 1","template":"{date} {title}"},"pages":[{"image":{"file":"pages/0001.jpg","format":"jpeg","byteCount":421,"sha256":"f1794218ec714df25067c3eb5ac220220d81e9eaaaac9535d5dfb163c87503b7","pixelWidth":16,"pixelHeight":12,"dpi":300,"colorMode":"grayscale"},"rotationQuarterTurns":1,"side":"front","sheetIndex":0,"ocrLines":[{"text":"Hello","x":0.1,"y":0.2,"width":0.5,"height":0.125,"confidence":0.98},{"text":"naïve 日本","x":0.000123,"y":0.75,"width":0.333333,"height":0.05,"confidence":0.5}],"capture":{"quad":[12.5,8.25,1500,20,1490.75,2010.125,3,1998],"sourceWidth":1512,"sourceHeight":2016,"kind":"document","focalLength":1234.567891,"scale":{"basis":"paper","size":"a4","dpi":300,"pixelWidth":2480,"pixelHeight":3508,"widthInches":8.2677,"heightInches":11.6929}},"original":{"file":"pages/0001-original.png","format":"png","byteCount":127,"sha256":"f45eb33d36e152c974c50a807e04f6e45b357376a1f584016f27ef19829b5861","pixelWidth":16,"pixelHeight":12,"dpi":300,"colorMode":"blackWhite"}},{"image":{"file":"pages/0002.png","format":"png","byteCount":127,"sha256":"f45eb33d36e152c974c50a807e04f6e45b357376a1f584016f27ef19829b5861","pixelWidth":16,"pixelHeight":12,"dpi":200,"colorMode":"blackWhite"},"rotationQuarterTurns":0,"side":"back","sheetIndex":0,"ocrLines":[]}]}"""
         + "\n";
 
     public const string MinimalManifest =
-        """{"format":"csdoc","formatVersion":1,"formatMinor":0,"writer":{"app":"CompleteScanner","appVersion":"","platform":""},"title":"Scan","pages":[{"image":{"file":"pages/0001.jpg","format":"jpeg","byteCount":421,"sha256":"f1794218ec714df25067c3eb5ac220220d81e9eaaaac9535d5dfb163c87503b7","pixelWidth":16,"pixelHeight":12,"dpi":300,"colorMode":"color"},"rotationQuarterTurns":0}]}"""
+        """{"format":"csdoc","formatVersion":1,"formatMinor":1,"writer":{"app":"CompleteScanner","appVersion":"","platform":""},"title":"Scan","pages":[{"image":{"file":"pages/0001.jpg","format":"jpeg","byteCount":421,"sha256":"f1794218ec714df25067c3eb5ac220220d81e9eaaaac9535d5dfb163c87503b7","pixelWidth":16,"pixelHeight":12,"dpi":300,"colorMode":"color"},"rotationQuarterTurns":0}]}"""
         + "\n";
 
-    public const int GoldenLength = 2375;
-    public const string GoldenSha256 = "7875e75b4b30114850eed1a64c88f59efaea27e1e5b9ccf5eaabd0feb7ab1868";
+    public const int GoldenLength = 2650;
+    public const string GoldenSha256 = "72b781f3433ca16bf1ef4ff8e879f9a1bd99172d5f1c1813efc3c75b299edb21";
     public const string GoldenHex =
-        "504B03040A00000000000000210004B4A913DE040000DE0400000D0000006D616E69666573742E6A736F6E7B22666F72" +
-        "6D6174223A226373646F63222C22666F726D617456657273696F6E223A312C22666F726D61744D696E6F72223A302C22" +
+        "504B03040A000000000000002100C530609FF1050000F10500000D0000006D616E69666573742E6A736F6E7B22666F72" +
+        "6D6174223A226373646F63222C22666F726D617456657273696F6E223A312C22666F726D61744D696E6F72223A312C22" +
         "777269746572223A7B22617070223A22436F6D706C6574655363616E6E6572222C2261707056657273696F6E223A2231" +
         "2E30222C22706C6174666F726D223A2274657374227D2C2263726561746564223A22323032362D31302D32305430383A" +
         "33303A30305A222C227469746C65223A2252C3A973756DC3A9205C2264726166745C22205C5C20315C745C7530303031" +
@@ -517,38 +585,44 @@ internal static class CompanionFixtures
         "6C6F222C2278223A302E312C2279223A302E322C227769647468223A302E352C22686569676874223A302E3132352C22" +
         "636F6E666964656E6365223A302E39387D2C7B2274657874223A226E61C3AF766520E697A5E69CAC222C2278223A302E" +
         "3030303132332C2279223A302E37352C227769647468223A302E3333333333332C22686569676874223A302E30352C22" +
-        "636F6E666964656E6365223A302E357D5D2C226F726967696E616C223A7B2266696C65223A2270616765732F30303031" +
-        "2D6F726967696E616C2E706E67222C22666F726D6174223A22706E67222C2262797465436F756E74223A3132372C2273" +
-        "6861323536223A2266343565623333643336653135326339373463353061383037653034663665343562333537333736" +
-        "613166353834303136663237656631393832396235383631222C22706978656C5769647468223A31362C22706978656C" +
-        "486569676874223A31322C22647069223A3330302C22636F6C6F724D6F6465223A22626C61636B5768697465227D7D2C" +
-        "7B22696D616765223A7B2266696C65223A2270616765732F303030322E706E67222C22666F726D6174223A22706E6722" +
-        "2C2262797465436F756E74223A3132372C22736861323536223A22663435656233336433366531353263393734633530" +
-        "61383037653034663665343562333537333736613166353834303136663237656631393832396235383631222C227069" +
-        "78656C5769647468223A31362C22706978656C486569676874223A31322C22647069223A3230302C22636F6C6F724D6F" +
-        "6465223A22626C61636B5768697465227D2C22726F746174696F6E517561727465725475726E73223A302C2273696465" +
-        "223A226261636B222C227368656574496E646578223A302C226F63724C696E6573223A5B5D7D5D7D0A504B03040A0000" +
-        "0000000000210085915458A5010000A50100000E00000070616765732F303030312E6A7067FFD8FFE000104A46494600" +
-        "010101012C012C0000FFDB00430006040506050406060506070706080A100A0A09090A140E0F0C101714181817141616" +
-        "1A1D251F1A1B231C1616202C20232627292A29191F2D302D283025282928FFC0000B08000C001001011100FFC4001F00" +
-        "00010501010101010100000000000000000102030405060708090A0BFFC400B510000201030302040305050404000001" +
-        "7D01020300041105122131410613516107227114328191A1082342B1C11552D1F02433627282090A161718191A252627" +
-        "28292A3435363738393A434445464748494A535455565758595A636465666768696A737475767778797A838485868788" +
-        "898A92939495969798999AA2A3A4A5A6A7A8A9AAB2B3B4B5B6B7B8B9BAC2C3C4C5C6C7C8C9CAD2D3D4D5D6D7D8D9DAE1" +
-        "E2E3E4E5E6E7E8E9EAF1F2F3F4F5F6F7F8F9FAFFDA0008010100003F00E13E1B685FEABE4F4AF6BF166B7FF0807C38BC" +
-        "D560F97529B16761F2E7F7EE0E1B9561F2A867C30C1D9B73C8AE73E1B59C3FBAF97D2B9FFDA4A5925F1FF8774D77CD95" +
-        "BE982E228F68F96492575739C64E4451F04E06DE3A9CFF00FFD9504B03040A000000000000002100063A73A67F000000" +
-        "7F0000001700000070616765732F303030312D6F726967696E616C2E706E6789504E470D0A1A0A0000000D4948445200" +
-        "0000100000000C0100000000439C002C000000017352474200AECE1CE90000000467414D410000B18F0BFC6105000000" +
-        "097048597300002E2300002E230178A53F76000000144944415418D363C8DDC6703B9761DB6D06DC0C0019EB0FF11F83" +
-        "7D3C0000000049454E44AE426082504B03040A000000000000002100063A73A67F0000007F0000000E00000070616765" +
-        "732F303030322E706E6789504E470D0A1A0A0000000D49484452000000100000000C0100000000439C002C0000000173" +
-        "52474200AECE1CE90000000467414D410000B18F0BFC6105000000097048597300002E2300002E230178A53F76000000" +
-        "144944415418D363C8DDC6703B9761DB6D06DC0C0019EB0FF11F837D3C0000000049454E44AE426082504B010214000A" +
-        "00000000000000210004B4A913DE040000DE0400000D00000000000000000000000000000000006D616E69666573742E" +
-        "6A736F6E504B010214000A00000000000000210085915458A5010000A50100000E000000000000000000000000000905" +
-        "000070616765732F303030312E6A7067504B010214000A000000000000002100063A73A67F0000007F00000017000000" +
-        "00000000000000000000DA06000070616765732F303030312D6F726967696E616C2E706E67504B010214000A00000000" +
-        "0000002100063A73A67F0000007F0000000E000000000000000000000000008E07000070616765732F303030322E706E" +
-        "67504B05060000000004000400F8000000390800000000";
+        "636F6E666964656E6365223A302E357D5D2C2263617074757265223A7B2271756164223A5B31322E352C382E32352C31" +
+        "3530302C32302C313439302E37352C323031302E3132352C332C313939385D2C22736F757263655769647468223A3135" +
+        "31322C22736F75726365486569676874223A323031362C226B696E64223A22646F63756D656E74222C22666F63616C4C" +
+        "656E677468223A313233342E3536373839312C227363616C65223A7B226261736973223A227061706572222C2273697A" +
+        "65223A226134222C22647069223A3330302C22706978656C5769647468223A323438302C22706978656C486569676874" +
+        "223A333530382C227769647468496E63686573223A382E323637372C22686569676874496E63686573223A31312E3639" +
+        "32397D7D2C226F726967696E616C223A7B2266696C65223A2270616765732F303030312D6F726967696E616C2E706E67" +
+        "222C22666F726D6174223A22706E67222C2262797465436F756E74223A3132372C22736861323536223A226634356562" +
+        "333364333665313532633937346335306138303765303466366534356233353733373661316635383430313666323765" +
+        "6631393832396235383631222C22706978656C5769647468223A31362C22706978656C486569676874223A31322C2264" +
+        "7069223A3330302C22636F6C6F724D6F6465223A22626C61636B5768697465227D7D2C7B22696D616765223A7B226669" +
+        "6C65223A2270616765732F303030322E706E67222C22666F726D6174223A22706E67222C2262797465436F756E74223A" +
+        "3132372C22736861323536223A2266343565623333643336653135326339373463353061383037653034663665343562" +
+        "333537333736613166353834303136663237656631393832396235383631222C22706978656C5769647468223A31362C" +
+        "22706978656C486569676874223A31322C22647069223A3230302C22636F6C6F724D6F6465223A22626C61636B576869" +
+        "7465227D2C22726F746174696F6E517561727465725475726E73223A302C2273696465223A226261636B222C22736865" +
+        "6574496E646578223A302C226F63724C696E6573223A5B5D7D5D7D0A504B03040A00000000000000210085915458A501" +
+        "0000A50100000E00000070616765732F303030312E6A7067FFD8FFE000104A46494600010101012C012C0000FFDB0043" +
+        "0006040506050406060506070706080A100A0A09090A140E0F0C1017141818171416161A1D251F1A1B231C1616202C20" +
+        "232627292A29191F2D302D283025282928FFC0000B08000C001001011100FFC4001F0000010501010101010100000000" +
+        "000000000102030405060708090A0BFFC400B5100002010303020403050504040000017D010203000411051221314106" +
+        "13516107227114328191A1082342B1C11552D1F02433627282090A161718191A25262728292A3435363738393A434445" +
+        "464748494A535455565758595A636465666768696A737475767778797A838485868788898A92939495969798999AA2A3" +
+        "A4A5A6A7A8A9AAB2B3B4B5B6B7B8B9BAC2C3C4C5C6C7C8C9CAD2D3D4D5D6D7D8D9DAE1E2E3E4E5E6E7E8E9EAF1F2F3F4" +
+        "F5F6F7F8F9FAFFDA0008010100003F00E13E1B685FEABE4F4AF6BF166B7FF0807C38BCD560F97529B16761F2E7F7EE0E" +
+        "1B9561F2A867C30C1D9B73C8AE73E1B59C3FBAF97D2B9FFDA4A5925F1FF8774D77CD95BE982E228F68F96492575739C6" +
+        "4E4451F04E06DE3A9CFF00FFD9504B03040A000000000000002100063A73A67F0000007F000000170000007061676573" +
+        "2F303030312D6F726967696E616C2E706E6789504E470D0A1A0A0000000D49484452000000100000000C010000000043" +
+        "9C002C000000017352474200AECE1CE90000000467414D410000B18F0BFC6105000000097048597300002E2300002E23" +
+        "0178A53F76000000144944415418D363C8DDC6703B9761DB6D06DC0C0019EB0FF11F837D3C0000000049454E44AE4260" +
+        "82504B03040A000000000000002100063A73A67F0000007F0000000E00000070616765732F303030322E706E6789504E" +
+        "470D0A1A0A0000000D49484452000000100000000C0100000000439C002C000000017352474200AECE1CE90000000467" +
+        "414D410000B18F0BFC6105000000097048597300002E2300002E230178A53F76000000144944415418D363C8DDC6703B" +
+        "9761DB6D06DC0C0019EB0FF11F837D3C0000000049454E44AE426082504B010214000A000000000000002100C530609F" +
+        "F1050000F10500000D00000000000000000000000000000000006D616E69666573742E6A736F6E504B010214000A0000" +
+        "0000000000210085915458A5010000A50100000E000000000000000000000000001C06000070616765732F303030312E" +
+        "6A7067504B010214000A000000000000002100063A73A67F0000007F0000001700000000000000000000000000ED0700" +
+        "0070616765732F303030312D6F726967696E616C2E706E67504B010214000A000000000000002100063A73A67F000000" +
+        "7F0000000E00000000000000000000000000A108000070616765732F303030322E706E67504B05060000000004000400" +
+        "F80000004C0900000000";
 }

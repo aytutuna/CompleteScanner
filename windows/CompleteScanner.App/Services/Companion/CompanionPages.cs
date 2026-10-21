@@ -6,7 +6,8 @@ namespace CompleteScanner.App.Services.Companion;
 /// A document from a phone as pages of the queue: each picture decoded, turned by the rotation the
 /// phone had still to apply, labelled "From phone" (<see cref="PageSource.Phone"/>), with its side
 /// and sheet; a page that came with its picture as photographed keeps that as its other version, so
-/// "Show as photographed" works as for an imported photo. A document sent as a new one starts a
+/// "Show as photographed" works as for an imported photo; what the phone's camera recorded about a page
+/// (<see cref="ScannedPage.Capture"/>) comes with it. A document sent as a new one starts a
 /// document of its own in the queue (a split before its first page, when pages are already queued)
 /// and carries its name.
 /// </summary>
@@ -27,6 +28,7 @@ public static class CompanionPages
                 Side = source.Side,
                 SheetIndex = source.SheetIndex,
                 Source = PageSource.Phone,
+                Capture = source.Capture,
             };
             if (source.Original is { } original)
             {
@@ -36,6 +38,7 @@ public static class CompanionPages
                     Side = source.Side,
                     SheetIndex = source.SheetIndex,
                     Source = PageSource.Phone,
+                    Capture = source.Capture,
                 };
                 page = photographed.WithGeometry(image, new PageGeometry(true, 0, GeometryBasis.Perspective));
             }

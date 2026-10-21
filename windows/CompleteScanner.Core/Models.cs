@@ -930,6 +930,13 @@ public sealed class ScannedPage
     /// </summary>
     public PageSource Source { get; init; } = PageSource.Scanner;
 
+    /// <summary>
+    /// What the camera recorded about a page taken by one (<see cref="CaptureFacts"/>): its corners in
+    /// the photo and, once <see cref="PerspectiveStep"/> cut it out, the real size it snapped to; null
+    /// for pages from scanners and files. Carried by every rebuild of the page and by companion packages.
+    /// </summary>
+    public CaptureFacts? Capture { get; init; }
+
     public ScannedPage(RgbaImage image, int dpi, ColorMode colorMode, Guid? id = null,
                        DateTime? createdAt = null, string? filePath = null, SizeD? fullPixelSize = null)
     {
@@ -963,8 +970,8 @@ public sealed class ScannedPage
     /// sheet, the blank-page check, the user's keep or skip, what crop and straighten did and
     /// which version is shown, the patch code and barcodes found on it, the user's document break and
     /// document name, the turn that made it upright, the spread it was cut from, what softening
-    /// its spine's shadow did and where it came from (<see cref="Source"/>). Pixels, id, file, rotation
-    /// and the other version stay this page's.
+    /// its spine's shadow did, where it came from (<see cref="Source"/>) and what the camera recorded
+    /// (<see cref="Capture"/>). Pixels, id, file, rotation and the other version stay this page's.
     /// </summary>
     public ScannedPage CopyMeta(ScannedPage source) =>
         new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
@@ -984,6 +991,7 @@ public sealed class ScannedPage
             Spread = source.Spread,
             SpineShadow = source.SpineShadow,
             Source = source.Source,
+            Capture = source.Capture,
             Alternate = Alternate,
         };
 
@@ -1006,6 +1014,7 @@ public sealed class ScannedPage
             Spread = Spread,
             SpineShadow = SpineShadow,
             Source = Source,
+            Capture = Capture,
             Alternate = Alternate,
         };
 
@@ -1028,6 +1037,7 @@ public sealed class ScannedPage
             Spread = Spread,
             SpineShadow = SpineShadow,
             Source = Source,
+            Capture = Capture,
             Alternate = Alternate,
         };
 
@@ -1050,6 +1060,7 @@ public sealed class ScannedPage
             Spread = Spread,
             SpineShadow = SpineShadow,
             Source = Source,
+            Capture = Capture,
             Alternate = Alternate,
         };
 
@@ -1072,6 +1083,7 @@ public sealed class ScannedPage
             Spread = Spread,
             SpineShadow = SpineShadow,
             Source = Source,
+            Capture = Capture,
             Alternate = Alternate,
         };
 
@@ -1094,6 +1106,7 @@ public sealed class ScannedPage
             Spread = Spread,
             SpineShadow = SpineShadow,
             Source = Source,
+            Capture = Capture,
             Alternate = Alternate,
         };
 
@@ -1116,6 +1129,7 @@ public sealed class ScannedPage
             Spread = Spread,
             SpineShadow = SpineShadow,
             Source = Source,
+            Capture = Capture,
             Alternate = Alternate,
         };
 
@@ -1138,6 +1152,7 @@ public sealed class ScannedPage
             Spread = Spread,
             SpineShadow = SpineShadow,
             Source = Source,
+            Capture = Capture,
             Alternate = Alternate,
         };
 
@@ -1163,6 +1178,7 @@ public sealed class ScannedPage
             Spread = Spread,
             SpineShadow = SpineShadow,
             Source = Source,
+            Capture = Capture,
             Alternate = new PageVersion(Image, FilePath, FullPixelSize),
         };
 
@@ -1189,6 +1205,7 @@ public sealed class ScannedPage
             Spread = Spread,
             SpineShadow = result,
             Source = Source,
+            Capture = Capture,
             Alternate = Alternate ?? new PageVersion(Image, FilePath, FullPixelSize),
         };
 
@@ -1211,6 +1228,30 @@ public sealed class ScannedPage
             Spread = Spread,
             SpineShadow = SpineShadow,
             Source = Source,
+            Capture = Capture,
+            Alternate = Alternate,
+        };
+
+    /// <summary>This page with what the camera recorded about it (null: not taken by a camera); the pixels are not changed.</summary>
+    public ScannedPage WithCapture(CaptureFacts? capture) =>
+        new(Image, Dpi, ColorMode, Id, CreatedAt, FilePath, FullPixelSize)
+        {
+            RotationQuarterTurns = RotationQuarterTurns,
+            Side = Side,
+            SheetIndex = SheetIndex,
+            Blank = Blank,
+            Inclusion = Inclusion,
+            Geometry = Geometry,
+            ShowsOriginal = ShowsOriginal,
+            Patch = Patch,
+            Barcodes = Barcodes,
+            DocumentBreak = DocumentBreak,
+            DocumentLabel = DocumentLabel,
+            Upright = Upright,
+            Spread = Spread,
+            SpineShadow = SpineShadow,
+            Source = Source,
+            Capture = capture,
             Alternate = Alternate,
         };
 
@@ -1233,6 +1274,7 @@ public sealed class ScannedPage
             Spread = spread,
             SpineShadow = SpineShadow,
             Source = Source,
+            Capture = Capture,
             Alternate = Alternate,
         };
 
@@ -1295,6 +1337,7 @@ public sealed class ScannedPage
             Spread = Spread,
             SpineShadow = SpineShadow,
             Source = Source,
+            Capture = Capture,
             Alternate = alternate,
         };
 
@@ -1325,6 +1368,7 @@ public sealed class ScannedPage
             Spread = Spread,
             SpineShadow = SpineShadow,
             Source = Source,
+            Capture = Capture,
             Alternate = new PageVersion(FilePath is null ? Image : null, FilePath, FullPixelSize),
         };
     }

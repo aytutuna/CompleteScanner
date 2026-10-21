@@ -267,15 +267,17 @@ public enum PhotoImport {
 
     /// The page cut out of `photo` along `corners` (named again with `Quad.fromCorners`), its
     /// perspective corrected, at `pageDPI`: a color page from a photo (`PageSource.photo`) whose other
-    /// version is the photo as it was (`ScannedPage.withGeometry`, `GeometryBasis.perspective`). nil when
-    /// the corners outline no page (or the pixels cannot be made into images).
+    /// version is the photo as it was (`ScannedPage.withGeometry`, `GeometryBasis.perspective`, the
+    /// corners kept as `PageGeometry.quad`). nil when the corners outline no page (or the pixels cannot
+    /// be made into images).
     public static func correctedPage(_ photo: RgbaImage, corners: Quad, createdAt: Date = Date()) -> ScannedPage? {
         let named = Quad.fromCorners(corners.corners)
         guard let corrected = PerspectiveCorrector.correct(photo, quad: named),
               let photoImage = photo.makeCGImage(), let pageImage = corrected.image.makeCGImage() else { return nil }
         var page = ScannedPage(image: photoImage, dpi: pageDPI(corrected.plan.dpi), colorMode: .color, createdAt: createdAt)
         page.source = .photo
-        return page.withGeometry(pageImage, geometry: PageGeometry(cropped: true, angleDegrees: 0, basis: .perspective))
+        return page.withGeometry(pageImage, geometry: PageGeometry(cropped: true, angleDegrees: 0, basis: .perspective,
+                                                                   quad: named))
     }
 
     /// The whole photo as the page (`wholePhotoDPI`), labelled as a photo, with no other version; nil

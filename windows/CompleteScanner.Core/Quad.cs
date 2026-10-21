@@ -128,6 +128,54 @@ public readonly record struct Quad(PointD TopLeft, PointD TopRight, PointD Botto
     }
 
     /// <summary>
+    /// The area this outline and <paramref name="other"/> share, in square pixels (both convex and
+    /// clockwise): this quad clipped by each edge of the other in turn (Sutherland–Hodgman).
+    /// </summary>
+    public double IntersectionArea(Quad other)
+    {
+        var polygon = new List<PointD>(Corners);
+        for (int i = 0; i < 4 && polygon.Count > 0; i++)
+        {
+            var a = other[i];
+            var b = other[i + 1];
+            var input = polygon;
+            polygon = new List<PointD>(input.Count + 1);
+            for (int k = 0; k < input.Count; k++)
+            {
+                var current = input[k];
+                var previous = input[(k + input.Count - 1) % input.Count];
+                double sc = (b.X - a.X) * (current.Y - a.Y) - (b.Y - a.Y) * (current.X - a.X);
+                double sp = (b.X - a.X) * (previous.Y - a.Y) - (b.Y - a.Y) * (previous.X - a.X);
+                if (sc >= 0)
+                {
+                    if (sp < 0) polygon.Add(Crossing(previous, current, sp, sc));
+                    polygon.Add(current);
+                }
+                else if (sp >= 0)
+                {
+                    polygon.Add(Crossing(previous, current, sp, sc));
+                }
+            }
+        }
+        if (polygon.Count < 3) return 0;
+        double sum = 0;
+        for (int i = 0; i < polygon.Count; i++)
+        {
+            var p = polygon[i];
+            var q = polygon[(i + 1) % polygon.Count];
+            sum += p.X * q.Y - q.X * p.Y;
+        }
+        return Math.Abs(sum) / 2;
+    }
+
+    /// <summary>Where segment p→q crosses the clipping line, from the two ends' signed distances to it.</summary>
+    private static PointD Crossing(PointD p, PointD q, double sp, double sq)
+    {
+        double t = sp / (sp - sq);
+        return new PointD(p.X + (q.X - p.X) * t, p.Y + (q.Y - p.Y) * t);
+    }
+
+    /// <summary>
     /// Four corners in any order around the outline (either direction) as a quad: turned
     /// clockwise on screen when they run the other way, and started at the top-left corner (the
     /// first corner of the edge whose midpoint is highest; the smaller midpoint x on a tie).

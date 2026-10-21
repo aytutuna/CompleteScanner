@@ -39,9 +39,51 @@ public sealed class BlankDetectionStep(BlankPageOptions options) : IPageStep
 }
 
 /// <summary>
+/// Cuts a page taken by a camera out of its photo (<see cref="ScannedPage.Capture"/> not yet measured,
+/// no geometry yet): its real size from <see cref="CaptureScale.Measure(Quad, int, int, CaptureKind, double?)"/>
+/// (the capture's corners and focal length scaled to the pixels at hand when the photo in memory is
+/// smaller than the one taken), the page made upright at that size by <see cref="PerspectiveWarp"/>,
+/// the resolution set to the size's and recorded on the capture (<see cref="CaptureFacts.Scale"/>),
+/// and the photo kept as the other version (<see cref="ScannedPage.WithGeometry"/>,
+/// <see cref="GeometryBasis.Perspective"/> with the corners). Other pages, and corners that outline no
+/// page, stay as they are. Runs first, before the blank check.
+/// </summary>
+public sealed class PerspectiveStep : IPageStep
+{
+    public string Name => "perspective";
+
+    public ScannedPage Apply(ScannedPage page)
+    {
+        if (page.Capture is not { Scale: null } capture || page.Geometry is not null) return page;
+        var photo = page.Image;
+        var quad = capture.Quad;
+        double? focalLength = capture.FocalLength;
+        if (capture.SourceWidth > 0 && capture.SourceHeight > 0
+            && (capture.SourceWidth != photo.Width || capture.SourceHeight != photo.Height))
+        {
+            double sx = (double)photo.Width / capture.SourceWidth, sy = (double)photo.Height / capture.SourceHeight;
+            quad = quad.Scaled(sx, sy);
+            if (focalLength is { } f) focalLength = f * sx;
+        }
+        if (!quad.IsConvex) return page;
+        var scale = CaptureScale.Measure(quad, photo.Width, photo.Height, capture.Kind, focalLength);
+        if (PerspectiveWarp.Warp(photo, quad, scale.PixelWidth, scale.PixelHeight) is not { } warped) return page;
+        var measured = new ScannedPage(photo, scale.Dpi, page.ColorMode, page.Id, page.CreatedAt, page.FilePath, page.FullPixelSize)
+        {
+            RotationQuarterTurns = page.RotationQuarterTurns,
+            Alternate = page.Alternate,
+        }.CopyMeta(page).WithCapture(capture with { Scale = scale });
+        return measured.WithGeometry(warped, new PageGeometry(true, 0, GeometryBasis.Perspective) { Quad = quad });
+    }
+}
+
+/// <summary>
 /// Crops the page to the sheet and straightens it (<see cref="DocumentGeometry.Correct"/>), keeping
 /// the page as it was as the other version (<see cref="ScannedPage.WithGeometry"/>); a page the
-/// analysis is not sure about stays as it is. Runs after the blank check, before the adjustments.
+/// analysis is not sure about stays as it is, and so does a page from a camera or a photo
+/// (<see cref="ScannedPage.Capture"/>, <see cref="GeometryBasis.Perspective"/>), which was cut out
+/// along its corners already and lies on no scanner background. Runs after the blank check, before
+/// the adjustments.
 /// </summary>
 public sealed class GeometryStep(bool crop, bool straighten) : IPageStep
 {
@@ -49,10 +91,13 @@ public sealed class GeometryStep(bool crop, bool straighten) : IPageStep
     public bool Straighten { get; } = straighten;
     public string Name => "geometry";
 
-    public ScannedPage Apply(ScannedPage page) =>
-        DocumentGeometry.Correct(page.Image, page.Dpi, Crop, Straighten) is { } corrected
+    public ScannedPage Apply(ScannedPage page)
+    {
+        if (page.Capture is not null || page.Geometry?.Basis == GeometryBasis.Perspective) return page;
+        return DocumentGeometry.Correct(page.Image, page.Dpi, Crop, Straighten) is { } corrected
             ? page.WithGeometry(corrected.Image, corrected.Geometry)
             : page;
+    }
 }
 
 /// <summary>
@@ -304,6 +349,19 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
         {
             steps.Add(new AdjustmentStep(settings.Adjustments, settings.ColorMode));
         }
+        return new PageProcessor(steps);
+    }
+
+    /// <summary>
+    /// The steps for pages taken by a camera (<see cref="ScannedPage.Capture"/>), which go to the queue
+    /// like imported photos: <see cref="PerspectiveStep"/> cuts each page out of its photo at its real
+    /// size, then the steps of <see cref="ForPhotoImport"/>.
+    /// </summary>
+    public static PageProcessor ForCapture(ScanSettings settings, IOrientationScorer? scorer = null,
+                                           IBarcodeReader? barcodes = null)
+    {
+        var steps = new List<IPageStep> { new PerspectiveStep() };
+        steps.AddRange(ForPhotoImport(settings, scorer, barcodes).Steps);
         return new PageProcessor(steps);
     }
 

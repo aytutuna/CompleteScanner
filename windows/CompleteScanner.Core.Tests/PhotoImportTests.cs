@@ -196,7 +196,7 @@ public class PhotoImportTests
         Assert.Equal(PhotoScenes.Checksum(expected), PhotoScenes.Checksum(page.Image));
         Assert.Equal(PageSource.Photo, page.Source);
         Assert.Equal(ColorMode.Color, page.ColorMode);
-        Assert.Equal(new PageGeometry(true, 0, GeometryBasis.Perspective), page.Geometry);
+        Assert.Equal(new PageGeometry(true, 0, GeometryBasis.Perspective) { Quad = Quad.FromCorners(plan.Corners.Corners) }, page.Geometry);
         Assert.Same(photo, page.Alternate!.Image);
         Assert.Null(page.Alternate.FilePath);
         Assert.True(page.CanSwapVersions);

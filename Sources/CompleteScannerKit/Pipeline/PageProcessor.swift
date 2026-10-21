@@ -33,9 +33,52 @@ public struct BlankDetectionStep: PageStep {
     }
 }
 
+/// Cuts a page taken by a camera out of its photo (`ScannedPage.capture` not yet measured, no geometry
+/// yet): its real size from `CaptureScale.measure` (the capture's corners and focal length scaled to
+/// the pixels at hand when the photo in memory is smaller than the one taken), the page made upright at
+/// that size by `PerspectiveWarp`, the resolution set to the size's and recorded on the capture
+/// (`CaptureFacts.scale`), and the photo kept as the other version (`ScannedPage.withGeometry`,
+/// `GeometryBasis.perspective` with the corners). Other pages, and corners that outline no page, stay
+/// as they are. Runs first, before the blank check. Twin of C# `PerspectiveStep`.
+public struct PerspectiveStep: PageStep {
+    public var name: String { "perspective" }
+
+    public init() {}
+
+    public func apply(_ page: ScannedPage) -> ScannedPage {
+        guard let capture = page.capture, capture.scale == nil, page.geometry == nil,
+              let photo = RgbaImage(cgImage: page.image) else { return page }
+        var quad = capture.quad
+        var focalLength: Double? = capture.focalLength
+        if capture.sourceWidth > 0 && capture.sourceHeight > 0
+            && (capture.sourceWidth != photo.width || capture.sourceHeight != photo.height) {
+            let sx: Double = Double(photo.width) / Double(capture.sourceWidth)
+            let sy: Double = Double(photo.height) / Double(capture.sourceHeight)
+            quad = quad.scaled(sx, sy)
+            if let f = focalLength { focalLength = f * sx }
+        }
+        guard quad.isConvex else { return page }
+        let scale = CaptureScale.measure(quad, imageWidth: photo.width, imageHeight: photo.height,
+                                         kind: capture.kind, focalLength: focalLength)
+        guard let warped = PerspectiveWarp.warp(photo, quad: quad, width: scale.pixelWidth, height: scale.pixelHeight),
+              let image = warped.makeCGImage() else { return page }
+        var measuredFacts = capture
+        measuredFacts.scale = scale
+        var measured = ScannedPage(image: page.image, dpi: scale.dpi, colorMode: page.colorMode, id: page.id,
+                                   createdAt: page.createdAt, fileURL: page.fileURL, fullPixelSize: page.fullPixelSize)
+        measured.rotationQuarterTurns = page.rotationQuarterTurns
+        measured.alternate = page.alternate
+        measured = measured.copyMeta(from: page).withCapture(measuredFacts)
+        let geometry = PageGeometry(cropped: true, angleDegrees: 0, basis: .perspective, quad: quad)
+        return measured.withGeometry(image, geometry: geometry)
+    }
+}
+
 /// Crops the page to the sheet and straightens it (`DocumentGeometry.correct`), keeping the page as
 /// it was as the other version (`ScannedPage.withGeometry`); a page the analysis is not sure about
-/// stays as it is. Runs after the blank check, before the adjustments. Twin of C# `GeometryStep`.
+/// stays as it is, and so does a page from a camera or a photo (`ScannedPage.capture`,
+/// `GeometryBasis.perspective`), which was cut out along its corners already and lies on no scanner
+/// background. Runs after the blank check, before the adjustments. Twin of C# `GeometryStep`.
 public struct GeometryStep: PageStep {
     public let crop: Bool
     public let straighten: Bool
@@ -47,6 +90,7 @@ public struct GeometryStep: PageStep {
     }
 
     public func apply(_ page: ScannedPage) -> ScannedPage {
+        if page.capture != nil || page.geometry?.basis == .perspective { return page }
         guard let pixels = RgbaImage(cgImage: page.image),
               let corrected = DocumentGeometry.correct(pixels, dpi: page.dpi, crop: crop, straighten: straighten),
               let image = corrected.image.makeCGImage() else { return page }
@@ -297,6 +341,17 @@ public struct PageProcessor {
         if !(settings.adjustments.isIdentity && settings.colorMode == .color) {
             steps.append(AdjustmentStep(adjustments: settings.adjustments, colorMode: settings.colorMode))
         }
+        return PageProcessor(steps: steps)
+    }
+
+    /// The steps for pages taken by a camera (`ScannedPage.capture`), which go to the queue like imported
+    /// photos: `PerspectiveStep` cuts each page out of its photo at its real size, then the steps of
+    /// `forPhotoImport`. Twin of C# `PageProcessor.ForCapture`.
+    public static func forCapture(_ settings: ScanSettings, scorer: (any OrientationScorer)? = nil,
+                                  barcodes: (any BarcodeReader)? = nil) -> PageProcessor {
+        var steps: [any PageStep] = [PerspectiveStep()]
+        let rest = forPhotoImport(settings, scorer: scorer, barcodes: barcodes)
+        for step in rest.steps { steps.append(step) }
         return PageProcessor(steps: steps)
     }
 

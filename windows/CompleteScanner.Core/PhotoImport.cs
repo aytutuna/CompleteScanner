@@ -276,8 +276,8 @@ public static class PhotoImport
     /// The page cut out of <paramref name="photo"/> along <paramref name="corners"/> (named again with
     /// <see cref="Quad.FromCorners"/>), its perspective corrected, at <see cref="PageDpi"/>: a color
     /// page from a photo (<see cref="PageSource.Photo"/>) whose other version is the photo as it was
-    /// (<see cref="ScannedPage.WithGeometry"/>, <see cref="GeometryBasis.Perspective"/>). Null when the
-    /// corners outline no page.
+    /// (<see cref="ScannedPage.WithGeometry"/>, <see cref="GeometryBasis.Perspective"/>, the corners
+    /// kept as <see cref="PageGeometry.Quad"/>). Null when the corners outline no page.
     /// </summary>
     public static ScannedPage? CorrectedPage(RgbaImage photo, Quad corners, DateTime? createdAt = null)
     {
@@ -287,7 +287,7 @@ public static class PhotoImport
         {
             Source = PageSource.Photo,
         };
-        return page.WithGeometry(corrected.Image, new PageGeometry(true, 0, GeometryBasis.Perspective));
+        return page.WithGeometry(corrected.Image, new PageGeometry(true, 0, GeometryBasis.Perspective) { Quad = named });
     }
 
     /// <summary>The whole photo as the page (<see cref="WholePhotoDpi"/>), labelled as a photo, with no other version.</summary>

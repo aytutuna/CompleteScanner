@@ -792,6 +792,11 @@ public struct ScannedPage: Identifiable {
     /// page strip labels "Photo". In memory only.
     public var source: PageSource = .scanner
 
+    /// What the camera recorded about a page taken by one (`CaptureFacts`): its corners in the photo
+    /// and, once `PerspectiveStep` cut it out, the real size it snapped to; nil for pages from scanners
+    /// and files. Carried by every rebuild of the page and by companion packages.
+    public var capture: CaptureFacts?
+
     /// The spread this page was cut from (`spread`); nil for other pages.
     public var spreadID: UUID? { spread?.spreadID }
 
@@ -828,9 +833,9 @@ public struct ScannedPage: Identifiable {
     /// This page carrying what the scan recorded about `source`: its side and sheet, the
     /// blank-page check, the user's keep or skip, what crop and straighten did and which version is
     /// shown, the patch code and barcodes found on it, the user's document break and document name, the turn that
-    /// made it upright, the spread it was cut from, what softening its spine's shadow did and where it came
-    /// from (`source`). Pixels, id, file, rotation and the other version stay this page's. Twin of C#
-    /// `ScannedPage.CopyMeta`.
+    /// made it upright, the spread it was cut from, what softening its spine's shadow did, where it came
+    /// from (`source`) and what the camera recorded (`capture`). Pixels, id, file, rotation and the other
+    /// version stay this page's. Twin of C# `ScannedPage.CopyMeta`.
     public func copyMeta(from source: ScannedPage) -> ScannedPage {
         var page = self
         page.side = source.side
@@ -847,6 +852,7 @@ public struct ScannedPage: Identifiable {
         page.spread = source.spread
         page.spineShadow = source.spineShadow
         page.source = source.source
+        page.capture = source.capture
         return page
     }
 
@@ -869,6 +875,7 @@ public struct ScannedPage: Identifiable {
         page.spread = spread
         page.spineShadow = spineShadow
         page.source = source
+        page.capture = capture
         page.alternate = PageVersion(image: image, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }
@@ -893,6 +900,7 @@ public struct ScannedPage: Identifiable {
         page.spread = spread
         page.spineShadow = result
         page.source = source
+        page.capture = capture
         page.alternate = alternate ?? PageVersion(image: image, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }
@@ -928,6 +936,7 @@ public struct ScannedPage: Identifiable {
         page.spread = spread
         page.spineShadow = spineShadow
         page.source = source
+        page.capture = capture
         page.alternate = PageVersion(image: fileURL == nil ? image : nil, fileURL: fileURL, fullPixelSize: fullPixelSize)
         return page
     }
@@ -986,6 +995,14 @@ public struct ScannedPage: Identifiable {
     public func withUpright(_ upright: UprightTurn?) -> ScannedPage {
         var page = self
         page.upright = upright
+        return page
+    }
+
+    /// This page with what the camera recorded about it (nil: not taken by a camera); the pixels are not
+    /// changed. Twin of C# `ScannedPage.WithCapture`.
+    public func withCapture(_ capture: CaptureFacts?) -> ScannedPage {
+        var page = self
+        page.capture = capture
         return page
     }
 

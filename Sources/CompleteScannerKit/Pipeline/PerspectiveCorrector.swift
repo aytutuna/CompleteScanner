@@ -126,25 +126,12 @@ public enum PerspectiveCorrector {
     /// between `minFocalDiagonals` and `maxFocalDiagonals` diagonals explains it, the shape is the
     /// mean of the opposite edge lengths' ratio.
     public static func estimateAspect(_ quad: Quad, imageWidth: Double, imageHeight: Double) -> AspectEstimate {
-        let cx = imageWidth / 2, cy = imageHeight / 2
-        // m1 top-left, m2 top-right, m3 bottom-left, m4 bottom-right, centered, homogeneous.
-        let m1x = Double(quad.topLeft.x) - cx, m1y = Double(quad.topLeft.y) - cy
-        let m2x = Double(quad.topRight.x) - cx, m2y = Double(quad.topRight.y) - cy
-        let m3x = Double(quad.bottomLeft.x) - cx, m3y = Double(quad.bottomLeft.y) - cy
-        let m4x = Double(quad.bottomRight.x) - cx, m4y = Double(quad.bottomRight.y) - cy
-        let top = quad.edgeLength(0), right = quad.edgeLength(1), bottom = quad.edgeLength(2), left = quad.edgeLength(3)
-        let sides = (left + right) / 2
-        let fallback = sides > 0 ? (top + bottom) / 2 / sides : 1
-
-        let c14 = cross(m1x, m1y, 1, m4x, m4y, 1)
-        let c24 = cross(m2x, m2y, 1, m4x, m4y, 1)
-        let c34 = cross(m3x, m3y, 1, m4x, m4y, 1)
-        let k2den = dot(c24, m3x, m3y, 1), k3den = dot(c34, m2x, m2y, 1)
-        if k2den == 0 || k3den == 0 { return AspectEstimate(widthOverHeight: fallback, focalLength: nil) }
-        let k2 = dot(c14, m3x, m3y, 1) / k2den
-        let k3 = dot(c14, m2x, m2y, 1) / k3den
-        let n2x = k2 * m2x - m1x, n2y = k2 * m2y - m1y, n2z = k2 - 1
-        let n3x = k3 * m3x - m1x, n3y = k3 * m3y - m1y, n3z = k3 - 1
+        let fallback = edgeAspect(quad)
+        guard let r = rays(quad, imageWidth: imageWidth, imageHeight: imageHeight) else {
+            return AspectEstimate(widthOverHeight: fallback, focalLength: nil)
+        }
+        let n2x = r.n2x, n2y = r.n2y, n2z = r.n2z
+        let n3x = r.n3x, n3y = r.n3y, n3z = r.n3z
         let diagonal = (imageWidth * imageWidth + imageHeight * imageHeight).squareRoot()
         let zz = n2z * n3z
         // Seen straight on (opposite edges parallel), the camera's distance cannot be told.
@@ -161,6 +148,31 @@ public enum PerspectiveCorrector {
                     }
                 }
             }
+        }
+        return AspectEstimate(widthOverHeight: fallback, focalLength: nil)
+    }
+
+    /// The shape of the flat rectangle seen as `quad` by a camera of known `focalLength` (in pixels of
+    /// this photo) centered on the photo with square pixels: the construction of
+    /// `estimateAspect(_:imageWidth:imageHeight:)` with the focal length given rather than worked out,
+    /// so a sheet tilted about an axis along one of its edges (where the quad alone tells no focal
+    /// length) gets its shape as well. A focal length that is not a positive number gives
+    /// `estimateAspect(_:imageWidth:imageHeight:)`; a quad that gives no shape the mean of the opposite
+    /// edge lengths' ratio (with no focal length). Twin of the C# overload with `focalLength`.
+    public static func estimateAspect(_ quad: Quad, imageWidth: Double, imageHeight: Double,
+                                      focalLength: Double) -> AspectEstimate {
+        guard focalLength > 0, focalLength.isFinite else {
+            return estimateAspect(quad, imageWidth: imageWidth, imageHeight: imageHeight)
+        }
+        let fallback = edgeAspect(quad)
+        guard let r = rays(quad, imageWidth: imageWidth, imageHeight: imageHeight) else {
+            return AspectEstimate(widthOverHeight: fallback, focalLength: nil)
+        }
+        let f2 = focalLength * focalLength
+        let num = r.n2x * r.n2x + r.n2y * r.n2y + f2 * r.n2z * r.n2z
+        let den = r.n3x * r.n3x + r.n3y * r.n3y + f2 * r.n3z * r.n3z
+        if num > 0 && den > 0 && (num / den).isFinite {
+            return AspectEstimate(widthOverHeight: (num / den).squareRoot(), focalLength: focalLength)
         }
         return AspectEstimate(widthOverHeight: fallback, focalLength: nil)
     }
@@ -325,6 +337,40 @@ public enum PerspectiveCorrector {
     /// Rounded to the nearest byte, halves to even (as `RgbaImage`'s sampler), clamped.
     private static func roundByte(_ value: Double) -> UInt8 {
         UInt8(min(255, max(0, value.rounded(.toNearestOrEven))))
+    }
+
+    /// Zhang and He's n2 and n3: the directions of the rectangle's top and left edges in camera space.
+    private struct PlaneRays {
+        let n2x: Double, n2y: Double, n2z: Double
+        let n3x: Double, n3y: Double, n3z: Double
+    }
+
+    /// The edge directions (`PlaneRays`) of the rectangle seen as `quad`, up to the focal length, for a
+    /// camera centered on the photo; nil when the quad gives none.
+    private static func rays(_ quad: Quad, imageWidth: Double, imageHeight: Double) -> PlaneRays? {
+        let cx = imageWidth / 2, cy = imageHeight / 2
+        // m1 top-left, m2 top-right, m3 bottom-left, m4 bottom-right, centered, homogeneous.
+        let m1x = Double(quad.topLeft.x) - cx, m1y = Double(quad.topLeft.y) - cy
+        let m2x = Double(quad.topRight.x) - cx, m2y = Double(quad.topRight.y) - cy
+        let m3x = Double(quad.bottomLeft.x) - cx, m3y = Double(quad.bottomLeft.y) - cy
+        let m4x = Double(quad.bottomRight.x) - cx, m4y = Double(quad.bottomRight.y) - cy
+        let c14 = cross(m1x, m1y, 1, m4x, m4y, 1)
+        let c24 = cross(m2x, m2y, 1, m4x, m4y, 1)
+        let c34 = cross(m3x, m3y, 1, m4x, m4y, 1)
+        let k2den = dot(c24, m3x, m3y, 1), k3den = dot(c34, m2x, m2y, 1)
+        if k2den == 0 || k3den == 0 { return nil }
+        let k2 = dot(c14, m3x, m3y, 1) / k2den
+        let k3 = dot(c14, m2x, m2y, 1) / k3den
+        return PlaneRays(n2x: k2 * m2x - m1x, n2y: k2 * m2y - m1y, n2z: k2 - 1,
+                         n3x: k3 * m3x - m1x, n3y: k3 * m3y - m1y, n3z: k3 - 1)
+    }
+
+    /// The mean of the top and bottom edges over the mean of the left and right edges (1 for a quad
+    /// without height).
+    private static func edgeAspect(_ quad: Quad) -> Double {
+        let top = quad.edgeLength(0), right = quad.edgeLength(1), bottom = quad.edgeLength(2), left = quad.edgeLength(3)
+        let sides = (left + right) / 2
+        return sides > 0 ? (top + bottom) / 2 / sides : 1
     }
 
     private static func cross(_ ax: Double, _ ay: Double, _ az: Double,

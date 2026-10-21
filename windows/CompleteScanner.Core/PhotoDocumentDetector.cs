@@ -45,7 +45,7 @@ public sealed record PhotoDocumentOptions
 /// The best outline seen when none was taken (cut off, ambiguous, unclear), in the photo's pixels,
 /// for a live view's hint ("move back"); null when nothing was seen.
 /// </param>
-/// <param name="Aspect">The page's shape (<see cref="PerspectiveCorrector.EstimateAspect"/>) when a page was taken.</param>
+/// <param name="Aspect">The page's shape (<see cref="PerspectiveCorrector.EstimateAspect(Quad, double, double)"/>) when a page was taken.</param>
 /// <param name="Paper">The known size the page's shape matches, if any.</param>
 public sealed record PhotoDocumentDetection(Quad? Quad, double Confidence, PhotoDocumentRejection Rejection,
                                             Quad? Candidate, AspectEstimate? Aspect, PaperMatch? Paper)
@@ -72,7 +72,7 @@ public sealed record PhotoDocumentDetection(Quad? Quad, double Confidence, Photo
 /// its four edges (<see cref="SideScore"/>: the share of points along each edge where the
 /// gradient across it, of the edge's sign, stands out from the texture outside; the color
 /// difference between just inside and just outside; whether the edge runs on past its
-/// corners), its corner angles, its shape (<see cref="PerspectiveCorrector.EstimateAspect"/>; a
+/// corners), its corner angles, its shape (<see cref="PerspectiveCorrector.EstimateAspect(Quad, double, double)"/>; a
 /// known paper size earns a small bonus), its size and whether its edges share one polarity;
 /// the best are refitted to the edge points along them with sub-pixel precision, then tried
 /// with each edge swapped for another straight edge. A page is taken only when it scores at

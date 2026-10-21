@@ -43,7 +43,7 @@ public struct TextLayout: Equatable, Sendable {
 }
 
 /// What told the page's angle.
-public enum GeometryBasis: Sendable {
+public enum GeometryBasis: CaseIterable, Sendable {
     /// The edges of the sheet against the scanner's background.
     case pageEdges
     /// The lines of text on the page.
@@ -72,11 +72,16 @@ public struct PageGeometry: Equatable, Sendable {
     public let angleDegrees: Double
     /// What the angle (or the crop) was found from.
     public let basis: GeometryBasis
+    /// For `.perspective`: the corners the page was cut out along, in the continuous pixels of its
+    /// other version (the photo) as it was taken, before any turn; nil for other pages and when they
+    /// are not known.
+    public let quad: Quad?
 
-    public init(cropped: Bool, angleDegrees: Double, basis: GeometryBasis) {
+    public init(cropped: Bool, angleDegrees: Double, basis: GeometryBasis, quad: Quad? = nil) {
         self.cropped = cropped
         self.angleDegrees = angleDegrees
         self.basis = basis
+        self.quad = quad
     }
 
     /// The page was turned.

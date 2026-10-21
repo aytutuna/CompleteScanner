@@ -192,7 +192,8 @@ final class PhotoImportTests: XCTestCase {
         XCTAssertEqual(PhotoScenes.checksum(try pixels(of: page)), PhotoScenes.checksum(expected))
         XCTAssertEqual(page.source, .photo)
         XCTAssertEqual(page.colorMode, .color)
-        XCTAssertEqual(page.geometry, PageGeometry(cropped: true, angleDegrees: 0, basis: .perspective))
+        XCTAssertEqual(page.geometry, PageGeometry(cropped: true, angleDegrees: 0, basis: .perspective,
+                                                   quad: Quad.fromCorners(plan.corners.corners)))
         let other = try XCTUnwrap(page.alternate?.image)
         XCTAssertEqual(other.width, photo.width)
         XCTAssertEqual(other.height, photo.height)

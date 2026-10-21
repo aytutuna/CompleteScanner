@@ -66,6 +66,13 @@ public enum GeometryAction
 /// <param name="Basis">What the angle (or the crop) was found from.</param>
 public sealed record PageGeometry(bool Cropped, double AngleDegrees, GeometryBasis Basis)
 {
+    /// <summary>
+    /// For <see cref="GeometryBasis.Perspective"/>: the corners the page was cut out along, in the
+    /// continuous pixels of its other version (the photo) as it was taken, before any turn; null for
+    /// other pages and when they are not known.
+    /// </summary>
+    public Quad? Quad { get; init; }
+
     /// <summary>The page was turned.</summary>
     public bool Straightened => AngleDegrees != 0;
 

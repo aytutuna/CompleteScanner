@@ -45,6 +45,13 @@ public sealed record CompanionPage(CompanionImage Image)
 
     /// <summary>The page as scanned, before crop, clean-up and the like; null when there is no other version.</summary>
     public CompanionImage? Original { get; init; }
+
+    /// <summary>
+    /// What the camera recorded about the page (<see cref="ScannedPage.Capture"/>), its corners in the
+    /// pixels of <see cref="Original"/> as stored; null for a page not taken by a camera, and when a
+    /// package's record of it cannot be read.
+    /// </summary>
+    public CaptureFacts? Capture { get; init; }
 }
 
 /// <summary>The app that wrote a package: its name, version and platform ("windows", "macos", "ios").</summary>
@@ -120,8 +127,8 @@ public static class CompanionPackage
     public const string FormatName = "csdoc";
     /// <summary>The major version: a reader refuses a larger one.</summary>
     public const int FormatVersion = 1;
-    /// <summary>The minor version: raised for additions older readers can ignore.</summary>
-    public const int FormatMinor = 0;
+    /// <summary>The minor version: raised for additions older readers can ignore (1: the pages' capture facts).</summary>
+    public const int FormatMinor = 1;
     public const string ManifestName = "manifest.json";
     public const int MaxPages = 2000;
     public const int MaxManifestBytes = 16 * 1024 * 1024;
@@ -215,6 +222,7 @@ public static class CompanionPackage
                 }
                 json.Append(']');
             }
+            if (page.Capture is { } capture) AppendCapture(json, capture);
             if (page.Original is { } original)
             {
                 json.Append(",\"original\":");
@@ -368,6 +376,52 @@ public static class CompanionPackage
 
     private static string Integer(int value) => value.ToString(CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// ,"capture":{"quad":[x, y of the four corners clockwise from the top-left],"sourceWidth",
+    /// "sourceHeight","kind"[,"focalLength"][,"scale":{"basis"[,"size"],"dpi","pixelWidth",
+    /// "pixelHeight","widthInches","heightInches"}]}.
+    /// </summary>
+    private static void AppendCapture(StringBuilder json, CaptureFacts capture)
+    {
+        json.Append(",\"capture\":{\"quad\":[");
+        for (int i = 0; i < 4; i++)
+        {
+            if (i > 0) json.Append(',');
+            json.Append(Number(capture.Quad[i].X)).Append(',').Append(Number(capture.Quad[i].Y));
+        }
+        json.Append("],\"sourceWidth\":").Append(Integer(capture.SourceWidth));
+        json.Append(",\"sourceHeight\":").Append(Integer(capture.SourceHeight));
+        json.Append(",\"kind\":").Append(Quote(CaptureKindName(capture.Kind)));
+        if (capture.FocalLength is { } focalLength) json.Append(",\"focalLength\":").Append(Number(focalLength));
+        if (capture.Scale is { } scale)
+        {
+            json.Append(",\"scale\":{\"basis\":").Append(Quote(ScaleBasisName(scale.Basis)));
+            if (scale.Size is { } size) json.Append(",\"size\":").Append(Quote(size));
+            json.Append(",\"dpi\":").Append(Integer(scale.Dpi));
+            json.Append(",\"pixelWidth\":").Append(Integer(scale.PixelWidth));
+            json.Append(",\"pixelHeight\":").Append(Integer(scale.PixelHeight));
+            json.Append(",\"widthInches\":").Append(Number(scale.WidthInches));
+            json.Append(",\"heightInches\":").Append(Number(scale.HeightInches)).Append('}');
+        }
+        json.Append('}');
+    }
+
+    private static string CaptureKindName(CaptureKind kind) => kind switch
+    {
+        CaptureKind.Receipt => "receipt",
+        CaptureKind.Photo => "photo",
+        CaptureKind.IdCard => "idCard",
+        _ => "document",
+    };
+
+    private static string ScaleBasisName(CaptureScaleBasis basis) => basis switch
+    {
+        CaptureScaleBasis.Paper => "paper",
+        CaptureScaleBasis.ReceiptWidth => "receiptWidth",
+        CaptureScaleBasis.PhotoSize => "photoSize",
+        _ => "nominal",
+    };
+
     private static string ColorModeName(ColorMode mode) => mode switch
     {
         ColorMode.Grayscale => "grayscale",
@@ -461,6 +515,7 @@ public static class CompanionPackage
                 SheetIndex = dto.SheetIndex is >= 0 ? dto.SheetIndex : null,
                 OcrLines = dto.OcrLines?.Select(l => new OcrLine(l.Text, new RectD(l.X, l.Y, l.Width, l.Height), (float)l.Confidence)).ToList(),
                 Original = original,
+                Capture = ReadCapture(dto.Capture),
             });
         }
         return new CompanionDocument(manifest.Title, pages)
@@ -471,6 +526,43 @@ public static class CompanionPackage
             SuggestedName = manifest.Naming.SuggestedName,
             NamingTemplate = manifest.Naming.Template,
         };
+    }
+
+    /// <summary>
+    /// The capture facts as a package records them; null when missing or unusable (not four finite
+    /// corners, no photo size), so a damaged record costs the page only them. An unknown kind reads as
+    /// a document; an unusable scale (no resolution or size) is left out, an unknown basis reads as nominal.
+    /// </summary>
+    private static CaptureFacts? ReadCapture(CaptureDto? dto)
+    {
+        if (dto?.Quad is not { Count: 8 } q || dto.SourceWidth <= 0 || dto.SourceHeight <= 0) return null;
+        foreach (double value in q)
+        {
+            if (!double.IsFinite(value)) return null;
+        }
+        var quad = new Quad(new PointD(q[0], q[1]), new PointD(q[2], q[3]), new PointD(q[4], q[5]), new PointD(q[6], q[7]));
+        var kind = dto.Kind switch
+        {
+            "receipt" => CaptureKind.Receipt,
+            "photo" => CaptureKind.Photo,
+            "idCard" => CaptureKind.IdCard,
+            _ => CaptureKind.Document,
+        };
+        double? focalLength = dto.FocalLength is { } f && f > 0 && double.IsFinite(f) ? f : null;
+        CaptureScaleResult? scale = null;
+        if (dto.Scale is { } s && s.Dpi > 0 && s.PixelWidth > 0 && s.PixelHeight > 0
+            && s.WidthInches > 0 && double.IsFinite(s.WidthInches) && s.HeightInches > 0 && double.IsFinite(s.HeightInches))
+        {
+            var basis = s.Basis switch
+            {
+                "paper" => CaptureScaleBasis.Paper,
+                "receiptWidth" => CaptureScaleBasis.ReceiptWidth,
+                "photoSize" => CaptureScaleBasis.PhotoSize,
+                _ => CaptureScaleBasis.Nominal,
+            };
+            scale = new CaptureScaleResult(basis, s.Size, s.Dpi, s.PixelWidth, s.PixelHeight, s.WidthInches, s.HeightInches);
+        }
+        return new CaptureFacts(quad, dto.SourceWidth, dto.SourceHeight) { Kind = kind, FocalLength = focalLength, Scale = scale };
     }
 
     /// <summary>
@@ -574,6 +666,33 @@ public static class CompanionPackage
         public int? SheetIndex { get; set; }
         public List<OcrLineDto>? OcrLines { get; set; }
         public ImageDto? Original { get; set; }
+        public CaptureDto? Capture { get; set; }
+    }
+
+    private sealed class CaptureDto
+    {
+        public List<double>? Quad { get; set; }
+        [JsonConverter(typeof(WholeNumberConverter))]
+        public int SourceWidth { get; set; }
+        [JsonConverter(typeof(WholeNumberConverter))]
+        public int SourceHeight { get; set; }
+        public string? Kind { get; set; }
+        public double? FocalLength { get; set; }
+        public ScaleDto? Scale { get; set; }
+    }
+
+    private sealed class ScaleDto
+    {
+        public string? Basis { get; set; }
+        public string? Size { get; set; }
+        [JsonConverter(typeof(WholeNumberConverter))]
+        public int Dpi { get; set; }
+        [JsonConverter(typeof(WholeNumberConverter))]
+        public int PixelWidth { get; set; }
+        [JsonConverter(typeof(WholeNumberConverter))]
+        public int PixelHeight { get; set; }
+        public double WidthInches { get; set; }
+        public double HeightInches { get; set; }
     }
 
     private sealed class ImageDto
