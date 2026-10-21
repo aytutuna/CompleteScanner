@@ -41,6 +41,7 @@ public sealed class HelperFactAttribute : FactAttribute
 // scanners (--simulate) instead of TWAIN, since no test machine is expected to have a 32-bit
 // scanner driver. Scans run end to end through the app's TWAIN session code. Nothing is shown on
 // screen: the helper is a console program started without a window, and the stand-ins have no UI.
+[Collection(WallClockCollection.Name)]
 public class TwainHelperTests
 {
     private const string Scanner = "CompleteScanner Simulated Scanner";
@@ -226,7 +227,10 @@ public class TwainHelperTests
     [HelperFact]
     public async Task AHang_TimesOut_StopsTheHelper_AndTheNextScanWorks()
     {
-        using var backend = NewBackend(TwainHelperTimeouts.Default with { Request = TimeSpan.FromSeconds(3) });
+        // The limit that finds the hang also bounds every request of the next scan, which goes to a
+        // helper started moments before: its first replies wait for the 32-bit runtime to compile
+        // their code, which took more than 3 s on a 2-core CI runner.
+        using var backend = NewBackend(TwainHelperTimeouts.Default with { Request = TimeSpan.FromSeconds(10) });
         await Listed(backend);
         int first = backend.HelperProcessId!.Value;
 
