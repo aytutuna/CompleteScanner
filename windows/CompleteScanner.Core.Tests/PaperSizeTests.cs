@@ -160,10 +160,11 @@ public class PaperSizeTests
         Assert.Equal("8.5 × 11 in", PaperSize.Letter.Detail());
         Assert.Equal("The whole glass, or the area selected on the preview.", PaperSizes.Hint(PaperSize.Auto, ScanSource.Flatbed));
         Assert.Equal("The sheet size the feeder takes.", PaperSizes.Hint(PaperSize.Auto, ScanSource.DocumentFeeder));
-        Assert.Equal("210 × 297 mm sheets.", PaperSizes.Hint(PaperSize.A4, ScanSource.DocumentFeeder));
-        Assert.Equal("8.5 × 11 in, from the corner of the glass. An area selected on the preview takes its place.",
+        Assert.Equal("Sheets of this size, from the feeder.", PaperSizes.Hint(PaperSize.A4, ScanSource.DocumentFeeder));
+        Assert.Equal("From the glass corner. A preview selection replaces it.",
                      PaperSizes.Hint(PaperSize.Letter, ScanSource.Flatbed));
-        Assert.Equal("Larger than this scanner's glass takes.", PaperSizes.DoesNotFitReason(ScanSource.Flatbed));
-        Assert.Equal("Larger than this scanner's feeder takes.", PaperSizes.DoesNotFitReason(ScanSource.DocumentFeeder));
+        Assert.Equal("Too big for this glass", PaperSizes.DoesNotFitReason(ScanSource.Flatbed));
+        Assert.Equal("Too big for this feeder", PaperSizes.DoesNotFitReason(ScanSource.DocumentFeeder));
+        Assert.Equal("Using the selected area", PaperSizes.SelectedAreaNote);
     }
 }

@@ -358,8 +358,10 @@ final class PhotoImportTests: XCTestCase {
                        "No pages were added. 2 photos were skipped. 1 photo could not be opened.")
         XCTAssertEqual(PhotoImport.cancelledMessage(added: 0, queueCount: 3), "Cancelled.")
         XCTAssertEqual(PhotoImport.cancelledMessage(added: 2, queueCount: 4), "Cancelled after adding 2 pages from photos \u{2014} 4 in queue.")
-        XCTAssertEqual(PhotoImport.counter(2, of: 5, fileName: "IMG_0042.jpg"), "Photo 2 of 5: IMG_0042.jpg")
+        XCTAssertEqual(PhotoImport.counter(2, of: 5, fileName: "IMG_0042.jpg"), "Photo 2 of 5")
+        XCTAssertEqual(PhotoImport.counterName(2, of: 5, fileName: "IMG_0042.jpg"), "Photo 2 of 5: IMG_0042.jpg")
         XCTAssertEqual(PhotoImport.counter(1, of: 1, fileName: "IMG_0042.jpg"), "IMG_0042.jpg")
+        XCTAssertEqual(PhotoImport.counterName(1, of: 1, fileName: "IMG_0042.jpg"), "IMG_0042.jpg")
         XCTAssertEqual(PhotoImport.progressMessage(2, of: 5), "Importing photo 2 of 5\u{2026}")
         XCTAssertEqual(PhotoImport.progressMessage(1, of: 1), "Importing photo\u{2026}")
         // A TIFF of several pages: each page is imported, and named, in turn.
@@ -368,11 +370,32 @@ final class PhotoImportTests: XCTestCase {
         XCTAssertEqual(PhotoImport.progressMessage(2, of: 5, page: 1, pageCount: 1), "Importing photo 2 of 5\u{2026}")
         XCTAssertEqual(PhotoImport.pageName("fax.tif", page: 2, pageCount: 5), "fax.tif, page 2 of 5")
         XCTAssertEqual(PhotoImport.pageName("IMG_0042.jpg", page: 1, pageCount: 1), "IMG_0042.jpg")
-        XCTAssertEqual(PhotoImport.counter(2, of: 3, fileName: PhotoImport.pageName("fax.tif", page: 2, pageCount: 5)),
+        XCTAssertEqual(PhotoImport.counterName(2, of: 3, fileName: PhotoImport.pageName("fax.tif", page: 2, pageCount: 5)),
                        "Photo 2 of 3: fax.tif, page 2 of 5")
         XCTAssertEqual(PhotoImport.unreadableMessage("a.jpg", detail: "it is damaged."), "a.jpg could not be opened: it is damaged.")
         XCTAssertTrue(PhotoImport.heifUnavailableMessage("IMG_1.heic")
             .hasPrefix("IMG_1.heic could not be opened: HEIC photos need the free \u{201C}HEIF Image Extensions\u{201D}"))
+    }
+
+    func testTheImportAndTheCornerEditor_sayLittle() {
+        XCTAssertEqual(PhotoImport.buttonLabel, "Import photos of documents\u{2026}")
+        XCTAssertEqual(PhotoImport.buttonHint, "Add phone photos of documents as pages")
+        XCTAssertEqual(PhotoImport.buttonHelp, "Each page is found in the photo and straightened. Your photo files are not changed.")
+        XCTAssertEqual(PhotoImport.dropHint, "or drop them here")
+        XCTAssertEqual(PhotoImport.dropOverlay, "Drop to add as pages")
+        XCTAssertEqual(PhotoImport.editorTitle, "Check the corners")
+        XCTAssertEqual(PhotoImport.editorHelp, "Drag each corner onto a corner of the page.")
+        XCTAssertEqual(PhotoImport.editorKeys, "Keys 1\u{2013}4 select a corner. Arrow keys move it; Shift takes bigger steps.")
+        XCTAssertEqual([PhotoImport.useCornersLabel, PhotoImport.wholePhotoLabel, PhotoImport.skipLabel],
+                       ["Use corners", "Use whole photo", "Skip photo"])
+        XCTAssertEqual(PhotoImport.reasonText(.unsure), "The page edges are unclear.")
+        XCTAssertEqual(PhotoImport.reasonText(.nothingFound), "No page found in this photo.")
+        XCTAssertEqual(PhotoImport.reasonText(.cutOff), "The page runs off the photo.")
+        XCTAssertEqual(PhotoImport.reasonText(.twoPages), "Two pages found: pick one.")
+        XCTAssertEqual(PhotoImport.reasonText(.none), "")
+        for reason in [PhotoReviewReason.none, .unsure, .cutOff, .twoPages, .nothingFound] {
+            XCTAssertTrue((0...6).contains(StatusLine.words(PhotoImport.reasonText(reason))))
+        }
     }
 
     func testTheStatusAfterAScanLeavesPagesFromPhotosToTheImport() throws {

@@ -28,6 +28,43 @@ public class TroubleshootingTests
     }
 
     [Fact]
+    public void EveryProblem_HasATitleOfThreeWords_AndAdviceOfTen()
+    {
+        Assert.Equal(["Something went wrong", "Feeder empty", "Paper jam", "Paper problem", "Several sheets fed", "Cover open",
+                      "Scanner offline", "Scanner busy", "Warming up", "Needs attention", "Connection lost"],
+                     Enum.GetValues<ScannerProblem>().Select(ScannerProblems.Title));
+        Assert.Equal("Turn it on and check the cable or network.", ScannerProblems.Advice(ScannerProblem.Offline));
+        Assert.Equal("Clear the jam, then scan again.", ScannerProblems.Advice(ScannerProblem.PaperJam));
+        foreach (var problem in Enum.GetValues<ScannerProblem>())
+        {
+            Assert.InRange(StatusLine.Words(ScannerProblems.Title(problem)), 1, 3);
+            Assert.InRange(StatusLine.Words(ScannerProblems.Advice(problem)), 1, 10);
+            Assert.Equal(problem, ScannerProblems.Find(ScannerProblems.Describe(problem)));
+        }
+        Assert.Equal("Something went wrong", ScannerProblems.GenericTitle);
+    }
+
+    [Fact]
+    public void Notice_TitlesTheErrorByItsProblem_AndKeepsWhatToDo()
+    {
+        Assert.Equal(new ProblemNotice("Scanner offline", "Turn it on and check the cable or network."),
+                     ScannerProblems.Notice(ScannerProblems.Describe(ScannerProblem.Offline)));
+        // A connection's code after the text stays; the sentence before it is cut to what to do.
+        Assert.Equal(new ProblemNotice("Paper jam", "Clear the jam, then scan again. (WIA error 0x80210002)"),
+                     ScannerProblems.Notice(ScanException.ForProblem(ScannerProblem.PaperJam).Message + " (WIA error 0x80210002)"));
+        // A feeder batch that stopped: what was kept, then what to do.
+        string stopped = new ScanStop(ScannerProblems.Describe(ScannerProblem.MultiFeed), ScannerProblem.MultiFeed).Message(3);
+        Assert.Equal(new ProblemNotice("Several sheets fed", "Scanning stopped after 3 pages; they were kept. Fan the stack, load it again, then scan again."),
+                     ScannerProblems.Notice(stopped));
+        // Any other error: the generic title and the message as it is.
+        Assert.Equal(new ProblemNotice("Something went wrong", "Saving failed: the disk is full."),
+                     ScannerProblems.Notice(" Saving failed: the disk is full. "));
+        Assert.Null(ScannerProblems.Find("Saving failed: the disk is full."));
+        Assert.Null(ScannerProblems.Find(null));
+        Assert.Null(ScannerProblems.Find(""));
+    }
+
+    [Fact]
     public void ForProblemCarriesTheProblemAndItsText()
     {
         var error = ScanException.ForProblem(ScannerProblem.FeederEmpty);

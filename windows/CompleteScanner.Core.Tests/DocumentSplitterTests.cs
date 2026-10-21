@@ -429,8 +429,8 @@ public class DocumentSplitterTests
         Assert.Equal("Separator sheet (Patch 2): the pages after it are joined to the document before. It is not saved.",
                      DocumentSplitter.SeparatorNote(joinedPlan, 1, joined[1]));
         // The strip's label.
-        Assert.Equal("5 pages in queue, 3 documents, 1 separator page and 1 blank skipped", DocumentSplitter.QueueSummary(pages, options));
-        Assert.Equal("5 pages in queue, 2 documents, 1 blank skipped",
+        Assert.Equal("5 pages · 3 documents · 1 separator page and 1 blank skipped", DocumentSplitter.QueueSummary(pages, options));
+        Assert.Equal("5 pages · 2 documents · 1 blank skipped",
                      DocumentSplitter.QueueSummary(pages, Options(SplitMode.None, removeBlankPages: true)));
     }
 
@@ -444,6 +444,6 @@ public class DocumentSplitterTests
             Assert.Equal(PageFilter.QueueSummary(pages, options), DocumentSplitter.QueueSummary(pages, options));
             Assert.Equal(PageFilter.QueueSummary(pages[..2], options), DocumentSplitter.QueueSummary(pages[..2], options));
         }
-        Assert.Equal("1 page in queue", DocumentSplitter.QueueSummary([MakePage()], new DocumentOptions()));
+        Assert.Equal("1 page", DocumentSplitter.QueueSummary([MakePage()], new DocumentOptions()));
     }
 }

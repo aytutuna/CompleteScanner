@@ -63,9 +63,9 @@ final class ScanTaskTests: XCTestCase {
     func test_catalog_listsEveryTaskOnce_inStartScreenOrder() {
         XCTAssertEqual(TaskCatalog.all.map(\.task), ScanTask.allCases)
         XCTAssertEqual(TaskCatalog.all.map(\.title),
-                       ["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
-                        "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word", "Receipts",
-                        "Batch of separate documents", "Book or magazine"])
+                       ["Document to PDF", "Stack from feeder", "Photos", "Restore old photos", "Quick scan",
+                        "Email a document", "Two-sided document", "ID card", "Photocopy", "Scan to Word", "Receipts",
+                        "Separate documents", "Book or magazine"])
         XCTAssertEqual(TaskCatalog.all.map(\.iconKey),
                        ["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word",
                         "receipt", "batch", "book"])
@@ -83,6 +83,57 @@ final class ScanTaskTests: XCTestCase {
             XCTAssertFalse(step.skippable)
             XCTAssertFalse(step.prompt.isEmpty)
             XCTAssertFalse(step.primaryActionLabel.isEmpty)
+        }
+    }
+
+    func test_catalog_texts_areShort_theFullerGuidanceIsTheHelp() {
+        XCTAssertEqual(TaskCatalog.all.map(\.subtitle),
+                       ["Page by page into a searchable PDF.", "A stack through the feeder into one PDF.",
+                        "Several photos at once, each cropped and straightened.", "Brings back faded colors; saved as PNG.",
+                        "Save part of the glass as an image.", "A small PDF, ready to attach.",
+                        "Both sides of every sheet, in page order.", "Both sides on one page, at real size.",
+                        "Prints at real size, like a photocopier.", "Printed pages into an editable Word file.",
+                        "Several at once, small files named by date.", "One stack, a PDF for each document.",
+                        "Two pages per scan, split at the spine."])
+        XCTAssertEqual(TaskCatalog.all.map { $0.steps[0].prompt },
+                       ["Place each page face down and scan, then save.", "Load the pages in the feeder and scan.",
+                        "Lay the photos on the glass, apart, and scan.", "Lay the photos on the glass, apart, and scan.",
+                        "Preview, drag over the part you need, then scan.", "Scan each page, then save to email it.",
+                        "Load the pages in the feeder and scan.", "Place the card face down near a corner and scan.",
+                        "Place the original face down, then copy.", "Scan each page, then save as Word.",
+                        "Lay up to six receipts apart and scan.", "Put a separator sheet before each document, then scan.",
+                        "Open the book face down, spine centered, and scan."])
+        for definition in TaskCatalog.all {
+            XCTAssertTrue((1...3).contains(StatusLine.words(definition.title)), definition.title)
+            XCTAssertTrue((1...10).contains(StatusLine.words(definition.subtitle)), definition.subtitle)
+            for step in definition.steps {
+                // One short line on the banner; the rest behind its info button.
+                XCTAssertTrue((1...10).contains(StatusLine.words(step.prompt)), step.prompt)
+                XCTAssertFalse(step.help.trimmingCharacters(in: .whitespaces).isEmpty, "\(definition.title): \(step.id)")
+                XCTAssertEqual(step.fullPrompt, step.prompt + " " + step.help)
+            }
+        }
+        XCTAssertEqual(TaskCatalog.definition(.document).steps[0].help,
+                       "Scan the pages one by one. They are collected until you save the PDF.")
+        XCTAssertTrue(TaskCatalog.definition(.batch).steps[0].help.hasPrefix("1. Print separator sheets"))
+        XCTAssertEqual(TaskStep(id: "x", title: "t", prompt: "Place it", primaryActionLabel: "Go").fullPrompt, "Place it")
+    }
+
+    func test_startScreen_groupsEveryTaskOnce() {
+        XCTAssertEqual(TaskGroup.allCases, [.documents, .photosAndImages, .other])
+        XCTAssertEqual(TaskGroup.allCases.map(\.title), ["Documents", "Photos & images", "Other"])
+        XCTAssertEqual(Set(TaskCatalog.startOrder), Set(ScanTask.allCases))
+        XCTAssertEqual(TaskCatalog.startOrder.count, ScanTask.allCases.count)
+        let sections: [TaskGroupSection] = TaskCatalog.sections
+        XCTAssertEqual(sections.map(\.group), TaskGroup.allCases)
+        XCTAssertEqual(sections[0].definitions.map(\.task), [.document, .feeder, .twoSided, .batch, .word, .email])
+        XCTAssertEqual(sections[1].definitions.map(\.task), [.photos, .photoRestore, .quickScan])
+        XCTAssertEqual(sections[2].definitions.map(\.task), [.idCard, .copy, .receipt, .book])
+        XCTAssertEqual(sections.flatMap { $0.definitions.map(\.task) }, TaskCatalog.startOrder)
+        for section in sections {
+            for definition in section.definitions {
+                XCTAssertEqual(definition.group, section.group, definition.title)
+            }
         }
     }
 
@@ -287,7 +338,11 @@ final class ScanTaskTests: XCTestCase {
     func test_copy_needsAPrinter_theOtherTasksDoNot() {
         let unavailable = TaskCatalog.availability(of: .copy, capabilities: nil, hasPrinter: false)
         XCTAssertFalse(unavailable.isAvailable)
-        XCTAssertEqual(unavailable.reason, "No printer is installed.")
+        XCTAssertEqual(unavailable.reason, "Needs a printer")
+        XCTAssertEqual(TaskCatalog.unavailableMessage(.copy, reason: unavailable.reason ?? ""), "Photocopy needs a printer.")
+        XCTAssertEqual(TaskCatalog.unavailableMessage(.feeder, reason: TaskCatalog.needsFeederReason),
+                       "Stack from feeder needs a document feeder.")
+        XCTAssertEqual(TaskCatalog.unavailableMessage(.idCard, reason: " Needs a flatbed. "), "ID card needs a flatbed.")
         XCTAssertEqual(TaskCatalog.availability(of: .copy, capabilities: nil, hasPrinter: true), .available)
         XCTAssertEqual(TaskCatalog.availability(of: .copy, capabilities: nil), .available)
         for task in ScanTask.allCases where task != .copy {
@@ -297,7 +352,7 @@ final class ScanTaskTests: XCTestCase {
         let feederOnly = ScannerCapabilities(sources: [.documentFeeder], supportsOverview: false)
         XCTAssertTrue(TaskCatalog.availability(of: .copy, capabilities: feederOnly, hasPrinter: true).isAvailable)
         XCTAssertEqual(TaskCatalog.availability(of: .idCard, capabilities: feederOnly, hasPrinter: false).reason,
-                       "This scanner has no flatbed.")
+                       "Needs a flatbed")
     }
 
     func test_summary_ofACopy_saysHowItPrints() {
@@ -439,7 +494,7 @@ final class ScanTaskTests: XCTestCase {
         for task in [ScanTask.feeder, .twoSided, .batch] {
             let availability = TaskCatalog.availability(of: task, capabilities: caps)
             XCTAssertFalse(availability.isAvailable)
-            XCTAssertEqual(availability.reason, "This scanner has no document feeder.")
+            XCTAssertEqual(availability.reason, "Needs a document feeder")
         }
         for task in ScanTask.allCases where task != .feeder && task != .twoSided && task != .batch {
             XCTAssertTrue(TaskCatalog.availability(of: task, capabilities: caps).isAvailable, task.rawValue)
@@ -451,7 +506,7 @@ final class ScanTaskTests: XCTestCase {
         for task in [ScanTask.quickScan, .idCard, .book] {
             let availability = TaskCatalog.availability(of: task, capabilities: caps)
             XCTAssertFalse(availability.isAvailable)
-            XCTAssertEqual(availability.reason, "This scanner has no flatbed.")
+            XCTAssertEqual(availability.reason, "Needs a flatbed")
         }
         // Documents and photos fall back to the feeder (SettingsAdapter).
         for task in ScanTask.allCases where task != .quickScan && task != .idCard && task != .book {
@@ -770,7 +825,7 @@ final class ScanTaskTests: XCTestCase {
         s.document.splitFacingPages = false
         XCTAssertFalse(TaskCatalog.fits(.book, s))
         XCTAssertEqual(TaskCatalog.availability(of: .book, capabilities: ScannerCapabilities(sources: [.documentFeeder])).reason,
-                       "This scanner has no flatbed.")
+                       "Needs a flatbed")
         // Saved at once, nothing is split: the summary says nothing of it.
         var once = TaskCatalog.apply(.book, to: ScanSettings())
         once.documentMultiPage = false

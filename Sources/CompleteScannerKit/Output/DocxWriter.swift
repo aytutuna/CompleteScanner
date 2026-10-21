@@ -51,11 +51,11 @@ public enum DocxWriter {
     /// The page pictures switch (`OutputOptions.wordPageImages`) as the inspector shows it.
     public static let pageImagesLabel = "Include page images"
 
-    /// What the page pictures switch does, on and off.
+    /// What the page pictures switch does, on and off: its tooltip.
     public static func pageImagesHint(on: Bool) -> String {
         on
-            ? "Each page as scanned, then its text you can edit. The pictures are stored at the size chosen below."
-            : "Only the text you can edit: the pictures of the pages are left out."
+            ? "Each page's picture, then its editable text"
+            : "Only the editable text, without page pictures"
     }
 
     /// The relationship type of a picture's part.

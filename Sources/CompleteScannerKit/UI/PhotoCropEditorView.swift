@@ -34,7 +34,8 @@ struct PhotoCropEditorView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Adjust Crop")
                         .font(.title3.bold())
-                    Text("Drag the corners to resize, or drag inside the frame to move it.")
+                    // No keyboard help here: unlike the Windows editor, this view has no arrow-key handling.
+                    Text("Drag corners to resize, or inside to move.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -148,7 +148,7 @@ public static class PaperSizes
         return new RectD(0, 0, Math.Min(paper.Width, max.Width), Math.Min(paper.Height, max.Height));
     }
 
-    /// <summary>One line saying what a size scans from <paramref name="source"/>, shown under the paper size picker.</summary>
+    /// <summary>What a size scans from <paramref name="source"/>, in a line: its item's tooltip in the paper size picker.</summary>
     public static string Hint(PaperSize size, ScanSource source)
     {
         bool feeder = source == ScanSource.DocumentFeeder;
@@ -157,13 +157,22 @@ public static class PaperSizes
             return feeder ? "The sheet size the feeder takes." : "The whole glass, or the area selected on the preview.";
         }
         return feeder
-            ? $"{size.Detail()} sheets."
-            : $"{size.Detail()}, from the corner of the glass. An area selected on the preview takes its place.";
+            ? "Sheets of this size, from the feeder."
+            : "From the glass corner. A preview selection replaces it.";
     }
 
-    /// <summary>Why a size is not offered: it is larger than the glass or the feeder of the scanner.</summary>
+    /// <summary>
+    /// Why a size is not offered: it is larger than the glass or the feeder of the scanner. The picker
+    /// shows it after the size's name, greyed out ("A3 (297 × 420 mm) · Too big for this glass").
+    /// </summary>
     public static string DoesNotFitReason(ScanSource source) =>
-        $"Larger than this scanner's {(source == ScanSource.DocumentFeeder ? "feeder" : "glass")} takes.";
+        $"Too big for this {(source == ScanSource.DocumentFeeder ? "feeder" : "glass")}";
+
+    /// <summary>
+    /// The live line under the paper size while an area of the preview is selected: the scan takes
+    /// that area, whatever the size says.
+    /// </summary>
+    public const string SelectedAreaNote = "Using the selected area";
 
     /// <summary>What a picker shows: "Automatic", "Letter", "B5 (JIS)", "ID card".</summary>
     public static string Label(this PaperSize size) => size switch

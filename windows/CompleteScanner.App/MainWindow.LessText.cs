@@ -17,18 +17,19 @@ public partial class MainWindow
     private string? _statusShown;
 
     /// <summary>
-    /// At most six words, facts only. While the photo review is open its title says what was found,
-    /// so the line stays empty; while the Saved bar shows, it says "Saved", with any warning a
-    /// setting changed for the scanner adds ("Saved · 600 dpi used").
+    /// At most six words, facts only (<see cref="StatusLine.Shown"/>). While a review is open (photos,
+    /// receipts, the ID card) its title says what was found, so the line stays empty; while the Saved
+    /// bar shows, it says "Saved", with any warning a setting changed for the scanner adds ("Saved ·
+    /// 600 dpi used").
     /// </summary>
     private void SyncStatusLine()
     {
         string full = ViewModel.StatusMessage;
         bool idle = !ViewModel.IsBusy;
         string device = ViewModel.Devices.FirstOrDefault(d => d.Id == ViewModel.SelectedDeviceId)?.Name ?? "";
-        string shown = idle && ViewModel.ShowPhotoReview ? ""
-            : idle && ViewModel.SavedBarPaths is not null && full.StartsWith("Saved", StringComparison.Ordinal) ? StatusLine.WithWarnings("Saved", full)
-            : StatusLine.Short(full, device);
+        string shown = StatusLine.Shown(full, device,
+                                        reviewShown: idle && (ViewModel.ShowPhotoReview || ViewModel.ShowIdCardReview),
+                                        savedShown: idle && ViewModel.SavedBarPaths is not null);
         StatusText.Text = shown;
         AutomationProperties.SetName(StatusText, full);
         if (full != _statusShown)
@@ -86,7 +87,7 @@ public partial class MainWindow
         bool area = ViewModel.SelectionRect is not null && ViewModel.OverviewImage is not null
                     && ViewModel.Settings.Source == ScanSource.Flatbed;
         SelectedAreaRow.Visibility = area ? Visibility.Visible : Visibility.Collapsed;
-        PaperSizeHint.Text = area ? ShortText.UsingSelectedArea : "";
+        PaperSizeHint.Text = area ? PaperSizes.SelectedAreaNote : "";
         ClearSelectionButton.IsEnabled = !ViewModel.IsBusy;
     }
 

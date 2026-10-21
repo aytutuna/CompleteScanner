@@ -39,7 +39,15 @@ public enum ScanSource: String, Codable, CaseIterable, Identifiable, Sendable {
     public var label: String {
         switch self {
         case .flatbed: return "Flatbed"
-        case .documentFeeder: return "Document Feeder (ADF)"
+        case .documentFeeder: return "Document feeder"
+        }
+    }
+
+    /// The source's tooltip: what the plain name stands for.
+    public var hint: String {
+        switch self {
+        case .flatbed: return "The scanner's glass"
+        case .documentFeeder: return "Automatic document feeder (ADF)"
         }
     }
 }
@@ -147,15 +155,25 @@ public enum PDFSizePreset: String, Codable, CaseIterable, Identifiable, Sendable
         }
     }
 
-    /// One line saying what the size does, shown under the size picker.
+    /// What the size is for, in a few words: the segment's tooltip.
     public var hint: String {
+        switch self {
+        case .standard: return "Good for most documents"
+        case .best: return "Full quality, largest files"
+        case .compact: return "Smaller, for email and uploads"
+        case .smallest: return "Smallest, for strict size limits"
+        }
+    }
+
+    /// How the size stores the pages, for VoiceOver (the segment's help).
+    public var detail: String {
         switch self {
         // Windows names its higher black & white (CCITT G4) limits here too; the Mac stores black &
         // white pages as gray JPEGs up to these limits until its port of the C# PDF writer.
-        case .standard: return "Up to 300 dpi, gray pages saved in gray. For most documents."
-        case .best: return "Full resolution, high quality. Largest files."
-        case .compact: return "Up to 200 dpi, more compression. For email and uploads."
-        case .smallest: return "Up to 150 dpi, most compression. For strict size limits."
+        case .standard: return "Up to 300 dpi, gray pages saved in gray."
+        case .best: return "Full resolution, high quality."
+        case .compact: return "Up to 200 dpi, more compression."
+        case .smallest: return "Up to 150 dpi, most compression."
         }
     }
 
@@ -183,12 +201,12 @@ public enum DuplexMode: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// One line saying what the choice does, shown under the sides picker.
+    /// What the choice does, in a few words: its tooltip.
     public var hint: String {
         switch self {
-        case .off: return "Only the front of each sheet is scanned."
-        case .both: return "The feeder scans both sides of every sheet in one pass."
-        case .manual: return "Scan the fronts, turn the stack over, then scan the backs. The pages are put in order."
+        case .off: return "Front only"
+        case .both: return "Both sides in one pass"
+        case .manual: return "Scan the fronts, flip the stack, scan the backs"
         }
     }
 }
@@ -203,10 +221,13 @@ public enum DuplexBinding: String, Codable, CaseIterable, Identifiable, Sendable
     public var id: String { rawValue }
     public var label: String {
         switch self {
-        case .longEdge: return "Long edge (like a book)"
-        case .shortEdge: return "Short edge (like a calendar)"
+        case .longEdge: return "Long edge (book)"
+        case .shortEdge: return "Short edge (calendar)"
         }
     }
+
+    /// The Flip on picker's tooltip. Twin of C# `DuplexBindings.PickerHint`.
+    public static let pickerHint = "Which edge the sheets turn on"
 }
 
 /// How much may be on a page for it to count as blank (`DocumentOptions.blankSensitivity`,
@@ -228,17 +249,21 @@ public enum BlankSensitivity: String, Codable, CaseIterable, Identifiable, Senda
         }
     }
 
-    /// One line saying what counts as blank at that level, shown under the picker.
+    /// What counts as blank at that level, in a few words: the segment's tooltip.
     public var hint: String {
         switch self {
-        case .low: return "Only pages with nothing on them count as blank."
-        case .medium: return "Empty pages count as blank, also with dust, show-through or a lone page number."
-        case .high: return "Pages with a few small marks count as blank too. Check the flagged pages before saving."
+        case .low: return "Only empty pages"
+        case .medium: return "Also dust or a page number"
+        case .high: return "Also pages with small marks"
         }
     }
 
     /// The levels as the inspector lists them: least first.
     public static let displayOrder: [BlankSensitivity] = [.low, .medium, .high]
+
+    /// The line that stays visible under the levels at High: pages with a few marks may be left out.
+    /// Twin of C# `BlankSensitivities.HighWarning`.
+    public static let highWarning = "Check flagged pages before saving"
 }
 
 /// The user's say over whether a queued page is saved (`ScannedPage.inclusion`): `.automatic`
@@ -284,19 +309,45 @@ public enum SplitMode: String, Codable, CaseIterable, Identifiable, Sendable {
         case .none: return "Off"
         case .separatorSheet: return "At separator sheets"
         case .blankSheet: return "At blank sheets"
-        case .sheetCount: return "Every N sheets"
-        case .barcode: return "At barcode or QR sheets"
+        case .sheetCount: return "Every few sheets"
+        case .barcode: return "At QR codes or barcodes"
         }
     }
 
-    /// One line saying how the stack is split, shown under the picker.
+    /// How the stack is split, in a few words: the choice's tooltip.
     public var hint: String {
         switch self {
-        case .none: return "All the pages are saved as one document."
-        case .separatorSheet: return "Put a separator sheet (Patch T) in front of each document after the first. It is found and left out, and a new document starts after it."
-        case .blankSheet: return "Put an empty sheet between documents; it is left out. With both sides scanned, only a sheet blank on both sides splits."
-        case .sheetCount: return "A new document starts every few sheets, for forms that all have the same number of sheets."
-        case .barcode: return "Put a QR separator sheet (print it below) in front of each document. It is found and left out, a new document starts after it, and the name on it names that document ({label}). Only codes starting with CS-SEP count, so codes printed on the documents are ignored."
+        case .none: return "All pages in one document"
+        case .separatorSheet: return "A separator sheet starts each document"
+        case .blankSheet: return "A blank sheet between documents splits them"
+        case .sheetCount: return "A new document every few sheets"
+        case .barcode: return "A code starts each document and can name it"
+        }
+    }
+
+    /// The one line under the choice: what happens to the sheets that split ("Separator sheets are
+    /// left out"); empty where the choice's own controls say it (every few sheets, codes).
+    public var caption: String {
+        switch self {
+        case .separatorSheet: return "Separator sheets are left out"
+        case .blankSheet: return "Blank sheets are left out"
+        case .none, .sheetCount, .barcode: return ""
+        }
+    }
+
+    /// How it works, step by step: what the info button next to "Split into documents" shows.
+    public var steps: String {
+        switch self {
+        case .none:
+            return "All the pages are saved as one document. Right-click a page to start a new document there."
+        case .separatorSheet:
+            return "1. Save or print a separator sheet. 2. Put one in front of each document after the first. 3. Scan the stack. 4. Check the dividers in the page strip, then save."
+        case .blankSheet:
+            return "Put an empty sheet between documents. With both sides scanned, only a sheet blank on both sides splits."
+        case .sheetCount:
+            return "A new document starts every few sheets, for forms that all have the same number of sheets. Check the dividers in the page strip, then save."
+        case .barcode:
+            return "1. Print a QR sheet, one per document, with a name or without. 2. Put it in front of the document. 3. Scan: the sheet is left out and its name names the document. Only codes starting with CS-SEP count."
         }
     }
 
@@ -448,12 +499,12 @@ public struct DocumentOptions: Codable, Equatable, Sendable {
     /// keeping the text dark and leaving pictures beside it as they are (`SpineShadow`); one click in the
     /// page strip shows a page as scanned. Off unless chosen (the Book or magazine task turns it on).
     public var softenSpineShadow: Bool = false
-    /// At barcode or QR sheets (`SplitMode.barcode`): a page with any code is kept, starts a new
+    /// At QR codes or barcodes (`SplitMode.barcode`): a page with any code is kept, starts a new
     /// document and names it after the code's text. Off: a sheet with a code starting with
     /// `splitBarcodePrefix` is a separator sheet, left out, and the rest of the code's text names the
     /// document after it; other codes are ignored. Off unless chosen.
     public var barcodeStartsDocument: Bool = false
-    /// At barcode or QR sheets: the text a separator sheet's code starts with ("CS-SEP",
+    /// At QR codes or barcodes: the text a separator sheet's code starts with ("CS-SEP",
     /// `BarcodeSeparators.defaultPrefix`; a–z matching A–Z, spaces around it ignored), which the QR
     /// separator sheets the app prints carry, so codes printed on the documents themselves do not split
     /// the stack. Empty: every code makes a separator sheet. Kept in settings files and presets (no

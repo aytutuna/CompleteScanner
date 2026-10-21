@@ -176,4 +176,33 @@ final class TaskFlowTests: XCTestCase {
             XCTAssertEqual(flow.current?.id, "scan")
         }
     }
+
+    func test_word_isTheStepInOneWord() {
+        let cases: [(String, String)] = [
+            ("Front side", "Front"), ("Back side", "Back"), ("Check and save", "Check"),
+            ("Scan the front sides", "Front"), ("Scan the back sides", "Back"), ("Scan each page", "Each"),
+            ("Scan", "Scan"), ("", ""),
+        ]
+        for (title, expected) in cases {
+            XCTAssertEqual(TaskStep(id: "x", title: title, prompt: "p", primaryActionLabel: "a").word, expected, title)
+        }
+    }
+
+    func test_words_ofEveryTaskWithSteps_areDistinct() {
+        var stepLists: [[TaskStep]] = TaskCatalog.all.filter { $0.steps.count > 1 }.map(\.steps)
+        stepLists.append(DocumentSides.manualSteps)
+        for steps in stepLists {
+            let words: [String] = steps.map(\.word)
+            XCTAssertEqual(Set(words).count, words.count)
+        }
+    }
+
+    func test_help_isOptional_andFollowsThePromptForVoiceOver() {
+        let plain = TaskStep(id: "x", title: "Scan", prompt: "Scan it.", primaryActionLabel: "Scan")
+        XCTAssertEqual(plain.help, "")
+        XCTAssertEqual(plain.fullPrompt, "Scan it.")
+        let helped = TaskStep(id: "x", title: "Scan", prompt: "Scan it.", primaryActionLabel: "Scan", help: "Close the lid.")
+        XCTAssertEqual(helped.fullPrompt, "Scan it. Close the lid.")
+        XCTAssertNotEqual(plain, helped)
+    }
 }

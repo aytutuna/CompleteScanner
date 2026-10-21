@@ -243,7 +243,7 @@ public sealed partial class AppViewModel
 }
 
 /// <summary>What the page strip says about a page cut from a spread (<see cref="PageItem.Book"/>).</summary>
-/// <param name="Label">"Spread 2 · page 1", "Spread 2 · not split".</param>
+/// <param name="Label">"2 · left", "2 · not split".</param>
 /// <param name="Help">The label's tooltip.</param>
 /// <param name="SplitLabel">The page menu's split item ("Split this spread…", "Change the split…"); null when the spread is not at hand.</param>
 /// <param name="JoinLabel">The page menu's join item ("Join the two pages"); null for a whole spread, or when the spread is not at hand.</param>

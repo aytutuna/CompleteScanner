@@ -72,11 +72,11 @@ public sealed record SplitPlan(IReadOnlyList<PlannedPage> Pages, IReadOnlyList<P
 /// starts a new document. At blank sheets: a sheet blank on every side is a separator (one-sided:
 /// each blank page; two-sided: only a sheet blank on both sides, so the blank back of a printed
 /// sheet is no separator and follows Skip blank pages). Separators in a row count once, and
-/// documents left with no page are dropped. Every N sheets: a new document starts at every Nth
+/// documents left with no page are dropped. Every few sheets: a new document starts at every Nth
 /// sheet, counting every sheet, blank ones too. A page the user keeps makes its sheet no
 /// separator; the user's split or join at a page wins over the setting.
 ///
-/// At barcode or QR sheets: a sheet with a code starting with <see cref="DocumentOptions.SplitBarcodePrefix"/>
+/// At QR codes or barcodes: a sheet with a code starting with <see cref="DocumentOptions.SplitBarcodePrefix"/>
 /// on either side is a separator, like a patch-code sheet, and the rest of the code's text names the
 /// document after it (the last such sheet before it, when several are in a row); other codes are
 /// ignored. With <see cref="DocumentOptions.BarcodeStartsDocument"/> a sheet with any code is kept and
@@ -423,23 +423,23 @@ public static class DocumentSplitter
     }
 
     /// <summary>
-    /// "9 pages in queue", "9 pages in queue, 3 documents, 2 separator pages skipped", "24 pages in
-    /// queue, 5 blank skipped": <see cref="PageFilter.QueueSummary"/> with documents and separators.
+    /// "9 pages", "9 pages · 3 documents · 2 separator pages skipped", "24 pages · 5 blank skipped":
+    /// <see cref="PageFilter.QueueSummary"/> with documents and separators.
     /// </summary>
     public static string QueueSummary(IReadOnlyList<ScannedPage> pages, DocumentOptions options)
     {
         var plan = Plan(pages, options);
         int total = pages.Count;
-        string text = $"{total} page{(total == 1 ? "" : "s")} in queue";
-        if (plan.IsSplit) text += $", {plan.Documents.Count} documents";
+        string text = $"{total} page{(total == 1 ? "" : "s")}";
+        if (plan.IsSplit) text += $" · {plan.Documents.Count} documents";
         int separators = plan.SeparatorCount;
         var skipped = Enumerable.Range(0, pages.Count).Where(i => plan.Pages[i].Role == PageRole.Skipped).ToList();
         bool allBlank = skipped.All(i => PageFilter.LooksBlank(pages[i], options.BlankSensitivity));
         string skippedText = $"{skipped.Count}{(allBlank ? " blank" : "")}";
         string separatorText = $"{separators} separator page{(separators == 1 ? "" : "s")}";
-        if (separators > 0 && skipped.Count > 0) return $"{text}, {separatorText} and {skippedText} skipped";
-        if (separators > 0) return $"{text}, {separatorText} skipped";
-        if (skipped.Count > 0) return $"{text}, {skippedText} skipped";
+        if (separators > 0 && skipped.Count > 0) return $"{text} · {separatorText} and {skippedText} skipped";
+        if (separators > 0) return $"{text} · {separatorText} skipped";
+        if (skipped.Count > 0) return $"{text} · {skippedText} skipped";
         return text;
     }
 

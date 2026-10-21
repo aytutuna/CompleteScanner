@@ -96,11 +96,11 @@ public struct SplitPlan: Equatable, Sendable {
 /// starts a new document. At blank sheets: a sheet blank on every side is a separator (one-sided:
 /// each blank page; two-sided: only a sheet blank on both sides, so the blank back of a printed
 /// sheet is no separator and follows Skip blank pages). Separators in a row count once, and
-/// documents left with no page are dropped. Every N sheets: a new document starts at every Nth
+/// documents left with no page are dropped. Every few sheets: a new document starts at every Nth
 /// sheet, counting every sheet, blank ones too. A page the user keeps makes its sheet no separator;
 /// the user's split or join at a page wins over the setting.
 ///
-/// At barcode or QR sheets: a sheet with a code starting with `DocumentOptions.splitBarcodePrefix` on
+/// At QR codes or barcodes: a sheet with a code starting with `DocumentOptions.splitBarcodePrefix` on
 /// either side is a separator, like a patch-code sheet, and the rest of the code's text names the
 /// document after it (the last such sheet before it, when several are in a row); other codes are
 /// ignored. With `DocumentOptions.barcodeStartsDocument` a sheet with any code is kept and starts a new
@@ -418,21 +418,21 @@ public enum DocumentSplitter {
         return nil
     }
 
-    /// "9 pages in queue", "9 pages in queue, 3 documents, 2 separator pages skipped", "24 pages in
-    /// queue, 5 blank skipped": `PageFilter.queueSummary` with documents and separators.
+    /// "9 pages", "9 pages · 3 documents · 2 separator pages skipped", "24 pages · 5 blank skipped":
+    /// `PageFilter.queueSummary` with documents and separators.
     public static func queueSummary(_ pages: [ScannedPage], options: DocumentOptions) -> String {
         let plan = self.plan(pages, options: options)
         let total = pages.count
-        var text = "\(total) page\(total == 1 ? "" : "s") in queue"
-        if plan.isSplit { text += ", \(plan.documents.count) documents" }
+        var text = "\(total) page\(total == 1 ? "" : "s")"
+        if plan.isSplit { text += " \u{00B7} \(plan.documents.count) documents" }
         let separators = plan.separatorCount
         let skipped = pages.indices.filter { plan.pages[$0].role == .skipped }
         let allBlank = skipped.allSatisfy { PageFilter.looksBlank(pages[$0], sensitivity: options.blankSensitivity) }
         let skippedText = "\(skipped.count)\(allBlank ? " blank" : "")"
         let separatorText = "\(separators) separator page\(separators == 1 ? "" : "s")"
-        if separators > 0 && !skipped.isEmpty { return "\(text), \(separatorText) and \(skippedText) skipped" }
-        if separators > 0 { return "\(text), \(separatorText) skipped" }
-        if !skipped.isEmpty { return "\(text), \(skippedText) skipped" }
+        if separators > 0 && !skipped.isEmpty { return "\(text) \u{00B7} \(separatorText) and \(skippedText) skipped" }
+        if separators > 0 { return "\(text) \u{00B7} \(separatorText) skipped" }
+        if !skipped.isEmpty { return "\(text) \u{00B7} \(skippedText) skipped" }
         return text
     }
 

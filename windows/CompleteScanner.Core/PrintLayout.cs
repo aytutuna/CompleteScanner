@@ -260,8 +260,8 @@ public static class PrintCalibration
 /// <summary>What the app says about printing.</summary>
 public static class PrintText
 {
-    /// <summary>Why the Copy task cannot be started.</summary>
-    public const string NoPrinterReason = "No printer is installed.";
+    /// <summary>Why the Copy task (and printing anything) cannot be started: no printer is installed.</summary>
+    public const string NoPrinterReason = "Needs a printer";
 
     /// <summary>The error when there is nothing to print on.</summary>
     public const string NoPrinterMessage = "No printer is installed. Add a printer, then try again.";
@@ -283,6 +283,6 @@ public static class PrintText
     /// </summary>
     public static string CopyPaperHint(PaperSize size, ScanSource source) =>
         size == PaperSize.Auto && source == ScanSource.Flatbed
-            ? "The printer's paper, from the corner of the glass. An area selected on the preview takes its place."
+            ? "The printer's paper size, from the glass corner"
             : PaperSizes.Hint(size, source);
 }

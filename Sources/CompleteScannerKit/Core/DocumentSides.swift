@@ -77,6 +77,9 @@ public enum DocumentSides {
     /// Why the sides cannot be chosen while the flatbed is the source.
     public static let feederOnlyReason = "Two-sided scanning uses the document feeder."
 
+    /// The short reason shown next to Sides while the flatbed of a scanner with a feeder is the source.
+    public static let needsFeederReason = "Needs the feeder"
+
     /// Why "Both sides" is not offered: the feeder cannot scan both sides in one pass.
     public static let oneSidedFeederReason =
         "This scanner's feeder scans one side at a time. To scan both sides, turn the stack over by hand."
@@ -91,11 +94,13 @@ public enum DocumentSides {
     /// ("Keep fronts only").
     public static let manualSteps: [TaskStep] = [
         TaskStep(id: frontsStepID, title: "Scan the front sides",
-                 prompt: "Load the stack in the document feeder as usual and scan. Only the front of each sheet is scanned.",
-                 primaryActionLabel: "Scan fronts", repeats: true),
+                 prompt: "Load the stack in the feeder and scan the fronts.",
+                 primaryActionLabel: "Scan fronts", repeats: true,
+                 help: "Only the front of each sheet is scanned this time."),
         TaskStep(id: backsStepID, title: "Scan the back sides",
-                 prompt: "Take the stack from the output tray, turn it over as a whole without changing the order of the sheets, and load it in the feeder again. Then scan the back sides.",
-                 primaryActionLabel: "Scan backs", skippable: true, repeats: true, requiresCapture: false),
+                 prompt: "Turn the stack over, load it again and scan.",
+                 primaryActionLabel: "Scan backs", skippable: true, repeats: true, requiresCapture: false,
+                 help: "Take the stack from the output tray and turn it over as a whole, keeping the sheets in order. Then scan the back sides."),
     ]
 
     /// The sheet and side of each transfer of a feeder scan, in reading order (by sheet, the
@@ -189,12 +194,21 @@ public enum DocumentSides {
         return nil
     }
 
-    /// How a page of a two-sided stack is named next to its thumbnail: "Sheet 2 · back", or
-    /// "Front" / "Back" before its sheet is known; nil for a page without a side.
+    /// The badge on the thumbnail of a page of a two-sided stack: "2 · back" (sheet 2), or "Front" /
+    /// "Back" before its sheet is known; nil for a page without a side.
     public static func sideLabel(side: PageSide?, sheetIndex: Int?) -> String? {
         guard let side else { return nil }
         guard let sheetIndex else { return side == .front ? "Front" : "Back" }
-        return "Sheet \(sheetIndex + 1) \u{00B7} \(side == .front ? "front" : "back")"
+        let word: String = side == .front ? "front" : "back"
+        return "\(sheetIndex + 1) \u{00B7} \(word)"
+    }
+
+    /// The badge spelled out for VoiceOver: "Sheet 2, back", or "Front" / "Back"; nil for a page without a side.
+    public static func sideName(side: PageSide?, sheetIndex: Int?) -> String? {
+        guard let side else { return nil }
+        guard let sheetIndex else { return side == .front ? "Front" : "Back" }
+        let word: String = side == .front ? "front" : "back"
+        return "Sheet \(sheetIndex + 1), \(word)"
     }
 
     /// "3 fronts but 2 backs", "1 front but 2 backs".

@@ -122,6 +122,14 @@ final class IdCardTests: XCTestCase {
         XCTAssertEqual(steps.map(\.skippable), [false, true, false])
         XCTAssertTrue(steps.allSatisfy { !$0.repeats })
         XCTAssertTrue(steps.allSatisfy { !$0.prompt.isEmpty })
+        XCTAssertEqual(steps.map(\.prompt), ["Place the card face down near a corner and scan.",
+                                             "Turn the card over where it lies and scan.", "Check both sides, then save."])
+        XCTAssertEqual(steps.map(\.help), ["Close the lid before scanning.", "Nothing printed on the back? Select No back side.",
+                                           "Both sides go on one page at real size."])
+        XCTAssertEqual(steps.map(\.word), ["Front", "Back", "Check"])
+        XCTAssertEqual(IdCardSteps.skipBackLabel, "No back side")
+        XCTAssertEqual(IdCardSteps.privacyNote, "Not kept in Scans history")
+        XCTAssertEqual(IdCardSteps.privacyHelp, "The scans stay on this computer and are cleared once you save or discard them.")
         XCTAssertEqual(IdCardSteps.sideOf("front"), .front)
         XCTAssertEqual(IdCardSteps.sideOf("back"), .back)
         XCTAssertNil(IdCardSteps.sideOf("review"))
@@ -224,10 +232,11 @@ final class IdCardTests: XCTestCase {
     }
 
     func test_layout_caption() {
-        XCTAssertEqual(IdCardLayout.caption(paper: .a4, hasBack: true, scaledToFit: false),
-                       "Front and back on one A4 page, at real size.")
+        XCTAssertEqual(IdCardLayout.caption(paper: .a4, hasBack: true, scaledToFit: false), "One A4 page, real size")
+        XCTAssertEqual(IdCardLayout.caption(paper: .letter, hasBack: true, scaledToFit: false), "One Letter page, real size")
         XCTAssertEqual(IdCardLayout.caption(paper: .letter, hasBack: false, scaledToFit: true),
-                       "Front only on one Letter page, made smaller to fit.")
+                       "Front only, one Letter page, made smaller to fit")
+        XCTAssertEqual(IdCardLayout.caption(paper: .a4, hasBack: true, scaledToFit: true), "One A4 page, made smaller to fit")
     }
 
     // MARK: Composer

@@ -19,9 +19,6 @@ struct PhotoReviewView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(state.reviewTitle)
                     .font(.title2.bold())
-                Text("Uncheck any false detections, rotate if needed, then save.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
@@ -41,6 +38,7 @@ struct PhotoReviewView: View {
                 }
                 .padding()
             }
+            .accessibilityHint(Text("Uncheck any false detections, rotate if needed, then save."))
 
             Divider()
 
@@ -149,21 +147,24 @@ fileprivate struct PhotoReviewCard: View {
                     Image(systemName: "crop")
                 }
                 .disabled(cropDisabled)
-                .help("Adjust the crop manually")
+                .help("Fix crop")
+                .accessibilityLabel(Text("Adjust the crop manually"))
 
                 Button {
                     onRotate(-1)
                 } label: {
                     Image(systemName: "rotate.left")
                 }
-                .help("Rotate 90° counterclockwise")
+                .help("Rotate left")
+                .accessibilityLabel(Text("Rotate 90° counterclockwise"))
 
                 Button {
                     onRotate(1)
                 } label: {
                     Image(systemName: "rotate.right")
                 }
-                .help("Rotate 90° clockwise")
+                .help("Rotate right")
+                .accessibilityLabel(Text("Rotate 90° clockwise"))
             }
             .buttonStyle(.borderless)
         }

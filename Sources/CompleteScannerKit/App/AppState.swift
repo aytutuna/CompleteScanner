@@ -200,6 +200,10 @@ public final class AppState: ObservableObject {
     var flowTask: ScanTask?
     /// `taskFlow` guides turning a stack over by hand.
     var flowIsManual = false
+    /// The inspector sections started tasks opened (`InspectorSections.openedBy`), open until the user
+    /// closes them, for this session only: kept here, not in the inspector, so they stay open when the
+    /// inspector is shown again. Never remembered across launches.
+    @Published public internal(set) var sectionsOpenedByTask: Set<String> = []
     /// Turning over by hand, the fronts and backs did not pair up, e.g. "3 fronts but 2 backs";
     /// nil otherwise. The user scans the backs again, combines the pages as they are, or keeps
     /// the fronts only.

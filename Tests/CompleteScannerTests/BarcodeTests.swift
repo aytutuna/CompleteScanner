@@ -509,7 +509,7 @@ final class BarcodeTests: XCTestCase {
                        "Separator sheet (QR code \u{201C}CS-SEP\u{201D}): a new document starts after it. It is not saved.")
         XCTAssertNil(DocumentSplitter.separatorNote(plan, 2, page: pages[2]))
         XCTAssertEqual(DocumentSplitter.dividerTitle(plan, 2), "Document 2 \u{00B7} Lease")
-        XCTAssertEqual(DocumentSplitter.queueSummary(pages, options: o), "5 pages in queue, 3 documents, 2 separator pages skipped")
+        XCTAssertEqual(DocumentSplitter.queueSummary(pages, options: o), "5 pages \u{00B7} 3 documents \u{00B7} 2 separator pages skipped")
         XCTAssertEqual(DocumentSplitter.scanNote(plan, separatorsAdded: 2), " Found 2 separator pages: 3 documents to save.")
         // The save names the files after the codes.
         XCTAssertEqual(SavePlan.make(pages, options: o).documents.map(\.label), [nil, "Lease", nil])

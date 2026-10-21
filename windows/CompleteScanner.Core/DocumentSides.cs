@@ -47,8 +47,11 @@ public sealed record QueueCollation(IReadOnlyList<Guid> Order, IReadOnlyDictiona
 
 public static class DocumentSides
 {
-    /// <summary>Why the sides cannot be chosen while the flatbed is the source.</summary>
+    /// <summary>Why the sides cannot be chosen while the flatbed is the source (the tooltip of <see cref="NeedsFeederReason"/>).</summary>
     public const string FeederOnlyReason = "Two-sided scanning uses the document feeder.";
+
+    /// <summary>The short reason shown next to Sides while the flatbed of a scanner with a feeder is the source.</summary>
+    public const string NeedsFeederReason = "Needs the feeder";
 
     /// <summary>Why "Both sides" is not offered: the feeder cannot scan both sides in one pass.</summary>
     public const string OneSidedFeederReason =
@@ -67,11 +70,13 @@ public static class DocumentSides
     public static IReadOnlyList<TaskStep> ManualSteps { get; } =
     [
         new TaskStep(FrontsStepId, "Scan the front sides",
-                     "Load the stack in the document feeder as usual and scan. Only the front of each sheet is scanned.",
-                     "Scan fronts", Repeats: true),
+                     "Load the stack in the feeder and scan the fronts.",
+                     "Scan fronts", Repeats: true,
+                     Help: "Only the front of each sheet is scanned this time."),
         new TaskStep(BacksStepId, "Scan the back sides",
-                     "Take the stack from the output tray, turn it over as a whole without changing the order of the sheets, and load it in the feeder again. Then scan the back sides.",
-                     "Scan backs", Skippable: true, Repeats: true, RequiresCapture: false),
+                     "Turn the stack over, load it again and scan.",
+                     "Scan backs", Skippable: true, Repeats: true, RequiresCapture: false,
+                     Help: "Take the stack from the output tray and turn it over as a whole, keeping the sheets in order. Then scan the back sides."),
     ];
 
     /// <summary>
@@ -184,16 +189,27 @@ public static class DocumentSides
     }
 
     /// <summary>
-    /// How a page of a two-sided stack is named next to its thumbnail: "Sheet 2 · back", or
-    /// "Front" / "Back" before its sheet is known; null for a page without a side.
+    /// The badge on the thumbnail of a page of a two-sided stack: "2 · back" (sheet 2), or "Front" /
+    /// "Back" before its sheet is known; null for a page without a side.
     /// </summary>
     public static string? SideLabel(PageSide? side, int? sheetIndex) => side switch
     {
         null => null,
-        { } s when sheetIndex is { } sheet => $"Sheet {sheet + 1} · {(s == PageSide.Front ? "front" : "back")}",
+        { } s when sheetIndex is { } sheet => $"{sheet + 1} · {SideWord(s)}",
         PageSide.Front => "Front",
         _ => "Back",
     };
+
+    /// <summary>The badge spelled out for screen readers: "Sheet 2, back", or "Front" / "Back"; null for a page without a side.</summary>
+    public static string? SideName(PageSide? side, int? sheetIndex) => side switch
+    {
+        null => null,
+        { } s when sheetIndex is { } sheet => $"Sheet {sheet + 1}, {SideWord(s)}",
+        PageSide.Front => "Front",
+        _ => "Back",
+    };
+
+    private static string SideWord(PageSide side) => side == PageSide.Front ? "front" : "back";
 
     /// <summary>"3 fronts but 2 backs", "1 front but 2 backs".</summary>
     public static string CountMessage(int fronts, int backs) =>

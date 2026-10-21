@@ -8,7 +8,7 @@ using CompleteScanner.Core;
 namespace CompleteScanner.App;
 
 /// <summary>
-/// The start screen: one tile per task (<see cref="TaskCatalog"/>) in its group (<see cref="TaskGroups"/>),
+/// The start screen: one tile per task (<see cref="TaskCatalog"/>) in its group (<see cref="TaskCatalog.Sections"/>),
 /// greyed out with a short reason when the connected scanner cannot do it, and the user's presets.
 /// Picking a tile is reported to the window, which sets it up and opens the scan screen.
 /// The twin of UI/TaskStartView.swift.
@@ -72,8 +72,9 @@ public partial class TaskStartView : UserControl
         if (_viewModel is not { } vm) return;
 
         var cards = vm.TaskCards.ToDictionary(c => c.Task);
-        var groups = TaskGroups.All
-            .Select(g => new TaskGroupItem(g.Title, g.Tasks.Where(cards.ContainsKey).Select(t => cards[t]).ToList()))
+        var groups = TaskCatalog.Sections
+            .Select(g => new TaskGroupItem(g.Group.Title(),
+                                           g.Definitions.Where(d => cards.ContainsKey(d.Task)).Select(d => cards[d.Task]).ToList()))
             .ToList();
         if (!groups.Select(g => g.Signature).SequenceEqual(_groups.Select(g => g.Signature)))
         {

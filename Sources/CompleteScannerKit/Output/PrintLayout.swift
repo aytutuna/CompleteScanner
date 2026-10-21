@@ -291,8 +291,8 @@ public enum PrintCalibration {
 
 /// What the app says about printing. Twin of C# `PrintText`.
 public enum PrintText {
-    /// Why the Copy task cannot be started.
-    public static let noPrinterReason = "No printer is installed."
+    /// Why the Copy task (and printing anything) cannot be started: no printer is installed.
+    public static let noPrinterReason = "Needs a printer"
 
     /// The error when there is nothing to print on.
     public static let noPrinterMessage = "No printer is installed. Add a printer, then try again."
@@ -310,7 +310,7 @@ public enum PrintText {
     /// printer's paper covers (a copier copies the sheet it prints on); otherwise as `PaperSizes.hint`.
     public static func copyPaperHint(_ size: PaperSize, source: ScanSource) -> String {
         size == .auto && source == .flatbed
-            ? "The printer's paper, from the corner of the glass. An area selected on the preview takes its place."
+            ? "The printer's paper size, from the glass corner"
             : PaperSizes.hint(size, source: source)
     }
 }

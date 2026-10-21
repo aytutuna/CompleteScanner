@@ -12,16 +12,17 @@ struct SidebarView: View {
                         .tag(device.id)
                 }
                 if !state.hasRealDevices {
+                    // Twin of the Windows side pane: what is missing, and the way to find out why.
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("No scanner found yet. Check that the scanner is on and connected.")
+                        Text("No scanner found")
                             .font(.callout)
                             .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Button("Why isn't my scanner listed?") {
+                        Button("Troubleshoot") {
                             state.showTroubleshooter = true
                         }
                         .buttonStyle(.link)
                         .font(.callout)
+                        .help("Why isn't my scanner listed?")
                     }
                     .padding(.vertical, 4)
                 }

@@ -884,9 +884,85 @@ public class ModelsCompatTests
     [Fact]
     public void SplitLabelsAndHints()
     {
-        Assert.Equal(["Off", "At separator sheets", "At blank sheets", "Every N sheets", "At barcode or QR sheets"],
+        Assert.Equal(["Off", "At separator sheets", "At blank sheets", "Every few sheets", "At QR codes or barcodes"],
                      SplitModes.DisplayOrder.Select(m => m.Label()));
-        Assert.All(SplitModes.DisplayOrder, mode => Assert.False(string.IsNullOrWhiteSpace(mode.Hint())));
+        Assert.Equal(["All pages in one document", "A separator sheet starts each document",
+                      "A blank sheet between documents splits them", "A new document every few sheets",
+                      "A code starts each document and can name it"],
+                     SplitModes.DisplayOrder.Select(m => m.Hint()));
+        Assert.Equal(["", "Separator sheets are left out", "Blank sheets are left out", "", ""],
+                     SplitModes.DisplayOrder.Select(m => m.Caption()));
+        Assert.All(SplitModes.DisplayOrder, mode => Assert.False(string.IsNullOrWhiteSpace(mode.Steps())));
+        Assert.StartsWith("1. Save or print a separator sheet. 2. Put one in front of each document after the first.",
+                          SplitMode.SeparatorSheet.Steps());
+        Assert.EndsWith("Only codes starting with CS-SEP count.", SplitMode.Barcode.Steps());
+        Assert.Equal("Put an empty sheet between documents. With both sides scanned, only a sheet blank on both sides splits.",
+                     SplitMode.BlankSheet.Steps());
+        Assert.Equal("Pages are kept", BarcodeSeparators.StartsDocumentCaption(true));
+        Assert.Equal("Sheets are left out", BarcodeSeparators.StartsDocumentCaption(false));
+    }
+
+    // MARK: - The settings' short texts (the text spec: tooltips of a few words)
+
+    [Fact]
+    public void ChoiceTexts_AreShort_AndNeverRepeatTheLabel()
+    {
+        Assert.Equal(["Flatbed", "Document feeder"], new[] { ScanSource.Flatbed, ScanSource.DocumentFeeder }.Select(s => s.Label()));
+        Assert.Equal("Automatic document feeder (ADF)", ScanSource.DocumentFeeder.Hint());
+        Assert.Equal("The scanner's glass", ScanSource.Flatbed.Hint());
+        Assert.Equal(["Full quality, largest files", "Good for most documents", "Smaller, for email and uploads",
+                      "Smallest, for strict size limits"], PdfSizePresets.DisplayOrder.Select(p => p.Hint()));
+        Assert.Equal("Up to 300 dpi (black & white 600), gray pages saved in gray.", PdfSizePreset.Standard.Detail());
+        Assert.Equal(["Stay here", "Open the file (several: show the folder)", "Show the files in their folder", "Email or send to an app"],
+                     new[] { AfterSaveAction.None, AfterSaveAction.Open, AfterSaveAction.Reveal, AfterSaveAction.Share }.Select(a => a.Hint()));
+        Assert.Equal(["Front only", "Both sides in one pass", "Scan the fronts, flip the stack, scan the backs"],
+                     new[] { DuplexMode.Off, DuplexMode.Both, DuplexMode.Manual }.Select(m => m.Hint()));
+        Assert.Equal(["Long edge (book)", "Short edge (calendar)"],
+                     new[] { DuplexBinding.LongEdge, DuplexBinding.ShortEdge }.Select(b => b.Label()));
+        Assert.Equal("Which edge the sheets turn on", DuplexBindings.PickerHint);
+        Assert.Equal(["Only empty pages", "Also dust or a page number", "Also pages with small marks"],
+                     BlankSensitivities.DisplayOrder.Select(b => b.Hint()));
+        Assert.Equal("Check flagged pages before saving", BlankSensitivities.HighWarning);
+        // A tooltip says more than the label, in fifteen words at most.
+        var tips = new List<(string Label, string Hint)>();
+        tips.AddRange(PdfSizePresets.DisplayOrder.Select(p => (p.Label(), p.Hint())));
+        tips.AddRange(Enum.GetValues<AfterSaveAction>().Select(a => (a.Label(), a.Hint())));
+        tips.AddRange(Enum.GetValues<DuplexMode>().Select(m => (m.Label(), m.Hint())));
+        tips.AddRange(BlankSensitivities.DisplayOrder.Select(b => (b.Label(), b.Hint())));
+        tips.AddRange(SplitModes.DisplayOrder.Select(m => (m.Label(), m.Hint())));
+        tips.AddRange(Enum.GetValues<ScanSource>().Select(s => (s.Label(), s.Hint())));
+        foreach (var (label, hint) in tips)
+        {
+            Assert.NotEqual(label, hint);
+            Assert.InRange(StatusLine.Words(hint), 1, 15);
+        }
+    }
+
+    // MARK: - Renamed tasks (CONTRACTS.md, rule 6): files keep the raw values, only the titles changed
+
+    [Theory]
+    [InlineData("feeder", ScanTask.Feeder, "Stack from feeder")]
+    [InlineData("photoRestore", ScanTask.PhotoRestore, "Restore old photos")]
+    [InlineData("copy", ScanTask.Copy, "Photocopy")]
+    [InlineData("batch", ScanTask.Batch, "Separate documents")]
+    public void RenamedTasks_StillDecode_FromSettingsAndPresetsWrittenBefore(string rawValue, ScanTask task, string title)
+    {
+        var settings = Decode<ScanSettings>($$"""{"resolution": 300, "taskId": "{{rawValue}}"}""");
+        Assert.Equal(rawValue, settings.TaskId);
+        Assert.Equal(task, settings.Task);
+        Assert.Equal(title, TaskCatalog.Definition(settings.Task!.Value).Title);
+        // Written back as it was read: the raw value, never the title.
+        using var written = System.Text.Json.JsonDocument.Parse(CompatFixtures.Encode(settings));
+        Assert.Equal(rawValue, written.RootElement.GetProperty("taskId").GetString());
+
+        // A preset saved for the task by an earlier version keeps its name and its task.
+        var presets = Decode<List<Preset>>($$$"""
+            [{"id": "7b0f4c84-3c55-4f56-9d0f-0b4b5f1d2a09", "name": "My {{{rawValue}}} preset",
+              "settings": {"intent": "document", "taskId": "{{{rawValue}}}"}}]
+            """);
+        var preset = Assert.Single(presets);
+        Assert.Equal($"My {rawValue} preset", preset.Name);
+        Assert.Equal(task, TaskCatalog.Infer(preset.Settings));
     }
 
     // MARK: - Barcode and QR separator sheets (CONTRACTS.md, rule 6)

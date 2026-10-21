@@ -206,6 +206,6 @@ public class SaveActionsTests
         var email = TaskCatalog.Apply(ScanTask.Email, current);
         email.Output.AfterSave = AfterSaveAction.Reveal;
         Assert.True(TaskCatalog.Fits(ScanTask.Email, email));
-        Assert.Contains("share window", TaskCatalog.Definition(ScanTask.Email).Steps[0].Prompt);
+        Assert.Contains("share window", TaskCatalog.Definition(ScanTask.Email).Steps[0].Help);
     }
 }

@@ -77,15 +77,27 @@ public static class IdCardSteps
     public static IReadOnlyList<TaskStep> Steps { get; } =
     [
         new TaskStep(FrontStepId, "Front side",
-                     "Place the card face down near a corner of the glass, close the lid and scan the front.",
-                     "Scan front"),
+                     "Place the card face down near a corner and scan.",
+                     "Scan front",
+                     Help: "Close the lid before scanning."),
         new TaskStep(BackStepId, "Back side",
-                     "Turn the card over where it lies, close the lid and scan the back. Skip this if nothing is printed on the back.",
-                     "Scan back", Skippable: true, RequiresCapture: false),
+                     "Turn the card over where it lies and scan.",
+                     "Scan back", Skippable: true, RequiresCapture: false,
+                     Help: $"Nothing printed on the back? Select {SkipBackLabel}."),
         new TaskStep(ReviewStepId, "Check and save",
-                     "Check both sides, then save them on one page at their real size.",
-                     "Review", RequiresCapture: false),
+                     "Check both sides, then save.",
+                     "Review", RequiresCapture: false,
+                     Help: "Both sides go on one page at real size."),
     ];
+
+    /// <summary>The button that leaves out the back of a card with nothing printed on it.</summary>
+    public const string SkipBackLabel = "No back side";
+
+    /// <summary>The ID card review's line on privacy: the scans stay out of the Scans history.</summary>
+    public const string PrivacyNote = "Not kept in Scans history";
+
+    /// <summary>The privacy line's full sentence, for its tooltip and screen readers.</summary>
+    public const string PrivacyHelp = "The scans stay on this computer and are cleared once you save or discard them.";
 
     /// <summary>The side a step scans; null for the review and any other step.</summary>
     public static PageSide? SideOf(string? stepId) => stepId switch
@@ -328,9 +340,9 @@ public static class IdCardLayout
         return new IdCardLayoutResult(frontRect, backRect, scale);
     }
 
-    /// <summary>"Front and back on one A4 page, at real size.", "Front only on one Letter page, made smaller to fit."</summary>
+    /// <summary>"One A4 page, real size", "Front only, one Letter page, made smaller to fit".</summary>
     public static string Caption(PaperSize paper, bool hasBack, bool scaledToFit) =>
-        $"{(hasBack ? "Front and back" : "Front only")} on one {paper.Label()} page, {(scaledToFit ? "made smaller to fit" : "at real size")}.";
+        $"{(hasBack ? "One" : "Front only, one")} {paper.Label()} page, {(scaledToFit ? "made smaller to fit" : "real size")}";
 }
 
 /// <summary>One side of a card as cut out of its scan, at the resolution it was scanned at.</summary>

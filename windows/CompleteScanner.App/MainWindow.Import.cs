@@ -27,10 +27,10 @@ public partial class MainWindow
         ImportPhotosButton.ToolTip = importName;
         ToolTipService.SetShowOnDisabled(ImportPhotosButton, true);
         AutomationProperties.SetName(ImportPhotosButton, importName);
-        AutomationProperties.SetHelpText(ImportPhotosButton, PhotoImport.ButtonHint);
+        AutomationProperties.SetHelpText(ImportPhotosButton, PhotoImport.ButtonHelp);
         CanvasImportButton.Content = PhotoImport.ButtonLabel;
         CanvasImportButton.ToolTip = PhotoImport.ButtonHint;
-        AutomationProperties.SetHelpText(CanvasImportButton, PhotoImport.ButtonHint);
+        AutomationProperties.SetHelpText(CanvasImportButton, PhotoImport.ButtonHelp);
         CanvasDropHint.Text = PhotoImport.DropHint;
         ViewModel.ReviewPhotoCorners = request => PhotoCornersWindow.Ask(this, request);
     }

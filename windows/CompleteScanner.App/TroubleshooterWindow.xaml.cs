@@ -97,8 +97,8 @@ public partial class TroubleshooterWindow : Window
     {
         Snapshot = snapshot;
         var checks = Troubleshooter.Diagnose(snapshot);
-        // One line: "No scanner found yet · 1 warning found".
-        string headline = HeadlineLine(Troubleshooter.Headline(snapshot), Troubleshooter.Summary(checks));
+        // One line: "No scanner found · 1 warning".
+        string headline = Troubleshooter.Overview(snapshot, checks);
         if (HeadlineText.Text != headline && _refreshes == 0) Announce(HeadlineText, headline);
         else HeadlineText.Text = headline;
         if (checks.SequenceEqual(_shownChecks)) return;
@@ -141,19 +141,13 @@ public partial class TroubleshooterWindow : Window
         else RefreshButton.Focus();
     }
 
-    /// <summary>The headline and the summary in one line: "No scanner found yet · 1 warning found".</summary>
-    internal static string HeadlineLine(string headline, string summary)
-    {
-        string count = summary.Trim().TrimEnd('.');
-        return count.Length == 0 ? headline : $"{headline} · {count}";
-    }
-
     /// <summary>
     /// One check: a passed one with nothing to do as a compact row (its title; what it found is the
-    /// tooltip), any other (a passed one that offers an action too) as a card with the status glyph (named for screen readers), the title, the detail's first
-    /// sentence, its buttons and a "More help" expander with the rest. Refresh is the footer's, not
+    /// tooltip), any other (a passed one that offers an action too) as a card with the status glyph
+    /// (named for screen readers), the title, the one-line detail, its buttons and a "More help"
+    /// expander with the rest (<see cref="TroubleshootCheck.More"/>). Refresh is the footer's, not
     /// repeated in a card. Screen readers see the card as a group named with the status and title,
-    /// with the whole detail as its help text.
+    /// with the whole explanation as its help text.
     /// </summary>
     private Border Card(TroubleshootCheck check)
     {
@@ -191,17 +185,17 @@ public partial class TroubleshooterWindow : Window
                 Margin = new Thickness(0, 0, 0, 4),
                 Background = System.Windows.Media.Brushes.Transparent,
                 Child = okRow,
-                ToolTip = check.Detail,
+                ToolTip = check.FullDetail,
             };
             AutomationProperties.SetName(row, $"{status}: {check.Title}");
-            AutomationProperties.SetHelpText(row, check.Detail);
+            AutomationProperties.SetHelpText(row, check.FullDetail);
             AutomationProperties.SetAutomationId(row, check.Id);
             return row;
         }
-        var (lead, more) = TextSplit.Lead(check.Detail);
+        string more = check.More;
         var detail = new TextBlock
         {
-            Text = lead,
+            Text = check.Detail,
             Style = (Style)FindResource("BodyText"),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 2, 0, 0),
@@ -259,7 +253,7 @@ public partial class TroubleshooterWindow : Window
             Child = cardRow,
         };
         AutomationProperties.SetName(card, $"{status}: {check.Title}");
-        AutomationProperties.SetHelpText(card, check.Detail);
+        AutomationProperties.SetHelpText(card, check.FullDetail);
         AutomationProperties.SetAutomationId(card, check.Id);
         return card;
     }

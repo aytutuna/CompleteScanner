@@ -626,9 +626,9 @@ final class DocxWriterPictureTests: XCTestCase {
         XCTAssertEqual(DocxWriter.pictureContentType(.png), "image/png")
         XCTAssertEqual(DocxWriter.pageImagesLabel, "Include page images")
         XCTAssertEqual(DocxWriter.pageImagesHint(on: true),
-                       "Each page as scanned, then its text you can edit. The pictures are stored at the size chosen below.")
+                       "Each page's picture, then its editable text")
         XCTAssertEqual(DocxWriter.pageImagesHint(on: false),
-                       "Only the text you can edit: the pictures of the pages are left out.")
+                       "Only the editable text, without page pictures")
     }
 
     func test_make_withPageImages_fingerprint_matchesWindows() {

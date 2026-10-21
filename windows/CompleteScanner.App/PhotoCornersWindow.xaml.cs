@@ -14,7 +14,7 @@ namespace CompleteScanner.App;
 /// The corner editor of a photo of a document whose page was not found clearly
 /// (<see cref="PhotoImport.Plan(RgbaImage)"/>): the whole photo with the page's four corners, each
 /// dragged on its own onto a corner of the page (a magnifier shows the photo around the corner being
-/// moved), or moved with the arrow keys. Use these corners cuts the page out along them, Use whole
+/// moved), or moved with the arrow keys. Use corners cuts the page out along them, Use whole
 /// photo takes the photo as it is, and Skip leaves the photo out. Built like the crop editor
 /// (<see cref="PhotoCropEditorWindow"/>); the Mac's twin is UI/PhotoCornersEditorView.swift.
 ///
@@ -67,21 +67,17 @@ public partial class PhotoCornersWindow : Window
         string reason = PhotoImport.ReasonText(request.Plan.Reason);
         ReasonText.Text = reason;
         ReasonPanel.Visibility = reason.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
-        // The first sentence on screen; the keys behind the ⓘ.
-        var (lead, keys) = TextSplit.Lead(PhotoImport.EditorHelp);
-        HelpText.Text = lead;
-        KeyboardInfoButton.InfoText = keys;
-        KeyboardInfoButton.Visibility = keys.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        // What to do on screen; the keys behind the ⓘ.
+        HelpText.Text = PhotoImport.EditorHelp;
+        KeyboardInfoButton.InfoText = PhotoImport.EditorKeys;
         // "Photo 2 of 3"; the file's name is the tooltip.
-        CounterText.Text = request.Count > 1
-            ? $"Photo {request.Number} of {request.Count}"
-            : PhotoImport.Counter(request.Number, request.Count, request.FileName);
+        CounterText.Text = PhotoImport.Counter(request.Number, request.Count, request.FileName);
         CounterText.ToolTip = request.FileName;
-        AutomationProperties.SetName(CounterText, PhotoImport.Counter(request.Number, request.Count, request.FileName));
+        AutomationProperties.SetName(CounterText, PhotoImport.CounterName(request.Number, request.Count, request.FileName));
         WholePhotoButton.Content = PhotoImport.WholePhotoLabel;
         SkipButton.Content = PhotoImport.SkipLabel;
         UseButton.Content = PhotoImport.UseCornersLabel;
-        AutomationProperties.SetHelpText(Host, PhotoImport.EditorHelp);
+        AutomationProperties.SetHelpText(Host, $"{PhotoImport.EditorHelp} {PhotoImport.EditorKeys}");
         LoupeLens.Fill = _loupeBrush;
         for (int i = 0; i < 4; i++)
         {

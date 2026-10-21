@@ -381,8 +381,7 @@ final class SpineShadowTests: XCTestCase {
     }
 
     func test_hint_saysWhatTheSwitchDoes() {
-        XCTAssertTrue(SpineShadow.hint(true).contains("pictures beside it are left as they are"))
-        XCTAssertTrue(SpineShadow.hint(true).contains("see it as scanned"))
-        XCTAssertEqual(SpineShadow.hint(false), "Lighten the dark shadow along the spine of each page, keeping the text dark.")
+        XCTAssertEqual(SpineShadow.hint(true), "Lightens the dark band along the spine")
+        XCTAssertEqual(SpineShadow.hint(false), "Lightens the dark band along the spine")
     }
 }

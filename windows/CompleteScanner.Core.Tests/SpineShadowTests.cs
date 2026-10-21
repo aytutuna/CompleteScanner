@@ -413,8 +413,7 @@ public class SpineShadowTests
     [Fact]
     public void Hint_SaysWhatTheSwitchDoes()
     {
-        Assert.Contains("pictures beside it are left as they are", SpineShadow.Hint(true));
-        Assert.Contains("see it as scanned", SpineShadow.Hint(true));
-        Assert.Equal("Lighten the dark shadow along the spine of each page, keeping the text dark.", SpineShadow.Hint(false));
+        Assert.Equal("Lightens the dark band along the spine", SpineShadow.Hint(true));
+        Assert.Equal("Lightens the dark band along the spine", SpineShadow.Hint(false));
     }
 }

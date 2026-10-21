@@ -29,9 +29,36 @@ public enum TaskFlowKind
 /// <param name="Intent">The scan mode the task uses.</param>
 /// <param name="RequiredSource">The source the task cannot work without; null when any source does.</param>
 /// <param name="FileLabel">What the <c>{task}</c> naming token becomes ("Document", "Photo").</param>
+/// <param name="Subtitle">What the task does, in one short line: the tile's tooltip, not shown on the tile.</param>
+/// <param name="Group">The start screen's group the tile is in.</param>
 public sealed record TaskDefinition(ScanTask Task, string Title, string Subtitle, string IconKey,
                                     TaskFlowKind Flow, ScanIntent Intent, ScanSource? RequiredSource,
-                                    string FileLabel, IReadOnlyList<TaskStep> Steps);
+                                    string FileLabel, IReadOnlyList<TaskStep> Steps, TaskGroup Group);
+
+/// <summary>The start screen's groups of tasks, in the order it shows them.</summary>
+public enum TaskGroup
+{
+    Documents,
+    PhotosAndImages,
+    Other,
+}
+
+/// <summary>A group of the start screen with its tasks, in the order they are shown.</summary>
+public sealed record TaskGroupSection(TaskGroup Group, IReadOnlyList<TaskDefinition> Definitions);
+
+public static class TaskGroups
+{
+    /// <summary>Every group, in start-screen order.</summary>
+    public static IReadOnlyList<TaskGroup> All { get; } = Enum.GetValues<TaskGroup>();
+
+    /// <summary>"Documents", "Photos &amp; images", "Other".</summary>
+    public static string Title(this TaskGroup group) => group switch
+    {
+        TaskGroup.Documents => "Documents",
+        TaskGroup.PhotosAndImages => "Photos & images",
+        _ => "Other",
+    };
+}
 
 /// <summary>Whether a task can be started with the connected scanner, and if not, why.</summary>
 public sealed record TaskAvailability(bool IsAvailable, string? Reason = null)
@@ -49,90 +76,137 @@ public static class TaskCatalog
     private static readonly TaskDefinition[] Definitions =
     [
         new(ScanTask.Document, "Document to PDF",
-            "Scan pages one at a time into a searchable PDF.",
+            "Page by page into a searchable PDF.",
             "document", TaskFlowKind.DocumentQueue, ScanIntent.Document, null, "Document",
             [new TaskStep("scan", "Scan each page",
-                          "Place a page face down on the glass and scan it. Repeat for every page, then save the PDF.",
-                          "Scan page", Repeats: true)]),
-        new(ScanTask.Feeder, "Multi-page from feeder",
-            "Scan a stack of pages through the document feeder into one PDF.",
+                          "Place each page face down and scan, then save.",
+                          "Scan page", Repeats: true,
+                          Help: "Scan the pages one by one. They are collected until you save the PDF.")],
+            TaskGroup.Documents),
+        new(ScanTask.Feeder, "Stack from feeder",
+            "A stack through the feeder into one PDF.",
             "feeder", TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.DocumentFeeder, "Document",
             [new TaskStep("scan", "Scan the stack",
-                          "Load the pages in the document feeder and scan. Add more stacks if you need to, then save the PDF.",
-                          "Scan stack", Repeats: true)]),
+                          "Load the pages in the feeder and scan.",
+                          "Scan stack", Repeats: true,
+                          Help: "Add more stacks if you need to, then save the PDF.")],
+            TaskGroup.Documents),
         new(ScanTask.Photos, "Photos",
-            "Scan several photos at once. Each one is found, cropped and straightened.",
+            "Several photos at once, each cropped and straightened.",
             "photos", TaskFlowKind.PhotoSplit, ScanIntent.Photo, null, "Photo",
             [new TaskStep("scan", "Scan the photos",
-                          "Lay the photos on the glass with a little space between them, close the lid and scan. Check each photo before saving.",
-                          "Scan photos", Repeats: true)]),
-        new(ScanTask.PhotoRestore, "Old photo restoration",
-            "Bring back the faded colors of old prints, saved as lossless PNG.",
+                          "Lay the photos on the glass, apart, and scan.",
+                          "Scan photos", Repeats: true,
+                          Help: "Leave a little space between photos and close the lid. Check each photo before saving.")],
+            TaskGroup.PhotosAndImages),
+        new(ScanTask.PhotoRestore, "Restore old photos",
+            "Brings back faded colors; saved as PNG.",
             "restore", TaskFlowKind.PhotoSplit, ScanIntent.Photo, null, "Restored photo",
             [new TaskStep("scan", "Scan the old photos",
-                          "Lay the photos on the glass with a little space between them and scan. Colors are restored automatically; check each photo before saving.",
-                          "Scan photos", Repeats: true)]),
+                          "Lay the photos on the glass, apart, and scan.",
+                          "Scan photos", Repeats: true,
+                          Help: "Colors are restored automatically. Check each photo before saving.")],
+            TaskGroup.PhotosAndImages),
         new(ScanTask.QuickScan, "Quick scan",
-            "Preview the glass, drag over the part you need and save it as an image.",
+            "Save part of the glass as an image.",
             "quick", TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.Flatbed, "Scan",
             [new TaskStep("scan", "Scan an area",
-                          "Preview the glass, drag over the part you need, then scan. Each scan is saved right away.",
-                          "Scan", Repeats: true)]),
+                          "Preview, drag over the part you need, then scan.",
+                          "Scan", Repeats: true,
+                          Help: "Each scan is saved right away.")],
+            TaskGroup.PhotosAndImages),
         new(ScanTask.Email, "Email a document",
-            "Scan pages into a small PDF that is easy to attach to an email.",
+            "A small PDF, ready to attach.",
             "email", TaskFlowKind.DocumentQueue, ScanIntent.Document, null, "Document",
             [new TaskStep("scan", "Scan each page",
-                          "Place a page face down on the glass and scan it. Repeat for every page, then save the PDF: the share window opens so you can email it.",
-                          "Scan page", Repeats: true)]),
+                          "Scan each page, then save to email it.",
+                          "Scan page", Repeats: true,
+                          Help: "Saving opens the share window, so you can email the PDF.")],
+            TaskGroup.Documents),
         new(ScanTask.TwoSided, "Two-sided document",
-            "Both sides of every sheet in the feeder, in page order, in one PDF.",
+            "Both sides of every sheet, in page order.",
             "twoSided", TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.DocumentFeeder, "Document",
             [new TaskStep("scan", "Scan the stack",
-                          "Load the pages in the document feeder and scan: both sides of every sheet are scanned and put in order. Then save the PDF.",
-                          "Scan stack", Repeats: true)]),
+                          "Load the pages in the feeder and scan.",
+                          "Scan stack", Repeats: true,
+                          Help: "Both sides of every sheet are scanned and put in order. Then save the PDF.")],
+            TaskGroup.Documents),
         new(ScanTask.IdCard, "ID card",
-            "Both sides of an ID card or driving licence on one page, at real size.",
+            "Both sides on one page, at real size.",
             "idCard", TaskFlowKind.IdCard, ScanIntent.Document, ScanSource.Flatbed, "ID card",
-            IdCardSteps.Steps),
-        new(ScanTask.Copy, "Copy",
-            "Scan straight to the printer at real size, like a photocopier.",
+            IdCardSteps.Steps,
+            TaskGroup.Other),
+        new(ScanTask.Copy, "Photocopy",
+            "Prints at real size, like a photocopier.",
             "copy", TaskFlowKind.Copy, ScanIntent.Document, null, "Copy",
             [new TaskStep("scan", "Make a copy",
-                          "Place the original face down on the glass, or load the feeder, and copy. It prints at real size; choose the printer and the number of copies first.",
-                          "Copy", Repeats: true)]),
+                          "Place the original face down, then copy.",
+                          "Copy", Repeats: true,
+                          Help: "Or load the feeder. Copies print at real size; choose the printer and number of copies on the right.")],
+            TaskGroup.Other),
         new(ScanTask.Word, "Scan to Word",
-            "Turn printed pages into a Word document you can edit.",
+            "Printed pages into an editable Word file.",
             "word", TaskFlowKind.DocumentQueue, ScanIntent.Document, null, "Document",
             [new TaskStep("scan", "Scan each page",
-                          "Place a page face down on the glass and scan it. Repeat for every page, then save: the text is read from the pages into a Word document.",
-                          "Scan page", Repeats: true)]),
+                          "Scan each page, then save as Word.",
+                          "Scan page", Repeats: true,
+                          Help: "The text is read from the pages into a Word document you can edit.")],
+            TaskGroup.Documents),
         new(ScanTask.Receipt, "Receipts",
-            "Scan several receipts at once into small, searchable files named by their date.",
+            "Several at once, small files named by date.",
             "receipt", TaskFlowKind.ReceiptSplit, ScanIntent.Document, null, "Receipt",
             [new TaskStep("scan", "Scan the receipts",
-                          "Lay up to six receipts on the glass with a little space between them, close the lid and scan. Each one is found, straightened and made easy to read; check them before saving.",
-                          "Scan receipts", Repeats: true)]),
-        new(ScanTask.Batch, "Batch of separate documents",
-            "Scan a stack of documents in one go; each one is saved as its own PDF, split at separator sheets.",
+                          "Lay up to six receipts apart and scan.",
+                          "Scan receipts", Repeats: true,
+                          Help: "Each one is found, straightened and made easy to read. Check them before saving.")],
+            TaskGroup.Other),
+        new(ScanTask.Batch, "Separate documents",
+            "One stack, a PDF for each document.",
             "batch", TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.DocumentFeeder, "Document",
             [new TaskStep("scan", "Scan the stack",
-                          "Put a separator sheet in front of each document after the first, load the stack in the feeder and scan. Check where the stack is split, then save.",
-                          "Scan stack", Repeats: true)]),
+                          "Put a separator sheet before each document, then scan.",
+                          "Scan stack", Repeats: true,
+                          Help: "1. Print separator sheets (Split into documents, on the right). 2. Put one in front of each "
+                                + "document after the first. 3. Load the stack and scan. 4. Check the splits in the page "
+                                + "strip, then save.")],
+            TaskGroup.Documents),
         new(ScanTask.Book, "Book or magazine",
-            "Scan an open book two pages at a time; each spread is split into its pages, in reading order.",
+            "Two pages per scan, split at the spine.",
             "book", TaskFlowKind.DocumentQueue, ScanIntent.Document, ScanSource.Flatbed, "Book",
             [new TaskStep("scan", "Scan each spread",
-                          "Open the book face down with the spine in the middle of the glass and press it gently flat, then scan. Turn the page and scan the next spread; each one becomes two pages.",
-                          "Scan spread", Repeats: true)]),
+                          "Open the book face down, spine centered, and scan.",
+                          "Scan spread", Repeats: true,
+                          Help: "Press it gently flat. Turn the page and scan the next spread; each one becomes two pages.")],
+            TaskGroup.Other),
         new(ScanTask.Archive, "Archive document",
-            "Scan pages into a searchable PDF/A file, made to be kept for years.",
+            "A searchable PDF/A, made to be kept.",
             "archive", TaskFlowKind.DocumentQueue, ScanIntent.Document, null, "Document",
             [new TaskStep("scan", "Scan each page",
-                          "Place a page face down on the glass and scan it. Repeat for every page, then save: the PDF is kept at its best quality, as PDF/A for long-term keeping.",
-                          "Scan page", Repeats: true)]),
+                          "Scan each page, then save as PDF/A.",
+                          "Scan page", Repeats: true,
+                          Help: "The PDF keeps its best quality, made to be kept for years.")],
+            TaskGroup.Documents),
     ];
 
-    /// <summary>Every task, in start-screen order.</summary>
+    /// <summary>
+    /// The tasks in the order the start screen shows them, group by group: Documents (Document to
+    /// PDF, Stack from feeder, Two-sided document, Separate documents, Scan to Word, Email a
+    /// document, Archive document), Photos &amp; images (Photos, Restore old photos, Quick scan),
+    /// Other (ID card, Photocopy, Receipts, Book or magazine).
+    /// </summary>
+    public static IReadOnlyList<ScanTask> StartOrder { get; } =
+    [
+        ScanTask.Document, ScanTask.Feeder, ScanTask.TwoSided, ScanTask.Batch, ScanTask.Word, ScanTask.Email,
+        ScanTask.Archive, ScanTask.Photos, ScanTask.PhotoRestore, ScanTask.QuickScan, ScanTask.IdCard,
+        ScanTask.Copy, ScanTask.Receipt, ScanTask.Book,
+    ];
+
+    /// <summary>The start screen's groups in order, each with its tasks in <see cref="StartOrder"/>; every task is in one group.</summary>
+    public static IReadOnlyList<TaskGroupSection> Sections =>
+        [.. TaskGroups.All.Select(group => new TaskGroupSection(
+            group, [.. StartOrder.Select(Definition).Where(definition => definition.Group == group)]))];
+
+    /// <summary>Every task, in the order of <see cref="ScanTask"/> (the start screen uses <see cref="StartOrder"/>).</summary>
     public static IReadOnlyList<TaskDefinition> All => Definitions;
 
     public static TaskDefinition Definition(ScanTask task) => Definitions.First(d => d.Task == task);
@@ -314,6 +388,23 @@ public static class TaskCatalog
         return ScanTask.Document;
     }
 
+    /// <summary>Why a task that needs the document feeder cannot be started: the tile's one visible line.</summary>
+    public const string NeedsFeederReason = "Needs a document feeder";
+
+    /// <summary>Why a task that needs the flatbed cannot be started.</summary>
+    public const string NeedsFlatbedReason = "Needs a flatbed";
+
+    /// <summary>
+    /// The error when a task that cannot be started is picked anyway: its title and the reason, as a
+    /// sentence ("Stack from feeder needs a document feeder.").
+    /// </summary>
+    public static string UnavailableMessage(ScanTask task, string reason)
+    {
+        string text = reason.Trim().TrimEnd('.');
+        if (text.Length > 0) text = char.ToLowerInvariant(text[0]) + text[1..];
+        return $"{Definition(task).Title} {text}.";
+    }
+
     /// <summary>
     /// Whether the task can be started with a scanner offering <paramref name="capabilities"/>
     /// (null: none connected yet, so nothing is ruled out).
@@ -336,8 +427,8 @@ public static class TaskCatalog
             return TaskAvailability.Available;
         }
         return new TaskAvailability(false, source == ScanSource.DocumentFeeder
-            ? "This scanner has no document feeder."
-            : "This scanner has no flatbed.");
+            ? NeedsFeederReason
+            : NeedsFlatbedReason);
     }
 
     /// <summary>

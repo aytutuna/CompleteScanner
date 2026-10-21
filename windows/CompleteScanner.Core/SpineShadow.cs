@@ -154,12 +154,8 @@ public static class SpineShadow
     public static PageEdge Turned(PageEdge edge, int quarterTurns) =>
         (PageEdge)(((int)edge + BookSplitter.NormalizedTurns(quarterTurns)) % 4);
 
-    /// <summary>
-    /// The hint under "Soften spine shadow": what it does when on (<paramref name="on"/>), what it would do when off.
-    /// </summary>
-    public static string Hint(bool on) => on
-        ? "The shadow along the spine is lightened on each page; pictures beside it are left as they are. Click the arrow on a page to see it as scanned."
-        : "Lighten the dark shadow along the spine of each page, keeping the text dark.";
+    /// <summary>The tooltip of "Soften spine shadow", on (<paramref name="on"/>) or off: what it does.</summary>
+    public static string Hint(bool on) => "Lightens the dark band along the spine";
 
     /// <summary>
     /// <paramref name="image"/> (scanned at <paramref name="dpi"/>) with the shadow along <paramref name="edge"/>

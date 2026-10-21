@@ -7,7 +7,7 @@ public struct TaskStep: Equatable, Sendable {
     public let id: String
     /// Short name of the step ("Scan each page").
     public let title: String
-    /// What to do, in a sentence or two.
+    /// What to do, in one short line (ten words at most): the banner shows it.
     public let prompt: String
     /// Caption of the button that performs the step ("Scan page").
     public let primaryActionLabel: String
@@ -17,9 +17,13 @@ public struct TaskStep: Equatable, Sendable {
     public let repeats: Bool
     /// The task cannot be finished before this step has a capture.
     public let requiresCapture: Bool
+    /// The fuller guidance behind the banner's info button, read out with the prompt by VoiceOver;
+    /// empty when the prompt says it all.
+    public let help: String
 
     public init(id: String, title: String, prompt: String, primaryActionLabel: String,
-                skippable: Bool = false, repeats: Bool = false, requiresCapture: Bool = true) {
+                skippable: Bool = false, repeats: Bool = false, requiresCapture: Bool = true,
+                help: String = "") {
         self.id = id
         self.title = title
         self.prompt = prompt
@@ -27,6 +31,28 @@ public struct TaskStep: Equatable, Sendable {
         self.skippable = skippable
         self.repeats = repeats
         self.requiresCapture = requiresCapture
+        self.help = help
+    }
+
+    /// The step in one word, for a step indicator ("Front · Back · Check"): the title's first word
+    /// after a leading "Scan the" or "Scan", capitalized ("Scan the front sides" is "Front").
+    public var word: String {
+        var text: String = title.trimmingCharacters(in: .whitespaces)
+        for lead in ["Scan the ", "Scan "] {
+            if text.hasPrefix(lead) && text.count > lead.count {
+                text = String(text.dropFirst(lead.count))
+                break
+            }
+        }
+        let parts: [Substring] = text.split(separator: " ", omittingEmptySubsequences: true)
+        let first: String = parts.first.map { String($0) } ?? text
+        guard let initial: Character = first.first else { return first }
+        return String(initial).uppercased() + String(first.dropFirst())
+    }
+
+    /// The prompt and the help as one text, for VoiceOver.
+    public var fullPrompt: String {
+        help.isEmpty ? prompt : prompt + " " + help
     }
 }
 

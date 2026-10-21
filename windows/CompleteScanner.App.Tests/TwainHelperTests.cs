@@ -363,8 +363,8 @@ public class TwainHelperTests
         Assert.Equal("It cannot run: the 32-bit TWAIN helper (CompleteScanner.TwainHelper.exe) is missing from "
                      + "CompleteScanner's folder. Reinstall CompleteScanner.", snapshot.ThirtyTwoBitHelperProblem);
         var check = Troubleshooter.Diagnose(snapshot with { Platform = TroubleshootPlatform.Windows }).Single(c => c.Id == "twain32");
-        Assert.Contains(snapshot.ThirtyTwoBitHelperProblem!, check.Detail);
-        Assert.DoesNotContain("can use only 64-bit drivers", check.Detail);
+        Assert.Contains(snapshot.ThirtyTwoBitHelperProblem!, check.More);
+        Assert.DoesNotContain("can use only 64-bit drivers", check.FullDetail);
         // Trying again on its own cannot help (the troubleshooter's Refresh does, after a reinstall).
         await Task.Delay(500);
         Assert.Equal(1, Volatile.Read(ref published));
@@ -441,7 +441,7 @@ public class TwainHelperTests
         Assert.Equal((TwainStatus.NotInstalled, 0), (snapshot.Twain, snapshot.TwainDriverCount));
         string problem = TwainDiagnostics.HelperProblem(TwainHelperStatus.Available, null, reachedAny: false)!;
         Assert.Equal(problem, snapshot.ThirtyTwoBitHelperProblem);
-        Assert.Contains(problem, Troubleshooter.Diagnose(snapshot).Single(c => c.Id == "twain32").Detail);
+        Assert.Contains(problem, Troubleshooter.Diagnose(snapshot).Single(c => c.Id == "twain32").More);
 
         // No 32-bit Data Source Manager: said so.
         backend.Publish(0, new TwainHelperSourceList(TwainAvailability.NoDataSourceManager, []));

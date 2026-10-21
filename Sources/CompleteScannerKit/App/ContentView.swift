@@ -15,6 +15,8 @@ struct ContentView: View {
     /// The first appearance picked the opening view: the start screen on a first run, the
     /// scanner view (with the task the user had last) afterwards.
     @State private var choseOpeningView = false
+    /// Photo files are dragged over the scanner view: it says where they go.
+    @State private var dropTargeted = false
 
     var body: some View {
         NavigationSplitView {
@@ -91,7 +93,8 @@ struct ContentView: View {
             PhotoReviewView()
                 .environmentObject(state)
         }
-        .alert("CompleteScanner", isPresented: Binding(
+        // An error titled by the scanner's problem ("Paper jam"), with what to do (`ScannerProblems.notice`).
+        .alert(errorNotice.title, isPresented: Binding(
             get: { state.errorMessage != nil },
             set: { if !$0 { state.errorMessage = nil; state.errorSuggestsTroubleshooter = false } }
         )) {
@@ -101,7 +104,7 @@ struct ContentView: View {
             }
             Button("OK", role: .cancel) {}
         } message: {
-            Text(state.errorMessage ?? "")
+            Text(errorNotice.message)
         }
         // Below this the layout cannot stay usable; the inspector adds its own
         // width requirement only while shown.
@@ -112,6 +115,11 @@ struct ContentView: View {
             if state.isFirstRun { detailTab = .start }
         }
         .task { state.start() }
+    }
+
+    /// The error the alert shows, as its title and message.
+    private var errorNotice: ProblemNotice {
+        ScannerProblems.notice(state.errorMessage ?? "")
     }
 
     private var scannerDetail: some View {
@@ -139,6 +147,18 @@ struct ContentView: View {
             guard state.canImportPhotos, !PhotoImport.photoFiles(urls.map(\.path)).isEmpty else { return false }
             state.importPhotos(urls)
             return true
+        } isTargeted: { targeted in
+            dropTargeted = targeted
+        }
+        .overlay {
+            if dropTargeted && state.canImportPhotos {
+                Text(PhotoImport.dropOverlay)
+                    .font(.title2.weight(.semibold))
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+                    .allowsHitTesting(false)
+            }
         }
         .inspector(isPresented: $showInspector) {
             InspectorView()

@@ -45,10 +45,10 @@ public static class DocxWriter
     /// <summary>The page pictures switch (<see cref="OutputOptions.WordPageImages"/>) as the inspector shows it.</summary>
     public const string PageImagesLabel = "Include page images";
 
-    /// <summary>What the page pictures switch does, on and off.</summary>
+    /// <summary>What the page pictures switch does, on and off: its tooltip.</summary>
     public static string PageImagesHint(bool on) => on
-        ? "Each page as scanned, then its text you can edit. The pictures are stored at the size chosen below."
-        : "Only the text you can edit: the pictures of the pages are left out.";
+        ? "Each page's picture, then its editable text"
+        : "Only the editable text, without page pictures";
 
     /// <summary>The relationship type of a picture's part.</summary>
     public const string ImageRelationshipType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";

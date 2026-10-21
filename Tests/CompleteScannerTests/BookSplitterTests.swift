@@ -38,6 +38,11 @@ private func blankPage() -> ScannedPage {
     ScannedPage(image: RgbaImage.filled(width: 4, height: 4, r: 255, g: 255, b: 255).makeCGImage()!, dpi: 100, colorMode: .color)
 }
 
+/// A blank spread twice as wide as it is high, to cut in two.
+private func blankSpread() -> ScannedPage {
+    ScannedPage(image: RgbaImage.filled(width: 20, height: 10, r: 255, g: 255, b: 255).makeCGImage()!, dpi: 100, colorMode: .color)
+}
+
 private func part(_ spread: UUID, _ part: Int?) -> ScannedPage {
     var page = blankPage()
     page.spread = SpreadPart(spreadID: spread, part: part,
@@ -334,16 +339,27 @@ final class BookSplitterTests: XCTestCase {
         let a = UUID(), b = UUID()
         let pages = [part(a, 0), part(a, 1), blankPage(), part(b, nil)]
         XCTAssertEqual((0..<pages.count).map { BookPages.label(pages, $0) },
-                       ["Spread 1 \u{00B7} page 1", "Spread 1 \u{00B7} page 2", nil, "Spread 2 \u{00B7} not split"])
-        // Pages moved apart keep their spread's number; their order in the queue numbers them.
+                       ["1 \u{00B7} left", "1 \u{00B7} right", nil, "2 \u{00B7} not split"])
+        // Pages moved apart keep their spread's number, in queue order, and each keeps its own side.
         let moved = [pages[1], pages[3], pages[0]]
         XCTAssertEqual((0..<moved.count).map { BookPages.label(moved, $0) },
-                       ["Spread 1 \u{00B7} page 1", "Spread 2 \u{00B7} not split", "Spread 1 \u{00B7} page 2"])
-        XCTAssertEqual(BookPages.help(pages, 3),
-                       "Spread 2 \u{00B7} not split: the spread is one page. Right-click it to split it into two pages.")
-        XCTAssertEqual(BookPages.help(pages, 1), "Spread 1 \u{00B7} page 2")
+                       ["1 \u{00B7} right", "2 \u{00B7} not split", "1 \u{00B7} left"])
+        // The left page removed: the right page is still the right page.
+        XCTAssertEqual(BookPages.label([pages[1]], 0), "1 \u{00B7} right")
+        XCTAssertEqual(BookPages.help(pages, 3), "Spread 2, not split")
+        XCTAssertEqual(BookPages.help(pages, 1), "Spread 1, right page")
         XCTAssertNil(BookPages.help(pages, 2))
         XCTAssertNil(BookPages.label(pages, 9))
+        // The side recorded when the spread was cut wins over the part: a book scanned upside down.
+        var first = part(a, 1)
+        first.spread?.left = true
+        var second = part(a, 0)
+        second.spread?.left = false
+        let upsideDown = [first, second]
+        XCTAssertEqual((0..<upsideDown.count).map { BookPages.label(upsideDown, $0) },
+                       ["1 \u{00B7} left", "1 \u{00B7} right"])
+        XCTAssertEqual(BookPages.notSplitBadge, "Not split")
+        XCTAssertEqual(BookPages.notWithTwoSidedReason, "Not with two-sided")
     }
 
     func test_labels_inOnePass_areTheLabelAndHelpOfEveryPage() {
@@ -351,16 +367,15 @@ final class BookSplitterTests: XCTestCase {
         let pages = [part(a, 1), blankPage(), part(b, nil), part(a, 0)]
         let labels = BookPages.labels(pages)
         XCTAssertEqual(labels, [
-            BookPageLabel(label: "Spread 1 \u{00B7} page 1", help: "Spread 1 \u{00B7} page 1"),
+            BookPageLabel(label: "1 \u{00B7} right", help: "Spread 1, right page"),
             nil,
-            BookPageLabel(label: "Spread 2 \u{00B7} not split",
-                          help: "Spread 2 \u{00B7} not split: the spread is one page. Right-click it to split it into two pages."),
-            BookPageLabel(label: "Spread 1 \u{00B7} page 2", help: "Spread 1 \u{00B7} page 2"),
+            BookPageLabel(label: "2 \u{00B7} not split", help: "Spread 2, not split"),
+            BookPageLabel(label: "1 \u{00B7} left", help: "Spread 1, left page"),
         ])
         XCTAssertEqual((0..<pages.count).map { BookPages.label(pages, $0) }, labels.map { $0?.label })
         XCTAssertEqual((0..<pages.count).map { BookPages.help(pages, $0) }, labels.map { $0?.help })
         XCTAssertTrue(BookPages.labels([]).isEmpty)
-        // A long book: every spread numbered, every page counted within its spread.
+        // A long book: every spread numbered, each page with its side.
         var book: [ScannedPage] = []
         for _ in 0..<1000 {
             let id = UUID()
@@ -368,8 +383,34 @@ final class BookSplitterTests: XCTestCase {
             book.append(part(id, 1))
         }
         let bookLabels = BookPages.labels(book)
-        XCTAssertEqual(bookLabels.first??.label, "Spread 1 \u{00B7} page 1")
-        XCTAssertEqual(bookLabels.last??.label, "Spread 1000 \u{00B7} page 2")
+        XCTAssertEqual(bookLabels.first??.label, "1 \u{00B7} left")
+        XCTAssertEqual(bookLabels.last??.label, "1000 \u{00B7} right")
+    }
+
+    func test_labels_keepTheSideEachPageWasCutWith() throws {
+        // A left-to-right book: the left page leads.
+        let spread = blankSpread()
+        let cut = BookSplitter.manual(.vertical, fraction: 0.5, width: 20, height: 10)
+        let ltr = try PageProcessor(steps: []).processSpread(spread, cut: cut, options: BookSplitOptions())
+        XCTAssertEqual(ltr.map { $0.spread?.part }, [0, 1])
+        XCTAssertEqual(BookPages.labels(ltr).map { $0?.label }, ["1 \u{00B7} left", "1 \u{00B7} right"])
+        // A right-to-left book scanned next: the right page leads, and the pages of the first spread
+        // keep their sides, as the setting applies to the spreads scanned from then on.
+        let rtl = try PageProcessor(steps: [])
+            .processSpread(blankSpread(), cut: cut, options: BookSplitOptions(rotationQuarterTurns: 0, rightToLeft: true))
+        XCTAssertEqual(rtl.map { $0.spread?.part }, [1, 0])
+        let queue = ltr + rtl
+        XCTAssertEqual(BookPages.labels(queue).map { $0?.label },
+                       ["1 \u{00B7} left", "1 \u{00B7} right", "2 \u{00B7} right", "2 \u{00B7} left"])
+        XCTAssertEqual(BookPages.help(queue, 2), "Spread 2, right page")
+        // Upside down on the glass: the part before the cut lies on the right once turned.
+        let turned = try PageProcessor(steps: [])
+            .processSpread(spread, cut: cut, options: BookSplitOptions(rotationQuarterTurns: 2))
+        XCTAssertEqual(turned.map { $0.spread?.part }, [1, 0])
+        XCTAssertEqual(BookPages.labels(turned).map { $0?.label }, ["1 \u{00B7} left", "1 \u{00B7} right"])
+        // A page moved in front of its partner, or left alone, keeps its side.
+        XCTAssertEqual(BookPages.labels([ltr[1], ltr[0]]).map { $0?.label }, ["1 \u{00B7} right", "1 \u{00B7} left"])
+        XCTAssertEqual(BookPages.labels([ltr[1]]).map { $0?.label }, ["1 \u{00B7} right"])
     }
 
     func test_replacementPages_keepWhatTheUserDecided() {
@@ -433,9 +474,9 @@ final class BookSplitterTests: XCTestCase {
         XCTAssertEqual(BookPages.scanNote([part(a, 0), part(a, 1)]), " 1 spread split into pages.")
         XCTAssertEqual(BookPages.scanNote([part(a, 0), part(a, 1), part(b, 1), part(b, 0)]), " 2 spreads split into pages.")
         XCTAssertEqual(BookPages.scanNote([part(c, nil)]),
-                       " The spine of 1 spread was not found: it was added as one page (right-click it to split it).")
+                       " The spine of 1 spread was not found: it was added as one page (Split\u{2026} on it splits it).")
         XCTAssertEqual(BookPages.scanNote([part(a, 0), part(a, 1), part(b, nil), part(c, nil)]),
-                       " 1 spread split into pages. The spine of 2 spreads was not found: they were added as one page each (right-click one to split it).")
+                       " 1 spread split into pages. The spine of 2 spreads was not found: they were added as one page each (Split\u{2026} on one splits it).")
     }
 
     func test_rotation_andHint() {
@@ -443,9 +484,9 @@ final class BookSplitterTests: XCTestCase {
                        ["As scanned", "90\u{00B0} clockwise", "180\u{00B0}", "90\u{00B0} counterclockwise"])
         XCTAssertEqual(BookPages.rotationLabel(5), "90\u{00B0} clockwise")
         var book = TaskCatalog.apply(.book, to: ScanSettings())
-        XCTAssertTrue(BookPages.hint(book).hasPrefix("Each scan of an open book"))
+        XCTAssertEqual(BookPages.hint(book), "Each book scan becomes two pages, cut at the spine.")
         book.document.splitFacingPages = false
-        XCTAssertTrue(BookPages.hint(book).hasPrefix("Scan an open book"))
+        XCTAssertEqual(BookPages.hint(book), "Each book scan becomes two pages, cut at the spine.")
         book.documentMultiPage = false
         XCTAssertTrue(BookPages.hint(book).hasPrefix("Only for pages collected"))
         XCTAssertTrue(BookPages.hint(TaskCatalog.apply(.copy, to: ScanSettings())).hasPrefix("Copies print"))
@@ -460,6 +501,6 @@ final class BookSplitterTests: XCTestCase {
         XCTAssertTrue(BookPages.hint(feeder).hasPrefix("Only for one side of each sheet"))
         feeder.duplex = .off
         XCTAssertTrue(BookPages.scansOneSide(feeder))
-        XCTAssertTrue(BookPages.hint(feeder).hasPrefix("Each scan of an open book"))
+        XCTAssertTrue(BookPages.hint(feeder).hasPrefix("Each book scan becomes two pages"))
     }
 }

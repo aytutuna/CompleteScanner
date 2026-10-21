@@ -1,7 +1,9 @@
 import SwiftUI
 
 /// The banner above the preview while a task is active or a stack is turned over by hand: the
-/// task, what to do now, a way back to the start screen (`onChangeTask`) and a button that
+/// task (with "Front · Back · Check" for a task of several steps, the current one stressed), what to
+/// do now in one short line with the fuller guidance behind an info button (`TaskStep.help`), a way
+/// back to the start screen (`onChangeTask`) and a button that
 /// leaves the task, keeping its settings (without a task: that scans one side again). Fronts
 /// scanned without moving on to the backs (the feeder stopped early) offer Done with Fronts.
 /// While the backs are due it offers keeping the fronts only and, before any back is scanned,
@@ -17,7 +19,16 @@ struct TaskBannerView: View {
     /// Title of the banner that guides turning a stack over by hand without a task.
     static let turningOverTitle = "Two-sided scanning"
 
+    /// The guidance behind the info button is showing.
+    @State private var showHelp = false
+
     private var name: String { definition?.title ?? Self.turningOverTitle }
+
+    /// The step's short line.
+    private var prompt: String { state.taskFlow?.current?.prompt ?? definition?.subtitle ?? DuplexMode.manual.hint }
+
+    /// The step's fuller guidance; empty when the prompt says it all.
+    private var guidance: String { state.taskFlow?.current?.help ?? "" }
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -28,13 +39,37 @@ struct TaskBannerView: View {
                 .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.12)))
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.headline)
-                    .lineLimit(1)
-                Text(state.taskFlow?.current?.prompt ?? definition?.subtitle ?? DuplexMode.manual.hint)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(name)
+                        .font(.headline)
+                        .lineLimit(1)
+                    if let flow = state.taskFlow, flow.stepCount > 1 {
+                        stepIndicator(flow)
+                    }
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(prompt)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel(Text(state.taskFlow?.current?.fullPrompt ?? prompt))
+                    if !guidance.isEmpty {
+                        Button {
+                            showHelp.toggle()
+                        } label: {
+                            Image(systemName: "info.circle")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("More about \(name)")
+                        .accessibilityLabel(Text("More about \(name)"))
+                        .popover(isPresented: $showHelp, arrowEdge: .bottom) {
+                            Text(guidance)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(14)
+                                .frame(width: 300, alignment: .leading)
+                        }
+                    }
+                }
                 if state.awaitingBacks || state.canFinishFronts {
                     sidesActions
                         .padding(.top, 4)
@@ -42,7 +77,9 @@ struct TaskBannerView: View {
                 // The back of a card with nothing printed on it may be left out. (The backs of a stack
                 // turned over by hand are left out with Keep Fronts Only.)
                 if state.canSkipStep, let step = state.taskFlow?.current {
-                    Button("Skip \(step.title.lowercased())") { state.skipStep() }
+                    Button(step.id == IdCardSteps.backStepID ? IdCardSteps.skipBackLabel : "Skip \(step.title.lowercased())") {
+                        state.skipStep()
+                    }
                         .controlSize(.small)
                         .disabled(state.isBusy)
                         .help("Nothing is printed on the back: save the front only")
@@ -55,7 +92,7 @@ struct TaskBannerView: View {
             } label: {
                 Label("Change Task", systemImage: "square.grid.2x2")
             }
-            .help("Pick another task on the start screen")
+            .help("Pick another task")
             Button {
                 if definition != nil {
                     // Leaving the ID card task with a side scanned asks first.
@@ -81,20 +118,36 @@ struct TaskBannerView: View {
     }
 
     private var exitHelp: String {
-        definition != nil
-            ? "Leave the task. Its settings stay, without the guidance."
-            : "Stop turning stacks over by hand: scan one side of each sheet."
+        definition != nil ? "Leave the task (settings stay)" : "Scan one side of each sheet"
     }
 
     private var exitLabel: String { definition != nil ? "Leave the task" : "Scan one side only" }
 
     private var bannerLabel: String { definition != nil ? "Task: \(name)" : name }
 
-    private var title: String {
-        guard let flow = state.taskFlow, flow.stepCount > 1, let step = flow.current else {
-            return name
+    /// "Front · Back · Check": each step in a word, the current one bold in the accent color; VoiceOver
+    /// reads "ID card, step 1 of 3: front side".
+    private func stepIndicator(_ flow: TaskFlow) -> some View {
+        var line: Text = Text("")
+        for (index, step) in flow.steps.enumerated() {
+            if index > 0 {
+                let separator: Text = Text(" \u{00B7} ").foregroundStyle(Color.secondary)
+                line = line + separator
+            }
+            let word: Text = Text(step.word)
+            if index == flow.stepIndex {
+                let stressed: Text = word.bold().foregroundStyle(Color.accentColor)
+                line = line + stressed
+            } else {
+                let plain: Text = word.foregroundStyle(Color.secondary)
+                line = line + plain
+            }
         }
-        return "\(name) \u{00B7} Step \(flow.stepIndex + 1) of \(flow.stepCount): \(step.title)"
+        let current: String = flow.current?.title.lowercased() ?? ""
+        return line
+            .font(.callout)
+            .lineLimit(1)
+            .accessibilityLabel(Text("\(name), step \(flow.stepIndex + 1) of \(flow.stepCount): \(current)"))
     }
 
     /// Moving on from the fronts, the backs' choices, and the count mismatch ("3 fronts but 2

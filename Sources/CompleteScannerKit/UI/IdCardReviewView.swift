@@ -18,10 +18,12 @@ struct IdCardReviewView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Check the ID Card")
                     .font(.title2.bold())
-                Text("Both sides go on one page at their real size. The scans stay on this Mac: they are not kept in the Scans tab, and are cleared once you save or discard them.")
+                // Privacy: always shown, the full sentence on hover and for VoiceOver.
+                Label(IdCardSteps.privacyNote, systemImage: "lock.shield")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .help(IdCardSteps.privacyHelp)
+                    .accessibilityHint(Text(IdCardSteps.privacyHelp))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
@@ -45,7 +47,7 @@ struct IdCardReviewView: View {
                             Button {
                                 state.swapIdCardSides()
                             } label: {
-                                Label("Swap Front and Back", systemImage: "arrow.up.arrow.down")
+                                Label("Swap Sides", systemImage: "arrow.up.arrow.down")
                             }
                             .help("The sides were scanned the other way round")
                             .disabled(state.isBusy)
@@ -54,8 +56,6 @@ struct IdCardReviewView: View {
                     .frame(width: 300)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("The page")
-                            .font(.headline)
                         Group {
                             if let page = state.idCardPreview {
                                 Image(decorative: page, scale: 1)
@@ -71,7 +71,7 @@ struct IdCardReviewView: View {
                         .background(Color.white)
                         .overlay(Rectangle().strokeBorder(Color.secondary.opacity(0.3), lineWidth: 1))
                         .shadow(color: .black.opacity(0.2), radius: 6, y: 2)
-                        .accessibilityLabel("The page both sides are saved on")
+                        .accessibilityLabel("Page preview")
                         Text(state.idCardLayoutCaption)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -99,7 +99,6 @@ struct IdCardReviewView: View {
                 }
                 .pickerStyle(.menu)
                 .fixedSize()
-                .help("The page both sides are laid out on")
                 // The card is a picture: a PDF or an image. A text format chosen in the inspector
                 // shows (and saves) as PDF here.
                 Picker("Save as", selection: Binding(
@@ -111,29 +110,28 @@ struct IdCardReviewView: View {
                 }
                 .pickerStyle(.menu)
                 .fixedSize()
-                Toggle("Also save each side as an image", isOn: $state.settings.taskOptions.idCardSaveSidesAsImages)
+                Toggle("Also save sides as images", isOn: $state.settings.taskOptions.idCardSaveSidesAsImages)
                     .toggleStyle(.checkbox)
-                    .help("Each side is saved as a picture of its own too, next to the page")
                 Spacer()
                 Button("Print\u{2026}") {
                     state.printIdCard()
                 }
                 .disabled(state.idCardFront == nil || state.isBusy || !state.hasPrinter)
                 .help(state.hasPrinter
-                      ? "Print the page at real size on \(state.copyPrinterName ?? "the default printer")"
+                      ? "Print at real size on \(state.copyPrinterName ?? "the default printer")"
                       : PrintText.noPrinterMessage)
                 Button("Discard") {
                     state.discardIdCard()
                 }
                 .keyboardShortcut(.cancelAction)
-                .help("Drop both sides without saving them")
+                .help("Delete both sides; can't be undone")
                 Button(saveTitle) {
                     state.saveIdCard()
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
                 .disabled(state.idCardFront == nil || state.isBusy)
-                .help(saveHelp)
+                .accessibilityHint(Text(saveHelp))
             }
             .disabled(state.isBusy)
             .padding()
@@ -182,18 +180,22 @@ fileprivate struct IdCardSideCard: View {
                     .font(.headline)
                 Spacer(minLength: 4)
                 if photo != nil {
+                    // Short tooltips; the names keep the side ("Scan the front again").
                     Button(action: onRotate) {
                         Image(systemName: "rotate.right")
                     }
-                    .help("Turn the \(title.lowercased()) 90° clockwise")
+                    .help("Rotate")
+                    .accessibilityLabel(Text("Rotate the \(title.lowercased()) 90° clockwise"))
                     Button(action: onAdjustCrop) {
                         Image(systemName: "crop")
                     }
-                    .help("Fix the crop of the \(title.lowercased())")
+                    .help("Fix crop")
+                    .accessibilityLabel(Text("Fix the crop of the \(title.lowercased())"))
                     Button(action: onRetake) {
                         Image(systemName: "arrow.clockwise")
                     }
-                    .help("Scan the \(title.lowercased()) again")
+                    .help("Scan again")
+                    .accessibilityLabel(Text("Scan the \(title.lowercased()) again"))
                 }
             }
             .buttonStyle(.borderless)

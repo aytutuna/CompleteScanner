@@ -192,8 +192,15 @@ public static class ModelLabels
     public static string Label(this ScanSource source) => source switch
     {
         ScanSource.Flatbed => "Flatbed",
-        ScanSource.DocumentFeeder => "Document Feeder (ADF)",
+        ScanSource.DocumentFeeder => "Document feeder",
         _ => source.ToString(),
+    };
+
+    /// <summary>The source's tooltip: what the plain name stands for.</summary>
+    public static string Hint(this ScanSource source) => source switch
+    {
+        ScanSource.DocumentFeeder => "Automatic document feeder (ADF)",
+        _ => "The scanner's glass",
     };
 
     public static string Label(this OutputFormat format) => format switch
@@ -216,13 +223,23 @@ public static class ModelLabels
         _ => preset.ToString(),
     };
 
-    /// <summary>One line saying what the size does, shown under the size picker.</summary>
+    /// <summary>What the size is for, in a few words: the segment's tooltip.</summary>
     public static string Hint(this PdfSizePreset preset) => preset switch
     {
-        PdfSizePreset.Standard => "Up to 300 dpi (black & white 600), gray pages saved in gray. For most documents.",
-        PdfSizePreset.Best => "Full resolution, high quality. Largest files.",
-        PdfSizePreset.Compact => "Up to 200 dpi (black & white 300), more compression. For email and uploads.",
-        PdfSizePreset.Smallest => "Up to 150 dpi (black & white 300), most compression. For strict size limits.",
+        PdfSizePreset.Standard => "Good for most documents",
+        PdfSizePreset.Best => "Full quality, largest files",
+        PdfSizePreset.Compact => "Smaller, for email and uploads",
+        PdfSizePreset.Smallest => "Smallest, for strict size limits",
+        _ => "",
+    };
+
+    /// <summary>How the size stores the pages, for screen readers (the segment's help text).</summary>
+    public static string Detail(this PdfSizePreset preset) => preset switch
+    {
+        PdfSizePreset.Standard => "Up to 300 dpi (black & white 600), gray pages saved in gray.",
+        PdfSizePreset.Best => "Full resolution, high quality.",
+        PdfSizePreset.Compact => "Up to 200 dpi (black & white 300), more compression.",
+        PdfSizePreset.Smallest => "Up to 150 dpi (black & white 300), most compression.",
         _ => "",
     };
 
@@ -235,13 +252,13 @@ public static class ModelLabels
         _ => action.ToString(),
     };
 
-    /// <summary>One line saying what the after-save action does, shown as its tooltip.</summary>
+    /// <summary>What the after-save action does, in a few words: its tooltip.</summary>
     public static string Hint(this AfterSaveAction action) => action switch
     {
-        AfterSaveAction.None => "Stay in the app after saving.",
-        AfterSaveAction.Open => "Open the saved file in its app. Several files are shown in their folder instead.",
-        AfterSaveAction.Reveal => "Show the saved files in their folder.",
-        AfterSaveAction.Share => "Open the share window to email the saved files or send them to an app.",
+        AfterSaveAction.None => "Stay here",
+        AfterSaveAction.Open => "Open the file (several: show the folder)",
+        AfterSaveAction.Reveal => "Show the files in their folder",
+        AfterSaveAction.Share => "Email or send to an app",
         _ => "",
     };
 
@@ -253,19 +270,19 @@ public static class ModelLabels
         _ => mode.ToString(),
     };
 
-    /// <summary>One line saying what the choice does, shown under the sides picker.</summary>
+    /// <summary>What the choice does, in a few words: its tooltip.</summary>
     public static string Hint(this DuplexMode mode) => mode switch
     {
-        DuplexMode.Off => "Only the front of each sheet is scanned.",
-        DuplexMode.Both => "The feeder scans both sides of every sheet in one pass.",
-        DuplexMode.Manual => "Scan the fronts, turn the stack over, then scan the backs. The pages are put in order.",
+        DuplexMode.Off => "Front only",
+        DuplexMode.Both => "Both sides in one pass",
+        DuplexMode.Manual => "Scan the fronts, flip the stack, scan the backs",
         _ => "",
     };
 
     public static string Label(this DuplexBinding binding) => binding switch
     {
-        DuplexBinding.LongEdge => "Long edge (like a book)",
-        DuplexBinding.ShortEdge => "Short edge (like a calendar)",
+        DuplexBinding.LongEdge => "Long edge (book)",
+        DuplexBinding.ShortEdge => "Short edge (calendar)",
         _ => binding.ToString(),
     };
 
@@ -277,12 +294,12 @@ public static class ModelLabels
         _ => sensitivity.ToString(),
     };
 
-    /// <summary>One line saying what counts as blank at that level, shown under the picker.</summary>
+    /// <summary>What counts as blank at that level, in a few words: the segment's tooltip.</summary>
     public static string Hint(this BlankSensitivity sensitivity) => sensitivity switch
     {
-        BlankSensitivity.Low => "Only pages with nothing on them count as blank.",
-        BlankSensitivity.Medium => "Empty pages count as blank, also with dust, show-through or a lone page number.",
-        BlankSensitivity.High => "Pages with a few small marks count as blank too. Check the flagged pages before saving.",
+        BlankSensitivity.Low => "Only empty pages",
+        BlankSensitivity.Medium => "Also dust or a page number",
+        BlankSensitivity.High => "Also pages with small marks",
         _ => "",
     };
 
@@ -291,19 +308,44 @@ public static class ModelLabels
         SplitMode.None => "Off",
         SplitMode.SeparatorSheet => "At separator sheets",
         SplitMode.BlankSheet => "At blank sheets",
-        SplitMode.SheetCount => "Every N sheets",
-        SplitMode.Barcode => "At barcode or QR sheets",
+        SplitMode.SheetCount => "Every few sheets",
+        SplitMode.Barcode => "At QR codes or barcodes",
         _ => mode.ToString(),
     };
 
-    /// <summary>One line saying how the stack is split, shown under the picker.</summary>
+    /// <summary>How the stack is split, in a few words: the choice's tooltip.</summary>
     public static string Hint(this SplitMode mode) => mode switch
     {
-        SplitMode.None => "All the pages are saved as one document.",
-        SplitMode.SeparatorSheet => "Put a separator sheet (Patch T) in front of each document after the first. It is found and left out, and a new document starts after it.",
-        SplitMode.BlankSheet => "Put an empty sheet between documents; it is left out. With both sides scanned, only a sheet blank on both sides splits.",
-        SplitMode.SheetCount => "A new document starts every few sheets, for forms that all have the same number of sheets.",
-        SplitMode.Barcode => "Put a QR separator sheet (print it below) in front of each document. It is found and left out, a new document starts after it, and the name on it names that document ({label}). Only codes starting with CS-SEP count, so codes printed on the documents are ignored.",
+        SplitMode.None => "All pages in one document",
+        SplitMode.SeparatorSheet => "A separator sheet starts each document",
+        SplitMode.BlankSheet => "A blank sheet between documents splits them",
+        SplitMode.SheetCount => "A new document every few sheets",
+        SplitMode.Barcode => "A code starts each document and can name it",
+        _ => "",
+    };
+
+    /// <summary>
+    /// The one line under the choice: what happens to the sheets that split ("Separator sheets are
+    /// left out"); empty where the choice's own controls say it (every few sheets, codes).
+    /// </summary>
+    public static string Caption(this SplitMode mode) => mode switch
+    {
+        SplitMode.SeparatorSheet => "Separator sheets are left out",
+        SplitMode.BlankSheet => "Blank sheets are left out",
+        _ => "",
+    };
+
+    /// <summary>How it works, step by step: what the ⓘ next to "Split into documents" shows.</summary>
+    public static string Steps(this SplitMode mode) => mode switch
+    {
+        SplitMode.None => "All the pages are saved as one document. Right-click a page to start a new document there.",
+        SplitMode.SeparatorSheet => "1. Save or print a separator sheet. 2. Put one in front of each document after the first. "
+                                    + "3. Scan the stack. 4. Check the dividers in the page strip, then save.",
+        SplitMode.BlankSheet => "Put an empty sheet between documents. With both sides scanned, only a sheet blank on both sides splits.",
+        SplitMode.SheetCount => "A new document starts every few sheets, for forms that all have the same number of sheets. "
+                                + "Check the dividers in the page strip, then save.",
+        SplitMode.Barcode => "1. Print a QR sheet, one per document, with a name or without. 2. Put it in front of the document. "
+                             + "3. Scan: the sheet is left out and its name names the document. Only codes starting with CS-SEP count.",
         _ => "",
     };
 
@@ -545,7 +587,7 @@ public sealed class DocumentOptions : IEquatable<DocumentOptions>
     public bool SoftenSpineShadow { get; set; } = false;
 
     /// <summary>
-    /// At barcode or QR sheets (<see cref="SplitMode.Barcode"/>): a page with any code is kept, starts a
+    /// At QR codes or barcodes (<see cref="SplitMode.Barcode"/>): a page with any code is kept, starts a
     /// new document and names it after the code's text. Off: a sheet with a code starting with
     /// <see cref="SplitBarcodePrefix"/> is a separator sheet, left out, and the rest of the code's text
     /// names the document after it; other codes are ignored. Off unless chosen. Written after the earlier keys.
@@ -553,7 +595,7 @@ public sealed class DocumentOptions : IEquatable<DocumentOptions>
     public bool BarcodeStartsDocument { get; set; } = false;
 
     /// <summary>
-    /// At barcode or QR sheets: the text a separator sheet's code starts with ("CS-SEP",
+    /// At QR codes or barcodes: the text a separator sheet's code starts with ("CS-SEP",
     /// <see cref="BarcodeSeparators.DefaultPrefix"/>; a–z matching A–Z, spaces around it ignored), which
     /// the QR separator sheets the app prints carry, so codes printed on the documents themselves do not
     /// split the stack. Empty: every code makes a separator sheet. Kept in settings files and presets
@@ -657,6 +699,15 @@ public static class BlankSensitivities
     /// <summary>The levels as the inspector lists them: least first.</summary>
     public static IReadOnlyList<BlankSensitivity> DisplayOrder { get; } =
         [BlankSensitivity.Low, BlankSensitivity.Medium, BlankSensitivity.High];
+
+    /// <summary>The line that stays visible under the levels at High: pages with a few marks may be left out.</summary>
+    public const string HighWarning = "Check flagged pages before saving";
+}
+
+public static class DuplexBindings
+{
+    /// <summary>The Flip on picker's tooltip.</summary>
+    public const string PickerHint = "Which edge the sheets turn on";
 }
 
 public static class SplitModes

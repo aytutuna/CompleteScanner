@@ -535,11 +535,11 @@ public class PageProcessorTests
     public void QueueSummary_AndScanNote_CountTheSkippedPages()
     {
         var on = Options(true);
-        Assert.Equal("1 page in queue", PageFilter.QueueSummary([Checked(false)], on));
-        Assert.Equal("3 pages in queue, 2 blank skipped", PageFilter.QueueSummary([Checked(false), Checked(true), Checked(true)], on));
-        Assert.Equal("2 pages in queue, 1 skipped",
+        Assert.Equal("1 page", PageFilter.QueueSummary([Checked(false)], on));
+        Assert.Equal("3 pages · 2 blank skipped", PageFilter.QueueSummary([Checked(false), Checked(true), Checked(true)], on));
+        Assert.Equal("2 pages · 1 skipped",
                      PageFilter.QueueSummary([Checked(false), Checked(false, PageInclusion.Skip)], on));
-        Assert.Equal("2 pages in queue", PageFilter.QueueSummary([Checked(true), Checked(false)], Options(false)));
+        Assert.Equal("2 pages", PageFilter.QueueSummary([Checked(true), Checked(false)], Options(false)));
         Assert.Equal(" 2 look blank and will be skipped.", PageFilter.ScanNote([Checked(true), Checked(true), Checked(false)], on));
         Assert.Equal(" 1 looks blank.", PageFilter.ScanNote([Checked(true)], Options(false)));
         Assert.Equal("", PageFilter.ScanNote([Checked(false), Page(BlankImage)], on));

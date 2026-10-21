@@ -21,6 +21,7 @@ struct SpreadSplitView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var axis: GutterAxis
     @State private var fraction: Double
+    @State private var showKeys: Bool = false
 
     /// The slider's range: the cut stays this far from the spread's edges.
     private static let range: ClosedRange<Double> = 0.05...0.95
@@ -36,10 +37,26 @@ struct SpreadSplitView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Split Spread \(source.spreadNumber)")
                 .font(.headline)
-            Text("Click or drag on the spread to place the cut at the spine, or use the slider. Choose how the pages lie if the book was on its side.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text("Drag to place the cut at the spine.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    showKeys.toggle()
+                } label: {
+                    Image(systemName: "info.circle")
+                }
+                .buttonStyle(.borderless)
+                .help("More about keyboard use")
+                .accessibilityLabel(Text("More about keyboard use"))
+                .popover(isPresented: $showKeys, arrowEdge: .bottom) {
+                    Text("Use the slider for fine placement. If the book lay on its side, choose Stacked.")
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(14)
+                        .frame(width: 280, alignment: .leading)
+                }
+            }
             GeometryReader { geometry in
                 let size = fittedSize(in: geometry.size)
                 ZStack(alignment: .topLeading) {
@@ -63,10 +80,10 @@ struct SpreadSplitView: View {
             .frame(minHeight: 360)
             Picker("Pages lie", selection: $axis) {
                 Text("Side by Side").tag(GutterAxis.vertical)
-                Text("One Above the Other").tag(GutterAxis.horizontal)
+                Text("Stacked").tag(GutterAxis.horizontal)
             }
             .pickerStyle(.segmented)
-            .help("Side by side: the spine runs up and down the scan. One above the other: the book lay on its side.")
+            .help("Side by side: the spine runs up and down the scan. Stacked: the book lay on its side.")
             Slider(value: $fraction, in: Self.range) {
                 Text("Cut")
             }

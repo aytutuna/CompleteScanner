@@ -118,6 +118,14 @@ public class IdCardTests
         Assert.Equal([false, true, false], steps.Select(s => s.Skippable));
         Assert.All(steps, s => Assert.False(s.Repeats));
         Assert.All(steps, s => Assert.False(string.IsNullOrWhiteSpace(s.Prompt)));
+        Assert.Equal(["Place the card face down near a corner and scan.", "Turn the card over where it lies and scan.",
+                      "Check both sides, then save."], steps.Select(s => s.Prompt));
+        Assert.Equal(["Close the lid before scanning.", "Nothing printed on the back? Select No back side.",
+                      "Both sides go on one page at real size."], steps.Select(s => s.Help));
+        Assert.Equal(["Front", "Back", "Check"], steps.Select(s => s.Word));
+        Assert.Equal("No back side", IdCardSteps.SkipBackLabel);
+        Assert.Equal("Not kept in Scans history", IdCardSteps.PrivacyNote);
+        Assert.Equal("The scans stay on this computer and are cleared once you save or discard them.", IdCardSteps.PrivacyHelp);
         Assert.Equal(PageSide.Front, IdCardSteps.SideOf("front"));
         Assert.Equal(PageSide.Back, IdCardSteps.SideOf("back"));
         Assert.Null(IdCardSteps.SideOf("review"));
@@ -235,8 +243,10 @@ public class IdCardTests
     [Fact]
     public void Layout_Caption()
     {
-        Assert.Equal("Front and back on one A4 page, at real size.", IdCardLayout.Caption(PaperSize.A4, hasBack: true, scaledToFit: false));
-        Assert.Equal("Front only on one Letter page, made smaller to fit.", IdCardLayout.Caption(PaperSize.Letter, hasBack: false, scaledToFit: true));
+        Assert.Equal("One A4 page, real size", IdCardLayout.Caption(PaperSize.A4, hasBack: true, scaledToFit: false));
+        Assert.Equal("One Letter page, real size", IdCardLayout.Caption(PaperSize.Letter, hasBack: true, scaledToFit: false));
+        Assert.Equal("Front only, one Letter page, made smaller to fit", IdCardLayout.Caption(PaperSize.Letter, hasBack: false, scaledToFit: true));
+        Assert.Equal("One A4 page, made smaller to fit", IdCardLayout.Caption(PaperSize.A4, hasBack: true, scaledToFit: true));
     }
 
     // MARK: - Composer

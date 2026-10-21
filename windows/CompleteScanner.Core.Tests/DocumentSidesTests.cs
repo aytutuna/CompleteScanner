@@ -133,11 +133,23 @@ public class DocumentSidesTests
     [Fact]
     public void SideLabel()
     {
-        Assert.Equal("Sheet 2 · back", DocumentSides.SideLabel(PageSide.Back, 1));
-        Assert.Equal("Sheet 1 · front", DocumentSides.SideLabel(PageSide.Front, 0));
+        Assert.Equal("2 · back", DocumentSides.SideLabel(PageSide.Back, 1));
+        Assert.Equal("1 · front", DocumentSides.SideLabel(PageSide.Front, 0));
         Assert.Equal("Front", DocumentSides.SideLabel(PageSide.Front, null));
         Assert.Equal("Back", DocumentSides.SideLabel(PageSide.Back, null));
         Assert.Null(DocumentSides.SideLabel(null, 3));
+    }
+
+    [Fact]
+    public void SideName_SpellsTheSheetOut()
+    {
+        Assert.Equal("Sheet 2, back", DocumentSides.SideName(PageSide.Back, 1));
+        Assert.Equal("Sheet 1, front", DocumentSides.SideName(PageSide.Front, 0));
+        Assert.Equal("Front", DocumentSides.SideName(PageSide.Front, null));
+        Assert.Equal("Back", DocumentSides.SideName(PageSide.Back, null));
+        Assert.Null(DocumentSides.SideName(null, 3));
+        Assert.Equal("Needs the feeder", DocumentSides.NeedsFeederReason);
+        Assert.Equal("Two-sided scanning uses the document feeder.", DocumentSides.FeederOnlyReason);
     }
 
     [Fact]
@@ -159,7 +171,11 @@ public class DocumentSidesTests
         Assert.False(steps[0].Skippable);
         Assert.False(steps[1].RequiresCapture);
         Assert.True(steps[1].Skippable);
-        Assert.Contains("turn it over", steps[1].Prompt);
+        Assert.Equal("Load the stack in the feeder and scan the fronts.", steps[0].Prompt);
+        Assert.Equal("Turn the stack over, load it again and scan.", steps[1].Prompt);
+        Assert.Contains("turn it over", steps[1].Help);
+        Assert.Equal(["Front", "Back"], steps.Select(s => s.Word));
+        Assert.All(steps, step => Assert.InRange(StatusLine.Words(step.Prompt), 1, 10));
     }
 
     // MARK: - What a scan does with the settings

@@ -345,9 +345,11 @@ public partial class MainWindow : Window
         bool cardHeld = ViewModel.HasIdCardCaptures;
         string? cardHint = cardHeld ? IdCardHeldHint : null;
         ModeTrack.IsEnabled = SourceBox.IsEnabled = !cardHeld;
-        ModeTrack.ToolTip = SourceBox.ToolTip = cardHint;
+        ModeTrack.ToolTip = cardHint;
+        // The source's plain name ("Document feeder") with what it stands for on hover: "(ADF)".
+        SourceBox.ToolTip = cardHint ?? ViewModel.Settings.Source.Hint();
         AutomationProperties.SetHelpText(ModeTrack, cardHint ?? "");
-        AutomationProperties.SetHelpText(SourceBox, cardHint ?? "");
+        AutomationProperties.SetHelpText(SourceBox, cardHint ?? ViewModel.Settings.Source.Hint());
 
         UpdateMarquee();
         SyncDeviceSelection();
@@ -417,13 +419,20 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Shows an error in the InfoBar above the window content. It stays until dismissed; a newer
-    /// error replaces the text. Screen readers are told through a live-region event. The bar's
-    /// Troubleshoot button is hidden; only a scanner error from the view model shows it again.
+    /// Shows an error in the InfoBar above the window content: a title naming the scanner's problem
+    /// ("Paper jam") and what to do (<see cref="ScannerProblems.Notice"/>), the whole message as its
+    /// tooltip. It stays until dismissed; a newer error replaces the text. Screen readers are told
+    /// through a live-region event. The bar's Troubleshoot button is hidden; only a scanner error from
+    /// the view model shows it again.
     /// </summary>
     private void ShowError(string message)
     {
-        InfoBarMessage.Text = message;
+        var notice = ScannerProblems.Notice(message);
+        InfoBarTitle.Text = notice.Title;
+        InfoBarMessage.Text = notice.Message;
+        bool shortened = notice.Message != message.Trim();
+        InfoBarText.ToolTip = shortened ? message : null;
+        AutomationProperties.SetHelpText(InfoBarText, shortened ? message : "");
         InfoBarTroubleshootButton.Visibility = Visibility.Collapsed;
         InfoBar.Visibility = Visibility.Visible;
         var peer = UIElementAutomationPeer.FromElement(InfoBarText) ?? UIElementAutomationPeer.CreatePeerForElement(InfoBarText);
@@ -597,13 +606,17 @@ public partial class MainWindow : Window
         if (task is null && !turningOver)
         {
             TaskBanner.Visibility = Visibility.Collapsed;
+            CanvasHintTitle.Visibility = Visibility.Visible;
             CanvasHintBody.Visibility = Visibility.Visible;
             return;
         }
         string title = task?.Title ?? TurningOverTitle;
         string name = task is null ? title : $"Task: {title}";
         bool sameTaskShown = TaskBanner.Visibility == Visibility.Visible && AutomationProperties.GetName(TaskBannerGroup) == name;
-        TaskBanner.Visibility = Visibility.Visible;
+        // While a review shows its own title (photos, receipts, the ID card), the banner's guidance is
+        // for the next scan: it is hidden under the review, keeping its place so nothing moves.
+        bool reviewShown = ViewModel.ShowPhotoReview || ViewModel.ShowIdCardReview;
+        TaskBanner.Visibility = reviewShown ? Visibility.Hidden : Visibility.Visible;
         TaskBannerGlyph.Text = TaskIcons.Glyph(task?.IconKey ?? "twoSided");
         var flow = ViewModel.Flow;
         var step = flow?.Current;
@@ -620,17 +633,18 @@ public partial class MainWindow : Window
         {
             TaskBannerSteps.Visibility = Visibility.Collapsed;
         }
-        // The first sentence on screen; the rest behind the ⓘ. Screen readers get all of it.
+        // The step's short line on screen; its fuller guidance behind the ⓘ. Screen readers get both.
         string prompt = step?.Prompt ?? task?.Subtitle ?? DuplexMode.Manual.Hint();
-        var (lead, rest) = TextSplit.Lead(prompt);
-        bool promptChanged = TaskBannerPrompt.Text != lead;
-        TaskBannerPrompt.Text = lead;
-        AutomationProperties.SetName(TaskBannerPrompt, prompt);
+        string help = step?.Help ?? "";
+        string spoken = step?.FullPrompt ?? prompt;
+        bool promptChanged = TaskBannerPrompt.Text != prompt;
+        TaskBannerPrompt.Text = prompt;
+        AutomationProperties.SetName(TaskBannerPrompt, spoken);
         TaskBannerInfo.Label = title;
-        TaskBannerInfo.InfoText = rest;
-        TaskBannerInfo.Visibility = rest.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        TaskBannerInfo.InfoText = help;
+        TaskBannerInfo.Visibility = help.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         AutomationProperties.SetName(TaskBannerGroup, name);
-        AutomationProperties.SetHelpText(TaskBannerGroup, prompt);
+        AutomationProperties.SetHelpText(TaskBannerGroup, spoken);
         // A new step of the same task (the backs after the fronts) is read out.
         if (sameTaskShown && promptChanged) AnnounceWhenShown(TaskBannerPrompt);
 
@@ -668,16 +682,18 @@ public partial class MainWindow : Window
         StepActions.IsEnabled = !ViewModel.IsBusy;
         if (skippable)
         {
-            SkipStepButton.Content = step!.Id == IdCardSteps.BackStepId ? "No back side" : $"Skip {step.Title.ToLowerInvariant()}";
+            SkipStepButton.Content = step!.Id == IdCardSteps.BackStepId ? IdCardSteps.SkipBackLabel : $"Skip {step.Title.ToLowerInvariant()}";
             SkipStepButton.ToolTip = "Nothing is printed on the back: save the front only";
         }
-        // The empty stage's line says what the banner says: hidden while it shows.
+        // The empty stage's title and line say what the banner and the status line say: hidden while
+        // the banner shows (the import link stays).
+        CanvasHintTitle.Visibility = Visibility.Collapsed;
         CanvasHintBody.Visibility = Visibility.Collapsed;
     }
 
     /// <summary>
-    /// "Front · Back · Check": each step in a word (its title's first word, after a leading "Scan the":
-    /// "Scan the front sides" is "Front"), the current one bold in the accent color.
+    /// "Front · Back · Check": each step in a word (<see cref="TaskStep.Word"/>), the current one bold in
+    /// the accent color.
     /// </summary>
     private void SetStepIndicator(TaskFlow flow)
     {
@@ -685,7 +701,7 @@ public partial class MainWindow : Window
         for (int i = 0; i < flow.StepCount; i++)
         {
             if (i > 0) TaskBannerSteps.Inlines.Add(new System.Windows.Documents.Run(" · "));
-            string word = StepWords.Of(flow.Steps[i].Title);
+            string word = flow.Steps[i].Word;
             var run = new System.Windows.Documents.Run(word);
             if (i == flow.StepIndex)
             {
@@ -858,7 +874,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Names the items of the page strip for screen readers: "Page 3, Sheet 2 · back". The badge
+    /// Names the items of the page strip for screen readers: "Page 3, Sheet 2, back". The badge
     /// and tooltip inside an item are not read, and an item is otherwise named after its type.
     /// </summary>
     private void NamePageItems()
@@ -1198,14 +1214,14 @@ public partial class MainWindow : Window
         SidesBox.SelectedItem = SidesBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (DuplexMode)i.Tag == s.Duplex);
         SidesBox.IsEnabled = feeder;
         // On the flatbed of a scanner with a feeder: greyed out, with the reason next to it.
-        SidesHint.Text = feeder ? "" : ShortText.NeedsFeeder;
+        SidesHint.Text = feeder ? "" : DocumentSides.NeedsFeederReason;
         SidesReason.Visibility = feeder ? Visibility.Collapsed : Visibility.Visible;
         string sidesHelp = !feeder ? DocumentSides.FeederOnlyReason
             : s.Duplex == DuplexMode.Manual && manualReason is not null ? manualReason
             : s.Duplex == DuplexMode.Off && bothReason is not null ? $"{s.Duplex.Hint()} {bothReason}"
             : s.Duplex.Hint();
         SidesBox.ToolTip = sidesHelp;
-        AutomationProperties.SetHelpText(SidesBox, feeder ? sidesHelp : $"{ShortText.NeedsFeeder}. {sidesHelp}");
+        AutomationProperties.SetHelpText(SidesBox, feeder ? sidesHelp : $"{DocumentSides.NeedsFeederReason}. {sidesHelp}");
         BackBindingOptions.Visibility = feeder && s.Duplex != DuplexMode.Off ? Visibility.Visible : Visibility.Collapsed;
         BackBindingBox.SelectedItem = BackBindingBox.Items.OfType<ComboBoxItem>()
             .FirstOrDefault(i => (DuplexBinding)i.Tag == s.BackBinding);
@@ -1233,12 +1249,14 @@ public partial class MainWindow : Window
                 string tip = !fits ? PaperSizes.DoesNotFitReason(s.Source)
                     : size == PaperSize.Auto && ViewModel.IsCopyFlow ? PrintText.CopyPaperHint(size, s.Source)
                     : PaperSizes.Hint(size, s.Source);
+                // A size larger than the glass or the feeder stays listed, greyed out with why after its name.
+                string content = size == PaperSize.Auto ? size.Label() : $"{size.Label()}  ({size.Detail()})";
                 var item = new ComboBoxItem
                 {
-                    Content = size == PaperSize.Auto ? size.Label() : $"{size.Label()}  ({size.Detail()})",
+                    Content = fits ? content : $"{content} · {tip}",
                     Tag = size,
                     IsEnabled = fits,
-                    ToolTip = tip,
+                    ToolTip = fits ? tip : null,
                 };
                 ToolTipService.SetShowOnDisabled(item, true);
                 AutomationProperties.SetHelpText(item, tip);
@@ -1593,7 +1611,7 @@ public partial class MainWindow : Window
                 ToolTip = size.Hint(),
                 Style = (Style)FindResource("SegmentedTextItemStyle"),
             };
-            AutomationProperties.SetHelpText(segment, size.Hint());
+            AutomationProperties.SetHelpText(segment, $"{size.Hint()}. {size.Detail()}");
             segment.Checked += Setting_Changed;
             PdfSizeSegments.Children.Add(segment);
         }
@@ -1623,7 +1641,7 @@ public partial class MainWindow : Window
         PdfSizeOptions.Visibility = pdf || (word && s.Output.WordPageImages) ? Visibility.Visible : Visibility.Collapsed;
         PdfSizeLabel.Text = pdf ? "PDF size" : "Page image size";
         AutomationProperties.SetName(PdfSizeTrack, PdfSizeLabel.Text);
-        AutomationProperties.SetHelpText(PdfSizeTrack, s.Output.PdfSize.Hint());
+        AutomationProperties.SetHelpText(PdfSizeTrack, $"{s.Output.PdfSize.Hint()}. {s.Output.PdfSize.Detail()}");
         bool savesPdf = receipts ? OutputFormats.PageFormat(s.Format) == OutputFormat.Pdf : OutputFormats.SavesPdf(s.Format, s.DocumentMultiPage);
         AlsoSaveTextBox.IsEnabled = savesPdf && (flow == TaskFlowKind.DocumentQueue || receipts);
         // Receipts are saved from their review, and the ID card from its own: collecting pages does

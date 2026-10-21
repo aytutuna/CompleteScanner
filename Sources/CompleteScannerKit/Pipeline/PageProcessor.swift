@@ -375,8 +375,8 @@ public struct PageProcessor {
     /// The pages of one spread after every step: `spread` (as scanned) cut at `cut`, or kept whole when
     /// it is nil, each page turned as `options` say, then put in reading order: by where they lie once
     /// turned by the book's rotation and the turn reading their text gave them
-    /// (`BookSplitter.totalTurns`). Each page records the spread (`SpreadPart`, with the spread's id),
-    /// keeps the side and sheet the spread was given (`side`, `sheetIndex`) and gets an id of its own.
+    /// (`BookSplitter.totalTurns`). Each page records the spread (`SpreadPart`, with the spread's id,
+    /// and whether it is the left or the right page, `SpreadPart.left`), keeps the side and sheet the spread was given (`side`, `sheetIndex`) and gets an id of its own.
     /// Used for every scan when facing pages are split, and to join or split a spread again. Twin of C#
     /// `PageProcessor.ProcessSpread`.
     public func processSpread(_ spread: ScannedPage, cut: GutterResult?, options: BookSplitOptions,
@@ -395,10 +395,15 @@ public struct PageProcessor {
             let whole = try runSteps(part(spread.image, nil, nil), shouldContinue: shouldContinue)
             return [whole]
         }
-        let a = try runSteps(part(halves.first, 0, cut), shouldContinue: shouldContinue)
-        let b = try runSteps(part(halves.second, 1, cut), shouldContinue: shouldContinue)
+        var a = try runSteps(part(halves.first, 0, cut), shouldContinue: shouldContinue)
+        var b = try runSteps(part(halves.second, 1, cut), shouldContinue: shouldContinue)
         let total = BookSplitter.totalTurns(turns, a.upright, b.upright)
-        return BookSplitter.firstPartLeads(cut.axis, quarterTurns: total, rightToLeft: options.rightToLeft) ? [a, b] : [b, a]
+        let firstLeads = BookSplitter.firstPartLeads(cut.axis, quarterTurns: total, rightToLeft: options.rightToLeft)
+        // The page that leads is the left one, or the right one in a book read from right to left.
+        let firstIsLeft = firstLeads != options.rightToLeft
+        a.spread?.left = firstIsLeft
+        b.spread?.left = !firstIsLeft
+        return firstLeads ? [a, b] : [b, a]
     }
 
     /// Every step on `page`, in order.
@@ -472,14 +477,14 @@ public enum PageFilter {
             : nil
     }
 
-    /// "3 pages in queue", "24 pages in queue, 5 blank skipped", "4 pages in queue, 1 skipped".
+    /// The page strip's label: "3 pages", "24 pages · 5 blank skipped", "4 pages · 1 skipped".
     public static func queueSummary(_ pages: [ScannedPage], options: DocumentOptions) -> String {
         let total = pages.count
         let excluded = pages.filter { isExcluded($0, options: options) }
-        let text = "\(total) page\(total == 1 ? "" : "s") in queue"
+        let text = "\(total) page\(total == 1 ? "" : "s")"
         if excluded.isEmpty { return text }
         let allBlank = excluded.allSatisfy { looksBlank($0, sensitivity: options.blankSensitivity) }
-        return "\(text), \(excluded.count)\(allBlank ? " blank" : "") skipped"
+        return "\(text) \u{00B7} \(excluded.count)\(allBlank ? " blank" : "") skipped"
     }
 
     /// The status after a scan's pages were queued, when some look blank: " 2 look blank and will

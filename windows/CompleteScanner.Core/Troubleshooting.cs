@@ -27,6 +27,9 @@ public enum ScannerProblem
     CommunicationError,
 }
 
+/// <summary>An error as the error bar shows it: what went wrong in a few words, and what to do.</summary>
+public sealed record ProblemNotice(string Title, string Message);
+
 public static class ScannerProblems
 {
     /// <summary>User-facing text: what happened and what to do about it.</summary>
@@ -44,6 +47,66 @@ public static class ScannerProblems
         ScannerProblem.CommunicationError => "The connection to the scanner was interrupted. Check the cable or network, then try again.",
         _ => "The scanner reported a problem. Check the scanner, then try again.",
     };
+
+    /// <summary>The title of an error that names no scanner problem.</summary>
+    public const string GenericTitle = "Something went wrong";
+
+    /// <summary>The problem in two or three words, for the title of the error bar: "Paper jam", "Scanner offline".</summary>
+    public static string Title(ScannerProblem problem) => problem switch
+    {
+        ScannerProblem.FeederEmpty => "Feeder empty",
+        ScannerProblem.PaperJam => "Paper jam",
+        ScannerProblem.PaperProblem => "Paper problem",
+        ScannerProblem.MultiFeed => "Several sheets fed",
+        ScannerProblem.CoverOpen => "Cover open",
+        ScannerProblem.Offline => "Scanner offline",
+        ScannerProblem.Busy => "Scanner busy",
+        ScannerProblem.WarmingUp => "Warming up",
+        ScannerProblem.NeedsAttention => "Needs attention",
+        ScannerProblem.CommunicationError => "Connection lost",
+        _ => GenericTitle,
+    };
+
+    /// <summary>
+    /// What to do, in ten words at most, shown under <see cref="Title"/>; <see cref="Describe"/> is the
+    /// sentence that stands on its own (error messages, the status line, the troubleshooter).
+    /// </summary>
+    public static string Advice(ScannerProblem problem) => problem switch
+    {
+        ScannerProblem.FeederEmpty => "Load paper in the feeder, then scan again.",
+        ScannerProblem.PaperJam => "Clear the jam, then scan again.",
+        ScannerProblem.PaperProblem => "Check the sheets in the feeder, then scan again.",
+        ScannerProblem.MultiFeed => "Fan the stack, load it again, then scan again.",
+        ScannerProblem.CoverOpen => "Close the cover, then scan again.",
+        ScannerProblem.Offline => "Turn it on and check the cable or network.",
+        ScannerProblem.Busy => "Wait until it has finished, then try again.",
+        ScannerProblem.WarmingUp => "Try again in a moment.",
+        ScannerProblem.NeedsAttention => "Check its display or control panel.",
+        ScannerProblem.CommunicationError => "Check the cable or network, then try again.",
+        _ => "Check the scanner, then try again.",
+    };
+
+    /// <summary>The scanner problem an error message describes (its <see cref="Describe"/> text is in it); null when none is.</summary>
+    public static ScannerProblem? Find(string? message)
+    {
+        if (string.IsNullOrEmpty(message)) return null;
+        foreach (var problem in Enum.GetValues<ScannerProblem>())
+        {
+            if (message.Contains(Describe(problem), StringComparison.Ordinal)) return problem;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// How the error bar shows <paramref name="message"/>: a title naming the problem ("Paper jam") and
+    /// the message with the problem's sentence cut to what to do ("Clear the jam, then scan again.");
+    /// "Something went wrong" and the message as it is when it names no problem.
+    /// </summary>
+    public static ProblemNotice Notice(string message)
+    {
+        if (Find(message) is not { } problem) return new ProblemNotice(GenericTitle, message.Trim());
+        return new ProblemNotice(Title(problem), message.Replace(Describe(problem), Advice(problem), StringComparison.Ordinal).Trim());
+    }
 
     /// <summary>
     /// How a problem is classified as a <see cref="ScanException"/>: an offline scanner is

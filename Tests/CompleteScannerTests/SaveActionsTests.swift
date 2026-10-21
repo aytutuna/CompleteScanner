@@ -175,6 +175,6 @@ final class SaveActionsTests: XCTestCase {
         var email = TaskCatalog.apply(.email, to: current)
         email.output.afterSave = .reveal
         XCTAssertTrue(TaskCatalog.fits(.email, email))
-        XCTAssertTrue(TaskCatalog.definition(.email).steps[0].prompt.contains("share window"))
+        XCTAssertTrue(TaskCatalog.definition(.email).steps[0].help.contains("share window"))
     }
 }

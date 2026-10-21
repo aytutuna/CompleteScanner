@@ -61,25 +61,19 @@ public partial class MainWindow
         SplitCountRow.Visibility = collecting && mode == SplitMode.SheetCount ? Visibility.Visible : Visibility.Collapsed;
         SplitCountUnit.Text = count == 1 ? "sheet" : "sheets";
 
-        // The full explanation: how it works (the ⓘ), and the choice's help text.
+        // The full explanation: how it works, step by step (the ⓘ), and the choice's help text.
         string help = copy
             ? "Copies print every page as scanned: nothing is split."
             : receipts
             ? "Each receipt is saved on its own."
             : !collecting
             ? "Only for pages collected before saving: a scan saved at once is one file."
-            : mode == SplitMode.None
-            ? mode.Hint() + " Right-click a page to start a new document there."
-            : mode.Hint() + " Check the page strip before saving: click the gap between two pages to split or join there.";
+            : mode.Steps();
         SplitInfoButton.InfoText = help;
+        SplitModeBox.ToolTip = collecting ? mode.Hint() : help;
         AutomationProperties.SetHelpText(SplitModeBox, help);
         // One line: what happens to the sheets that split.
-        string line = !collecting ? "" : mode switch
-        {
-            SplitMode.SeparatorSheet => ShortText.SeparatorSheetsLeftOut,
-            SplitMode.BlankSheet => ShortText.BlankSheetsLeftOut,
-            _ => "",
-        };
+        string line = collecting ? mode.Caption() : "";
         SplitHint.Text = line;
         SplitHint.Visibility = line.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
@@ -89,7 +83,7 @@ public partial class MainWindow
         BarcodeOptions.Visibility = barcodes ? Visibility.Visible : Visibility.Collapsed;
         CodesOnSeparatorsButton.IsEnabled = CodesOnFirstPagesButton.IsEnabled = !ViewModel.IsBusy;
         string startsHint = BarcodeSeparators.StartsDocumentHint(s.Document.BarcodeStartsDocument, s.Document.SplitBarcodePrefix);
-        BarcodeStartsDocumentHint.Text = s.Document.BarcodeStartsDocument ? ShortText.CodePagesKept : ShortText.CodeSheetsLeftOut;
+        BarcodeStartsDocumentHint.Text = BarcodeSeparators.StartsDocumentCaption(s.Document.BarcodeStartsDocument);
         BarcodeStartsDocumentHint.ToolTip = startsHint;
         AutomationProperties.SetHelpText(CodesOnSeparatorsButton, startsHint);
         AutomationProperties.SetHelpText(CodesOnFirstPagesButton, startsHint);
@@ -117,7 +111,7 @@ public partial class MainWindow
         string sheetName = qrSheets ? "a QR separator sheet carrying the name above" : "a Patch T separator sheet";
         AutomationProperties.SetHelpText(PrintSeparatorButton, ViewModel.HasPrinter
             ? $"Prints {sheetName} at actual size on {printer}, on the paper it has, with no print dialog. Print as many as you need."
-            : PrintText.NoPrinterReason + " Save the separator sheet as a PDF to print it elsewhere.");
+            : PrintText.NoPrinterReason + ". Save the separator sheet as a PDF to print it elsewhere.");
         // At blank sheets one-sided, Skip blank pages has no say.
         SyncBlankPageOptions();
     }

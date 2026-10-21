@@ -546,9 +546,8 @@ public class DocxWriterPictureTests
         Assert.Equal(("jpeg", "image/jpeg"), (DocxWriter.PictureExtension(DocxPictureFormat.Jpeg), DocxWriter.PictureContentType(DocxPictureFormat.Jpeg)));
         Assert.Equal(("png", "image/png"), (DocxWriter.PictureExtension(DocxPictureFormat.Png), DocxWriter.PictureContentType(DocxPictureFormat.Png)));
         Assert.Equal("Include page images", DocxWriter.PageImagesLabel);
-        Assert.Equal("Each page as scanned, then its text you can edit. The pictures are stored at the size chosen below.",
-                     DocxWriter.PageImagesHint(true));
-        Assert.Equal("Only the text you can edit: the pictures of the pages are left out.", DocxWriter.PageImagesHint(false));
+        Assert.Equal("Each page's picture, then its editable text", DocxWriter.PageImagesHint(true));
+        Assert.Equal("Only the editable text, without page pictures", DocxWriter.PageImagesHint(false));
     }
 
     [Fact]

@@ -528,10 +528,9 @@ public class OrientationTests
     public void PageTurns_Hint_SaysWhyTheSwitchIsOff_OrWhatItDoes()
     {
         var s = new ScanSettings();
-        Assert.Equal("Turn pages that are upside down or sideways, by reading their text.", PageTurns.Hint(s, true));
+        Assert.Equal("Turns sideways or upside-down pages by reading the text", PageTurns.Hint(s, true));
         s.Document.AutoRotate = true;
-        Assert.Equal("Pages upside down or sideways are turned when their text makes it clear. Click the turn button on a page to undo it.",
-                     PageTurns.Hint(s, true));
+        Assert.Equal("Turns sideways or upside-down pages by reading the text", PageTurns.Hint(s, true));
         Assert.Equal("Needs a text recognition language, and none is installed.", PageTurns.Hint(s, false));
         Assert.Equal("Only for pages collected before saving: a scan saved at once is kept as scanned.",
                      PageTurns.Hint(new ScanSettings { DocumentMultiPage = false }, true));

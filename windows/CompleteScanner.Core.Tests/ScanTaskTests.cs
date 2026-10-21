@@ -31,9 +31,9 @@ public class ScanTaskTests
     public void Catalog_ListsEveryTaskOnce_InStartScreenOrder()
     {
         Assert.Equal(ScanTasks.All, TaskCatalog.All.Select(d => d.Task));
-        Assert.Equal(["Document to PDF", "Multi-page from feeder", "Photos", "Old photo restoration", "Quick scan",
-                      "Email a document", "Two-sided document", "ID card", "Copy", "Scan to Word", "Receipts",
-                      "Batch of separate documents", "Book or magazine", "Archive document"],
+        Assert.Equal(["Document to PDF", "Stack from feeder", "Photos", "Restore old photos", "Quick scan",
+                      "Email a document", "Two-sided document", "ID card", "Photocopy", "Scan to Word", "Receipts",
+                      "Separate documents", "Book or magazine", "Archive document"],
                      TaskCatalog.All.Select(d => d.Title));
         Assert.Equal(["document", "feeder", "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book", "archive"],
                      TaskCatalog.All.Select(d => d.IconKey));
@@ -53,6 +53,59 @@ public class ScanTaskTests
             Assert.False(string.IsNullOrWhiteSpace(step.Prompt));
             Assert.False(string.IsNullOrWhiteSpace(step.PrimaryActionLabel));
         }
+    }
+
+    [Fact]
+    public void Catalog_Texts_AreShort_TheFullerGuidanceIsTheHelp()
+    {
+        Assert.Equal(["Page by page into a searchable PDF.", "A stack through the feeder into one PDF.",
+                      "Several photos at once, each cropped and straightened.", "Brings back faded colors; saved as PNG.",
+                      "Save part of the glass as an image.", "A small PDF, ready to attach.",
+                      "Both sides of every sheet, in page order.", "Both sides on one page, at real size.",
+                      "Prints at real size, like a photocopier.", "Printed pages into an editable Word file.",
+                      "Several at once, small files named by date.", "One stack, a PDF for each document.",
+                      "Two pages per scan, split at the spine.", "A searchable PDF/A, made to be kept."],
+                     TaskCatalog.All.Select(d => d.Subtitle));
+        Assert.Equal(["Place each page face down and scan, then save.", "Load the pages in the feeder and scan.",
+                      "Lay the photos on the glass, apart, and scan.", "Lay the photos on the glass, apart, and scan.",
+                      "Preview, drag over the part you need, then scan.", "Scan each page, then save to email it.",
+                      "Load the pages in the feeder and scan.", "Place the card face down near a corner and scan.",
+                      "Place the original face down, then copy.", "Scan each page, then save as Word.",
+                      "Lay up to six receipts apart and scan.", "Put a separator sheet before each document, then scan.",
+                      "Open the book face down, spine centered, and scan.", "Scan each page, then save as PDF/A."],
+                     TaskCatalog.All.Select(d => d.Steps[0].Prompt));
+        foreach (var definition in TaskCatalog.All)
+        {
+            Assert.InRange(StatusLine.Words(definition.Title), 1, 3);
+            Assert.InRange(StatusLine.Words(definition.Subtitle), 1, 10);
+            foreach (var step in definition.Steps)
+            {
+                // One short line on the banner; the rest behind its ⓘ.
+                Assert.InRange(StatusLine.Words(step.Prompt), 1, 10);
+                Assert.False(string.IsNullOrWhiteSpace(step.Help), $"{definition.Title}: {step.Id}");
+                Assert.Equal($"{step.Prompt} {step.Help}", step.FullPrompt);
+            }
+        }
+        Assert.Equal("Scan the pages one by one. They are collected until you save the PDF.",
+                     TaskCatalog.Definition(ScanTask.Document).Steps[0].Help);
+        Assert.StartsWith("1. Print separator sheets", TaskCatalog.Definition(ScanTask.Batch).Steps[0].Help);
+        Assert.Equal("Place it", new TaskStep("x", "t", "Place it", "Go").FullPrompt);
+    }
+
+    [Fact]
+    public void StartScreen_GroupsEveryTaskOnce()
+    {
+        Assert.Equal([TaskGroup.Documents, TaskGroup.PhotosAndImages, TaskGroup.Other], TaskGroups.All);
+        Assert.Equal(["Documents", "Photos & images", "Other"], TaskGroups.All.Select(g => g.Title()));
+        Assert.Equal(ScanTasks.All.Order(), TaskCatalog.StartOrder.Order());
+        var sections = TaskCatalog.Sections;
+        Assert.Equal(TaskGroups.All, sections.Select(s => s.Group));
+        Assert.Equal([ScanTask.Document, ScanTask.Feeder, ScanTask.TwoSided, ScanTask.Batch, ScanTask.Word, ScanTask.Email, ScanTask.Archive],
+                     sections[0].Definitions.Select(d => d.Task));
+        Assert.Equal([ScanTask.Photos, ScanTask.PhotoRestore, ScanTask.QuickScan], sections[1].Definitions.Select(d => d.Task));
+        Assert.Equal([ScanTask.IdCard, ScanTask.Copy, ScanTask.Receipt, ScanTask.Book], sections[2].Definitions.Select(d => d.Task));
+        Assert.Equal(TaskCatalog.StartOrder, sections.SelectMany(s => s.Definitions).Select(d => d.Task));
+        Assert.All(sections, section => Assert.All(section.Definitions, d => Assert.Equal(section.Group, d.Group)));
     }
 
     [Fact]
@@ -321,7 +374,10 @@ public class ScanTaskTests
     {
         var unavailable = TaskCatalog.Availability(ScanTask.Copy, null, hasPrinter: false);
         Assert.False(unavailable.IsAvailable);
-        Assert.Equal("No printer is installed.", unavailable.Reason);
+        Assert.Equal("Needs a printer", unavailable.Reason);
+        Assert.Equal("Photocopy needs a printer.", TaskCatalog.UnavailableMessage(ScanTask.Copy, unavailable.Reason!));
+        Assert.Equal("Stack from feeder needs a document feeder.", TaskCatalog.UnavailableMessage(ScanTask.Feeder, TaskCatalog.NeedsFeederReason));
+        Assert.Equal("ID card needs a flatbed.", TaskCatalog.UnavailableMessage(ScanTask.IdCard, " Needs a flatbed. "));
         Assert.Equal(TaskAvailability.Available, TaskCatalog.Availability(ScanTask.Copy, null, hasPrinter: true));
         Assert.Equal(TaskAvailability.Available, TaskCatalog.Availability(ScanTask.Copy, null));
         Assert.All(ScanTasks.All.Where(t => t != ScanTask.Copy),
@@ -329,7 +385,7 @@ public class ScanTaskTests
         // Any scanner will do: the glass or the feeder.
         var feederOnly = new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder], SupportsOverview = false };
         Assert.True(TaskCatalog.Availability(ScanTask.Copy, feederOnly, hasPrinter: true).IsAvailable);
-        Assert.Equal("This scanner has no flatbed.", TaskCatalog.Availability(ScanTask.IdCard, feederOnly, hasPrinter: false).Reason);
+        Assert.Equal("Needs a flatbed", TaskCatalog.Availability(ScanTask.IdCard, feederOnly, hasPrinter: false).Reason);
     }
 
     [Fact]
@@ -476,7 +532,7 @@ public class ScanTaskTests
         {
             var availability = TaskCatalog.Availability(task, caps);
             Assert.False(availability.IsAvailable);
-            Assert.Equal("This scanner has no document feeder.", availability.Reason);
+            Assert.Equal("Needs a document feeder", availability.Reason);
         }
         Assert.All(ScanTasks.All.Where(t => t is not (ScanTask.Feeder or ScanTask.TwoSided or ScanTask.Batch)),
                    task => Assert.True(TaskCatalog.Availability(task, caps).IsAvailable));
@@ -490,7 +546,7 @@ public class ScanTaskTests
         {
             var availability = TaskCatalog.Availability(task, caps);
             Assert.False(availability.IsAvailable);
-            Assert.Equal("This scanner has no flatbed.", availability.Reason);
+            Assert.Equal("Needs a flatbed", availability.Reason);
         }
         // Documents and photos fall back to the feeder (SettingsAdapter).
         Assert.All(ScanTasks.All.Where(t => t is not (ScanTask.QuickScan or ScanTask.IdCard or ScanTask.Book)),
@@ -826,7 +882,7 @@ public class ScanTaskTests
         s.Source = ScanSource.Flatbed;
         s.Document.SplitFacingPages = false;
         Assert.False(TaskCatalog.Fits(ScanTask.Book, s));
-        Assert.Equal("This scanner has no flatbed.",
+        Assert.Equal("Needs a flatbed",
                      TaskCatalog.Availability(ScanTask.Book, new ScannerCapabilities { Sources = [ScanSource.DocumentFeeder] }).Reason);
         // Saved at once, nothing is split: the summary says nothing of it.
         var once = TaskCatalog.Apply(ScanTask.Book, new ScanSettings());

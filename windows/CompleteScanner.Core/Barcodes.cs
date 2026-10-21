@@ -102,6 +102,12 @@ public static class BarcodeSeparators
             : $"A sheet whose barcode or QR code starts with “{start}” is a separator sheet: it is left out, and the rest of the code's text names the document after it. Other codes are ignored. Print QR separator sheets below, with a name or without.";
     }
 
+    /// <summary>
+    /// The one line under "Codes are on": what happens to the page or sheet with a code, kept as a
+    /// document's first page (<paramref name="on"/>) or left out as a separator sheet.
+    /// </summary>
+    public static string StartsDocumentCaption(bool on) => on ? "Pages are kept" : "Sheets are left out";
+
     /// <summary>The prefix as it is compared: <paramref name="prefix"/> trimmed. Empty: every code makes a separator sheet.</summary>
     public static string Prefix(string? prefix) => (prefix ?? "").Trim();
 

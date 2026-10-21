@@ -109,16 +109,17 @@ dotnet run --project CompleteScanner.App     # launch the app
 The main window has four tabs, like the macOS app:
 
 - **Start** — "What are you scanning?": the user's presets first (only when there are some), then
-  one tile per task in three groups: **Documents** (Document to PDF, Multi-page from feeder,
-  Two-sided document, Batch of separate documents, Scan to Word, Email a document, Archive
-  document), **Photos & images** (Photos, Old photo restoration, Quick scan) and **Other** (ID card,
-  Copy, Receipts, Book or magazine). A tile is an icon and a title; what the task does and what it
-  sets are its tooltip (also on keyboard focus) and its help text for screen readers. Picking a tile
-  sets everything up for that task, keeps the save folder, fits
+  one tile per task in three groups (`TaskCatalog.Sections`): **Documents** (Document to PDF, Stack
+  from feeder, Two-sided document, Separate documents, Scan to Word, Email a document, Archive
+  document), **Photos & images** (Photos, Restore old photos, Quick scan) and **Other** (ID card,
+  Photocopy, Receipts, Book or magazine). A tile is an icon and a title; what the task does (its
+  one-line subtitle) and what it sets are its tooltip (also on keyboard focus) and its help text for
+  screen readers. Picking a tile sets everything up for that task, keeps the save folder, fits
   the settings to the connected scanner and opens **Scan**; a tile the scanner cannot do (the
-  feeder task on a flatbed-only scanner) is greyed out with a short reason ("Needs a document
-  feeder"; the full reason is the tooltip). On **Scan** a banner
-  names the active task and says what to do; **Change task** goes back to Start and the close
+  feeder task on a flatbed-only scanner, Photocopy without a printer) is greyed out with a short
+  reason ("Needs a document feeder", "Needs a printer"). On **Scan** a banner
+  names the active task and says what to do in one line, with the fuller guidance behind its ⓘ
+  (`TaskStep.Prompt` and `Help`); **Change task** goes back to Start and the close
   button leaves the task (its settings stay). The task is saved with the settings, so a
   restart comes back to it. A first run opens on Start, later runs on Scan. The task tiles are
   one Tab stop, the presets another; the arrow keys move between tiles and Enter or Space picks one.
@@ -138,8 +139,11 @@ The main window has four tabs, like the macOS app:
 ### Less text on screen
 
 Each screen shows icons, short labels and what prevents a mistake; explanations are one hover or
-one click away (the layout half of the text spec; the shared Core strings it shortens, and
-the Mac's matching layout, come in a second step, so the Mac app is unchanged by this one).
+one click away. Both halves of the text spec are built: the Windows layout, and the shared Core
+strings, shortened in C# and Swift together (task titles and subtitles, a step's short prompt and
+its help, the troubleshooter's one-line details with their more help, the error bar's title by
+problem, a few words of help per choice, the page strip's labels and badges, the photo import's
+texts); the Mac mirrors the layout (see the main README).
 
 - **Inspector sections.** Scanner (Source, Sides, Flip on, Paper size, Resolution, Color), Output
   (Format, PDF size, the last PDF's size, Searchable PDF, Collect pages before saving, Save to; in
@@ -149,7 +153,8 @@ the Mac's matching layout, come in a second step, so the Mac app is unchanged by
   save text, After saving, File name), after the Photocopy or Receipts section of those tasks. The
   task section, Scanner and Output start open, the rest collapsed; each stays as the user leaves
   it (`inspectorSections` in `preferences.json`, not in presets), and the Restore old photos, Book
-  or magazine, Batch and Archive tasks open their own section. A collapsed header shows what is on
+  or magazine, Separate documents and Archive tasks open their own section (`InspectorSections` in
+  Core). A collapsed header shows what is on
   in it ("Skip blank · Upright +1", "Separator sheets", a lock and "Password on") with an accent
   dot when anything differs from the defaults; its accessible name carries the same summary.
 - **Hide or disable.** What does nothing for the task or format is hidden (Pages and Split for
@@ -162,32 +167,50 @@ the Mac's matching layout, come in a second step, so the Mac app is unchanged by
   Collect pages", "Needs {docdate} in File name"); the full sentence is its tooltip (shown on disabled controls too) and its help
   text. The captions that explained a switch are its tooltip and help text now.
 - **ⓘ flyouts** (`InfoButton`, a Popup styled as a Fluent flyout) hold procedures and keyboard
-  help: the task banner's fuller guidance (the banner shows the step's first sentence), how
-  splitting works, where a network scanner's address is, and the keys of the crop, spread and
-  corner editors. The flyout takes focus, closes with Esc and gives the focus back.
+  help: the task banner's fuller guidance (`TaskStep.Help`; the banner shows the step's one-line
+  prompt), how splitting works (`SplitMode` steps), where a network scanner's address is, and the
+  keys of the crop, spread and corner editors (`PhotoImport.EditorKeys`). The flyout takes focus,
+  closes with Esc and gives the focus back.
 - **State instead of instructions.** "Drag to select an area" on a preview until an area is
   selected, "Using the selected area" (with × to clear it) under Paper size, "Drop to add as pages"
   while photo files are dragged over the window, a **Not split** badge with **Split…** on a spread
   kept whole, a scissors or link on the gap between two pages (Split here / Join), the next file's
-  name under File name (with an **Insert** menu for its parts), and "1 · front" side badges.
+  name under File name (with an **Insert** menu for its parts), "1 · front" and "1 · left" side
+  badges (named "Sheet 1, front" and "Spread 1, left page" for screen readers), and the strip's
+  "6 pages · 1 blank skipped".
 - **Save** is a split button: **Save PDF** with a badge of the pages it saves and a lock while the
   PDF gets a password (named "Save password-protected PDF, 5 pages" for screen readers), and a ▾
   menu with **Add to existing PDF…**. Importing photos of documents is an icon button next to it.
-- **The status bar** shows at most six words, facts only ("6 pages added · 1 blank", "Saved"); a
+- **The status bar** shows at most six words, facts only (`StatusLine` in Core: "6 pages added · 1
+  blank", "Saved"; nothing while a review shows its own title); a
   setting changed for the scanner, or a two-sided scan that came back one-sided, stays on it as a
   short warning ("Ready — Office Scanner · feeder used", "300 dpi used", "3 pages added · one side
   only", "Saved · 600 dpi used"); its accessible name is the whole sentence, read out as it changes. The Saved bar counts
   what was saved: "3 photos · Scans", "3 receipts · Scans", "3 files · Scans".
-- **Dialogs** are trimmed the same way: the troubleshooter shows each check's first sentence with
-  its buttons and a **More help** expander (a passed check is one line, its detail the tooltip, unless it offers an action such as **Add
-  scanner by address…**, which keeps its card and button),
+- **The error bar** is titled by the scanner's problem ("Paper jam", "Scanner offline"; "Something
+  went wrong" for any other error) and says what to do in a line (`ScannerProblems.Notice`); the
+  whole message is its tooltip and help text.
+- **While a review is open** (photos, receipts, the ID card), the task banner is hidden under it,
+  keeping its place, and the empty stage's title and line are hidden while a banner shows (the
+  import link stays).
+- **Dialogs** are trimmed the same way: the troubleshooter's headline is one line ("No scanner found
+  · 1 warning", `Troubleshooter.Overview`), and each check shows its one-line detail with its buttons
+  and a **More help** expander for the rest (`TroubleshootCheck.More`; a passed check is one line,
+  its detail the tooltip, unless it offers an action such as **Add by address…**, which keeps its
+  card and button),
   the password dialog keeps its warning and a strength bar, and the add-scanner, crop, spread,
   corner and save-preset dialogs keep one line each.
 
-The short texts that have no home in Core yet are in `LessText.cs` (`ShortText`, with
-`StatusLine`, `TextSplit`, `SideBadge`, `TaskGroups` and `InspectorSummary`), checked by
-`LessTextTests` in `CompleteScanner.App.Tests`; the PDF/A and password texts live in their
-Windows-only Core files (`PdfA.cs`, `PdfEncryption.cs`).
+The short texts both apps show are in Core with Swift twins (`StatusLine`, `InspectorSections`,
+and the reasons with the types they belong to: `DocumentSides.NeedsFeederReason`,
+`BookPages.NotWithTwoSidedReason`, `BlankSensitivities.HighWarning`, `PaperSizes.SelectedAreaNote`,
+`SplitMode` captions and steps, `BarcodeSeparators.StartsDocumentCaption`, `IdCardSteps.PrivacyNote`,
+`PhotoImport.DropOverlay`), checked by `StatusLineTests`, `InspectorSectionsTests` and the tests of
+those types on both platforms. The Windows-only short texts are in `LessText.cs` (`ShortText`),
+checked by `LessTextTests` in `CompleteScanner.App.Tests`; the PDF/A and password texts live in
+their Windows-only Core files (`PdfA.cs`, `PdfEncryption.cs`). Renaming the four tasks changed no
+settings file: presets and settings store the task's raw value (`taskId`: "feeder",
+"photoRestore", "copy", "batch"), never its title (`ModelsCompatTests`).
 
 A scanner that several backends reach (WIA and TWAIN for one USB scanner, WIA and eSCL for
 one network MFP) is one row in the sidebar. The app connects through WIA when it can, then
@@ -206,11 +229,11 @@ missing aliases can be spotted on real hardware.
 
 Pick **Demo Scanner** in the sidebar to exercise everything without hardware: scan in
 Photos mode to see detection/deskew/review, or Document mode to build a PDF. Its
-**Document Feeder (ADF)** source holds three numbered two-sided letter-size sheets (Preview is
+**Document feeder** source holds three numbered two-sided letter-size sheets (Preview is
 for the flatbed, so it is off while the feeder is selected). It scans both sides in one pass,
 or, with **Both sides, turned by hand**, the side facing up: it turns its stack over after the
 fronts, as the user would, so the next scan delivers the backs, last sheet first. A paper size
-makes it deliver sheets of that size. For the **Batch of separate documents** task its feeder holds
+makes it deliver sheets of that size. For the **Separate documents** task its feeder holds
 seven sheets instead, the third and fifth being separator sheets (the Patch T sheet the app prints,
 with a blank back; split at barcode or QR sheets, a Code 39 sheet saying "CS-SEP INVOICE 1002"
 and "CS-SEP INVOICE 1003" instead, naming the document after it), so the stack splits into documents of two,
@@ -230,7 +253,7 @@ out upside down and are turned upright). **Paper size** (Automatic, then the usu
 the user lives, Letter or A4, then the others) sets the sheet the feeder is asked for, and on the
 glass the area scanned from its corner when nothing is selected on the preview; sizes larger
 than the glass or the feeder are greyed out with the reason. Each page in the strip is badged
-with its sheet and side ("Sheet 2 · back").
+with its sheet and side ("2 · back").
 
 - **Both sides in one pass**: one scan; the pages come front, back, front, back… and are queued
   in that order, the backs turned upright for short-edge sheets. A scanner that falls back to one
@@ -245,7 +268,7 @@ with its sheet and side ("Sheet 2 · back").
   **Combine anyway** (the extra pages at the end), **Scan back sides again** (the backs leave the
   queue) and **Keep fronts only**; scanning again adds the rest of the backs. Without a task the
   banner's close button goes back to one side. Screen readers name each page by its place and
-  side ("Page 3, Sheet 2 · back").
+  side ("Page 3, Sheet 2, back").
 - **Two-sided document** task: a 300 dpi PDF of both sides through the feeder; on a feeder that
   scans one side its card says "Both sides, turned by hand" and the task guides the two steps.
 
@@ -358,8 +381,8 @@ orientation tag (EXIF 274: all eight values, mirrored ones included), the page's
 photo's edge, two pages, or nothing found) the **corner editor** opens with the best guess and says
 why: drag each corner onto a corner of the page (a magnifier shows the photo around the corner
 being moved; keys 1 to 4 select a corner, the arrow keys move it, Shift takes bigger steps); a
-corner stays on the photo and the outline stays a page that can be cut out. **Use these corners**,
-**Use whole photo** or **Skip this photo** (Esc). Every page then goes through the clean-up stage
+corner stays on the photo and the outline stays a page that can be cut out. **Use corners**,
+**Use whole photo** or **Skip photo** (Esc). Every page then goes through the clean-up stage
 like a scan, except crop and straighten (blank-page check, separator sheets, barcodes when the stack
 is split at them, turning upright, the adjustments and color mode), and is added to the queue at
 once, so **Cancel** keeps the pages already added. Its resolution is the one its shape gives when it
@@ -524,7 +547,7 @@ cards with holograms, and the real size of a printed copy measured with a ruler.
 
 ### Copy and print
 
-The **Copy** task (any scanner; greyed out with "No printer is installed." when Windows lists no
+The **Photocopy** task (any scanner; greyed out with "Needs a printer" when Windows lists no
 printer) makes the scanner and a printer a photocopier: the main button is **Copy**, which scans and
 prints straight away, at real size: a page scanned at 300 dpi prints at its pixels / 300 inches, 1
 inch on the glass is 1 inch on paper, and nothing is scaled to the page unless **Fit to page** is on
@@ -981,11 +1004,11 @@ paper at 0.93 with print at 0.6, tilted 3° either way), printed in a plain stro
 OCR reads, with a date each (12.03.2026 and 2026-02-27): the files come out as "Receipt
 2026-02-27 …" and "Receipt 2026-03-12 …".
 
-### Batch of separate documents
+### Separate documents
 
 **Split into documents** (the inspector's section of that name; its ⓘ says how each way works)
 saves the collected pages as several files: **At separator sheets**, **At blank sheets** or **Every
-N sheets** ("New document every [N] sheets", 1 to 99 in the list, up to 999 in a settings file). The **Batch of separate documents** task (feeder only; greyed out on a scanner without one)
+N sheets** ("New document every [N] sheets", 1 to 99 in the list, up to 999 in a settings file). The **Separate documents** task (feeder only; greyed out on a scanner without one)
 sets it up: 300 dpi, PDF, split at separator sheets, blank pages skipped, named
 `Document {label} {date} {counter}`. The other tasks do not split; the sheets per document are
 kept. Like the blank-page check, splitting needs the pages collected in the queue, so the choice is
@@ -1007,7 +1030,7 @@ and receipts.
   on both sides does, so the blank back of a one-sided page is no separator (it follows Skip blank
   pages). One-sided, Skip blank pages has no say, so the switch is greyed out and says why. Several
   separators in a row split once, and a document with nothing in it is not saved.
-- **Every N sheets**: a sheet is a front with its back; blank sheets count too.
+- **Every few sheets**: a sheet is a front with its back; blank sheets count too.
 
 Nothing is split unseen. The page strip shows the plan before saving: the first page of each
 document is badged "Document 2" (with its name, "Document 2 · Lease"), a bar in the gap before it;
@@ -1022,7 +1045,7 @@ most 120 bytes of it, cut between characters). The name stays with its document:
 page is skipped (or a page before it is kept again) the name moves to the document's new first
 page, and a document that is gone and comes back has its name back. Moving, turning or removing
 pages keeps every page's facts, and the plan follows the queue as it is. The strip's label counts the documents and
-what is left out ("7 pages in queue, 3 documents, 2 separator pages skipped"), the status after a
+what is left out ("7 pages · 3 documents · 2 separator pages skipped"), the status after a
 scan says what was found (" Found 2 separator pages: 3 documents to save."), and the save button
 says what it writes: **Save 3 PDFs (5 pages)**.
 
@@ -1052,7 +1075,7 @@ that shrinks the page), feeders that skew sheets more than 3°, and very dark or
 
 #### Barcode and QR separator sheets
 
-**At barcode or QR sheets** splits the stack at separator sheets carrying a QR code, Code 128,
+**At QR codes or barcodes** splits the stack at separator sheets carrying a QR code, Code 128,
 Code 39 or Data Matrix code (other kinds are not looked for) whose text starts with `CS-SEP`, the
 separator prefix the app's QR sheets carry ("CS-SEP Lease 2026"): a sheet with such a code on either
 side is a separator, left out like a patch-code sheet, and the rest of the code's text names the
@@ -1142,13 +1165,15 @@ The split runs in the page clean-up stage (`PageProcessor`), before the other st
 checked for being blank, straightened and turned upright on its own. The two pages are put in
 reading order by where they lie once turned: by the book's rotation plus the turn reading their text
 gave them when the two pages agree (or when only one was read): left before right, right before left
-reading right to left, top before bottom. Each page in the strip is labelled with its spread
-("Spread 2 · page 1"); a spread whose spine was not found stays one page, "Spread 2 · not split",
-and the status after the scan says so ("The spine of 1 spread was not found: it was added as one
-page (right-click it to split it)."). A page's right-click menu has **Split this spread…** (for a
+reading right to left, top before bottom. Each page in the strip is labelled with its spread and
+side ("2 · left", read out "Spread 2, left page"), the side worked out when the spread was cut, so a
+page keeps it when moved, when its partner is removed, and when the reading order is changed for
+later spreads; a spread whose spine was not found stays one page, "2 · not split", and the status
+after the scan says so ("The spine of 1 spread was not found: it was added as one page (Split… on it
+splits it)."). A page's right-click menu has **Split this spread…** (for a
 spread kept whole) or **Change the split…**, which opens a dialog with the spread as scanned and the
 cut drawn across it: click or drag on the spread, or use the slider or the arrow keys, choose
-**Side by side** or **One above the other**, then **Split**; **Keep as one page** and the menu's
+**Side by side** or **Stacked**, then **Split**; **Keep as one page** and the menu's
 **Join the two pages** make the spread one page again. Joining or splitting again starts from the
 spread as scanned, kept in the page spool (`<id>-spread.png`) until its last page is removed, saved or
 cleared, and runs the clean-up again with the current settings. A split moved keeps what was decided
@@ -1317,7 +1342,7 @@ knows through `IScannerBackendDiagnostics`, and the system's state comes from
 | Share, email, open with, copy (`SaveActions`, `FileActions`, `ShareService`) | The choices are covered by `SaveActionsTests` and the after-save cases of `ModelsCompatTests` (same cases as macOS). Checked by driving the view model's real save paths with a stand-in for Windows (each after-save action after a PDF, a file saved at once and a photo batch; the Email task sharing; no share window; a refused action; a moved file; a cancelled save running nothing), by building the real clipboard data and share package without placing them anywhere, and by building the window without showing it: the bar, its buttons and menu, the narrow layout, the "After saving" choices, the Saved tab's buttons and menus, rendered off screen in light and dark. **Not tried on screen:** the share window, the Open with dialog and the clipboard themselves (checks must not send, open or overwrite anything), and Mail or Outlook as share targets |
 | Troubleshooter (`Troubleshooter`, `SystemDiagnostics`, `TroubleshooterWindow`) | The checks are covered by `TroubleshooterTests` (same cases as macOS) and the Windows service and network values by `WindowsSystemStatusTests`. Checked by driving the view model with stand-in connections and a stand-in for Windows (the snapshot, the order of the checks, devices.txt, Refresh, Copy diagnostics and Settings refused, a busy scanner at connect and at scan, a connection that works clearing it, a cancelled scan not counting), by reading the real WIA service and network on Windows 11 (Running and Public, as `sc query` and `Get-NetConnectionProfile` report, from UI and thread-pool threads), by copying to the real clipboard with the user's clipboard saved and restored, by an address added by hand on loopback where nothing listens, by a discovered scanner (a stand-in service for a loopback scanner) that stays listed, selected and connected across a Refresh when Windows aborts either network watcher, and dropped only once the restarted watcher's first pass did not find it again, and by building the sidebar, error bar and troubleshooter window without showing them: the header button, the empty state's links, the error bar's Troubleshoot (and none on a file or photo error shown later), one card per check with its buttons and screen-reader names (each card a named group in the UI Automation tree), a Refresh while one runs ignored, rendered off screen in light and dark. **Not tried on screen:** opening Windows Settings and the real Add scanner dialog from it. **Unverified:** a stopped or disabled WIA service, a TWAIN install with 32-bit-only drivers, and a scanner that is really busy in another app |
 | Receipts (`ReceiptDetector`, `ReceiptEnhancer`, `ReceiptDateExtractor`, the review) | Covered by `ReceiptTests` (two receipts on a white lid found apart along their paper, cut around their print when the paper is as light as the lid, a 2 × 11 in receipt that is too long for a page but not for a receipt, prices far from the items, two receipts 0.15 in apart, one receipt per feeder sheet, nothing on the glass, a 300 dpi scan, the enhancer on fading paper, little print and a dark logo, the date rules and the 99-case date set, the texts) and the receipt cases of `ScanTaskTests`, `ModelsCompatTests`, `NamingTemplateTests` and `MockScannerTests` (same cases as macOS, on the same synthetic beds checked by checksum). Checked on harder synthetic beds (four receipts on a white lid, an open lid and with invisible paper, 12° tilts, receipts in a column 0.2 in apart, a receipt lying sideways, an 11 in receipt at the glass's edge: all found and held whole; two receipts 0.15 in apart with paper as light as the lid are not told apart), by driving the view model with the demo scanner and Windows OCR (both receipts found and cut along their paper, a gray Compact PDF each with a text layer named by its own date, one PDF for all named by the earliest, JPEG files, the text beside each PDF, today's date without OCR, OCR that fails, a save cancelled while reading, Fix crop, Discard) and by building the window without showing it: the Receipts card, the inspector's Receipts section and its switches, one PDF off for JPEG, the review's title and save button, rendered off screen in light and dark. **Unverified:** real thermal receipts on a real lid (see [Receipts](#receipts)) |
-| Batch of separate documents (`PatchCodeDetector`, `DocumentSplitter`, `SavePlan`, the strip's gaps) | Covered by `PatchCodeTests` (all six codes across and down the page, ±2.5° and ±3°, the separator sheet at 100 and 300 dpi and turned, its bar widths, no code on text, a ruled table, blank pages, photos), `DocumentSplitterTests` (every mode, the two-sided blank-sheet rule, separators in a row, empty documents, every N sheets with an odd last sheet and skipped sheets, splits and joins by hand and their undo, keeping a separator page, names, also across a change of the settings, the strip's texts) and `SavePlanTests` (the documents, the texts, all or nothing on success, failure and cancel), and the split cases of `ModelsCompatTests`, `ScanTaskTests`, `PageProcessorTests`, `NamingTemplateTests` and `MockScannerTests` (same cases as macOS). Checked by driving the view model with the demo scanner's batch stack and stand-ins for OCR, the file actions and the printers (the task's settings and card, three PDFs of 2, 1 and 2 pages named with their number, the separators left out, the queue and its spool files cleared; joining, splitting and undoing by hand, keeping a separator page, naming a document from any of its pages, turning and moving pages; a save whose third file cannot be written and one cancelled during the second document leaving no file and the queue intact, then saved again with the text beside each PDF; three text files; both sides with blank backs skipped and separator backs left out; at blank sheets; every 2 sheets; no split ending the task; the separator sheet printed on Letter and A4 stand-in printers (and on the printer's paper when the scan asks for Legal), read back as Patch T, and refused without a printer, then saved as a PDF without one, a page of the usual paper read back as Patch T, and saved again under the next free name; a named first page skipped and kept again with the name following it, and left out and saved again by a change of what counts as blank, of Skip blank pages and of the split, a 300-character name cut to 100; the PDFs' size, the text files beside them and "no text was found" in the status; the last PDF size put back after a failed or cancelled save; another task unchanged) and by building the window without showing it: the card, the Split into documents choice and its hint, Print separator sheet, Sheets per document, the strip's badges, gaps and bars, a click on a gap joining two documents, the save button and label, the name box's 100-character limit, Save separator sheet (PDF) and its hint, Skip blank pages greyed out with the reason at blank sheets one-sided and back with both sides, the choice greyed out when each scan is saved at once, rendered off screen in light and dark. **Not tried on screen:** the name box (a popup window) and the page menu. **Unverified:** printed separator sheets scanned by real feeders (see [Batch of separate documents](#batch-of-separate-documents)) |
+| Separate documents (`PatchCodeDetector`, `DocumentSplitter`, `SavePlan`, the strip's gaps) | Covered by `PatchCodeTests` (all six codes across and down the page, ±2.5° and ±3°, the separator sheet at 100 and 300 dpi and turned, its bar widths, no code on text, a ruled table, blank pages, photos), `DocumentSplitterTests` (every mode, the two-sided blank-sheet rule, separators in a row, empty documents, every N sheets with an odd last sheet and skipped sheets, splits and joins by hand and their undo, keeping a separator page, names, also across a change of the settings, the strip's texts) and `SavePlanTests` (the documents, the texts, all or nothing on success, failure and cancel), and the split cases of `ModelsCompatTests`, `ScanTaskTests`, `PageProcessorTests`, `NamingTemplateTests` and `MockScannerTests` (same cases as macOS). Checked by driving the view model with the demo scanner's batch stack and stand-ins for OCR, the file actions and the printers (the task's settings and card, three PDFs of 2, 1 and 2 pages named with their number, the separators left out, the queue and its spool files cleared; joining, splitting and undoing by hand, keeping a separator page, naming a document from any of its pages, turning and moving pages; a save whose third file cannot be written and one cancelled during the second document leaving no file and the queue intact, then saved again with the text beside each PDF; three text files; both sides with blank backs skipped and separator backs left out; at blank sheets; every 2 sheets; no split ending the task; the separator sheet printed on Letter and A4 stand-in printers (and on the printer's paper when the scan asks for Legal), read back as Patch T, and refused without a printer, then saved as a PDF without one, a page of the usual paper read back as Patch T, and saved again under the next free name; a named first page skipped and kept again with the name following it, and left out and saved again by a change of what counts as blank, of Skip blank pages and of the split, a 300-character name cut to 100; the PDFs' size, the text files beside them and "no text was found" in the status; the last PDF size put back after a failed or cancelled save; another task unchanged) and by building the window without showing it: the card, the Split into documents choice and its hint, Print separator sheet, Sheets per document, the strip's badges, gaps and bars, a click on a gap joining two documents, the save button and label, the name box's 100-character limit, Save separator sheet (PDF) and its hint, Skip blank pages greyed out with the reason at blank sheets one-sided and back with both sides, the choice greyed out when each scan is saved at once, rendered off screen in light and dark. **Not tried on screen:** the name box (a popup window) and the page menu. **Unverified:** printed separator sheets scanned by real feeders (see [Batch of separate documents](#batch-of-separate-documents)) |
 | Barcode and QR separator sheets (`Barcodes.cs`, `BarcodeStep`, `ZXingBarcodeReader`, `ZXingQrEncoder`) | Covered by `BarcodeTests` (the four kinds, reading order and repeats, bounds back in the page's and a spooled page's pixels, a queued page read on its spool file turned like the page and left unread when only its preview shows nothing, the separator prefix and the codes it ignores, the name a code's text gives with format characters dropped, the step and when it runs, every rule of the split at barcode or QR sheets one- and two-sided, keeping, names typed winning, the strip's texts naming the document the plan starts, the QR sheet and the demo's Code 39 sheet pinned by checksum; same cases as macOS), `OrientationTests` (barcode or QR separator sheets not turned upright) and the barcode cases of `ModelsCompatTests` and `MockScannerTests`, and in the app's tests by `BarcodeReaderTests` (ZXing.Net on synthetic scans at 150, 200 and 300 dpi with noise and a ±3° slant: every kind, Data Matrix anywhere, several codes, no false codes, QR sheets in four scripts, a queued page's preview, small 1D codes a preview loses read from the spool file, an end-to-end stack with an order number ignored). Checked by driving the view model with the demo scanner's stack of Code 39 sheets (split and named, saved as "Document INVOICE 1002 … 2.pdf"; queued pages read when the split is chosen later, from their previews; a barcode starting a document; a typed name winning and removed; a separator page kept) and stand-in printers (the QR sheet saved as a PDF and printed on Letter and A4, each read back exactly, a Turkish name included; Patch T with the switch on), and by building the window without showing it: the choice, the switch and its hint, the name box, the QR buttons, the strip, rendered off screen in light and dark. **Unverified:** printed QR sheets fed through real scanners, codes printed by other software, Vision on a Mac (CI runs `VisionBarcodeTests`) |
 | Send from your phone (`Companion/`, `Services/Companion/`, `PhoneWindow`) | The protocol pieces are covered by `SpkiFingerprintTests`, `PairingUriTests`, `PairingSessionTests`, `PairedDeviceStoreTests`, `CompanionHttpTests`, `CompanionProtocolTests` (same cases as macOS), the server by `CompanionRouterTests`, `CompanionNetworkTests` and `CompanionLoopbackTests` (a fake phone over TLS on 127.0.0.1: pairing with the pinned certificate, a wrong fingerprint refused, expired and reused codes refused, a removed phone gets 401, idempotent uploads, damaged, malicious, oversize and chunked uploads refused, rate limits, listening stops when the network is no longer trusted and starts again when it is allowed, advertising only on trusted interfaces, a phone waiting for the user's answer keeps the PC listening and a declined one stops it, no pairing session left open when no code can be shown, a reset without a new key changing nothing), the app's side by `CompanionAppTests`, and a window-free run of the view model and the Phone window with a fake phone (the question, staying while the window's clock ticks and the PC is refreshed, queued pages labelled From phone, a retry not added twice, a document waiting in Photos mode, a document kept when its pages cannot be spooled, the firewall verdict for the network received on only, a failed reset reported, a launch with an unreadable inbox still serving the paired phone). **Needs the user's PC and a phone:** Windows Firewall's question when the app first listens (on a Public network approved in the app: tick Public networks), a cancelled question (block rules, shown by the checks), the certificate in `CurrentUser\My` (checked on CI in a store of the test's own), DNS-SD with `DnsServiceRegister` (never run here), and the iPhone app itself (I20). |
 | eSCL backend (`EsclScannerBackend`) | **Experimental, untested against hardware** — see [Network scanners](#network-scanners-escl) below for discovery, adding by address and HTTPS. Feeder-only devices offer no flatbed or preview; feeder jobs ask for the paper size's region, clamped to the feeder (the feeder's own sheet size for Automatic, at most 17 in tall); two-sided feeder jobs send `<scan:Duplex>true</scan:Duplex>` and use the two-sided feeder's capabilities (`AdfDuplexInputCaps`) when the device lists them, and a device that lists no two-sided feeding scans one side and says so; black & white is requested as grayscale and thresholded by the app, because most devices reject 1-bit JPEG; busy (HTTP 503) answers are retried for up to 60 s; relative job addresses are resolved; when a job fails, the scanner's status explains it (empty feeder, jam, cover open, …); a feeder job that fails partway (an error answer, a dropped or stalled connection, a page that cannot be read) keeps the pages already received and tells the user how many were kept and why it stopped; a job that is cancelled or cut short is deleted on the device. The protocol client (`EsclClient`, `EsclScannerSession`) is covered by `EsclClientTests` through a stub HTTP handler. Checked against local fake eSCL servers (plain and HTTPS), not a real device |

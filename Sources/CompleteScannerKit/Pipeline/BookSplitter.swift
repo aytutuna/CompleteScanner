@@ -59,15 +59,24 @@ public struct SpreadPart: Equatable, Sendable {
     public var part: Int?
     /// Where the spread was cut; nil when it was not.
     public var gutter: GutterResult?
+    /// Whether the page is the spread's left page, as worked out when the spread was cut
+    /// (`PageProcessor.processSpread`): the page first in reading order then, or the other one for a
+    /// book read from right to left. Nil when not recorded: then the part before the cut is the left
+    /// page (`isLeft`).
+    public var left: Bool?
 
-    public init(spreadID: UUID, part: Int?, gutter: GutterResult?) {
+    public init(spreadID: UUID, part: Int?, gutter: GutterResult?, left: Bool? = nil) {
         self.spreadID = spreadID
         self.part = part
         self.gutter = gutter
+        self.left = left
     }
 
     /// The page is a whole spread: it was not split (the spine was not found, or the user joined it).
     public var isWhole: Bool { part == nil }
+
+    /// The page is the spread's left page (`left`); it keeps its side wherever it is moved in the queue.
+    public var isLeft: Bool { left ?? (part == 0) }
 }
 
 /// How the pages of a spread are turned and put in order (`BookSplitter.split`). Twin of C#
@@ -668,9 +677,9 @@ public enum BookSplitter {
 /// What the page strip says about a page cut from a spread (`BookPages.labels`). Twin of C#
 /// `BookPageLabel`.
 public struct BookPageLabel: Equatable, Sendable {
-    /// "Spread 2 · page 1", "Spread 2 · not split".
+    /// The badge: "2 · left", "2 · right", "2 · not split".
     public let label: String
-    /// The label's help.
+    /// The badge spelled out for VoiceOver: "Spread 2, left page", "Spread 2, not split".
     public let help: String
 
     public init(label: String, help: String) {
@@ -690,13 +699,19 @@ public enum BookPages {
         DocumentSides.effective(settings, capabilities: nil) == .off
     }
 
-    /// The label and help of every page of the queue, in one pass: "Spread 2 · page 1", "Spread 2 ·
-    /// page 2" for the pages cut from the second spread in the queue, by their order in it; "Spread 2 ·
-    /// not split" for a spread kept whole, whose help says it can be split; nil for a page not scanned as
-    /// part of a spread.
+    /// The badge of a spread kept as one page; the page offers Split… next to it.
+    public static let notSplitBadge = "Not split"
+
+    /// Why Split facing pages is greyed out while both sides of each sheet are scanned.
+    public static let notWithTwoSidedReason = "Not with two-sided"
+
+    /// The badge and its spoken form for every page of the queue, in one pass: "2 · left" and "2 ·
+    /// right" ("Spread 2, left page") for the pages cut from the second spread in the queue, each page
+    /// keeping the side it was given when the spread was cut (`SpreadPart.isLeft`), wherever it is moved
+    /// and whatever the reading order is set to later; "2 · not split" ("Spread 2, not split") for a
+    /// spread kept whole; nil for a page not scanned as part of a spread.
     public static func labels(_ pages: [ScannedPage]) -> [BookPageLabel?] {
         var numbers: [UUID: Int] = [:]
-        var counts: [UUID: Int] = [:]
         var result: [BookPageLabel?] = Array(repeating: nil, count: pages.count)
         for (i, page) in pages.enumerated() {
             guard let part = page.spread else { continue }
@@ -707,22 +722,23 @@ public enum BookPages {
                 number = numbers.count + 1
                 numbers[part.spreadID] = number
             }
-            let ordinal = (counts[part.spreadID] ?? 0) + 1
-            counts[part.spreadID] = ordinal
-            let text = part.isWhole ? "Spread \(number) \u{00B7} not split" : "Spread \(number) \u{00B7} page \(ordinal)"
-            let help = part.isWhole ? "\(text): the spread is one page. Right-click it to split it into two pages." : text
-            result[i] = BookPageLabel(label: text, help: help)
+            if part.isWhole {
+                result[i] = BookPageLabel(label: "\(number) \u{00B7} not split", help: "Spread \(number), not split")
+                continue
+            }
+            let side: String = part.isLeft ? "left" : "right"
+            result[i] = BookPageLabel(label: "\(number) \u{00B7} \(side)", help: "Spread \(number), \(side) page")
         }
         return result
     }
 
-    /// The label of the page at `index` (`labels`); nil for a page not scanned as part of a spread.
+    /// The badge of the page at `index` (`labels`); nil for a page not scanned as part of a spread.
     public static func label(_ pages: [ScannedPage], _ index: Int) -> String? {
         guard index >= 0, index < pages.count, pages[index].spread != nil else { return nil }
         return labels(pages)[index]?.label
     }
 
-    /// The label's tooltip: what can be done with a spread kept whole; the label itself otherwise.
+    /// The badge spelled out for VoiceOver ("Spread 2, left page").
     public static func help(_ pages: [ScannedPage], _ index: Int) -> String? {
         guard index >= 0, index < pages.count, pages[index].spread != nil else { return nil }
         return labels(pages)[index]?.help
@@ -771,8 +787,8 @@ public enum BookPages {
     }
 
     /// The status after a scan's pages were queued, when spreads were split or kept whole: " 2 spreads
-    /// split into pages." and " The spine of 1 spread was not found: it was added as one page
-    /// (right-click it to split it)." (leading space; empty for no spread).
+    /// split into pages." and " The spine of 1 spread was not found: it was added as one page (Split…
+    /// on it splits it)." (leading space; empty for no spread).
     public static func scanNote(_ added: [ScannedPage]) -> String {
         let parts = added.compactMap(\.spread)
         let split = Set(parts.filter { !$0.isWhole }.map(\.spreadID)).count
@@ -780,8 +796,8 @@ public enum BookPages {
         var note = split == 0 ? "" : " \(split) spread\(split == 1 ? "" : "s") split into pages."
         if whole > 0 {
             note += whole == 1
-                ? " The spine of 1 spread was not found: it was added as one page (right-click it to split it)."
-                : " The spine of \(whole) spreads was not found: they were added as one page each (right-click one to split it)."
+                ? " The spine of 1 spread was not found: it was added as one page (Split\u{2026} on it splits it)."
+                : " The spine of \(whole) spreads was not found: they were added as one page each (Split\u{2026} on one splits it)."
         }
         return note
     }
@@ -804,8 +820,8 @@ public enum BookPages {
         }
     }
 
-    /// The inspector's hint under "Split facing pages": why it is off for copies, receipts, scans saved
-    /// at once and two-sided scans, else what it does.
+    /// The tooltip of "Split facing pages": why it is off for copies, receipts, scans saved at once and
+    /// two-sided scans (those show `notWithTwoSidedReason` next to it), else what it does.
     public static func hint(_ settings: ScanSettings) -> String {
         let flow = TaskCatalog.flow(of: settings)
         if flow == .copy { return "Copies print every page as scanned: spreads are not split." }
@@ -816,8 +832,6 @@ public enum BookPages {
         if !scansOneSide(settings) {
             return "Only for one side of each sheet: pages scanned on both sides are kept as scanned."
         }
-        return settings.document.splitFacingPages
-            ? "Each scan of an open book or magazine becomes two pages, cut at the spine. When the spine is not clear the spread stays one page: right-click it to split it."
-            : "Scan an open book or magazine two pages at a time; each spread is cut at the spine into two pages."
+        return "Each book scan becomes two pages, cut at the spine."
     }
 }

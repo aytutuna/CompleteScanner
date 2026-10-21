@@ -403,9 +403,9 @@ final class DocumentSplitterTests: XCTestCase {
         XCTAssertEqual(DocumentSplitter.separatorNote(joinedPlan, 1, page: joined[1]),
                        "Separator sheet (Patch 2): the pages after it are joined to the document before. It is not saved.")
         // The strip's label.
-        XCTAssertEqual(DocumentSplitter.queueSummary(pages, options: o), "5 pages in queue, 3 documents, 1 separator page and 1 blank skipped")
+        XCTAssertEqual(DocumentSplitter.queueSummary(pages, options: o), "5 pages \u{00B7} 3 documents \u{00B7} 1 separator page and 1 blank skipped")
         XCTAssertEqual(DocumentSplitter.queueSummary(pages, options: options(.none, removeBlankPages: true)),
-                       "5 pages in queue, 2 documents, 1 blank skipped")
+                       "5 pages \u{00B7} 2 documents \u{00B7} 1 blank skipped")
     }
 
     func test_queueSummary_withoutASplit_isThePageFiltersSummary() {
@@ -416,6 +416,6 @@ final class DocumentSplitterTests: XCTestCase {
             let two = Array(pages[..<2])
             XCTAssertEqual(DocumentSplitter.queueSummary(two, options: o), PageFilter.queueSummary(two, options: o))
         }
-        XCTAssertEqual(DocumentSplitter.queueSummary([makePage()], options: DocumentOptions()), "1 page in queue")
+        XCTAssertEqual(DocumentSplitter.queueSummary([makePage()], options: DocumentOptions()), "1 page")
     }
 }

@@ -59,7 +59,7 @@ scanners** — including the Epson Perfection V39 II.
   embedded in the file, so text in any script (Turkish, Greek, Cyrillic, Arabic, Chinese, …)
   can be selected and searched. The Mac gets both with the port of the Windows PDF writer;
   until then it keeps its CoreText text layer, and the setting is kept in its settings file.
-- **Password-protected PDFs** (Windows for now): **Protect with a password** encrypts saved PDFs
+- **Password-protected PDFs** (Windows for now): **Require a password** encrypts saved PDFs
   with AES-256 (the PDF 2.0 standard security handler). The password is asked for at each save,
   typed twice, with a hint about its strength, and never stored; printing and copying can be
   disallowed, which PDF apps honor as a request, not a lock. A PDF/A file can't have a password,
@@ -129,14 +129,14 @@ scanners** — including the Epson Perfection V39 II.
   so nothing leaves the Mac: the scans are kept in memory only, never in the Scans tab, and are
   cleared as soon as the card is saved or discarded; the PDF has no searchable text layer unless you
   turn it on. **Print** prints the page at real size on the printer chosen for copies.
-- **Copy**: a photocopier from a scanner and a printer. Put the original on the glass (or a stack in
+- **Photocopy**: a photocopier from a scanner and a printer. Put the original on the glass (or a stack in
   the feeder) and press **Copy**: it is scanned and printed at real size, 1 inch on the glass is 1
   inch on paper, never scaled to the page unless you turn on **Fit to page**. Choose the printer
   (the default one unless you pick another), the number of copies (1 to 99) and color or gray; on
   the glass with Automatic paper size the part of the glass the printer's paper covers is copied,
   and an area selected on the preview is centred on the paper. The app says when the printer's
-  margins cut the edges ("Edges may be cut by up to 5 mm"). **Also save a PDF** keeps a copy as a
-  file too. **Print ruler test page** prints a 1-inch grid with centimetre ticks to check the size
+  margins cut the edges ("Edges may lose up to 5 mm"). **Also save a PDF** keeps a copy as a
+  file too. **Print test ruler** prints a 1-inch grid with centimetre ticks to check the size
   with a ruler. On the Mac the standard print panel opens, already set to the printer, the paper,
   the copies and 100 %; on Windows the copy goes straight to the printer with no dialog.
 - **Receipts**: lay several receipts on the glass (with a little space between them) and scan
@@ -152,10 +152,9 @@ scanners** — including the Epson Perfection V39 II.
   out expiry and "valid until" dates; today's date is used when none is found. The text is read
   once per receipt, for the date, the PDF's text layer and, if you like, a .txt beside each PDF.
   From the feeder, each sheet is one receipt.
-- **Batch of separate documents**: feed a whole stack of documents at once and get a file for
-  each. Put a separator sheet in front of every document after the first: **Save separator
-  sheet** saves one as a PDF to print at actual size on any printer, and **Print separator sheet**
-  prints one at once (a Patch T sheet, the standard patch code document scanners use; any patch
+- **Separate documents**: feed a whole stack of documents at once and get a file for
+  each. Put a separator sheet in front of every document after the first: **Save sheet** saves
+  one as a PDF to print at actual size on any printer, and **Print sheet** prints one at once (a Patch T sheet, the standard patch code document scanners use; any patch
   code works, either way round, at a slant of a few degrees). Instead of separator sheets the stack
   can be split at empty sheets (with both sides scanned, only a sheet empty on both sides splits,
   so the blank backs of one-sided pages do not), every few sheets, or **at barcode or QR sheets**:
@@ -194,18 +193,31 @@ scanners** — including the Epson Perfection V39 II.
   is busy in another app or reported a problem). For what macOS does not let it check, it gives
   tips: a USB scanner needs its maker's driver, a network scanner must be on the same network
   and the Local Network permission allowed, and a shared scanner needs Scanner Sharing on the
-  other Mac. It offers **Refresh**, **Open Image Capture**, **Open Printers & Scanners** and
-  **Copy Diagnostics**. It only reads; it never changes a setting. On Windows it also checks
+  other Mac. Its headline is one line ("No scanner found · 1 warning"); each check shows one line
+  with its buttons (**Image Capture**, **Printers & Scanners**), and **More help** holds the rest;
+  **Refresh** and **Copy Diagnostics** are at the bottom. It only reads; it never changes a setting. On Windows it also checks
   the Windows Image Acquisition service, the network profile (Public networks hide scanners),
   TWAIN and 32-bit-only TWAIN drivers, and addresses added by hand.
 - **Image adjustments**: auto-enhance, brightness / contrast / saturation / sharpness,
-  descreen (moiré reduction for printed material), faded-color restoration for old photos,
-  black-and-white threshold.
-- **Start screen**: pick what you are scanning (Document to PDF, Multi-page from feeder,
-  Photos, Old photo restoration, Quick scan, Email a document, Two-sided document, ID card, Copy,
-  Scan to Word, Receipts, Batch of separate documents) and everything is set up for it, with a short
-  guide on the scan screen. Tasks the connected scanner cannot do are greyed out with the
-  reason (Copy also needs a printer). The app remembers the task you used last.
+  remove print dots (descreen, moiré reduction for printed material), faded-color restoration for
+  old photos, black-and-white threshold.
+- **Start screen**: pick what you are scanning, in three groups: **Documents** (Document to PDF,
+  Stack from feeder, Two-sided document, Separate documents, Scan to Word, Email a document; on
+  Windows also Archive document), **Photos & images** (Photos, Restore old photos, Quick scan) and
+  **Other** (ID card, Photocopy, Receipts, Book or magazine). A tile is an icon and a title; what
+  the task does and what it sets are its help. Picking one sets everything up for it, with a one-line
+  guide on the scan screen and the fuller guidance behind its info button. Tasks the connected
+  scanner cannot do are greyed out with a short reason ("Needs a document feeder", "Needs a
+  printer"). The app remembers the task you used last.
+- **Less text, same clarity** (both apps): icons and short labels on screen, explanations one hover
+  or one click away. The scan settings are in sections; the task's own section, Scanner and Output
+  start open, the others collapsed with a summary of what is on in them ("Skip blank · Upright +1"),
+  and a task opens the section it needs. What a control does is its help (tooltip and VoiceOver); a
+  line under a control stays only for why it is greyed out ("Needs the feeder", "Not with
+  two-sided"), for a consequence ("Check flagged pages before saving") or for live state ("Using the
+  selected area", "Last PDF: 498 KB"). The status line shows six words at most ("6 pages added · 1
+  blank"); VoiceOver and Narrator read the whole sentence. An error is titled by the scanner's
+  problem ("Paper jam", "Scanner offline") and says what to do.
 - **Presets**: save your own settings as presets; they appear on the start screen too.
   Starter presets from earlier versions stay.
 - **File naming templates**: `{date}`, `{time}`, `{counter}`, `{counter:4}`, `{intent}`,
@@ -216,8 +228,8 @@ scanners** — including the Epson Perfection V39 II.
   photo splitting and a document feeder with three two-sided sheets, which it scans one side or
   both; the second sheet's back is blank; for the ID card task a made-up sample card, which it
   turns over after each scan; for the Receipts task two made-up receipts with faded print and a
-  date each; for the Batch task a stack of seven sheets with two separator sheets in it, patch-code
-  sheets or, split at barcode or QR sheets, Code 39 sheets saying "CS-SEP INVOICE 1002" and naming
+  date each; for the Separate documents task a stack of seven sheets with two separator sheets in it, patch-code
+  sheets or, split at QR codes or barcodes, Code 39 sheets saying "CS-SEP INVOICE 1002" and naming
   the documents after them) with no
   hardware connected.
 
@@ -252,7 +264,7 @@ instructions and current status.
 1. Pick your scanner in the sidebar (or **Demo Scanner** to explore).
 2. On **Start**, pick a task; or go to **Scanner** and choose a mode yourself:
    - **Document** — each Scan adds a page to the strip at the bottom; press **Save PDF**
-     when done. Turn on *Searchable PDF (OCR)* for selectable text.
+     when done. Turn on *Searchable PDF* for selectable text.
    - **Photos** — place several photos on the glass with a little space between them, press
      **Scan**, review the detected photos in the grid, then **Save N Photos**. Put the next
      batch on the glass and scan again.

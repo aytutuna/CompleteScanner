@@ -67,8 +67,58 @@ public class TroubleshooterTests
         Assert.Equal([CheckStatus.Problem, CheckStatus.Problem, CheckStatus.Problem,
                       CheckStatus.Warning, CheckStatus.Warning, CheckStatus.Warning, CheckStatus.Warning,
                       CheckStatus.Tip, CheckStatus.Tip], checks.Select(c => c.Status));
-        Assert.Equal("No scanner found yet", Troubleshooter.Headline(snapshot));
+        Assert.Equal("No scanner found", Troubleshooter.Headline(snapshot));
         Assert.Equal("3 problems and 4 warnings found.", Troubleshooter.Summary(checks));
+        Assert.Equal("No scanner found · 3 problems, 4 warnings", Troubleshooter.Overview(snapshot, checks));
+    }
+
+    [Fact]
+    public void Overview_IsOneLine()
+    {
+        var healthy = HealthyWindows();
+        Assert.Equal("1 scanner found", Troubleshooter.Overview(healthy, Troubleshooter.Diagnose(healthy)));
+        var publicNetwork = new DiscoverySnapshot { Devices = [Demo], Network = NetworkStatus.PublicNetwork };
+        Assert.Equal("No scanner found · 1 warning", Troubleshooter.Overview(publicNetwork, Troubleshooter.Diagnose(publicNetwork)));
+        var offline = new DiscoverySnapshot { Network = NetworkStatus.Offline };
+        Assert.Equal("No scanner found · 1 problem", Troubleshooter.Overview(offline, Troubleshooter.Diagnose(offline)));
+    }
+
+    /// <summary>Every check the fixtures make, on both platforms.</summary>
+    private static IEnumerable<TroubleshootCheck> EveryCheck()
+    {
+        var snapshots = new List<DiscoverySnapshot> { HealthyWindows(), TroubledWindows() };
+        foreach (var service in Enum.GetValues<ServiceStatus>()) snapshots.Add(HealthyWindows() with { WiaService = service });
+        foreach (var twain in Enum.GetValues<TwainStatus>()) snapshots.Add(HealthyWindows() with { Twain = twain, TwainDriverCount = 0 });
+        foreach (var network in Enum.GetValues<NetworkStatus>()) snapshots.Add(HealthyWindows() with { Network = network });
+        foreach (var discovery in Enum.GetValues<DiscoveryStatus>())
+        {
+            snapshots.Add(HealthyWindows() with { Discovery = discovery });
+            snapshots.Add(new DiscoverySnapshot { Platform = TroubleshootPlatform.Mac, Discovery = discovery });
+        }
+        foreach (var problem in Enum.GetValues<ScannerProblem>())
+        {
+            snapshots.Add(new DiscoverySnapshot { LastFailure = new ScannerFailure("Acme", "x", problem) });
+        }
+        snapshots.Add(new DiscoverySnapshot { LastFailure = new ScannerFailure("Office MFP", "Office MFP did not answer.") });
+        snapshots.Add(TroubledWindows() with { Platform = TroubleshootPlatform.Mac });
+        return snapshots.SelectMany(Troubleshooter.Diagnose);
+    }
+
+    [Fact]
+    public void EveryCheck_HasAShortTitle_AndAOneLineDetail_TheRestIsMoreHelp()
+    {
+        foreach (var check in EveryCheck())
+        {
+            Assert.InRange(StatusLine.Words(check.Title), 1, 6);
+            Assert.InRange(StatusLine.Words(check.Detail), 1, 15);
+            Assert.Equal(check.More.Length == 0 ? check.Detail : $"{check.Detail} {check.More}", check.FullDetail);
+            Assert.DoesNotContain(check.Detail, check.More);
+        }
+        foreach (var action in Enum.GetValues<TroubleshootAction>())
+        {
+            Assert.InRange(StatusLine.Words(Troubleshooter.Label(action, TroubleshootPlatform.Windows)), 1, 3);
+            Assert.InRange(StatusLine.Words(Troubleshooter.Label(action, TroubleshootPlatform.Mac)), 1, 3);
+        }
     }
 
     [Fact]
@@ -83,10 +133,11 @@ public class TroubleshooterTests
     {
         var check = Check(Troubleshooter.Diagnose(TroubledWindows()), "lastFailure");
         Assert.Equal(new TroubleshootCheck(
-            "lastFailure", CheckStatus.Problem, "Acme Scan 100 is busy or in use by another app",
-            "A scanner works with one app at a time. Close other apps that may be using it, such as Windows Scan "
-            + "or the scanner maker's app, wait until the scanner has finished, then choose it again.",
-            [TroubleshootAction.Refresh]), check);
+            "lastFailure", CheckStatus.Problem, "Acme Scan 100 is busy",
+            "Close other apps using it, then choose it again.",
+            [TroubleshootAction.Refresh],
+            "A scanner works with one app at a time; Windows Scan or the maker's app may be using it. Wait until the "
+            + "scanner has finished, then choose it again."), check);
     }
 
     [Fact]
@@ -98,8 +149,10 @@ public class TroubleshooterTests
         };
         var check = Check(Troubleshooter.Diagnose(snapshot), "lastFailure");
         Assert.Equal(CheckStatus.Problem, check.Status);
-        Assert.Equal("Acme Scan 100 reported a problem", check.Title);
-        Assert.Equal(ScannerProblems.Describe(ScannerProblem.CoverOpen), check.Detail);
+        Assert.Equal("Cover open: Acme Scan 100", check.Title);
+        Assert.Equal("Close the cover, then scan again.", check.Detail);
+        Assert.Equal(ScannerProblems.Advice(ScannerProblem.CoverOpen), check.Detail);
+        Assert.Equal("", check.More);
     }
 
     [Fact]
@@ -112,21 +165,22 @@ public class TroubleshooterTests
         var check = Check(Troubleshooter.Diagnose(snapshot), "lastFailure");
         Assert.Equal(CheckStatus.Warning, check.Status);
         Assert.Equal("Could not connect to Office MFP", check.Title);
-        Assert.Equal("Office MFP did not answer (192.168.1.9: no answer in time). Check that the scanner is on "
-                     + "and awake, and connected by its cable or to the same network as this PC.", check.Detail);
+        Assert.Equal("Check that it is on, awake and connected.", check.Detail);
+        Assert.Equal("Office MFP did not answer (192.168.1.9: no answer in time). It must be connected by its cable or "
+                     + "to the same network as this PC.", check.More);
         var mac = Check(Troubleshooter.Diagnose(snapshot with { Platform = TroubleshootPlatform.Mac }), "lastFailure");
-        Assert.EndsWith("to the same network as this Mac.", mac.Detail);
+        Assert.EndsWith("to the same network as this Mac.", mac.More);
     }
 
     public static TheoryData<ServiceStatus, CheckStatus, string> WiaStates => new()
     {
-        { ServiceStatus.Running, CheckStatus.Ok, "The Windows scanner service is running" },
-        { ServiceStatus.Starting, CheckStatus.Warning, "The Windows scanner service is starting" },
-        { ServiceStatus.Stopped, CheckStatus.Warning, "The Windows scanner service is not running" },
-        { ServiceStatus.Stopping, CheckStatus.Warning, "The Windows scanner service is not running" },
-        { ServiceStatus.Paused, CheckStatus.Warning, "The Windows scanner service is not running" },
-        { ServiceStatus.Disabled, CheckStatus.Problem, "The Windows scanner service is turned off" },
-        { ServiceStatus.NotInstalled, CheckStatus.Problem, "The Windows scanner service is missing" },
+        { ServiceStatus.Running, CheckStatus.Ok, "Scanner service is on" },
+        { ServiceStatus.Starting, CheckStatus.Warning, "Scanner service is starting" },
+        { ServiceStatus.Stopped, CheckStatus.Warning, "Scanner service is not running" },
+        { ServiceStatus.Stopping, CheckStatus.Warning, "Scanner service is not running" },
+        { ServiceStatus.Paused, CheckStatus.Warning, "Scanner service is not running" },
+        { ServiceStatus.Disabled, CheckStatus.Problem, "Scanner service is turned off" },
+        { ServiceStatus.NotInstalled, CheckStatus.Problem, "Scanner service is missing" },
     };
 
     [Theory]
@@ -136,7 +190,7 @@ public class TroubleshooterTests
         var check = Check(Troubleshooter.Diagnose(HealthyWindows() with { WiaService = service }), "wiaService");
         Assert.Equal(status, check.Status);
         Assert.Equal(title, check.Title);
-        Assert.Contains("Windows Image Acquisition (WIA)", check.Detail);
+        Assert.Contains("Windows Image Acquisition (WIA)", check.FullDetail);
     }
 
     [Fact]
@@ -150,9 +204,10 @@ public class TroubleshooterTests
     public void DisabledWiaService_SaysHowToTurnItOnWithoutDoingIt()
     {
         var check = Check(Troubleshooter.Diagnose(HealthyWindows() with { WiaService = ServiceStatus.Disabled }), "wiaService");
-        Assert.Equal("Windows Image Acquisition (WIA), which most scanners use, is disabled, so those scanners cannot "
+        Assert.Equal("An administrator can set it to Automatic in Services.", check.Detail);
+        Assert.Equal("Windows Image Acquisition (WIA), which most scanners use, is disabled, so those scanners can't "
                      + "appear. Someone with administrator rights can set its startup type to Automatic in Services, then "
-                     + "restart the PC.", check.Detail);
+                     + "restart the PC.", check.More);
         Assert.Equal([TroubleshootAction.Refresh], check.Actions);
     }
 
@@ -161,15 +216,16 @@ public class TroubleshooterTests
     {
         var offline = Check(Troubleshooter.Diagnose(HealthyWindows() with { Network = NetworkStatus.Offline }), "network");
         Assert.Equal((CheckStatus.Problem, "Not connected to a network"), (offline.Status, offline.Title));
-        Assert.Equal("This PC is not on a network, so network scanners cannot be found. Connect to the network the "
-                     + "scanner is on, then select Refresh. Scanners connected by USB are not affected.", offline.Detail);
+        Assert.Equal("Connect to the network the scanner is on, then select Refresh.", offline.Detail);
+        Assert.Equal("This PC is not on a network, so network scanners can't be found. Scanners connected by USB are not "
+                     + "affected.", offline.More);
         Assert.Equal([TroubleshootAction.OpenNetworkSettings, TroubleshootAction.Refresh], offline.Actions);
 
         var publicNetwork = Check(Troubleshooter.Diagnose(HealthyWindows() with { Network = NetworkStatus.PublicNetwork }), "network");
-        Assert.Equal((CheckStatus.Warning, "The network is set to Public"), (publicNetwork.Status, publicNetwork.Title));
-        Assert.Equal("Windows does not look for devices on public networks, so network scanners may not be found. "
-                     + "If this is your home or office network, set its network profile type to Private in Windows "
-                     + "network settings. You can also add the scanner by its address.", publicNetwork.Detail);
+        Assert.Equal((CheckStatus.Warning, "Network set to Public"), (publicNetwork.Status, publicNetwork.Title));
+        Assert.Equal("Windows won't find network scanners on a Public network.", publicNetwork.Detail);
+        Assert.Equal("If this is your home or office network, set it to Private in network settings. You can also add "
+                     + "the scanner by its address.", publicNetwork.More);
         Assert.Equal([TroubleshootAction.OpenNetworkSettings, TroubleshootAction.AddByAddress], publicNetwork.Actions);
 
         foreach (var status in new[] { NetworkStatus.PrivateNetwork, NetworkStatus.DomainNetwork })
@@ -186,9 +242,10 @@ public class TroubleshooterTests
         var none = Check(Troubleshooter.Diagnose(HealthyWindows() with { Devices = [Demo], Twain = TwainStatus.NotInstalled }), "twain");
         Assert.Equal(CheckStatus.Warning, none.Status);
         Assert.Equal("TWAIN is not installed", none.Title);
+        Assert.Equal("Some scanners need their maker's 64-bit TWAIN driver.", none.Detail);
         Assert.Equal("Some scanners, often document scanners, work only through their maker's TWAIN driver, which "
                      + "also installs TWAIN. If yours is one of them, install the maker's 64-bit TWAIN driver, then "
-                     + "restart CompleteScanner.", none.Detail);
+                     + "restart CompleteScanner.", none.More);
         var some = Check(Troubleshooter.Diagnose(HealthyWindows() with { Twain = TwainStatus.NotInstalled }), "twain");
         Assert.Equal(CheckStatus.Tip, some.Status);
     }
@@ -211,15 +268,17 @@ public class TroubleshooterTests
     public void ThirtyTwoBitDrivers_AreNamedByFile()
     {
         var one = Check(Troubleshooter.Diagnose(TroubledWindows()), "twain32");
-        Assert.Equal("A TWAIN driver works only with 32-bit apps", one.Title);
-        Assert.Equal("\"acme.ds\" is installed only for 32-bit apps. CompleteScanner reaches such drivers through its "
-                     + "32-bit TWAIN helper, which has not listed it yet. A 64-bit (x64) driver from the maker, where there "
-                     + "is one, works without the helper. Many scanners also work through Windows Image Acquisition (WIA) "
-                     + "once the maker's full driver package is installed.", one.Detail);
+        Assert.Equal("A TWAIN driver is 32-bit only", one.Title);
+        Assert.Equal("\"acme.ds\" is installed only for 32-bit apps.", one.Detail);
+        Assert.Equal("CompleteScanner reaches such drivers through its 32-bit TWAIN helper, which has not listed it yet. "
+                     + "A 64-bit (x64) driver from the maker, where there is one, works without the helper. Many scanners "
+                     + "also work through Windows Image Acquisition (WIA) once the maker's full driver package is installed.",
+                     one.More);
         var two = Check(Troubleshooter.Diagnose(HealthyWindows() with { ThirtyTwoBitOnlyDrivers = ["Acme/acme.ds", "beta.ds"] }), "twain32");
-        Assert.Equal((CheckStatus.Problem, "2 TWAIN drivers work only with 32-bit apps"), (two.Status, two.Title));
-        Assert.StartsWith("\"acme.ds\", \"beta.ds\" are installed only for 32-bit apps. CompleteScanner reaches such drivers "
-                          + "through its 32-bit TWAIN helper, which has not listed them yet. ", two.Detail);
+        Assert.Equal((CheckStatus.Problem, "2 TWAIN drivers are 32-bit only"), (two.Status, two.Title));
+        Assert.Equal("\"acme.ds\", \"beta.ds\" are installed only for 32-bit apps.", two.Detail);
+        Assert.StartsWith("CompleteScanner reaches such drivers through its 32-bit TWAIN helper, which has not listed them yet. ",
+                          two.More);
     }
 
     [Fact]
@@ -231,12 +290,13 @@ public class TroubleshooterTests
                                         + "which is not installed. Install it, then restart CompleteScanner ",
         };
         var check = Check(Troubleshooter.Diagnose(snapshot), "twain32");
-        Assert.Equal((CheckStatus.Problem, "A TWAIN driver works only with 32-bit apps"), (check.Status, check.Title));
-        Assert.Equal("\"acme.ds\" is installed only for 32-bit apps. CompleteScanner reaches such drivers through its "
-                     + "32-bit TWAIN helper. It cannot run: it needs the .NET 10 Desktop Runtime for 32-bit programs (x86), "
-                     + "which is not installed. Install it, then restart CompleteScanner. A 64-bit (x64) driver from the "
-                     + "maker, where there is one, works without the helper. Many scanners also work through Windows Image "
-                     + "Acquisition (WIA) once the maker's full driver package is installed.", check.Detail);
+        Assert.Equal((CheckStatus.Problem, "A TWAIN driver is 32-bit only"), (check.Status, check.Title));
+        Assert.Equal("\"acme.ds\" is installed only for 32-bit apps.", check.Detail);
+        Assert.Equal("CompleteScanner reaches such drivers through its 32-bit TWAIN helper. It cannot run: it needs the "
+                     + ".NET 10 Desktop Runtime for 32-bit programs (x86), which is not installed. Install it, then restart "
+                     + "CompleteScanner. A 64-bit (x64) driver from the maker, where there is one, works without the helper. "
+                     + "Many scanners also work through Windows Image Acquisition (WIA) once the maker's full driver package "
+                     + "is installed.", check.More);
         Assert.Empty(check.Actions);
         // A blank reason is no reason.
         Assert.Equal(Check(Troubleshooter.Diagnose(TroubledWindows()), "twain32"),
@@ -249,23 +309,23 @@ public class TroubleshooterTests
     [Fact]
     public void NetworkSearchOnWindows()
     {
-        string Detail(DiscoverySnapshot s) => Check(Troubleshooter.Diagnose(s), "discovery").Detail;
-        Assert.Equal("No network scanner has been found on this network yet. A scanner that does not appear can be added by its address.",
+        string Detail(DiscoverySnapshot s) => Check(Troubleshooter.Diagnose(s), "discovery").FullDetail;
+        Assert.Equal("No network scanner has been found on this network yet. A scanner that doesn't appear can be added by its address.",
                      Detail(HealthyWindows() with { DiscoveredCount = 0 }));
-        Assert.Equal("1 network scanner found. A scanner that does not appear can be added by its address.",
+        Assert.Equal("1 network scanner found. A scanner that doesn't appear can be added by its address.",
                      Detail(HealthyWindows()));
-        Assert.Equal("3 network scanners found. A scanner that does not appear can be added by its address.",
+        Assert.Equal("3 network scanners found. A scanner that doesn't appear can be added by its address.",
                      Detail(HealthyWindows() with { DiscoveredCount = 3 }));
-        Assert.Equal("The search has just started. Scanners on the network appear as they answer.",
+        Assert.Equal("Scanners on the network appear as they answer. The search has just started.",
                      Detail(HealthyWindows() with { Discovery = DiscoveryStatus.Searching }));
         var running = Check(Troubleshooter.Diagnose(HealthyWindows()), "discovery");
         Assert.Equal((CheckStatus.Ok, "Looking for network scanners"), (running.Status, running.Title));
         Assert.Equal([TroubleshootAction.AddByAddress], running.Actions);
 
         var unavailable = Check(Troubleshooter.Diagnose(TroubledWindows()), "discovery");
-        Assert.Equal((CheckStatus.Warning, "Automatic search for network scanners is not working"), (unavailable.Status, unavailable.Title));
-        Assert.Equal("Windows could not search the network for scanners (Access is denied). You can still add a network "
-                     + "scanner by its address.", unavailable.Detail);
+        Assert.Equal((CheckStatus.Warning, "Network search is not working"), (unavailable.Status, unavailable.Title));
+        Assert.Equal("You can still add a network scanner by its address.", unavailable.Detail);
+        Assert.Equal("Windows could not search the network for scanners (Access is denied).", unavailable.More);
         Assert.Equal([TroubleshootAction.AddByAddress, TroubleshootAction.Refresh], unavailable.Actions);
         Assert.DoesNotContain("discovery", Ids(Troubleshooter.Diagnose(HealthyWindows() with { Discovery = DiscoveryStatus.Off })));
     }
@@ -277,12 +337,13 @@ public class TroubleshooterTests
         Assert.DoesNotContain("manualHost:10.0.0.2", Ids(checks));
         Assert.Equal(new TroubleshootCheck(
             "manualHost:192.168.1.50", CheckStatus.Warning, "No scanner answers at 192.168.1.50",
-            "No scanner answered at 192.168.1.50. Check that the scanner is on and that its address has not changed; "
-            + "its network settings page or control panel shows the current one. The app tries the address again every minute.",
-            [TroubleshootAction.Refresh]), Check(checks, "manualHost:192.168.1.50"));
+            "Check that it is on and its address hasn't changed.",
+            [TroubleshootAction.Refresh],
+            "No scanner answered at 192.168.1.50. Its network settings page or control panel shows the current address. "
+            + "The app tries the address again every minute."), Check(checks, "manualHost:192.168.1.50"));
         var unchecked_ = Check(Troubleshooter.Diagnose(new DiscoverySnapshot { ManualHosts = [new("scanner.local", false)] }),
                                "manualHost:scanner.local");
-        Assert.StartsWith("Check that the scanner is on", unchecked_.Detail);
+        Assert.StartsWith("Its network settings page", unchecked_.More);
     }
 
     [Fact]
@@ -290,17 +351,16 @@ public class TroubleshooterTests
     {
         var checks = Troubleshooter.Diagnose(HealthyWindows());
         var usb = Check(checks, "usb");
-        Assert.Equal("Scanner connected by USB?", usb.Title);
-        Assert.Equal("Turn the scanner on and connect it straight to the PC, not through a hub. Windows lists a USB "
-                     + "scanner only once its driver is installed: get the driver from the scanner maker's website, "
-                     + "install it, then select Refresh. Windows scanner settings show whether Windows sees the scanner.",
-                     usb.Detail);
+        Assert.Equal("Connected by USB?", usb.Title);
+        Assert.Equal("Connect it directly (no hub) and install the maker's driver.", usb.Detail);
+        Assert.Equal("Windows lists a USB scanner only after its driver is installed. Get it from the maker's website, "
+                     + "then select Refresh. Scanner settings show whether Windows sees it.", usb.More);
         Assert.Equal([TroubleshootAction.OpenScannerSettings, TroubleshootAction.Refresh], usb.Actions);
         var other = Check(checks, "otherApps");
         Assert.Equal("Still not listed?", other.Title);
-        Assert.Equal("Wake the scanner (press a button on it), and close other apps that may be using it, such as "
-                     + "Windows Scan or the scanner maker's app. Some scanners work only with their maker's own app; "
-                     + "the maker's website says whether yours does.", other.Detail);
+        Assert.Equal("Wake the scanner and close other scanning apps.", other.Detail);
+        Assert.Equal("Press a button on the scanner. Close Windows Scan or the maker's app. Some scanners work only with "
+                     + "their maker's app.", other.More);
     }
 
     [Fact]
@@ -310,11 +370,11 @@ public class TroubleshooterTests
         var checks = Troubleshooter.Diagnose(snapshot);
         Assert.Equal(["lastFailure", "network", "discovery", "usb", "networkScanner", "sharing", "otherApps"], Ids(checks));
         Assert.DoesNotContain(checks, c => c.Actions.Contains(TroubleshootAction.AddByAddress));
-        Assert.Contains("such as Image Capture or the scanner maker's app", Check(checks, "lastFailure").Detail);
+        Assert.Contains("Image Capture or the maker's app may be using it", Check(checks, "lastFailure").More);
         var discovery = Check(checks, "discovery");
         Assert.Equal((CheckStatus.Ok, "Looking for scanners"), (discovery.Status, discovery.Title));
-        Assert.Equal("macOS is looking for scanners connected by USB, on the network and shared by other Macs. They "
-                     + "appear here as they are found.", discovery.Detail);
+        Assert.Equal("Scanners appear here as macOS finds them.", discovery.Detail);
+        Assert.Equal("macOS looks for scanners connected by USB, on the network and shared by other Macs.", discovery.More);
     }
 
     [Fact]
@@ -323,17 +383,19 @@ public class TroubleshooterTests
         var checks = Troubleshooter.Diagnose(new DiscoverySnapshot { Platform = TroubleshootPlatform.Mac });
         Assert.Equal(["usb", "networkScanner", "sharing", "otherApps"], Ids(checks));
         Assert.Equal([TroubleshootAction.OpenImageCapture, TroubleshootAction.Refresh], Check(checks, "usb").Actions);
-        Assert.Equal("Turn the scanner on and connect it straight to the Mac, not through a hub. macOS lists a USB "
-                     + "scanner only when it can scan without a driver or its maker's macOS driver is installed: get "
-                     + "it from the scanner maker's website. If Image Capture does not show the scanner either, macOS "
-                     + "does not see it.", Check(checks, "usb").Detail);
-        Assert.Equal("The Mac and the scanner must be on the same network. If macOS asked whether CompleteScanner may "
-                     + "find devices on your local network, allow it in System Settings, Privacy & Security, Local "
-                     + "Network. A network printer with a scanner added in Printers & Scanners also appears here.",
-                     Check(checks, "networkScanner").Detail);
+        Assert.Equal("Connect it directly (no hub) and install the maker's macOS driver.", Check(checks, "usb").Detail);
+        Assert.Equal("macOS lists a USB scanner only when it can scan without a driver or its maker's driver is installed. "
+                     + "If Image Capture doesn't show it either, macOS doesn't see it.", Check(checks, "usb").More);
+        Assert.Equal("The Mac and the scanner must be on the same network.", Check(checks, "networkScanner").Detail);
+        Assert.Equal("If macOS asked whether CompleteScanner may find devices on your local network, allow it in System "
+                     + "Settings, Privacy & Security, Local Network. A network printer with a scanner added in Printers & "
+                     + "Scanners also appears here.", Check(checks, "networkScanner").More);
         Assert.Equal([TroubleshootAction.OpenScannerSettings], Check(checks, "networkScanner").Actions);
-        Assert.Equal("It appears when Scanner Sharing is on in that Mac's System Settings, General, Sharing, and both "
-                     + "Macs are on the same network.", Check(checks, "sharing").Detail);
+        Assert.Equal(("Shared by another Mac?", "Turn on Scanner Sharing in that Mac's Sharing settings."),
+                     (Check(checks, "sharing").Title, Check(checks, "sharing").Detail));
+        Assert.Equal("It's in System Settings, General, Sharing. Both Macs must be on the same network.", Check(checks, "sharing").More);
+        Assert.Equal("Press a button on the scanner. Close Image Capture or the maker's app. Some scanners work only with "
+                     + "their maker's app.", Check(checks, "otherApps").More);
     }
 
     [Fact]
@@ -344,7 +406,8 @@ public class TroubleshooterTests
             var check = Check(Troubleshooter.Diagnose(new DiscoverySnapshot { Platform = TroubleshootPlatform.Mac, Discovery = status }),
                               "discovery");
             Assert.Equal((CheckStatus.Warning, "Not looking for scanners"), (check.Status, check.Title));
-            Assert.Equal("The search for scanners is not running. Select Refresh to start it again.", check.Detail);
+            Assert.Equal("Select Refresh to start the search again.", check.Detail);
+            Assert.Equal("The search for scanners is not running.", check.More);
             Assert.Equal([TroubleshootAction.Refresh], check.Actions);
         }
     }
@@ -352,8 +415,9 @@ public class TroubleshooterTests
     [Fact]
     public void Headline_CountsScannersButNotTheDemo()
     {
-        Assert.Equal("No scanner found yet", Troubleshooter.Headline(new DiscoverySnapshot()));
-        Assert.Equal("No scanner found yet", Troubleshooter.Headline(new DiscoverySnapshot { Devices = [Demo] }));
+        Assert.Equal("No scanner found", Troubleshooter.Headline(new DiscoverySnapshot()));
+        Assert.Equal("No scanner found", Troubleshooter.Headline(new DiscoverySnapshot { Devices = [Demo] }));
+        Assert.Equal("1 scanner found", Troubleshooter.Headline(new DiscoverySnapshot { Devices = [Demo, WiaScanner] }));
         var second = new ScannerInfo("escl:2", "Office MFP", "Network", Backend: "escl");
         Assert.Equal("2 scanners found", Troubleshooter.Headline(new DiscoverySnapshot { Devices = [Demo, WiaScanner, second] }));
     }
@@ -372,19 +436,19 @@ public class TroubleshooterTests
     public void Labels()
     {
         Assert.Equal("Refresh", Troubleshooter.Label(TroubleshootAction.Refresh, TroubleshootPlatform.Windows));
-        Assert.Equal("Add scanner by address…", Troubleshooter.Label(TroubleshootAction.AddByAddress, TroubleshootPlatform.Windows));
-        Assert.Equal("Open Windows scanner settings", Troubleshooter.Label(TroubleshootAction.OpenScannerSettings, TroubleshootPlatform.Windows));
-        Assert.Equal("Open Printers & Scanners", Troubleshooter.Label(TroubleshootAction.OpenScannerSettings, TroubleshootPlatform.Mac));
-        Assert.Equal("Open network settings", Troubleshooter.Label(TroubleshootAction.OpenNetworkSettings, TroubleshootPlatform.Windows));
-        Assert.Equal("Open Network settings", Troubleshooter.Label(TroubleshootAction.OpenNetworkSettings, TroubleshootPlatform.Mac));
-        Assert.Equal("Open Image Capture", Troubleshooter.Label(TroubleshootAction.OpenImageCapture, TroubleshootPlatform.Mac));
+        Assert.Equal("Add by address…", Troubleshooter.Label(TroubleshootAction.AddByAddress, TroubleshootPlatform.Windows));
+        Assert.Equal("Scanner settings", Troubleshooter.Label(TroubleshootAction.OpenScannerSettings, TroubleshootPlatform.Windows));
+        Assert.Equal("Printers & Scanners", Troubleshooter.Label(TroubleshootAction.OpenScannerSettings, TroubleshootPlatform.Mac));
+        Assert.Equal("Network settings", Troubleshooter.Label(TroubleshootAction.OpenNetworkSettings, TroubleshootPlatform.Windows));
+        Assert.Equal("Network settings", Troubleshooter.Label(TroubleshootAction.OpenNetworkSettings, TroubleshootPlatform.Mac));
+        Assert.Equal("Image Capture", Troubleshooter.Label(TroubleshootAction.OpenImageCapture, TroubleshootPlatform.Mac));
         Assert.Equal("Copy diagnostics", Troubleshooter.Label(TroubleshootAction.CopyDiagnostics, TroubleshootPlatform.Mac));
         Assert.Equal(["OK", "Tip", "Warning", "Problem"],
                      new[] { CheckStatus.Ok, CheckStatus.Tip, CheckStatus.Warning, CheckStatus.Problem }.Select(Troubleshooter.StatusLabel));
     }
 
     [Fact]
-    public void Report_ListsEveryCheckWithItsDetail()
+    public void Report_ListsEveryCheckWithItsDetail_AndItsMoreHelp()
     {
         var snapshot = HealthyWindows();
         var checks = Troubleshooter.Diagnose(snapshot);
@@ -394,9 +458,12 @@ public class TroubleshooterTests
         Assert.Equal("1 scanner found. Nothing here stops scanners from appearing. The tips below cover the usual causes.", lines[1]);
         Assert.Equal("OK: Connected to a private network", lines[2]);
         Assert.Equal("  Network scanners on this network can be found.", lines[3]);
-        Assert.Equal("Tip: Still not listed?", lines[^3]);
+        Assert.Equal("Tip: Still not listed?", lines[^4]);
+        Assert.Equal("  Wake the scanner and close other scanning apps.", lines[^3]);
+        Assert.Equal("  Press a button on the scanner. Close Windows Scan or the maker's app. Some scanners work only with "
+                     + "their maker's app.", lines[^2]);
         Assert.Equal("", lines[^1]);
-        Assert.Equal(2 + 2 * checks.Count + 1, lines.Length);
+        Assert.Equal(2 + 2 * checks.Count + checks.Count(c => c.More.Length > 0) + 1, lines.Length);
     }
 
     [Fact]

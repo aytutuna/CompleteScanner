@@ -540,10 +540,9 @@ final class OrientationTests: XCTestCase {
 
     func test_pageTurns_hint_saysWhyTheSwitchIsOff_orWhatItDoes() {
         var s = ScanSettings()
-        XCTAssertEqual(PageTurns.hint(s, available: true), "Turn pages that are upside down or sideways, by reading their text.")
+        XCTAssertEqual(PageTurns.hint(s, available: true), "Turns sideways or upside-down pages by reading the text")
         s.document.autoRotate = true
-        XCTAssertEqual(PageTurns.hint(s, available: true),
-                       "Pages upside down or sideways are turned when their text makes it clear. Click the turn button on a page to undo it.")
+        XCTAssertEqual(PageTurns.hint(s, available: true), "Turns sideways or upside-down pages by reading the text")
         XCTAssertEqual(PageTurns.hint(s, available: false), "Needs a text recognition language, and none is installed.")
         var atOnce = ScanSettings()
         atOnce.documentMultiPage = false

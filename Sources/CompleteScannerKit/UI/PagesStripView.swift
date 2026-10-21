@@ -75,7 +75,7 @@ struct PagesStripView: View {
                 .padding(.vertical, 10)
 
             VStack(alignment: .trailing, spacing: 6) {
-                // "24 pages in queue, 5 blank skipped", "9 pages in queue, 3 documents, 2 separator pages skipped"
+                // "24 pages · 5 blank skipped", "9 pages · 3 documents · 2 separator pages skipped"
                 Text(DocumentSplitter.queueSummary(state.scannedPages, options: options))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -92,6 +92,8 @@ struct PagesStripView: View {
                     state.clearPages()
                 }
                 .disabled(state.isBusy)
+                .help("Remove all pages")
+                .accessibilityHint(Text("Remove every page from the queue"))
             }
             .padding(.trailing, 12)
         }
@@ -123,9 +125,9 @@ struct PagesStripView: View {
 
 /// What the strip says about a page cut from a spread of a book. Twin of the Windows `PageBookView`.
 fileprivate struct PageBookInfo {
-    /// "Spread 2 · page 1", "Spread 2 · not split"; nil for other pages.
+    /// "2 · left", "2 · not split"; nil for other pages.
     let label: String?
-    /// The label's help: what can be done with a spread kept whole.
+    /// The label spelled out for VoiceOver: "Spread 2, left page".
     let help: String?
     /// The spread was kept whole: the caption says so.
     let isWhole: Bool
@@ -263,8 +265,15 @@ fileprivate struct PageThumbnailCell: View {
                     Text(caption)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                        .help(DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? book.help
+                        .help(DocumentSides.sideName(side: page.side, sheetIndex: page.sheetIndex) ?? book.help
                               ?? (PhotoImport.sourceHelp(page) ?? ""))
+                }
+                // A spread kept as one page (its spine was not found, or it was joined): split it here.
+                if book.isWhole, book.splitLabel != nil {
+                    Button("Split\u{2026}", action: onSplitSpread)
+                        .buttonStyle(.link)
+                        .font(.caption2)
+                        .help(book.splitLabel ?? "")
                 }
                 geometryToggle
                 uprightToggle
@@ -322,12 +331,12 @@ fileprivate struct PageThumbnailCell: View {
         return "Page \(pageNumber) \u{00B7} \(side == .front ? "front" : "back")"
     }
 
-    /// "Page 3, Sheet 2 · back, Blank, skipped, Straightened 1.5°, Turned upright 180°" for screen
+    /// "Page 3, Sheet 2, back, Blank, skipped, Straightened 1.5°, Turned upright 180°" for screen
     /// readers; the first page of a document after the first starts with its title ("Document 2, Page 3").
     private var accessibilityName: String {
         var name = "Page \(pageNumber)"
         if let title = split.dividerTitle { name = "\(title), \(name)" }
-        if let label = DocumentSides.sideLabel(side: page.side, sheetIndex: page.sheetIndex) ?? book.label
+        if let label = DocumentSides.sideName(side: page.side, sheetIndex: page.sheetIndex) ?? book.help
             ?? PhotoImport.sourceLabel(page) {
             name += ", \(label)"
         }

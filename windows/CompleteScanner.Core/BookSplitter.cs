@@ -52,10 +52,19 @@ public sealed record GutterResult(GutterAxis Axis, int Position, double Confiden
 /// the spread was not split and the page is the whole spread.
 /// </param>
 /// <param name="Gutter">Where the spread was cut; null when it was not.</param>
-public sealed record SpreadPart(Guid SpreadId, int? Part, GutterResult? Gutter)
+/// <param name="Left">
+/// Whether the page is the spread's left page, as worked out when the spread was cut
+/// (<see cref="PageProcessor.ProcessSpread"/>): the page first in reading order then, or the other one
+/// for a book read from right to left. Null when not recorded: then the part before the cut is the left
+/// page (<see cref="IsLeft"/>).
+/// </param>
+public sealed record SpreadPart(Guid SpreadId, int? Part, GutterResult? Gutter, bool? Left = null)
 {
     /// <summary>The page is a whole spread: it was not split (the spine was not found, or the user joined it).</summary>
     public bool IsWhole => Part is null;
+
+    /// <summary>The page is the spread's left page (<see cref="Left"/>); it keeps its side wherever it is moved in the queue.</summary>
+    public bool IsLeft => Left ?? Part == 0;
 }
 
 /// <summary>How the pages of a spread are turned and put in order (<see cref="BookSplitter.Split"/>).</summary>
@@ -674,8 +683,8 @@ public static class BookSplitter
 }
 
 /// <summary>What the page strip says about a page cut from a spread (<see cref="BookPages.Labels"/>).</summary>
-/// <param name="Label">"Spread 2 · page 1", "Spread 2 · not split".</param>
-/// <param name="Help">The label's tooltip.</param>
+/// <param name="Label">The badge: "2 · left", "2 · right", "2 · not split".</param>
+/// <param name="Help">The badge spelled out for screen readers: "Spread 2, left page", "Spread 2, not split".</param>
 public sealed record BookPageLabel(string Label, string Help);
 
 /// <summary>
@@ -691,16 +700,22 @@ public static class BookPages
     /// </summary>
     public static bool ScansOneSide(ScanSettings settings) => DocumentSides.Effective(settings, null) == DuplexMode.Off;
 
+    /// <summary>The badge of a spread kept as one page; the page offers Split… next to it.</summary>
+    public const string NotSplitBadge = "Not split";
+
+    /// <summary>Why Split facing pages is greyed out while both sides of each sheet are scanned.</summary>
+    public const string NotWithTwoSidedReason = "Not with two-sided";
+
     /// <summary>
-    /// The label and tooltip of every page of the queue, in one pass: "Spread 2 · page 1", "Spread 2 ·
-    /// page 2" for the pages cut from the second spread in the queue, by their order in it; "Spread 2 ·
-    /// not split" for a spread kept whole, whose tooltip says it can be split; null for a page not scanned
-    /// as part of a spread.
+    /// The badge and its spoken form for every page of the queue, in one pass: "2 · left" and "2 · right"
+    /// ("Spread 2, left page") for the pages cut from the second spread in the queue, each page keeping
+    /// the side it was given when the spread was cut (<see cref="SpreadPart.IsLeft"/>), wherever it is
+    /// moved and whatever the reading order is set to later; "2 · not split" ("Spread 2, not split") for
+    /// a spread kept whole; null for a page not scanned as part of a spread.
     /// </summary>
     public static IReadOnlyList<BookPageLabel?> Labels(IReadOnlyList<ScannedPage> pages)
     {
         var numbers = new Dictionary<Guid, int>();
-        var counts = new Dictionary<Guid, int>();
         var result = new BookPageLabel?[pages.Count];
         for (int i = 0; i < pages.Count; i++)
         {
@@ -710,21 +725,22 @@ public static class BookPages
                 number = numbers.Count + 1;
                 numbers[part.SpreadId] = number;
             }
-            int ordinal = counts.GetValueOrDefault(part.SpreadId) + 1;
-            counts[part.SpreadId] = ordinal;
-            string label = part.IsWhole ? $"Spread {number} · not split" : $"Spread {number} · page {ordinal}";
-            result[i] = new BookPageLabel(label, part.IsWhole
-                ? $"{label}: the spread is one page. Right-click it to split it into two pages."
-                : label);
+            if (part.IsWhole)
+            {
+                result[i] = new BookPageLabel($"{number} · not split", $"Spread {number}, not split");
+                continue;
+            }
+            string side = part.IsLeft ? "left" : "right";
+            result[i] = new BookPageLabel($"{number} · {side}", $"Spread {number}, {side} page");
         }
         return result;
     }
 
-    /// <summary>The label of the page at <paramref name="index"/> (<see cref="Labels"/>); null for a page not scanned as part of a spread.</summary>
+    /// <summary>The badge of the page at <paramref name="index"/> (<see cref="Labels"/>); null for a page not scanned as part of a spread.</summary>
     public static string? Label(IReadOnlyList<ScannedPage> pages, int index) =>
         index < 0 || index >= pages.Count || pages[index].Spread is null ? null : Labels(pages)[index]?.Label;
 
-    /// <summary>The label's tooltip: what can be done with a spread kept whole; the label itself otherwise.</summary>
+    /// <summary>The badge spelled out for screen readers ("Spread 2, left page").</summary>
     public static string? Help(IReadOnlyList<ScannedPage> pages, int index) =>
         index < 0 || index >= pages.Count || pages[index].Spread is null ? null : Labels(pages)[index]?.Help;
 
@@ -775,8 +791,8 @@ public static class BookPages
 
     /// <summary>
     /// The status after a scan's pages were queued, when spreads were split or kept whole: " 2 spreads
-    /// split into pages." and " The spine of 1 spread was not found: it was added as one page (right-click
-    /// it to split it)." (leading space; empty for no spread).
+    /// split into pages." and " The spine of 1 spread was not found: it was added as one page (Split… on
+    /// it splits it)." (leading space; empty for no spread).
     /// </summary>
     public static string ScanNote(IEnumerable<ScannedPage> added)
     {
@@ -787,8 +803,8 @@ public static class BookPages
         if (whole > 0)
         {
             note += whole == 1
-                ? " The spine of 1 spread was not found: it was added as one page (right-click it to split it)."
-                : $" The spine of {whole} spreads was not found: they were added as one page each (right-click one to split it).";
+                ? " The spine of 1 spread was not found: it was added as one page (Split… on it splits it)."
+                : $" The spine of {whole} spreads was not found: they were added as one page each (Split… on one splits it).";
         }
         return note;
     }
@@ -810,8 +826,8 @@ public static class BookPages
     };
 
     /// <summary>
-    /// The inspector's hint under "Split facing pages": why it is off for copies, receipts, scans saved
-    /// at once and two-sided scans, else what it does.
+    /// The tooltip of "Split facing pages": why it is off for copies, receipts, scans saved at once and
+    /// two-sided scans (those show <see cref="NotWithTwoSidedReason"/> next to it), else what it does.
     /// </summary>
     public static string Hint(ScanSettings settings)
     {
@@ -820,8 +836,6 @@ public static class BookPages
         if (flow == TaskFlowKind.ReceiptSplit) return "Receipts are found on the glass one by one.";
         if (!settings.DocumentMultiPage) return "Only for pages collected before saving: a scan saved at once is kept as scanned.";
         if (!ScansOneSide(settings)) return "Only for one side of each sheet: pages scanned on both sides are kept as scanned.";
-        return settings.Document.SplitFacingPages
-            ? "Each scan of an open book or magazine becomes two pages, cut at the spine. When the spine is not clear the spread stays one page: right-click it to split it."
-            : "Scan an open book or magazine two pages at a time; each spread is cut at the spine into two pages.";
+        return "Each book scan becomes two pages, cut at the spine.";
     }
 }

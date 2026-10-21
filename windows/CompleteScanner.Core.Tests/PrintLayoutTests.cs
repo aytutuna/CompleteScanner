@@ -203,8 +203,8 @@ public class PrintLayoutTests
         Assert.Equal("Sent 2 pages to Office Printer, 3 copies.", PrintText.Sent(2, 3, "Office Printer"));
         Assert.Equal("Actual size", PrintText.ModeLabel(false));
         Assert.Equal("Fit to page", PrintText.ModeLabel(true));
-        Assert.Equal("No printer is installed.", PrintText.NoPrinterReason);
-        Assert.Equal("The printer's paper, from the corner of the glass. An area selected on the preview takes its place.",
+        Assert.Equal("Needs a printer", PrintText.NoPrinterReason);
+        Assert.Equal("The printer's paper size, from the glass corner",
                      PrintText.CopyPaperHint(PaperSize.Auto, ScanSource.Flatbed));
         Assert.Equal(PaperSizes.Hint(PaperSize.Auto, ScanSource.DocumentFeeder), PrintText.CopyPaperHint(PaperSize.Auto, ScanSource.DocumentFeeder));
         Assert.Equal(PaperSizes.Hint(PaperSize.A4, ScanSource.Flatbed), PrintText.CopyPaperHint(PaperSize.A4, ScanSource.Flatbed));

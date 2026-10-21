@@ -16,10 +16,39 @@ public enum TaskFlowKind: String, Sendable {
     case receiptSplit
 }
 
+/// The start screen's groups of tasks, in the order it shows them. Twin of C# `TaskGroup`
+/// (`TaskGroups.All`, `TaskGroups.Title`).
+public enum TaskGroup: String, CaseIterable, Sendable {
+    case documents
+    case photosAndImages
+    case other
+
+    /// "Documents", "Photos & images", "Other".
+    public var title: String {
+        switch self {
+        case .documents: return "Documents"
+        case .photosAndImages: return "Photos & images"
+        case .other: return "Other"
+        }
+    }
+}
+
+/// A group of the start screen with its tasks, in the order they are shown. Twin of C# `TaskGroupSection`.
+public struct TaskGroupSection: Equatable, Sendable {
+    public let group: TaskGroup
+    public let definitions: [TaskDefinition]
+
+    public init(group: TaskGroup, definitions: [TaskDefinition]) {
+        self.group = group
+        self.definitions = definitions
+    }
+}
+
 /// A task card: what it is called, how it looks and how its scans are handled.
 public struct TaskDefinition: Equatable, Sendable {
     public let task: ScanTask
     public let title: String
+    /// What the task does, in one short line: the tile's tooltip, not shown on the tile.
     public let subtitle: String
     /// Names the card's icon; each platform maps it to its own symbol: "document", "feeder",
     /// "photos", "restore", "quick", "email", "twoSided", "idCard", "copy", "word", "receipt", "batch", "book".
@@ -32,6 +61,8 @@ public struct TaskDefinition: Equatable, Sendable {
     /// What the `{task}` naming token becomes ("Document", "Photo").
     public let fileLabel: String
     public let steps: [TaskStep]
+    /// The start screen's group the tile is in.
+    public let group: TaskGroup
 }
 
 /// Whether a task can be started with the connected scanner, and if not, why.
@@ -51,111 +82,174 @@ public struct TaskAvailability: Equatable, Sendable {
 /// its settings over the current ones (`apply`); a preset without a stored task is shown with
 /// the task its settings look like (`infer`). Twin of C# `TaskCatalog`.
 public enum TaskCatalog {
-    /// Every task, in start-screen order.
+    /// Every task, in the order of `ScanTask.allCases`.
     public static let all: [TaskDefinition] = [
         TaskDefinition(
             task: .document, title: "Document to PDF",
-            subtitle: "Scan pages one at a time into a searchable PDF.",
+            subtitle: "Page by page into a searchable PDF.",
             iconKey: "document", flow: .documentQueue, intent: .document, requiredSource: nil,
             fileLabel: "Document",
             steps: [TaskStep(id: "scan", title: "Scan each page",
-                             prompt: "Place a page face down on the glass and scan it. Repeat for every page, then save the PDF.",
-                             primaryActionLabel: "Scan page", repeats: true)]),
+                             prompt: "Place each page face down and scan, then save.",
+                             primaryActionLabel: "Scan page", repeats: true,
+                             help: "Scan the pages one by one. They are collected until you save the PDF.")],
+            group: .documents),
         TaskDefinition(
-            task: .feeder, title: "Multi-page from feeder",
-            subtitle: "Scan a stack of pages through the document feeder into one PDF.",
+            task: .feeder, title: "Stack from feeder",
+            subtitle: "A stack through the feeder into one PDF.",
             iconKey: "feeder", flow: .documentQueue, intent: .document, requiredSource: .documentFeeder,
             fileLabel: "Document",
             steps: [TaskStep(id: "scan", title: "Scan the stack",
-                             prompt: "Load the pages in the document feeder and scan. Add more stacks if you need to, then save the PDF.",
-                             primaryActionLabel: "Scan stack", repeats: true)]),
+                             prompt: "Load the pages in the feeder and scan.",
+                             primaryActionLabel: "Scan stack", repeats: true,
+                             help: "Add more stacks if you need to, then save the PDF.")],
+            group: .documents),
         TaskDefinition(
             task: .photos, title: "Photos",
-            subtitle: "Scan several photos at once. Each one is found, cropped and straightened.",
+            subtitle: "Several photos at once, each cropped and straightened.",
             iconKey: "photos", flow: .photoSplit, intent: .photo, requiredSource: nil,
             fileLabel: "Photo",
             steps: [TaskStep(id: "scan", title: "Scan the photos",
-                             prompt: "Lay the photos on the glass with a little space between them, close the lid and scan. Check each photo before saving.",
-                             primaryActionLabel: "Scan photos", repeats: true)]),
+                             prompt: "Lay the photos on the glass, apart, and scan.",
+                             primaryActionLabel: "Scan photos", repeats: true,
+                             help: "Leave a little space between photos and close the lid. Check each photo before saving.")],
+            group: .photosAndImages),
         TaskDefinition(
-            task: .photoRestore, title: "Old photo restoration",
-            subtitle: "Bring back the faded colors of old prints, saved as lossless PNG.",
+            task: .photoRestore, title: "Restore old photos",
+            subtitle: "Brings back faded colors; saved as PNG.",
             iconKey: "restore", flow: .photoSplit, intent: .photo, requiredSource: nil,
             fileLabel: "Restored photo",
             steps: [TaskStep(id: "scan", title: "Scan the old photos",
-                             prompt: "Lay the photos on the glass with a little space between them and scan. Colors are restored automatically; check each photo before saving.",
-                             primaryActionLabel: "Scan photos", repeats: true)]),
+                             prompt: "Lay the photos on the glass, apart, and scan.",
+                             primaryActionLabel: "Scan photos", repeats: true,
+                             help: "Colors are restored automatically. Check each photo before saving.")],
+            group: .photosAndImages),
         TaskDefinition(
             task: .quickScan, title: "Quick scan",
-            subtitle: "Preview the glass, drag over the part you need and save it as an image.",
+            subtitle: "Save part of the glass as an image.",
             iconKey: "quick", flow: .documentQueue, intent: .document, requiredSource: .flatbed,
             fileLabel: "Scan",
             steps: [TaskStep(id: "scan", title: "Scan an area",
-                             prompt: "Preview the glass, drag over the part you need, then scan. Each scan is saved right away.",
-                             primaryActionLabel: "Scan", repeats: true)]),
+                             prompt: "Preview, drag over the part you need, then scan.",
+                             primaryActionLabel: "Scan", repeats: true,
+                             help: "Each scan is saved right away.")],
+            group: .photosAndImages),
         TaskDefinition(
             task: .email, title: "Email a document",
-            subtitle: "Scan pages into a small PDF that is easy to attach to an email.",
+            subtitle: "A small PDF, ready to attach.",
             iconKey: "email", flow: .documentQueue, intent: .document, requiredSource: nil,
             fileLabel: "Document",
             steps: [TaskStep(id: "scan", title: "Scan each page",
-                             prompt: "Place a page face down on the glass and scan it. Repeat for every page, then save the PDF: the share window opens so you can email it.",
-                             primaryActionLabel: "Scan page", repeats: true)]),
+                             prompt: "Scan each page, then save to email it.",
+                             primaryActionLabel: "Scan page", repeats: true,
+                             help: "Saving opens the share window, so you can email the PDF.")],
+            group: .documents),
         TaskDefinition(
             task: .twoSided, title: "Two-sided document",
-            subtitle: "Both sides of every sheet in the feeder, in page order, in one PDF.",
+            subtitle: "Both sides of every sheet, in page order.",
             iconKey: "twoSided", flow: .documentQueue, intent: .document, requiredSource: .documentFeeder,
             fileLabel: "Document",
             steps: [TaskStep(id: "scan", title: "Scan the stack",
-                             prompt: "Load the pages in the document feeder and scan: both sides of every sheet are scanned and put in order. Then save the PDF.",
-                             primaryActionLabel: "Scan stack", repeats: true)]),
+                             prompt: "Load the pages in the feeder and scan.",
+                             primaryActionLabel: "Scan stack", repeats: true,
+                             help: "Both sides of every sheet are scanned and put in order. Then save the PDF.")],
+            group: .documents),
         TaskDefinition(
             task: .idCard, title: "ID card",
-            subtitle: "Both sides of an ID card or driving licence on one page, at real size.",
+            subtitle: "Both sides on one page, at real size.",
             iconKey: "idCard", flow: .idCard, intent: .document, requiredSource: .flatbed,
             fileLabel: "ID card",
-            steps: IdCardSteps.steps),
+            steps: IdCardSteps.steps,
+            group: .other),
         TaskDefinition(
-            task: .copy, title: "Copy",
-            subtitle: "Scan straight to the printer at real size, like a photocopier.",
+            task: .copy, title: "Photocopy",
+            subtitle: "Prints at real size, like a photocopier.",
             iconKey: "copy", flow: .copy, intent: .document, requiredSource: nil,
             fileLabel: "Copy",
             steps: [TaskStep(id: "scan", title: "Make a copy",
-                             prompt: "Place the original face down on the glass, or load the feeder, and copy. It prints at real size; choose the printer and the number of copies first.",
-                             primaryActionLabel: "Copy", repeats: true)]),
+                             prompt: "Place the original face down, then copy.",
+                             primaryActionLabel: "Copy", repeats: true,
+                             help: "Or load the feeder. Copies print at real size; choose the printer and number of copies on the right.")],
+            group: .other),
         TaskDefinition(
             task: .word, title: "Scan to Word",
-            subtitle: "Turn printed pages into a Word document you can edit.",
+            subtitle: "Printed pages into an editable Word file.",
             iconKey: "word", flow: .documentQueue, intent: .document, requiredSource: nil,
             fileLabel: "Document",
             steps: [TaskStep(id: "scan", title: "Scan each page",
-                             prompt: "Place a page face down on the glass and scan it. Repeat for every page, then save: the text is read from the pages into a Word document.",
-                             primaryActionLabel: "Scan page", repeats: true)]),
+                             prompt: "Scan each page, then save as Word.",
+                             primaryActionLabel: "Scan page", repeats: true,
+                             help: "The text is read from the pages into a Word document you can edit.")],
+            group: .documents),
         TaskDefinition(
             task: .receipt, title: "Receipts",
-            subtitle: "Scan several receipts at once into small, searchable files named by their date.",
+            subtitle: "Several at once, small files named by date.",
             iconKey: "receipt", flow: .receiptSplit, intent: .document, requiredSource: nil,
             fileLabel: "Receipt",
             steps: [TaskStep(id: "scan", title: "Scan the receipts",
-                             prompt: "Lay up to six receipts on the glass with a little space between them, close the lid and scan. Each one is found, straightened and made easy to read; check them before saving.",
-                             primaryActionLabel: "Scan receipts", repeats: true)]),
+                             prompt: "Lay up to six receipts apart and scan.",
+                             primaryActionLabel: "Scan receipts", repeats: true,
+                             help: "Each one is found, straightened and made easy to read. Check them before saving.")],
+            group: .other),
         TaskDefinition(
-            task: .batch, title: "Batch of separate documents",
-            subtitle: "Scan a stack of documents in one go; each one is saved as its own PDF, split at separator sheets.",
+            task: .batch, title: "Separate documents",
+            subtitle: "One stack, a PDF for each document.",
             iconKey: "batch", flow: .documentQueue, intent: .document, requiredSource: .documentFeeder,
             fileLabel: "Document",
             steps: [TaskStep(id: "scan", title: "Scan the stack",
-                             prompt: "Put a separator sheet in front of each document after the first, load the stack in the feeder and scan. Check where the stack is split, then save.",
-                             primaryActionLabel: "Scan stack", repeats: true)]),
+                             prompt: "Put a separator sheet before each document, then scan.",
+                             primaryActionLabel: "Scan stack", repeats: true,
+                             help: "1. Print separator sheets (Split into documents, on the right). 2. Put one in front of each document after the first. 3. Load the stack and scan. 4. Check the splits in the page strip, then save.")],
+            group: .documents),
         TaskDefinition(
             task: .book, title: "Book or magazine",
-            subtitle: "Scan an open book two pages at a time; each spread is split into its pages, in reading order.",
+            subtitle: "Two pages per scan, split at the spine.",
             iconKey: "book", flow: .documentQueue, intent: .document, requiredSource: .flatbed,
             fileLabel: "Book",
             steps: [TaskStep(id: "scan", title: "Scan each spread",
-                             prompt: "Open the book face down with the spine in the middle of the glass and press it gently flat, then scan. Turn the page and scan the next spread; each one becomes two pages.",
-                             primaryActionLabel: "Scan spread", repeats: true)]),
+                             prompt: "Open the book face down, spine centered, and scan.",
+                             primaryActionLabel: "Scan spread", repeats: true,
+                             help: "Press it gently flat. Turn the page and scan the next spread; each one becomes two pages.")],
+            group: .other),
     ]
+
+    /// The tasks in the order the start screen shows them, group by group: Documents (Document to
+    /// PDF, Stack from feeder, Two-sided document, Separate documents, Scan to Word, Email a
+    /// document), Photos & images (Photos, Restore old photos, Quick scan), Other (ID card,
+    /// Photocopy, Receipts, Book or magazine). Windows lists its Archive document task last under
+    /// Documents.
+    public static let startOrder: [ScanTask] = [
+        .document, .feeder, .twoSided, .batch, .word, .email,
+        .photos, .photoRestore, .quickScan, .idCard,
+        .copy, .receipt, .book,
+    ]
+
+    /// The start screen's groups in order, each with its tasks in `startOrder`; every task is in one group.
+    public static var sections: [TaskGroupSection] {
+        TaskGroup.allCases.map { (group: TaskGroup) -> TaskGroupSection in
+            let definitions: [TaskDefinition] = startOrder
+                .map { (task: ScanTask) -> TaskDefinition in TaskCatalog.definition(task) }
+                .filter { (definition: TaskDefinition) -> Bool in definition.group == group }
+            return TaskGroupSection(group: group, definitions: definitions)
+        }
+    }
+
+    /// Why a task that needs the document feeder cannot be started: the tile's one visible line.
+    public static let needsFeederReason = "Needs a document feeder"
+
+    /// Why a task that needs the flatbed cannot be started.
+    public static let needsFlatbedReason = "Needs a flatbed"
+
+    /// The error when a task that cannot be started is picked anyway: its title and the reason, as a
+    /// sentence ("Stack from feeder needs a document feeder.").
+    public static func unavailableMessage(_ task: ScanTask, reason: String) -> String {
+        var text: String = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        while text.hasSuffix(".") { text.removeLast() }
+        if let first: Character = text.first {
+            text = String(first).lowercased() + String(text.dropFirst())
+        }
+        return "\(TaskCatalog.definition(task).title) \(text)."
+    }
 
     public static func definition(_ task: ScanTask) -> TaskDefinition {
         // Every case has an entry in `all` (ScanTaskTests checks it).
@@ -316,9 +410,7 @@ public enum TaskCatalog {
             return .available
         }
         return TaskAvailability(isAvailable: false,
-                                reason: source == .documentFeeder
-                                    ? "This scanner has no document feeder."
-                                    : "This scanner has no flatbed.")
+                                reason: source == .documentFeeder ? needsFeederReason : needsFlatbedReason)
     }
 
     /// The settings still do what the task is for: the same scan mode, and the task's required

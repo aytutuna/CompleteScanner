@@ -72,6 +72,12 @@ public enum BarcodeSeparators {
     /// The most characters of a code's text a note shows; a longer text is cut, ending with "…".
     public static let maxNoteTextLength = 40
 
+    /// The one line under "Codes are on": what happens to the page or sheet with a code, kept as a
+    /// document's first page (`on`) or left out as a separator sheet.
+    public static func startsDocumentCaption(_ on: Bool) -> String {
+        on ? "Pages are kept" : "Sheets are left out"
+    }
+
     /// What `DocumentOptions.barcodeStartsDocument` does, on and off, under its switch; off, with the
     /// codes that make a separator sheet (those starting with `prefix`, `defaultPrefix` when nil; every
     /// code when it is empty).

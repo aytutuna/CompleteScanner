@@ -311,8 +311,8 @@ public static class PageTurns
         " Pages were not turned upright: no text recognition language is installed.";
 
     /// <summary>
-    /// The inspector's hint under "Rotate pages upright": why it is off for copies, receipts and
-    /// scans saved at once, that it needs text recognition, else what it does.
+    /// The tooltip of "Rotate pages upright": why it is off for copies, receipts and scans saved at
+    /// once, that it needs text recognition (shown next to it), else what it does.
     /// </summary>
     public static string Hint(ScanSettings settings, bool available)
     {
@@ -321,8 +321,6 @@ public static class PageTurns
         if (flow == TaskFlowKind.ReceiptSplit) return "Receipts are kept the way they lie on the glass.";
         if (!settings.DocumentMultiPage) return "Only for pages collected before saving: a scan saved at once is kept as scanned.";
         if (!available) return "Needs a text recognition language, and none is installed.";
-        return settings.Document.AutoRotate
-            ? "Pages upside down or sideways are turned when their text makes it clear. Click the turn button on a page to undo it."
-            : "Turn pages that are upside down or sideways, by reading their text.";
+        return "Turns sideways or upside-down pages by reading the text";
     }
 }

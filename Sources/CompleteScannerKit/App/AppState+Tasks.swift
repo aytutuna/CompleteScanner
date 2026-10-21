@@ -70,7 +70,7 @@ extension AppState {
         if task == .copy { refreshPrinters() }
         let availability = TaskCatalog.availability(of: task, capabilities: capabilities, hasPrinter: hasPrinter)
         guard availability.isAvailable else {
-            errorMessage = availability.reason
+            errorMessage = TaskCatalog.unavailableMessage(task, reason: availability.reason ?? "")
             return false
         }
         // A feeder not asked yet whether it scans both sides is taken to (`sidesCapabilities`); the
@@ -83,6 +83,7 @@ extension AppState {
         flowTask = nil
         flowIsManual = false
         settings = adapted.settings
+        if let section = InspectorSections.openedBy(task) { sectionsOpenedByTask.insert(section) }
         statusMessage = Self.withNotes("Ready for \u{201C}\(TaskCatalog.definition(task).title)\u{201D}.",
                                        adapted.notes)
         return true

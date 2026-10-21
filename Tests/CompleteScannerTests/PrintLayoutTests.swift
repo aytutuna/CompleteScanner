@@ -200,9 +200,8 @@ final class PrintLayoutTests: XCTestCase {
                        "Sent 2 pages to Office Printer, 3 copies.")
         XCTAssertEqual(PrintText.modeLabel(fitToPage: false), "Actual size")
         XCTAssertEqual(PrintText.modeLabel(fitToPage: true), "Fit to page")
-        XCTAssertEqual(PrintText.noPrinterReason, "No printer is installed.")
-        XCTAssertEqual(PrintText.copyPaperHint(.auto, source: .flatbed),
-                       "The printer's paper, from the corner of the glass. An area selected on the preview takes its place.")
+        XCTAssertEqual(PrintText.noPrinterReason, "Needs a printer")
+        XCTAssertEqual(PrintText.copyPaperHint(.auto, source: .flatbed), "The printer's paper size, from the glass corner")
         XCTAssertEqual(PrintText.copyPaperHint(.auto, source: .documentFeeder), PaperSizes.hint(.auto, source: .documentFeeder))
         XCTAssertEqual(PrintText.copyPaperHint(.a4, source: .flatbed), PaperSizes.hint(.a4, source: .flatbed))
     }

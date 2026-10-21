@@ -110,10 +110,15 @@ public static class PhotoImport
     public static IReadOnlyList<string> HeifExtensions { get; } = ["heic", "heif", "hif"];
 
     public const string ButtonLabel = "Import photos of documents…";
-    public const string ButtonHint =
-        "Add photos of paper documents to the queue. Each page is found in its photo, straightened and cleaned up like a scan; the photo files are not changed.";
+    /// <summary>The import button's tooltip.</summary>
+    public const string ButtonHint = "Add phone photos of documents as pages";
+    /// <summary>The import button's full explanation, for screen readers.</summary>
+    public const string ButtonHelp = "Each page is found in the photo and straightened. Your photo files are not changed.";
     public const string PickerTitle = "Import photos of documents";
-    public const string DropHint = "Or drop photos of documents here to add them as pages.";
+    /// <summary>The line under the import link on the empty stage.</summary>
+    public const string DropHint = "or drop them here";
+    /// <summary>What the window shows while photo files are dragged over it.</summary>
+    public const string DropOverlay = "Drop to add as pages";
     /// <summary>The page strip's label on a page taken from a photo.</summary>
     public const string Label = "Photo";
     public const string LabelHelp = "Imported from a photo";
@@ -121,12 +126,13 @@ public static class PhotoImport
     public const string CorrectedCaption = "Corrected from photo";
     /// <summary>The caption of such a page shown as photographed (<see cref="PageCorrections.Caption"/>).</summary>
     public const string OriginalCaption = "As photographed";
-    public const string EditorTitle = "Check the page's corners";
-    public const string EditorHelp =
-        "Drag each corner onto a corner of the page. Arrow keys move the selected corner, Shift takes bigger steps, and keys 1 to 4 select a corner.";
-    public const string UseCornersLabel = "Use these corners";
+    public const string EditorTitle = "Check the corners";
+    public const string EditorHelp = "Drag each corner onto a corner of the page.";
+    /// <summary>The corner editor's keys, behind its ⓘ and in the canvas's help text.</summary>
+    public const string EditorKeys = "Keys 1–4 select a corner. Arrow keys move it; Shift takes bigger steps.";
+    public const string UseCornersLabel = "Use corners";
     public const string WholePhotoLabel = "Use whole photo";
-    public const string SkipLabel = "Skip this photo";
+    public const string SkipLabel = "Skip photo";
     public const string NotOfferedMessage =
         "Photos of documents are added to the page queue: choose Document mode, or a document task, to import them.";
     public const string NoPhotosMessage =
@@ -310,15 +316,19 @@ public static class PhotoImport
     /// <summary>The corner editor's note on why it is shown; empty for <see cref="PhotoReviewReason.None"/>.</summary>
     public static string ReasonText(PhotoReviewReason reason) => reason switch
     {
-        PhotoReviewReason.Unsure => "The page's edges are hard to make out. Check that each corner sits on a corner of the page.",
-        PhotoReviewReason.CutOff => "The page seems to run off the edge of the photo. Move the corners onto the page, or use the whole photo.",
-        PhotoReviewReason.TwoPages => "There seem to be two pages in the photo. Put the corners on the one to add.",
-        PhotoReviewReason.NothingFound => "No page was found in the photo. Drag the corners onto the page's corners, or use the whole photo.",
+        PhotoReviewReason.Unsure => "The page edges are unclear.",
+        PhotoReviewReason.CutOff => "The page runs off the photo.",
+        PhotoReviewReason.TwoPages => "Two pages found: pick one.",
+        PhotoReviewReason.NothingFound => "No page found in this photo.",
         _ => "",
     };
 
-    /// <summary>The corner editor's caption: "Photo 2 of 5: IMG_0042.jpg", or the file name alone for one photo.</summary>
+    /// <summary>The corner editor's caption: "Photo 2 of 5" (the file name is its tooltip), or the file name alone for one photo.</summary>
     public static string Counter(int number, int count, string fileName) =>
+        count > 1 ? $"Photo {number} of {count}" : fileName;
+
+    /// <summary>The caption with the file name, for its tooltip and screen readers: "Photo 2 of 5: IMG_0042.jpg".</summary>
+    public static string CounterName(int number, int count, string fileName) =>
         count > 1 ? $"Photo {number} of {count}: {fileName}" : fileName;
 
     /// <summary>"Importing photo 2 of 5…", or "Importing photo…" for one.</summary>

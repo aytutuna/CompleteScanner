@@ -133,10 +133,10 @@ final class PaperSizeTests: XCTestCase {
         XCTAssertEqual(PaperSize.letter.detail, "8.5 \u{00D7} 11 in")
         XCTAssertEqual(PaperSizes.hint(.auto, source: .flatbed), "The whole glass, or the area selected on the preview.")
         XCTAssertEqual(PaperSizes.hint(.auto, source: .documentFeeder), "The sheet size the feeder takes.")
-        XCTAssertEqual(PaperSizes.hint(.a4, source: .documentFeeder), "210 \u{00D7} 297 mm sheets.")
-        XCTAssertEqual(PaperSizes.hint(.letter, source: .flatbed),
-                       "8.5 \u{00D7} 11 in, from the corner of the glass. An area selected on the preview takes its place.")
-        XCTAssertEqual(PaperSizes.doesNotFitReason(source: .flatbed), "Larger than this scanner's glass takes.")
-        XCTAssertEqual(PaperSizes.doesNotFitReason(source: .documentFeeder), "Larger than this scanner's feeder takes.")
+        XCTAssertEqual(PaperSizes.hint(.a4, source: .documentFeeder), "Sheets of this size, from the feeder.")
+        XCTAssertEqual(PaperSizes.hint(.letter, source: .flatbed), "From the glass corner. A preview selection replaces it.")
+        XCTAssertEqual(PaperSizes.doesNotFitReason(source: .flatbed), "Too big for this glass")
+        XCTAssertEqual(PaperSizes.doesNotFitReason(source: .documentFeeder), "Too big for this feeder")
+        XCTAssertEqual(PaperSizes.selectedAreaNote, "Using the selected area")
     }
 }

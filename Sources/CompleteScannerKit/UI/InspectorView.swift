@@ -1,14 +1,29 @@
 import AppKit
 import SwiftUI
 
-/// Right column: the full control panel — every scan setting, presets, and the
-/// Preview / Scan / Cancel actions pinned at the bottom.
+/// Right column: the scan settings in sections (`InspectorSections`), presets, and the Preview / Scan /
+/// Cancel actions pinned at the bottom. The task's own section (Photocopy or Receipts), Scanner and
+/// Output start open; Adjustments, Pages, Split into documents and More options start collapsed, and a
+/// collapsed header shows what is on in it (with a dot when something differs from the default), so a
+/// setting is never out of sight. What a control does is its help (tooltip and VoiceOver); a line under
+/// a control stays only for why it is greyed out, for what cannot be undone, or for live state. Which
+/// sections are open is remembered for the user (not in presets); starting a task opens the section it
+/// needs without remembering it. Twin of the Windows inspector (MainWindow.xaml, MainWindow.Inspector.cs).
 struct InspectorView: View {
     @EnvironmentObject var state: AppState
 
     @State private var showNamingHelp = false
     @State private var showSavePresetAlert = false
     @State private var newPresetName = ""
+    @State private var showSplitSteps = false
+
+    @AppStorage("inspector.section.task") private var taskOpen: Bool = InspectorSections.openByDefault(InspectorSections.task)
+    @AppStorage("inspector.section.scanner") private var scannerOpen: Bool = InspectorSections.openByDefault(InspectorSections.scanner)
+    @AppStorage("inspector.section.output") private var outputOpen: Bool = InspectorSections.openByDefault(InspectorSections.output)
+    @AppStorage("inspector.section.adjustments") private var adjustmentsOpen: Bool = InspectorSections.openByDefault(InspectorSections.adjustments)
+    @AppStorage("inspector.section.pages") private var pagesOpen: Bool = InspectorSections.openByDefault(InspectorSections.pages)
+    @AppStorage("inspector.section.split") private var splitOpen: Bool = InspectorSections.openByDefault(InspectorSections.split)
+    @AppStorage("inspector.section.more") private var moreOpen: Bool = InspectorSections.openByDefault(InspectorSections.more)
 
     var body: some View {
         // The action area is pinned as a bottom safe-area inset: the form scrolls
@@ -46,19 +61,88 @@ struct InspectorView: View {
             if state.isReceiptFlow {
                 receiptsSection
             }
-            scanSection
-            outputSection
+            scannerSection
             if state.settings.intent == .photo {
                 photosSection
-            }
-            if state.settings.intent == .document {
-                documentSection
+            } else {
+                outputSection
             }
             adjustmentsSection
+            if showsPageSections {
+                pagesSection
+                splitSection
+            }
+            moreSection
             presetsSection
         }
         .formStyle(.grouped)
         .disabled(state.isBusy)
+    }
+
+    /// Pages and Split into documents apply to document pages, not to copies or receipts.
+    private var showsPageSections: Bool {
+        state.settings.intent == .document && !state.isCopyFlow && !state.isReceiptFlow
+    }
+
+    /// Pages are collected in the queue (not each scan saved at once), outside copies and receipts.
+    private var collecting: Bool {
+        state.settings.documentMultiPage && !state.isCopyFlow && !state.isReceiptFlow
+    }
+
+    // MARK: Sections
+
+    /// Whether a section is open: as the user left it, or opened by a task (`AppState.sectionsOpenedByTask`,
+    /// Restore old photos opens Adjustments) until the user closes it. A task opens a section without
+    /// remembering it; applying a preset or changing a setting opens nothing.
+    private func isOpen(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { storedOpen(id) || state.sectionsOpenedByTask.contains(id) },
+            set: { (open: Bool) in
+                state.sectionsOpenedByTask.remove(id)
+                setStoredOpen(id, open)
+            })
+    }
+
+    private func storedOpen(_ id: String) -> Bool {
+        switch id {
+        case InspectorSections.task: return taskOpen
+        case InspectorSections.scanner: return scannerOpen
+        case InspectorSections.output: return outputOpen
+        case InspectorSections.adjustments: return adjustmentsOpen
+        case InspectorSections.pages: return pagesOpen
+        case InspectorSections.split: return splitOpen
+        default: return moreOpen
+        }
+    }
+
+    private func setStoredOpen(_ id: String, _ open: Bool) {
+        switch id {
+        case InspectorSections.task: taskOpen = open
+        case InspectorSections.scanner: scannerOpen = open
+        case InspectorSections.output: outputOpen = open
+        case InspectorSections.adjustments: adjustmentsOpen = open
+        case InspectorSections.pages: pagesOpen = open
+        case InspectorSections.split: splitOpen = open
+        default: moreOpen = open
+        }
+    }
+
+    /// A section of the column: a disclosure group whose header shows a summary while collapsed.
+    private func section<Content: View>(_ id: String, title: String, summary: String, changed: Bool,
+                                        locked: Bool = false, accessibilityName: String? = nil,
+                                        @ViewBuilder content: () -> Content) -> some View {
+        let open: Binding<Bool> = isOpen(id)
+        let name: String = accessibilityName ?? InspectorSections.headerName(title, summary: summary)
+        let inner: Content = content()
+        return Section {
+            DisclosureGroup(isExpanded: open) {
+                inner
+            } label: {
+                InspectorSectionHeader(title: title, summary: summary, changed: changed, locked: locked,
+                                       collapsed: !open.wrappedValue)
+                    .accessibilityLabel(Text(name))
+            }
+        }
     }
 
     // MARK: Mode
@@ -74,6 +158,7 @@ struct InspectorView: View {
             .labelsHidden()
             .disabled(state.hasIdCardCaptures)
             .help(state.hasIdCardCaptures ? Self.idCardHeldHint : "")
+            .accessibilityHint(Text("Document: pages and text. Photos: finds each photo on the glass."))
         }
     }
 
@@ -82,19 +167,21 @@ struct InspectorView: View {
     private static let idCardHeldHint =
         "The ID card task needs the flatbed in Document mode. Save or discard the card, or leave the task, to change this."
 
-    /// What the paper size picker says: for a copy, Automatic on the glass is the printer's paper.
-    private var paperSizeHint: String {
-        state.isCopyFlow
-            ? PrintText.copyPaperHint(state.settings.paperSize, source: state.settings.source)
-            : PaperSizes.hint(state.settings.paperSize, source: state.settings.source)
+    /// A reason next to a greyed-out control, or a consequence that must not be missed: an icon and a
+    /// few words, in secondary text.
+    private func reasonLine(_ text: String, systemImage: String = "info.circle") -> some View {
+        Label(text, systemImage: systemImage)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
-    // MARK: Copies
+    // MARK: Photocopy
 
     /// The Copy task: where and how the copies print (AppState+Copy.swift). The print panel opens set
     /// to these, at 100 %.
     private var copySection: some View {
-        Section("Copies") {
+        section(InspectorSections.task, title: "Photocopy", summary: "", changed: false) {
             if state.hasPrinter {
                 Picker("Printer", selection: Binding(
                     get: { state.copyPrinterName ?? "" },
@@ -116,28 +203,22 @@ struct InspectorView: View {
                 Toggle("Fit to page", isOn: Binding(
                     get: { state.settings.taskOptions.copyFitToPage },
                     set: { state.setCopyFitToPage($0) }))
-                Text(state.settings.taskOptions.copyFitToPage
-                     ? "Made smaller to fit the paper, never larger. It is not at real size."
-                     : "At real size, like a photocopier: 1 inch on the glass is 1 inch on paper.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .help("Off: real size. On: shrinks to fit the paper.")
+                // Printer margins cut the edges of a copy at real size: stays visible.
                 if let warning = state.copyMarginWarning {
-                    Text(warning)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    reasonLine(warning, systemImage: "exclamationmark.triangle")
                 }
                 Toggle("Also save a PDF", isOn: Binding(
                     get: { state.settings.taskOptions.copyAlsoSavePdf },
                     set: { state.setCopyAlsoSavePdf($0) }))
-                    .help("Each copy is also saved as a PDF in the save folder")
-                Button("Print Ruler Test Page\u{2026}") {
+                    .help("Keeps a PDF of each copy in your save folder")
+                Button("Print Test Ruler\u{2026}") {
                     state.printRulerPage()
                 }
-                .help("Prints a 1-inch grid with centimetre ticks: measure it with a ruler to check that copies come out at real size")
+                .help("Prints a ruler to check copies come out at real size")
             } else {
-                Text("No printer is installed. Add one in System Settings \u{2192} Printers & Scanners, then look again.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                reasonLine(PrintText.noPrinterReason)
+                    .help("Add a printer in System Settings \u{2192} Printers & Scanners, then look again.")
                 Button("Look Again") {
                     state.refreshPrinters()
                 }
@@ -150,49 +231,41 @@ struct InspectorView: View {
     /// The Receipts task: how the receipts found on the glass are named and saved (AppState+Receipts.swift).
     private var receiptsSection: some View {
         let options = state.settings.taskOptions
-        let pdf = state.settings.format.pageFormat == .pdf
-        let dateHint: String
-        if !options.receiptNameByDate {
-            dateHint = "Each file is named by today's date."
-        } else if Receipts.namesByDate(state.settings) {
-            dateHint = "Each file is named by the date printed on the receipt ({docdate}), read from its text; today's date when none is found."
-        } else {
-            dateHint = "The file name has no {docdate}, so the date printed on the receipt is not used."
-        }
-        return Section("Receipts") {
-            Toggle("Name by the receipt's date", isOn: Binding(
+        let pdf: Bool = state.settings.format.pageFormat == .pdf
+        let dateUsed: Bool = Receipts.namesByDate(state.settings)
+        return section(InspectorSections.task, title: "Receipts", summary: "", changed: false) {
+            Toggle("Name by receipt date", isOn: Binding(
                 get: { state.settings.taskOptions.receiptNameByDate },
                 set: { state.setReceiptNameByDate($0) }))
-            Text(dateHint)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Toggle("One PDF for all receipts", isOn: Binding(
+                .help("Uses the date printed on the receipt, or today")
+            if options.receiptNameByDate && !dateUsed {
+                reasonLine("Needs {docdate} in File name")
+                    .help("The file name has no {docdate}, so the date printed on the receipt is not used.")
+            }
+            Toggle("One PDF for all", isOn: Binding(
                 get: { state.settings.taskOptions.receiptCombine },
                 set: { state.setReceiptCombine($0) }))
                 .disabled(!pdf)
-            Text(!pdf
-                 ? "Only for PDFs: each receipt is saved as an image of its own."
-                 : options.receiptCombine
-                 ? "All the receipts of a scan go into one PDF, a page each, named by the earliest date."
-                 : "Each receipt is saved as a PDF of its own.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .help(pdf ? "Off: a PDF for each receipt" : "Only for PDFs: each receipt is saved as an image of its own.")
+            if !pdf {
+                reasonLine("Only for PDFs")
+            }
         }
     }
 
-    // MARK: Scan
+    // MARK: Scanner
 
-    private var scanSection: some View {
-        Section("Scan") {
+    private var scannerSection: some View {
+        section(InspectorSections.scanner, title: "Scanner",
+                summary: InspectorSections.scannerSummary(state.settings),
+                changed: InspectorSections.scannerChanged(state.settings)) {
             Picker("Source", selection: $state.settings.source) {
                 ForEach(availableSources) { source in
                     Text(source.label).tag(source)
                 }
             }
             .disabled(state.hasIdCardCaptures)
-            .help(state.hasIdCardCaptures ? Self.idCardHeldHint : "")
+            .help(state.hasIdCardCaptures ? Self.idCardHeldHint : state.settings.source.hint)
             if availableSources.contains(.documentFeeder) {
                 sidesRows
             }
@@ -202,6 +275,7 @@ struct InspectorView: View {
                     Text("\(dpi) dpi").tag(dpi)
                 }
             }
+            .help("Higher is sharper but slower and larger. 300 suits documents.")
             Picker("Color", selection: $state.settings.colorMode) {
                 ForEach(ColorMode.allCases) { mode in
                     Text(mode.label).tag(mode)
@@ -230,7 +304,7 @@ struct InspectorView: View {
     }
 
     /// The sides the scanner and the settings can do (the chosen one is always listed); the
-    /// caption says why a choice is left out. Twin of the Windows inspector's "Sides".
+    /// help says why a choice is left out. Twin of the Windows inspector's "Sides".
     private var offeredSides: [DuplexMode] {
         DuplexMode.allCases.filter { mode in
             switch mode {
@@ -242,16 +316,18 @@ struct InspectorView: View {
         }
     }
 
-    private var sidesCaption: String {
+    /// What the sides do, or why they can't be chosen: the picker's help.
+    private var sidesHelp: String {
         let s = state.settings
         guard feederSelected else { return DocumentSides.feederOnlyReason }
         if s.duplex == .manual, let reason = DocumentSides.manualUnavailableReason(s) { return reason }
-        if s.duplex == .off, let reason = bothSidesReason { return "\(s.duplex.hint) \(reason)" }
+        if s.duplex == .off, let reason = bothSidesReason { return "\(s.duplex.hint). \(reason)" }
         return s.duplex.hint
     }
 
     /// One side, both, or turned over by hand, for scanners with a feeder; usable while the
-    /// feeder is the source. With both sides, along which edge the sheets turn.
+    /// feeder is the source (greyed out with the reason on the flatbed). With both sides, along
+    /// which edge the sheets turn.
     @ViewBuilder
     private var sidesRows: some View {
         Picker("Sides", selection: $state.settings.duplex) {
@@ -260,18 +336,19 @@ struct InspectorView: View {
             }
         }
         .disabled(!feederSelected)
-        .help(sidesCaption)
-        Text(sidesCaption)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+        .help(sidesHelp)
+        if !feederSelected {
+            reasonLine(DocumentSides.needsFeederReason)
+                .help(DocumentSides.feederOnlyReason)
+        }
         if feederSelected && state.settings.duplex != .off {
             Picker("Flip on", selection: $state.settings.backBinding) {
                 ForEach(DuplexBinding.allCases) { binding in
                     Text(binding.label).tag(binding)
                 }
             }
-            .help("How the sheets turn: the backs of short-edge sheets are turned upright.")
+            .help(DuplexBinding.pickerHint)
+            .accessibilityHint(Text("How the sheets turn: the backs of short-edge sheets are turned upright."))
         }
     }
 
@@ -289,6 +366,18 @@ struct InspectorView: View {
         }
     }
 
+    /// What the paper size does: for a copy, Automatic on the glass is the printer's paper.
+    private var paperSizeHint: String {
+        state.isCopyFlow
+            ? PrintText.copyPaperHint(state.settings.paperSize, source: state.settings.source)
+            : PaperSizes.hint(state.settings.paperSize, source: state.settings.source)
+    }
+
+    /// An area of the preview is selected: the scan takes it, whatever the paper size says.
+    private var areaSelected: Bool {
+        state.selectionRect != nil && state.overviewImage != nil && state.settings.source == .flatbed
+    }
+
     private var paperSizeRow: some View {
         VStack(alignment: .leading, spacing: 4) {
             Picker("Paper size", selection: $state.settings.paperSize) {
@@ -297,15 +386,22 @@ struct InspectorView: View {
                 }
             }
             .help(paperSizeHint)
-            Text(paperSizeHint)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if areaSelected {
+                HStack(spacing: 4) {
+                    reasonLine(PaperSizes.selectedAreaNote, systemImage: "selection.pin.in.out")
+                    Button {
+                        state.selectionRect = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Clear the selected area")
+                    .accessibilityLabel(Text("Clear the selected area"))
+                }
+            }
             if offeredPaperSizes.count < PaperSize.allCases.count {
-                Text("Sizes larger than this scanner's \(feederSelected ? "feeder" : "glass") takes are left out.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                reasonLine("Larger sizes left out")
+                    .help(PaperSizes.doesNotFitReason(source: state.settings.source))
             }
         }
     }
@@ -313,22 +409,12 @@ struct InspectorView: View {
     // MARK: Output
 
     private var outputSection: some View {
-        Section("Output") {
-            Picker("Format", selection: shownFormatBinding) {
-                ForEach(availableFormats) { format in
-                    Text(format.label).tag(format)
-                }
-            }
+        section(InspectorSections.output, title: "Output",
+                summary: InspectorSections.outputSummary(state.settings, shownFormat: shownFormat),
+                changed: InspectorSections.outputChanged(state.settings, shownFormat: shownFormat)) {
+            formatPicker
             if shownFormat == .jpeg {
-                LabeledContent("JPEG quality") {
-                    HStack(spacing: 8) {
-                        Slider(value: $state.settings.jpegQuality, in: 0.5...1)
-                        Text("\(Int((state.settings.jpegQuality * 100).rounded()))%")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .frame(width: 38, alignment: .trailing)
-                    }
-                }
+                jpegQualityRow
             }
             if shownFormat == .pdf {
                 pdfSizeRow
@@ -336,61 +422,72 @@ struct InspectorView: View {
             if shownFormat == .word {
                 wordPicturesRow
             }
-            afterSavePicker
-            LabeledContent("Destination") {
-                HStack(spacing: 6) {
-                    Text(destinationURL.lastPathComponent)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(destinationURL.path)
-                    Spacer(minLength: 4)
-                    Button("Choose…") { chooseDestination() }
-                    Button {
-                        state.revealInFinder(destinationURL)
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Show in Finder")
-                }
+            if searchableShown {
+                Toggle("Searchable PDF", isOn: $state.settings.pdfSearchable)
+                    .help("Lets you search and copy the text (OCR)")
             }
-            LabeledContent("Name") {
-                HStack(spacing: 4) {
-                    TextField("Naming template", text: $state.settings.namingTemplate)
-                        .textFieldStyle(.roundedBorder)
-                        .labelsHidden()
-                    Button {
-                        showNamingHelp.toggle()
-                    } label: {
-                        Image(systemName: "questionmark.circle")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Naming template tokens")
-                    .popover(isPresented: $showNamingHelp, arrowEdge: .bottom) {
-                        namingHelpPopover
-                    }
-                }
+            if !state.isReceiptFlow && !state.isIdCardFlow {
+                Toggle("Collect pages before saving", isOn: $state.settings.documentMultiPage)
+                    .help("Off: each scan is saved right away")
+                    .accessibilityHint(Text("On: pages are collected until you \(shownFormat.saveTitle). Off: each scan is saved right away."))
+            }
+            destinationRow
+        }
+    }
+
+    /// Searchable PDF applies whenever the save writes a PDF that can carry text: not for Word, text or
+    /// image files saved at once, nor for copies and ID cards (saved without their text).
+    private var searchableShown: Bool {
+        let writesPDF: Bool = state.settings.format.savesPDF(collectsPages: state.settings.documentMultiPage)
+        return writesPDF && !state.isCopyFlow && !state.isIdCardFlow
+    }
+
+    private var formatPicker: some View {
+        Picker("Format", selection: shownFormatBinding) {
+            ForEach(availableFormats) { format in
+                Text(format.label).tag(format)
             }
         }
     }
 
-    /// How small saved PDFs are made: one segment per size (largest first), the chosen size's
-    /// hint, and the size of the PDF saved last. Twin of the Windows inspector's "PDF size".
+    private var jpegQualityRow: some View {
+        LabeledContent("JPEG quality") {
+            HStack(spacing: 8) {
+                Slider(value: $state.settings.jpegQuality, in: 0.5...1)
+                Text("\(Int((state.settings.jpegQuality * 100).rounded()))%")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 38, alignment: .trailing)
+            }
+        }
+    }
+
+    private var destinationRow: some View {
+        LabeledContent("Save to") {
+            HStack(spacing: 6) {
+                Text(destinationURL.lastPathComponent)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(destinationURL.path)
+                Spacer(minLength: 4)
+                Button("Choose…") { chooseDestination() }
+                Button {
+                    state.revealInFinder(destinationURL)
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                }
+                .buttonStyle(.borderless)
+                .help("Show in Finder")
+            }
+        }
+    }
+
+    /// How small saved PDFs are made: one segment per size (largest first), what each is for as the
+    /// help, and the size of the PDF saved last. Twin of the Windows inspector's "PDF size".
     private var pdfSizeRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("PDF size")
-            Picker("PDF size", selection: $state.settings.output.pdfSize) {
-                ForEach(PDFSizePreset.displayOrder) { size in
-                    Text(size.label).tag(size)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .help(state.settings.output.pdfSize.hint)
-            Text(state.settings.output.pdfSize.hint)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            pdfSizePicker("PDF size")
             if let bytes = state.lastPDFByteCount {
                 Text("Last PDF: \(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))")
                     .font(.caption)
@@ -400,45 +497,32 @@ struct InspectorView: View {
         }
     }
 
+    private func pdfSizePicker(_ name: String) -> some View {
+        let size: PDFSizePreset = state.settings.output.pdfSize
+        return Picker(name, selection: $state.settings.output.pdfSize) {
+            ForEach(PDFSizePreset.displayOrder) { preset in
+                Text(preset.label).tag(preset)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .help(size.hint)
+        .accessibilityHint(Text("\(size.hint). \(size.detail)"))
+    }
+
     /// Word documents only: each page's picture before its text (`OutputOptions.wordPageImages`),
     /// stored at the size picked under the switch, which is the PDF size setting. Twin of the
     /// Windows inspector's "Include page images" and its "Page image size".
     private var wordPicturesRow: some View {
-        let on = state.settings.output.wordPageImages
+        let on: Bool = state.settings.output.wordPageImages
         return VStack(alignment: .leading, spacing: 6) {
             Toggle(DocxWriter.pageImagesLabel, isOn: $state.settings.output.wordPageImages)
                 .help(DocxWriter.pageImagesHint(on: on))
-            Text(DocxWriter.pageImagesHint(on: on))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
             if on {
                 Text("Page image size")
-                Picker("Page image size", selection: $state.settings.output.pdfSize) {
-                    ForEach(PDFSizePreset.displayOrder) { size in
-                        Text(size.label).tag(size)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .help(state.settings.output.pdfSize.hint)
-                Text(state.settings.output.pdfSize.hint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                pdfSizePicker("Page image size")
             }
         }
-    }
-
-    /// What happens on its own after a save. Twin of the Windows inspector's "After saving"; the
-    /// photo review offers the same choice.
-    private var afterSavePicker: some View {
-        Picker("After saving", selection: $state.settings.output.afterSave) {
-            ForEach(AfterSaveAction.allCases) { action in
-                Text(action.label).tag(action)
-            }
-        }
-        .help(state.settings.output.afterSave.hint)
     }
 
     /// Every format for documents, the image formats for photos (`OutputFormat.offered(for:)`);
@@ -481,6 +565,340 @@ struct InspectorView: View {
         }
     }
 
+    // MARK: Photos
+
+    /// Photos mode: finding and straightening each photo, the image format and where it is saved.
+    private var photosSection: some View {
+        section(InspectorSections.output, title: "Photos",
+                summary: InspectorSections.outputSummary(state.settings, shownFormat: shownFormat),
+                changed: InspectorSections.outputChanged(state.settings, shownFormat: shownFormat)) {
+            Toggle("Find each photo", isOn: $state.settings.photoAutoSplit)
+                .help("Finds each photo on the glass and saves it on its own")
+            Toggle("Straighten photos", isOn: $state.settings.photoAutoDeskew)
+                .help("Turns each photo straight (deskew)")
+            Stepper(value: $state.settings.photoMinSideInches, in: 0.5...4, step: 0.1) {
+                LabeledContent("Min photo side",
+                               value: String(format: "%.1f in", state.settings.photoMinSideInches))
+            }
+            Stepper(value: $state.settings.photoCropInsetPixels, in: 0...20) {
+                LabeledContent("Edge trim", value: "\(state.settings.photoCropInsetPixels) px")
+            }
+            formatPicker
+            if shownFormat == .jpeg {
+                jpegQualityRow
+            }
+            destinationRow
+        }
+    }
+
+    // MARK: Pages
+
+    /// Skip blank pages, crop and straighten, turning pages upright and splitting facing pages: on
+    /// pages collected in the queue only, where a changed page can be seen and undone.
+    private var pagesSection: some View {
+        let d = state.settings.document
+        return section(InspectorSections.pages, title: "Pages",
+                       summary: InspectorSections.pagesSummary(d),
+                       changed: !InspectorSections.pagesSummary(d).isEmpty,
+                       accessibilityName: InspectorSections.pagesHeaderName(d)) {
+            if !collecting {
+                reasonLine("Needs Collect pages")
+                    .help("Only for pages collected before saving: a scan saved at once is kept as scanned.")
+            }
+            blankPagesRows
+            geometryRows
+            autoRotateRows
+            bookRows
+        }
+    }
+
+    /// Blank pages: flagged in the page strip, left out when saving. One-sided at blank sheets, every
+    /// blank page is a separator, so the switch has no say. Twin of the Windows inspector's "Skip
+    /// blank pages".
+    @ViewBuilder
+    private var blankPagesRows: some View {
+        let separators: Bool = collecting
+            && DocumentSplitter.blankPagesAreSeparators(state.settings.document, sides: state.effectiveDuplex)
+        Toggle("Skip blank pages", isOn: $state.settings.document.removeBlankPages)
+            .disabled(!collecting || separators)
+            .help(separators ? DocumentSplitter.blankPagesAreSeparatorsHint
+                  : "Blank pages are left out. Click Keep on a page to save it.")
+            .accessibilityHint(Text(separators ? DocumentSplitter.blankPagesAreSeparatorsHint
+                                    : "Blank pages are marked in the page strip and left out when you save. Click Keep on a page to save it."))
+        if separators {
+            reasonLine("Blank sheets split documents")
+        }
+        if collecting {
+            Text("What counts as blank")
+            Picker("What counts as blank", selection: $state.settings.document.blankSensitivity) {
+                ForEach(BlankSensitivity.displayOrder) { level in
+                    Text(level.label).tag(level)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .help(state.settings.document.blankSensitivity.hint)
+            // Pages with a few marks may be left out: stays visible.
+            if state.settings.document.blankSensitivity == .high {
+                reasonLine(BlankSensitivity.highWarning, systemImage: "exclamationmark.triangle")
+            }
+        }
+    }
+
+    /// Crop and straighten: what each does as its help. Twin of the Windows inspector's "Crop to page"
+    /// and "Straighten pages".
+    @ViewBuilder
+    private var geometryRows: some View {
+        Toggle("Crop to page", isOn: $state.settings.document.autoCrop)
+            .disabled(!collecting)
+            .help("Cut away the scanner background")
+        Toggle("Straighten pages", isOn: $state.settings.document.autoStraighten)
+            .disabled(!collecting)
+            .help("Straighten slanted pages")
+    }
+
+    /// Rotate pages upright: needs text recognition; greyed out with the reason when there is none.
+    /// Twin of the Windows inspector's "Rotate pages upright".
+    @ViewBuilder
+    private var autoRotateRows: some View {
+        let available: Bool = state.canTurnPagesUpright
+        let hint: String = PageTurns.hint(state.settings, available: available)
+        Toggle("Rotate pages upright", isOn: $state.settings.document.autoRotate)
+            .disabled(!collecting || !available)
+            .help(hint)
+        if collecting && !available {
+            reasonLine(hint)
+        }
+    }
+
+    /// Split facing pages: each scan of an open book becomes its two pages, scanned one side of each
+    /// sheet. The reading order, the book's rotation and softening the spine's shadow show while
+    /// spreads are split. Twin of the Windows inspector's "Split facing pages".
+    @ViewBuilder
+    private var bookRows: some View {
+        let oneSide: Bool = BookPages.scansOneSide(state.settings)
+        let twoSided: Bool = collecting && !oneSide
+        Toggle("Split facing pages", isOn: $state.settings.document.splitFacingPages)
+            .disabled(!collecting || !oneSide)
+            .help(BookPages.hint(state.settings))
+        if twoSided {
+            reasonLine(BookPages.notWithTwoSidedReason)
+                .help(BookPages.hint(state.settings))
+        }
+        if collecting && oneSide && state.settings.document.splitFacingPages {
+            Toggle("Reads right to left", isOn: $state.settings.taskOptions.bookRightToLeft)
+                .help("Arabic, Hebrew, manga: the right page of each spread comes first.")
+                .padding(.leading, 12)
+            Picker("Book rotation", selection: Binding(
+                get: { BookSplitter.normalizedTurns(state.settings.taskOptions.bookRotationQuarterTurns) },
+                set: { state.settings.taskOptions.bookRotationQuarterTurns = $0 })) {
+                ForEach(BookPages.rotationChoices, id: \.self) { turns in
+                    Text(BookPages.rotationLabel(turns)).tag(turns)
+                }
+            }
+            .help("For a book lying sideways or upside down on the glass")
+            .padding(.leading, 12)
+            Toggle("Soften spine shadow", isOn: $state.settings.document.softenSpineShadow)
+                .help(SpineShadow.hint(state.settings.document.softenSpineShadow))
+                .padding(.leading, 12)
+        }
+    }
+
+    // MARK: Split into documents
+
+    /// Split the stack into documents: the page strip shows where before saving, and one click on the
+    /// gap between two pages splits or joins there. One line under the choice says what happens to the
+    /// sheets that split; the info button holds how it works, step by step. Separator sheets are saved
+    /// or printed on the printer chosen for copies: Patch T, or at QR codes a QR code carrying the name
+    /// typed above the buttons. Twin of the Windows inspector's "Split into documents".
+    private var splitSection: some View {
+        section(InspectorSections.split, title: "Split into documents",
+                summary: InspectorSections.splitSummary(state.settings.document),
+                changed: state.settings.document.splitMode != SplitMode.none) {
+            splitRows
+        }
+    }
+
+    /// How it works, step by step: the info button's text and the choice's VoiceOver help.
+    private var splitSteps: String {
+        collecting
+            ? state.settings.document.splitMode.steps
+            : "Only for pages collected before saving: a scan saved at once is one file."
+    }
+
+    @ViewBuilder
+    private var splitRows: some View {
+        let mode: SplitMode = state.settings.document.splitMode
+        if !collecting {
+            reasonLine("Needs Collect pages")
+        }
+        HStack(spacing: 4) {
+            Picker("Split", selection: Binding(get: { state.settings.document.splitMode },
+                                               set: { state.setSplitMode($0) })) {
+                ForEach(SplitMode.displayOrder) { choice in
+                    Text(choice.label).tag(choice)
+                }
+            }
+            .disabled(!collecting || state.isBusy)
+            .help(collecting ? mode.hint : splitSteps)
+            .accessibilityHint(Text(splitSteps))
+            Button {
+                showSplitSteps.toggle()
+            } label: {
+                Image(systemName: "info.circle")
+            }
+            .buttonStyle(.borderless)
+            .help("More about Split into documents")
+            .accessibilityLabel(Text("More about Split into documents"))
+            .popover(isPresented: $showSplitSteps, arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("How it works")
+                        .font(.headline)
+                    Text(splitSteps)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(14)
+                .frame(width: 300, alignment: .leading)
+            }
+        }
+        if collecting && !mode.caption.isEmpty {
+            Text(mode.caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        if collecting && mode == .sheetCount {
+            Stepper(value: Binding(get: { DocumentSplitter.clampSheetCount(state.settings.document.splitSheetCount) },
+                                   set: { state.setSplitSheetCount($0) }),
+                    in: 1...DocumentSplitter.maxSheetCount) {
+                LabeledContent("New document every",
+                               value: "\(DocumentSplitter.clampSheetCount(state.settings.document.splitSheetCount)) sheets")
+            }
+        }
+        if collecting && mode == .barcode {
+            barcodeRows
+        }
+        separatorSheetButtons
+    }
+
+    /// At QR codes or barcodes: the codes are on separator sheets (left out) or on the documents' first
+    /// pages (kept); then the name the QR separator sheet carries.
+    @ViewBuilder
+    private var barcodeRows: some View {
+        let startsDocument: Bool = state.settings.document.barcodeStartsDocument
+        let fullHint: String = BarcodeSeparators.startsDocumentHint(startsDocument,
+                                                                    prefix: state.settings.document.splitBarcodePrefix)
+        Picker("Codes are on", selection: Binding(get: { state.settings.document.barcodeStartsDocument },
+                                                  set: { state.setBarcodeStartsDocument($0) })) {
+            Text("Separator sheets").tag(false)
+            Text("First pages").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .disabled(state.isBusy)
+        .help(fullHint)
+        .accessibilityHint(Text(fullHint))
+        Text(BarcodeSeparators.startsDocumentCaption(startsDocument))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .help(fullHint)
+        if !startsDocument {
+            // The name the QR separator sheet carries; empty: a sheet that only splits.
+            TextField("Name on sheet", text: $state.qrSheetName, prompt: Text("Optional"))
+                .help("Names the document that follows the sheet")
+                .accessibilityHint(Text("The QR code holds this name and the document after the sheet is named by it ({label}). Leave it empty for a sheet that only splits."))
+        }
+    }
+
+    /// A PDF in the scans folder, to print on any printer; or printed at once on the printer chosen for copies.
+    @ViewBuilder
+    private var separatorSheetButtons: some View {
+        let mode: SplitMode = state.settings.document.splitMode
+        let qrSheets: Bool = collecting && mode == .barcode && !state.settings.document.barcodeStartsDocument
+        if (collecting && mode == .separatorSheet) || qrSheets {
+            let printer: String = state.copyPrinterName ?? "the default printer"
+            HStack(spacing: 8) {
+                Button {
+                    state.saveSeparatorSheet()
+                } label: {
+                    Label("Save Sheet", systemImage: "square.and.arrow.down")
+                }
+                .disabled(state.isBusy)
+                .help("Saves a PDF of the sheet; print it at 100%")
+                .accessibilityLabel(Text(qrSheets ? "Save QR separator sheet as PDF" : "Save separator sheet as PDF"))
+                Button {
+                    state.printSeparatorSheet()
+                } label: {
+                    Label("Print Sheet", systemImage: "printer")
+                }
+                .disabled(!state.hasPrinter || state.isBusy)
+                .help(state.hasPrinter ? "Prints one now on \(printer), at actual size" : PrintText.noPrinterReason)
+                .accessibilityLabel(Text(qrSheets ? "Print QR separator sheet" : "Print separator sheet"))
+            }
+        }
+    }
+
+    // MARK: More options
+
+    /// The text beside each PDF, what happens after a save, and the file name.
+    private var moreSection: some View {
+        section(InspectorSections.more, title: "More options",
+                summary: InspectorSections.moreSummary(state.settings.output, textShown: alsoSaveTextShown),
+                changed: !InspectorSections.moreSummary(state.settings.output, textShown: alsoSaveTextShown).isEmpty) {
+            if alsoSaveTextShown {
+                Toggle("Also save text (.txt)", isOn: $state.settings.output.alsoSaveText)
+                    .help("Saves the text in a .txt file next to the PDF")
+            }
+            afterSavePicker
+            fileNameRow
+        }
+    }
+
+    /// The text of the pages in a .txt file beside each PDF; OCR reads each page once for both. Shown
+    /// whenever a save of document pages (or receipts) writes a PDF; never for ID cards and copies,
+    /// whose PDFs are saved without it. Twin of the Windows inspector's "Also save text".
+    private var alsoSaveTextShown: Bool {
+        guard state.settings.intent == .document else { return false }
+        let flow = TaskCatalog.flow(of: state.settings)
+        switch flow {
+        case .receiptSplit:
+            return state.settings.format.pageFormat == .pdf
+        case .documentQueue:
+            return state.settings.format.savesPDF(collectsPages: state.settings.documentMultiPage)
+        case .idCard, .copy, .photoSplit:
+            return false
+        }
+    }
+
+    /// What happens on its own after a save. Twin of the Windows inspector's "After saving"; the
+    /// photo review offers the same choice.
+    private var afterSavePicker: some View {
+        Picker("After saving", selection: $state.settings.output.afterSave) {
+            ForEach(AfterSaveAction.allCases) { action in
+                Text(action.label).tag(action)
+            }
+        }
+        .help(state.settings.output.afterSave.hint)
+    }
+
+    private var fileNameRow: some View {
+        LabeledContent("File name") {
+            HStack(spacing: 4) {
+                TextField("Naming template", text: $state.settings.namingTemplate)
+                    .textFieldStyle(.roundedBorder)
+                    .labelsHidden()
+                Button {
+                    showNamingHelp.toggle()
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                }
+                .buttonStyle(.borderless)
+                .help("Naming template tokens")
+                .popover(isPresented: $showNamingHelp, arrowEdge: .bottom) {
+                    namingHelpPopover
+                }
+            }
+        }
+    }
+
     private var namingHelpPopover: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Naming Tokens")
@@ -510,297 +928,6 @@ struct InspectorView: View {
         }
     }
 
-    // MARK: Photos
-
-    private var photosSection: some View {
-        Section("Photos") {
-            Toggle("Auto-split multiple photos", isOn: $state.settings.photoAutoSplit)
-            Toggle("Auto-straighten (deskew)", isOn: $state.settings.photoAutoDeskew)
-            Stepper(value: $state.settings.photoMinSideInches, in: 0.5...4, step: 0.1) {
-                LabeledContent("Min photo side",
-                               value: String(format: "%.1f in", state.settings.photoMinSideInches))
-            }
-            Stepper(value: $state.settings.photoCropInsetPixels, in: 0...20) {
-                LabeledContent("Edge trim", value: "\(state.settings.photoCropInsetPixels) px")
-            }
-        }
-    }
-
-    // MARK: Document / PDF
-
-    private var documentSection: some View {
-        Section("Document") {
-            Toggle("Collect pages, then \(shownFormat.saveTitle)", isOn: $state.settings.documentMultiPage)
-                .disabled(state.isReceiptFlow)
-                .help(state.isReceiptFlow ? "Receipts are checked in a review, then saved: a file each, or one PDF." as String : "")
-            Toggle("Searchable PDF (OCR)", isOn: $state.settings.pdfSearchable)
-                .help("Text is recognized in any language automatically — nothing to configure.")
-            alsoSaveTextRow
-            blankPagesRow
-            geometryRow
-            autoRotateRow
-            bookRow
-            splitRow
-        }
-    }
-
-    /// Split the stack into documents: the page strip shows where before saving, and one click on
-    /// the gap between two pages splits or joins there. Pages collected in the queue only; with each
-    /// scan saved at once, for copies and receipts, the choice is off and says why. Separator sheets
-    /// are printed on the printer chosen for copies: Patch T, or at barcode or QR sheets a QR code
-    /// carrying the name typed above the buttons. Twin of the Windows inspector's "Split into
-    /// documents".
-    private var splitRow: some View {
-        let isCopy = state.isCopyFlow
-        let isReceipts = state.isReceiptFlow
-        let collecting = state.settings.documentMultiPage && !isCopy && !isReceipts
-        let mode = state.settings.document.splitMode
-        let hint: String
-        if isCopy {
-            hint = "Copies print every page as scanned: nothing is split."
-        } else if isReceipts {
-            hint = "Each receipt is saved on its own."
-        } else if !collecting {
-            hint = "Only for pages collected before saving: a scan saved at once is one file."
-        } else if mode == SplitMode.none {
-            hint = mode.hint + " Control-click a page to start a new document there."
-        } else {
-            hint = mode.hint + " Check the page strip before saving: click the gap between two pages to split or join there."
-        }
-        return VStack(alignment: .leading, spacing: 6) {
-            Picker("Split into documents", selection: Binding(get: { state.settings.document.splitMode },
-                                                              set: { state.setSplitMode($0) })) {
-                ForEach(SplitMode.displayOrder) { choice in
-                    Text(choice.label).tag(choice)
-                }
-            }
-            .disabled(!collecting || state.isBusy)
-            .help(hint)
-            if collecting && mode == .sheetCount {
-                Stepper(value: Binding(get: { DocumentSplitter.clampSheetCount(state.settings.document.splitSheetCount) },
-                                       set: { state.setSplitSheetCount($0) }),
-                        in: 1...DocumentSplitter.maxSheetCount) {
-                    LabeledContent("Sheets per document",
-                                   value: "\(DocumentSplitter.clampSheetCount(state.settings.document.splitSheetCount))")
-                }
-            }
-            Text(hint)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if collecting && mode == .barcode {
-                // The page with a code kept as its document's first page, or the sheet left out.
-                Toggle("A barcode starts a new document and names it",
-                       isOn: Binding(get: { state.settings.document.barcodeStartsDocument },
-                                     set: { state.setBarcodeStartsDocument($0) }))
-                    .disabled(state.isBusy)
-                    .help(BarcodeSeparators.startsDocumentHint(state.settings.document.barcodeStartsDocument,
-                                                               prefix: state.settings.document.splitBarcodePrefix))
-                Text(BarcodeSeparators.startsDocumentHint(state.settings.document.barcodeStartsDocument,
-                                                          prefix: state.settings.document.splitBarcodePrefix))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            let qrSheets = collecting && mode == .barcode && !state.settings.document.barcodeStartsDocument
-            if qrSheets {
-                // The name the QR separator sheet carries; empty: a sheet that only splits.
-                TextField("Name on the QR sheet (optional)", text: $state.qrSheetName)
-                    .help("The QR code holds this name and the document after the sheet is named by it ({label}). Leave it empty for a sheet that only splits.")
-            }
-            if (collecting && mode == .separatorSheet) || qrSheets {
-                // A PDF in the scans folder, to print on any printer; or printed at once.
-                let paperLabel = SeparatorSheet.paper(regionCode: AppState.regionCode).label
-                Button(qrSheets ? "Save QR Separator Sheet (PDF)" : "Save Separator Sheet (PDF)") {
-                    state.saveSeparatorSheet()
-                }
-                .disabled(state.isBusy)
-                .help(qrSheets
-                      ? "Saves a QR separator sheet (\(paperLabel)) carrying the name above as a PDF in the scans folder, to print on any printer."
-                      : "Saves a Patch T separator sheet (\(paperLabel)) as a PDF in the scans folder. Print it at actual size (100%) on any printer.")
-                Button(qrSheets ? "Print QR Separator Sheet\u{2026}" : "Print Separator Sheet\u{2026}") {
-                    state.printSeparatorSheet()
-                }
-                .disabled(!state.hasPrinter || state.isBusy)
-                .help(state.hasPrinter
-                      ? "Prints \(qrSheets ? "a QR separator sheet carrying the name above" : "a Patch T separator sheet") at actual size on \(state.copyPrinterName ?? "the default printer"), on the paper it has. Print as many as you need."
-                      : PrintText.noPrinterReason + " Save the separator sheet as a PDF to print it elsewhere.")
-            }
-        }
-    }
-
-    /// The text of the pages in a .txt file beside each PDF; OCR reads each page once for both. Off,
-    /// with the reason, when the save writes no PDF, and in the ID card and Copy tasks, whose PDFs
-    /// are saved without it. Twin of the Windows inspector's "Also save text".
-    private var alsoSaveTextRow: some View {
-        let flow = TaskCatalog.flow(of: state.settings)
-        let savesPDF = flow == .receiptSplit
-            ? state.settings.format.pageFormat == .pdf
-            : state.settings.format.savesPDF(collectsPages: state.settings.documentMultiPage)
-        let hint: String
-        switch flow {
-        case .idCard:
-            hint = "Not for ID cards: the card is saved as a picture, without its text."
-        case .copy:
-            hint = "Not for copies: the PDF of a copy is saved without its text."
-        case .receiptSplit where savesPDF:
-            hint = "Writes the text of each receipt beside its PDF, in a .txt file with the same name."
-        default:
-            hint = savesPDF
-                ? "Writes the text of the pages beside each PDF, in a .txt file with the same name."
-                : "Only for PDFs: Word and text files are the text already, and images have none."
-        }
-        return Toggle("Also save text (.txt)", isOn: $state.settings.output.alsoSaveText)
-            .disabled(!savesPDF || (flow != .documentQueue && flow != .receiptSplit))
-            .help(hint)
-    }
-
-    /// Crop and straighten: run on pages collected in the queue only, where a changed page shows a
-    /// swap button; with each scan saved at once, and for copies, the switches are off and say why.
-    /// Twin of the Windows inspector's "Crop to page" and "Straighten pages".
-    private var geometryRow: some View {
-        let isCopy = state.isCopyFlow
-        let isReceipts = state.isReceiptFlow
-        let collecting = state.settings.documentMultiPage && !isCopy && !isReceipts
-        let document = state.settings.document
-        let hint: String
-        switch (collecting, document.autoCrop, document.autoStraighten) {
-        case (false, _, _) where isCopy:
-            hint = "Copies print every page as scanned: pages are not cropped or straightened."
-        case (false, _, _) where isReceipts:
-            hint = "Each receipt is cut out along its paper, or around its print, and turned straight on its own."
-        case (false, _, _):
-            hint = "Only for pages collected before saving: a scan saved at once is kept as scanned."
-        case (true, true, true):
-            hint = "Pages are cut out of the scanner background and turned straight when that is clear. Click the arrow on a page to see it as scanned."
-        case (true, true, false):
-            hint = "Pages are cut out of the scanner background when that is clear. Click the arrow on a page to see it as scanned."
-        case (true, false, true):
-            hint = "Pages that lie at a slant are turned straight when that is clear. Click the arrow on a page to see it as scanned."
-        case (true, false, false):
-            hint = "Cut each page out of the scanner background, and turn pages that lie at a slant."
-        }
-        return VStack(alignment: .leading, spacing: 6) {
-            Toggle("Crop to page", isOn: $state.settings.document.autoCrop)
-                .disabled(!collecting)
-                .help(hint)
-            Toggle("Straighten pages", isOn: $state.settings.document.autoStraighten)
-                .disabled(!collecting)
-                .help(hint)
-            Text(hint)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    /// Rotate pages upright: runs on pages collected in the queue only, where a turned page shows an
-    /// undo button, and needs text recognition; otherwise the switch is off and says why. Twin of the
-    /// Windows inspector's "Rotate pages upright".
-    private var autoRotateRow: some View {
-        let collecting = state.settings.documentMultiPage && !state.isCopyFlow && !state.isReceiptFlow
-        let available = state.canTurnPagesUpright
-        let hint = PageTurns.hint(state.settings, available: available)
-        return VStack(alignment: .leading, spacing: 6) {
-            Toggle("Rotate pages upright", isOn: $state.settings.document.autoRotate)
-                .disabled(!collecting || !available)
-                .help(hint)
-            Text(hint)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    /// Split facing pages: each scan of an open book becomes its two pages, on pages collected in the
-    /// queue only, where a page's menu joins them again or moves the cut, scanned one side of each sheet;
-    /// otherwise the switch is off and says why. The reading order, the book's rotation and softening the
-    /// spine's shadow show while spreads are split. Twin of the Windows inspector's "Split facing pages".
-    private var bookRow: some View {
-        let collecting = state.settings.documentMultiPage && !state.isCopyFlow && !state.isReceiptFlow
-            && BookPages.scansOneSide(state.settings)
-        let hint = BookPages.hint(state.settings)
-        let shadowHint = SpineShadow.hint(state.settings.document.softenSpineShadow)
-        return VStack(alignment: .leading, spacing: 6) {
-            Toggle("Split facing pages", isOn: $state.settings.document.splitFacingPages)
-                .disabled(!collecting)
-                .help(hint)
-            Text(hint)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if collecting && state.settings.document.splitFacingPages {
-                Toggle("Reads right to left", isOn: $state.settings.taskOptions.bookRightToLeft)
-                    .help("Arabic, Hebrew, manga: the right page of each spread comes first.")
-                Picker("Turn the pages", selection: Binding(
-                    get: { BookSplitter.normalizedTurns(state.settings.taskOptions.bookRotationQuarterTurns) },
-                    set: { state.settings.taskOptions.bookRotationQuarterTurns = $0 })) {
-                    ForEach(BookPages.rotationChoices, id: \.self) { turns in
-                        Text(BookPages.rotationLabel(turns)).tag(turns)
-                    }
-                }
-                .help("For a book lying sideways or upside down on the glass, from the next spread on.")
-                Toggle("Soften spine shadow", isOn: $state.settings.document.softenSpineShadow)
-                    .help(shadowHint)
-                Text(shadowHint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    /// Blank pages: flagged in the page strip, left out when saving. The check runs on pages
-    /// collected in the queue only, where flagged pages can be seen and kept; with each scan saved
-    /// at once, and for copies, the switch is off and says why. Twin of the Windows inspector's "Skip
-    /// blank pages".
-    private var blankPagesRow: some View {
-        let isCopy = state.isCopyFlow
-        let isReceipts = state.isReceiptFlow
-        let collecting = state.settings.documentMultiPage && !isCopy && !isReceipts
-        // One-sided at blank sheets, every blank page is a separator: the switch has no say.
-        let separators = collecting
-            && DocumentSplitter.blankPagesAreSeparators(state.settings.document, sides: state.effectiveDuplex)
-        let hint: String
-        if isCopy {
-            hint = "Copies print every page as scanned: blank pages are not left out."
-        } else if isReceipts {
-            hint = "Receipts are found on the glass and checked before saving: there are no blank pages to leave out."
-        } else if separators {
-            hint = DocumentSplitter.blankPagesAreSeparatorsHint
-        } else if collecting {
-            hint = state.settings.document.removeBlankPages
-                ? "Blank pages are marked in the page strip and left out when you save. Click Keep on a page to save it."
-                : "Blank pages are marked in the page strip. Click Skip on a page to leave it out."
-        } else {
-            hint = "Only for pages collected before saving: a scan saved at once keeps every page."
-        }
-        return VStack(alignment: .leading, spacing: 6) {
-            Toggle("Skip blank pages", isOn: $state.settings.document.removeBlankPages)
-                .disabled(!collecting || separators)
-                .help(hint)
-            Text(hint)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if collecting {
-                Text("What counts as blank")
-                Picker("What counts as blank", selection: $state.settings.document.blankSensitivity) {
-                    ForEach(BlankSensitivity.displayOrder) { level in
-                        Text(level.label).tag(level)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .help(state.settings.document.blankSensitivity.hint)
-                Text(state.settings.document.blankSensitivity.hint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
     // MARK: Adjustments
 
     // All adjustment sliders use one -100...+100 scale: 0 is neutral and sits at the
@@ -808,32 +935,33 @@ struct InspectorView: View {
     // (settings/presets keep their original semantics on disk).
 
     private var adjustmentsSection: some View {
-        Section {
-            DisclosureGroup("Adjustments") {
-                Toggle("Auto-enhance", isOn: $state.settings.adjustments.autoEnhance)
-                amountSlider("Brightness", value: brightnessAmount)
-                amountSlider("Contrast", value: contrastAmount)
-                amountSlider("Saturation", value: saturationAmount)
-                amountSlider("Sharpness", value: sharpnessAmount)
-                    .help("Positive sharpens, negative softens")
-                Button {
-                    resetAdjustmentSliders()
-                } label: {
-                    Label("Reset Sliders", systemImage: "arrow.counterclockwise")
-                }
-                .controlSize(.small)
-                .disabled(slidersAreNeutral)
-                Toggle("Descreen printed material", isOn: $state.settings.adjustments.descreen)
-                Toggle("Restore faded colors", isOn: $state.settings.adjustments.restoreFadedColors)
-                if state.settings.colorMode == .blackWhite {
-                    LabeledContent("B&W threshold") {
-                        HStack(spacing: 6) {
-                            Slider(value: $state.settings.adjustments.blackWhiteThreshold, in: 0...1)
-                            Text("\(Int((state.settings.adjustments.blackWhiteThreshold * 100).rounded()))")
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                                .frame(width: 34, alignment: .trailing)
-                        }
+        let summary: String = InspectorSections.adjustmentsSummary(state.settings.adjustments)
+        return section(InspectorSections.adjustments, title: "Adjustments", summary: summary, changed: !summary.isEmpty) {
+            Toggle("Auto-enhance", isOn: $state.settings.adjustments.autoEnhance)
+            amountSlider("Brightness", value: brightnessAmount)
+            amountSlider("Contrast", value: contrastAmount)
+            amountSlider("Saturation", value: saturationAmount)
+            amountSlider("Sharpness", value: sharpnessAmount)
+                .help("Positive sharpens, negative softens")
+            Button {
+                resetAdjustmentSliders()
+            } label: {
+                Label("Reset", systemImage: "arrow.counterclockwise")
+            }
+            .controlSize(.small)
+            .disabled(slidersAreNeutral)
+            .help("Put the four sliders back to neutral")
+            Toggle("Remove print dots", isOn: $state.settings.adjustments.descreen)
+                .help("Smooths the dot pattern of magazines and printed photos (descreen)")
+            Toggle("Restore faded colors", isOn: $state.settings.adjustments.restoreFadedColors)
+            if state.settings.colorMode == .blackWhite {
+                LabeledContent("B&W threshold") {
+                    HStack(spacing: 6) {
+                        Slider(value: $state.settings.adjustments.blackWhiteThreshold, in: 0...1)
+                        Text("\(Int((state.settings.adjustments.blackWhiteThreshold * 100).rounded()))")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 34, alignment: .trailing)
                     }
                 }
             }
@@ -956,7 +1084,7 @@ struct InspectorView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(state.isBusy || previewUnavailable)
-                .help("Fast low-resolution preview of the whole flatbed")
+                .help("Quick look at the whole glass")
 
                 Button {
                     state.performScan()
@@ -979,6 +1107,7 @@ struct InspectorView: View {
                 .buttonStyle(.bordered)
                 .disabled(!state.canImportPhotos)
                 .help(PhotoImport.buttonHint)
+                .accessibilityHint(Text(PhotoImport.buttonHelp))
             }
         }
         .padding(12)
@@ -987,5 +1116,43 @@ struct InspectorView: View {
 
     private var previewUnavailable: Bool {
         state.capabilities?.supportsOverview == false || state.settings.source == .documentFeeder
+    }
+}
+
+/// The header of a section of the settings column: its title, and while collapsed what is on in it
+/// (a lock first for a password) with a dot when something differs from the default.
+private struct InspectorSectionHeader: View {
+    let title: String
+    let summary: String
+    let changed: Bool
+    let locked: Bool
+    let collapsed: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.headline)
+                if collapsed && changed {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+                }
+            }
+            if collapsed && !summary.isEmpty {
+                HStack(spacing: 3) {
+                    if locked {
+                        Image(systemName: "lock.fill")
+                            .accessibilityHidden(true)
+                    }
+                    Text(summary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
     }
 }

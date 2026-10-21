@@ -2,7 +2,8 @@ import SwiftUI
 
 /// Slim bar under the preview canvas: current status, a busy spinner, and what can be done with
 /// the files saved last (open, show in Finder, share, copy; open with and email in More). The
-/// twin of the bar Windows shows after a save.
+/// twin of the bar Windows shows after a save. The status shows at most six words, facts only
+/// (`StatusLine`); VoiceOver reads the whole sentence.
 struct StatusBarView: View {
     @EnvironmentObject var state: AppState
 
@@ -11,11 +12,12 @@ struct StatusBarView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(state.statusMessage)
+            Text(shownStatus)
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .accessibilityLabel(Text(state.statusMessage))
             if state.isBusy {
                 ProgressView()
                     .controlSize(.small)
@@ -34,6 +36,16 @@ struct StatusBarView: View {
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.bar)
+    }
+
+    /// The status in six words at most: empty while a review shows its own title, "Saved" while the
+    /// saved files' actions show (with any warning a setting changed for the scanner adds).
+    private var shownStatus: String {
+        let idle: Bool = !state.isBusy
+        let device: String? = state.devices.first(where: { $0.id == state.selectedDeviceID })?.name
+        let reviewShown: Bool = idle && (state.showPhotoReview || state.showIdCardReview)
+        let savedShown: Bool = idle && !state.lastSavedURLs.isEmpty
+        return StatusLine.shown(state.statusMessage, deviceName: device, reviewShown: reviewShown, savedShown: savedShown)
     }
 
     private var savedActions: some View {

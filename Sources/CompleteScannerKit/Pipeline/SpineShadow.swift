@@ -158,10 +158,9 @@ public enum SpineShadow {
         PageEdge(rawValue: (edge.rawValue + BookSplitter.normalizedTurns(quarterTurns)) % 4) ?? edge
     }
 
-    /// The hint under "Soften spine shadow": what it does when on (`on`), what it would do when off.
+    /// The tooltip of "Soften spine shadow", on (`on`) or off: what it does.
     public static func hint(_ on: Bool) -> String {
-        on ? "The shadow along the spine is lightened on each page; pictures beside it are left as they are. Click the arrow on a page to see it as scanned."
-            : "Lighten the dark shadow along the spine of each page, keeping the text dark."
+        "Lightens the dark band along the spine"
     }
 
     /// `image` (scanned at `dpi`) with the shadow along `edge` softened, and what was done; nil when there

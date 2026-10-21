@@ -202,4 +202,38 @@ public class TaskFlowTests
             Assert.Equal("scan", flow.Current?.Id);
         }
     }
+
+    [Theory]
+    [InlineData("Front side", "Front")]
+    [InlineData("Back side", "Back")]
+    [InlineData("Check and save", "Check")]
+    [InlineData("Scan the front sides", "Front")]
+    [InlineData("Scan the back sides", "Back")]
+    [InlineData("Scan each page", "Each")]
+    [InlineData("Scan", "Scan")]
+    [InlineData("", "")]
+    public void Word_IsTheStepInOneWord(string title, string expected)
+    {
+        Assert.Equal(expected, new TaskStep("x", title, "p", "a").Word);
+    }
+
+    [Fact]
+    public void Words_OfEveryTaskWithSteps_AreDistinct()
+    {
+        foreach (var steps in TaskCatalog.All.Where(t => t.Steps.Count > 1).Select(t => t.Steps).Append(DocumentSides.ManualSteps))
+        {
+            var words = steps.Select(s => s.Word).ToList();
+            Assert.Equal(words.Count, words.Distinct().Count());
+        }
+    }
+
+    [Fact]
+    public void Help_IsOptional_AndFollowsThePromptForScreenReaders()
+    {
+        var plain = new TaskStep("x", "Scan", "Scan it.", "Scan");
+        Assert.Equal(("", "Scan it."), (plain.Help, plain.FullPrompt));
+        var helped = plain with { Help = "Close the lid." };
+        Assert.Equal("Scan it. Close the lid.", helped.FullPrompt);
+        Assert.NotEqual(plain, helped);
+    }
 }

@@ -49,10 +49,10 @@ public partial class MainWindow
         BookOptions.Visibility = collecting && s.Document.SplitFacingPages ? Visibility.Visible : Visibility.Collapsed;
         string hint = BookPages.Hint(s);
         bool twoSided = queue && !oneSide;
-        SplitFacingPagesHint.Text = twoSided ? ShortText.NotWithTwoSided : "";
+        SplitFacingPagesHint.Text = twoSided ? BookPages.NotWithTwoSidedReason : "";
         SplitFacingPagesReason.Visibility = twoSided ? Visibility.Visible : Visibility.Collapsed;
         SplitFacingPagesBox.ToolTip = hint;
-        AutomationProperties.SetHelpText(SplitFacingPagesBox, twoSided ? $"{ShortText.NotWithTwoSided}. {hint}" : hint);
+        AutomationProperties.SetHelpText(SplitFacingPagesBox, twoSided ? $"{BookPages.NotWithTwoSidedReason}. {hint}" : hint);
         string shadowHint = SpineShadow.Hint(s.Document.SoftenSpineShadow);
         SoftenSpineShadowBox.ToolTip = shadowHint;
         AutomationProperties.SetHelpText(SoftenSpineShadowBox, shadowHint);

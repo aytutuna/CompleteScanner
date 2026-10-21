@@ -370,16 +370,26 @@ public class BookSplitterTests
         Guid a = Guid.NewGuid(), b = Guid.NewGuid();
         var loose = new ScannedPage(RgbaImage.Filled(4, 4, 255, 255, 255), 100, ColorMode.Color);
         var pages = new List<ScannedPage> { Part(a, 0), Part(a, 1), loose, Part(b, null) };
-        Assert.Equal(["Spread 1 · page 1", "Spread 1 · page 2", null, "Spread 2 · not split"],
+        Assert.Equal(["1 · left", "1 · right", null, "2 · not split"],
                      Enumerable.Range(0, pages.Count).Select(i => BookPages.Label(pages, i)));
-        // Pages moved apart keep their spread's number; their order in the queue numbers them.
+        // Pages moved apart keep their spread's number, in queue order, and each keeps its own side.
         var moved = new List<ScannedPage> { pages[1], pages[3], pages[0] };
-        Assert.Equal(["Spread 1 · page 1", "Spread 2 · not split", "Spread 1 · page 2"],
+        Assert.Equal(["1 · right", "2 · not split", "1 · left"],
                      Enumerable.Range(0, moved.Count).Select(i => BookPages.Label(moved, i)));
-        Assert.Equal("Spread 2 · not split: the spread is one page. Right-click it to split it into two pages.", BookPages.Help(pages, 3));
-        Assert.Equal("Spread 1 · page 2", BookPages.Help(pages, 1));
+        // The left page removed: the right page is still the right page.
+        Assert.Equal("1 · right", BookPages.Label([pages[1]], 0));
+        Assert.Equal("Spread 2, not split", BookPages.Help(pages, 3));
+        Assert.Equal("Spread 1, right page", BookPages.Help(pages, 1));
         Assert.Null(BookPages.Help(pages, 2));
         Assert.Null(BookPages.Label(pages, 9));
+        // The side recorded when the spread was cut wins over the part: a book scanned upside down.
+        var upsideDown = new List<ScannedPage>
+        {
+            Part(a, 1).WithSpread(Part(a, 1).Spread! with { Left = true }),
+            Part(a, 0).WithSpread(Part(a, 0).Spread! with { Left = false }),
+        };
+        Assert.Equal(["1 · left", "1 · right"], Enumerable.Range(0, 2).Select(i => BookPages.Label(upsideDown, i)));
+        Assert.Equal(("Not split", "Not with two-sided"), (BookPages.NotSplitBadge, BookPages.NotWithTwoSidedReason));
     }
 
     [Fact]
@@ -391,18 +401,44 @@ public class BookSplitterTests
         var labels = BookPages.Labels(pages);
         Assert.Equal(new BookPageLabel?[]
         {
-            new("Spread 1 · page 1", "Spread 1 · page 1"),
+            new("1 · right", "Spread 1, right page"),
             null,
-            new("Spread 2 · not split", "Spread 2 · not split: the spread is one page. Right-click it to split it into two pages."),
-            new("Spread 1 · page 2", "Spread 1 · page 2"),
+            new("2 · not split", "Spread 2, not split"),
+            new("1 · left", "Spread 1, left page"),
         }, labels);
         Assert.Equal(Enumerable.Range(0, pages.Count).Select(i => BookPages.Label(pages, i)), labels.Select(l => l?.Label));
         Assert.Equal(Enumerable.Range(0, pages.Count).Select(i => BookPages.Help(pages, i)), labels.Select(l => l?.Help));
         Assert.Empty(BookPages.Labels([]));
-        // A long book: every spread numbered, every page counted within its spread.
+        // A long book: every spread numbered, each page with its side.
         var book = Enumerable.Range(0, 1000).SelectMany(_ => { var id = Guid.NewGuid(); return new[] { Part(id, 0), Part(id, 1) }; }).ToList();
         var bookLabels = BookPages.Labels(book);
-        Assert.Equal(("Spread 1 · page 1", "Spread 1000 · page 2"), (bookLabels[0]!.Label, bookLabels[^1]!.Label));
+        Assert.Equal(("1 · left", "1000 · right"), (bookLabels[0]!.Label, bookLabels[^1]!.Label));
+    }
+
+    [Fact]
+    public void Labels_KeepTheSideEachPageWasCutWith()
+    {
+        // A left-to-right book: the left page leads.
+        var spread = new ScannedPage(RgbaImage.Filled(20, 10, 255, 255, 255), 100, ColorMode.Color);
+        var cut = BookSplitter.Manual(GutterAxis.Vertical, 0.5, spread.Image.Width, spread.Image.Height);
+        var ltr = new PageProcessor([]).ProcessSpread(spread, cut, new BookSplitOptions());
+        Assert.Equal(new int?[] { 0, 1 }, ltr.Select(p => p.Spread!.Part));
+        Assert.Equal(["1 · left", "1 · right"], BookPages.Labels(ltr).Select(l => l!.Label));
+        // A right-to-left book scanned next: the right page leads, and the pages of the first spread
+        // keep their sides, as the setting applies to the spreads scanned from then on.
+        var next = new ScannedPage(RgbaImage.Filled(20, 10, 255, 255, 255), 100, ColorMode.Color);
+        var rtl = new PageProcessor([]).ProcessSpread(next, cut, new BookSplitOptions(0, true));
+        Assert.Equal(new int?[] { 1, 0 }, rtl.Select(p => p.Spread!.Part));
+        var queue = ltr.Concat(rtl).ToList();
+        Assert.Equal(["1 · left", "1 · right", "2 · right", "2 · left"], BookPages.Labels(queue).Select(l => l!.Label));
+        Assert.Equal("Spread 2, right page", BookPages.Help(queue, 2));
+        // Upside down on the glass: the part before the cut lies on the right once turned.
+        var turned = new PageProcessor([]).ProcessSpread(spread, cut, new BookSplitOptions(2));
+        Assert.Equal(new int?[] { 1, 0 }, turned.Select(p => p.Spread!.Part));
+        Assert.Equal(["1 · left", "1 · right"], BookPages.Labels(turned).Select(l => l!.Label));
+        // A page moved in front of its partner, or left alone, keeps its side.
+        Assert.Equal(["1 · right", "1 · left"], BookPages.Labels([ltr[1], ltr[0]]).Select(l => l!.Label));
+        Assert.Equal(["1 · right"], BookPages.Labels([ltr[1]]).Select(l => l!.Label));
     }
 
     [Fact]
@@ -461,9 +497,9 @@ public class BookSplitterTests
         Assert.Equal("", BookPages.ScanNote([new ScannedPage(RgbaImage.Filled(4, 4, 255, 255, 255), 100, ColorMode.Color)]));
         Assert.Equal(" 1 spread split into pages.", BookPages.ScanNote([Part(a, 0), Part(a, 1)]));
         Assert.Equal(" 2 spreads split into pages.", BookPages.ScanNote([Part(a, 0), Part(a, 1), Part(b, 1), Part(b, 0)]));
-        Assert.Equal(" The spine of 1 spread was not found: it was added as one page (right-click it to split it).",
+        Assert.Equal(" The spine of 1 spread was not found: it was added as one page (Split… on it splits it).",
                      BookPages.ScanNote([Part(c, null)]));
-        Assert.Equal(" 1 spread split into pages. The spine of 2 spreads was not found: they were added as one page each (right-click one to split it).",
+        Assert.Equal(" 1 spread split into pages. The spine of 2 spreads was not found: they were added as one page each (Split… on one splits it).",
                      BookPages.ScanNote([Part(a, 0), Part(a, 1), Part(b, null), Part(c, null)]));
     }
 
@@ -474,9 +510,9 @@ public class BookSplitterTests
                      BookPages.RotationChoices.Select(BookPages.RotationLabel));
         Assert.Equal("90° clockwise", BookPages.RotationLabel(5));
         var book = TaskCatalog.Apply(ScanTask.Book, new ScanSettings());
-        Assert.StartsWith("Each scan of an open book", BookPages.Hint(book));
+        Assert.Equal("Each book scan becomes two pages, cut at the spine.", BookPages.Hint(book));
         book.Document.SplitFacingPages = false;
-        Assert.StartsWith("Scan an open book", BookPages.Hint(book));
+        Assert.Equal("Each book scan becomes two pages, cut at the spine.", BookPages.Hint(book));
         book.DocumentMultiPage = false;
         Assert.StartsWith("Only for pages collected", BookPages.Hint(book));
         Assert.StartsWith("Copies print", BookPages.Hint(TaskCatalog.Apply(ScanTask.Copy, new ScanSettings())));
@@ -491,6 +527,6 @@ public class BookSplitterTests
         Assert.StartsWith("Only for one side of each sheet", BookPages.Hint(feeder));
         feeder.Duplex = DuplexMode.Off;
         Assert.True(BookPages.ScansOneSide(feeder));
-        Assert.StartsWith("Each scan of an open book", BookPages.Hint(feeder));
+        Assert.StartsWith("Each book scan becomes two pages", BookPages.Hint(feeder));
     }
 }

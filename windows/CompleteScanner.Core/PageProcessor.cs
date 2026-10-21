@@ -391,7 +391,8 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// <paramref name="cut"/>, or kept whole when it is null, each page turned as
     /// <paramref name="options"/> say, then put in reading order: by where they lie once turned by the
     /// book's rotation and the turn reading their text gave them (<see cref="BookSplitter.TotalTurns"/>).
-    /// Each page records the spread (<see cref="SpreadPart"/>, with the spread's id), keeps the side and
+    /// Each page records the spread (<see cref="SpreadPart"/>, with the spread's id, and whether it is the
+    /// left or the right page, <see cref="SpreadPart.Left"/>), keeps the side and
     /// sheet the spread was given (<see cref="ScannedPage.Side"/>, <see cref="ScannedPage.SheetIndex"/>)
     /// and gets an id of its own. Used for every scan when facing pages are split, and to join or split
     /// a spread again.
@@ -413,7 +414,12 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
         var a = RunSteps(Part(first, 0), token);
         var b = RunSteps(Part(second, 1), token);
         int total = BookSplitter.TotalTurns(turns, a.Upright, b.Upright);
-        return BookSplitter.FirstPartLeads(cut.Axis, total, options.RightToLeft) ? [a, b] : [b, a];
+        bool firstLeads = BookSplitter.FirstPartLeads(cut.Axis, total, options.RightToLeft);
+        // The page that leads is the left one, or the right one in a book read from right to left.
+        bool firstIsLeft = firstLeads != options.RightToLeft;
+        a = a.WithSpread(a.Spread! with { Left = firstIsLeft });
+        b = b.WithSpread(b.Spread! with { Left = !firstIsLeft });
+        return firstLeads ? [a, b] : [b, a];
     }
 
     /// <summary>Every step on <paramref name="page"/>, in order.</summary>
@@ -490,15 +496,15 @@ public static class PageFilter
             : null;
     }
 
-    /// <summary>"3 pages in queue", "24 pages in queue, 5 blank skipped", "4 pages in queue, 1 skipped".</summary>
+    /// <summary>The page strip's label: "3 pages", "24 pages · 5 blank skipped", "4 pages · 1 skipped".</summary>
     public static string QueueSummary(IReadOnlyCollection<ScannedPage> pages, DocumentOptions options)
     {
         int total = pages.Count;
         var excluded = pages.Where(p => IsExcluded(p, options)).ToList();
-        string text = $"{total} page{(total == 1 ? "" : "s")} in queue";
+        string text = $"{total} page{(total == 1 ? "" : "s")}";
         if (excluded.Count == 0) return text;
         bool allBlank = excluded.All(p => LooksBlank(p, options.BlankSensitivity));
-        return $"{text}, {excluded.Count}{(allBlank ? " blank" : "")} skipped";
+        return $"{text} · {excluded.Count}{(allBlank ? " blank" : "")} skipped";
     }
 
     /// <summary>

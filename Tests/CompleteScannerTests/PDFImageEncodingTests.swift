@@ -94,12 +94,13 @@ final class PDFImageEncodingTests: XCTestCase {
 
     func test_hint_namesTheSizesLimits() {
         // The Mac stores black & white pages as gray JPEGs up to the gray limit until its port of the
-        // C# PDF writer, so its hint names that limit only; the Windows case also checks the black &
-        // white (G4) limit its hint names: "Up to 300 dpi (black & white 600), ...".
-        XCTAssertTrue(PDFSizePreset.best.hint.hasPrefix("Full resolution"))
+        // C# PDF writer, so its detail (the help behind the short tooltip) names that limit only; the
+        // Windows case also checks the black & white (G4) limit its detail names: "Up to 300 dpi (black
+        // & white 600), ...".
+        XCTAssertTrue(PDFSizePreset.best.detail.hasPrefix("Full resolution"))
         for size in [PDFSizePreset.standard, .compact, .smallest] {
             let maxDPI = PDFImageEncoding.profile(size).maxDPI ?? 0
-            XCTAssertTrue(size.hint.hasPrefix("Up to \(maxDPI) dpi, "), size.hint)
+            XCTAssertTrue(size.detail.hasPrefix("Up to \(maxDPI) dpi, "), size.detail)
         }
     }
 

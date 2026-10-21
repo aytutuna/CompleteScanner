@@ -24,6 +24,18 @@ public enum ScannerProblem: String, CaseIterable, Sendable {
     case communicationError
 }
 
+/// An error as the error bar or alert shows it: what went wrong in a few words, and what to do.
+/// Twin of C# `ProblemNotice`.
+public struct ProblemNotice: Equatable, Sendable {
+    public let title: String
+    public let message: String
+
+    public init(title: String, message: String) {
+        self.title = title
+        self.message = message
+    }
+}
+
 public enum ScannerProblems {
     /// User-facing text: what happened and what to do about it.
     public static func describe(_ problem: ScannerProblem) -> String {
@@ -51,6 +63,66 @@ public enum ScannerProblems {
         case .unknown:
             return "The scanner reported a problem. Check the scanner, then try again."
         }
+    }
+
+    /// The title of an error that names no scanner problem.
+    public static let genericTitle = "Something went wrong"
+
+    /// The problem in two or three words, for the title of the error alert: "Paper jam", "Scanner offline".
+    public static func title(_ problem: ScannerProblem) -> String {
+        switch problem {
+        case .feederEmpty: return "Feeder empty"
+        case .paperJam: return "Paper jam"
+        case .paperProblem: return "Paper problem"
+        case .multiFeed: return "Several sheets fed"
+        case .coverOpen: return "Cover open"
+        case .offline: return "Scanner offline"
+        case .busy: return "Scanner busy"
+        case .warmingUp: return "Warming up"
+        case .needsAttention: return "Needs attention"
+        case .communicationError: return "Connection lost"
+        case .unknown: return genericTitle
+        }
+    }
+
+    /// What to do, in ten words at most, shown under `title`; `describe` is the sentence that stands on
+    /// its own (error messages, the status line, the troubleshooter).
+    public static func advice(_ problem: ScannerProblem) -> String {
+        switch problem {
+        case .feederEmpty: return "Load paper in the feeder, then scan again."
+        case .paperJam: return "Clear the jam, then scan again."
+        case .paperProblem: return "Check the sheets in the feeder, then scan again."
+        case .multiFeed: return "Fan the stack, load it again, then scan again."
+        case .coverOpen: return "Close the cover, then scan again."
+        case .offline: return "Turn it on and check the cable or network."
+        case .busy: return "Wait until it has finished, then try again."
+        case .warmingUp: return "Try again in a moment."
+        case .needsAttention: return "Check its display or control panel."
+        case .communicationError: return "Check the cable or network, then try again."
+        case .unknown: return "Check the scanner, then try again."
+        }
+    }
+
+    /// The scanner problem an error message describes (its `describe` text is in it); nil when none is.
+    public static func find(_ message: String?) -> ScannerProblem? {
+        guard let message, !message.isEmpty else { return nil }
+        for problem in ScannerProblem.allCases where message.contains(describe(problem)) {
+            return problem
+        }
+        return nil
+    }
+
+    /// How the error alert shows `message`: a title naming the problem ("Paper jam") and the message
+    /// with the problem's sentence cut to what to do ("Clear the jam, then scan again."); "Something
+    /// went wrong" and the message as it is when it names no problem.
+    public static func notice(_ message: String) -> ProblemNotice {
+        let trimmed: String = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let problem = find(message) else {
+            return ProblemNotice(title: genericTitle, message: trimmed)
+        }
+        let shortened: String = message.replacingOccurrences(of: describe(problem), with: advice(problem))
+        return ProblemNotice(title: title(problem),
+                             message: shortened.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 

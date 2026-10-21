@@ -5,7 +5,7 @@ import SwiftUI
 /// The corner editor of a photo of a document whose page was not found clearly
 /// (`PhotoImport.plan(_:)`): the whole photo with the page's four corners, each dragged on its own
 /// onto a corner of the page (a magnifier shows the photo around the corner being moved), or moved
-/// with the arrow keys. Use these corners cuts the page out along them, Use whole photo takes the
+/// with the arrow keys. Use corners cuts the page out along them, Use whole photo takes the
 /// photo as it is, and Skip leaves the photo out (`AppState.answerCorners`). Built like the crop
 /// editor (`PhotoCropEditorView`). Twin of the Windows `PhotoCornersWindow`.
 ///
@@ -28,6 +28,8 @@ struct PhotoCornersEditorView: View {
     @State private var showLoupe = false
     /// The stage has the keyboard, so the corners take the arrow keys right away.
     @FocusState private var stageFocused: Bool
+    /// The keys behind the info button are showing.
+    @State private var showKeys = false
 
     private let handleHitRadius: CGFloat = 16
     private let loupeSize: CGFloat = 132
@@ -77,7 +79,7 @@ struct PhotoCornersEditorView: View {
                 return .handled
             }
             .accessibilityLabel("Page corners")
-            .accessibilityHint(PhotoImport.editorHelp)
+            .accessibilityHint(PhotoImport.editorHelp + " " + PhotoImport.editorKeys)
             Divider()
             footer
         }
@@ -106,9 +108,26 @@ struct PhotoCornersEditorView: View {
                     Label(reason, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.primary)
                 }
-                Text(PhotoImport.editorHelp)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(PhotoImport.editorHelp)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    // The keys, one click away.
+                    Button {
+                        showKeys.toggle()
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("More about keyboard use")
+                    .accessibilityLabel(Text("More about keyboard use"))
+                    .popover(isPresented: $showKeys, arrowEdge: .bottom) {
+                        Text(PhotoImport.editorKeys)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(14)
+                            .frame(width: 280, alignment: .leading)
+                    }
+                }
             }
             Spacer()
             Label(PhotoImport.counter(request.number, of: request.count, fileName: request.fileName), systemImage: "photo")
@@ -116,6 +135,7 @@ struct PhotoCornersEditorView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .help(request.fileName)
+                .accessibilityLabel(Text(PhotoImport.counterName(request.number, of: request.count, fileName: request.fileName)))
         }
         .padding()
     }
@@ -128,7 +148,6 @@ struct PhotoCornersEditorView: View {
             Button(PhotoImport.wholePhotoLabel) {
                 state.answerCorners(PhotoCornersAnswer(choice: .wholePhoto))
             }
-            .help("Add the whole photo as the page, as it is")
             Spacer()
             Button(PhotoImport.skipLabel) { state.answerCorners(.skip) }
                 .keyboardShortcut(.cancelAction)

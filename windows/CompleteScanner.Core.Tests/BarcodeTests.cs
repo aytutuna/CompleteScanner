@@ -498,7 +498,7 @@ public class BarcodeTests
                      DocumentSplitter.SeparatorNote(plan, 3, pages[3]));
         Assert.Null(DocumentSplitter.SeparatorNote(plan, 2, pages[2]));
         Assert.Equal("Document 2 · Lease", DocumentSplitter.DividerTitle(plan, 2));
-        Assert.Equal("5 pages in queue, 3 documents, 2 separator pages skipped", DocumentSplitter.QueueSummary(pages, options));
+        Assert.Equal("5 pages · 3 documents · 2 separator pages skipped", DocumentSplitter.QueueSummary(pages, options));
         Assert.Equal(" Found 2 separator pages: 3 documents to save.", DocumentSplitter.ScanNote(plan, 2));
         // The save names the files after the codes.
         var save = SavePlan.Make(pages, options);

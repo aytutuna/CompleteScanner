@@ -178,19 +178,28 @@ public struct TroubleshootCheck: Equatable, Sendable {
     /// Stable identifier ("network", "wiaService", "manualHost:192.168.1.50", ...).
     public let id: String
     public let status: CheckStatus
-    /// One short line.
+    /// Six words at most.
     public let title: String
-    /// What it means and what to do, in full sentences.
+    /// What it means or what to do, in one line of fifteen words at most.
     public let detail: String
+    /// The rest of the explanation, behind "More help"; empty when the detail says it all.
+    public let more: String
     /// Buttons offered with it, in order.
     public let actions: [TroubleshootAction]
 
-    public init(id: String, status: CheckStatus, title: String, detail: String, actions: [TroubleshootAction]) {
+    public init(id: String, status: CheckStatus, title: String, detail: String, more: String = "",
+                actions: [TroubleshootAction]) {
         self.id = id
         self.status = status
         self.title = title
         self.detail = detail
+        self.more = more
         self.actions = actions
+    }
+
+    /// The detail and the more help as one text, for VoiceOver and the copied diagnostics.
+    public var fullDetail: String {
+        more.isEmpty ? detail : detail + " " + more
     }
 }
 
@@ -227,7 +236,8 @@ public enum Troubleshooter {
                 checks.append(TroubleshootCheck(
                     id: "manualHost:\(host.address)", status: .warning,
                     title: "No scanner answers at \(host.address)",
-                    detail: joinSentences(host.problem, "Check that the scanner is on and that its address has not changed; its network settings page or control panel shows the current one. The app tries the address again every minute."),
+                    detail: "Check that it is on and its address hasn't changed.",
+                    more: joinSentences(host.problem, "Its network settings page or control panel shows the current address. The app tries the address again every minute."),
                     actions: [.refresh]))
             }
         }
@@ -243,10 +253,10 @@ public enum Troubleshooter {
             .map { $0.element }
     }
 
-    /// "No scanner found yet", "1 scanner found", "3 scanners found" (the demo scanner does not count).
+    /// "No scanner found", "1 scanner found", "3 scanners found" (the demo scanner does not count).
     public static func headline(_ snapshot: DiscoverySnapshot) -> String {
         switch snapshot.listedScannerCount {
-        case 0: return "No scanner found yet"
+        case 0: return "No scanner found"
         case 1: return "1 scanner found"
         case let count: return "\(count) scanners found"
         }
@@ -265,16 +275,27 @@ public enum Troubleshooter {
         return parts.joined(separator: " and ") + " found."
     }
 
+    /// The troubleshooter's one-line headline: what is listed, then how many problems and warnings
+    /// there are ("No scanner found · 2 problems, 1 warning"); just what is listed when there are none.
+    public static func overview(_ snapshot: DiscoverySnapshot, checks: [TroubleshootCheck]) -> String {
+        let problems: Int = checks.filter { $0.status == .problem }.count
+        let warnings: Int = checks.filter { $0.status == .warning }.count
+        var parts: [String] = []
+        if problems > 0 { parts.append(problems == 1 ? "1 problem" : "\(problems) problems") }
+        if warnings > 0 { parts.append(warnings == 1 ? "1 warning" : "\(warnings) warnings") }
+        let line: String = headline(snapshot)
+        return parts.isEmpty ? line : line + " \u{00B7} " + parts.joined(separator: ", ")
+    }
+
     /// The button text for an action.
     public static func label(_ action: TroubleshootAction, platform: TroubleshootPlatform) -> String {
         switch action {
         case .refresh: return "Refresh"
-        case .addByAddress: return "Add scanner by address\u{2026}"
+        case .addByAddress: return "Add by address\u{2026}"
         case .openScannerSettings:
-            return platform == .windows ? "Open Windows scanner settings" : "Open Printers & Scanners"
-        case .openNetworkSettings:
-            return platform == .windows ? "Open network settings" : "Open Network settings"
-        case .openImageCapture: return "Open Image Capture"
+            return platform == .windows ? "Scanner settings" : "Printers & Scanners"
+        case .openNetworkSettings: return "Network settings"
+        case .openImageCapture: return "Image Capture"
         case .copyDiagnostics: return "Copy diagnostics"
         }
     }
@@ -291,13 +312,14 @@ public enum Troubleshooter {
 
     /// The checks as plain text, for the pasteboard and the device diagnostics file: the heading,
     /// the headline and summary, then one "Status: title" line per check with its detail
-    /// indented below.
+    /// indented below, and its more help (when it has some) on the line after.
     public static func report(_ snapshot: DiscoverySnapshot, checks: [TroubleshootCheck]) -> String {
         var text = "Why isn't my scanner listed?\n"
         text += headline(snapshot) + ". " + summary(checks) + "\n"
         for check in checks {
             text += statusLabel(check.status) + ": " + check.title + "\n"
             text += "  " + check.detail + "\n"
+            if !check.more.isEmpty { text += "  " + check.more + "\n" }
         }
         return text
     }
@@ -346,26 +368,28 @@ public enum Troubleshooter {
 
     private static func otherApps(_ platform: TroubleshootPlatform) -> String {
         platform == .windows
-            ? "Windows Scan or the scanner maker's app"
-            : "Image Capture or the scanner maker's app"
+            ? "Windows Scan or the maker's app"
+            : "Image Capture or the maker's app"
     }
 
     private static func failureCheck(_ failure: ScannerFailure, platform: TroubleshootPlatform) -> TroubleshootCheck {
         let name = failure.deviceName
         if failure.problem == .busy {
             return TroubleshootCheck(
-                id: "lastFailure", status: .problem, title: "\(name) is busy or in use by another app",
-                detail: "A scanner works with one app at a time. Close other apps that may be using it, such as \(otherApps(platform)), wait until the scanner has finished, then choose it again.",
+                id: "lastFailure", status: .problem, title: "\(name) is busy",
+                detail: "Close other apps using it, then choose it again.",
+                more: "A scanner works with one app at a time; \(otherApps(platform)) may be using it. Wait until the scanner has finished, then choose it again.",
                 actions: [.refresh])
         }
         if let problem = failure.problem {
             return TroubleshootCheck(
-                id: "lastFailure", status: .problem, title: "\(name) reported a problem",
-                detail: ScannerProblems.describe(problem), actions: [.refresh])
+                id: "lastFailure", status: .problem, title: "\(ScannerProblems.title(problem)): \(name)",
+                detail: ScannerProblems.advice(problem), actions: [.refresh])
         }
         return TroubleshootCheck(
             id: "lastFailure", status: .warning, title: "Could not connect to \(name)",
-            detail: joinSentences(failure.message, "Check that the scanner is on and awake, and connected by its cable or to the same network as this \(computer(platform))."),
+            detail: "Check that it is on, awake and connected.",
+            more: joinSentences(failure.message, "It must be connected by its cable or to the same network as this \(computer(platform))."),
             actions: [.refresh])
     }
 
@@ -375,13 +399,15 @@ public enum Troubleshooter {
         case .offline:
             return TroubleshootCheck(
                 id: "network", status: .problem, title: "Not connected to a network",
-                detail: "This \(computer(snapshot.platform)) is not on a network, so network scanners cannot be found. Connect to the network the scanner is on, then select Refresh. Scanners connected by USB are not affected.",
+                detail: "Connect to the network the scanner is on, then select Refresh.",
+                more: "This \(computer(snapshot.platform)) is not on a network, so network scanners can't be found. Scanners connected by USB are not affected.",
                 actions: [.openNetworkSettings, .refresh])
         case .publicNetwork:
-            let detail = "Windows does not look for devices on public networks, so network scanners may not be found. If this is your home or office network, set its network profile type to Private in Windows network settings."
+            let more = "If this is your home or office network, set it to Private in network settings."
             return TroubleshootCheck(
-                id: "network", status: .warning, title: "The network is set to Public",
-                detail: windows ? detail + " You can also add the scanner by its address." : detail,
+                id: "network", status: .warning, title: "Network set to Public",
+                detail: "Windows won't find network scanners on a Public network.",
+                more: windows ? more + " You can also add the scanner by its address." : more,
                 actions: windows ? [.openNetworkSettings, .addByAddress] : [.openNetworkSettings])
         case .privateNetwork, .domainNetwork:
             return TroubleshootCheck(
@@ -396,27 +422,31 @@ public enum Troubleshooter {
         switch status {
         case .running:
             return TroubleshootCheck(
-                id: "wiaService", status: .ok, title: "The Windows scanner service is running",
+                id: "wiaService", status: .ok, title: "Scanner service is on",
                 detail: "Windows Image Acquisition (WIA), which most scanners use, is on.", actions: [])
         case .starting:
             return TroubleshootCheck(
-                id: "wiaService", status: .warning, title: "The Windows scanner service is starting",
-                detail: "Windows Image Acquisition (WIA), which most scanners use, is starting. Wait a moment, then select Refresh.",
+                id: "wiaService", status: .warning, title: "Scanner service is starting",
+                detail: "Wait a moment, then select Refresh.",
+                more: "Windows Image Acquisition (WIA), which most scanners use, is starting.",
                 actions: [.refresh])
         case .stopped, .stopping, .paused:
             return TroubleshootCheck(
-                id: "wiaService", status: .warning, title: "The Windows scanner service is not running",
-                detail: "Windows Image Acquisition (WIA), which most scanners use, is not running, so those scanners cannot appear. Restarting the PC usually starts it again. To start it now, someone with administrator rights can start Windows Image Acquisition (WIA) in Services.",
+                id: "wiaService", status: .warning, title: "Scanner service is not running",
+                detail: "Restarting the PC usually starts it again.",
+                more: "Windows Image Acquisition (WIA), which most scanners use, is not running, so those scanners can't appear. To start it now, someone with administrator rights can start Windows Image Acquisition (WIA) in Services.",
                 actions: [.refresh])
         case .disabled:
             return TroubleshootCheck(
-                id: "wiaService", status: .problem, title: "The Windows scanner service is turned off",
-                detail: "Windows Image Acquisition (WIA), which most scanners use, is disabled, so those scanners cannot appear. Someone with administrator rights can set its startup type to Automatic in Services, then restart the PC.",
+                id: "wiaService", status: .problem, title: "Scanner service is turned off",
+                detail: "An administrator can set it to Automatic in Services.",
+                more: "Windows Image Acquisition (WIA), which most scanners use, is disabled, so those scanners can't appear. Someone with administrator rights can set its startup type to Automatic in Services, then restart the PC.",
                 actions: [.refresh])
         case .notInstalled:
             return TroubleshootCheck(
-                id: "wiaService", status: .problem, title: "The Windows scanner service is missing",
-                detail: "This copy of Windows has no Windows Image Acquisition (WIA) service, which most scanners use. Scanners with a TWAIN driver and network scanners can still work.",
+                id: "wiaService", status: .problem, title: "Scanner service is missing",
+                detail: "Scanners with a TWAIN driver and network scanners can still work.",
+                more: "This copy of Windows has no Windows Image Acquisition (WIA) service, which most scanners use.",
                 actions: [.addByAddress])
         case .unknown:
             return nil
@@ -436,12 +466,14 @@ public enum Troubleshooter {
         case .notInstalled:
             return TroubleshootCheck(
                 id: "twain", status: snapshot.listedScannerCount == 0 ? .warning : .tip, title: "TWAIN is not installed",
-                detail: "Some scanners, often document scanners, work only through their maker's TWAIN driver, which also installs TWAIN. If yours is one of them, install the maker's 64-bit TWAIN driver, then restart CompleteScanner.",
+                detail: "Some scanners need their maker's 64-bit TWAIN driver.",
+                more: "Some scanners, often document scanners, work only through their maker's TWAIN driver, which also installs TWAIN. If yours is one of them, install the maker's 64-bit TWAIN driver, then restart CompleteScanner.",
                 actions: [])
         case .failed:
             return TroubleshootCheck(
                 id: "twain", status: .warning, title: "TWAIN did not start",
-                detail: "TWAIN is installed but would not open, so scanners that use a TWAIN driver are not listed. Restart CompleteScanner; if that does not help, reinstall the scanner maker's TWAIN driver.",
+                detail: "Restart CompleteScanner; if that fails, reinstall the maker's TWAIN driver.",
+                more: "TWAIN is installed but would not open, so scanners that use a TWAIN driver are not listed.",
                 actions: [.refresh])
         case .unknown:
             return nil
@@ -462,15 +494,16 @@ public enum Troubleshooter {
         let one = names.count == 1
         let problem = (helperProblem ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let known = !problem.isEmpty
-        var reach = names.joined(separator: ", ") + (one ? " is" : " are")
-        reach += " installed only for 32-bit apps. CompleteScanner reaches such drivers through its 32-bit TWAIN helper"
         let pronoun = one ? "it" : "them"
+        var reach = "CompleteScanner reaches such drivers through its 32-bit TWAIN helper"
         reach += known ? "." : ", which has not listed \(pronoun) yet."
+        let installed: String = names.joined(separator: ", ") + (one ? " is" : " are") + " installed only for 32-bit apps."
         return TroubleshootCheck(
             id: "twain32", status: .problem,
-            title: one ? "A TWAIN driver works only with 32-bit apps" : "\(names.count) TWAIN drivers work only with 32-bit apps",
-            detail: joinSentences(known ? joinSentences(reach, problem) : reach,
-                                  "A 64-bit (x64) driver from the maker, where there is one, works without the helper. Many scanners also work through Windows Image Acquisition (WIA) once the maker's full driver package is installed."),
+            title: one ? "A TWAIN driver is 32-bit only" : "\(names.count) TWAIN drivers are 32-bit only",
+            detail: installed,
+            more: joinSentences(known ? joinSentences(reach, problem) : reach,
+                                "A 64-bit (x64) driver from the maker, where there is one, works without the helper. Many scanners also work through Windows Image Acquisition (WIA) once the maker's full driver package is installed."),
             actions: [])
     }
 
@@ -483,12 +516,14 @@ public enum Troubleshooter {
             case .searching, .running:
                 return TroubleshootCheck(
                     id: "discovery", status: .ok, title: "Looking for scanners",
-                    detail: "macOS is looking for scanners connected by USB, on the network and shared by other Macs. They appear here as they are found.",
+                    detail: "Scanners appear here as macOS finds them.",
+                    more: "macOS looks for scanners connected by USB, on the network and shared by other Macs.",
                     actions: [])
             case .off, .unavailable:
                 return TroubleshootCheck(
                     id: "discovery", status: .warning, title: "Not looking for scanners",
-                    detail: "The search for scanners is not running\(detail). Select Refresh to start it again.",
+                    detail: "Select Refresh to start the search again.",
+                    more: "The search for scanners is not running\(detail).",
                     actions: [.refresh])
             case .unknown:
                 return nil
@@ -498,7 +533,8 @@ public enum Troubleshooter {
         case .searching:
             return TroubleshootCheck(
                 id: "discovery", status: .ok, title: "Looking for network scanners",
-                detail: "The search has just started. Scanners on the network appear as they answer.",
+                detail: "Scanners on the network appear as they answer.",
+                more: "The search has just started.",
                 actions: [.addByAddress])
         case .running:
             let found: String
@@ -509,12 +545,14 @@ public enum Troubleshooter {
             }
             return TroubleshootCheck(
                 id: "discovery", status: .ok, title: "Looking for network scanners",
-                detail: found + " A scanner that does not appear can be added by its address.",
+                detail: found,
+                more: "A scanner that doesn't appear can be added by its address.",
                 actions: [.addByAddress])
         case .unavailable:
             return TroubleshootCheck(
-                id: "discovery", status: .warning, title: "Automatic search for network scanners is not working",
-                detail: "Windows could not search the network for scanners\(detail). You can still add a network scanner by its address.",
+                id: "discovery", status: .warning, title: "Network search is not working",
+                detail: "You can still add a network scanner by its address.",
+                more: "Windows could not search the network for scanners\(detail).",
                 actions: [.addByAddress, .refresh])
         case .off, .unknown:
             return nil
@@ -525,26 +563,31 @@ public enum Troubleshooter {
         var tips: [TroubleshootCheck] = []
         if platform == .windows {
             tips.append(TroubleshootCheck(
-                id: "usb", status: .tip, title: "Scanner connected by USB?",
-                detail: "Turn the scanner on and connect it straight to the PC, not through a hub. Windows lists a USB scanner only once its driver is installed: get the driver from the scanner maker's website, install it, then select Refresh. Windows scanner settings show whether Windows sees the scanner.",
+                id: "usb", status: .tip, title: "Connected by USB?",
+                detail: "Connect it directly (no hub) and install the maker's driver.",
+                more: "Windows lists a USB scanner only after its driver is installed. Get it from the maker's website, then select Refresh. Scanner settings show whether Windows sees it.",
                 actions: [.openScannerSettings, .refresh]))
         } else {
             tips.append(TroubleshootCheck(
-                id: "usb", status: .tip, title: "Scanner connected by USB?",
-                detail: "Turn the scanner on and connect it straight to the Mac, not through a hub. macOS lists a USB scanner only when it can scan without a driver or its maker's macOS driver is installed: get it from the scanner maker's website. If Image Capture does not show the scanner either, macOS does not see it.",
+                id: "usb", status: .tip, title: "Connected by USB?",
+                detail: "Connect it directly (no hub) and install the maker's macOS driver.",
+                more: "macOS lists a USB scanner only when it can scan without a driver or its maker's driver is installed. If Image Capture doesn't show it either, macOS doesn't see it.",
                 actions: [.openImageCapture, .refresh]))
             tips.append(TroubleshootCheck(
                 id: "networkScanner", status: .tip, title: "Scanner on the network?",
-                detail: "The Mac and the scanner must be on the same network. If macOS asked whether CompleteScanner may find devices on your local network, allow it in System Settings, Privacy & Security, Local Network. A network printer with a scanner added in Printers & Scanners also appears here.",
+                detail: "The Mac and the scanner must be on the same network.",
+                more: "If macOS asked whether CompleteScanner may find devices on your local network, allow it in System Settings, Privacy & Security, Local Network. A network printer with a scanner added in Printers & Scanners also appears here.",
                 actions: [.openScannerSettings]))
             tips.append(TroubleshootCheck(
-                id: "sharing", status: .tip, title: "Scanner shared by another Mac?",
-                detail: "It appears when Scanner Sharing is on in that Mac's System Settings, General, Sharing, and both Macs are on the same network.",
+                id: "sharing", status: .tip, title: "Shared by another Mac?",
+                detail: "Turn on Scanner Sharing in that Mac's Sharing settings.",
+                more: "It's in System Settings, General, Sharing. Both Macs must be on the same network.",
                 actions: []))
         }
         tips.append(TroubleshootCheck(
             id: "otherApps", status: .tip, title: "Still not listed?",
-            detail: "Wake the scanner (press a button on it), and close other apps that may be using it, such as \(otherApps(platform)). Some scanners work only with their maker's own app; the maker's website says whether yours does.",
+            detail: "Wake the scanner and close other scanning apps.",
+            more: "Press a button on the scanner. Close \(otherApps(platform)). Some scanners work only with their maker's app.",
             actions: [.refresh]))
         return tips
     }

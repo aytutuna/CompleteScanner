@@ -117,10 +117,15 @@ public enum PhotoImport {
     public static let heifExtensions = ["heic", "heif", "hif"]
 
     public static let buttonLabel = "Import photos of documents\u{2026}"
-    public static let buttonHint =
-        "Add photos of paper documents to the queue. Each page is found in its photo, straightened and cleaned up like a scan; the photo files are not changed."
+    /// The import button's tooltip.
+    public static let buttonHint = "Add phone photos of documents as pages"
+    /// The import button's full explanation, for VoiceOver.
+    public static let buttonHelp = "Each page is found in the photo and straightened. Your photo files are not changed."
     public static let pickerTitle = "Import photos of documents"
-    public static let dropHint = "Or drop photos of documents here to add them as pages."
+    /// The line under the import link on the empty stage.
+    public static let dropHint = "or drop them here"
+    /// What the window shows while photo files are dragged over it.
+    public static let dropOverlay = "Drop to add as pages"
     /// The page strip's label on a page taken from a photo.
     public static let label = "Photo"
     public static let labelHelp = "Imported from a photo"
@@ -128,12 +133,13 @@ public enum PhotoImport {
     public static let correctedCaption = "Corrected from photo"
     /// The caption of such a page shown as photographed (`PageCorrections.caption`).
     public static let originalCaption = "As photographed"
-    public static let editorTitle = "Check the page's corners"
-    public static let editorHelp =
-        "Drag each corner onto a corner of the page. Arrow keys move the selected corner, Shift takes bigger steps, and keys 1 to 4 select a corner."
-    public static let useCornersLabel = "Use these corners"
+    public static let editorTitle = "Check the corners"
+    public static let editorHelp = "Drag each corner onto a corner of the page."
+    /// The corner editor's keys, behind its info button and in the canvas's VoiceOver help.
+    public static let editorKeys = "Keys 1\u{2013}4 select a corner. Arrow keys move it; Shift takes bigger steps."
+    public static let useCornersLabel = "Use corners"
     public static let wholePhotoLabel = "Use whole photo"
-    public static let skipLabel = "Skip this photo"
+    public static let skipLabel = "Skip photo"
     public static let notOfferedMessage =
         "Photos of documents are added to the page queue: choose Document mode, or a document task, to import them."
     public static let noPhotosMessage =
@@ -303,16 +309,22 @@ public enum PhotoImport {
     /// The corner editor's note on why it is shown; empty for `.none`.
     public static func reasonText(_ reason: PhotoReviewReason) -> String {
         switch reason {
-        case .unsure: return "The page's edges are hard to make out. Check that each corner sits on a corner of the page."
-        case .cutOff: return "The page seems to run off the edge of the photo. Move the corners onto the page, or use the whole photo."
-        case .twoPages: return "There seem to be two pages in the photo. Put the corners on the one to add."
-        case .nothingFound: return "No page was found in the photo. Drag the corners onto the page's corners, or use the whole photo."
+        case .unsure: return "The page edges are unclear."
+        case .cutOff: return "The page runs off the photo."
+        case .twoPages: return "Two pages found: pick one."
+        case .nothingFound: return "No page found in this photo."
         case .none: return ""
         }
     }
 
-    /// The corner editor's caption: "Photo 2 of 5: IMG_0042.jpg", or the file name alone for one photo.
+    /// The corner editor's caption: "Photo 2 of 5" (the file name is its tooltip), or the file name alone
+    /// for one photo.
     public static func counter(_ number: Int, of count: Int, fileName: String) -> String {
+        count > 1 ? "Photo \(number) of \(count)" : fileName
+    }
+
+    /// The caption with the file name, for its tooltip and VoiceOver: "Photo 2 of 5: IMG_0042.jpg".
+    public static func counterName(_ number: Int, of count: Int, fileName: String) -> String {
         count > 1 ? "Photo \(number) of \(count): \(fileName)" : fileName
     }
 

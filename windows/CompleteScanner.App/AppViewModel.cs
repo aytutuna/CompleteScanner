@@ -104,22 +104,24 @@ public sealed class PageItem : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// "Sheet 2 · back" for a page of a two-sided stack, "Spread 2 · page 1" for a page of a book, "Photo"
-    /// for a page imported from a photo, "From phone" for one a paired phone sent; null for other pages.
+    /// "2 · back" for a page of a two-sided stack, "2 · left" for a page of a book, "Photo" for a page
+    /// imported from a photo, "From phone" for one a paired phone sent; null for other pages.
     /// </summary>
     public string? SideLabel => DocumentSides.SideLabel(Page.Side, Page.SheetIndex) ?? _book?.Label ?? PhotoImport.SourceLabel(Page);
 
-    /// <summary>The side badge's tooltip: the label, what can be done with a spread kept whole, or where a photo's or phone's page came from.</summary>
-    public string? SideToolTip => DocumentSides.SideLabel(Page.Side, Page.SheetIndex) ?? _book?.Help
+    /// <summary>
+    /// The side badge spelled out ("Sheet 2, back", "Spread 2, left page"), or where a photo's or phone's
+    /// page came from.
+    /// </summary>
+    public string? SideToolTip => DocumentSides.SideName(Page.Side, Page.SheetIndex) ?? _book?.Help
                                   ?? PhotoImport.SourceHelp(Page);
 
     /// <summary>
-    /// The side badge on the thumbnail: "1 · front" for a page of a two-sided stack, "Spread 2 · page 1"
-    /// for a page of a book, "Photo" or "From phone"; null for other pages and for a spread kept whole,
-    /// which shows its "Not split" badge instead.
+    /// The side badge on the thumbnail: "1 · front" for a page of a two-sided stack, "2 · left" for a
+    /// page of a book, "Photo" or "From phone"; null for other pages and for a spread kept whole, which
+    /// shows its "Not split" badge instead.
     /// </summary>
-    public string? BadgeText => IsNotSplit ? null
-        : SideBadge.Text(Page.Side, Page.SheetIndex) ?? _book?.Label ?? PhotoImport.SourceLabel(Page);
+    public string? BadgeText => IsNotSplit ? null : SideLabel;
 
     /// <summary>The thumbnail's tooltip: where a photo's or phone's page came from; null for other pages.</summary>
     public string? SourceToolTip => Page.Side is null && _book is null ? PhotoImport.SourceHelp(Page) : null;
@@ -230,14 +232,14 @@ public sealed class PageItem : INotifyPropertyChanged
     public string? UprightToolTip => UprightToggleLabel is { } label ? $"{UprightCaption}. {label}." : null;
 
     /// <summary>
-    /// The page's name for screen readers: "Page 3, Sheet 2 · back, Blank, skipped, Straightened
+    /// The page's name for screen readers: "Page 3, Sheet 2, back, Blank, skipped, Straightened
     /// 1.5°, Turned upright 180°", or "Page 3"; the first page of a document after the first starts
     /// with its title ("Document 2, Page 3").
     /// </summary>
     /// <param name="number">The page's position in the queue, from 1.</param>
     public string AccessibleName(int number)
     {
-        string? side = SideBadge.Name(Page.Side, Page.SheetIndex) ?? _book?.Label ?? PhotoImport.SourceLabel(Page);
+        string? side = DocumentSides.SideName(Page.Side, Page.SheetIndex) ?? _book?.Help ?? PhotoImport.SourceLabel(Page);
         string name = side is { } label ? $"Page {number}, {label}" : $"Page {number}";
         if (DividerTitle is { } title) name = $"{title}, {name}";
         if (_split?.SeparatorNote is { } note) name = $"{name}, {note}";
@@ -2268,7 +2270,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         var availability = TaskCatalog.Availability(task, Capabilities, HasPrinter);
         if (!availability.IsAvailable)
         {
-            ErrorMessage = availability.Reason;
+            ErrorMessage = TaskCatalog.UnavailableMessage(task, availability.Reason ?? "");
             // A printer installed since they were read makes the card available once read again.
             if (task == ScanTask.Copy && !HasPrinter) PrintersMayHaveChanged();
             NotifyAll();

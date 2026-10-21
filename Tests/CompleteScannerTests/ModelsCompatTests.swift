@@ -776,9 +776,84 @@ final class ModelsCompatTests: XCTestCase {
 
     func test_splitLabelsAndHints() {
         XCTAssertEqual(SplitMode.displayOrder.map(\.label),
-                       ["Off", "At separator sheets", "At blank sheets", "Every N sheets", "At barcode or QR sheets"])
+                       ["Off", "At separator sheets", "At blank sheets", "Every few sheets", "At QR codes or barcodes"])
+        XCTAssertEqual(SplitMode.displayOrder.map(\.hint),
+                       ["All pages in one document", "A separator sheet starts each document",
+                        "A blank sheet between documents splits them", "A new document every few sheets",
+                        "A code starts each document and can name it"])
+        XCTAssertEqual(SplitMode.displayOrder.map(\.caption),
+                       ["", "Separator sheets are left out", "Blank sheets are left out", "", ""])
         for mode in SplitMode.displayOrder {
-            XCTAssertFalse(mode.hint.trimmingCharacters(in: .whitespaces).isEmpty)
+            XCTAssertFalse(mode.steps.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        XCTAssertTrue(SplitMode.separatorSheet.steps
+            .hasPrefix("1. Save or print a separator sheet. 2. Put one in front of each document after the first."))
+        XCTAssertTrue(SplitMode.barcode.steps.hasSuffix("Only codes starting with CS-SEP count."))
+        XCTAssertEqual(SplitMode.blankSheet.steps,
+                       "Put an empty sheet between documents. With both sides scanned, only a sheet blank on both sides splits.")
+        XCTAssertEqual(BarcodeSeparators.startsDocumentCaption(true), "Pages are kept")
+        XCTAssertEqual(BarcodeSeparators.startsDocumentCaption(false), "Sheets are left out")
+    }
+
+    // MARK: The settings' short texts (the text spec: tooltips of a few words)
+
+    func test_choiceTexts_areShort_andNeverRepeatTheLabel() {
+        XCTAssertEqual([ScanSource.flatbed, .documentFeeder].map(\.label), ["Flatbed", "Document feeder"])
+        XCTAssertEqual(ScanSource.documentFeeder.hint, "Automatic document feeder (ADF)")
+        XCTAssertEqual(ScanSource.flatbed.hint, "The scanner's glass")
+        XCTAssertEqual(PDFSizePreset.displayOrder.map(\.hint),
+                       ["Full quality, largest files", "Good for most documents", "Smaller, for email and uploads",
+                        "Smallest, for strict size limits"])
+        XCTAssertEqual(PDFSizePreset.standard.detail, "Up to 300 dpi, gray pages saved in gray.")
+        XCTAssertEqual([AfterSaveAction.none, .open, .reveal, .share].map(\.hint),
+                       ["Stay here", "Open the file (several: show the folder)", "Show the files in their folder",
+                        "Email or send to an app"])
+        XCTAssertEqual([DuplexMode.off, .both, .manual].map(\.hint),
+                       ["Front only", "Both sides in one pass", "Scan the fronts, flip the stack, scan the backs"])
+        XCTAssertEqual([DuplexBinding.longEdge, .shortEdge].map(\.label), ["Long edge (book)", "Short edge (calendar)"])
+        XCTAssertEqual(DuplexBinding.pickerHint, "Which edge the sheets turn on")
+        XCTAssertEqual(BlankSensitivity.displayOrder.map(\.hint),
+                       ["Only empty pages", "Also dust or a page number", "Also pages with small marks"])
+        XCTAssertEqual(BlankSensitivity.highWarning, "Check flagged pages before saving")
+        // A tooltip says more than the label, in fifteen words at most.
+        var tips: [(String, String)] = []
+        tips += PDFSizePreset.displayOrder.map { ($0.label, $0.hint) }
+        tips += AfterSaveAction.allCases.map { ($0.label, $0.hint) }
+        tips += DuplexMode.allCases.map { ($0.label, $0.hint) }
+        tips += BlankSensitivity.displayOrder.map { ($0.label, $0.hint) }
+        tips += SplitMode.displayOrder.map { ($0.label, $0.hint) }
+        tips += ScanSource.allCases.map { ($0.label, $0.hint) }
+        for (label, hint) in tips {
+            XCTAssertNotEqual(label, hint)
+            XCTAssertTrue((1...15).contains(StatusLine.words(hint)), hint)
+        }
+    }
+
+    // MARK: Renamed tasks (CONTRACTS.md, rule 6): files keep the raw values, only the titles changed
+
+    func test_renamedTasks_stillDecode_fromSettingsAndPresetsWrittenBefore() throws {
+        let renamed: [(String, ScanTask, String)] = [
+            ("feeder", .feeder, "Stack from feeder"),
+            ("photoRestore", .photoRestore, "Restore old photos"),
+            ("copy", .copy, "Photocopy"),
+            ("batch", .batch, "Separate documents"),
+        ]
+        for (rawValue, task, title) in renamed {
+            let settings = try decode(ScanSettings.self, "{\"resolution\": 300, \"taskId\": \"\(rawValue)\"}")
+            XCTAssertEqual(settings.taskId, rawValue)
+            XCTAssertEqual(settings.task, task)
+            XCTAssertEqual(settings.task.map { TaskCatalog.definition($0).title }, title)
+            // Written back as it was read: the raw value, never the title.
+            let written = try jsonObject(encode(settings))
+            XCTAssertEqual(written["taskId"] as? String, rawValue)
+
+            // A preset saved for the task by an earlier version keeps its name and its task.
+            let presetJSON = "[{\"id\": \"7B0F4C84-3C55-4F56-9D0F-0B4B5F1D2A09\", \"name\": \"My \(rawValue) preset\", "
+                + "\"settings\": {\"intent\": \"document\", \"taskId\": \"\(rawValue)\"}}]"
+            let presets = try decode([Preset].self, presetJSON)
+            XCTAssertEqual(presets.count, 1)
+            XCTAssertEqual(presets.first?.name, "My \(rawValue) preset")
+            XCTAssertEqual(presets.first.map { TaskCatalog.infer($0.settings) }, task)
         }
     }
 

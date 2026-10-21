@@ -150,17 +150,21 @@ public sealed record DiscoverySnapshot
 /// <summary>One line of the troubleshooter: what was checked, how it came out, what to do.</summary>
 /// <param name="Id">Stable identifier ("network", "wiaService", "manualHost:192.168.1.50", ...).</param>
 /// <param name="Status">How it came out.</param>
-/// <param name="Title">One short line.</param>
-/// <param name="Detail">What it means and what to do, in full sentences.</param>
+/// <param name="Title">Six words at most.</param>
+/// <param name="Detail">What it means or what to do, in one line of fifteen words at most.</param>
 /// <param name="Actions">Buttons offered with it, in order.</param>
+/// <param name="More">The rest of the explanation, behind "More help"; empty when the detail says it all.</param>
 public sealed record TroubleshootCheck(string Id, CheckStatus Status, string Title, string Detail,
-                                       IReadOnlyList<TroubleshootAction> Actions)
+                                       IReadOnlyList<TroubleshootAction> Actions, string More = "")
 {
     public bool Equals(TroubleshootCheck? other) =>
         other is not null && Id == other.Id && Status == other.Status && Title == other.Title
-        && Detail == other.Detail && Actions.SequenceEqual(other.Actions);
+        && Detail == other.Detail && More == other.More && Actions.SequenceEqual(other.Actions);
 
-    public override int GetHashCode() => HashCode.Combine(Id, Status, Title, Detail, Actions.Count);
+    public override int GetHashCode() => HashCode.Combine(Id, Status, Title, Detail, More, Actions.Count);
+
+    /// <summary>The detail and the more help as one text, for screen readers and the copied diagnostics.</summary>
+    public string FullDetail => More.Length == 0 ? Detail : $"{Detail} {More}";
 }
 
 /// <summary>
@@ -205,11 +209,11 @@ public static class Troubleshooter
                 checks.Add(new TroubleshootCheck(
                     $"manualHost:{host.Address}", CheckStatus.Warning,
                     $"No scanner answers at {host.Address}",
+                    "Check that it is on and its address hasn't changed.",
+                    [TroubleshootAction.Refresh],
                     JoinSentences(host.Problem,
-                                  "Check that the scanner is on and that its address has not changed; its network "
-                                  + "settings page or control panel shows the current one. The app tries the address "
-                                  + "again every minute."),
-                    [TroubleshootAction.Refresh]));
+                                  "Its network settings page or control panel shows the current address. The app "
+                                  + "tries the address again every minute.")));
             }
         }
         checks.AddRange(Tips(snapshot.Platform));
@@ -221,10 +225,10 @@ public static class Troubleshooter
                          .Select(pair => pair.check)];
     }
 
-    /// <summary>"No scanner found yet", "1 scanner found", "3 scanners found" (the demo scanner does not count).</summary>
+    /// <summary>"No scanner found", "1 scanner found", "3 scanners found" (the demo scanner does not count).</summary>
     public static string Headline(DiscoverySnapshot snapshot) => snapshot.ListedScannerCount switch
     {
-        0 => "No scanner found yet",
+        0 => "No scanner found",
         1 => "1 scanner found",
         int count => $"{count} scanners found",
     };
@@ -244,16 +248,30 @@ public static class Troubleshooter
         return $"{string.Join(" and ", parts)} found.";
     }
 
+    /// <summary>
+    /// The troubleshooter's one-line headline: what is listed, then how many problems and warnings
+    /// there are ("No scanner found · 2 problems, 1 warning"); just what is listed when there are none.
+    /// </summary>
+    public static string Overview(DiscoverySnapshot snapshot, IReadOnlyList<TroubleshootCheck> checks)
+    {
+        int problems = checks.Count(check => check.Status == CheckStatus.Problem);
+        int warnings = checks.Count(check => check.Status == CheckStatus.Warning);
+        var parts = new List<string>();
+        if (problems > 0) parts.Add(problems == 1 ? "1 problem" : $"{problems} problems");
+        if (warnings > 0) parts.Add(warnings == 1 ? "1 warning" : $"{warnings} warnings");
+        string headline = Headline(snapshot);
+        return parts.Count == 0 ? headline : $"{headline} · {string.Join(", ", parts)}";
+    }
+
     /// <summary>The button text for an action.</summary>
     public static string Label(TroubleshootAction action, TroubleshootPlatform platform) => action switch
     {
         TroubleshootAction.Refresh => "Refresh",
-        TroubleshootAction.AddByAddress => "Add scanner by address…",
+        TroubleshootAction.AddByAddress => "Add by address…",
         TroubleshootAction.OpenScannerSettings => platform == TroubleshootPlatform.Windows
-            ? "Open Windows scanner settings" : "Open Printers & Scanners",
-        TroubleshootAction.OpenNetworkSettings => platform == TroubleshootPlatform.Windows
-            ? "Open network settings" : "Open Network settings",
-        TroubleshootAction.OpenImageCapture => "Open Image Capture",
+            ? "Scanner settings" : "Printers & Scanners",
+        TroubleshootAction.OpenNetworkSettings => "Network settings",
+        TroubleshootAction.OpenImageCapture => "Image Capture",
         TroubleshootAction.CopyDiagnostics => "Copy diagnostics",
         _ => action.ToString(),
     };
@@ -271,7 +289,7 @@ public static class Troubleshooter
     /// <summary>
     /// The checks as plain text, for the clipboard and the device diagnostics file:
     /// the heading, the headline and summary, then one "Status: title" line per check with
-    /// its detail indented below.
+    /// its detail indented below, and its more help (when it has some) on the line after.
     /// </summary>
     public static string Report(DiscoverySnapshot snapshot, IReadOnlyList<TroubleshootCheck> checks)
     {
@@ -282,6 +300,7 @@ public static class Troubleshooter
         {
             text.Append(StatusLabel(check.Status)).Append(": ").Append(check.Title).Append('\n');
             text.Append("  ").Append(check.Detail).Append('\n');
+            if (check.More.Length > 0) text.Append("  ").Append(check.More).Append('\n');
         }
         return text.ToString();
     }
@@ -326,8 +345,8 @@ public static class Troubleshooter
 
     private static string OtherApps(TroubleshootPlatform platform) =>
         platform == TroubleshootPlatform.Windows
-            ? "Windows Scan or the scanner maker's app"
-            : "Image Capture or the scanner maker's app";
+            ? "Windows Scan or the maker's app"
+            : "Image Capture or the maker's app";
 
     private static TroubleshootCheck FailureCheck(ScannerFailure failure, TroubleshootPlatform platform)
     {
@@ -335,19 +354,20 @@ public static class Troubleshooter
         return failure.Problem switch
         {
             ScannerProblem.Busy => new TroubleshootCheck(
-                "lastFailure", CheckStatus.Problem, $"{name} is busy or in use by another app",
-                $"A scanner works with one app at a time. Close other apps that may be using it, such as "
-                + $"{OtherApps(platform)}, wait until the scanner has finished, then choose it again.",
-                [TroubleshootAction.Refresh]),
+                "lastFailure", CheckStatus.Problem, $"{name} is busy",
+                "Close other apps using it, then choose it again.",
+                [TroubleshootAction.Refresh],
+                $"A scanner works with one app at a time; {OtherApps(platform)} may be using it. Wait until the "
+                + "scanner has finished, then choose it again."),
             { } problem => new TroubleshootCheck(
-                "lastFailure", CheckStatus.Problem, $"{name} reported a problem",
-                ScannerProblems.Describe(problem), [TroubleshootAction.Refresh]),
+                "lastFailure", CheckStatus.Problem, $"{ScannerProblems.Title(problem)}: {name}",
+                ScannerProblems.Advice(problem), [TroubleshootAction.Refresh]),
             null => new TroubleshootCheck(
                 "lastFailure", CheckStatus.Warning, $"Could not connect to {name}",
+                "Check that it is on, awake and connected.",
+                [TroubleshootAction.Refresh],
                 JoinSentences(failure.Message,
-                              "Check that the scanner is on and awake, and connected by its cable or to the same "
-                              + "network as this " + Computer(platform) + "."),
-                [TroubleshootAction.Refresh]),
+                              "It must be connected by its cable or to the same network as this " + Computer(platform) + ".")),
         };
     }
 
@@ -358,18 +378,18 @@ public static class Troubleshooter
         {
             NetworkStatus.Offline => new TroubleshootCheck(
                 "network", CheckStatus.Problem, "Not connected to a network",
-                $"This {Computer(snapshot.Platform)} is not on a network, so network scanners cannot be found. "
-                + "Connect to the network the scanner is on, then select Refresh. Scanners connected by USB are not affected.",
-                [TroubleshootAction.OpenNetworkSettings, TroubleshootAction.Refresh]),
+                "Connect to the network the scanner is on, then select Refresh.",
+                [TroubleshootAction.OpenNetworkSettings, TroubleshootAction.Refresh],
+                $"This {Computer(snapshot.Platform)} is not on a network, so network scanners can't be found. "
+                + "Scanners connected by USB are not affected."),
             NetworkStatus.PublicNetwork => new TroubleshootCheck(
-                "network", CheckStatus.Warning, "The network is set to Public",
-                "Windows does not look for devices on public networks, so network scanners may not be found. "
-                + "If this is your home or office network, set its network profile type to Private in Windows "
-                + "network settings."
-                + (windows ? " You can also add the scanner by its address." : ""),
+                "network", CheckStatus.Warning, "Network set to Public",
+                "Windows won't find network scanners on a Public network.",
                 windows
                     ? [TroubleshootAction.OpenNetworkSettings, TroubleshootAction.AddByAddress]
-                    : [TroubleshootAction.OpenNetworkSettings]),
+                    : [TroubleshootAction.OpenNetworkSettings],
+                "If this is your home or office network, set it to Private in network settings."
+                + (windows ? " You can also add the scanner by its address." : "")),
             NetworkStatus.PrivateNetwork or NetworkStatus.DomainNetwork => new TroubleshootCheck(
                 "network", CheckStatus.Ok, "Connected to a private network",
                 "Network scanners on this network can be found.", []),
@@ -380,29 +400,31 @@ public static class Troubleshooter
     private static TroubleshootCheck? WiaServiceCheck(ServiceStatus status) => status switch
     {
         ServiceStatus.Running => new TroubleshootCheck(
-            "wiaService", CheckStatus.Ok, "The Windows scanner service is running",
+            "wiaService", CheckStatus.Ok, "Scanner service is on",
             "Windows Image Acquisition (WIA), which most scanners use, is on.", []),
         ServiceStatus.Starting => new TroubleshootCheck(
-            "wiaService", CheckStatus.Warning, "The Windows scanner service is starting",
-            "Windows Image Acquisition (WIA), which most scanners use, is starting. Wait a moment, then select Refresh.",
-            [TroubleshootAction.Refresh]),
+            "wiaService", CheckStatus.Warning, "Scanner service is starting",
+            "Wait a moment, then select Refresh.",
+            [TroubleshootAction.Refresh],
+            "Windows Image Acquisition (WIA), which most scanners use, is starting."),
         ServiceStatus.Stopped or ServiceStatus.Stopping or ServiceStatus.Paused => new TroubleshootCheck(
-            "wiaService", CheckStatus.Warning, "The Windows scanner service is not running",
-            "Windows Image Acquisition (WIA), which most scanners use, is not running, so those scanners cannot "
-            + "appear. Restarting the PC usually starts it again. To start it now, someone with administrator "
-            + "rights can start Windows Image Acquisition (WIA) in Services.",
-            [TroubleshootAction.Refresh]),
+            "wiaService", CheckStatus.Warning, "Scanner service is not running",
+            "Restarting the PC usually starts it again.",
+            [TroubleshootAction.Refresh],
+            "Windows Image Acquisition (WIA), which most scanners use, is not running, so those scanners can't "
+            + "appear. To start it now, someone with administrator rights can start Windows Image Acquisition (WIA) "
+            + "in Services."),
         ServiceStatus.Disabled => new TroubleshootCheck(
-            "wiaService", CheckStatus.Problem, "The Windows scanner service is turned off",
-            "Windows Image Acquisition (WIA), which most scanners use, is disabled, so those scanners cannot "
-            + "appear. Someone with administrator rights can set its startup type to Automatic in Services, then "
-            + "restart the PC.",
-            [TroubleshootAction.Refresh]),
+            "wiaService", CheckStatus.Problem, "Scanner service is turned off",
+            "An administrator can set it to Automatic in Services.",
+            [TroubleshootAction.Refresh],
+            "Windows Image Acquisition (WIA), which most scanners use, is disabled, so those scanners can't appear. "
+            + "Someone with administrator rights can set its startup type to Automatic in Services, then restart the PC."),
         ServiceStatus.NotInstalled => new TroubleshootCheck(
-            "wiaService", CheckStatus.Problem, "The Windows scanner service is missing",
-            "This copy of Windows has no Windows Image Acquisition (WIA) service, which most scanners use. "
-            + "Scanners with a TWAIN driver and network scanners can still work.",
-            [TroubleshootAction.AddByAddress]),
+            "wiaService", CheckStatus.Problem, "Scanner service is missing",
+            "Scanners with a TWAIN driver and network scanners can still work.",
+            [TroubleshootAction.AddByAddress],
+            "This copy of Windows has no Windows Image Acquisition (WIA) service, which most scanners use."),
         _ => null,
     };
 
@@ -419,14 +441,15 @@ public static class Troubleshooter
             []),
         TwainStatus.NotInstalled => new TroubleshootCheck(
             "twain", snapshot.ListedScannerCount == 0 ? CheckStatus.Warning : CheckStatus.Tip, "TWAIN is not installed",
+            "Some scanners need their maker's 64-bit TWAIN driver.",
+            [],
             "Some scanners, often document scanners, work only through their maker's TWAIN driver, which also "
-            + "installs TWAIN. If yours is one of them, install the maker's 64-bit TWAIN driver, then restart CompleteScanner.",
-            []),
+            + "installs TWAIN. If yours is one of them, install the maker's 64-bit TWAIN driver, then restart CompleteScanner."),
         TwainStatus.Failed => new TroubleshootCheck(
             "twain", CheckStatus.Warning, "TWAIN did not start",
-            "TWAIN is installed but would not open, so scanners that use a TWAIN driver are not listed. Restart "
-            + "CompleteScanner; if that does not help, reinstall the scanner maker's TWAIN driver.",
-            [TroubleshootAction.Refresh]),
+            "Restart CompleteScanner; if that fails, reinstall the maker's TWAIN driver.",
+            [TroubleshootAction.Refresh],
+            "TWAIN is installed but would not open, so scanners that use a TWAIN driver are not listed."),
         _ => null,
     };
 
@@ -436,17 +459,17 @@ public static class Troubleshooter
         var names = drivers.Select(path => $"\"{path[(path.LastIndexOfAny(['/', '\\']) + 1)..]}\"").ToList();
         bool one = names.Count == 1;
         bool known = !string.IsNullOrWhiteSpace(helperProblem);
-        string reach = $"{string.Join(", ", names)} {(one ? "is" : "are")} installed only for 32-bit apps. CompleteScanner "
-                       + "reaches such drivers through its 32-bit TWAIN helper"
+        string reach = "CompleteScanner reaches such drivers through its 32-bit TWAIN helper"
                        + (known ? "." : $", which has not listed {(one ? "it" : "them")} yet.");
         return new TroubleshootCheck(
             "twain32", CheckStatus.Problem,
-            one ? "A TWAIN driver works only with 32-bit apps" : $"{names.Count} TWAIN drivers work only with 32-bit apps",
+            one ? "A TWAIN driver is 32-bit only" : $"{names.Count} TWAIN drivers are 32-bit only",
+            $"{string.Join(", ", names)} {(one ? "is" : "are")} installed only for 32-bit apps.",
+            [],
             JoinSentences(known ? JoinSentences(reach, helperProblem!.Trim()) : reach,
                           "A 64-bit (x64) driver from the maker, where there is one, works without the helper. Many "
                           + "scanners also work through Windows Image Acquisition (WIA) once the maker's full driver "
-                          + "package is installed."),
-            []);
+                          + "package is installed."));
     }
 
     private static TroubleshootCheck? DiscoveryCheck(DiscoverySnapshot snapshot)
@@ -458,13 +481,14 @@ public static class Troubleshooter
             {
                 DiscoveryStatus.Searching or DiscoveryStatus.Running => new TroubleshootCheck(
                     "discovery", CheckStatus.Ok, "Looking for scanners",
-                    "macOS is looking for scanners connected by USB, on the network and shared by other Macs. "
-                    + "They appear here as they are found.",
-                    []),
+                    "Scanners appear here as macOS finds them.",
+                    [],
+                    "macOS looks for scanners connected by USB, on the network and shared by other Macs."),
                 DiscoveryStatus.Off or DiscoveryStatus.Unavailable => new TroubleshootCheck(
                     "discovery", CheckStatus.Warning, "Not looking for scanners",
-                    $"The search for scanners is not running{detail}. Select Refresh to start it again.",
-                    [TroubleshootAction.Refresh]),
+                    "Select Refresh to start the search again.",
+                    [TroubleshootAction.Refresh],
+                    $"The search for scanners is not running{detail}."),
                 _ => null,
             };
         }
@@ -472,21 +496,24 @@ public static class Troubleshooter
         {
             DiscoveryStatus.Searching => new TroubleshootCheck(
                 "discovery", CheckStatus.Ok, "Looking for network scanners",
-                "The search has just started. Scanners on the network appear as they answer.",
-                [TroubleshootAction.AddByAddress]),
+                "Scanners on the network appear as they answer.",
+                [TroubleshootAction.AddByAddress],
+                "The search has just started."),
             DiscoveryStatus.Running => new TroubleshootCheck(
                 "discovery", CheckStatus.Ok, "Looking for network scanners",
-                (snapshot.DiscoveredCount switch
+                snapshot.DiscoveredCount switch
                 {
                     0 => "No network scanner has been found on this network yet.",
                     1 => "1 network scanner found.",
                     int count => $"{count} network scanners found.",
-                }) + " A scanner that does not appear can be added by its address.",
-                [TroubleshootAction.AddByAddress]),
+                },
+                [TroubleshootAction.AddByAddress],
+                "A scanner that doesn't appear can be added by its address."),
             DiscoveryStatus.Unavailable => new TroubleshootCheck(
-                "discovery", CheckStatus.Warning, "Automatic search for network scanners is not working",
-                $"Windows could not search the network for scanners{detail}. You can still add a network scanner by its address.",
-                [TroubleshootAction.AddByAddress, TroubleshootAction.Refresh]),
+                "discovery", CheckStatus.Warning, "Network search is not working",
+                "You can still add a network scanner by its address.",
+                [TroubleshootAction.AddByAddress, TroubleshootAction.Refresh],
+                $"Windows could not search the network for scanners{detail}."),
             _ => null,
         };
     }
@@ -496,39 +523,38 @@ public static class Troubleshooter
         if (platform == TroubleshootPlatform.Windows)
         {
             yield return new TroubleshootCheck(
-                "usb", CheckStatus.Tip, "Scanner connected by USB?",
-                "Turn the scanner on and connect it straight to the PC, not through a hub. Windows lists a USB "
-                + "scanner only once its driver is installed: get the driver from the scanner maker's website, "
-                + "install it, then select Refresh. Windows scanner settings show whether Windows sees the scanner.",
-                [TroubleshootAction.OpenScannerSettings, TroubleshootAction.Refresh]);
+                "usb", CheckStatus.Tip, "Connected by USB?",
+                "Connect it directly (no hub) and install the maker's driver.",
+                [TroubleshootAction.OpenScannerSettings, TroubleshootAction.Refresh],
+                "Windows lists a USB scanner only after its driver is installed. Get it from the maker's website, "
+                + "then select Refresh. Scanner settings show whether Windows sees it.");
         }
         else
         {
             yield return new TroubleshootCheck(
-                "usb", CheckStatus.Tip, "Scanner connected by USB?",
-                "Turn the scanner on and connect it straight to the Mac, not through a hub. macOS lists a USB "
-                + "scanner only when it can scan without a driver or its maker's macOS driver is installed: get "
-                + "it from the scanner maker's website. If Image Capture does not show the scanner either, macOS "
-                + "does not see it.",
-                [TroubleshootAction.OpenImageCapture, TroubleshootAction.Refresh]);
+                "usb", CheckStatus.Tip, "Connected by USB?",
+                "Connect it directly (no hub) and install the maker's macOS driver.",
+                [TroubleshootAction.OpenImageCapture, TroubleshootAction.Refresh],
+                "macOS lists a USB scanner only when it can scan without a driver or its maker's driver is "
+                + "installed. If Image Capture doesn't show it either, macOS doesn't see it.");
             yield return new TroubleshootCheck(
                 "networkScanner", CheckStatus.Tip, "Scanner on the network?",
-                "The Mac and the scanner must be on the same network. If macOS asked whether CompleteScanner may "
-                + "find devices on your local network, allow it in System Settings, Privacy & Security, Local "
-                + "Network. A network printer with a scanner added in Printers & Scanners also appears here.",
-                [TroubleshootAction.OpenScannerSettings]);
+                "The Mac and the scanner must be on the same network.",
+                [TroubleshootAction.OpenScannerSettings],
+                "If macOS asked whether CompleteScanner may find devices on your local network, allow it in System "
+                + "Settings, Privacy & Security, Local Network. A network printer with a scanner added in Printers & "
+                + "Scanners also appears here.");
             yield return new TroubleshootCheck(
-                "sharing", CheckStatus.Tip, "Scanner shared by another Mac?",
-                "It appears when Scanner Sharing is on in that Mac's System Settings, General, Sharing, and both "
-                + "Macs are on the same network.",
-                []);
+                "sharing", CheckStatus.Tip, "Shared by another Mac?",
+                "Turn on Scanner Sharing in that Mac's Sharing settings.",
+                [],
+                "It's in System Settings, General, Sharing. Both Macs must be on the same network.");
         }
         yield return new TroubleshootCheck(
             "otherApps", CheckStatus.Tip, "Still not listed?",
-            $"Wake the scanner (press a button on it), and close other apps that may be using it, such as "
-            + $"{OtherApps(platform)}. Some scanners work only with their maker's own app; the maker's website "
-            + "says whether yours does.",
-            [TroubleshootAction.Refresh]);
+            "Wake the scanner and close other scanning apps.",
+            [TroubleshootAction.Refresh],
+            $"Press a button on the scanner. Close {OtherApps(platform)}. Some scanners work only with their maker's app.");
     }
 
     /// <summary>The first text as a sentence, then the second; the first may be missing.</summary>

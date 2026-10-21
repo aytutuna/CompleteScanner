@@ -7,7 +7,7 @@ using CompleteScanner.Core;
 
 namespace CompleteScanner.App;
 
-// The inspector's sections (InspectorSummary): their headers, which are open (as the user left them,
+// The inspector's sections (InspectorSections): their headers, which are open (as the user left them,
 // remembered in the preferences), what each shows for the task and format, and the summary a collapsed
 // header gives of what is on in it. Also the file name's Insert menu and its live preview.
 public partial class MainWindow
@@ -25,15 +25,15 @@ public partial class MainWindow
 
     private void SetUpInspectorSections()
     {
-        Add(CopyOptions, InspectorSummary.Task, "", "Photocopy");
-        Add(ReceiptOptions, InspectorSummary.Task, "", "Receipts");
-        Add(ScannerSection, InspectorSummary.Scanner, "", "Scanner");
-        Add(OutputSection, InspectorSummary.Output, "", "Output");
-        Add(AdjustmentsSection, InspectorSummary.Adjustments, "", "Adjustments");
-        Add(PagesSection, InspectorSummary.Pages, "", "Pages");
-        Add(SplitSection, InspectorSummary.Split, "", "Split into documents");
-        Add(ArchiveSection, InspectorSummary.Archive, "", "Archive & password");
-        Add(MoreSection, InspectorSummary.More, "", "More options");
+        Add(CopyOptions, InspectorSections.Task, "", "Photocopy");
+        Add(ReceiptOptions, InspectorSections.Task, "", "Receipts");
+        Add(ScannerSection, InspectorSections.Scanner, "", "Scanner");
+        Add(OutputSection, InspectorSections.Output, "", "Output");
+        Add(AdjustmentsSection, InspectorSections.Adjustments, "", "Adjustments");
+        Add(PagesSection, InspectorSections.Pages, "", "Pages");
+        Add(SplitSection, InspectorSections.Split, "", "Split into documents");
+        Add(ArchiveSection, InspectorSections.Archive, "", "Archive & password");
+        Add(MoreSection, InspectorSections.More, "", "More options");
 
         Dictionary<string, bool> saved;
         try
@@ -49,7 +49,7 @@ public partial class MainWindow
         {
             foreach (var section in _sections)
             {
-                section.Expander.IsExpanded = saved.TryGetValue(section.Id, out bool open) ? open : InspectorSummary.OpenByDefault(section.Id);
+                section.Expander.IsExpanded = saved.TryGetValue(section.Id, out bool open) ? open : InspectorSections.OpenByDefault(section.Id);
             }
         }
         finally
@@ -112,7 +112,7 @@ public partial class MainWindow
     /// <summary>Opens a section for a task that needs it (Restore old photos opens Adjustments); not remembered.</summary>
     private void OpenSectionFor(ScanTask task)
     {
-        if (InspectorSummary.OpenedBy(task) is not { } id) return;
+        if (InspectorSections.OpenedBy(task) is not { } id) return;
         _settingSections = true;
         try
         {
@@ -145,7 +145,7 @@ public partial class MainWindow
         // copy also saved as a PDF), not only when PDF is the format shown.
         ArchiveSection.Visibility = WritesPdf(s) ? Visibility.Visible : Visibility.Collapsed;
         AlsoSaveTextBox.Visibility = textApplies ? Visibility.Visible : Visibility.Collapsed;
-        var output = _sections.First(x => x.Id == InspectorSummary.Output);
+        var output = _sections.First(x => x.Id == InspectorSections.Output);
         output.Title.Text = documents ? "Output" : "Photos";
 
         foreach (var section in _sections)
@@ -156,35 +156,35 @@ public partial class MainWindow
             string? name = null;
             switch (section.Id)
             {
-                case InspectorSummary.Scanner:
-                    summary = InspectorSummary.ScannerSummary(s);
-                    changed = InspectorSummary.ScannerChanged(s);
+                case InspectorSections.Scanner:
+                    summary = InspectorSections.ScannerSummary(s);
+                    changed = InspectorSections.ScannerChanged(s);
                     break;
-                case InspectorSummary.Output:
-                    summary = InspectorSummary.OutputSummary(s, shownFormat);
-                    changed = InspectorSummary.OutputChanged(s, shownFormat);
+                case InspectorSections.Output:
+                    summary = InspectorSections.OutputSummary(s, shownFormat);
+                    changed = InspectorSections.OutputChanged(s, shownFormat);
                     break;
-                case InspectorSummary.Adjustments:
-                    summary = InspectorSummary.AdjustmentsSummary(s.Adjustments);
+                case InspectorSections.Adjustments:
+                    summary = InspectorSections.AdjustmentsSummary(s.Adjustments);
                     changed = summary.Length > 0;
                     break;
-                case InspectorSummary.Pages:
-                    summary = InspectorSummary.PagesSummary(s.Document);
+                case InspectorSections.Pages:
+                    summary = InspectorSections.PagesSummary(s.Document);
                     changed = summary.Length > 0;
-                    int on = InspectorSummary.PagesOn(s.Document);
+                    int on = InspectorSections.PagesOn(s.Document);
                     name = on == 0 ? section.TitleText : $"{section.TitleText}, {on} option{(on == 1 ? "" : "s")} on";
                     break;
-                case InspectorSummary.Split:
-                    summary = InspectorSummary.SplitSummary(s.Document);
+                case InspectorSections.Split:
+                    summary = InspectorSections.SplitSummary(s.Document);
                     changed = s.Document.SplitMode != SplitMode.None;
                     break;
-                case InspectorSummary.Archive:
-                    summary = InspectorSummary.ArchiveSummary(s.Output);
+                case InspectorSections.Archive:
+                    summary = InspectorSections.ArchiveSummary(s.Output);
                     changed = s.Output.Protect || s.Output.Archival;
                     locked = s.Output.Protect;
                     break;
-                case InspectorSummary.More:
-                    summary = InspectorSummary.MoreSummary(s.Output, textApplies);
+                case InspectorSections.More:
+                    summary = InspectorSections.MoreSummary(s.Output, textApplies);
                     changed = summary.Length > 0;
                     break;
             }

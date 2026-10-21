@@ -555,12 +555,12 @@ final class PageProcessorTests: XCTestCase {
 
     func test_queueSummary_andScanNote_countTheSkippedPages() {
         let on = options(true)
-        XCTAssertEqual(PageFilter.queueSummary([checked(false)], options: on), "1 page in queue")
+        XCTAssertEqual(PageFilter.queueSummary([checked(false)], options: on), "1 page")
         XCTAssertEqual(PageFilter.queueSummary([checked(false), checked(true), checked(true)], options: on),
-                       "3 pages in queue, 2 blank skipped")
+                       "3 pages \u{00B7} 2 blank skipped")
         XCTAssertEqual(PageFilter.queueSummary([checked(false), checked(false, .skip)], options: on),
-                       "2 pages in queue, 1 skipped")
-        XCTAssertEqual(PageFilter.queueSummary([checked(true), checked(false)], options: options(false)), "2 pages in queue")
+                       "2 pages \u{00B7} 1 skipped")
+        XCTAssertEqual(PageFilter.queueSummary([checked(true), checked(false)], options: options(false)), "2 pages")
         XCTAssertEqual(PageFilter.scanNote([checked(true), checked(true), checked(false)], options: on),
                        " 2 look blank and will be skipped.")
         XCTAssertEqual(PageFilter.scanNote([checked(true)], options: options(false)), " 1 looks blank.")

@@ -24,13 +24,13 @@ public enum AfterSaveAction: String, Codable, CaseIterable, Identifiable, Sendab
         }
     }
 
-    /// One line saying what the after-save action does, shown as its tooltip.
+    /// What the after-save action does, in a few words: its tooltip.
     public var hint: String {
         switch self {
-        case .none: return "Stay in the app after saving."
-        case .open: return "Open the saved file in its app. Several files are shown in their folder instead."
-        case .reveal: return "Show the saved files in their folder."
-        case .share: return "Open the share window to email the saved files or send them to an app."
+        case .none: return "Stay here"
+        case .open: return "Open the file (several: show the folder)"
+        case .reveal: return "Show the files in their folder"
+        case .share: return "Email or send to an app"
         }
     }
 }

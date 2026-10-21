@@ -369,8 +369,10 @@ public class PhotoImportTests
                      PhotoImport.AddedMessage(0, 2, 1, 0, "save PDF"));
         Assert.Equal("Cancelled.", PhotoImport.CancelledMessage(0, 3));
         Assert.Equal("Cancelled after adding 2 pages from photos — 4 in queue.", PhotoImport.CancelledMessage(2, 4));
-        Assert.Equal("Photo 2 of 5: IMG_0042.jpg", PhotoImport.Counter(2, 5, "IMG_0042.jpg"));
+        Assert.Equal("Photo 2 of 5", PhotoImport.Counter(2, 5, "IMG_0042.jpg"));
+        Assert.Equal("Photo 2 of 5: IMG_0042.jpg", PhotoImport.CounterName(2, 5, "IMG_0042.jpg"));
         Assert.Equal("IMG_0042.jpg", PhotoImport.Counter(1, 1, "IMG_0042.jpg"));
+        Assert.Equal("IMG_0042.jpg", PhotoImport.CounterName(1, 1, "IMG_0042.jpg"));
         Assert.Equal("Importing photo 2 of 5…", PhotoImport.ProgressMessage(2, 5));
         Assert.Equal("Importing photo…", PhotoImport.ProgressMessage(1, 1));
         // A TIFF of several pages: each page is imported, and named, in turn.
@@ -379,9 +381,32 @@ public class PhotoImportTests
         Assert.Equal("Importing photo 2 of 5…", PhotoImport.ProgressMessage(2, 5, 1, 1));
         Assert.Equal("fax.tif, page 2 of 5", PhotoImport.PageName("fax.tif", 2, 5));
         Assert.Equal("IMG_0042.jpg", PhotoImport.PageName("IMG_0042.jpg", 1, 1));
-        Assert.Equal("Photo 2 of 3: fax.tif, page 2 of 5", PhotoImport.Counter(2, 3, PhotoImport.PageName("fax.tif", 2, 5)));
+        Assert.Equal("Photo 2 of 3: fax.tif, page 2 of 5", PhotoImport.CounterName(2, 3, PhotoImport.PageName("fax.tif", 2, 5)));
         Assert.Equal("a.jpg could not be opened: it is damaged.", PhotoImport.UnreadableMessage("a.jpg", "it is damaged."));
         Assert.StartsWith("IMG_1.heic could not be opened: HEIC photos need the free “HEIF Image Extensions”", PhotoImport.HeifUnavailableMessage("IMG_1.heic"));
+    }
+
+    [Fact]
+    public void TheImportAndTheCornerEditor_SayLittle()
+    {
+        Assert.Equal("Import photos of documents…", PhotoImport.ButtonLabel);
+        Assert.Equal("Add phone photos of documents as pages", PhotoImport.ButtonHint);
+        Assert.Equal("Each page is found in the photo and straightened. Your photo files are not changed.", PhotoImport.ButtonHelp);
+        Assert.Equal(("or drop them here", "Drop to add as pages"), (PhotoImport.DropHint, PhotoImport.DropOverlay));
+        Assert.Equal("Check the corners", PhotoImport.EditorTitle);
+        Assert.Equal("Drag each corner onto a corner of the page.", PhotoImport.EditorHelp);
+        Assert.Equal("Keys 1–4 select a corner. Arrow keys move it; Shift takes bigger steps.", PhotoImport.EditorKeys);
+        Assert.Equal(("Use corners", "Use whole photo", "Skip photo"),
+                     (PhotoImport.UseCornersLabel, PhotoImport.WholePhotoLabel, PhotoImport.SkipLabel));
+        Assert.Equal("The page edges are unclear.", PhotoImport.ReasonText(PhotoReviewReason.Unsure));
+        Assert.Equal("No page found in this photo.", PhotoImport.ReasonText(PhotoReviewReason.NothingFound));
+        Assert.Equal("The page runs off the photo.", PhotoImport.ReasonText(PhotoReviewReason.CutOff));
+        Assert.Equal("Two pages found: pick one.", PhotoImport.ReasonText(PhotoReviewReason.TwoPages));
+        Assert.Equal("", PhotoImport.ReasonText(PhotoReviewReason.None));
+        foreach (var reason in Enum.GetValues<PhotoReviewReason>())
+        {
+            Assert.InRange(StatusLine.Words(PhotoImport.ReasonText(reason)), 0, 6);
+        }
     }
 
     [Fact]

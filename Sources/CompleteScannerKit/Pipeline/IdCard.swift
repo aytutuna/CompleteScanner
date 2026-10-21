@@ -58,15 +58,27 @@ public enum IdCardSteps {
     /// nothing on its back, and the review captures nothing.
     public static let steps: [TaskStep] = [
         TaskStep(id: frontStepID, title: "Front side",
-                 prompt: "Place the card face down near a corner of the glass, close the lid and scan the front.",
-                 primaryActionLabel: "Scan front"),
+                 prompt: "Place the card face down near a corner and scan.",
+                 primaryActionLabel: "Scan front",
+                 help: "Close the lid before scanning."),
         TaskStep(id: backStepID, title: "Back side",
-                 prompt: "Turn the card over where it lies, close the lid and scan the back. Skip this if nothing is printed on the back.",
-                 primaryActionLabel: "Scan back", skippable: true, requiresCapture: false),
+                 prompt: "Turn the card over where it lies and scan.",
+                 primaryActionLabel: "Scan back", skippable: true, requiresCapture: false,
+                 help: "Nothing printed on the back? Select No back side."),
         TaskStep(id: reviewStepID, title: "Check and save",
-                 prompt: "Check both sides, then save them on one page at their real size.",
-                 primaryActionLabel: "Review", requiresCapture: false),
+                 prompt: "Check both sides, then save.",
+                 primaryActionLabel: "Review", requiresCapture: false,
+                 help: "Both sides go on one page at real size."),
     ]
+
+    /// The button that leaves out the back of a card with nothing printed on it.
+    public static let skipBackLabel = "No back side"
+
+    /// The ID card review's line on privacy: the scans stay out of the Scans history.
+    public static let privacyNote = "Not kept in Scans history"
+
+    /// The privacy line's full sentence, for its tooltip and VoiceOver.
+    public static let privacyHelp = "The scans stay on this computer and are cleared once you save or discard them."
 
     /// The side a step scans; nil for the review and any other step.
     public static func sideOf(_ stepID: String?) -> PageSide? {
@@ -330,9 +342,11 @@ public enum IdCardLayout {
         return IdCardLayoutResult(front: frontRect, back: backRect, scale: scale)
     }
 
-    /// "Front and back on one A4 page, at real size.", "Front only on one Letter page, made smaller to fit."
+    /// "One A4 page, real size", "Front only, one Letter page, made smaller to fit".
     public static func caption(paper: PaperSize, hasBack: Bool, scaledToFit: Bool) -> String {
-        "\(hasBack ? "Front and back" : "Front only") on one \(paper.label) page, \(scaledToFit ? "made smaller to fit" : "at real size")."
+        let lead: String = hasBack ? "One" : "Front only, one"
+        let size: String = scaledToFit ? "made smaller to fit" : "real size"
+        return "\(lead) \(paper.label) page, \(size)"
     }
 }
 

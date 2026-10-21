@@ -24,40 +24,36 @@ enum TaskSymbols {
     }
 }
 
-/// The start screen: what are you scanning? One card per task (`TaskCatalog`), greyed out
-/// with the reason when the connected scanner cannot do it, then the user's presets badged
-/// with their task. Picking a card sets it up and opens the scanner view (`onOpenScanner`).
-/// Twin of the Windows `TaskStartView`.
+/// The start screen: what are you scanning? The user's presets first (when there are any), then one
+/// tile per task (`TaskCatalog.sections`) in its group: an icon and the title. What the task does and
+/// what it sets are the tile's help; a task the connected scanner cannot do is dimmed with one short
+/// line saying why. Picking a tile sets it up and opens the scanner view (`onOpenScanner`). Twin of
+/// the Windows `TaskStartView`.
 struct TaskStartView: View {
     @EnvironmentObject var state: AppState
 
-    /// Opens the scanner view (after a card was set up, or for "Go to Scanner").
+    /// Opens the scanner view (after a tile was set up, or for "Go to Scanner").
     var onOpenScanner: () -> Void
 
-    private let columns = [GridItem(.adaptive(minimum: 200, maximum: 280), spacing: 12, alignment: .top)]
+    private let columns: [GridItem] = [GridItem(.adaptive(minimum: 150, maximum: 190), spacing: 12, alignment: .top)]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 header
-                Text("Tasks")
-                    .font(.headline)
-                    .padding(.top, 8)
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
-                    ForEach(state.taskCards) { card in
-                        taskCard(card)
-                    }
-                }
-                Text("My presets")
-                    .font(.headline)
-                    .padding(.top, 12)
-                if state.presets.isEmpty {
-                    Text("Settings you save as a preset (Presets \u{25B8} Save current as preset\u{2026} in the scan settings) appear here.")
-                        .foregroundStyle(.secondary)
-                } else {
+                if !state.presets.isEmpty {
+                    groupHeading("My presets")
                     LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                         ForEach(state.presets) { preset in
-                            presetCard(preset)
+                            presetTile(preset)
+                        }
+                    }
+                }
+                ForEach(groups, id: \.group) { group in
+                    groupHeading(group.group.title)
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                        ForEach(group.cards) { card in
+                            taskTile(card)
                         }
                     }
                 }
@@ -65,34 +61,50 @@ struct TaskStartView: View {
             .padding(24)
             .frame(maxWidth: 1180, alignment: .leading)
             .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .contain)
+            .accessibilityHint(Text("Picking a task sets everything up. You can change any setting later."))
         }
         .background(Color(nsColor: .underPageBackgroundColor))
     }
 
-    private var header: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("What are you scanning?")
-                    .font(.largeTitle.weight(.semibold))
-                Text("Pick a task and everything is set up for it. Every setting can still be changed in the scanner view.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+    /// The tasks' tiles in their groups, in start-screen order.
+    private var groups: [TaskTileGroup] {
+        let cards: [TaskCard] = state.taskCards
+        return TaskCatalog.sections.map { (section: TaskGroupSection) -> TaskTileGroup in
+            let tiles: [TaskCard] = section.definitions.compactMap { (definition: TaskDefinition) -> TaskCard? in
+                cards.first(where: { $0.definition.task == definition.task })
             }
+            return TaskTileGroup(group: section.group, cards: tiles)
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            Text("What are you scanning?")
+                .font(.largeTitle.weight(.semibold))
             Spacer(minLength: 0)
             Button {
                 onOpenScanner()
             } label: {
                 Label("Go to Scanner", systemImage: "scanner")
             }
-            .help("Open the scanner view with the settings as they are")
+            .help("Scan with your current settings")
         }
     }
 
-    private func taskCard(_ card: TaskCard) -> some View {
-        let available = card.availability.isAvailable
-        let hint: String = available
-            ? "\(card.definition.subtitle) \(card.summary)."
-            : "\(card.definition.subtitle) Not available: \(card.availability.reason ?? "")"
+    private func groupHeading(_ title: String) -> some View {
+        Text(title)
+            .font(.headline)
+            .padding(.top, 8)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private func taskTile(_ card: TaskCard) -> some View {
+        let available: Bool = card.availability.isAvailable
+        let subtitle: String = card.definition.subtitle
+        let help: String = subtitle + "\n" + card.summary
+        let reason: String = card.availability.reason ?? ""
+        let hint: String = available ? "\(subtitle) \(card.summary)." : "\(subtitle) \(card.summary). Not available: \(reason)"
         return Button {
             // Picking a task while the ID card task holds a side asks first.
             let appState = state
@@ -102,25 +114,22 @@ struct TaskStartView: View {
                 if appState.startTask(task) { openScanner() }
             }
         } label: {
-            TaskCardLabel(symbol: TaskSymbols.systemImage(card.definition.iconKey),
+            TaskTileLabel(symbol: TaskSymbols.systemImage(card.definition.iconKey),
                           title: card.definition.title,
-                          subtitle: card.definition.subtitle,
-                          footer: card.availability.reason ?? card.summary,
-                          footerIsReason: !available,
+                          reason: available ? nil : reason,
                           isCurrent: card.isCurrent)
         }
         .buttonStyle(TaskCardButtonStyle())
-        .opacity(available ? 1 : 0.55)
         .disabled(!available || state.isBusy)
-        .help(card.availability.reason ?? card.definition.subtitle)
+        .help(help)
         .accessibilityLabel(Text(card.definition.title))
         .accessibilityHint(Text(hint))
     }
 
-    private func presetCard(_ preset: Preset) -> some View {
-        let task = TaskCatalog.infer(preset.settings)
-        let taskTitle = TaskCatalog.definition(task).title
-        let hint = "Preset for \(taskTitle). \(TaskCatalog.summary(preset.settings))."
+    private func presetTile(_ preset: Preset) -> some View {
+        let task: ScanTask = TaskCatalog.infer(preset.settings)
+        let taskTitle: String = TaskCatalog.definition(task).title
+        let summary: String = TaskCatalog.summary(preset.settings)
         return Button {
             guard !state.isBusy else { return }
             let appState = state
@@ -130,38 +139,42 @@ struct TaskStartView: View {
                 openScanner()
             }
         } label: {
-            TaskCardLabel(symbol: TaskSymbols.systemImage(TaskCatalog.definition(task).iconKey),
+            TaskTileLabel(symbol: TaskSymbols.systemImage(TaskCatalog.definition(task).iconKey),
                           title: preset.name,
-                          subtitle: taskTitle,
-                          footer: TaskCatalog.summary(preset.settings),
-                          footerIsReason: false,
+                          reason: nil,
                           isCurrent: false)
         }
         .buttonStyle(TaskCardButtonStyle())
         .disabled(state.isBusy)
-        .help(preset.name)
-        .accessibilityLabel(Text(preset.name))
-        .accessibilityHint(Text(hint))
+        .help(taskTitle + "\n" + summary)
+        .accessibilityLabel(Text("\(preset.name) preset"))
+        .accessibilityHint(Text("Preset for \(taskTitle). \(summary)."))
     }
 }
 
-/// The inside of a start-screen card: icon, title, description and a footer line.
-private struct TaskCardLabel: View {
+/// A group of the start screen with its tiles.
+private struct TaskTileGroup {
+    let group: TaskGroup
+    let cards: [TaskCard]
+}
+
+/// The inside of a start-screen tile: the icon, the title (two lines at most, never cut), and for a
+/// task that cannot be started, one line saying why.
+private struct TaskTileLabel: View {
     let symbol: String
     let title: String
-    let subtitle: String
-    let footer: String
-    let footerIsReason: Bool
+    let reason: String?
     let isCurrent: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top) {
                 Image(systemName: symbol)
-                    .font(.system(size: 18))
+                    .font(.system(size: 22))
                     .foregroundStyle(Color.accentColor)
-                    .frame(width: 36, height: 36)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.12)))
+                    .frame(width: 32, height: 32)
+                    .opacity(reason == nil ? 1 : 0.4)
+                    .accessibilityHidden(true)
                 Spacer(minLength: 4)
                 if isCurrent {
                     Text("Current")
@@ -175,32 +188,24 @@ private struct TaskCardLabel: View {
             Text(title)
                 .font(.headline)
                 .lineLimit(2)
-                .padding(.top, 6)
-            Text(subtitle)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                if footerIsReason {
-                    Image(systemName: "info.circle")
-                }
-                Text(footer)
+            if let reason {
+                Text(reason)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
-                    .monospacedDigit()
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
         }
         .multilineTextAlignment(.leading)
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 168, alignment: .topLeading)
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
         .contentShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 
-/// A whole-card button: card surface, hairline border, pressed feedback.
+/// A whole-tile button: card surface, hairline border, pressed feedback.
 private struct TaskCardButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

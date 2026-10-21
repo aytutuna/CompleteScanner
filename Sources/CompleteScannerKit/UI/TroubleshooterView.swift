@@ -1,10 +1,12 @@
 import SwiftUI
 
-/// "Why isn't my scanner listed?": the troubleshooter's checks (`Troubleshooter.diagnose`), one
-/// card each with its status, what it means and the buttons that help (Refresh, Image Capture,
-/// Printers & Scanners), and Copy Diagnostics. Shown as a sheet from the sidebar and from an
-/// error about a scanner; it follows `AppState` while open. Twin of the Windows
-/// `TroubleshooterWindow`.
+/// "Why isn't my scanner listed?": one line saying what is listed and how many problems and
+/// warnings there are (`Troubleshooter.overview`), then the troubleshooter's checks
+/// (`Troubleshooter.diagnose`): a card for each one to look at, with its status, one line, the
+/// buttons that help (Image Capture, Printers & Scanners) and "More help" with the rest; a compact
+/// row for each check that passed. Copy Diagnostics and Refresh are in the footer. Shown as a sheet
+/// from the sidebar and from an error about a scanner; it follows `AppState` while open. Twin of the
+/// Windows `TroubleshooterWindow`.
 struct TroubleshooterView: View {
     @EnvironmentObject var state: AppState
     @Environment(\.dismiss) private var dismiss
@@ -23,11 +25,9 @@ struct TroubleshooterView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Why isn't my scanner listed?")
                     .font(.title2.weight(.semibold))
-                Text(Troubleshooter.headline(snapshot))
+                Text(refreshing ? "Looking for scanners\u{2026}" : Troubleshooter.overview(snapshot, checks: checks))
                     .font(.headline)
                     .padding(.top, 4)
-                Text(refreshing ? "Looking for scanners\u{2026}" : Troubleshooter.summary(checks))
-                    .foregroundStyle(.secondary)
             }
             .padding(20)
             .accessibilityElement(children: .combine)
@@ -51,7 +51,7 @@ struct TroubleshooterView: View {
                 } label: {
                     Label("Copy Diagnostics", systemImage: "doc.on.doc")
                 }
-                .help("Copy these checks and the list of connections, to send to support")
+                .help("Copy the results to send to support")
                 if let footerMessage {
                     Text(footerMessage)
                         .font(.callout)
@@ -65,7 +65,7 @@ struct TroubleshooterView: View {
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
-                .help("Look for scanners again and repeat the checks")
+                .help("Check again")
                 Button("Done") {
                     dismiss()
                 }
@@ -111,12 +111,43 @@ struct TroubleshooterView: View {
     }
 }
 
-/// One check: the status symbol (named for VoiceOver), the title, the detail and its buttons.
+/// One check: the status symbol (named for VoiceOver), the title, the one-line detail, its buttons and
+/// "More help" with the rest. A check that passed and offers nothing to do is a compact row: its title,
+/// with what it found as its help. Refresh is the footer's, not repeated in a card.
 private struct TroubleshootCheckCard: View {
     let check: TroubleshootCheck
     let perform: (TroubleshootAction) -> Void
 
+    /// The buttons of the card: every action but Refresh.
+    private var actions: [TroubleshootAction] { check.actions.filter { $0 != .refresh } }
+
     var body: some View {
+        if check.status == .ok && actions.isEmpty {
+            passedRow
+        } else {
+            card
+        }
+    }
+
+    private var passedRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: symbol)
+                .foregroundStyle(color)
+                .frame(width: 24)
+                .accessibilityLabel(Troubleshooter.statusLabel(check.status))
+            Text(check.title)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+        .help(check.fullDetail)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(Troubleshooter.statusLabel(check.status)): \(check.title)")
+        .accessibilityHint(Text(check.fullDetail))
+    }
+
+    private var card: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: symbol)
                 .font(.title3)
@@ -129,14 +160,25 @@ private struct TroubleshootCheckCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Text(check.detail)
                     .fixedSize(horizontal: false, vertical: true)
-                if !check.actions.isEmpty {
+                if !actions.isEmpty {
                     HStack(spacing: 8) {
-                        ForEach(check.actions, id: \.self) { action in
+                        ForEach(actions, id: \.self) { action in
                             Button(Troubleshooter.label(action, platform: .mac)) { perform(action) }
                                 .help(check.title)
                         }
                     }
                     .padding(.top, 4)
+                }
+                if !check.more.isEmpty {
+                    DisclosureGroup("More help") {
+                        Text(check.more)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 2)
+                    }
+                    .padding(.top, 2)
+                    .accessibilityLabel(Text("More help: \(check.title)"))
                 }
             }
             Spacer(minLength: 0)
@@ -148,6 +190,7 @@ private struct TroubleshootCheckCard: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(Troubleshooter.statusLabel(check.status)): \(check.title)")
+        .accessibilityHint(Text(check.fullDetail))
     }
 
     private var symbol: String {

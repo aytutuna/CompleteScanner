@@ -117,11 +117,21 @@ final class DocumentSidesTests: XCTestCase {
     }
 
     func test_sideLabel() {
-        XCTAssertEqual(DocumentSides.sideLabel(side: .back, sheetIndex: 1), "Sheet 2 \u{00B7} back")
-        XCTAssertEqual(DocumentSides.sideLabel(side: .front, sheetIndex: 0), "Sheet 1 \u{00B7} front")
+        XCTAssertEqual(DocumentSides.sideLabel(side: .back, sheetIndex: 1), "2 \u{00B7} back")
+        XCTAssertEqual(DocumentSides.sideLabel(side: .front, sheetIndex: 0), "1 \u{00B7} front")
         XCTAssertEqual(DocumentSides.sideLabel(side: .front, sheetIndex: nil), "Front")
         XCTAssertEqual(DocumentSides.sideLabel(side: .back, sheetIndex: nil), "Back")
         XCTAssertNil(DocumentSides.sideLabel(side: nil, sheetIndex: 3))
+    }
+
+    func test_sideName_spellsTheSheetOut() {
+        XCTAssertEqual(DocumentSides.sideName(side: .back, sheetIndex: 1), "Sheet 2, back")
+        XCTAssertEqual(DocumentSides.sideName(side: .front, sheetIndex: 0), "Sheet 1, front")
+        XCTAssertEqual(DocumentSides.sideName(side: .front, sheetIndex: nil), "Front")
+        XCTAssertEqual(DocumentSides.sideName(side: .back, sheetIndex: nil), "Back")
+        XCTAssertNil(DocumentSides.sideName(side: nil, sheetIndex: 3))
+        XCTAssertEqual(DocumentSides.needsFeederReason, "Needs the feeder")
+        XCTAssertEqual(DocumentSides.feederOnlyReason, "Two-sided scanning uses the document feeder.")
     }
 
     func test_backQuarterTurns_shortEdgeBacksAreUpsideDown() {
@@ -139,7 +149,13 @@ final class DocumentSidesTests: XCTestCase {
         XCTAssertFalse(steps[0].skippable)
         XCTAssertFalse(steps[1].requiresCapture)
         XCTAssertTrue(steps[1].skippable)
-        XCTAssertTrue(steps[1].prompt.contains("turn it over"))
+        XCTAssertEqual(steps[0].prompt, "Load the stack in the feeder and scan the fronts.")
+        XCTAssertEqual(steps[1].prompt, "Turn the stack over, load it again and scan.")
+        XCTAssertTrue(steps[1].help.contains("turn it over"))
+        XCTAssertEqual(steps.map(\.word), ["Front", "Back"])
+        for step in steps {
+            XCTAssertTrue((1...10).contains(StatusLine.words(step.prompt)), step.prompt)
+        }
     }
 
     // MARK: What a scan does with the settings
