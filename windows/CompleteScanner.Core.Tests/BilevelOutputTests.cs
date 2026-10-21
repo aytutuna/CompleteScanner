@@ -10,8 +10,9 @@ namespace CompleteScanner.Core.Tests;
 // Black & white pages in the files the app writes: CCITT G4 images in every kind of PDF (plain,
 // PDF/A, protected, pages added to an existing PDF) and G4 TIFFs of one or several pages. PdfPig
 // (test-only) decodes the PDF images; WIC decodes the TIFFs and Windows.Data.Pdf renders the PDFs
-// in CompleteScanner.App.Tests/BilevelOutputTests.cs. Windows only until the Mac's port of the PDF
-// writer (see CONTRACTS.md, "CCITT G4 for black & white pages").
+// in CompleteScanner.App.Tests/BilevelOutputTests.cs. The Mac's twin (Tests/CompleteScannerTests/
+// BilevelOutputTests.swift) has the plain-PDF and TIFF cases with the same golden values (see
+// CONTRACTS.md, "CCITT G4 for black & white pages").
 
 public class BilevelOutputTests
 {
@@ -129,6 +130,22 @@ public class BilevelOutputTests
     }
 
     [Fact]
+    public void Pdf_G4AndJpegPages_GoldenBytes()
+    {
+        // A plain PDF: the 37 × 23 checkerboard as a G4 page at 100 dpi with a Turkish line, then a
+        // JPEG page. The Mac's twin (PDFWriterTests) must write the same bytes.
+        byte[] checker = CcittG4Encoder.Encode(CcittG4EncoderTests.Packed(37, 23, (x, y) => ((x + y) & 1) == 0), 37, 23);
+        var line = new OcrLine("Siyah beyaz — Çağrı", new RectD(0.1, 0.5, 0.8, 0.2), 0.9f);
+        byte[] pdf = PdfBuilder.Make(
+        [
+            new PdfPageInput(new PdfCcittImage(checker, 37, 23), 37, 23, 100, [line]),
+            new PdfPageInput(PdfBuilderTests.TinyJpeg, 850, 1100, 100, null),
+        ]);
+        Assert.Equal(9891, pdf.Length);
+        Assert.Equal("702D8A5F1AE3DF27F8B7CD5B18DF6C5585D9E3406AAE53880C0274C6A14EFB14", Convert.ToHexString(SHA256.HashData(pdf)));
+    }
+
+    [Fact]
     public void Pdf_G4_TakesAFractionOfABitPerPixel()
     {
         // The text page as a 1-bit G4 image: under one bit for every five pixels.
@@ -193,6 +210,9 @@ public class BilevelOutputTests
         Assert.True(tiff.AsSpan(8, g4.Length).SequenceEqual(g4));
         Assert.Equal(17852, tiff.Length); // 8 + 17666 + 162 + 16
         Assert.Equal("EF4F98A030BB642AB198F3FAE98EEE6CD088E24B986A769FCD0EEE92255CA38D", Convert.ToHexString(SHA256.HashData(tiff)));
+        // The gray text page thresholded at 128 has the same bits as its black & white page, so the
+        // Mac's twin, whose image pipeline is Core Image's, builds the same file from the gray page.
+        Assert.Equal(tiff, BilevelTiff.Make(TestPages.TextPage().ToRgba(), 300));
     }
 
     [Fact]

@@ -8,8 +8,9 @@ using Xunit;
 namespace CompleteScanner.Core.Tests;
 
 // PDF/A-2b output and the Unicode text layer, checked in the bytes and, through PdfPig (a
-// test-only package), as a PDF reader sees them. No Swift twin yet: the Mac's PDF writer port
-// (CONTRACTS.md, M19) brings one, which must write the same bytes (the pinned SHA-256 below).
+// test-only package), as a PDF reader sees them. The Mac's port checks the plain file's golden bytes
+// and the object writer's cases (PDFWriterTests.swift); the PDF/A cases wait for its second part
+// (I5), which must write the same bytes (the pinned SHA-256 below).
 
 public class PdfATests
 {

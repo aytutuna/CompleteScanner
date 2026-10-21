@@ -1235,7 +1235,7 @@ public final class AppState: ObservableObject {
                 let url = try outputURL(fileExtension: s.format.fileExtension)
                 try await Task.detached(priority: .userInitiated) {
                     try ImageExporter.write(page.image, to: url, format: s.format,
-                                            dpi: page.dpi, jpegQuality: s.jpegQuality)
+                                            dpi: page.dpi, jpegQuality: s.jpegQuality, colorMode: page.colorMode)
                 }.value
                 saved.append(url)
             }
@@ -1261,8 +1261,9 @@ public final class AppState: ObservableObject {
                     let image = photo.rotationQuarterTurns == 0
                         ? photo.image
                         : ImagePipeline.rotate(photo.image, quarterTurns: photo.rotationQuarterTurns)
+                    // The mode the photo was scanned in: a black & white TIFF is G4.
                     try ImageExporter.write(image, to: url, format: format,
-                                            dpi: photo.dpi, jpegQuality: s.jpegQuality)
+                                            dpi: photo.dpi, jpegQuality: s.jpegQuality, colorMode: photo.colorMode)
                 }.value
                 saved.append(url)
             }

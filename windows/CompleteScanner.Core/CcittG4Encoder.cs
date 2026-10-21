@@ -1,10 +1,10 @@
 namespace CompleteScanner.Core;
 
-// The Mac's twin (Output/CCITTG4Encoder.swift) arrives with the port of the C# PDF writer and
-// must give the same bytes (the golden values in CcittG4EncoderTests); see CONTRACTS.md, "CCITT G4
-// for black & white pages". The code tables below are written as the bit strings of ITU-T T.4
+// The Mac's twin (Sources/CompleteScannerKit/Output/CCITTG4Encoder.swift) gives the same bytes
+// (the golden values in CcittG4EncoderTests, checked on both platforms); see CONTRACTS.md, "CCITT
+// G4 for black & white pages". The code tables below are written as the bit strings of ITU-T T.4
 // (tables 2 and 3: terminating, make-up and extended make-up codes) and T.6 (table 1: the mode
-// codes), so the port can copy them as they are.
+// codes); the twin copies them as they are.
 
 /// <summary>
 /// CCITT Group 4 (ITU-T T.6) encoding of a black &amp; white image: the two-dimensional coding

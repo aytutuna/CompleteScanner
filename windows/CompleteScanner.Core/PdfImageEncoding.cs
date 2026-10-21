@@ -4,8 +4,8 @@ namespace CompleteScanner.Core;
 // rules and the same rounding. Windows encodes the planned JPEG with WIC
 // (WpfImageCodec.EncodeJpeg), or black & white pages as CCITT G4 (PdfCcittImage), and embeds
 // them through PdfBuilder; macOS encodes the JPEG with ImageIO and hands CoreGraphics a
-// JPEG-backed image, and stores black & white pages as gray JPEGs until its port of the C# PDF
-// writer brings G4.
+// JPEG-backed image, and writes a document with black & white pages through its port of this
+// writer (PDFWriter), with those pages as G4.
 
 /// <summary>How a page image is stored in the PDF.</summary>
 public enum PdfImageKind

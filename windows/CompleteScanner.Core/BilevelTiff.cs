@@ -2,8 +2,8 @@ using System.Buffers.Binary;
 
 namespace CompleteScanner.Core;
 
-// The Mac keeps writing black & white TIFFs with ImageIO (LZW) until the port of the C# PDF
-// writer brings the G4 encoder (see CONTRACTS.md, "CCITT G4 for black & white pages").
+// The Mac's twin is Sources/CompleteScannerKit/Output/BilevelTIFF.swift, which writes the same
+// bytes (see CONTRACTS.md, "CCITT G4 for black & white pages").
 
 /// <summary>One page of a black &amp; white TIFF: the page and its resolution.</summary>
 public sealed record BilevelTiffPage(RgbaImage Image, int Dpi);

@@ -804,7 +804,7 @@ final class ModelsCompatTests: XCTestCase {
         XCTAssertEqual(PDFSizePreset.displayOrder.map(\.hint),
                        ["Full quality, largest files", "Good for most documents", "Smaller, for email and uploads",
                         "Smallest, for strict size limits"])
-        XCTAssertEqual(PDFSizePreset.standard.detail, "Up to 300 dpi, gray pages saved in gray.")
+        XCTAssertEqual(PDFSizePreset.standard.detail, "Up to 300 dpi (black & white 600), gray pages saved in gray.")
         XCTAssertEqual([AfterSaveAction.none, .open, .reveal, .share].map(\.hint),
                        ["Stay here", "Open the file (several: show the folder)", "Show the files in their folder",
                         "Email or send to an app"])

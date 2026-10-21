@@ -7,8 +7,8 @@ using Xunit;
 
 namespace CompleteScanner.Core.Tests;
 
-// The text layer's font. No Swift twin yet: the Mac's PDF writer port (CONTRACTS.md, M19) brings
-// one, which must produce the same bytes (the pinned lengths and SHA-256 below).
+// The text layer's font. The Mac's twin (GlyphlessFontTests.swift) has the same cases and checks
+// the same bytes (the pinned lengths and SHA-256 below).
 
 public class GlyphlessFontTests
 {
@@ -91,7 +91,7 @@ public class GlyphlessFontTests
     [Fact]
     public void Program_BytesArePinned()
     {
-        // The Mac's port of the writer must produce these exact bytes.
+        // The Mac's port of the writer produces these exact bytes (GlyphlessFontTests.swift).
         byte[] font = GlyphlessFont.Program;
         Assert.Equal(636, font.Length);
         Assert.Equal("103B87CF98EE3A3E5FD752F3DB29975611605F785B36C879FAA61ABD439CC391", Convert.ToHexString(SHA256.HashData(font)));

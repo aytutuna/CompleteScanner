@@ -258,7 +258,7 @@ extension AppState {
                     let image = composed.page
                     try await Task.detached(priority: .userInitiated) {
                         try ImageExporter.write(image, to: url, format: pageFormat, dpi: pageDPI,
-                                                jpegQuality: s.jpegQuality)
+                                                jpegQuality: s.jpegQuality, colorMode: pageMode)
                     }.value
                     saved.append(url)
                 }
@@ -277,9 +277,11 @@ extension AppState {
                                                                base: IdCardComposer.sideFileBase(base, side: side),
                                                                fileExtension: sideFormat.fileExtension)
                         let dpi = sideImage.dpi
+                        // The mode the side was scanned in: a black & white TIFF is G4.
+                        let sideMode = side == .front ? front.colorMode : (back?.colorMode ?? .color)
                         try await Task.detached(priority: .userInitiated) {
                             try ImageExporter.write(image, to: sideURL, format: sideFormat, dpi: dpi,
-                                                    jpegQuality: s.jpegQuality)
+                                                    jpegQuality: s.jpegQuality, colorMode: sideMode)
                         }.value
                         saved.append(sideURL)
                     }

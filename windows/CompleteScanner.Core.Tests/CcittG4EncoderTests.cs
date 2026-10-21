@@ -5,8 +5,8 @@ using Xunit;
 
 namespace CompleteScanner.Core.Tests;
 
-// The G4 encoder and the bilevel packing. The Mac's port (with the port of the C# PDF writer) must
-// give the same bytes: the known answers below are written from the bit strings of ITU-T T.4 and
+// The G4 encoder and the bilevel packing. The Mac's twin (CCITTG4EncoderTests.swift) checks the same
+// bytes: the known answers below are written from the bit strings of ITU-T T.4 and
 // T.6, not from the encoder's own tables, and the golden values are checked against two separate
 // decoders: PdfPig's CCITT filter here, and WIC (which also encodes the same bytes itself) in
 // CompleteScanner.App.Tests/BilevelOutputTests.cs.

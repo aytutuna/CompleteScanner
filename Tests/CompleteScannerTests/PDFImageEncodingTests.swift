@@ -92,15 +92,15 @@ final class PDFImageEncodingTests: XCTestCase {
         }
     }
 
-    func test_hint_namesTheSizesLimits() {
-        // The Mac stores black & white pages as gray JPEGs up to the gray limit until its port of the
-        // C# PDF writer, so its detail (the help behind the short tooltip) names that limit only; the
-        // Windows case also checks the black & white (G4) limit its detail names: "Up to 300 dpi (black
-        // & white 600), ...".
+    func test_hint_namesTheSizesLimits_blackAndWhiteToo() {
+        // Black & white pages are stored as G4 up to their own limit, and the detail (the help text
+        // behind the short tooltip) says so.
         XCTAssertTrue(PDFSizePreset.best.detail.hasPrefix("Full resolution"))
         for size in [PDFSizePreset.standard, .compact, .smallest] {
-            let maxDPI = PDFImageEncoding.profile(size).maxDPI ?? 0
-            XCTAssertTrue(size.detail.hasPrefix("Up to \(maxDPI) dpi, "), size.detail)
+            let sizeProfile = PDFImageEncoding.profile(size)
+            let maxDPI = sizeProfile.maxDPI ?? 0
+            let bilevelDPI = sizeProfile.bilevelMaxDPI ?? 0
+            XCTAssertTrue(size.detail.hasPrefix("Up to \(maxDPI) dpi (black & white \(bilevelDPI)), "), size.detail)
         }
     }
 
@@ -293,8 +293,9 @@ final class PDFImageEncodingTests: XCTestCase {
                                                               size: .best))
         XCTAssertEqual(PDFImageEncoding.readJPEGHeader(best.jpegData), JPEGHeader(width: 300, height: 200, components: 3))
 
-        // A black & white page is planned as G4, which the Mac cannot write yet: it is stored as a
-        // gray JPEG, planned as a gray page is (300 dpi at Standard, not G4's 600).
+        // A black & white page is planned as G4, which CoreGraphics cannot store: encodedPage (what
+        // the CoreGraphics path draws) gives it as a gray JPEG, planned as a gray page is (300 dpi at
+        // Standard, not G4's 600). PDFBuilder writes such pages through PDFWriter as G4 instead.
         let blackWhite = try XCTUnwrap(PDFImageEncoding.encodedPage(page, imageDPI: 600, mode: .blackWhite,
                                                                     size: .standard))
         XCTAssertEqual(blackWhite.plan, PDFImagePlan(targetDPI: 300, kind: .jpegGray, quality: 0.8))

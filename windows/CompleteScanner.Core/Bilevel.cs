@@ -1,6 +1,6 @@
 namespace CompleteScanner.Core;
 
-// The Mac's twin (Pipeline/Bilevel.swift) arrives with the port of the C# PDF writer; see
+// The Mac's twin is Sources/CompleteScannerKit/Pipeline/Bilevel.swift (the same packing); see
 // CONTRACTS.md, "CCITT G4 for black & white pages".
 
 /// <summary>

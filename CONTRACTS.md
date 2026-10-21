@@ -21,6 +21,7 @@ Already written (READ THESE FIRST, code against them exactly):
 - `Sources/CompleteScannerKit/Core/ScanTask.swift`, `TaskCatalog.swift`, `TaskFlow.swift`, `SettingsAdapter.swift` — the start screen's tasks, their guided steps, and fitting settings to a scanner (see below).
 - `Sources/CompleteScannerKit/Core/StatusLine.swift`, `Core/InspectorSections.swift` — the short texts both apps show: the status line's six words, and the settings column's sections with the summaries of their collapsed headers (see below).
 - `Sources/CompleteScannerKit/Output/PDFImageEncoding.swift`, `Pipeline/ColorAnalysis.swift` — the PDF sizes: how each page image is stored in a PDF (see below).
+- `Sources/CompleteScannerKit/Output/PDFObjectWriter.swift`, `PDFWriter.swift`, `GlyphlessFont.swift`, `CCITTG4Encoder.swift`, `BilevelTIFF.swift`, `Pipeline/Bilevel.swift` — the port of the C# PDF writer (I4): the object writer, the plain PDF with its Unicode text layer, and black & white pages as CCITT G4 in PDFs and TIFFs, byte for byte as Windows writes them (see "PDF/A-2b and the Unicode text layer" and "CCITT G4 for black & white pages" below).
 - `Sources/CompleteScannerKit/Core/SaveActions.swift`, `App/FileActions.swift` — what can be done with saved files (open, open with, show in Finder, share, email, copy) and the after-save action (see below).
 - `Sources/CompleteScannerKit/Core/DocumentSides.swift`, `Core/PaperSize.swift` — two-sided scanning (which page is which side of which sheet, turning a stack over by hand) and paper sizes (see below).
 - `Sources/CompleteScannerKit/Pipeline/PageProcessor.swift`, `BlankPageDetector.swift`, `RgbaImage.swift`, `GrayImage.swift`, `BackgroundMap.swift`, `MaskOps.swift` — the page clean-up stage every scanned page goes through, blank-page detection, and the image toolkit the page analyses share (see below).
@@ -43,7 +44,7 @@ Already written (READ THESE FIRST, code against them exactly):
 ## Global rules
 
 1. Write ONLY the files assigned to you. Never edit shared files.
-2. Platform parity and CI. The Windows app under `windows/` is a sibling of this package. Every change to shared core logic (models, settings, naming, pipeline, output, persistence) lands on both platforms in the same change, with mirrored tests: `Tests/CompleteScannerTests` here and `windows/CompleteScanner.Core.Tests` there, same cases. Both suites must be green in CI (`.github/workflows/ci.yml`: `swift build` + `swift test` on macOS, the shared Swift suite on the iOS Simulator and the iPhone app's UI smoke test (the `ios` job, after the macOS job), `dotnet test windows/CompleteScanner.sln` on Windows) before a change counts as done. The one exception is the protocol logic of connections only Windows has — WIA, eSCL and TWAIN (`windows/CompleteScanner.Core/WiaErrors.cs`, `Escl/`, `Twain/`), and the Windows service and network values the troubleshooter reads (`WindowsSystemStatus.cs`): macOS reaches the same scanners through ImageCaptureCore, so that logic and its tests have no Swift twin (see `windows/README.md`). What those connections report to the app (`ScannerInfo`, `ScannerCapabilities`, `ScannerProblem`, `ScanStop`) stays shared. The 32-bit TWAIN helper (M22e) belongs to that TWAIN exception and changes nothing on the Mac except the shared troubleshooter's "twain32" check, which says why the helper does not reach a 32-bit-only driver when the Windows app fills in `DiscoverySnapshot.thirtyTwoBitHelperProblem` (same text and tests, `TroubleshooterTests`, on both platforms): the x86 helper program (`windows/CompleteScanner.TwainHelper`), its protocol in Core (`Twain/TwainHelperProtocol.cs`, `TwainHelperServer.cs`, `TwainHelperClient.cs`), the app's side (`Scanning/Twain/Twain32ScannerBackend.cs`, `TwainHelperProcess.cs`) and their tests (`TwainHelperProtocolTests`, `TwainHelperSessionTests`, `TwainHelperTests` in `CompleteScanner.App.Tests`) have no Swift twin; its sources reach the app as shared `ScannerInfo` entries (backend `twain32`, which `DeviceMerge` ranks after every other connection), and its errors as the shared `ScannerProblem` and `ScanStop`. The Windows Scan connection (M22f: the WinRT `ImageScanner` API, `Windows.Devices.Scanners`, a backup connection to WIA scanners chosen in the Windows connection chooser, never a replacement for WIA Automation) belongs to the WIA exception and changes nothing on the Mac: its capability mapping, scan request, error mapping and diagnostics in Core (`WindowsScan.cs`, plus `ResolutionList.FromBounds` in `Scanning.cs`, which is C# only like the rest of `ResolutionList`), the app's adapter (`Scanning/WinRtScannerBackend.cs`), the app waiting for WIA Automation to look again before it chooses a scanner only Windows Scan lists (`Scanning/IPolledScannerBackend.cs`, `AppViewModel`), and their tests (`WindowsScanTests`, the `FromBounds` cases of `ResolutionListTests`, `WinRtScannerTests` and `WiaEnumerationTests` in `CompleteScanner.App.Tests`) have no Swift twin; its devices reach the app as shared `ScannerInfo` entries (backend `winrt`, transport "Windows Scan (backup)", which `DeviceMerge.connectionLabel` shows as it does every transport it has no name for), `DeviceMerge` ranks them after every connection `windowsRanking` lists (it lists no `winrt`, so `windowsRanking` and `DeviceMergeTests` are unchanged on both platforms), and its errors reach the app as the shared `ScannerProblem` and `ScanStop`. It stores no setting: the user's choice of it is the existing `PreferredConnection` entry. One exception is temporary: M19's and M20's PDF writer pieces (`PdfObjectWriter.cs`, `GlyphlessFont.cs`, `PdfA.cs`, `PdfEncryption.cs`), the Archive document task, the password dialog and their tests exist only on Windows until the Mac's port of the C# PDF writer, which waits for macOS CI to compile the existing Swift (see "PDF/A-2b and the Unicode text layer" and "Password-protected PDFs" below); the settings fields they read are shared now. M22a's CCITT G4 pieces (`CcittG4Encoder.cs`, `Bilevel.cs`, `BilevelTiff.cs`, `PdfCcittImage` in `PdfBuilder.cs`) and their tests join them until the same port (see "CCITT G4 for black & white pages" below); the plan that chooses G4 (`PdfImageEncoding`) is shared now. Adding pages to an existing PDF (M21) is a divergence that stays: Windows writes an incremental update with its own reader (`PdfSyntax.cs`, `PdfReaderLite.cs`, `PdfAppender.cs` and their tests have no Swift twin), the Mac will rewrite the file with PDFKit, which is pending work, not built yet (see "Adding pages to an existing PDF" below); it stores no setting. The phone companion's desktop server (C1) is Windows only until the Mac's server (I21): its shared pieces (`SpkiFingerprint`, `PairingUri`, `PairingSession`, `PairedDeviceStore`, `CompanionHttp`, `CompanionProtocol`, `PageSource.phone`) have Swift twins with the same tests now, while the server's own parts in Core (`Companion/CompanionInbox.cs`, `CompanionOutbox.cs`, `CompanionRouter.cs`, `CompanionServer.cs`, `CompanionHost.cs`, `CompanionService.cs`, `CompanionRateLimiter.cs`) and the Windows-only rules it applies (`CompanionNetworks.cs`: trusted networks from Windows' network categories and the user's approvals; `CompanionFirewall.cs`; `CompanionTroubleshooter.cs`), the app's side (`Services/Companion/`, `AppViewModel.Companion.cs`, `PhoneWindow`, `MainWindow.Phone.cs`) and their tests (`CompanionRouterTests`, `CompanionNetworkTests`, `CompanionLoopbackTests`, `CompanionAppTests` in `CompleteScanner.App.Tests`) have no Swift twin yet (see "The phone companion" below). Reading barcodes and drawing QR codes are platform services behind shared protocols (M22d): Vision and Core Image on the Mac (`Output/BarcodeServices.swift`), ZXing.Net in the Windows app only (`windows/CompleteScanner.App/Services/ZXingBarcodeReader.cs`, `ZXingQrEncoder.cs`, checked by `CompleteScanner.App.Tests/BarcodeReaderTests.cs`; the Mac's twin checks are `VisionBarcodeTests.swift`, Data Matrix on Windows only since macOS draws none); everything they feed is shared Core (`Pipeline/Barcodes.swift` / `Barcodes.cs`) with the same tests on both sides (`BarcodeTests`). Both halves of the text spec are built ("less text, same clarity"). The shared texts are short on both platforms, in C# and Swift alike (task titles and one-line subtitles, a step's one-line `prompt` with its fuller `help`, the troubleshooter's one-line `detail` with its `more`, the error's title by problem, a few words of help per choice, the strip labels and badges, the photo import's texts); the short texts both apps show and their logic are in Core with Swift twins (`Core/StatusLine.swift` / `StatusLine.cs`: the status line's six words; `Core/InspectorSections.swift` / `InspectorSections.cs`: the settings column's sections, which start open and the collapsed headers' summaries; and the short reasons with the types they belong to, such as `DocumentSides.needsFeederReason`, `BookPages.notWithTwoSidedReason`, `BlankSensitivity.highWarning`, `PaperSizes.selectedAreaNote`, `SplitMode.caption` and `steps`, `BarcodeSeparators.startsDocumentCaption`, `IdCardSteps.privacyNote`), checked by `StatusLineTests` and `InspectorSectionsTests` on both sides. The Windows app keeps only its own short texts and layout logic (`windows/CompleteScanner.App/LessText.cs`: the empty stage's line and chip and a few Windows-only reasons, checked by `LessTextTests` in `CompleteScanner.App.Tests`) and the Windows-only PDF files (`PdfA.cs`, `PdfEncryption.cs`); the Mac mirrors the layout in SwiftUI (start tiles in groups, the inspector's disclosure sections with summaries, captions moved to help, the six-word status line, the banner's info popover, the troubleshooter's one-line headline and More help). The app shells' seams are Swift only (I1): Windows has one app shell, so `PlatformLifecycle` with the Mac's `AppKitLifecycle` and the iPhone's `UIKitLifecycle`, the Kit's stand-ins for a service a shell does not pass, and `AppState.ingest` have no C# twin (see "App shells" below); `AppStateSeamTests`, `AppKitLifecycleTests` and `UIKitLifecycleTests` check them. The iPhone's app shell (I2: `IOSShell`, `IOSFileActions`, the views, the Xcode project in `ios/`) is Swift only too; `IOSShellTests`, `IOSFileActionsTests` and the UI smoke test check it.
+2. Platform parity and CI. The Windows app under `windows/` is a sibling of this package. Every change to shared core logic (models, settings, naming, pipeline, output, persistence) lands on both platforms in the same change, with mirrored tests: `Tests/CompleteScannerTests` here and `windows/CompleteScanner.Core.Tests` there, same cases. Both suites must be green in CI (`.github/workflows/ci.yml`: `swift build` + `swift test` on macOS, the shared Swift suite on the iOS Simulator and the iPhone app's UI smoke test (the `ios` job, after the macOS job), `dotnet test windows/CompleteScanner.sln` on Windows) before a change counts as done. The one exception is the protocol logic of connections only Windows has — WIA, eSCL and TWAIN (`windows/CompleteScanner.Core/WiaErrors.cs`, `Escl/`, `Twain/`), and the Windows service and network values the troubleshooter reads (`WindowsSystemStatus.cs`): macOS reaches the same scanners through ImageCaptureCore, so that logic and its tests have no Swift twin (see `windows/README.md`). What those connections report to the app (`ScannerInfo`, `ScannerCapabilities`, `ScannerProblem`, `ScanStop`) stays shared. The 32-bit TWAIN helper (M22e) belongs to that TWAIN exception and changes nothing on the Mac except the shared troubleshooter's "twain32" check, which says why the helper does not reach a 32-bit-only driver when the Windows app fills in `DiscoverySnapshot.thirtyTwoBitHelperProblem` (same text and tests, `TroubleshooterTests`, on both platforms): the x86 helper program (`windows/CompleteScanner.TwainHelper`), its protocol in Core (`Twain/TwainHelperProtocol.cs`, `TwainHelperServer.cs`, `TwainHelperClient.cs`), the app's side (`Scanning/Twain/Twain32ScannerBackend.cs`, `TwainHelperProcess.cs`) and their tests (`TwainHelperProtocolTests`, `TwainHelperSessionTests`, `TwainHelperTests` in `CompleteScanner.App.Tests`) have no Swift twin; its sources reach the app as shared `ScannerInfo` entries (backend `twain32`, which `DeviceMerge` ranks after every other connection), and its errors as the shared `ScannerProblem` and `ScanStop`. The Windows Scan connection (M22f: the WinRT `ImageScanner` API, `Windows.Devices.Scanners`, a backup connection to WIA scanners chosen in the Windows connection chooser, never a replacement for WIA Automation) belongs to the WIA exception and changes nothing on the Mac: its capability mapping, scan request, error mapping and diagnostics in Core (`WindowsScan.cs`, plus `ResolutionList.FromBounds` in `Scanning.cs`, which is C# only like the rest of `ResolutionList`), the app's adapter (`Scanning/WinRtScannerBackend.cs`), the app waiting for WIA Automation to look again before it chooses a scanner only Windows Scan lists (`Scanning/IPolledScannerBackend.cs`, `AppViewModel`), and their tests (`WindowsScanTests`, the `FromBounds` cases of `ResolutionListTests`, `WinRtScannerTests` and `WiaEnumerationTests` in `CompleteScanner.App.Tests`) have no Swift twin; its devices reach the app as shared `ScannerInfo` entries (backend `winrt`, transport "Windows Scan (backup)", which `DeviceMerge.connectionLabel` shows as it does every transport it has no name for), `DeviceMerge` ranks them after every connection `windowsRanking` lists (it lists no `winrt`, so `windowsRanking` and `DeviceMergeTests` are unchanged on both platforms), and its errors reach the app as the shared `ScannerProblem` and `ScanStop`. It stores no setting: the user's choice of it is the existing `PreferredConnection` entry. One exception is temporary: M19's and M20's PDF/A and password pieces (`PdfA.cs`, `PdfEncryption.cs`, `PdfWriteOptions`, `PdfConformance`, `PdfProtection`), the Archive document task, the password dialog and their tests exist only on Windows until the second part of the Mac's port of the C# PDF writer (I5; see "PDF/A-2b and the Unicode text layer" and "Password-protected PDFs" below); the settings fields they read are shared now. The first part of that port is built (I4): `PdfObjectWriter.cs` (`Output/PDFObjectWriter.swift`, without the encryption that arrives with I5 and without the incremental-update members, which belong to the M21 divergence below), the object-level parts of `PdfBuilder.cs` (`PdfImageData`, `PdfJpegImage`, `PdfCcittImage`, `PdfPageInput`, `Make`, `Write`, `WritePage`, `ImageEntries`, `WriteTextFont`, `TextLayerLine`, `F`: `Output/PDFWriter.swift`), `GlyphlessFont.cs` with its own Deflate encoder (`Output/GlyphlessFont.swift`) and M22a's CCITT G4 pieces (`CcittG4Encoder.cs`, `Bilevel.cs`, `BilevelTiff.cs`: `Output/CCITTG4Encoder.swift`, `Pipeline/Bilevel.swift`, `Output/BilevelTIFF.swift`) have Swift twins that write the same bytes, checked by mirrored tests and the C#-pinned golden files (`PDFWriterTests`, `GlyphlessFontTests`, `CCITTG4EncoderTests`, `BilevelOutputTests` on both sides). `PdfBuilder`'s file helpers (`WriteFile`, `WriteNewFile`) stay C# only (the Mac moves its temporary file into place in `AppState.writePDFAtomically`), and the Mac's ordinary PDFs keep CoreGraphics' PDF context until I5 decides (see "CCITT G4 for black & white pages" below for the documents that use the port now); the plan that chooses G4 (`PdfImageEncoding`) is shared. Adding pages to an existing PDF (M21) is a divergence that stays: Windows writes an incremental update with its own reader (`PdfSyntax.cs`, `PdfReaderLite.cs`, `PdfAppender.cs` and their tests have no Swift twin), the Mac will rewrite the file with PDFKit, which is pending work, not built yet (see "Adding pages to an existing PDF" below); it stores no setting. The phone companion's desktop server (C1) is Windows only until the Mac's server (I21): its shared pieces (`SpkiFingerprint`, `PairingUri`, `PairingSession`, `PairedDeviceStore`, `CompanionHttp`, `CompanionProtocol`, `PageSource.phone`) have Swift twins with the same tests now, while the server's own parts in Core (`Companion/CompanionInbox.cs`, `CompanionOutbox.cs`, `CompanionRouter.cs`, `CompanionServer.cs`, `CompanionHost.cs`, `CompanionService.cs`, `CompanionRateLimiter.cs`) and the Windows-only rules it applies (`CompanionNetworks.cs`: trusted networks from Windows' network categories and the user's approvals; `CompanionFirewall.cs`; `CompanionTroubleshooter.cs`), the app's side (`Services/Companion/`, `AppViewModel.Companion.cs`, `PhoneWindow`, `MainWindow.Phone.cs`) and their tests (`CompanionRouterTests`, `CompanionNetworkTests`, `CompanionLoopbackTests`, `CompanionAppTests` in `CompleteScanner.App.Tests`) have no Swift twin yet (see "The phone companion" below). Reading barcodes and drawing QR codes are platform services behind shared protocols (M22d): Vision and Core Image on the Mac (`Output/BarcodeServices.swift`), ZXing.Net in the Windows app only (`windows/CompleteScanner.App/Services/ZXingBarcodeReader.cs`, `ZXingQrEncoder.cs`, checked by `CompleteScanner.App.Tests/BarcodeReaderTests.cs`; the Mac's twin checks are `VisionBarcodeTests.swift`, Data Matrix on Windows only since macOS draws none); everything they feed is shared Core (`Pipeline/Barcodes.swift` / `Barcodes.cs`) with the same tests on both sides (`BarcodeTests`). Both halves of the text spec are built ("less text, same clarity"). The shared texts are short on both platforms, in C# and Swift alike (task titles and one-line subtitles, a step's one-line `prompt` with its fuller `help`, the troubleshooter's one-line `detail` with its `more`, the error's title by problem, a few words of help per choice, the strip labels and badges, the photo import's texts); the short texts both apps show and their logic are in Core with Swift twins (`Core/StatusLine.swift` / `StatusLine.cs`: the status line's six words; `Core/InspectorSections.swift` / `InspectorSections.cs`: the settings column's sections, which start open and the collapsed headers' summaries; and the short reasons with the types they belong to, such as `DocumentSides.needsFeederReason`, `BookPages.notWithTwoSidedReason`, `BlankSensitivity.highWarning`, `PaperSizes.selectedAreaNote`, `SplitMode.caption` and `steps`, `BarcodeSeparators.startsDocumentCaption`, `IdCardSteps.privacyNote`), checked by `StatusLineTests` and `InspectorSectionsTests` on both sides. The Windows app keeps only its own short texts and layout logic (`windows/CompleteScanner.App/LessText.cs`: the empty stage's line and chip and a few Windows-only reasons, checked by `LessTextTests` in `CompleteScanner.App.Tests`) and the Windows-only PDF files (`PdfA.cs`, `PdfEncryption.cs`); the Mac mirrors the layout in SwiftUI (start tiles in groups, the inspector's disclosure sections with summaries, captions moved to help, the six-word status line, the banner's info popover, the troubleshooter's one-line headline and More help). The app shells' seams are Swift only (I1): Windows has one app shell, so `PlatformLifecycle` with the Mac's `AppKitLifecycle` and the iPhone's `UIKitLifecycle`, the Kit's stand-ins for a service a shell does not pass, and `AppState.ingest` have no C# twin (see "App shells" below); `AppStateSeamTests`, `AppKitLifecycleTests` and `UIKitLifecycleTests` check them. The iPhone's app shell (I2: `IOSShell`, `IOSFileActions`, the views, the Xcode project in `ios/`) is Swift only too; `IOSShellTests`, `IOSFileActionsTests` and the UI smoke test check it.
 3. Any helper function, extension, or type not listed in this document must be `private` or `fileprivate` in your file to avoid cross-file collisions.
 4. Coordinate conventions:
    - Image/region coordinates: pixels, origin TOP-LEFT, x right, y down (see DetectedPhotoRegion doc comment; positive angle = clockwise on screen).
@@ -322,7 +323,7 @@ public struct TaskFlow: Equatable, Sendable {      // a pure state machine; unkn
     public mutating func reset()
 }
 ```
-Twins of `windows/CompleteScanner.Core/ScanTask.cs`, `TaskCatalog.cs` and `TaskFlow.cs` (C# names in PascalCase; `TaskCatalog.FlowOf` for `flow(of:)`, `ScanTasks.TryParse` / `RawValue`); `ScanTaskTests` and `TaskFlowTests` are the same cases on both sides, except for Windows' `ScanTask.Archive` (M19), which has no Swift case until the Mac's PDF writer port: the C# lists end with it, and `Archive_IsABestSizeSearchablePdfA_AndEndsWithAPlainPdf` and `Apply_OnlyTheArchiveTaskMakesArchivalPdfs` stand against Swift's `test_apply_turnsArchivalOff`. A settings file with `"taskId": "archive"` reads on the Mac as no task and is written back unchanged. Task cards exist only for features that are built; later features add a `ScanTask` case, a catalog entry and their steps. `AppState` (`App/AppState+Tasks.swift`) keeps the task in `settings.taskId`, so it is saved and restored with the settings: `startTask(_:)`, `exitTask()`, `skipStep()` (the current step when it is skippable), `taskCards`, `activeTask`, `taskFlow`, `primaryActionLabel`, `isFirstRun`. Its `settings` didSet ends a task the settings no longer fit. The banner offers Skip for a skippable step (the ID card's back: `IdCardSteps.skipBackLabel`, "No back side"). Titles changed from the first versions (Multi-page from feeder, Old photo restoration, Copy, Batch of separate documents are now Stack from feeder, Restore old photos, Photocopy, Separate documents); settings files and presets store the raw value (`taskId`), never the title, so they read as before (`ModelsCompatTests` checks the four on both sides), and preset names saved with the old titles are left as they are.
+Twins of `windows/CompleteScanner.Core/ScanTask.cs`, `TaskCatalog.cs` and `TaskFlow.cs` (C# names in PascalCase; `TaskCatalog.FlowOf` for `flow(of:)`, `ScanTasks.TryParse` / `RawValue`); `ScanTaskTests` and `TaskFlowTests` are the same cases on both sides, except for Windows' `ScanTask.Archive` (M19), which has no Swift case until the second part of the Mac's PDF writer port (I5): the C# lists end with it, and `Archive_IsABestSizeSearchablePdfA_AndEndsWithAPlainPdf` and `Apply_OnlyTheArchiveTaskMakesArchivalPdfs` stand against Swift's `test_apply_turnsArchivalOff`. A settings file with `"taskId": "archive"` reads on the Mac as no task and is written back unchanged. Task cards exist only for features that are built; later features add a `ScanTask` case, a catalog entry and their steps. `AppState` (`App/AppState+Tasks.swift`) keeps the task in `settings.taskId`, so it is saved and restored with the settings: `startTask(_:)`, `exitTask()`, `skipStep()` (the current step when it is skippable), `taskCards`, `activeTask`, `taskFlow`, `primaryActionLabel`, `isFirstRun`. Its `settings` didSet ends a task the settings no longer fit. The banner offers Skip for a skippable step (the ID card's back: `IdCardSteps.skipBackLabel`, "No back side"). Titles changed from the first versions (Multi-page from feeder, Old photo restoration, Copy, Batch of separate documents are now Stack from feeder, Restore old photos, Photocopy, Separate documents); settings files and presets store the raw value (`taskId`), never the title, so they read as before (`ModelsCompatTests` checks the four on both sides), and preset names saved with the old titles are left as they are.
 
 ### Core/StatusLine.swift, Core/InspectorSections.swift (the short texts both apps show)
 
@@ -1419,12 +1420,29 @@ public enum PDFBuilder {
 ```
 The `searchable:` overloads are kept for existing callers (OCR on every page when searchable). The app saves through the `textLayer:` overload so OCR reads each page once per save, for the text layer and for the text file beside the PDF (`output.alsoSaveText`). Windows has no twin of these overloads: its view model reads the pages with OCR and hands `PdfBuilder` the lines in `PdfPageInput`.
 
-### PDF/A-2b and the Unicode text layer (M19: Windows now, the Mac with its PDF writer port)
+Every overload sends a document with a black & white page (`writesG4`) through the port of the C# writer, `PDFWriter` (see "CCITT G4 for black & white pages"); every other document is drawn by CoreGraphics as before:
+```swift
+extension PDFBuilder {   // internal, for the tests
+    static func writesG4(_ pages: [ScannedPage]) -> Bool          // any page scanned in black & white
+    /// Twin of the Windows view model's PdfPageInputs: prepared page, its text layer, the stored image.
+    static func pageInputs(_ pages: [ScannedPage], pdfSize: PDFSizePreset, progress: ((String) -> Void)?,
+                           shouldContinue: (() -> Bool)?, textLayer: PDFTextLayer?) throws -> [PDFPageInput]
+    /// Black & white: downsampled to the plan (box filter), Bilevel.pack, G4. Others: encodedPage's JPEG,
+    /// else a JPEG of the pixels at the size's color quality. Nil when the pixels cannot be read or encoded.
+    static func storedImage(_ prepared: PreparedPage, colorMode: ColorMode, dpi: Int,
+                            pdfSize: PDFSizePreset) -> PDFImageData?
+}
+```
 
-The Mac side of M19 arrives with the Swift port of the C# PDF writer (`Output/PDFWriter.swift`),
-which waits until macOS CI has compiled the existing Swift. Until then only the settings field
-below exists here, decoded and written like every other field, so settings files stay the same on
-both platforms; the Mac's `PDFBuilder` keeps drawing its text layer with CoreText and ignores it.
+### PDF/A-2b and the Unicode text layer (M19: Windows; the Mac's port in two parts, I4 built, I5 to come)
+
+The first part of the Swift port of the C# PDF writer is built (I4): the object writer, the plain
+PDF and its Unicode text layer in the embedded `GlyphLessFont`, byte for byte as Windows writes them
+(below). The Mac's `PDFBuilder` uses it for documents with a black & white page (see "CCITT G4 for
+black & white pages") and keeps drawing every other document, with a CoreText text layer, through
+CoreGraphics until I5 decides. PDF/A (`PdfA`, `PdfWriteOptions`) arrives with the second part (I5);
+until then only the settings field below exists here, decoded and written like every other field,
+so settings files stay the same on both platforms, and the Mac ignores it.
 
 ```swift
 // OutputOptions gains `archival: Bool` ("archival" in the "output" object; false by default and for
@@ -1470,21 +1488,66 @@ public static class PdfA {
 }
 // PdfBuilder.Make / Write / WriteFile / WriteNewFile gain a last optional `PdfWriteOptions? options`.
 ```
+The Swift twins (I4; names in Swift case, `GlyphlessCodes.For` is `of`; misuse throws
+`ScanError.exportFailed` where C# throws argument or invalid-operation exceptions):
+```swift
+public final class PDFObjectWriter {                       // Output/PDFObjectWriter.swift
+    public init(output: @escaping (Data) throws -> Void)    // every byte, in order, as it is written
+    public private(set) var position: Int
+    public func writeHeader(_ version: String) throws; func beginObject(_ number: Int) throws; func endObject() throws
+    public func writeObject(_ number: Int, _ value: String) throws
+    public func writeStream(_ number: Int, _ entries: String, _ data: Data) throws   // "<<entries /Length n>>"
+    public func asciiString(_ text: String) throws -> String                         // "(text)", \ ( ) escaped
+    public func finish(_ trailerEntries: String) throws     // throws on a gap; a repeated number throws when written
+    public func writeBytes(_ bytes: Data) throws; func writeASCII(_ text: String) throws
+}
+public enum GlyphlessFont {                                 // Output/GlyphlessFont.swift
+    static let fontName = "GlyphLessFont", unitsPerEm = 1000, glyphWidth = 500, codeCount = 0x10000
+    static let program: [UInt8]       // 636 bytes, SHA-256 103B87CF…C391 (as C#)
+    static let cidToGidMap: [UInt8]   // its own Deflate (fixed Huffman), 837 bytes, SHA-256 2B554AAC…E17E (as C#)
+    static func build() -> [UInt8]; static func textWidth(codeCount: Int, fontSize: Double) -> Double
+}
+public final class GlyphlessCodes {
+    static let firstSupplementaryCode = 0xD800, supplementaryCapacity = 0x800, replacementCode = 0xFFFD
+    static func of(_ texts: [String]) -> GlyphlessCodes; var supplementary: [Int]
+    func codes(_ text: String) -> [Int]; func hexString(_ text: String) -> String; func toUnicodeCMap() -> String
+}
+public enum PDFImageData: Equatable, Sendable {             // Output/PDFWriter.swift
+    case jpeg(Data); case ccittG4(data: Data, width: Int, height: Int)
+    var data: Data; static func encodeCCITTG4(_ image: RgbaImage) -> PDFImageData   // C# PdfCcittImage.Encode
+}
+public struct PDFPageInput {                                // C# PdfPageInput
+    image: PDFImageData; pixelWidth, pixelHeight, dpi: Int; ocrLines: [OCRLine]?; var jpegData: Data
+    init(image:pixelWidth:pixelHeight:dpi:ocrLines:); init(jpegData:pixelWidth:pixelHeight:dpi:ocrLines:)
+}
+public enum PDFWriter {                                     // C# PdfBuilder's object level, plain PDF 1.4
+    static func make(_ pages: [PDFPageInput], progress: ((String) -> Void)? = nil,
+                     shouldContinue: (() -> Bool)? = nil) throws -> Data
+    static func writeFile(_ pages: [PDFPageInput], to url: URL, progress:, shouldContinue:) throws  // streamed
+    static func write(_ pages: [PDFPageInput], progress:, shouldContinue:, to output: @escaping (Data) throws -> Void) throws
+    // internal, as in C#: writePage, imageEntries, writeTextFont, textLayerLine (PlacedLine), f (C#'s "0.####")
+}
+```
+`shouldContinue` returning false before a page throws `ScanError.cancelled` (C#'s cancellation
+token); `progress` hears "Writing page n of m…". Numbers are written as C#'s `ToString("0.####",
+CultureInfo.InvariantCulture)` writes them: 15 significant digits rounded half up at the fourth
+decimal, a negative value that rounds to 0 as "-0" (checked against .NET on 200,000 values).
 - **Object numbers, fixed order:** 1 Catalog, 2 Pages; when any page has text, 3–8 the font (Type0, CIDFontType2, FontDescriptor, FontFile2, CIDToGIDMap, ToUnicode); for PDF/A, the Info dictionary, the XMP Metadata and the ICC profile; then Page, Image and Contents per page. A document without text has no font objects and no `/Font` resource.
 - **Plain PDFs** stay `%PDF-1.4` with no Info, Metadata, OutputIntents or `/ID`; only their text layer changed (below).
 - **PDF/A-2b:** `%PDF-1.7` and the binary comment line; the catalog's `/Metadata` (unfiltered XMP: `pdfaid:part 2`, `pdfaid:conformance B`, `dc:format`, `dc:title` x-default, `xmp:CreateDate` = `ModifyDate` = `MetadataDate`, `xmp:CreatorTool`, `pdf:Producer`) and `/OutputIntents` (`/GTS_PDFA1`, the sRGB profile with `/N 3`); an Info dictionary that says exactly the same (`/Title`, `/Producer`, `/Creator`, `/CreationDate`, `/ModDate`, whole seconds with the local offset); `/ID [<id> <id>]` in the trailer; no encryption, no `/Interpolate`, no LZW. The title is the file name without its extension: when `WriteNewFile` is given that title and another writer takes the name while the PDF is being built, the file goes to the next free " 2", " 3", … name and is rewritten in place titled with that name (a failed rewrite leaves the complete file with the requested title); any other title is kept as given. The JPEG pages (`/DeviceRGB`, `/DeviceGray`) are covered by the output intent.
 - **The text layer (every PDF):** the embedded `GlyphLessFont` replaces Helvetica/WinAnsi, so no character turns into "?" any more. Type0 with `/Encoding /Identity-H` over a CIDFontType2 with `/DW 500` and a `/CIDToGIDMap` that sends every code to glyph 1 (never .notdef); FontDescriptor `/Flags 5 /FontBBox [0 0 500 1000] /Ascent 1000 /Descent 0 /CapHeight 1000 /StemV 80`. A BMP character is its UTF-16 code unit; each character beyond the BMP gets a code from D800 in order of first use (2048 at most, the rest and lone surrogates U+FFFD), and the ToUnicode map gives it back as its pair (`bfchar`), next to 248 identity ranges `<XX00> <XXFF> <XX00>` that skip D8–DF, in blocks of at most 100. Each line: `/F1 <box height> Tf`, `Tz` = box width ÷ (codes × 0.5 × size) × 100 clamped to 20–500, `1 0 0 1 <box left> <box bottom> Tm`, the codes as a hex string, `Tj`, all in `3 Tr`. The font size is the box's height and the baseline its bottom edge, so a selection covers the box.
-- **Golden bytes** (`PdfATests`): a dated, identified one-page Letter PDF/A with a Turkish line is 11496 bytes, SHA-256 `6A264EF6…AA33`; the same line as a plain two-page PDF is 9865 bytes, SHA-256 `BC4C14E0…A779` (full values in the tests). The Swift port must produce the same bytes.
+- **Golden bytes** (`PdfATests`): a dated, identified one-page Letter PDF/A with a Turkish line is 11496 bytes, SHA-256 `6A264EF6…AA33`; the same line as a plain two-page PDF is 9865 bytes, SHA-256 `BC4C14E0…A779` (full values in the tests). The Swift port writes the plain file byte for byte (`PDFWriterTests.test_standard_goldenBytes`, the same TinyJpeg bytes); the PDF/A file waits for I5.
 - **Not with a password:** PDF/A forbids encryption. The password option (M20, below) and the archival option exclude each other: while one is on the other is off and greyed out, with `PdfA.CannotProtectNote` as its tooltip and in a note under both; a settings file with both on gets the password (`PdfWriteOptions.For`); `PdfBuilder` refuses options asking for both (`ArgumentException`).
 - **Windows UI:** "Archival PDF (PDF/A)" under the PDF size in Output (shown for PDF output, hint `PdfA.OptionHint`); the **Archive document** task (`ScanTask.Archive`, raw value "archive", icon "archive", after `Book`): flatbed or feeder, 300 dpi color PDF at the Best size, searchable, archival, "Scan {date} {counter}", file label "Document". It fits while the format is PDF and archival is on; every other task turns archival off. Every PDF the app saves (queue, split documents, receipts, the ID card's page, a copy's PDF) follows the setting; the separator sheet does not.
-- **Checks:** `PdfATests` and `GlyphlessFontTests` (structure, XMP dates equal Info dates, the text layer read back in Turkish, Greek, Cyrillic, Arabic, Hebrew, Japanese, Chinese with an Extension B ideograph, Devanagari and emoji through PdfPig, a test-only package; the font's checksums and tables; the map inflated with `ZLibStream`). veraPDF and qpdf are developer checks to run where they are installed; neither ships.
+- **Checks:** `PdfATests` and `GlyphlessFontTests` (structure, XMP dates equal Info dates, the text layer read back in Turkish, Greek, Cyrillic, Arabic, Hebrew, Japanese, Chinese with an Extension B ideograph, Devanagari and emoji through PdfPig, a test-only package; the font's checksums and tables; the map inflated with `ZLibStream`). veraPDF and qpdf are developer checks to run where they are installed; neither ships. The Swift side: `GlyphlessFontTests` (the same cases; the map inflated with the Compression framework) and `PDFWriterTests` (the object writer, the plain file's structure and text layer, the JPEG headers with C#'s `SyntheticJpeg` generator, cancellation, the numbers, PDFKit opening the file and reading the Turkish line back, the golden files).
 
-### Password-protected PDFs (M20: Windows now, the Mac with its PDF writer port)
+### Password-protected PDFs (M20: Windows now, the Mac with the second part of its PDF writer port)
 
-Like M19, the Mac side arrives with the Swift port of the C# PDF writer (`Output/PDFWriter.swift`),
-after macOS CI has compiled the existing Swift. Until then only the settings field below exists
-here, decoded and written like every other field, so settings files stay the same on both
-platforms; the Mac writes no protected PDFs and shows no switch.
+Like PDF/A, the Mac side arrives with the second part of the Swift port of the C# PDF writer (I5:
+`PdfEncryption` and the encryption members of `PdfObjectWriter` on top of `Output/PDFWriter.swift`
+and `Output/PDFObjectWriter.swift`). Until then only the settings field below exists here, decoded
+and written like every other field, so settings files stay the same on both platforms; the Mac
+writes no protected PDFs and shows no switch.
 
 ```swift
 // OutputOptions gains `protect: Bool` ("protect" in the "output" object; false by default and for
@@ -1583,17 +1646,16 @@ public static class PdfAppender {
 - **Checks:** `PdfReaderLiteTests` and `PdfAppenderTests` (hand-made fixtures for each layout and refusal, our own plain, PDF/A and protected files; every result read back with PdfPig's lenient parsing off), and veraPDF in CI on a PDF/A file with pages added twice.
 - **Pending (not built yet):** the Mac's `PDFAppender.swift` (PDFKit over the existing `PDFBuilder.swift`; it does not wait for the writer's port), the start-screen task "Add pages to a PDF", the picker's first-page thumbnail of the chosen file, and the "Save as new PDF / Add to existing PDF…" split button (Windows has an icon button next to Save for now).
 
-### CCITT G4 for black & white pages (M22a: Windows now, the Mac with its PDF writer port)
+### CCITT G4 for black & white pages (M22a: Windows; the Mac since I4)
 
 Black & white pages (the Black & White color mode, after its threshold) are stored as lossless
 1-bit CCITT Group 4 images: in every PDF Windows writes (plain, PDF/A, protected, pages added to
-an existing PDF) and in TIFF files. The plan that chooses G4 is shared now (`PdfImageEncoding`
-above: `bilevelG4`, `bilevelMaxDPI`); the encoder, the TIFF writer and the PDF image type are
-Windows only until the Mac's port of the C# PDF writer, which must mirror them name for name and
-give the same bytes (`Output/CCITTG4Encoder.swift`, `Pipeline/Bilevel.swift`,
-`Output/BilevelTIFF.swift`, and `PDFImageData.ccittG4` in `Output/PDFWriter.swift`). Until then
-the Mac stores black & white pages as gray JPEGs (`encodedPage`) and writes its black & white
-TIFFs as LZW. No setting is stored: the color mode and the PDF size decide.
+an existing PDF), in every PDF the Mac writes (plain; PDF/A and protected files come with I5) and
+in TIFF files on both. The plan that chooses G4 is shared (`PdfImageEncoding` above: `bilevelG4`,
+`bilevelMaxDPI`); the encoder, the TIFF writer and the PDF image type have Swift twins with the
+same names and the same bytes (`Output/CCITTG4Encoder.swift`, `Pipeline/Bilevel.swift`,
+`Output/BilevelTIFF.swift`, and `PDFImageData.ccittG4` in `Output/PDFWriter.swift`). No setting
+is stored: the color mode and the PDF size decide.
 ```csharp
 public static class Bilevel {                  // 1 bit per pixel, rows from the top, each on a byte boundary
     const int Threshold = 128;                 // luma below it is black (Rec. 601, ×1000 integer weights, +500, /1000)
@@ -1620,6 +1682,25 @@ public static class BilevelTiff {
 }
 // WpfImageCodec.SaveAsNew gains `ColorMode colorMode = ColorMode.Color`: a black & white TIFF is BilevelTiff.Make.
 ```
+```swift
+public enum Bilevel {                          // Pipeline/Bilevel.swift
+    static let threshold = 128; static func stride(_ width: Int) -> Int
+    static func pack(_ image: RgbaImage) -> [UInt8]; static func pack(rgba: [UInt8], width: Int, height: Int) -> [UInt8]
+    static func isBlack(_ packed: [UInt8], width: Int, x: Int, y: Int) -> Bool
+    static func unpack(_ packed: [UInt8], width: Int, height: Int) -> RgbaImage
+}
+public enum CCITTG4Encoder {                   // Output/CCITTG4Encoder.swift
+    static func encode(_ packed: [UInt8], width: Int, height: Int) throws -> [UInt8]  // ScanError.exportFailed on bad sizes
+    static func encode(_ image: RgbaImage) -> [UInt8]
+}
+public struct BilevelTIFFPage { image: RgbaImage; dpi: Int }
+public enum BilevelTIFF {                      // Output/BilevelTIFF.swift
+    static func applies(_ format: OutputFormat, _ mode: ColorMode) -> Bool
+    static func make(_ image: RgbaImage, dpi: Int) -> Data; static func make(_ pages: [BilevelTIFFPage]) -> Data  // pages not empty
+}
+// ImageExporter.write gains `colorMode: ColorMode = .color`: a black & white TIFF is BilevelTIFF.make.
+// PDFImageData.ccittG4(data:width:height:) and PDFImageData.encodeCCITTG4(_:) are C#'s PdfCcittImage.
+```
 - **The coding:** the reference row above the first is white. Each row's changing elements are
   the pixels whose color differs from the pixel before them (white before the first). a0 starts
   at −1 and white; a1 is the first changing element of the coding row right of a0, a2 the next;
@@ -1640,11 +1721,16 @@ public static class BilevelTiff {
   rows is `00 10 01`; a black 1-pixel image is `010` `1` + EOFB; the all-black page, the 8 × 13
   page that uses pass, horizontal (starting white and black) and all seven vertical codes, and
   the runs 5200/2800 and 2624/2623 are spelled out bit by bit there.
-- **Golden bytes** (the port must give the same): the 37 × 23 checkerboard (black where x + y is
+- **Golden bytes** (both platforms check them): the 37 × 23 checkerboard (black where x + y is
   even) is 335 bytes, SHA-256 `E8A04616…43EC`; 517 × 211 noise (black where `TestPages.Rng(0xC0FFEE01).Below(2) == 0`,
   row by row) is 28704 bytes, `4255D22C…15C0`; `TestPages.TextPage()` is 17666 bytes,
   `DD8EC297…4DFE`; its black & white page as a one-page 300 dpi TIFF is 17852 bytes,
-  `EF4F98A0…A38D` (full values in the tests).
+  `EF4F98A0…A38D` (the gray page thresholded at 128 gives the same file, which the C# test also
+  checks, so the Swift twin builds it from `TestPages.textPage()` without C#'s image pipeline); a
+  plain PDF of the checkerboard as a G4 page at 100 dpi with the line "Siyah beyaz — Çağrı"
+  (0.1, 0.5, 0.8 × 0.2), then a TinyJpeg page of 850 × 1100 at 100 dpi, is 9891 bytes,
+  `702D8A5F…EFB14` (`BilevelOutputTests.Pdf_G4AndJpegPages_GoldenBytes`, Swift
+  `PDFWriterTests.test_g4AndJpegPages_goldenBytes`; full values in the tests).
 - **In a PDF:** the page's image XObject is `/Type /XObject /Subtype /Image /Width w /Height h
   /ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /CCITTFaxDecode /DecodeParms <</K -1
   /Columns w /Rows h /BlackIs1 false>>` and the G4 data (encrypted like every stream in a
@@ -1660,6 +1746,16 @@ public static class BilevelTiff {
   (possibly downsampled) pixels; a black & white page saved as TIFF (each scan saved at once, the
   photos of the photo review, the ID card's page and its sides) is `BilevelTiff.Make`; receipts,
   always enhanced gray, stay LZW; the Saved tab's rotate keeps a 1-bit TIFF G4 (WIC's encoder).
+- **The Mac:** `PDFBuilder` writes a document with a black & white page through `PDFWriter`
+  (`PDFBuilder.writesG4`, `pageInputs`, `storedImage`): its black & white pages are the planned G4
+  images of the (possibly downsampled, box filter) pixels, its other pages `encodedPage`'s JPEGs,
+  its text layer the `GlyphLessFont` one; CoreGraphics' PDF context cannot embed G4 data, so only
+  those documents leave it (every other document stays on CoreGraphics until I5). The same saves
+  as on Windows write `BilevelTIFF` through `ImageExporter.write(..., colorMode:)` (each scan saved
+  at once, the photos of the photo review, the ID card's page and its sides; receipts and the
+  spool files stay LZW), and the Saved tab's rotate keeps a 1-bit TIFF (`kCGImagePropertyDepth`
+  1) G4. `encodedPage` still gives a page planned as G4 as a gray JPEG for a caller that cannot
+  store G4.
 - **The mode a page was scanned in decides**, never the color mode set when it is saved, since
   only pixels the black & white mode thresholded (at the user's level) may become G4:
   `DetectedPhoto.colorMode` (C# `ColorMode`, init/constructor default color, kept by C#
@@ -1671,8 +1767,13 @@ public static class BilevelTiff {
   it is given, every run length of both colors included; App: WIC decodes the TIFFs, WIC's own G4
   encoder gives the same bytes strip by strip, Windows.Data.Pdf renders the pages pixel for pixel
   when read at three times their size); `PdfATests.Archival_ValidationSamples` adds a black &
-  white PDF/A sample for veraPDF in CI. The Mac's port is to decode its output with ImageIO (a
-  minimal TIFF around the strip through `CGImageSource`) as its round trip.
+  white PDF/A sample for veraPDF in CI. The Swift twins (`CCITTG4EncoderTests`,
+  `BilevelOutputTests`) have the same known answers and golden bytes; their round trips decode
+  with ImageIO (the G4 TIFF through `CGImageSource`: the run lengths up to 130 and every 61st up
+  to 2700 with each code boundary, odd widths, 20000-pixel rows), CoreGraphics renders the G4 PDF
+  pages (at one pixel per point, at most 1 % of the pixels may differ), and the Mac's own paths
+  (`PDFBuilder` with black & white pages, their size limits, text layer, file and cancellation;
+  `ImageExporter`'s G4 and LZW TIFFs) are checked there too.
 
 ### Output/OCRText.swift, TextExport.swift, DocxWriter.swift, ZipStore.swift (+ OutputFormat, OutputOptions in Core/Models.swift)
 
@@ -1816,15 +1917,16 @@ public enum PDFImageEncoding {
     public static func targetSize(width: Int, height: Int, imageDPI: Int, targetDPI: Int) -> (width: Int, height: Int)
     public static func downsample(rgba: [UInt8], width: Int, height: Int, newWidth: Int, newHeight: Int) -> [UInt8]  // box filter
     // Mac only: ImageIO JPEG, read back as a JPEG-backed CGImage for the PDF context. A page
-    // planned as G4 is stored as a gray JPEG planned as a gray page (plan(mode: .grayscale, ...,
-    // looksGray: true)), which is also the plan it returns, until the port of the C# PDF writer.
+    // planned as G4 is given as a gray JPEG planned as a gray page (plan(mode: .grayscale, ...,
+    // looksGray: true)), which is also the plan it returns; PDFBuilder never asks for one (a
+    // document with a black & white page goes through PDFWriter, with the page as G4).
     public static func encodedPage(_ image: CGImage, imageDPI: Int, mode: ColorMode,
                                    size: PDFSizePreset) -> PDFPageImage?   // plan, jpegData, image
     public static func encodeJPEG(_ image: CGImage, quality: Double) -> Data?
     public static func readJPEGHeader(_ data: Data) -> JPEGHeader?
 }
 ```
-Twins of `windows/CompleteScanner.Core/PdfImageEncoding.cs` (`PdfSizePreset`, `PdfSizePresets.DisplayOrder`, `ModelLabels.Label` / `Hint`, `PdfSizeProfile`, `PdfImagePlan`, `PdfImageEncoding.Plan` / `EffectiveDpi` / `TargetSize` / `Downsample`) and `ColorAnalysis.cs` (`IsEffectivelyGray`, `GrayPixels`); `PdfImageEncodingTests` and `ColorAnalysisTests` are the same cases on both sides. `readJPEGHeader` is the twin of `PdfBuilder.TryReadJpegHeader`, which declares a one-component JPEG `/DeviceGray`. Windows encodes the planned JPEG with WIC (`WpfImageCodec.EncodeJpeg(image, dpi, quality, gray)`) and a planned G4 page with `PdfCcittImage.Encode`; the Mac stores black & white pages as gray JPEGs until its port of the C# PDF writer (see "CCITT G4 for black & white pages"). Until that port the size hints differ: Windows names the black & white (G4) limit too ("Up to 300 dpi (black & white 600), gray pages saved in gray. For most documents.", "Up to 200 dpi (black & white 300), …", "Up to 150 dpi (black & white 300), …"), the Mac its gray limit only ("Up to 300 dpi, gray pages saved in gray. …"), and the hint case of `PdfImageEncodingTests` checks each platform's own text; the port gives the Mac the Windows text.
+Twins of `windows/CompleteScanner.Core/PdfImageEncoding.cs` (`PdfSizePreset`, `PdfSizePresets.DisplayOrder`, `ModelLabels.Label` / `Hint`, `PdfSizeProfile`, `PdfImagePlan`, `PdfImageEncoding.Plan` / `EffectiveDpi` / `TargetSize` / `Downsample`) and `ColorAnalysis.cs` (`IsEffectivelyGray`, `GrayPixels`); `PdfImageEncodingTests` and `ColorAnalysisTests` are the same cases on both sides. `readJPEGHeader` is the twin of `PdfBuilder.TryReadJpegHeader`, which declares a one-component JPEG `/DeviceGray`. Windows encodes the planned JPEG with WIC (`WpfImageCodec.EncodeJpeg(image, dpi, quality, gray)`) and a planned G4 page with `PdfCcittImage.Encode`; the Mac encodes the JPEG with ImageIO and a planned G4 page with `PDFImageData` / `CCITTG4Encoder` through `PDFWriter` (see "CCITT G4 for black & white pages"). The size details are the same on both platforms and name the black & white (G4) limit too ("Up to 300 dpi (black & white 600), gray pages saved in gray.", "Up to 200 dpi (black & white 300), more compression.", "Up to 150 dpi (black & white 300), most compression."); the hint case of `PdfImageEncodingTests` is the same on both sides.
 Note: `ScannedPage.fileURL` (optional) points at a full-resolution spill TIFF; when set,
 `page.image` is only a preview and PDFBuilder reloads the full pixels from the file per page.
 
@@ -1954,7 +2056,10 @@ public struct VisionOrientationScorer: OrientationScorer { public init() }
 ```swift
 public enum ImageExporter {
     /// Write jpeg/png/tiff with DPI metadata. Throws ScanError.unsupported for .pdf, .text and .word.
-    public static func write(_ image: CGImage, to url: URL, format: OutputFormat, dpi: Int, jpegQuality: Double) throws
+    /// A black & white page (`colorMode`, the mode it was scanned in) saved as TIFF is a 1-bit CCITT
+    /// G4 file (`BilevelTIFF.make`); every other TIFF is LZW (ImageIO).
+    public static func write(_ image: CGImage, to url: URL, format: OutputFormat, dpi: Int, jpegQuality: Double,
+                             colorMode: ColorMode = .color) throws
 }
 ```
 

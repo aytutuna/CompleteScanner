@@ -32,9 +32,8 @@ public class PdfImageEncodingTests
     [Fact]
     public void Hint_NamesTheSizesLimits_BlackAndWhiteToo()
     {
-        // Windows stores black & white pages as G4 up to their own limit, and the detail (the help text
-        // behind the short tooltip) says so. The Mac's detail names the gray limit only (its black & white
-        // pages are gray JPEGs until the port of the C# PDF writer), so this case differs from the Swift one.
+        // Black & white pages are stored as G4 up to their own limit, and the detail (the help text
+        // behind the short tooltip) says so. Same case as the Swift one.
         Assert.StartsWith("Full resolution", PdfSizePreset.Best.Detail());
         foreach (var size in new[] { PdfSizePreset.Standard, PdfSizePreset.Compact, PdfSizePreset.Smallest })
         {

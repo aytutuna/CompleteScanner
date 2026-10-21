@@ -7,9 +7,10 @@ import UniformTypeIdentifiers
 // the same rounding. The Mac part (`encodedPage`, `encodeJPEG`) has no C# counterpart: Windows
 // encodes with WIC in the app (black & white pages as CCITT G4) and embeds the image through its
 // own PDF writer, while the Mac hands CoreGraphics a JPEG-backed image, which its PDF context
-// stores as that JPEG. The Mac has no G4 writer until its port of the C# PDF writer, so it stores
-// pages planned as G4 as gray JPEGs, planned as gray pages are (see CONTRACTS.md, "CCITT G4 for
-// black & white pages").
+// stores as that JPEG. A document with a black & white page is written by the port of the C#
+// writer instead (`PDFWriter`, through `PDFBuilder.storedImage`), with those pages as CCITT G4;
+// `encodedPage` still gives a page planned as G4 as a gray JPEG, planned as a gray page is, for a
+// caller that cannot store G4 (see CONTRACTS.md, "CCITT G4 for black & white pages").
 
 /// How a page image is stored in the PDF.
 public enum PDFImageKind: Equatable, Sendable {
@@ -17,8 +18,8 @@ public enum PDFImageKind: Equatable, Sendable {
     case jpegColor
     /// A one-component JPEG (DeviceGray).
     case jpegGray
-    /// A 1-bit black & white image in CCITT G4 (DeviceGray, CCITTFaxDecode). Windows only for now:
-    /// the Mac stores these pages as gray JPEGs (`encodedPage`).
+    /// A 1-bit black & white image in CCITT G4 (DeviceGray, CCITTFaxDecode), on both platforms (the
+    /// Mac through `PDFWriter`; `encodedPage` gives such a page as a gray JPEG).
     case bilevelG4
 }
 
@@ -88,8 +89,7 @@ public struct PDFPageImage {
 
 /// The size presets of saved PDFs and the per-page plan they lead to: downsampling, gray
 /// storage and JPEG quality. The page size in the PDF never changes; only the stored image gets
-/// fewer pixels. Black & white pages are planned as CCITT G4 at every size (stored as gray JPEGs on
-/// the Mac until its port of the C# PDF writer).
+/// fewer pixels. Black & white pages are planned as CCITT G4 at every size.
 public enum PDFImageEncoding {
     /// A page is downsampled only when it is finer than this many times the size's limit.
     public static let downsampleSlack = 1.1
@@ -206,8 +206,9 @@ public enum PDFImageEncoding {
     /// box filter, converted to gray when planned, JPEG-encoded at the planned quality and
     /// turned back into a JPEG-backed image. The pixels are read once. Nil when the image
     /// cannot be read or encoded; the caller then draws the page as it is. A page planned as G4
-    /// (black & white) is stored as a gray JPEG, planned as a gray page is, until the Mac's port
-    /// of the C# PDF writer brings G4; the returned plan is that gray plan.
+    /// (black & white), which a JPEG-backed image cannot carry, is given as a gray JPEG, planned as a
+    /// gray page is; the returned plan is that gray plan. `PDFBuilder` never draws such a page: a
+    /// document with one is written by `PDFWriter`, with the page as G4.
     public static func encodedPage(_ image: CGImage, imageDPI: Int, mode: ColorMode,
                                    size: PDFSizePreset) -> PDFPageImage? {
         guard var rgba = ColorAnalysis.rgbaPixels(of: image) else { return nil }

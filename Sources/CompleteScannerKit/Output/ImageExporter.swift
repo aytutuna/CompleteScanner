@@ -5,7 +5,11 @@ import UniformTypeIdentifiers
 
 public enum ImageExporter {
     /// Write jpeg/png/tiff with DPI metadata. Throws ScanError.unsupported for .pdf, .text and .word.
-    public static func write(_ image: CGImage, to url: URL, format: OutputFormat, dpi: Int, jpegQuality: Double) throws {
+    /// A black & white page (`colorMode`, the mode it was scanned in) saved as TIFF is a 1-bit CCITT
+    /// G4 file (`BilevelTIFF`); everything else is written by ImageIO, TIFFs as LZW. Twin of C#
+    /// `WpfImageCodec.SaveAsNew`'s choice.
+    public static func write(_ image: CGImage, to url: URL, format: OutputFormat, dpi: Int, jpegQuality: Double,
+                             colorMode: ColorMode = .color) throws {
         let utType: UTType
         switch format {
         case .jpeg: utType = .jpeg
@@ -13,6 +17,18 @@ public enum ImageExporter {
         case .tiff: utType = .tiff
         case .pdf: throw ScanError.unsupported("Use PDFBuilder to write PDF files.")
         case .text, .word: throw ScanError.unsupported("Use TextExport or DocxWriter to write text.")
+        }
+
+        if BilevelTIFF.applies(format, colorMode) {
+            guard let pixels = RgbaImage(cgImage: image) else {
+                throw ScanError.exportFailed("Could not read the page to write \(url.lastPathComponent).")
+            }
+            do {
+                try BilevelTIFF.make(pixels, dpi: dpi).write(to: url)
+            } catch {
+                throw ScanError.exportFailed("Could not write \(url.lastPathComponent).")
+            }
+            return
         }
 
         guard let destination = CGImageDestinationCreateWithURL(url as CFURL,

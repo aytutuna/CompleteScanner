@@ -127,12 +127,16 @@ struct SavedFilesView: View {
                 }
                 let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
                 let dpi = (props?[kCGImagePropertyDPIWidth] as? NSNumber)?.intValue ?? 300
+                // A black & white TIFF (1 bit per pixel; the app writes them as CCITT G4) stays G4.
+                let depth = (props?[kCGImagePropertyDepth] as? NSNumber)?.intValue ?? 8
+                let mode: ColorMode = format == .tiff && depth == 1 ? .blackWhite : .color
                 let rotated = ImagePipeline.rotate(image, quarterTurns: 1)
                 let tmp = url.deletingLastPathComponent()
                     .appendingPathComponent(".\(UUID().uuidString).\(url.pathExtension)")
                 do {
                     // High quality to limit generation loss on repeated JPEG rotates.
-                    try ImageExporter.write(rotated, to: tmp, format: format, dpi: dpi, jpegQuality: 0.95)
+                    try ImageExporter.write(rotated, to: tmp, format: format, dpi: dpi, jpegQuality: 0.95,
+                                            colorMode: mode)
                     _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
                     return nil
                 } catch {

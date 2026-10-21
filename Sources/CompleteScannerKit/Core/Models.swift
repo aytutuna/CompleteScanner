@@ -168,12 +168,11 @@ public enum PDFSizePreset: String, Codable, CaseIterable, Identifiable, Sendable
     /// How the size stores the pages, for VoiceOver (the segment's help).
     public var detail: String {
         switch self {
-        // Windows names its higher black & white (CCITT G4) limits here too; the Mac stores black &
-        // white pages as gray JPEGs up to these limits until its port of the C# PDF writer.
-        case .standard: return "Up to 300 dpi, gray pages saved in gray."
+        // Black & white pages are CCITT G4 up to their own, higher limit on both platforms.
+        case .standard: return "Up to 300 dpi (black & white 600), gray pages saved in gray."
         case .best: return "Full resolution, high quality."
-        case .compact: return "Up to 200 dpi, more compression."
-        case .smallest: return "Up to 150 dpi, most compression."
+        case .compact: return "Up to 200 dpi (black & white 300), more compression."
+        case .smallest: return "Up to 150 dpi (black & white 300), most compression."
         }
     }
 

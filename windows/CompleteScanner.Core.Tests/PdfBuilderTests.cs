@@ -5,11 +5,12 @@ using Xunit;
 
 namespace CompleteScanner.Core.Tests;
 
-// Windows-side structural tests for the hand-rolled PDF writer (the macOS app delegates to
-// CGContext's PDF engine until the port of this writer, so most of these have no Swift counterpart
-// yet; MakePdfTwoPages ports OutputTests.test_makePDFTwoPages). They validate document structure
-// and, through PdfPig (a test-only package), what a PDF reader gets out of the file: pages, the
-// text layer in any script. Not pixel rendering — open the output in a viewer for a visual check.
+// Windows-side structural tests for the hand-rolled PDF writer. The object-level cases have Swift
+// twins in PDFWriterTests.swift (the Mac's port of this writer), the file helpers' cases (WriteFile,
+// WriteNewFile) are C# only, and MakePdfTwoPages ports OutputTests.test_makePDFTwoPages. They
+// validate document structure and, through PdfPig (a test-only package), what a PDF reader gets
+// out of the file: pages, the text layer in any script. Not pixel rendering — open the output in
+// a viewer for a visual check.
 
 public class PdfBuilderTests
 {

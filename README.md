@@ -47,18 +47,21 @@ scanners** — including the Epson Perfection V39 II.
   that). On the Mac each page is encoded as a JPEG with ImageIO and handed to the CoreGraphics
   PDF writer as a JPEG-backed image, which stores it unchanged; that the files come out as
   small as on Windows still has to be confirmed on a Mac.
-- **Black & white as CCITT G4** (Windows for now): black & white pages are stored as lossless
-  1-bit CCITT Group 4 images, in every PDF (at every size, up to 600 dpi at Standard and 300 dpi
-  at Compact and Smallest; also PDF/A, password-protected and added pages) and in TIFF files
+- **Black & white as CCITT G4**: black & white pages are stored as lossless 1-bit CCITT Group 4
+  images, in every PDF (at every size, up to 600 dpi at Standard and 300 dpi at Compact and
+  Smallest; on Windows also PDF/A, password-protected and added pages) and in TIFF files
   (compression 4, one page or several). A 300 dpi letter page is 33 KB instead of a 527 KB gray
-  JPEG at Standard. The encoder is the app's own code, with no library. The Mac stores black &
-  white pages as gray JPEGs and writes LZW TIFFs until it gets the Windows PDF writer's port.
+  JPEG at Standard. The encoder is the app's own code, with no library, and writes the same bytes
+  on both platforms. On the Mac a PDF with a black & white page is written by the port of the
+  Windows PDF writer (`PDFWriter`), so its text layer is the embedded Unicode one too; other Mac
+  PDFs still come from CoreGraphics.
 - **Archival PDF (PDF/A)** (Windows for now): a switch under the PDF size, and an **Archive
   document** task, save PDF/A-2b files for long-term keeping, with their color profile, fonts and
   description inside. On Windows the invisible text layer is now written in a small font
   embedded in the file, so text in any script (Turkish, Greek, Cyrillic, Arabic, Chinese, …)
-  can be selected and searched. The Mac gets both with the port of the Windows PDF writer;
-  until then it keeps its CoreText text layer, and the setting is kept in its settings file.
+  can be selected and searched. The Mac has the writer and its Unicode text layer for PDFs with
+  black & white pages; PDF/A comes with the rest of the port, and until then its other PDFs keep
+  their CoreText text layer, and the setting is kept in its settings file.
 - **Password-protected PDFs** (Windows for now): **Require a password** encrypts saved PDFs
   with AES-256 (the PDF 2.0 standard security handler). The password is asked for at each save,
   typed twice, with a hint about its strength, and never stored; printing and copying can be

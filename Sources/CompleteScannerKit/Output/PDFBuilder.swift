@@ -25,6 +25,11 @@ public enum PDFBuilder {
     /// `pdfSize` plans it (`PDFImageEncoding`): a JPEG at the size's quality, downsampled and
     /// gray where the size says so; OCR reads the full pixels first. `shouldContinue` is polled
     /// before each page; returning false aborts with ScanError.cancelled.
+    ///
+    /// A document with a black & white page (`writesG4(_:)`) is written by `PDFWriter`, the port of
+    /// the Windows writer: its black & white pages are 1-bit CCITT G4 images, its other pages the
+    /// planned JPEGs, and its text layer the embedded `GlyphlessFont`. Every other document is
+    /// drawn by CoreGraphics' PDF context, with a CoreText text layer.
     public static func makePDF(pages: [ScannedPage], searchable: Bool, ocrLanguages: [String],
                                pdfSize: PDFSizePreset = .best, progress: ((String) -> Void)?,
                                shouldContinue: (() -> Bool)? = nil) throws -> Data {
@@ -43,6 +48,11 @@ public enum PDFBuilder {
     /// The same, with each page's text layer from `textLayer` (no text layer when nil).
     public static func makePDF(pages: [ScannedPage], pdfSize: PDFSizePreset = .best, progress: ((String) -> Void)?,
                                shouldContinue: (() -> Bool)? = nil, textLayer: PDFTextLayer?) throws -> Data {
+        if writesG4(pages) {
+            let inputs = try pageInputs(pages, pdfSize: pdfSize, progress: progress, shouldContinue: shouldContinue,
+                                        textLayer: textLayer)
+            return try PDFWriter.make(inputs, progress: progress, shouldContinue: shouldContinue)
+        }
         let output = NSMutableData()
         guard let consumer = CGDataConsumer(data: output as CFMutableData) else {
             throw ScanError.exportFailed("Could not create a PDF data consumer.")
@@ -73,6 +83,12 @@ public enum PDFBuilder {
     public static func writePDF(pages: [ScannedPage], pdfSize: PDFSizePreset = .best, to url: URL,
                                 progress: ((String) -> Void)?, shouldContinue: (() -> Bool)? = nil,
                                 textLayer: PDFTextLayer?) throws {
+        if writesG4(pages) {
+            let inputs = try pageInputs(pages, pdfSize: pdfSize, progress: progress, shouldContinue: shouldContinue,
+                                        textLayer: textLayer)
+            try PDFWriter.writeFile(inputs, to: url, progress: progress, shouldContinue: shouldContinue)
+            return
+        }
         guard let consumer = CGDataConsumer(url: url as CFURL) else {
             throw ScanError.exportFailed("Could not write to \(url.path).")
         }
@@ -108,6 +124,81 @@ public enum PDFBuilder {
         }
         return PreparedPage(image: page.image, pixelWidth: page.image.width, pixelHeight: page.image.height)
     }
+
+    // MARK: - Documents with black & white pages (PDFWriter, CCITT G4)
+
+    /// Whether the document has a black & white page: such a document is written by `PDFWriter`,
+    /// which stores those pages as CCITT G4 (the plan's `.bilevelG4`); CoreGraphics' PDF context
+    /// cannot embed G4 data. The mode a page was scanned in decides, never the color mode set now.
+    static func writesG4(_ pages: [ScannedPage]) -> Bool {
+        for page in pages where page.colorMode == .blackWhite {
+            return true
+        }
+        return false
+    }
+
+    /// The pages as `PDFWriter` stores them (twin of the Windows view model's `PdfPageInputs`): each
+    /// one prepared at full resolution with its rotation, read by `textLayer` (its lines become the
+    /// page's text layer), and stored as `pdfSize` plans it (`storedImage`). `shouldContinue` is
+    /// polled before each page.
+    static func pageInputs(_ pages: [ScannedPage], pdfSize: PDFSizePreset, progress: ((String) -> Void)?,
+                           shouldContinue: (() -> Bool)?, textLayer: PDFTextLayer?) throws -> [PDFPageInput] {
+        var inputs: [PDFPageInput] = []
+        for index in 0..<pages.count {
+            if shouldContinue?() == false { throw ScanError.cancelled }
+            let page = pages[index]
+            let prepared = preparePage(page)
+            var lines: [OCRLine]? = nil
+            if let textLayer {
+                progress?("OCR page \(index + 1) of \(pages.count)…")
+                // A page without lines (OCR failed or found nothing) is still written, without a text layer.
+                lines = textLayer(index, prepared)
+            }
+            guard let stored = storedImage(prepared, colorMode: page.colorMode, dpi: page.dpi, pdfSize: pdfSize) else {
+                throw ScanError.exportFailed("Page \(index + 1) could not be stored in the PDF.")
+            }
+            inputs.append(PDFPageInput(image: stored, pixelWidth: prepared.pixelWidth,
+                                       pixelHeight: prepared.pixelHeight, dpi: page.dpi, ocrLines: lines))
+        }
+        return inputs
+    }
+
+    /// One page's image as the PDF size plans it (`PDFImageEncoding`): a black & white page
+    /// downsampled with the box filter to its planned resolution, thresholded (`Bilevel.pack`) and
+    /// encoded as CCITT G4; any other page as the planned JPEG (`PDFImageEncoding.encodedPage`), or,
+    /// when that fails, as a JPEG of its pixels at the size's color quality. Nil when the pixels
+    /// cannot be read or encoded.
+    static func storedImage(_ prepared: PreparedPage, colorMode: ColorMode, dpi: Int,
+                            pdfSize: PDFSizePreset) -> PDFImageData? {
+        let image = prepared.image
+        let imageDPI = PDFImageEncoding.effectiveDPI(imageWidth: image.width, pagePixelWidth: prepared.pixelWidth,
+                                                     pageDPI: dpi)
+        if colorMode == .blackWhite {
+            let plan = PDFImageEncoding.plan(mode: .blackWhite, imageDPI: imageDPI, size: pdfSize, looksGray: false)
+            guard var rgba = ColorAnalysis.rgbaPixels(of: image) else { return nil }
+            var width = image.width
+            var height = image.height
+            let target = PDFImageEncoding.targetSize(width: width, height: height, imageDPI: imageDPI,
+                                                     targetDPI: plan.targetDPI)
+            if target.width != width || target.height != height {
+                rgba = PDFImageEncoding.downsample(rgba: rgba, width: width, height: height,
+                                                   newWidth: target.width, newHeight: target.height)
+                width = target.width
+                height = target.height
+            }
+            let packed = Bilevel.pack(rgba: rgba, width: width, height: height)
+            guard let g4 = try? CCITTG4Encoder.encode(packed, width: width, height: height) else { return nil }
+            return .ccittG4(data: Data(g4), width: width, height: height)
+        }
+        if let stored = PDFImageEncoding.encodedPage(image, imageDPI: imageDPI, mode: colorMode, size: pdfSize) {
+            return .jpeg(stored.jpegData)
+        }
+        let quality = PDFImageEncoding.profile(pdfSize).colorQuality
+        guard let jpeg = PDFImageEncoding.encodeJPEG(image, quality: quality) else { return nil }
+        return .jpeg(jpeg)
+    }
+
+    // MARK: - CoreGraphics
 
     /// The text layer of the older overloads: OCR on every page when `searchable` (a page whose OCR
     /// fails gets none), else none.
