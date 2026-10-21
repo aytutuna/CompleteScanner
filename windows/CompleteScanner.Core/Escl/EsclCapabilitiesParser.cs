@@ -5,8 +5,9 @@ using System.Xml.Linq;
 namespace CompleteScanner.Core;
 
 // eSCL (AirScan) protocol logic used by CompleteScanner.App/Scanning/EsclScannerBackend.cs,
-// kept in Core so it can be tested against fixture XML. macOS reaches eSCL scanners through
-// ImageCaptureCore, so this has no Swift twin.
+// kept in Core so it can be tested against fixture XML (Tests/Fixtures/Escl, shared with the Swift
+// suite). Twin of Sources/CompleteScannerKit/Escl/EsclCapabilities.swift, which the iPhone's eSCL
+// connection uses: the same rules and tests on both platforms.
 
 /// <summary>What one eSCL input source (platen, feeder simplex, feeder duplex) offers.</summary>
 public sealed class EsclInputCaps

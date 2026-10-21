@@ -1,10 +1,11 @@
+using System.Net.NetworkInformation;
 using CompleteScanner.Core;
 using Xunit;
 
 namespace CompleteScanner.Core.Tests;
 
-// eSCL only (see EsclTests): no Swift counterpart. The Mac finds these scanners through
-// ImageCaptureCore's Bonjour browsing. Covers what discovery hands over: TXT records, the
+// Mirrored by Tests/CompleteScannerTests/EsclDiscoveryTests.swift (same cases; the TXT record is the
+// shared fixture Tests/Fixtures/Escl/txt-hp.txt). Covers what discovery hands over: TXT records, the
 // addresses users type, and how a scanner's DNS-SD services become one endpoint.
 
 public class EsclDiscoveryTests
@@ -12,14 +13,7 @@ public class EsclDiscoveryTests
     // MARK: - TXT records
 
     /// <summary>A TXT record in the shape HP all-in-ones advertise.</summary>
-    private static readonly string[] HpTxt =
-    [
-        "txtvers=1", "vers=2.63", "adminurl=http://HPA1B2C3.local./#hId-pgAirPrint",
-        "representation=http://HPA1B2C3.local./images/printer.png", "rs=eSCL",
-        "ty=HP Color LaserJet MFP M479fdw", "note=Office", "pdl=application/pdf,image/jpeg",
-        "UUID=564e4333-4230-3538-3930-a0b3cce51a2b", "cs=color,grayscale,binary", "is=platen,adf",
-        "duplex=T",
-    ];
+    private static string[] HpTxt => EsclFixtures.Lines(EsclFixtures.HpTxtFile);
 
     [Fact]
     public void TxtRecordReadsTheEsclKeys()
@@ -116,6 +110,26 @@ public class EsclDiscoveryTests
         Assert.Equal("[fe80::1%12]:8080", address.Authority);
     }
 
+    /// <summary>The loopback interface's name, as the system's interface-name lookup takes it.</summary>
+    private static string LoopbackName =>
+        OperatingSystem.IsWindows() ? "loopback_0" : OperatingSystem.IsMacOS() ? "lo0" : "lo";
+
+    [Fact]
+    public void NamedZonesReadAsTheirInterfaceIndex()
+    {
+        int index = NetworkInterface.IPv6LoopbackInterfaceIndex;
+        Assert.True(index > 0);
+        var address = ScannerAddress.Parse($"[fe80::1%{LoopbackName}]:8080");
+        Assert.Equal($"fe80::1%{index}", address.Host);
+        Assert.Equal($"[fe80::1%{index}]:8080", address.ToString());
+        Assert.Equal(address, ScannerAddress.Parse(address.ToString()));
+        Assert.Equal($"fe80::1%{index}", ScannerAddress.Parse($"http://[fe80::1%{LoopbackName}]:8080").Host);
+        // A zone of 0 or none at all is no zone; one that names no interface is refused, not dropped.
+        Assert.Equal("fe80::1", ScannerAddress.Parse("[fe80::1%0]").Host);
+        Assert.Equal("fe80::1", ScannerAddress.Parse("[fe80::1%]").Host);
+        Assert.False(ScannerAddress.TryParse("[fe80::1%nosuch0]", out _, out _));
+    }
+
     [Theory]
     [InlineData("", "Enter the scanner's IP address or host name.")]
     [InlineData("   ", "Enter the scanner's IP address or host name.")]
@@ -130,6 +144,9 @@ public class EsclDiscoveryTests
     [InlineData("[fe80::1", "An IPv6 address in brackets needs its closing \"]\".")]
     [InlineData("[fe80::1]x", "That is not a valid address.")]
     [InlineData("bad_host!", "\"bad_host!\" is not a valid IP address or host name.")]
+    [InlineData("[fe80::1%nosuch0]", "\"fe80::1%nosuch0\" is not a valid IP address or host name.")]
+    [InlineData("fe80::1%99999999999", "\"fe80::1%99999999999\" is not a valid IP address or host name.")]
+    [InlineData("http://[fe80::1%nosuch0]:8080", "That is not a valid address.")]
     public void BadAddressesSayWhatIsWrong(string text, string message)
     {
         Assert.False(ScannerAddress.TryParse(text, out var address, out string error));
@@ -187,6 +204,17 @@ public class EsclDiscoveryTests
         var address = Assert.Single(endpoint.Addresses);
         Assert.Equal("http://[fe80::5]:8080/scan/", address.BaseUri.AbsoluteUri);
         Assert.Equal("fe80::5%7", address.BaseUri.DnsSafeHost);
+    }
+
+    [Fact]
+    public void AddressesWhoseZoneNamesNoInterfaceAreSkipped()
+    {
+        var endpoint = Assert.Single(EsclEndpoint.Choose(
+        [
+            Service("Canon", secure: false, ["fe80::5%nosuch0", "2001:db8::9%nosuch0", $"fe80::6%{LoopbackName}"],
+                    ["ty=Canon MF743C"], host: null),
+        ]));
+        Assert.Equal([$"[fe80::6%{NetworkInterface.IPv6LoopbackInterfaceIndex}]"], endpoint.Addresses.Select(a => a.ToString()));
     }
 
     [Fact]

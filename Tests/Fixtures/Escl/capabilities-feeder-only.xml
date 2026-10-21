@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ScannerCapabilities xmlns="http://schemas.hp.com/imaging/escl/2011/05/03" xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">
+  <pwg:Version>2.6</pwg:Version>
+  <pwg:MakeAndModel>Brother ADS-1700W</pwg:MakeAndModel>
+  <UUID>e3248000-80ce-11db-8000-30055c773bcf</UUID>
+  <Adf>
+    <AdfSimplexInputCaps>
+      <MinWidth>153</MinWidth>
+      <MaxWidth>2580</MaxWidth>
+      <MinHeight>153</MinHeight>
+      <MaxHeight>35400</MaxHeight>
+      <SettingProfiles>
+        <SettingProfile>
+          <ColorModes>
+            <ColorMode>BlackAndWhite1</ColorMode>
+            <ColorMode>RGB24</ColorMode>
+          </ColorModes>
+          <DocumentFormats>
+            <pwg:DocumentFormat>application/pdf</pwg:DocumentFormat>
+            <pwg:DocumentFormat>image/png</pwg:DocumentFormat>
+          </DocumentFormats>
+          <SupportedResolutions>
+            <ResolutionRange>
+              <XResolutionRange><Min>100</Min><Max>600</Max><Normal>300</Normal><Step>100</Step></XResolutionRange>
+              <YResolutionRange><Min>100</Min><Max>600</Max><Normal>300</Normal><Step>100</Step></YResolutionRange>
+            </ResolutionRange>
+          </SupportedResolutions>
+        </SettingProfile>
+      </SettingProfiles>
+    </AdfSimplexInputCaps>
+    <AdfOptions>
+      <AdfOption>DetectPaperLoaded</AdfOption>
+    </AdfOptions>
+  </Adf>
+</ScannerCapabilities>

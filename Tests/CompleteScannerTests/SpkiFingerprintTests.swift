@@ -2,8 +2,9 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/SpkiFingerprintTests.cs (same vectors). The Windows-only
-// case that makes certificates with .NET's CertificateRequest has no twin here.
+// Mirrors windows/CompleteScanner.Core.Tests/SpkiFingerprintTests.cs (same vectors; the scanner
+// certificates are the shared fixtures in Tests/Fixtures/Escl). The Windows-only case that makes
+// certificates with .NET's CertificateRequest has no twin here.
 
 /// Test vectors both platforms check: a P-256 certificate made once with OpenSSL.
 enum CompanionVectors {
@@ -49,6 +50,18 @@ final class SpkiFingerprintTests: XCTestCase {
         XCTAssertEqual(SpkiFingerprint.hex(fingerprint), CompanionVectors.fingerprintHex)
         XCTAssertEqual(SpkiFingerprint.text(fingerprint), CompanionVectors.fingerprintText)
         XCTAssertEqual(SpkiFingerprint.hex(SpkiFingerprint.ofSubjectPublicKeyInfo(spki)), CompanionVectors.fingerprintHex)
+    }
+
+    func testSharedScannerCertificates_HaveTheSharedFingerprints() throws {
+        // RSA-2048, P-256 and P-384, the key types scanners use; the same vectors as eSCL pinning.
+        for vector in EsclFixtures.certificates {
+            let der: Data = try EsclFixtures.certificateDER(vector.file)
+            let digest: Data = try XCTUnwrap(SpkiFingerprint.of(der), vector.file)
+            XCTAssertEqual(SpkiFingerprint.hex(digest), vector.fingerprint, vector.file)
+            let spki: Data = try XCTUnwrap(SpkiFingerprint.subjectPublicKeyInfo(der), vector.file)
+            XCTAssertEqual(SpkiFingerprint.hex(SpkiFingerprint.ofSubjectPublicKeyInfo(spki)), vector.fingerprint, vector.file)
+            XCTAssertEqual(EsclCertificates.fingerprint(certificateDER: der), vector.fingerprint, vector.file)
+        }
     }
 
     func testP256Point_RebuildsTheSubjectPublicKeyInfo() {

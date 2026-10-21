@@ -3,6 +3,8 @@ using System.Net;
 
 namespace CompleteScanner.Core;
 
+// Twin of Sources/CompleteScannerKit/Escl/EsclRetry.swift: the same rules and tests on both platforms.
+
 /// <summary>
 /// How long to keep retrying an eSCL request the device answers with HTTP 503 (busy, or the
 /// next page is not ready yet): the wait starts at <see cref="InitialDelay"/>, grows by

@@ -4,6 +4,8 @@ using System.Net.Sockets;
 
 namespace CompleteScanner.Core;
 
+// Twin of Sources/CompleteScannerKit/Escl/ScannerAddress.swift: the same rules and tests on both platforms.
+
 /// <summary>
 /// Where an eSCL scanner answers: scheme, host, port and resource path. Parsed from what a
 /// user types ("192.168.1.50", "scanner.local:8080", "https://10.0.0.7", "[fe80::1%12]:80",
@@ -183,7 +185,9 @@ public sealed class ScannerAddress : IEquatable<ScannerAddress>
         }
         if (NormalizeHost(uri.DnsSafeHost) is not { } host)
         {
-            error = $"\"{uri.Host}\" is not a valid IP address or host name.";
+            error = uri.HostNameType == UriHostNameType.IPv6
+                ? "That is not a valid address."
+                : $"\"{uri.Host}\" is not a valid IP address or host name.";
             return false;
         }
         string path = Uri.UnescapeDataString(uri.AbsolutePath).Trim('/');
@@ -207,12 +211,7 @@ public sealed class ScannerAddress : IEquatable<ScannerAddress>
     private static string? NormalizeHost(string host)
     {
         if (host.Length == 0) return null;
-        if (host.Contains(':'))
-        {
-            return IPAddress.TryParse(host, out var v6) && v6.AddressFamily == AddressFamily.InterNetworkV6
-                ? v6.ToString().ToLowerInvariant()
-                : null;
-        }
+        if (host.Contains(':')) return ParseIPv6(host)?.ToString().ToLowerInvariant();
         if (host.All(c => char.IsAsciiDigit(c) || c == '.'))
         {
             // Digits and dots only: it has to be a complete dotted IPv4 address ("192.168.1"
@@ -223,5 +222,24 @@ public sealed class ScannerAddress : IEquatable<ScannerAddress>
                 : null;
         }
         return Uri.CheckHostName(host) == UriHostNameType.Dns ? host.TrimEnd('.').ToLowerInvariant() : null;
+    }
+
+    /// <summary>
+    /// An IPv6 address with an optional zone, an interface number ("fe80::1%12") or the name of an
+    /// interface on this device, read as its number; null when it is not one, or when its zone is
+    /// neither (IPAddress reads such a zone as none, and a link-local address without its interface
+    /// cannot be reached).
+    /// </summary>
+    internal static IPAddress? ParseIPv6(string text)
+    {
+        if (!IPAddress.TryParse(text, out var ip) || ip.AddressFamily != AddressFamily.InterNetworkV6) return null;
+        int percent = text.IndexOf('%');
+        if (percent >= 0 && ip.ScopeId == 0)
+        {
+            string zone = text[(percent + 1)..];
+            bool isZero = uint.TryParse(zone, NumberStyles.None, CultureInfo.InvariantCulture, out uint number) && number == 0;
+            if (zone.Length > 0 && !isZero) return null;
+        }
+        return ip;
     }
 }

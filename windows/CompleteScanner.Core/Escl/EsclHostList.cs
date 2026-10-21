@@ -1,5 +1,7 @@
 namespace CompleteScanner.Core;
 
+// Twin of Sources/CompleteScannerKit/Escl/EsclHostList.swift: the same rules and tests on both platforms.
+
 /// <summary>
 /// The network scanners added by address: %APPDATA%\CompleteScanner\escl-hosts.json, a JSON
 /// list of address strings (["192.168.1.50", "scanner.local:8080", "https://10.0.0.7"]). The

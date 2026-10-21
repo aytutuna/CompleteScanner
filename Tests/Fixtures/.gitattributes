@@ -1,0 +1,2 @@
+# The fixtures are compared byte for byte on Windows and on Apple platforms: never convert line endings.
+* -text

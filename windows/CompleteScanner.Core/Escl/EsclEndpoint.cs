@@ -3,6 +3,8 @@ using System.Net.Sockets;
 
 namespace CompleteScanner.Core;
 
+// Twin of Sources/CompleteScannerKit/Escl/EsclEndpoint.swift: the same rules and tests on both platforms.
+
 /// <summary>
 /// One DNS-SD service instance of a network scanner, as the operating system reports it:
 /// _uscan._tcp (<paramref name="Secure"/> false) or _uscans._tcp (true).
@@ -10,7 +12,10 @@ namespace CompleteScanner.Core;
 /// <param name="Id">The system's id for the service instance.</param>
 /// <param name="InstanceName">e.g. "HP Color LaserJet MFP M479fdw (A1B2C3)".</param>
 /// <param name="HostName">e.g. "HPA1B2C3.local"; null when not reported.</param>
-/// <param name="Addresses">IP addresses as text, e.g. "192.168.1.20", "fe80::1%12".</param>
+/// <param name="Addresses">
+/// IP addresses as text, e.g. "192.168.1.20", "fe80::1%12" (the zone as an interface index or
+/// name; an address whose zone names no interface here is skipped).
+/// </param>
 /// <param name="TextAttributes">TXT record entries ("key=value").</param>
 public sealed record EsclService(string Id, string InstanceName, bool Secure, string? HostName,
                                  IReadOnlyList<string> Addresses, int Port, IReadOnlyList<string> TextAttributes);
@@ -101,11 +106,12 @@ public sealed class EsclEndpoint
         var v6 = new List<string>();
         foreach (string text in service.Addresses)
         {
-            if (!IPAddress.TryParse(text?.Trim(), out var ip)) continue;
+            string trimmed = text?.Trim() ?? "";
+            if (!IPAddress.TryParse(trimmed, out var ip)) continue;
             if (ip.AddressFamily == AddressFamily.InterNetwork) v4.Add(ip.ToString());
-            else if (ip.AddressFamily == AddressFamily.InterNetworkV6 && (!ip.IsIPv6LinkLocal || ip.ScopeId != 0))
+            else if (ScannerAddress.ParseIPv6(trimmed) is { } zoned && (!zoned.IsIPv6LinkLocal || zoned.ScopeId != 0))
             {
-                v6.Add(ip.ToString());
+                v6.Add(zoned.ToString());
             }
         }
         foreach (string ip in v4) yield return ip;

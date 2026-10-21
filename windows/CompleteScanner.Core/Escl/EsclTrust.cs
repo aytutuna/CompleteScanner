@@ -6,6 +6,9 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace CompleteScanner.Core;
 
+// Twin of Sources/CompleteScannerKit/Escl/EsclTrust.swift (the store, the validator's rules and the
+// same escl-trust.json keys; the TLS hook and X509Certificate2 stay platform-specific).
+//
 // Trust for eSCL over HTTPS (_uscans). Scanners make their own certificates, which Windows
 // cannot check, so a scanner's certificate is trusted the first time the app connects to it
 // (trust on first use) and pinned: its public key (SPKI) SHA-256 is kept in

@@ -157,6 +157,24 @@ enum StoreFiles {
         }
     }
 
+    /// The file's value under the settings-file rules, as C# `StoreFiles.Load`: nil when there is no
+    /// file, or it could not be read (left in place and protected from writes for the session), or it
+    /// did not decode (moved aside first).
+    static func load<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
+        switch read(type, from: url) {
+        case .loaded(let value):
+            return value
+        case .missing:
+            return nil
+        case .corrupt(let error):
+            keepUnreadable(url, error: error)
+            return nil
+        case .inaccessible(let error):
+            leaveInaccessible(url, error: error)
+            return nil
+        }
+    }
+
     /// The text encodings a settings file may be in.
     enum TextEncoding: Equatable {
         case utf8

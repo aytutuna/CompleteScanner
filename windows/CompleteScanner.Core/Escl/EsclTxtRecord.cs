@@ -1,5 +1,7 @@
 namespace CompleteScanner.Core;
 
+// Twin of Sources/CompleteScannerKit/Escl/EsclTxtRecord.swift: the same rules and tests on both platforms.
+
 /// <summary>
 /// The TXT record a network scanner advertises with its _uscan._tcp / _uscans._tcp DNS-SD
 /// service (Mopria eSCL): where the eSCL resource lives, what the device is and roughly what

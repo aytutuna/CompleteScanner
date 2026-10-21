@@ -5,7 +5,8 @@ using Xunit;
 
 namespace CompleteScanner.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/SpkiFingerprintTests.swift (same vectors). C#-only case:
+// Mirrored by Tests/CompleteScannerTests/SpkiFingerprintTests.swift (same vectors; the scanner
+// certificates are the shared fixtures in Tests/Fixtures/Escl). C#-only case:
 // MatchesDotNetSubjectPublicKeyInfo (makes certificates with CertificateRequest, which Swift lacks).
 
 /// <summary>Test vectors both platforms check: a P-256 certificate made once with OpenSSL.</summary>
@@ -47,6 +48,23 @@ public class SpkiFingerprintTests
         Assert.Equal(CompanionVectors.FingerprintHex, SpkiFingerprint.Hex(fingerprint));
         Assert.Equal(CompanionVectors.FingerprintText, SpkiFingerprint.Text(fingerprint));
         Assert.Equal(CompanionVectors.FingerprintHex, SpkiFingerprint.Hex(SpkiFingerprint.OfSubjectPublicKeyInfo(spki)));
+    }
+
+    [Fact]
+    public void SharedScannerCertificates_HaveTheSharedFingerprints()
+    {
+        // RSA-2048, P-256 and P-384, the key types scanners use; the same vectors as eSCL pinning.
+        foreach (var (file, fingerprint, subject) in EsclFixtures.Certificates)
+        {
+            byte[] der = EsclFixtures.CertificateDer(file);
+            var digest = SpkiFingerprint.Of(der);
+            Assert.NotNull(digest);
+            Assert.Equal(fingerprint, SpkiFingerprint.Hex(digest));
+            using var certificate = EsclFixtures.Certificate(file);
+            Assert.Equal(subject, certificate.Subject);
+            Assert.Equal(certificate.PublicKey.ExportSubjectPublicKeyInfo(), SpkiFingerprint.SubjectPublicKeyInfo(der));
+            Assert.Equal(fingerprint, EsclCertificates.Fingerprint(certificate));
+        }
     }
 
     [Fact]

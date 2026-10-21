@@ -3,6 +3,8 @@ using System.Xml.Linq;
 
 namespace CompleteScanner.Core;
 
+// Twin of Sources/CompleteScannerKit/Escl/EsclStatus.swift: the same rules and tests on both platforms.
+
 /// <summary>
 /// A parsed eSCL ScannerStatus document: the device state (pwg:State) and the feeder state
 /// (scan:AdfState), read after a job fails to tell the user what is wrong at the scanner.

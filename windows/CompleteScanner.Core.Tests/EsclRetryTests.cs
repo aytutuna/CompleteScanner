@@ -5,8 +5,8 @@ using Xunit;
 
 namespace CompleteScanner.Core.Tests;
 
-// eSCL only (see EsclTests): no Swift counterpart. Time is simulated: the fake delay
-// advances a fake clock instead of waiting.
+// Mirrored by Tests/CompleteScannerTests/EsclRetryTests.swift (same cases). Time is simulated: the
+// fake delay advances a fake clock instead of waiting.
 
 [Collection(WallClockCollection.Name)]
 public class EsclRetryTests

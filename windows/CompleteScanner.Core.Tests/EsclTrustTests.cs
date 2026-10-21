@@ -9,9 +9,10 @@ using Xunit;
 
 namespace CompleteScanner.Core.Tests;
 
-// eSCL only (see EsclTests): no Swift counterpart (the Mac connects through ImageCaptureCore).
-// Certificate pinning for eSCL over HTTPS, the escl-trust.json and escl-hosts.json files, and
-// one end-to-end check through a real TLS connection to a loopback server.
+// Mirrored by Tests/CompleteScannerTests/EsclTrustTests.swift (same cases), except the two checks
+// through a real TLS connection to a loopback server, which belong to the client (EsclClient) and get
+// their Swift twins with it. Certificate pinning for eSCL over HTTPS and the escl-trust.json and
+// escl-hosts.json files, including trust files written by either platform (Tests/Fixtures/Escl).
 
 [Collection(WallClockCollection.Name)]
 public sealed class EsclTrustTests : IDisposable
@@ -220,12 +221,54 @@ public sealed class EsclTrustTests : IDisposable
     }
 
     [Fact]
+    public void TrustFilesFromEitherPlatformLoad()
+    {
+        const string p256 = "61010433c5795ff33b96976a6bc6f2aa324a36b7182a1ddcab4d234744fe7d6c";
+        const string rsa = "4ad3ab48789a9c2f6b9b8cb55503d2bdf9fa889488beca7137476c0e1bb4e4e9";
+        foreach (string name in new[] { "escl-trust-windows.json", "escl-trust-apple.json" })
+        {
+            string directory = Path.Combine(_directory, name);
+            Directory.CreateDirectory(directory);
+            File.Copy(EsclFixtures.PathOf(name), Path.Combine(directory, "escl-trust.json"));
+            var store = new EsclTrustStore(directory);
+            Assert.Equal([p256, rsa], store.Certificates.Select(c => c.Fingerprint));
+            var scanner = store.Certificates[0];
+            Assert.Equal("564e4333423035383930a0b3cce51a2b", scanner.DeviceUuid);
+            Assert.Equal(["192.168.1.20:443", "hpa1b2c3.local:443"], scanner.Addresses);
+            Assert.Equal("HP Color LaserJet MFP M479fdw", scanner.Name);
+            var byAddress = store.Certificates[1];
+            Assert.Equal("", byAddress.DeviceUuid);
+            Assert.Equal(["[fe80::1%12]:443"], byAddress.Addresses);
+            Assert.Equal("fe80::1%12", byAddress.Name);
+            // Each platform writes the date its own way; the other platform's reads as unknown.
+            if (name == "escl-trust-windows.json")
+            {
+                Assert.Equal(DateTimeOffset.Parse("2026-10-21T14:26:48.7107503-04:00", System.Globalization.CultureInfo.InvariantCulture),
+                             scanner.Trusted);
+            }
+            else
+            {
+                Assert.Null(scanner.Trusted);
+            }
+            Assert.Empty(Directory.GetFiles(directory, "escl-trust.unreadable-*.json"));
+            Assert.Equal(EsclTrustVerdict.Trusted, store.Check(p256, Uuid.ToUpperInvariant(), "10.0.0.20:443", out _));
+            Assert.Equal(EsclTrustVerdict.Changed, store.Check(Fingerprint(1), null, "[fe80::1%12]:443", out var previous));
+            Assert.Equal(rsa, previous?.Fingerprint);
+        }
+    }
+
+    [Fact]
     public void FingerprintsArePublicKeyHashesFormattedForPeople()
     {
         using var certificate = SelfSigned("FakeScanner");
         string fingerprint = EsclCertificates.Fingerprint(certificate);
         Assert.Equal(64, fingerprint.Length);
         Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(certificate.PublicKey.ExportSubjectPublicKeyInfo())), fingerprint);
+        foreach (var (file, expected, _) in EsclFixtures.Certificates)
+        {
+            using var shared = EsclFixtures.Certificate(file);
+            Assert.Equal(expected, EsclCertificates.Fingerprint(shared));
+        }
         Assert.Equal("AB:CD:01", EsclCertificates.Format("abcd01"));
         Assert.Equal("AA:BB\nCC", EsclCertificates.Format("aabbcc", bytesPerLine: 2));
     }
@@ -281,6 +324,46 @@ public sealed class EsclTrustTests : IDisposable
         Assert.Equal("564e4333423035383930a0b3cce51a2b", Assert.Single(new EsclTrustStore(_directory).Certificates).DeviceUuid);
         // Discovery later finds the scanner by its UUID at another address, with another key.
         Assert.Equal(EsclTrustVerdict.Changed, store.Check(Fingerprint(3), Uuid, "192.168.1.20:443", out _));
+    }
+
+    [Fact]
+    public void TheValidatorPinsAFirstUseCertificateOnlyOnceItsUuidIsChecked()
+    {
+        using var certificate = EsclFixtures.Certificate("certificate-p256.pem");
+        string presented = EsclCertificates.Fingerprint(certificate);
+        var uri = new Uri("https://10.0.0.30/eSCL/ScannerCapabilities");
+        var store = new EsclTrustStore(_directory);
+        store.Trust(Fingerprint(0), Uuid, "192.168.1.20:443", "HP M479");
+
+        // Not the certificate allowed for first use: refused.
+        var other = new EsclCertificateValidator(store, null, "10.0.0.30", firstUse: Fingerprint(7));
+        Assert.False(other.Validate(uri, certificate, SslPolicyErrors.RemoteCertificateChainErrors));
+        Assert.Equal(EsclTrustVerdict.Unknown, other.TakeRejection()?.Verdict);
+
+        // The first-use certificate is accepted without being pinned; it claims the trusted scanner's
+        // UUID, so it is a change and stays unpinned.
+        var claims = new EsclCertificateValidator(store, null, "10.0.0.30", firstUse: presented);
+        Assert.True(claims.Validate(uri, certificate, SslPolicyErrors.RemoteCertificateChainErrors));
+        Assert.Equal([Fingerprint(0)], store.Certificates.Select(c => c.Fingerprint));
+        var changed = Assert.Throws<EsclCertificateException>(() => claims.RememberDevice(Uuid));
+        Assert.Equal(EsclTrustVerdict.Changed, changed.Verdict);
+        Assert.Equal(Fingerprint(0), changed.Previous?.Fingerprint);
+        Assert.Equal(presented, changed.Fingerprint);
+        Assert.Equal("10.0.0.30:443", changed.Authority);
+        Assert.True(changed.CanTrust);
+        Assert.Equal([Fingerprint(0)], new EsclTrustStore(_directory).Certificates.Select(c => c.Fingerprint));
+
+        // A scanner nobody trusted: pinned with its UUID once it answered.
+        var fresh = new EsclCertificateValidator(store, null, "10.0.0.30", firstUse: presented);
+        Assert.True(fresh.Validate(uri, certificate, SslPolicyErrors.RemoteCertificateChainErrors));
+        fresh.RememberDevice(OtherUuid);
+        var pin = new EsclTrustStore(_directory).Certificates.Single(c => c.Fingerprint == presented);
+        Assert.Equal("cfe9210067c411d4a45ff8d0273e1a0b", pin.DeviceUuid);
+        Assert.Equal(["10.0.0.30:443"], pin.Addresses);
+        // Pinned now: the same validator accepts it as a pinned key, and nothing changes.
+        Assert.True(fresh.Validate(uri, certificate, SslPolicyErrors.RemoteCertificateChainErrors));
+        fresh.RememberDevice(OtherUuid);
+        Assert.Equal([Fingerprint(0), presented], new EsclTrustStore(_directory).Certificates.Select(c => c.Fingerprint));
     }
 
     [Fact]

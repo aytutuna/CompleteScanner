@@ -1,0 +1,6 @@
+<scan:ScannerCapabilities xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03" xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">
+  <scan:Adf>
+    <scan:AdfSimplexInputCaps><scan:MaxWidth>2550</scan:MaxWidth><scan:MaxHeight>3300</scan:MaxHeight></scan:AdfSimplexInputCaps>
+    <scan:AdfOptions><scan:AdfOption>Duplex</scan:AdfOption></scan:AdfOptions>
+  </scan:Adf>
+</scan:ScannerCapabilities>

@@ -3,146 +3,18 @@ using Xunit;
 
 namespace CompleteScanner.Core.Tests;
 
-// eSCL is reached through ImageCaptureCore on macOS: no Swift counterpart. The fixtures are
-// hand-written in the shape real devices send (namespace prefixes vary between devices).
+// Mirrored by Tests/CompleteScannerTests/EsclTests.swift (same cases). The fixtures, which the Swift
+// suite reads too (Tests/Fixtures/Escl, see EsclFixtures), are hand-written in the shape real devices
+// send (namespace prefixes vary between devices).
 
 public class EsclTests
 {
-    // MARK: - Fixtures
+    // MARK: - Fixtures (Tests/Fixtures/Escl)
 
-    /// <summary>An all-in-one: platen plus a feeder that scans both sides; discrete resolutions.</summary>
-    internal const string PlatenAndDuplexAdf = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <scan:ScannerCapabilities xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03" xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">
-          <pwg:Version>2.63</pwg:Version>
-          <pwg:MakeAndModel>HP Color LaserJet MFP M479fdw</pwg:MakeAndModel>
-          <pwg:SerialNumber>CNB1234567</pwg:SerialNumber>
-          <scan:UUID>564e4333-4230-3538-3930-a0b3cce51a2b</scan:UUID>
-          <scan:Platen>
-            <scan:PlatenInputCaps>
-              <scan:MinWidth>8</scan:MinWidth>
-              <scan:MaxWidth>2550</scan:MaxWidth>
-              <scan:MinHeight>8</scan:MinHeight>
-              <scan:MaxHeight>3508</scan:MaxHeight>
-              <scan:MaxScanRegions>1</scan:MaxScanRegions>
-              <scan:SettingProfiles>
-                <scan:SettingProfile>
-                  <scan:ColorModes>
-                    <scan:ColorMode>BlackAndWhite1</scan:ColorMode>
-                    <scan:ColorMode>Grayscale8</scan:ColorMode>
-                    <scan:ColorMode>RGB24</scan:ColorMode>
-                  </scan:ColorModes>
-                  <scan:DocumentFormats>
-                    <pwg:DocumentFormat>application/pdf</pwg:DocumentFormat>
-                    <pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>
-                    <scan:DocumentFormatExt>application/pdf</scan:DocumentFormatExt>
-                    <scan:DocumentFormatExt>image/jpeg</scan:DocumentFormatExt>
-                  </scan:DocumentFormats>
-                  <scan:SupportedResolutions>
-                    <scan:DiscreteResolutions>
-                      <scan:DiscreteResolution><scan:XResolution>75</scan:XResolution><scan:YResolution>75</scan:YResolution></scan:DiscreteResolution>
-                      <scan:DiscreteResolution><scan:XResolution>100</scan:XResolution><scan:YResolution>100</scan:YResolution></scan:DiscreteResolution>
-                      <scan:DiscreteResolution><scan:XResolution>200</scan:XResolution><scan:YResolution>200</scan:YResolution></scan:DiscreteResolution>
-                      <scan:DiscreteResolution><scan:XResolution>300</scan:XResolution><scan:YResolution>300</scan:YResolution></scan:DiscreteResolution>
-                      <scan:DiscreteResolution><scan:XResolution>600</scan:XResolution><scan:YResolution>600</scan:YResolution></scan:DiscreteResolution>
-                      <scan:DiscreteResolution><scan:XResolution>1200</scan:XResolution><scan:YResolution>600</scan:YResolution></scan:DiscreteResolution>
-                    </scan:DiscreteResolutions>
-                  </scan:SupportedResolutions>
-                </scan:SettingProfile>
-              </scan:SettingProfiles>
-            </scan:PlatenInputCaps>
-          </scan:Platen>
-          <scan:Adf>
-            <scan:AdfSimplexInputCaps>
-              <scan:MinWidth>600</scan:MinWidth>
-              <scan:MaxWidth>2550</scan:MaxWidth>
-              <scan:MinHeight>600</scan:MinHeight>
-              <scan:MaxHeight>4200</scan:MaxHeight>
-              <scan:SettingProfiles>
-                <scan:SettingProfile>
-                  <scan:ColorModes>
-                    <scan:ColorMode>Grayscale8</scan:ColorMode>
-                    <scan:ColorMode>RGB24</scan:ColorMode>
-                  </scan:ColorModes>
-                  <scan:DocumentFormats>
-                    <pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>
-                  </scan:DocumentFormats>
-                  <scan:SupportedResolutions>
-                    <scan:DiscreteResolutions>
-                      <scan:DiscreteResolution><scan:XResolution>200</scan:XResolution><scan:YResolution>200</scan:YResolution></scan:DiscreteResolution>
-                      <scan:DiscreteResolution><scan:XResolution>300</scan:XResolution><scan:YResolution>300</scan:YResolution></scan:DiscreteResolution>
-                    </scan:DiscreteResolutions>
-                  </scan:SupportedResolutions>
-                </scan:SettingProfile>
-              </scan:SettingProfiles>
-            </scan:AdfSimplexInputCaps>
-            <scan:AdfDuplexInputCaps>
-              <scan:MinWidth>600</scan:MinWidth>
-              <scan:MaxWidth>2550</scan:MaxWidth>
-              <scan:MinHeight>600</scan:MinHeight>
-              <scan:MaxHeight>4200</scan:MaxHeight>
-            </scan:AdfDuplexInputCaps>
-            <scan:FeederCapacity>50</scan:FeederCapacity>
-          </scan:Adf>
-        </scan:ScannerCapabilities>
-        """;
-
-    /// <summary>A sheet-fed document scanner: feeder only, a resolution range, long-paper height.</summary>
-    internal const string FeederOnly = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <ScannerCapabilities xmlns="http://schemas.hp.com/imaging/escl/2011/05/03" xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">
-          <pwg:Version>2.6</pwg:Version>
-          <pwg:MakeAndModel>Brother ADS-1700W</pwg:MakeAndModel>
-          <UUID>e3248000-80ce-11db-8000-30055c773bcf</UUID>
-          <Adf>
-            <AdfSimplexInputCaps>
-              <MinWidth>153</MinWidth>
-              <MaxWidth>2580</MaxWidth>
-              <MinHeight>153</MinHeight>
-              <MaxHeight>35400</MaxHeight>
-              <SettingProfiles>
-                <SettingProfile>
-                  <ColorModes>
-                    <ColorMode>BlackAndWhite1</ColorMode>
-                    <ColorMode>RGB24</ColorMode>
-                  </ColorModes>
-                  <DocumentFormats>
-                    <pwg:DocumentFormat>application/pdf</pwg:DocumentFormat>
-                    <pwg:DocumentFormat>image/png</pwg:DocumentFormat>
-                  </DocumentFormats>
-                  <SupportedResolutions>
-                    <ResolutionRange>
-                      <XResolutionRange><Min>100</Min><Max>600</Max><Normal>300</Normal><Step>100</Step></XResolutionRange>
-                      <YResolutionRange><Min>100</Min><Max>600</Max><Normal>300</Normal><Step>100</Step></YResolutionRange>
-                    </ResolutionRange>
-                  </SupportedResolutions>
-                </SettingProfile>
-              </SettingProfiles>
-            </AdfSimplexInputCaps>
-            <AdfOptions>
-              <AdfOption>DetectPaperLoaded</AdfOption>
-            </AdfOptions>
-          </Adf>
-        </ScannerCapabilities>
-        """;
-
-    /// <summary>A flatbed-only scanner with no sizes, modes or formats listed.</summary>
-    internal const string BarePlaten = """
-        <scan:ScannerCapabilities xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03" xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">
-          <pwg:Version>2.0</pwg:Version>
-          <scan:Platen><scan:PlatenInputCaps /></scan:Platen>
-        </scan:ScannerCapabilities>
-        """;
-
-    /// <summary>Duplex announced only through AdfOptions.</summary>
-    internal const string DuplexOption = """
-        <scan:ScannerCapabilities xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03" xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">
-          <scan:Adf>
-            <scan:AdfSimplexInputCaps><scan:MaxWidth>2550</scan:MaxWidth><scan:MaxHeight>3300</scan:MaxHeight></scan:AdfSimplexInputCaps>
-            <scan:AdfOptions><scan:AdfOption>Duplex</scan:AdfOption></scan:AdfOptions>
-          </scan:Adf>
-        </scan:ScannerCapabilities>
-        """;
+    internal static string PlatenAndDuplexAdf => EsclFixtures.PlatenAndDuplexAdf;
+    internal static string FeederOnly => EsclFixtures.FeederOnly;
+    internal static string BarePlaten => EsclFixtures.BarePlaten;
+    internal static string DuplexOption => EsclFixtures.DuplexOption;
 
     private static void AssertSize(SizeD expected, SizeD? actual)
     {
@@ -250,26 +122,7 @@ public class EsclTests
     {
         var caps = EsclCapabilitiesParser.Parse(PlatenAndDuplexAdf);
         var request = EsclScanRequest.Create(caps, ScanSource.Flatbed, ColorMode.Color, 300, selection: null);
-        string expected = string.Join("\n",
-            """<?xml version="1.0" encoding="UTF-8"?>""",
-            """<scan:ScanSettings xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03" xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">""",
-            "  <pwg:Version>2.0</pwg:Version>",
-            "  <pwg:ScanRegions>",
-            "    <pwg:ScanRegion>",
-            "      <pwg:ContentRegionUnits>escl:ThreeHundredthsOfInches</pwg:ContentRegionUnits>",
-            "      <pwg:XOffset>0</pwg:XOffset>",
-            "      <pwg:YOffset>0</pwg:YOffset>",
-            "      <pwg:Width>2550</pwg:Width>",
-            "      <pwg:Height>3508</pwg:Height>",
-            "    </pwg:ScanRegion>",
-            "  </pwg:ScanRegions>",
-            "  <pwg:InputSource>Platen</pwg:InputSource>",
-            "  <scan:ColorMode>RGB24</scan:ColorMode>",
-            "  <scan:XResolution>300</scan:XResolution>",
-            "  <scan:YResolution>300</scan:YResolution>",
-            "  <pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>",
-            "</scan:ScanSettings>",
-            "");
+        string expected = EsclFixtures.Text(EsclFixtures.PlatenColorRequestFile);
         Assert.Equal(expected, request.ToXml());
     }
 
@@ -294,27 +147,7 @@ public class EsclTests
         var request = EsclScanRequest.Create(caps, ScanSource.DocumentFeeder, ColorMode.Color, 300, selection: null,
                                              duplex: true);
         Assert.True(request.Duplex);
-        string expected = string.Join("\n",
-            """<?xml version="1.0" encoding="UTF-8"?>""",
-            """<scan:ScanSettings xmlns:scan="http://schemas.hp.com/imaging/escl/2011/05/03" xmlns:pwg="http://www.pwg.org/schemas/2010/12/sm">""",
-            "  <pwg:Version>2.0</pwg:Version>",
-            "  <pwg:ScanRegions>",
-            "    <pwg:ScanRegion>",
-            "      <pwg:ContentRegionUnits>escl:ThreeHundredthsOfInches</pwg:ContentRegionUnits>",
-            "      <pwg:XOffset>0</pwg:XOffset>",
-            "      <pwg:YOffset>0</pwg:YOffset>",
-            "      <pwg:Width>2550</pwg:Width>",
-            "      <pwg:Height>4200</pwg:Height>",
-            "    </pwg:ScanRegion>",
-            "  </pwg:ScanRegions>",
-            "  <pwg:InputSource>Feeder</pwg:InputSource>",
-            "  <scan:ColorMode>RGB24</scan:ColorMode>",
-            "  <scan:XResolution>300</scan:XResolution>",
-            "  <scan:YResolution>300</scan:YResolution>",
-            "  <scan:Duplex>true</scan:Duplex>",
-            "  <pwg:DocumentFormat>image/jpeg</pwg:DocumentFormat>",
-            "</scan:ScanSettings>",
-            "");
+        string expected = EsclFixtures.Text(EsclFixtures.FeederTwoSidedRequestFile);
         Assert.Equal(expected, request.ToXml());
     }
 

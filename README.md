@@ -340,6 +340,14 @@ target for each platform's own parts:
     layout and page (`IdCard`)
   - `Output` — PDF builder, OCR, image export, naming templates
   - `Persistence`, `Companion` — settings files; the phone companion's shared pieces
+  - `Escl` — the protocol of driverless network scanners (eSCL, also called AirScan or Mopria
+    Scan), shared with the Windows app line for line and checked by the same tests: the
+    capabilities parser, the scan request (the same XML bytes as Windows), the scanner's status,
+    retrying while it is busy, DNS-SD TXT records, scanner addresses, one entry per scanner from
+    its services, the scanners added by address (`escl-hosts.json`) and certificate pinning for
+    HTTPS (`escl-trust.json`, with `SpkiFingerprint` from `Companion`). It has no network code:
+    the iPhone's eSCL connection (URLSession, discovery, the Local Network permission) builds on
+    it next, and the Mac, which reaches these scanners through ImageCaptureCore, could use it later
   - `App` — `AppState`, which every view binds to, and the protocols of the system services each
     app passes in (`FileActionService`, `PrintService`, `TroubleshooterService`,
     `PlatformLifecycle`); pages from a scan or any other source come in through `AppState.ingest`
@@ -358,4 +366,7 @@ target for each platform's own parts:
   photo, and the camera screen's no-camera state); the `.xcodeproj` XcodeGen writes is not checked in
 - `Sources/CompleteScanner` — the Mac app's entry point
 - `Tests/CompleteScannerTests` — unit tests (synthetic-image based), run on macOS and on the iOS
-  Simulator; `Tests/CompleteScannerMacTests` and `Tests/CompleteScannerIOSTests` — each platform's own
+  Simulator; `Tests/CompleteScannerMacTests` and `Tests/CompleteScannerIOSTests` — each platform's own;
+  `Tests/Fixtures/Escl` — the eSCL fixtures this suite and the Windows one both read (capability
+  documents, request snapshots, a TXT record, RSA-2048, P-256 and P-384 scanner certificates and a
+  trust file written by each platform)

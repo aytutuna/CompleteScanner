@@ -25,14 +25,17 @@ UI per platform** architecture:
   through ImageCaptureCore: the WIA error and document-handling tables (`WiaErrors.cs`), the
   decisions of the Windows Scan backup connection (`WindowsScan.cs`: capabilities, the scan
   request, error mapping and its diagnostics; see [Windows Scan](#windows-scan-backup-connection)),
-  the eSCL protocol (`Escl/`: capabilities parser, job request builder, 503 retry policy,
-  status parser, the HTTP client and session, DNS-SD TXT records and address parsing, and
-  certificate pinning for HTTPS), and the TWAIN scan logic (`Twain/`: the acquisition state machine behind an
+  the eSCL HTTP client and session (`Escl/EsclClient.cs`, `EsclScannerSession.cs`; the iPhone's
+  twin comes with its eSCL connection), and the TWAIN scan logic (`Twain/`: the acquisition state machine behind an
   `ITwainTransport` interface, memory-strip and bitmap conversion, the paper-size table and
   the condition-code mapping, and the protocol of the 32-bit TWAIN helper: its messages and
   their encoding, `TwainHelperProtocol.cs`, the helper's end, `TwainHelperServer.cs`, and the
   app's end with a transport that forwards each TWAIN call to it, `TwainHelperClient.cs`), and the Windows service and network-category values the
-  troubleshooter reads (`WindowsSystemStatus.cs`). Device merging (`DeviceMerge.cs`: one row per physical
+  troubleshooter reads (`WindowsSystemStatus.cs`). The rest of the eSCL protocol (`Escl/`:
+  capabilities parser, job request builder, status mapping, 503 retry policy, DNS-SD TXT
+  records, address parsing, endpoints, the added-address list and certificate pinning for HTTPS)
+  has Swift twins in `Sources/CompleteScannerKit/Escl/`, for the iPhone, which has no
+  ImageCaptureCore scanners; see [Network scanners](#network-scanners-escl). Device merging (`DeviceMerge.cs`: one row per physical
   scanner, whichever backends list it) is shared with macOS. So is the page clean-up stage
   (`PageProcessor.cs`: the steps every scanned page goes through before it is queued) and the
   image toolkit it works with (`GrayImage.cs`, `BackgroundMap.cs`, `MaskOps.cs` next to
@@ -1433,15 +1436,19 @@ Known divergences from the macOS app (all documented in the source):
   font rasterizer), so OCR demos need a real scan. Its receipts are the exception: they are
   printed in a plain stroke type drawn pixel by pixel (the same on the Mac), which Windows OCR
   reads.
-- WIA, Windows Scan, eSCL and TWAIN exist only here, so their logic in Core (`WiaErrors.cs`,
-  `WindowsScan.cs` and `ResolutionList.FromBounds`, `Escl/`, `Twain/`) and its tests
+- WIA, Windows Scan and TWAIN exist only here, so their logic in Core (`WiaErrors.cs`,
+  `WindowsScan.cs` and `ResolutionList.FromBounds`, `Twain/`) and its tests
   (`WiaErrorsTests`, `WindowsScanTests` and the `FromBounds` cases of `ResolutionListTests`,
-  `EsclTests`, `EsclRetryTests`, `EsclClientTests`, `EsclDiscoveryTests`, `EsclTrustTests`,
   `TwainScanLoopTests`, `TwainRasterTests`, `TwainScanRequestsTests`, `TwainHelperProtocolTests`,
   `TwainHelperSessionTests`, and `WinRtScannerTests` and `WiaEnumerationTests` in
   `CompleteScanner.App.Tests`) have no Swift counterparts, nor has the 32-bit TWAIN helper: the Mac reaches
   the same scanners through ImageCaptureCore, whose Bonjour browsing also finds network
-  scanners. The scanner problems they report (`ScannerProblem`) are shared with macOS.
+  scanners. The scanner problems they report (`ScannerProblem`) are shared with macOS. The eSCL
+  protocol (`Escl/`) is shared since the iPhone needs it: its Swift twins pass the same cases
+  (`EsclTests`, `EsclRetryTests`, `EsclDiscoveryTests`, `EsclTrustTests`, reading the same
+  fixtures in `Tests/Fixtures/Escl`); only the HTTP client and session (`EsclClient.cs`,
+  `EsclScannerSession.cs`, `EsclClientTests`, and the two `EsclTrustTests` cases that go through
+  a real TLS connection) wait for the iPhone's eSCL connection.
 - The troubleshooter's checks (`Troubleshooter`) are shared, but each app fills in what it can
   read. Windows reads the WIA service, the network category, TWAIN (with why its 32-bit helper
   does not reach a driver, `ThirtyTwoBitHelperProblem`) and the addresses added by
@@ -1731,7 +1738,9 @@ row's **via** menu chooses between them.
   A connection that fails, including a failed TLS handshake, moves on to the next address.
 - **Add scanner by address.** The **+** button next to **Scanners** (and the link in the
   empty list and in the troubleshooter) opens a dialog that takes an IP address, a host name, `host:port` or an
-  `http(s)://` URL. It checks that an eSCL scanner answers there before adding it, and
+  `http(s)://` URL. An IPv6 zone may be an interface number or name (`%12`, `%ethernet_32769`;
+  a name is kept as its number), and one that names no interface is refused rather than
+  dropped. It checks that an eSCL scanner answers there before adding it, and
   explains what is wrong when nothing does. Addresses are kept in
   `%APPDATA%\CompleteScanner\escl-hosts.json` (a JSON list of strings, the file earlier
   versions asked to edit by hand; hand-written entries keep working). They are checked at
@@ -1755,6 +1764,18 @@ row's **via** menu chooses between them.
   its own again until the app restarts, and moves on to another one. A refused certificate
   never falls back to plain HTTP. A certificate Windows itself accepts (valid chain and name)
   is used without asking.
+- **Shared with the iPhone.** The protocol logic above has Swift twins in
+  `Sources/CompleteScannerKit/Escl/` that behave the same way and pass the same tests:
+  capabilities, the scan request (the same ScanSettings bytes), the status mapping, the retry
+  policy, TXT records, addresses and their canonical text, one entry per scanner, the
+  added-address list and the trust store with its validator. The fixtures both suites read are
+  in `Tests/Fixtures/Escl`: capability documents, the request snapshots, a TXT record, scanner
+  certificates (RSA-2048, P-256 and P-384) with their public-key fingerprints, and a trust file
+  written by each platform. Each platform keeps its own `escl-hosts.json` and
+  `escl-trust.json`, with the same keys; a trust file from the other platform loads with its
+  pins, only the date each was trusted reads as unknown (Windows writes ISO 8601 text, the Swift
+  side a number). The iPhone keeps an IPv6 zone in the URL text (`%25` and the zone), where
+  `System.Uri` leaves it out of `AbsoluteUri`.
 - **To check on real hardware:** discovery of real scanners (the names, TXT records and
   addresses they advertise appear in `devices.txt`), HTTPS with real scanner certificates
   and TLS versions, link-local IPv6 connections, and how long Windows keeps listing a

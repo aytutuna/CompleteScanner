@@ -1,0 +1,12 @@
+txtvers=1
+vers=2.63
+adminurl=http://HPA1B2C3.local./#hId-pgAirPrint
+representation=http://HPA1B2C3.local./images/printer.png
+rs=eSCL
+ty=HP Color LaserJet MFP M479fdw
+note=Office
+pdl=application/pdf,image/jpeg
+UUID=564e4333-4230-3538-3930-a0b3cce51a2b
+cs=color,grayscale,binary
+is=platen,adf
+duplex=T

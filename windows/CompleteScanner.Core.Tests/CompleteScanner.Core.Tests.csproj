@@ -21,4 +21,11 @@
     <ProjectReference Include="..\CompleteScanner.Core\CompleteScanner.Core.csproj" />
   </ItemGroup>
 
+  <!-- The eSCL fixtures both test suites read (Tests/Fixtures/Escl at the repository root; the Swift
+       suite reads the same files): capability documents, request snapshots, a TXT record, scanner
+       certificates and trust files from either platform. -->
+  <ItemGroup>
+    <None Include="..\..\Tests\Fixtures\Escl\**\*" LinkBase="Fixtures\Escl" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
