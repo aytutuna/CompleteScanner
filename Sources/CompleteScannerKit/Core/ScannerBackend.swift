@@ -11,6 +11,16 @@ public protocol ScannerBackend: AnyObject {
     func stopBrowsing()
     /// Open a session with one of `devices`. Throws ScanError on failure.
     func openSession(deviceID: String) async throws -> any ScannerSession
+    /// The same, `interactive` when the user just chose the scanner: a connection that needs the user's
+    /// say (a network scanner's changed certificate) may ask then, never otherwise. Twin of the Windows
+    /// network backend's `OpenSessionAsync(id, interactive)`. Default: `openSession(deviceID:)`.
+    func openSession(deviceID: String, interactive: Bool) async throws -> any ScannerSession
+}
+
+extension ScannerBackend {
+    public func openSession(deviceID: String, interactive: Bool) async throws -> any ScannerSession {
+        try await openSession(deviceID: deviceID)
+    }
 }
 
 /// An open connection to one scanner.

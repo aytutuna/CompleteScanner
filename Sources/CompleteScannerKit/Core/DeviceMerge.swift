@@ -28,6 +28,10 @@ public enum DeviceMerge {
     /// macOS connection ranking, best first: USB, then Bonjour, then shared scanners.
     public static let macRanking = ["ic:USB", "ic:Network", "ic:Shared"]
 
+    /// iPhone and iPad connection ranking, best first: the scanner's own network connection (eSCL),
+    /// then a computer's scanner reached through the desktop companion. Windows never uses it.
+    public static let iosRanking = ["escl:Network", "companion:*"]
+
     /// Words that say how a device is reached, or what kind of thing it is, rather than which model it is.
     private static let stopWords: Set<String> = [
         "wia", "twain", "tw", "driver", "scanner", "scan", "series", "usb", "network", "net", "wsd",

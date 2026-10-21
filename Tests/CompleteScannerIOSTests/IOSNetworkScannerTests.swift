@@ -178,7 +178,8 @@ final class IOSNetworkScannerTests: XCTestCase {
 
         let demoOnly: [any ScannerBackend] = IOSShell.backends(options: IOSLaunchOptions(demoScannerOnly: true), network: network)
         XCTAssertEqual(demoOnly.count, 1)
-        // The app itself offers the demo scanner alone until it finds network scanners (I12).
+        // Without network scanners passed in (tests, previews) the demo scanner is alone; the app passes its
+        // own (`backends(options:networkScanners:)`, IOSScannerPickerTests).
         XCTAssertEqual(IOSShell.backends(options: IOSLaunchOptions(demoScannerOnly: false)).count, 1)
     }
 }

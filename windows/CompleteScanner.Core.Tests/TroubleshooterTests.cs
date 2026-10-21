@@ -101,7 +101,146 @@ public class TroubleshooterTests
         }
         snapshots.Add(new DiscoverySnapshot { LastFailure = new ScannerFailure("Office MFP", "Office MFP did not answer.") });
         snapshots.Add(TroubledWindows() with { Platform = TroubleshootPlatform.Mac });
+        snapshots.Add(HealthyPhone());
+        snapshots.Add(TroubledPhone());
+        foreach (var network in Enum.GetValues<NetworkStatus>()) snapshots.Add(HealthyPhone() with { Network = network });
+        foreach (var discovery in Enum.GetValues<DiscoveryStatus>()) snapshots.Add(HealthyPhone() with { Discovery = discovery });
+        foreach (var problem in Enum.GetValues<ScannerProblem>())
+        {
+            snapshots.Add(HealthyPhone() with { LastFailure = new ScannerFailure("Acme", "x", problem) });
+        }
+        snapshots.Add(HealthyPhone() with { LastFailure = new ScannerFailure("Office MFP", "Office MFP did not answer.") });
         return snapshots.SelectMany(Troubleshooter.Diagnose);
+    }
+
+    // MARK: - iPhone and iPad (never produced on Windows)
+
+    private static readonly ScannerInfo NetworkScanner =
+        new("escl:uuid", "HP Color LaserJet MFP M479fdw", "Network", Backend: "escl");
+
+    /// <summary>A phone on Wi-Fi that found a network scanner.</summary>
+    private static DiscoverySnapshot HealthyPhone() => new()
+    {
+        Platform = TroubleshootPlatform.Ios,
+        Devices = [Demo, NetworkScanner],
+        Network = NetworkStatus.PrivateNetwork,
+        Discovery = DiscoveryStatus.Running,
+        DiscoveredCount = 1,
+    };
+
+    /// <summary>A phone off Wi-Fi, without Local Network access, with an address that does not answer.</summary>
+    private static DiscoverySnapshot TroubledPhone() => new()
+    {
+        Platform = TroubleshootPlatform.Ios,
+        Devices = [Demo],
+        Network = NetworkStatus.Offline,
+        Discovery = DiscoveryStatus.Denied,
+        ManualHosts = [new("192.168.1.50", false, "No scanner answered at 192.168.1.50."), new("10.0.0.2", true)],
+        LastFailure = new ScannerFailure("Office MFP", "Office MFP did not answer."),
+    };
+
+    [Fact]
+    public void Phone_Healthy_ShowsWhatIsFineThenItsTips()
+    {
+        var snapshot = HealthyPhone();
+        var checks = Troubleshooter.Diagnose(snapshot);
+        Assert.Equal(["network", "discovery", "networkScanner", "usb", "otherApps"], Ids(checks));
+        Assert.Equal([CheckStatus.Ok, CheckStatus.Ok, CheckStatus.Tip, CheckStatus.Tip, CheckStatus.Tip], checks.Select(c => c.Status));
+        Assert.Equal("1 scanner found", Troubleshooter.Overview(snapshot, checks));
+        var network = Check(checks, "network");
+        Assert.Equal(("Connected to a local network", "Network scanners on this network can be found."), (network.Title, network.Detail));
+        var discovery = Check(checks, "discovery");
+        Assert.Equal((CheckStatus.Ok, "Looking for network scanners"), (discovery.Status, discovery.Title));
+        Assert.Equal("1 network scanner found. A scanner that doesn't appear can be added by its address.", discovery.FullDetail);
+        Assert.Equal([TroubleshootAction.AddByAddress], discovery.Actions);
+        Assert.Equal(new TroubleshootCheck(
+            "networkScanner", CheckStatus.Tip, "Scanner on the network?",
+            "This device and the scanner must be on the same Wi-Fi.",
+            [TroubleshootAction.AddByAddress],
+            "Guest networks and some VPNs hide scanners. Try adding the scanner by its address."), Check(checks, "networkScanner"));
+        Assert.Equal(new TroubleshootCheck(
+            "usb", CheckStatus.Tip, "Connected by USB?",
+            "Use its Wi-Fi connection; iPhone and iPad can't use USB scanners.",
+            [],
+            "Most scanners that print or copy also join Wi-Fi. The scanner's manual shows how."), Check(checks, "usb"));
+        Assert.Equal("Press a button on the scanner. Close scanning apps on other devices. Some scanners work only with "
+                     + "Windows (WSD) or their maker's app.", Check(checks, "otherApps").More);
+    }
+
+    [Fact]
+    public void Phone_Troubled_LocalNetworkAccessOffComesFirstWithSettings()
+    {
+        var snapshot = TroubledPhone();
+        var checks = Troubleshooter.Diagnose(snapshot);
+        Assert.Equal(["network", "localNetwork", "lastFailure", "manualHost:192.168.1.50", "networkScanner", "usb", "otherApps"],
+                     Ids(checks));
+        Assert.Equal("No scanner found · 2 problems, 2 warnings", Troubleshooter.Overview(snapshot, checks));
+        Assert.Equal(new TroubleshootCheck(
+            "localNetwork", CheckStatus.Problem, "Local Network access is off",
+            "Turn on Local Network for CompleteScanner in Settings.",
+            [TroubleshootAction.OpenAppSettings],
+            "Without it, the app can't find or reach scanners on your network. Scanners appear as soon as it's on. "
+            + "If it's on already, turn it off and on again."), Check(checks, "localNetwork"));
+        Assert.Equal(new TroubleshootCheck(
+            "network", CheckStatus.Problem, "Not connected to Wi-Fi",
+            "Join the scanner's Wi-Fi network, then tap Refresh.",
+            [TroubleshootAction.Refresh],
+            "Network scanners are found only on Wi-Fi or a wired network. The camera works without one."), Check(checks, "network"));
+        Assert.Equal("Office MFP did not answer. It must be on the same network as this device.", Check(checks, "lastFailure").More);
+        Assert.StartsWith("No scanner answered at 192.168.1.50. Its network settings page",
+                          Check(checks, "manualHost:192.168.1.50").More);
+        Assert.DoesNotContain("manualHost:10.0.0.2", Ids(checks));
+        var busy = Troubleshooter.Diagnose(HealthyPhone() with { LastFailure = new ScannerFailure("Acme", "x", ScannerProblem.Busy) });
+        Assert.Contains("another device or app may be using it", Check(busy, "lastFailure").More);
+    }
+
+    [Fact]
+    public void Phone_SearchStates_SayWhatIOSDoes()
+    {
+        string Detail(DiscoverySnapshot s) => Check(Troubleshooter.Diagnose(s), "discovery").FullDetail;
+        Assert.Equal("Scanners on the network appear as they answer. The search has just started.",
+                     Detail(HealthyPhone() with { Discovery = DiscoveryStatus.Searching }));
+        var unavailable = Check(Troubleshooter.Diagnose(HealthyPhone() with
+        {
+            Discovery = DiscoveryStatus.Unavailable,
+            DiscoveryDetail = "NoSuchRecord.",
+        }), "discovery");
+        Assert.Equal((CheckStatus.Warning, "Network search is not working"), (unavailable.Status, unavailable.Title));
+        Assert.Equal("iOS could not search the network for scanners (NoSuchRecord).", unavailable.More);
+        Assert.Equal([TroubleshootAction.AddByAddress, TroubleshootAction.Refresh], unavailable.Actions);
+        // Before the search has started there is nothing to say; denied access replaces the search's check.
+        Assert.DoesNotContain("discovery", Ids(Troubleshooter.Diagnose(HealthyPhone() with { Discovery = DiscoveryStatus.Off })));
+        var denied = Troubleshooter.Diagnose(HealthyPhone() with { Discovery = DiscoveryStatus.Denied });
+        Assert.DoesNotContain("discovery", Ids(denied));
+        Assert.Contains("localNetwork", Ids(denied));
+        // iOS has no public networks: any local network is fine; an unknown one has no check.
+        Assert.Equal(CheckStatus.Ok, Check(Troubleshooter.Diagnose(HealthyPhone() with { Network = NetworkStatus.PublicNetwork }), "network").Status);
+        Assert.DoesNotContain("network", Ids(Troubleshooter.Diagnose(HealthyPhone() with { Network = NetworkStatus.Unknown })));
+    }
+
+    [Fact]
+    public void Phone_NeverOffersTheComputersActions_AndTheComputersNeverOfferSettings()
+    {
+        var computerActions = new[]
+        {
+            TroubleshootAction.OpenScannerSettings, TroubleshootAction.OpenNetworkSettings, TroubleshootAction.OpenImageCapture,
+        };
+        var phone = new List<TroubleshootCheck>();
+        foreach (var snapshot in new[] { HealthyPhone(), TroubledPhone() })
+        {
+            foreach (var network in Enum.GetValues<NetworkStatus>())
+            {
+                foreach (var discovery in Enum.GetValues<DiscoveryStatus>())
+                {
+                    phone.AddRange(Troubleshooter.Diagnose(snapshot with { Network = network, Discovery = discovery }));
+                }
+            }
+        }
+        Assert.DoesNotContain(phone, c => c.Actions.Intersect(computerActions).Any());
+        // Windows and the Mac never report denied access, so they never offer the phone's Settings.
+        Assert.DoesNotContain(Troubleshooter.Diagnose(TroubledWindows()), c => c.Actions.Contains(TroubleshootAction.OpenAppSettings));
+        Assert.DoesNotContain(Troubleshooter.Diagnose(HealthyWindows() with { Platform = TroubleshootPlatform.Mac }),
+                              c => c.Actions.Contains(TroubleshootAction.OpenAppSettings));
     }
 
     [Fact]
@@ -118,6 +257,7 @@ public class TroubleshooterTests
         {
             Assert.InRange(StatusLine.Words(Troubleshooter.Label(action, TroubleshootPlatform.Windows)), 1, 3);
             Assert.InRange(StatusLine.Words(Troubleshooter.Label(action, TroubleshootPlatform.Mac)), 1, 3);
+            Assert.InRange(StatusLine.Words(Troubleshooter.Label(action, TroubleshootPlatform.Ios)), 1, 3);
         }
     }
 
@@ -443,6 +583,8 @@ public class TroubleshooterTests
         Assert.Equal("Network settings", Troubleshooter.Label(TroubleshootAction.OpenNetworkSettings, TroubleshootPlatform.Mac));
         Assert.Equal("Image Capture", Troubleshooter.Label(TroubleshootAction.OpenImageCapture, TroubleshootPlatform.Mac));
         Assert.Equal("Copy diagnostics", Troubleshooter.Label(TroubleshootAction.CopyDiagnostics, TroubleshootPlatform.Mac));
+        Assert.Equal("Open Settings", Troubleshooter.Label(TroubleshootAction.OpenAppSettings, TroubleshootPlatform.Ios));
+        Assert.Equal("Add by address…", Troubleshooter.Label(TroubleshootAction.AddByAddress, TroubleshootPlatform.Ios));
         Assert.Equal(["OK", "Tip", "Warning", "Problem"],
                      new[] { CheckStatus.Ok, CheckStatus.Tip, CheckStatus.Warning, CheckStatus.Problem }.Select(Troubleshooter.StatusLabel));
     }

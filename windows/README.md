@@ -1451,7 +1451,18 @@ Known divergences from the macOS app (all documented in the source):
   and the two `EsclTrustTests` cases that go through a real TLS connection have their twins in
   `EsclLoopbackTests` (a loopback `NWListener` serving the fixtures' two test identities). The
   scanner problems include one Windows never produces, `AppSuspended` (the iPhone suspended the
-  app in the middle of a network scan; the pages received are kept); its text is shared.
+  app in the middle of a network scan; the pages received are kept); its text is shared. The
+  search for scanners and the backend around it are each platform's own: Windows has its device
+  watcher (`EsclDiscovery.cs`) and `Scanning/EsclScannerBackend.cs`, the iPhone an NWBrowser per
+  service type with DNS-SD resolving and a Swift `EsclScannerBackend` with the same device list,
+  addresses added by hand and troubleshooter view (their Swift tests have no C# twin); what they
+  hand over (`EsclService`, `EsclEndpoint.Choose`, `EsclHostList`) is shared.
+- The iPhone's troubleshooter cases are in Core with their Swift twins and the same tests
+  (`TroubleshooterTests`), though Windows never produces them: `TroubleshootPlatform.Ios`,
+  `DiscoveryStatus.Denied` (the iPhone's Local Network access is off: the "localNetwork" problem
+  with `TroubleshootAction.OpenAppSettings`, "Open Settings") and the iPhone's own network check and
+  tips. So is `DeviceMerge.IosRanking` (`["escl:Network", "companion:*"]`, `DeviceMergeTests`),
+  which the Windows app never uses.
 - The troubleshooter's checks (`Troubleshooter`) are shared, but each app fills in what it can
   read. Windows reads the WIA service, the network category, TWAIN (with why its 32-bit helper
   does not reach a driver, `ThirtyTwoBitHelperProblem`) and the addresses added by
@@ -1777,7 +1788,12 @@ row's **via** menu chooses between them.
   while a job runs, and a job the system suspends keeping its pages with the `AppSuspended`
   stop, which Windows never produces) and the way a scanner is connected to (the iPhone's
   `EsclScannerBackend`: addresses in order, trust on first use, a changed certificate refused,
-  never plain HTTP after a refused certificate). The fixtures both suites read are in
+  never plain HTTP after a refused certificate). Since I12 the iPhone also finds scanners on the
+  network, keeps the addresses added by hand (the same `escl-hosts.json` format, the same messages
+  as the Add scanner dialog) and shows the same troubleshooter checks for them. Two choices differ
+  there: adding by address trusts a new certificate without asking (it is still pinned, and a
+  changed one is asked about), and a connection that falls back to the scanner's own plain HTTP
+  address after its HTTPS address could not be used (as Windows does) is labeled "Not encrypted". The fixtures both suites read are in
   `Tests/Fixtures/Escl`: capability documents, the request snapshots, a TXT record, scanner
   certificates (RSA-2048, P-256 and P-384) with their public-key fingerprints, a trust file
   written by each platform, and two test-only identities with their private keys

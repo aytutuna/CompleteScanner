@@ -86,7 +86,7 @@ final class TroubleshooterTests: XCTestCase {
         for network in [NetworkStatus.unknown, .offline, .publicNetwork, .privateNetwork, .domainNetwork] {
             snapshots.append(changed(healthyWindows()) { $0.network = network })
         }
-        for discovery in [DiscoveryStatus.unknown, .off, .searching, .running, .unavailable] {
+        for discovery in [DiscoveryStatus.unknown, .off, .searching, .running, .unavailable, .denied] {
             snapshots.append(changed(healthyWindows()) { $0.discovery = discovery })
             snapshots.append(DiscoverySnapshot(platform: .mac, discovery: discovery))
         }
@@ -95,7 +95,143 @@ final class TroubleshooterTests: XCTestCase {
         }
         snapshots.append(DiscoverySnapshot(lastFailure: ScannerFailure(deviceName: "Office MFP", message: "Office MFP did not answer.")))
         snapshots.append(changed(troubledWindows()) { $0.platform = .mac })
+        snapshots.append(healthyPhone())
+        snapshots.append(troubledPhone())
+        for network in [NetworkStatus.unknown, .offline, .publicNetwork, .privateNetwork, .domainNetwork] {
+            snapshots.append(changed(healthyPhone()) { $0.network = network })
+        }
+        for discovery in [DiscoveryStatus.unknown, .off, .searching, .running, .unavailable, .denied] {
+            snapshots.append(changed(healthyPhone()) { $0.discovery = discovery })
+        }
+        for problem in ScannerProblem.allCases {
+            snapshots.append(changed(healthyPhone()) { $0.lastFailure = ScannerFailure(deviceName: "Acme", message: "x", problem: problem) })
+        }
+        snapshots.append(changed(healthyPhone()) {
+            $0.lastFailure = ScannerFailure(deviceName: "Office MFP", message: "Office MFP did not answer.")
+        })
         return snapshots.flatMap { (snapshot: DiscoverySnapshot) -> [TroubleshootCheck] in Troubleshooter.diagnose(snapshot) }
+    }
+
+    // MARK: - iPhone and iPad (never produced on Windows)
+
+    private let networkScanner = ScannerInfo(id: "escl:uuid", name: "HP Color LaserJet MFP M479fdw", transport: "Network",
+                                             backend: "escl")
+
+    /// A phone on Wi-Fi that found a network scanner.
+    private func healthyPhone() -> DiscoverySnapshot {
+        DiscoverySnapshot(platform: .ios, devices: [demo, networkScanner], network: .privateNetwork,
+                          discovery: .running, discoveredCount: 1)
+    }
+
+    /// A phone off Wi-Fi, without Local Network access, with an address that does not answer.
+    private func troubledPhone() -> DiscoverySnapshot {
+        DiscoverySnapshot(platform: .ios, devices: [demo], network: .offline, discovery: .denied,
+                          manualHosts: [ManualHostStatus(address: "192.168.1.50", listed: false, problem: "No scanner answered at 192.168.1.50."),
+                                        ManualHostStatus(address: "10.0.0.2", listed: true)],
+                          lastFailure: ScannerFailure(deviceName: "Office MFP", message: "Office MFP did not answer."))
+    }
+
+    func test_phone_healthy_showsWhatIsFineThenItsTips() {
+        let snapshot: DiscoverySnapshot = healthyPhone()
+        let checks: [TroubleshootCheck] = Troubleshooter.diagnose(snapshot)
+        XCTAssertEqual(ids(checks), ["network", "discovery", "networkScanner", "usb", "otherApps"])
+        XCTAssertEqual(checks.map { $0.status }, [.ok, .ok, .tip, .tip, .tip])
+        XCTAssertEqual(Troubleshooter.overview(snapshot, checks: checks), "1 scanner found")
+        let network: TroubleshootCheck = check(checks, "network")
+        XCTAssertEqual(network.title, "Connected to a local network")
+        XCTAssertEqual(network.detail, "Network scanners on this network can be found.")
+        let discovery: TroubleshootCheck = check(checks, "discovery")
+        XCTAssertEqual(discovery.status, .ok)
+        XCTAssertEqual(discovery.title, "Looking for network scanners")
+        XCTAssertEqual(discovery.fullDetail, "1 network scanner found. A scanner that doesn't appear can be added by its address.")
+        XCTAssertEqual(discovery.actions, [.addByAddress])
+        XCTAssertEqual(check(checks, "networkScanner"), TroubleshootCheck(
+            id: "networkScanner", status: .tip, title: "Scanner on the network?",
+            detail: "This device and the scanner must be on the same Wi-Fi.",
+            more: "Guest networks and some VPNs hide scanners. Try adding the scanner by its address.",
+            actions: [.addByAddress]))
+        XCTAssertEqual(check(checks, "usb"), TroubleshootCheck(
+            id: "usb", status: .tip, title: "Connected by USB?",
+            detail: "Use its Wi-Fi connection; iPhone and iPad can't use USB scanners.",
+            more: "Most scanners that print or copy also join Wi-Fi. The scanner's manual shows how.",
+            actions: []))
+        XCTAssertEqual(check(checks, "otherApps").more, "Press a button on the scanner. Close scanning apps on other devices. Some "
+                       + "scanners work only with Windows (WSD) or their maker's app.")
+    }
+
+    func test_phone_troubled_localNetworkAccessOffComesFirstWithSettings() {
+        let snapshot: DiscoverySnapshot = troubledPhone()
+        let checks: [TroubleshootCheck] = Troubleshooter.diagnose(snapshot)
+        XCTAssertEqual(ids(checks), ["network", "localNetwork", "lastFailure", "manualHost:192.168.1.50", "networkScanner", "usb",
+                                     "otherApps"])
+        XCTAssertEqual(Troubleshooter.overview(snapshot, checks: checks), "No scanner found \u{00B7} 2 problems, 2 warnings")
+        XCTAssertEqual(check(checks, "localNetwork"), TroubleshootCheck(
+            id: "localNetwork", status: .problem, title: "Local Network access is off",
+            detail: "Turn on Local Network for CompleteScanner in Settings.",
+            more: "Without it, the app can't find or reach scanners on your network. Scanners appear as soon as it's on. "
+                + "If it's on already, turn it off and on again.",
+            actions: [.openAppSettings]))
+        XCTAssertEqual(check(checks, "network"), TroubleshootCheck(
+            id: "network", status: .problem, title: "Not connected to Wi-Fi",
+            detail: "Join the scanner's Wi-Fi network, then tap Refresh.",
+            more: "Network scanners are found only on Wi-Fi or a wired network. The camera works without one.",
+            actions: [.refresh]))
+        XCTAssertEqual(check(checks, "lastFailure").more, "Office MFP did not answer. It must be on the same network as this device.")
+        XCTAssertTrue(check(checks, "manualHost:192.168.1.50").more
+            .hasPrefix("No scanner answered at 192.168.1.50. Its network settings page"))
+        XCTAssertFalse(ids(checks).contains("manualHost:10.0.0.2"))
+        let busy: [TroubleshootCheck] = Troubleshooter.diagnose(changed(healthyPhone()) {
+            $0.lastFailure = ScannerFailure(deviceName: "Acme", message: "x", problem: .busy)
+        })
+        XCTAssertTrue(check(busy, "lastFailure").more.contains("another device or app may be using it"))
+    }
+
+    func test_phone_searchStates_sayWhatIOSDoes() {
+        func detail(_ snapshot: DiscoverySnapshot) -> String {
+            check(Troubleshooter.diagnose(snapshot), "discovery").fullDetail
+        }
+        XCTAssertEqual(detail(changed(healthyPhone()) { $0.discovery = .searching }),
+                       "Scanners on the network appear as they answer. The search has just started.")
+        let unavailable: TroubleshootCheck = check(Troubleshooter.diagnose(changed(healthyPhone()) {
+            $0.discovery = .unavailable
+            $0.discoveryDetail = "NoSuchRecord."
+        }), "discovery")
+        XCTAssertEqual(unavailable.status, .warning)
+        XCTAssertEqual(unavailable.title, "Network search is not working")
+        XCTAssertEqual(unavailable.more, "iOS could not search the network for scanners (NoSuchRecord).")
+        XCTAssertEqual(unavailable.actions, [.addByAddress, .refresh])
+        // Before the search has started there is nothing to say; denied access replaces the search's check.
+        XCTAssertFalse(ids(Troubleshooter.diagnose(changed(healthyPhone()) { $0.discovery = .off })).contains("discovery"))
+        let denied: [TroubleshootCheck] = Troubleshooter.diagnose(changed(healthyPhone()) { $0.discovery = .denied })
+        XCTAssertFalse(ids(denied).contains("discovery"))
+        XCTAssertTrue(ids(denied).contains("localNetwork"))
+        // iOS has no public networks: any local network is fine; an unknown one has no check.
+        XCTAssertEqual(check(Troubleshooter.diagnose(changed(healthyPhone()) { $0.network = .publicNetwork }), "network").status, .ok)
+        XCTAssertFalse(ids(Troubleshooter.diagnose(changed(healthyPhone()) { $0.network = .unknown })).contains("network"))
+    }
+
+    func test_phone_neverOffersTheComputersActions_andTheComputersNeverOfferSettings() {
+        let computerActions: [TroubleshootAction] = [.openScannerSettings, .openNetworkSettings, .openImageCapture]
+        var phone: [TroubleshootCheck] = []
+        for snapshot in [healthyPhone(), troubledPhone()] {
+            for network in [NetworkStatus.unknown, .offline, .publicNetwork, .privateNetwork, .domainNetwork] {
+                for discovery in [DiscoveryStatus.unknown, .off, .searching, .running, .unavailable, .denied] {
+                    phone.append(contentsOf: Troubleshooter.diagnose(changed(snapshot) {
+                        $0.network = network
+                        $0.discovery = discovery
+                    }))
+                }
+            }
+        }
+        for found in phone {
+            for action in computerActions {
+                XCTAssertFalse(found.actions.contains(action), found.id)
+            }
+        }
+        // Windows and the Mac never report denied access, so they never offer the phone's Settings.
+        XCTAssertFalse(Troubleshooter.diagnose(troubledWindows()).contains { $0.actions.contains(.openAppSettings) })
+        XCTAssertFalse(Troubleshooter.diagnose(changed(healthyWindows()) { $0.platform = .mac })
+            .contains { $0.actions.contains(.openAppSettings) })
     }
 
     func test_everyCheck_hasAShortTitle_andAOneLineDetail_theRestIsMoreHelp() {
@@ -106,10 +242,12 @@ final class TroubleshooterTests: XCTestCase {
             XCTAssertFalse(!found.more.isEmpty && found.more.contains(found.detail), found.id)
         }
         let actions: [TroubleshootAction] = [.refresh, .addByAddress, .openScannerSettings, .openNetworkSettings,
-                                             .openImageCapture, .copyDiagnostics]
+                                             .openImageCapture, .copyDiagnostics, .openAppSettings]
+        XCTAssertEqual(actions, TroubleshootAction.allCases)
         for action in actions {
             XCTAssertTrue((1...3).contains(StatusLine.words(Troubleshooter.label(action, platform: .windows))))
             XCTAssertTrue((1...3).contains(StatusLine.words(Troubleshooter.label(action, platform: .mac))))
+            XCTAssertTrue((1...3).contains(StatusLine.words(Troubleshooter.label(action, platform: .ios))))
         }
     }
 
@@ -394,6 +532,8 @@ final class TroubleshooterTests: XCTestCase {
         XCTAssertEqual(Troubleshooter.label(.openNetworkSettings, platform: .mac), "Network settings")
         XCTAssertEqual(Troubleshooter.label(.openImageCapture, platform: .mac), "Image Capture")
         XCTAssertEqual(Troubleshooter.label(.copyDiagnostics, platform: .mac), "Copy diagnostics")
+        XCTAssertEqual(Troubleshooter.label(.openAppSettings, platform: .ios), "Open Settings")
+        XCTAssertEqual(Troubleshooter.label(.addByAddress, platform: .ios), "Add by address\u{2026}")
         XCTAssertEqual([CheckStatus.ok, .tip, .warning, .problem].map { Troubleshooter.statusLabel($0) }, ["OK", "Tip", "Warning", "Problem"])
     }
 

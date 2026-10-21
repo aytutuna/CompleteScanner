@@ -8,10 +8,20 @@ import Foundation
 @MainActor
 public protocol TroubleshooterService: AnyObject {
     /// Opens what `action` names (`.openScannerSettings`, `.openNetworkSettings`,
-    /// `.openImageCapture`); throws when the system refuses or the action opens nothing.
+    /// `.openImageCapture`; the iPhone's `.openAppSettings`); throws when the system refuses or the
+    /// action opens nothing.
     func open(_ action: TroubleshootAction) throws
     /// Puts the text on the pasteboard.
     func copy(_ text: String) throws
+    /// The snapshot with what the system says filled in (the iPhone: whether it is on Wi-Fi). Default:
+    /// nothing; the Mac reads no system state.
+    func addSystemStatus(to snapshot: DiscoverySnapshot) -> DiscoverySnapshot
+}
+
+extension TroubleshooterService {
+    public func addSystemStatus(to snapshot: DiscoverySnapshot) -> DiscoverySnapshot {
+        snapshot
+    }
 }
 
 /// The troubleshooter's system side of an `AppState` whose app shell passed none: nothing opens and

@@ -27,6 +27,12 @@ public static class DeviceMerge
     /// <summary>macOS connection ranking, best first: USB, then Bonjour, then shared scanners.</summary>
     public static readonly IReadOnlyList<string> MacRanking = ["ic:USB", "ic:Network", "ic:Shared"];
 
+    /// <summary>
+    /// iPhone and iPad connection ranking, best first: the scanner's own network connection (eSCL),
+    /// then a computer's scanner reached through the desktop companion. Windows never uses it.
+    /// </summary>
+    public static readonly IReadOnlyList<string> IosRanking = ["escl:Network", "companion:*"];
+
     /// <summary>Words that say how a device is reached, or what kind of thing it is, rather than which model it is.</summary>
     private static readonly HashSet<string> StopWords =
     [

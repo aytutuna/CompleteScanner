@@ -129,6 +129,24 @@ public class DeviceMergeTests
     }
 
     [Fact]
+    public void Group_IosRankingPrefersTheScannersOwnNetworkConnection()
+    {
+        Assert.Equal(["escl:Network", "companion:*"], DeviceMerge.IosRanking);
+        // The same scanner through a computer (the desktop companion) and on its own network connection.
+        var companion = new ScannerInfo("companion:pc:1", "HP LaserJet MFP M428fdw", "Desktop", Backend: "companion",
+                                        HardwareId: "4509A320-00A0");
+        var escl = Escl("HP LaserJet MFP M428fdw", "4509a320-00a0");
+        var group = Assert.Single(DeviceMerge.Group([companion, escl], DeviceMerge.IosRanking));
+        Assert.Same(escl, group.Primary);
+        Assert.Equal("id:4509a32000a0", group.Key);
+        // A connection the phone does not rank comes after the companion; the demo scanner stays apart.
+        var other = new ScannerInfo("x:1", "Canon LiDE 300", "Bluetooth", Backend: "other");
+        var viaComputer = new ScannerInfo("companion:pc:2", "Canon LiDE 300", "Desktop", Backend: "companion");
+        Assert.Same(viaComputer, Assert.Single(DeviceMerge.Group([other, viaComputer], DeviceMerge.IosRanking)).Primary);
+        Assert.Equal(2, DeviceMerge.Group([Demo, escl], DeviceMerge.IosRanking).Count);
+    }
+
+    [Fact]
     public void Group_UnrankedConnectionsComeLastInListOrder()
     {
         var first = new ScannerInfo("x:1", "Canon LiDE 300", "Bluetooth", Backend: "other");

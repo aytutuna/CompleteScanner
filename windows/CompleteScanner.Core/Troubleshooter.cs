@@ -13,6 +13,8 @@ public enum TroubleshootPlatform
 {
     Windows,
     Mac,
+    /// <summary>The iPhone and iPad app (never produced on Windows).</summary>
+    Ios,
 }
 
 /// <summary>The network the computer is on, as far as finding network scanners goes.</summary>
@@ -70,6 +72,11 @@ public enum DiscoveryStatus
     Running,
     /// <summary>The system would not search.</summary>
     Unavailable,
+    /// <summary>
+    /// The user turned off the app's access to the local network (iPhone and iPad: Local Network
+    /// privacy). Windows never produces it.
+    /// </summary>
+    Denied,
 }
 
 /// <summary>How a check came out. The order is not the display order (see <see cref="Troubleshooter.Diagnose"/>).</summary>
@@ -97,6 +104,8 @@ public enum TroubleshootAction
     OpenImageCapture,
     /// <summary>Copies the checks and the device diagnostics as text.</summary>
     CopyDiagnostics,
+    /// <summary>The app's own page in the Settings app (iPhone and iPad), where Local Network access is turned on.</summary>
+    OpenAppSettings,
 }
 
 /// <summary>An address added by hand (Windows: escl-hosts.json) and whether a scanner answers there.</summary>
@@ -185,12 +194,15 @@ public static class Troubleshooter
     /// <summary>
     /// The checks for <paramref name="snapshot"/>: problems first, then warnings, then what is
     /// fine, then the tips that always apply; within each, in this order: the last failure, the
-    /// network, the WIA service, TWAIN, 32-bit TWAIN drivers, the automatic search, the addresses
-    /// added by hand, then the tips.
+    /// network, the WIA service, TWAIN, 32-bit TWAIN drivers, the automatic search (or the local
+    /// network access it was refused), the addresses added by hand, then the tips. The iPhone and
+    /// iPad get their own wording and tips, never the Windows or Mac checks.
     /// </summary>
     public static IReadOnlyList<TroubleshootCheck> Diagnose(DiscoverySnapshot snapshot)
     {
         bool windows = snapshot.Platform == TroubleshootPlatform.Windows;
+        // The phone adds network scanners by address too (Mac: ImageCaptureCore finds them).
+        bool addsByAddress = windows || snapshot.Platform == TroubleshootPlatform.Ios;
         var checks = new List<TroubleshootCheck>();
 
         if (snapshot.LastFailure is { } failure) checks.Add(FailureCheck(failure, snapshot.Platform));
@@ -202,7 +214,7 @@ public static class Troubleshooter
             checks.Add(ThirtyTwoBitCheck(snapshot.ThirtyTwoBitOnlyDrivers, snapshot.ThirtyTwoBitHelperProblem));
         }
         if (DiscoveryCheck(snapshot) is { } discovery) checks.Add(discovery);
-        if (windows)
+        if (addsByAddress)
         {
             foreach (var host in snapshot.ManualHosts.Where(host => !host.Listed))
             {
@@ -273,6 +285,7 @@ public static class Troubleshooter
         TroubleshootAction.OpenNetworkSettings => "Network settings",
         TroubleshootAction.OpenImageCapture => "Image Capture",
         TroubleshootAction.CopyDiagnostics => "Copy diagnostics",
+        TroubleshootAction.OpenAppSettings => "Open Settings",
         _ => action.ToString(),
     };
 
@@ -340,13 +353,23 @@ public static class Troubleshooter
         _ => 3,
     };
 
-    private static string Computer(TroubleshootPlatform platform) =>
-        platform == TroubleshootPlatform.Windows ? "PC" : "Mac";
+    private static string Computer(TroubleshootPlatform platform) => platform switch
+    {
+        TroubleshootPlatform.Windows => "PC",
+        TroubleshootPlatform.Ios => "device",
+        _ => "Mac",
+    };
 
-    private static string OtherApps(TroubleshootPlatform platform) =>
-        platform == TroubleshootPlatform.Windows
-            ? "Windows Scan or the maker's app"
-            : "Image Capture or the maker's app";
+    private static string OtherApps(TroubleshootPlatform platform) => platform switch
+    {
+        TroubleshootPlatform.Windows => "Windows Scan or the maker's app",
+        TroubleshootPlatform.Ios => "another device or app",
+        _ => "Image Capture or the maker's app",
+    };
+
+    /// <summary>The system that searches the network, in the discovery check's more help.</summary>
+    private static string SearchingSystem(TroubleshootPlatform platform) =>
+        platform == TroubleshootPlatform.Ios ? "iOS" : "Windows";
 
     private static TroubleshootCheck FailureCheck(ScannerFailure failure, TroubleshootPlatform platform)
     {
@@ -367,12 +390,15 @@ public static class Troubleshooter
                 "Check that it is on, awake and connected.",
                 [TroubleshootAction.Refresh],
                 JoinSentences(failure.Message,
-                              "It must be connected by its cable or to the same network as this " + Computer(platform) + ".")),
+                              platform == TroubleshootPlatform.Ios
+                                  ? "It must be on the same network as this " + Computer(platform) + "."
+                                  : "It must be connected by its cable or to the same network as this " + Computer(platform) + ".")),
         };
     }
 
     private static TroubleshootCheck? NetworkCheck(DiscoverySnapshot snapshot)
     {
+        if (snapshot.Platform == TroubleshootPlatform.Ios) return PhoneNetworkCheck(snapshot.Network);
         bool windows = snapshot.Platform == TroubleshootPlatform.Windows;
         return snapshot.Network switch
         {
@@ -396,6 +422,35 @@ public static class Troubleshooter
             _ => null,
         };
     }
+
+    /// <summary>
+    /// The iPhone's and iPad's network: Wi-Fi or a wired network, or none (cellular only counts as
+    /// none, since scanners are not found there). iOS has no public or private networks.
+    /// </summary>
+    private static TroubleshootCheck? PhoneNetworkCheck(NetworkStatus network) => network switch
+    {
+        NetworkStatus.Offline => new TroubleshootCheck(
+            "network", CheckStatus.Problem, "Not connected to Wi-Fi",
+            "Join the scanner's Wi-Fi network, then tap Refresh.",
+            [TroubleshootAction.Refresh],
+            "Network scanners are found only on Wi-Fi or a wired network. The camera works without one."),
+        NetworkStatus.PublicNetwork or NetworkStatus.PrivateNetwork or NetworkStatus.DomainNetwork => new TroubleshootCheck(
+            "network", CheckStatus.Ok, "Connected to a local network",
+            "Network scanners on this network can be found.", []),
+        _ => null,
+    };
+
+    /// <summary>
+    /// The app may not use the local network (iPhone and iPad: Local Network privacy turned off for
+    /// it), so it can neither find scanners nor reach the addresses added by hand. The same check on
+    /// every platform, though only the iPhone and iPad report it.
+    /// </summary>
+    private static TroubleshootCheck LocalNetworkDeniedCheck() => new(
+        "localNetwork", CheckStatus.Problem, "Local Network access is off",
+        "Turn on Local Network for CompleteScanner in Settings.",
+        [TroubleshootAction.OpenAppSettings],
+        "Without it, the app can't find or reach scanners on your network. Scanners appear as soon as it's on. "
+        + "If it's on already, turn it off and on again.");
 
     private static TroubleshootCheck? WiaServiceCheck(ServiceStatus status) => status switch
     {
@@ -474,6 +529,7 @@ public static class Troubleshooter
 
     private static TroubleshootCheck? DiscoveryCheck(DiscoverySnapshot snapshot)
     {
+        if (snapshot.Discovery == DiscoveryStatus.Denied) return LocalNetworkDeniedCheck();
         string detail = string.IsNullOrWhiteSpace(snapshot.DiscoveryDetail) ? "" : $" ({snapshot.DiscoveryDetail.Trim().TrimEnd('.')})";
         if (snapshot.Platform == TroubleshootPlatform.Mac)
         {
@@ -513,13 +569,18 @@ public static class Troubleshooter
                 "discovery", CheckStatus.Warning, "Network search is not working",
                 "You can still add a network scanner by its address.",
                 [TroubleshootAction.AddByAddress, TroubleshootAction.Refresh],
-                $"Windows could not search the network for scanners{detail}."),
+                $"{SearchingSystem(snapshot.Platform)} could not search the network for scanners{detail}."),
             _ => null,
         };
     }
 
     private static IEnumerable<TroubleshootCheck> Tips(TroubleshootPlatform platform)
     {
+        if (platform == TroubleshootPlatform.Ios)
+        {
+            foreach (var tip in PhoneTips()) yield return tip;
+            yield break;
+        }
         if (platform == TroubleshootPlatform.Windows)
         {
             yield return new TroubleshootCheck(
@@ -555,6 +616,30 @@ public static class Troubleshooter
             "Wake the scanner and close other scanning apps.",
             [TroubleshootAction.Refresh],
             $"Press a button on the scanner. Close {OtherApps(platform)}. Some scanners work only with their maker's app.");
+    }
+
+    /// <summary>
+    /// The iPhone's and iPad's tips: network scanners only (they can't use USB scanners), with the
+    /// address as the way round a network that hides them.
+    /// </summary>
+    private static IEnumerable<TroubleshootCheck> PhoneTips()
+    {
+        yield return new TroubleshootCheck(
+            "networkScanner", CheckStatus.Tip, "Scanner on the network?",
+            "This device and the scanner must be on the same Wi-Fi.",
+            [TroubleshootAction.AddByAddress],
+            "Guest networks and some VPNs hide scanners. Try adding the scanner by its address.");
+        yield return new TroubleshootCheck(
+            "usb", CheckStatus.Tip, "Connected by USB?",
+            "Use its Wi-Fi connection; iPhone and iPad can't use USB scanners.",
+            [],
+            "Most scanners that print or copy also join Wi-Fi. The scanner's manual shows how.");
+        yield return new TroubleshootCheck(
+            "otherApps", CheckStatus.Tip, "Still not listed?",
+            "Wake the scanner and close other scanning apps.",
+            [TroubleshootAction.Refresh],
+            "Press a button on the scanner. Close scanning apps on other devices. Some scanners work only with "
+            + "Windows (WSD) or their maker's app.");
     }
 
     /// <summary>The first text as a sentence, then the second; the first may be missing.</summary>

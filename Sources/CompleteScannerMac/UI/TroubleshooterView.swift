@@ -87,8 +87,9 @@ struct TroubleshooterView: View {
             copyDiagnostics()
         case .openScannerSettings, .openNetworkSettings, .openImageCapture:
             footerMessage = state.openTroubleshootLink(action)
-        case .addByAddress:
-            // Windows only: macOS has no way to add a network scanner by its address.
+        case .addByAddress, .openAppSettings:
+            // Windows and the iPhone only: macOS has no way to add a network scanner by its address, and the
+            // Mac never reports the iPhone's Local Network access.
             break
         }
     }

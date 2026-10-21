@@ -323,6 +323,10 @@ public final class AppState: ObservableObject {
     private var session: (any ScannerSession)?
     private var sessionDeviceID: String?
     private var userPickedDevice = false
+    /// Scanners whose changed certificate was not trusted this session (refused when the app opened one
+    /// on its own, or declined by the user): never selected automatically again, so only the user
+    /// choosing one asks about its certificate. Twin of the Windows `AppViewModel._certificateRefused`.
+    private var certificateRefused: Set<String> = []
     /// The backend entry of the selected device, kept so its scanner is found again when
     /// that entry goes away.
     private var selectedEntry: ScannerInfo?
@@ -450,7 +454,7 @@ public final class AppState: ObservableObject {
     /// or the one in use went away), the session moves to it.
     private func mergeDevices() {
         let entries = backends.flatMap { $0.devices }
-        deviceGroups = DeviceMerge.group(entries, rankPatterns: DeviceMerge.macRanking)
+        deviceGroups = DeviceMerge.group(entries, rankPatterns: rankPatterns)
         writeDeviceDiagnostics()
 
         if let sel = selectedDeviceID {
@@ -504,9 +508,11 @@ public final class AppState: ObservableObject {
         readQueuedBarcodesAfterWork()
     }
 
-    /// The first real scanner (else the demo device), through its preferred connection.
+    /// The first real scanner (else the demo device), through its preferred connection. A scanner whose
+    /// changed certificate was not trusted (`certificateRefused`) is not chosen on its own.
     private func preferredDefaultDevice() -> String? {
-        (deviceGroups.first(where: { !$0.primary.isDemo }) ?? deviceGroups.first)?.primary.id
+        (deviceGroups.first(where: { !$0.primary.isDemo && !certificateRefused.contains($0.primary.id) })
+            ?? deviceGroups.first(where: { $0.primary.isDemo }))?.primary.id
     }
 
     /// The scanner the selected device belongs to: the group listing it, or, when that entry
@@ -550,11 +556,23 @@ public final class AppState: ObservableObject {
     /// A scanner other than the demo scanner is listed; without one the sidebar offers the troubleshooter.
     public var hasRealDevices: Bool { deviceGroups.contains { !$0.primary.isDemo } }
 
-    /// What the troubleshooter looks at now: the scanners listed, the last failure, and what each
-    /// connection adds (`ScannerBackendDiagnostics`). The Mac reads no service or network state.
+    /// Which app this is, for the troubleshooter's checks and the connection ranking (`rankPatterns`):
+    /// the Mac unless the app shell says otherwise before `start()` (the iPhone's `makeForIOS`: `.ios`).
+    public package(set) var platform: TroubleshootPlatform = .mac
+
+    /// How the connections of one scanner are ranked here: the Mac's (USB, Bonjour, shared) or the
+    /// iPhone's (the scanner's own network connection, then the desktop companion).
+    package var rankPatterns: [String] {
+        platform == .ios ? DeviceMerge.iosRanking : DeviceMerge.macRanking
+    }
+
+    /// What the troubleshooter looks at now: the scanners listed, the last failure, what the system
+    /// service reads (`TroubleshooterService.addSystemStatus`: the iPhone's network; the Mac reads no
+    /// service or network state) and what each connection adds (`ScannerBackendDiagnostics`).
     public func troubleshootSnapshot() -> DiscoverySnapshot {
-        var snapshot = DiscoverySnapshot(platform: .mac, devices: deviceGroups.map { $0.primary },
+        var snapshot = DiscoverySnapshot(platform: platform, devices: deviceGroups.map { $0.primary },
                                          lastFailure: lastFailure)
+        snapshot = troubleshooterService.addSystemStatus(to: snapshot)
         for backend in backends {
             if let diagnostics = backend as? any ScannerBackendDiagnostics {
                 snapshot = diagnostics.addStatus(to: snapshot)
@@ -575,8 +593,14 @@ public final class AppState: ObservableObject {
     /// The text of devices.txt and of Copy Diagnostics: how the device list was grouped, then the
     /// troubleshooter's checks for `snapshot`.
     public func diagnosticsText(_ snapshot: DiscoverySnapshot) -> String {
-        DeviceMerge.diagnosticsReport(deviceGroups) + "\n"
-            + Troubleshooter.report(snapshot, checks: Troubleshooter.diagnose(snapshot))
+        var text: String = DeviceMerge.diagnosticsReport(deviceGroups) + "\n"
+        // What each connection found (the network scanners' TXT records and addresses), as on Windows.
+        for backend in backends {
+            if let diagnostics = backend as? any ScannerBackendDiagnostics, let report = diagnostics.diagnosticsReport {
+                text += report + "\n"
+            }
+        }
+        return text + Troubleshooter.report(snapshot, checks: Troubleshooter.diagnose(snapshot))
     }
 
     /// Copies `diagnosticsText` to the pasteboard. Returns why it did not work, nil when it did.
@@ -600,7 +624,7 @@ public final class AppState: ObservableObject {
             try troubleshooterService.open(action)
             return nil
         } catch {
-            return "\(Troubleshooter.label(action, platform: .mac)) did not work: \(Self.describe(error))"
+            return "\(Troubleshooter.label(action, platform: platform)) did not work: \(Self.describe(error))"
         }
     }
 
@@ -619,13 +643,14 @@ public final class AppState: ObservableObject {
         writeDeviceDiagnostics()
     }
 
-    /// Device selection driven by the user (sidebar click).
+    /// Device selection driven by the user (sidebar click). The connection is opened interactively: a
+    /// network scanner whose certificate changed asks the user (`ScannerBackend.openSession(deviceID:interactive:)`).
     public func userSelectDevice(_ id: String?) {
         userPickedDevice = true
-        selectDevice(id)
+        selectDevice(id, interactive: true)
     }
 
-    private func selectDevice(_ id: String?) {
+    private func selectDevice(_ id: String?, interactive: Bool = false) {
         // Ignore re-clicks on a device that is already connected or connecting.
         guard id != selectedDeviceID || (session == nil && switchTask == nil) else { return }
         selectedDeviceID = id
@@ -641,12 +666,12 @@ public final class AppState: ObservableObject {
         switchTask = Task { [weak self] in
             await previous?.value
             guard let self, self.switchGeneration == generation else { return }
-            await self.switchSession(to: id)
+            await self.switchSession(to: id, interactive: interactive)
             if self.switchGeneration == generation { self.switchTask = nil }
         }
     }
 
-    private func switchSession(to id: String?) async {
+    private func switchSession(to id: String?, interactive: Bool) async {
         if let old = session {
             old.progressHandler = nil
             // Abort any in-flight scan so its results can't land after the switch.
@@ -679,7 +704,8 @@ public final class AppState: ObservableObject {
         let name = devices.first(where: { $0.id == id })?.name ?? "scanner"
         statusMessage = "Connecting to \(name)…"
         do {
-            let s = try await backend.openSession(deviceID: id)
+            let s = try await backend.openSession(deviceID: id, interactive: interactive)
+            certificateRefused.remove(id)
             guard selectedDeviceID == id else { await s.close(); return }
             s.progressHandler = { [weak self] p in
                 self?.progress = p
@@ -699,6 +725,25 @@ public final class AppState: ObservableObject {
             let adapted = SettingsAdapter.adapt(settings, to: sidesCapabilities)
             settings = adapted.settings
             statusMessage = Self.withNotes("Ready — \(s.info.name)", adapted.notes)
+        } catch let certificate as EsclCertificateError where certificate.canTrust {
+            // The certificate changed and was not trusted. Not chosen on its own again this session;
+            // when the app had chosen it, it moves on to another scanner, and choosing this one in the
+            // list shows the certificate.
+            certificateRefused.insert(id)
+            statusMessage = "Could not connect to \(name)."
+            recordFailure(deviceName: name, error: certificate)
+            if interactive {
+                errorMessage = certificate.message
+            } else {
+                errorMessage = certificate.message + " To review the new certificate, choose the scanner in the list."
+                if !userPickedDevice {
+                    Task { [weak self] in
+                        guard let self, !self.userPickedDevice, self.selectedDeviceID == id,
+                              !self.autoSwitchMustWait else { return }
+                        self.selectDevice(self.preferredDefaultDevice())
+                    }
+                }
+            }
         } catch {
             errorMessage = error.localizedDescription
             statusMessage = "Could not connect to \(name)."

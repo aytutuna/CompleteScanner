@@ -124,6 +124,25 @@ final class DeviceMergeTests: XCTestCase {
         XCTAssertEqual(groups.first?.members.count, 3)
     }
 
+    func test_group_iosRankingPrefersTheScannersOwnNetworkConnection() {
+        XCTAssertEqual(DeviceMerge.iosRanking, ["escl:Network", "companion:*"])
+        // The same scanner through a computer (the desktop companion) and on its own network connection.
+        let companion = ScannerInfo(id: "companion:pc:1", name: "HP LaserJet MFP M428fdw", transport: "Desktop",
+                                    backend: "companion", hardwareID: "4509A320-00A0")
+        let esclEntry = escl("HP LaserJet MFP M428fdw", uuid: "4509a320-00a0")
+        let groups = DeviceMerge.group([companion, esclEntry], rankPatterns: DeviceMerge.iosRanking)
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups.first?.primary, esclEntry)
+        XCTAssertEqual(groups.first?.key, "id:4509a32000a0")
+        // A connection the phone does not rank comes after the companion; the demo scanner stays apart.
+        let other = ScannerInfo(id: "x:1", name: "Canon LiDE 300", transport: "Bluetooth", backend: "other")
+        let viaComputer = ScannerInfo(id: "companion:pc:2", name: "Canon LiDE 300", transport: "Desktop", backend: "companion")
+        let ranked = DeviceMerge.group([other, viaComputer], rankPatterns: DeviceMerge.iosRanking)
+        XCTAssertEqual(ranked.count, 1)
+        XCTAssertEqual(ranked.first?.primary, viaComputer)
+        XCTAssertEqual(DeviceMerge.group([demo, esclEntry], rankPatterns: DeviceMerge.iosRanking).count, 2)
+    }
+
     func test_group_unrankedConnectionsComeLastInListOrder() {
         let first = ScannerInfo(id: "x:1", name: "Canon LiDE 300", transport: "Bluetooth", backend: "other")
         let second = ScannerInfo(id: "y:1", name: "Canon LiDE 300", transport: "Infrared", backend: "else")

@@ -11,6 +11,8 @@ import Foundation
 public enum TroubleshootPlatform: String, Sendable {
     case windows
     case mac
+    /// The iPhone and iPad app (never produced on Windows).
+    case ios
 }
 
 /// The network the computer is on, as far as finding network scanners goes.
@@ -62,6 +64,9 @@ public enum DiscoveryStatus: String, Sendable {
     case running
     /// The system would not search.
     case unavailable
+    /// The user turned off the app's access to the local network (iPhone and iPad: Local Network
+    /// privacy). Windows never produces it.
+    case denied
 }
 
 /// How a check came out. The order is not the display order (see `Troubleshooter.diagnose`).
@@ -87,6 +92,8 @@ public enum TroubleshootAction: String, CaseIterable, Sendable {
     case openImageCapture
     /// Copies the checks and the device diagnostics as text.
     case copyDiagnostics
+    /// The app's own page in the Settings app (iPhone and iPad), where Local Network access is turned on.
+    case openAppSettings
 }
 
 /// An address added by hand (Windows: escl-hosts.json) and whether a scanner answers there.
@@ -204,23 +211,34 @@ public struct TroubleshootCheck: Equatable, Sendable {
 }
 
 /// A connection that can tell the troubleshooter about itself. Optional, so `ScannerBackend`
-/// does not change. Twin of C# `IScannerBackendDiagnostics` (`AddStatus`, `Rescan`).
+/// does not change. Twin of C# `IScannerBackendDiagnostics` (`AddStatus`, `Rescan`), with the C#
+/// `IBackendDiagnostics.DiagnosticsReport` (devices.txt) as `diagnosticsReport`.
 @MainActor
 public protocol ScannerBackendDiagnostics: AnyObject {
     /// The snapshot with what this connection knows filled in.
     func addStatus(to snapshot: DiscoverySnapshot) -> DiscoverySnapshot
     /// Look for scanners again now (the troubleshooter's Refresh). Never changes system settings.
     func rescan()
+    /// What this connection found, as lines for devices.txt and Copy diagnostics; nil when it has
+    /// nothing to add (the default).
+    var diagnosticsReport: String? { get }
+}
+
+extension ScannerBackendDiagnostics {
+    public var diagnosticsReport: String? { nil }
 }
 
 public enum Troubleshooter {
 
     /// The checks for `snapshot`: problems first, then warnings, then what is fine, then the tips
     /// that always apply; within each, in this order: the last failure, the network, the WIA
-    /// service, TWAIN, 32-bit TWAIN drivers, the automatic search, the addresses added by hand,
-    /// then the tips.
+    /// service, TWAIN, 32-bit TWAIN drivers, the automatic search (or the local network access it
+    /// was refused), the addresses added by hand, then the tips. The iPhone and iPad get their own
+    /// wording and tips, never the Windows or Mac checks.
     public static func diagnose(_ snapshot: DiscoverySnapshot) -> [TroubleshootCheck] {
         let windows = snapshot.platform == .windows
+        // The phone adds network scanners by address too (Mac: ImageCaptureCore finds them).
+        let addsByAddress: Bool = windows || snapshot.platform == .ios
         var checks: [TroubleshootCheck] = []
 
         if let failure = snapshot.lastFailure { checks.append(failureCheck(failure, platform: snapshot.platform)) }
@@ -231,7 +249,7 @@ public enum Troubleshooter {
             checks.append(thirtyTwoBitCheck(snapshot.thirtyTwoBitOnlyDrivers, helperProblem: snapshot.thirtyTwoBitHelperProblem))
         }
         if let discovery = discoveryCheck(snapshot) { checks.append(discovery) }
-        if windows {
+        if addsByAddress {
             for host in snapshot.manualHosts where !host.listed {
                 checks.append(TroubleshootCheck(
                     id: "manualHost:\(host.address)", status: .warning,
@@ -297,6 +315,7 @@ public enum Troubleshooter {
         case .openNetworkSettings: return "Network settings"
         case .openImageCapture: return "Image Capture"
         case .copyDiagnostics: return "Copy diagnostics"
+        case .openAppSettings: return "Open Settings"
         }
     }
 
@@ -363,13 +382,24 @@ public enum Troubleshooter {
     }
 
     private static func computer(_ platform: TroubleshootPlatform) -> String {
-        platform == .windows ? "PC" : "Mac"
+        switch platform {
+        case .windows: return "PC"
+        case .ios: return "device"
+        case .mac: return "Mac"
+        }
     }
 
     private static func otherApps(_ platform: TroubleshootPlatform) -> String {
-        platform == .windows
-            ? "Windows Scan or the maker's app"
-            : "Image Capture or the maker's app"
+        switch platform {
+        case .windows: return "Windows Scan or the maker's app"
+        case .ios: return "another device or app"
+        case .mac: return "Image Capture or the maker's app"
+        }
+    }
+
+    /// The system that searches the network, in the discovery check's more help.
+    private static func searchingSystem(_ platform: TroubleshootPlatform) -> String {
+        platform == .ios ? "iOS" : "Windows"
     }
 
     private static func failureCheck(_ failure: ScannerFailure, platform: TroubleshootPlatform) -> TroubleshootCheck {
@@ -389,11 +419,14 @@ public enum Troubleshooter {
         return TroubleshootCheck(
             id: "lastFailure", status: .warning, title: "Could not connect to \(name)",
             detail: "Check that it is on, awake and connected.",
-            more: joinSentences(failure.message, "It must be connected by its cable or to the same network as this \(computer(platform))."),
+            more: joinSentences(failure.message, platform == .ios
+                                    ? "It must be on the same network as this \(computer(platform))."
+                                    : "It must be connected by its cable or to the same network as this \(computer(platform))."),
             actions: [.refresh])
     }
 
     private static func networkCheck(_ snapshot: DiscoverySnapshot) -> TroubleshootCheck? {
+        if snapshot.platform == .ios { return phoneNetworkCheck(snapshot.network) }
         let windows = snapshot.platform == .windows
         switch snapshot.network {
         case .offline:
@@ -416,6 +449,37 @@ public enum Troubleshooter {
         case .unknown:
             return nil
         }
+    }
+
+    /// The iPhone's and iPad's network: Wi-Fi or a wired network, or none (cellular only counts as
+    /// none, since scanners are not found there). iOS has no public or private networks.
+    private static func phoneNetworkCheck(_ network: NetworkStatus) -> TroubleshootCheck? {
+        switch network {
+        case .offline:
+            return TroubleshootCheck(
+                id: "network", status: .problem, title: "Not connected to Wi-Fi",
+                detail: "Join the scanner's Wi-Fi network, then tap Refresh.",
+                more: "Network scanners are found only on Wi-Fi or a wired network. The camera works without one.",
+                actions: [.refresh])
+        case .publicNetwork, .privateNetwork, .domainNetwork:
+            return TroubleshootCheck(
+                id: "network", status: .ok, title: "Connected to a local network",
+                detail: "Network scanners on this network can be found.", actions: [])
+        case .unknown:
+            return nil
+        }
+    }
+
+    /// The app may not use the local network (iPhone and iPad: Local Network privacy turned off for
+    /// it), so it can neither find scanners nor reach the addresses added by hand. The same check on
+    /// every platform, though only the iPhone and iPad report it.
+    private static func localNetworkDeniedCheck() -> TroubleshootCheck {
+        TroubleshootCheck(
+            id: "localNetwork", status: .problem, title: "Local Network access is off",
+            detail: "Turn on Local Network for CompleteScanner in Settings.",
+            more: "Without it, the app can't find or reach scanners on your network. Scanners appear as soon as it's on. "
+                + "If it's on already, turn it off and on again.",
+            actions: [.openAppSettings])
     }
 
     private static func wiaServiceCheck(_ status: ServiceStatus) -> TroubleshootCheck? {
@@ -508,6 +572,7 @@ public enum Troubleshooter {
     }
 
     private static func discoveryCheck(_ snapshot: DiscoverySnapshot) -> TroubleshootCheck? {
+        if snapshot.discovery == .denied { return localNetworkDeniedCheck() }
         var reason = (snapshot.discoveryDetail ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         while reason.hasSuffix(".") { reason.removeLast() }
         let detail = reason.isEmpty ? "" : " (\(reason))"
@@ -525,7 +590,7 @@ public enum Troubleshooter {
                     detail: "Select Refresh to start the search again.",
                     more: "The search for scanners is not running\(detail).",
                     actions: [.refresh])
-            case .unknown:
+            case .unknown, .denied:
                 return nil
             }
         }
@@ -552,14 +617,17 @@ public enum Troubleshooter {
             return TroubleshootCheck(
                 id: "discovery", status: .warning, title: "Network search is not working",
                 detail: "You can still add a network scanner by its address.",
-                more: "Windows could not search the network for scanners\(detail).",
+                more: "\(searchingSystem(snapshot.platform)) could not search the network for scanners\(detail).",
                 actions: [.addByAddress, .refresh])
-        case .off, .unknown:
+        case .off, .unknown, .denied:
             return nil
         }
     }
 
     private static func tips(_ platform: TroubleshootPlatform) -> [TroubleshootCheck] {
+        if platform == .ios {
+            return phoneTips()
+        }
         var tips: [TroubleshootCheck] = []
         if platform == .windows {
             tips.append(TroubleshootCheck(
@@ -588,6 +656,29 @@ public enum Troubleshooter {
             id: "otherApps", status: .tip, title: "Still not listed?",
             detail: "Wake the scanner and close other scanning apps.",
             more: "Press a button on the scanner. Close \(otherApps(platform)). Some scanners work only with their maker's app.",
+            actions: [.refresh]))
+        return tips
+    }
+
+    /// The iPhone's and iPad's tips: network scanners only (they can't use USB scanners), with the
+    /// address as the way round a network that hides them.
+    private static func phoneTips() -> [TroubleshootCheck] {
+        var tips: [TroubleshootCheck] = []
+        tips.append(TroubleshootCheck(
+            id: "networkScanner", status: .tip, title: "Scanner on the network?",
+            detail: "This device and the scanner must be on the same Wi-Fi.",
+            more: "Guest networks and some VPNs hide scanners. Try adding the scanner by its address.",
+            actions: [.addByAddress]))
+        tips.append(TroubleshootCheck(
+            id: "usb", status: .tip, title: "Connected by USB?",
+            detail: "Use its Wi-Fi connection; iPhone and iPad can't use USB scanners.",
+            more: "Most scanners that print or copy also join Wi-Fi. The scanner's manual shows how.",
+            actions: []))
+        tips.append(TroubleshootCheck(
+            id: "otherApps", status: .tip, title: "Still not listed?",
+            detail: "Wake the scanner and close other scanning apps.",
+            more: "Press a button on the scanner. Close scanning apps on other devices. Some scanners work only with "
+                + "Windows (WSD) or their maker's app.",
             actions: [.refresh]))
         return tips
     }

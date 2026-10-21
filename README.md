@@ -267,8 +267,11 @@ continuous capture, page after page, with the corner editor only for a page the 
 camera pages cleaned up with their lighting evened out, the paper white and the print black, in the
 task's color mode; Apple's document scanner kept as "Use Apple's scanner" on Document to PDF, Email a
 document and Scan to Word; photos and PDFs imported from Photos, Files or other apps with a touch
-corner editor and magnifier, the page strip, Save as PDF or JPEG and the share sheet) is an Xcode
-project that
+corner editor and magnifier, the page strip, Save as PDF or JPEG and the share sheet; network
+scanners (AirScan/eSCL) found on the Wi-Fi or added by address, picked from a sheet on iPhone or a
+sidebar on iPad, with a flatbed preview to choose the scan area on, a feeder's progress with Cancel,
+the screen kept on while a network scanner works, and the troubleshooter with its iPhone checks) is
+an Xcode project that
 [XcodeGen](https://github.com/yonaskolb/XcodeGen) writes from `ios/project.yml`; CI pins XcodeGen's
 release and checks its SHA-256. To build it and run its UI smoke test on the Simulator:
 
@@ -288,6 +291,19 @@ stand-ins. The cameras themselves (the wide lens's view at the start on Pro and 
 focus and macro switching, low light, the torch, Pro and non-Pro models, the automatic shutter's
 timing and thresholds on real frames, the clean-up on real photos, heat and memory over a long queue;
 and iCloud-only photos, large HEIC files and saving to the Files app) are checked on a real iPhone.
+
+Network scanners on the iPhone: the first time the scanner picker opens, a short card says why
+iOS is about to ask for Local Network access (camera scanning works without it); the search starts
+after Continue and runs only while the app is in front. When the access is off, the picker says so
+in one line with Open Settings, and so does the troubleshooter. Adding a scanner by address uses the
+Windows rules and messages; its certificate is trusted on first use, and a certificate that changed
+since is asked about. When a scanner's HTTPS connection cannot be made (an old TLS version), the
+app may use the scanner's own plain HTTP address and marks the connection "Not encrypted"; it never
+does so after a refused certificate. The addresses and the trusted certificates are kept in
+Application Support/CompleteScanner/Network, out of backups. Launched with `-demoScanner` (the UI
+tests), the app has the Demo Scanner alone and never searches the network; the search itself is
+checked with stand-ins for the system's browsers, and the prompt, a denial, client-isolated Wi-Fi,
+IPv6 and a feeder batch while the app goes to the background need a real iPhone and scanner.
 
 ## Windows version
 
@@ -350,9 +366,12 @@ target for each platform's own parts:
     2-minute job requests, each page downloaded to the page spool, the job deleted on the scanner
     whenever it is cut short, the trust rules applied to each TLS connection), `EsclScannerSession`
     (on the iPhone, a job keeps the system's background time while it runs, and a job the system
-    suspends keeps its pages) and `EsclScannerBackend`. The iPhone app does not offer network
-    scanners yet: finding them, adding them by address and the Local Network permission come
-    next; the Mac, which reaches these scanners through ImageCaptureCore, could use it later
+    suspends keeps its pages) and `EsclScannerBackend` (the same device list as Windows, the
+    addresses added by hand, checked again every minute while they do not answer, and the
+    troubleshooter's view); finding scanners on the network (`EsclDiscovery`: an NWBrowser per
+    service type with the TXT records, every address resolved with DNS-SD, Local Network access
+    that is off told from what the system says). The Mac, which reaches these scanners through
+    ImageCaptureCore, could use it later
   - `App` — `AppState`, which every view binds to, and the protocols of the system services each
     app passes in (`FileActionService`, `PrintService`, `TroubleshooterService`,
     `PlatformLifecycle`, `BackgroundActivity`); pages from a scan or any other source come in through `AppState.ingest`
@@ -365,11 +384,16 @@ target for each platform's own parts:
   sheet, the Files app), Apple's document scanner and our own camera (`Camera/`: the capture session,
   the lens choice, the live page outline, the automatic shutter, when the camera runs), importing photos and PDFs with the
   corner editor (`Import/`: decoding with the EXIF turn, PDF pages at 300 dpi, Vision's page search,
-  the import session), `CompleteScannerIOSApp` and its SwiftUI views
+  the import session), network scanners (`Network/`: the search, run only while the app is in
+  front, after a short card that explains the system's Local Network prompt; adding a scanner by
+  address; the scanner picker, a sheet on iPhone and a sidebar on iPad; the troubleshooter's
+  system side), `CompleteScannerIOSApp` and its SwiftUI views (also the flatbed preview with its
+  scan area, a feeder's progress with Cancel, and the troubleshooter)
 - `ios/` — the iPhone and iPad app's Xcode project for XcodeGen (`project.yml`): the app target that
   only starts `CompleteScannerIOSApp`, its `Info.plist`, privacy manifest and asset catalog, and the
   UI tests (`CompleteScanneriOSUITests`: the smoke test, the photo import, with its fixture
-  photo, and the camera screen's no-camera state); the `.xcodeproj` XcodeGen writes is not checked in
+  photo, the camera screen's no-camera state, and the scanner picker with the add-by-address
+  sheet); the `.xcodeproj` XcodeGen writes is not checked in
 - `Sources/CompleteScanner` — the Mac app's entry point
 - `Tests/CompleteScannerTests` — unit tests (synthetic-image based), run on macOS and on the iOS
   Simulator; `Tests/CompleteScannerMacTests` and `Tests/CompleteScannerIOSTests` — each platform's own;

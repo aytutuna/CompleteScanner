@@ -45,21 +45,27 @@ public struct IOSLaunchOptions: Equatable, Sendable {
     }
 }
 
-/// What the iPhone's and iPad's app shell passes `AppState`: its scanner connections, its file
-/// actions and its lifecycle. Printing and the troubleshooter's links are not passed yet, so the
-/// Kit's stand-ins refuse them (no printer, nothing opened or copied).
+/// What the iPhone's and iPad's app shell passes `AppState`: its scanner connections, its file actions,
+/// its troubleshooter service and its lifecycle. Printing is not passed yet, so the Kit's stand-in
+/// refuses it (no printer).
 public enum IOSShell {
-    /// The scanner connections: the demo scanner, whatever `options` say, since the app does not offer
-    /// network scanners yet (they come with finding them and adding them by address, I12).
+    /// The demo scanner alone, whatever `options` say: the connections without the network, for tests and
+    /// previews. The app's are `backends(options:networkScanners:)`.
     @MainActor
     public static func backends(options: IOSLaunchOptions) -> [any ScannerBackend] {
         backends(options: options, network: nil)
     }
 
+    /// The app's scanner connections: the demo scanner, and the network scanners (eSCL: found on the
+    /// network, added by address) beside it unless `options` keep the demo scanner alone (`-demoScanner`,
+    /// the UI tests: then nothing is searched for).
+    @MainActor
+    public static func backends(options: IOSLaunchOptions, networkScanners: IOSNetworkScanners?) -> [any ScannerBackend] {
+        backends(options: options, network: networkScanners?.backend)
+    }
+
     /// The scanner connections with a network scanner connection (eSCL) beside the demo scanner, unless
-    /// `options` keep the demo scanner alone. Internal until the app finds network scanners (I12): the
-    /// connection lists only the scanners it was made with (`networkBackend`), and tests are its only
-    /// callers.
+    /// `options` keep the demo scanner alone.
     @MainActor
     static func backends(options: IOSLaunchOptions, network: EsclScannerBackend?) -> [any ScannerBackend] {
         let demo: MockScannerBackend = AppState.makeDemoBackend()
@@ -77,6 +83,14 @@ public enum IOSShell {
                                clientOptions: EsclClientOptions = EsclClientOptions()) -> EsclScannerBackend {
         EsclScannerBackend(trust: trust, endpoints: endpoints, clientOptions: clientOptions,
                            background: UIKitBackgroundActivity())
+    }
+
+    /// The screen stays on while `isBusy` with a network scanner (`device`): iOS would suspend the app soon
+    /// after the screen locked, cutting a feeder batch short. Other work (the demo scanner, saving) lets it
+    /// sleep as usual.
+    public static func keepsScreenAwake(isBusy: Bool, device: ScannerInfo?) -> Bool {
+        guard isBusy, let device else { return false }
+        return device.backend == "escl"
     }
 
     /// Whether this app offers a task yet: the tasks whose pages are collected and saved, without a
@@ -221,14 +235,26 @@ public struct IOSTaskGroup: Identifiable, Equatable {
 }
 
 extension AppState {
-    /// The iPhone's and iPad's state: the scanner connections of `IOSShell.backends`, the iOS file
-    /// actions (share sheet, Quick Look, the Files app) and UIKit's lifecycle; no printer and no
-    /// troubleshooter links yet (the Kit's stand-ins refuse them).
+    /// The iPhone's and iPad's state without network scanners (the demo scanner alone).
     @MainActor
     public static func makeForIOS(options: IOSLaunchOptions, fileActions: IOSFileActions) -> AppState {
-        let backends: [any ScannerBackend] = IOSShell.backends(options: options)
+        makeForIOS(options: options, fileActions: fileActions, networkScanners: nil)
+    }
+
+    /// The iPhone's and iPad's state: the scanner connections of `IOSShell.backends(options:networkScanners:)`,
+    /// the iOS file actions (share sheet, Quick Look, the Files app), the iOS troubleshooter service (the
+    /// app's page in Settings, the pasteboard, the network path) and UIKit's lifecycle; the iPhone's
+    /// troubleshooter checks and connection ranking (`platform` `.ios`); no printer yet (the Kit's stand-in
+    /// refuses it).
+    @MainActor
+    public static func makeForIOS(options: IOSLaunchOptions, fileActions: IOSFileActions,
+                                  networkScanners: IOSNetworkScanners?) -> AppState {
+        let backends: [any ScannerBackend] = IOSShell.backends(options: options, networkScanners: networkScanners)
         let lifecycle: UIKitLifecycle = UIKitLifecycle()
-        return AppState(backends: backends, fileActions: fileActions, lifecycle: lifecycle)
+        let state: AppState = AppState(backends: backends, fileActions: fileActions,
+                                       troubleshooterService: IOSTroubleshooterService(), lifecycle: lifecycle)
+        state.platform = .ios
+        return state
     }
 }
 #endif
