@@ -51,35 +51,15 @@ public struct IOSRootView: View {
             CornerEditorView(request: request, onAnswer: answerCorners, onStop: stopImport)
         }
         .quickLookPreview($fileActions.previewURL)
-        .alert(errorNotice.title, isPresented: errorShown) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(errorNotice.message)
-        }
+        .modifier(ErrorAlert(state: state))
     }
 
-    /// The error the alert shows, as its title and message (as on the Mac).
-    private var errorNotice: ProblemNotice {
-        ScannerProblems.notice(state.errorMessage ?? "")
-    }
-
-    private var errorShown: Binding<Bool> {
-        let appState: AppState = state
-        return Binding<Bool>(
-            get: { appState.errorMessage != nil },
-            set: { (shown: Bool) in
-                if !shown {
-                    appState.errorMessage = nil
-                    appState.errorSuggestsTroubleshooter = false
-                }
-            })
-    }
-
-    /// The corner editor waiting for an answer; closing it any other way skips the photo.
+    /// The corner editor waiting for an answer; closing it any other way skips the photo. While our
+    /// camera's screen is open it shows the editor itself (`editorInCamera`), so none is presented here.
     private var cornerRequest: Binding<PhotoCornersRequest?> {
         let session: IOSImportSession = importer
         return Binding<PhotoCornersRequest?>(
-            get: { session.cornerRequest },
+            get: { session.editorInCamera ? nil : session.cornerRequest },
             set: { (request: PhotoCornersRequest?) in
                 if request == nil {
                     session.answer(PhotoCornersAnswer.skip)
@@ -144,6 +124,40 @@ public struct IOSRootView: View {
         if pushed {
             try? await Task.sleep(nanoseconds: 700_000_000)
         }
+    }
+}
+
+/// The error alert: `state.errorMessage` as its title and message (as on the Mac), cleared when it is
+/// dismissed. The root view has it, and so does our camera's screen, since the root's alert cannot show
+/// over the full-screen cover the camera is in.
+@MainActor
+struct ErrorAlert: ViewModifier {
+    @ObservedObject var state: AppState
+
+    func body(content: Content) -> some View {
+        content
+            .alert(notice.title, isPresented: shown) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(notice.message)
+            }
+    }
+
+    /// The error the alert shows, as its title and message.
+    private var notice: ProblemNotice {
+        ScannerProblems.notice(state.errorMessage ?? "")
+    }
+
+    private var shown: Binding<Bool> {
+        let appState: AppState = state
+        return Binding<Bool>(
+            get: { appState.errorMessage != nil },
+            set: { (isShown: Bool) in
+                if !isShown {
+                    appState.errorMessage = nil
+                    appState.errorSuggestsTroubleshooter = false
+                }
+            })
     }
 }
 #endif

@@ -36,6 +36,13 @@ public enum IOSCameraAvailability: Equatable, Sendable {
                 authorization: AVCaptureDevice.authorizationStatus(for: .video))
     }
 
+    /// Our own camera (`CameraScreen`) on this device, now: a camera to capture with
+    /// (`IOSCameraLens.hasCamera`; none in the Simulator) and the camera permission.
+    @MainActor
+    public static var ownCamera: IOSCameraAvailability {
+        resolve(isSupported: IOSCameraLens.hasCamera, authorization: AVCaptureDevice.authorizationStatus(for: .video))
+    }
+
     public var isAvailable: Bool { self == .available }
 
     /// Why the camera cannot be used: the line under the dimmed Camera button; nil when it can.

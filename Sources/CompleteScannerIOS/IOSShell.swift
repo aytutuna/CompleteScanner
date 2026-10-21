@@ -70,10 +70,17 @@ public enum IOSShell {
     /// Why a task is not offered yet: the tile's one visible line.
     public static let notYetReason = "Not in this version yet"
 
-    /// Whether a task's scan screen opens Apple's document scanner (Document, Email, Word).
+    /// Whether a task's scan screen opens Apple's document scanner (Document, Email, Word), its default
+    /// camera until our own camera becomes the default.
     public static func offersCamera(_ task: ScanTask?) -> Bool {
         guard let task else { return false }
         return IOSDocumentCamera.tasks.contains(task)
+    }
+
+    /// Whether the scan screen offers our own camera (`CameraScreen`): wherever pages are collected in the
+    /// queue (`PhotoImport.isOffered`), as photos are imported.
+    public static func offersOwnCamera(_ settings: ScanSettings) -> Bool {
+        PhotoImport.isOffered(settings)
     }
 
     /// The formats the scan screen's Save offers: PDF or JPEG (a picture a page) while the queue would

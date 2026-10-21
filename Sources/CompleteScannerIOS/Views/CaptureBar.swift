@@ -5,20 +5,26 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// The ways pages come in besides the scanner: Camera (Apple's document scanner, on the Document, Email
-/// and Word tasks; dimmed with one short line where there is none, as in the Simulator), Photos (the
-/// system's photo picker, several in the order picked) and Files (photos and PDFs). Imported photos go
-/// to the corner editor one by one (`IOSImportSession`); the root view shows it. Each picked photo is
-/// loaded only when its turn comes; while an import runs, its progress shows with Stop.
+/// The ways pages come in besides the scanner: Doc scanner (Apple's document scanner, on the Document,
+/// Email and Word tasks, still their default; dimmed with one short line where there is none, as in the
+/// Simulator), Camera (our own camera, `CameraScreen`, on every task that collects pages; its screen
+/// says why when there is no camera or access is off), Photos (the system's photo picker, several in
+/// the order picked) and Files (photos and PDFs). Imported photos go to the corner editor one by one
+/// (`IOSImportSession`); the root view shows it. Each picked photo is loaded only when its turn comes;
+/// while an import runs, its progress shows with Stop.
 struct CaptureBar: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
 
     /// Whether the task opens Apple's scanner.
-    let offersCamera: Bool
-    /// Whether the scanner can be opened here.
-    let camera: IOSCameraAvailability
+    let offersScanner: Bool
+    /// Whether Apple's scanner can be opened here.
+    let scanner: IOSCameraAvailability
     /// Opens Apple's scanner.
+    let onScanner: @MainActor () -> Void
+    /// Whether our own camera is offered (the task collects pages).
+    let offersCamera: Bool
+    /// Opens our own camera.
     let onCamera: @MainActor () -> Void
 
     @State private var picked: [PhotosPickerItem] = []
@@ -28,40 +34,29 @@ struct CaptureBar: View {
     static let maxPicked: Int = 50
 
     var body: some View {
-        let canImport: Bool = importer.canImport
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
-                if offersCamera {
-                    Button {
-                        onCamera()
-                    } label: {
-                        Label(IOSImportText.cameraLabel, systemImage: "camera")
-                            .frame(maxWidth: .infinity)
+            if offersScanner {
+                // Four ways in: the two cameras above, the imports below.
+                HStack(spacing: 10) {
+                    scannerButton
+                    if offersCamera {
+                        cameraButton
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(!camera.isAvailable || !canImport)
-                    .accessibilityHint(Text(camera.reason ?? "Scan pages with the camera"))
-                    .accessibilityIdentifier("capture.camera")
                 }
-                PhotosPicker(selection: $picked, maxSelectionCount: CaptureBar.maxPicked, selectionBehavior: .ordered,
-                             matching: .images, preferredItemEncoding: .current) {
-                    Label(IOSImportText.photosLabel, systemImage: "photo.on.rectangle")
-                        .frame(maxWidth: .infinity)
+                HStack(spacing: 10) {
+                    photosButton
+                    filesButton
                 }
-                .buttonStyle(.bordered)
-                .disabled(!canImport)
-                .accessibilityIdentifier("import.photos")
-                Button {
-                    showsFiles = true
-                } label: {
-                    Label(IOSImportText.filesLabel, systemImage: "folder")
-                        .frame(maxWidth: .infinity)
+            } else {
+                HStack(spacing: 10) {
+                    if offersCamera {
+                        cameraButton
+                    }
+                    photosButton
+                    filesButton
                 }
-                .buttonStyle(.bordered)
-                .disabled(!canImport)
-                .accessibilityIdentifier("import.files")
             }
-            if offersCamera, let reason = camera.reason {
+            if offersScanner, let reason = scanner.reason {
                 HStack(spacing: 6) {
                     Image(systemName: "camera.badge.ellipsis")
                         .font(.caption)
@@ -69,7 +64,7 @@ struct CaptureBar: View {
                     Text(reason)
                         .font(.caption)
                         .accessibilityIdentifier("camera.reason")
-                    if camera.opensSettings {
+                    if scanner.opensSettings {
                         Button("Settings") {
                             openSettings()
                         }
@@ -124,6 +119,58 @@ struct CaptureBar: View {
                 await session.importSources(sources)
             }
         }
+    }
+
+    /// Apple's document scanner (the Document, Email and Word tasks' default), dimmed where it cannot run.
+    private var scannerButton: some View {
+        Button {
+            onScanner()
+        } label: {
+            Label(IOSImportText.scannerLabel, systemImage: "doc.viewfinder")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(!scanner.isAvailable || !importer.canImport)
+        .accessibilityLabel(Text(IOSImportText.scannerName))
+        .accessibilityHint(Text(scanner.reason ?? "Finds each page and takes it when steady"))
+        .accessibilityIdentifier("capture.camera")
+    }
+
+    /// Our own camera; its screen says why when there is no camera or access is off.
+    private var cameraButton: some View {
+        Button {
+            onCamera()
+        } label: {
+            Label(IOSImportText.cameraLabel, systemImage: "camera")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .disabled(!importer.canImport)
+        .accessibilityHint(Text("Shows the page's outline live; you take each photo"))
+        .accessibilityIdentifier("capture.live")
+    }
+
+    private var photosButton: some View {
+        PhotosPicker(selection: $picked, maxSelectionCount: CaptureBar.maxPicked, selectionBehavior: .ordered,
+                     matching: .images, preferredItemEncoding: .current) {
+            Label(IOSImportText.photosLabel, systemImage: "photo.on.rectangle")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .disabled(!importer.canImport)
+        .accessibilityIdentifier("import.photos")
+    }
+
+    private var filesButton: some View {
+        Button {
+            showsFiles = true
+        } label: {
+            Label(IOSImportText.filesLabel, systemImage: "folder")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .disabled(!importer.canImport)
+        .accessibilityIdentifier("import.files")
     }
 
     /// The picked photos in the order picked, each loaded only when its turn comes (`load`), so one

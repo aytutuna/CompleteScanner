@@ -3,21 +3,32 @@ import CompleteScannerKit
 import CoreGraphics
 import SwiftUI
 
-/// The scan screen: the task's step, the camera and imports (`CaptureBar`), the scanner, the last scan,
+/// The full-screen covers the scan screen opens: Apple's document scanner, or our own camera.
+enum ScanCover: String, Identifiable {
+    case scanner
+    case camera
+
+    var id: String { rawValue }
+}
+
+/// The scan screen: the task's step, the cameras and imports (`CaptureBar`), the scanner, the last scan,
 /// the page strip, the status line, and Scan and Save (as a PDF or a JPEG a page, `IOSShell.saveFormats`);
-/// once saved, the saved file with Share and Show in Files. Camera opens Apple's document scanner.
+/// once saved, the saved file with Share and Show in Files. Doc scanner opens Apple's document scanner,
+/// Camera our own camera (`CameraScreen`).
 struct ScanScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
-    @State private var showsCamera: Bool = false
-    @State private var camera: IOSCameraAvailability = .noCamera
+    @State private var cover: ScanCover?
+    @State private var scanner: IOSCameraAvailability = .noCamera
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     stepCard
-                    CaptureBar(offersCamera: IOSShell.offersCamera(state.activeTask), camera: camera, onCamera: openCamera)
+                    CaptureBar(offersScanner: IOSShell.offersCamera(state.activeTask), scanner: scanner,
+                               onScanner: openScanner, offersCamera: IOSShell.offersOwnCamera(state.settings),
+                               onCamera: openOwnCamera)
                     scannerRow
                     PreviewArea(image: state.canvasImage)
                 }
@@ -32,25 +43,38 @@ struct ScanScreen: View {
         .navigationTitle(state.activeTaskDefinition?.title ?? "Scanner")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            camera = IOSCameraAvailability.current
+            scanner = IOSCameraAvailability.current
         }
-        .fullScreenCover(isPresented: $showsCamera) {
-            DocumentCameraView(onFinish: cameraFinished, onCancel: closeCamera, onFail: cameraFailed)
-                .ignoresSafeArea()
+        .fullScreenCover(item: $cover) { (shown: ScanCover) in
+            switch shown {
+            case .scanner:
+                DocumentCameraView(onFinish: cameraFinished, onCancel: closeCamera, onFail: cameraFailed)
+                    .ignoresSafeArea()
+            case .camera:
+                CameraScreen(onClose: closeCamera)
+                    .environmentObject(state)
+                    .environmentObject(importer)
+            }
         }
     }
 
-    // MARK: Camera
+    // MARK: Cameras
 
-    private func openCamera() {
-        camera = IOSCameraAvailability.current
-        guard camera.isAvailable, importer.canImport else { return }
-        showsCamera = true
+    private func openScanner() {
+        scanner = IOSCameraAvailability.current
+        guard scanner.isAvailable, importer.canImport else { return }
+        cover = .scanner
+    }
+
+    /// Our own camera; its screen checks for a camera and asks for access the first time.
+    private func openOwnCamera() {
+        guard importer.canImport else { return }
+        cover = .camera
     }
 
     private func closeCamera() {
-        showsCamera = false
-        camera = IOSCameraAvailability.current
+        cover = nil
+        scanner = IOSCameraAvailability.current
     }
 
     private func cameraFinished(_ images: [CGImage]) {
