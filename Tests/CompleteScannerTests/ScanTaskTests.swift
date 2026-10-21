@@ -628,7 +628,7 @@ final class ScanTaskTests: XCTestCase {
     func test_fileLabels() {
         XCTAssertEqual(TaskCatalog.all.map(\.fileLabel),
                        ["Document", "Document", "Photo", "Restored photo", "Scan", "Document", "Document", "ID card", "Copy",
-                        "Document", "Receipt", "Document", "Book"])
+                        "Document", "Receipt", "Document", "Book", "Document"])
     }
 
     func test_word_savesTheTextAsAWordDocument_andEndsWithAnotherFormat() {
