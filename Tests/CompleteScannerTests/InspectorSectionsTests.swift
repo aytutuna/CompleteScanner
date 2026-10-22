@@ -112,4 +112,103 @@ final class InspectorSectionsTests: XCTestCase {
         s.output.afterSave = .share
         XCTAssertEqual(InspectorSections.moreSummary(s.output, textShown: true), "Share after saving \u{00B7} .txt")
     }
+
+    func test_shown_hidesWhatCannotApply_eachSectionOnce() {
+        var s: ScanSettings = ScanSettings()
+        XCTAssertEqual(InspectorSections.shown(s), ["scanner", "output", "adjustments", "pages", "split", "archive", "more"])
+        XCTAssertEqual(InspectorSections.title(InspectorSections.output, for: s), "Output")
+        XCTAssertTrue(InspectorSections.textApplies(s))
+
+        s.format = .word
+        XCTAssertEqual(InspectorSections.shown(s), ["scanner", "output", "adjustments", "pages", "split", "more"])
+        XCTAssertFalse(InspectorSections.writesPDF(s))
+        XCTAssertFalse(InspectorSections.textApplies(s))
+
+        // A queue of image pages is saved as a PDF.
+        s.format = .jpeg
+        XCTAssertTrue(InspectorSections.writesPDF(s))
+        s.documentMultiPage = false
+        XCTAssertFalse(InspectorSections.writesPDF(s))
+
+        var photos: ScanSettings = ScanSettings()
+        photos.intent = .photo
+        XCTAssertEqual(InspectorSections.shown(photos), ["scanner", "output", "adjustments", "more"])
+        XCTAssertEqual(InspectorSections.title(InspectorSections.output, for: photos), "Photos")
+        XCTAssertEqual(InspectorSections.shownFormat(photos), .jpeg)
+
+        var receipts: ScanSettings = TaskCatalog.apply(.receipt, to: ScanSettings())
+        receipts.format = .word
+        XCTAssertEqual(InspectorSections.shown(receipts), ["task", "scanner", "output", "adjustments", "archive", "more"])
+        XCTAssertEqual(InspectorSections.title(InspectorSections.task, for: receipts), "Receipts")
+        XCTAssertEqual(InspectorSections.shownFormat(receipts), .pdf)
+        XCTAssertTrue(InspectorSections.textApplies(receipts))
+        receipts.format = .png
+        XCTAssertFalse(InspectorSections.shown(receipts).contains(InspectorSections.archive))
+
+        var copy: ScanSettings = TaskCatalog.apply(.copy, to: ScanSettings())
+        copy.taskOptions.copyAlsoSavePdf = false
+        XCTAssertEqual(InspectorSections.shown(copy), ["task", "scanner", "output", "adjustments", "more"])
+        XCTAssertEqual(InspectorSections.title(InspectorSections.task, for: copy), "Photocopy")
+        copy.taskOptions.copyAlsoSavePdf = true
+        XCTAssertTrue(InspectorSections.shown(copy).contains(InspectorSections.archive))
+        XCTAssertFalse(InspectorSections.textApplies(copy))
+
+        XCTAssertNil(InspectorSections.taskTitle(ScanSettings()))
+        XCTAssertEqual(InspectorSections.title(InspectorSections.task, for: ScanSettings()), "Task")
+        let all: [ScanSettings] = [s, photos, receipts, copy]
+        for settings in all {
+            let shown: [String] = InspectorSections.shown(settings)
+            XCTAssertEqual(Set(shown).count, shown.count)
+            var inOrder: [String] = []
+            for id in InspectorSections.all where shown.contains(id) {
+                inOrder.append(id)
+            }
+            XCTAssertEqual(shown, inOrder)
+        }
+    }
+
+    func test_headers_forASetting_haveTheirSummaryDotAndName() {
+        var s: ScanSettings = ScanSettings()
+        XCTAssertEqual(InspectorSections.summary(InspectorSections.scanner, for: s), "Flatbed \u{00B7} 300 dpi \u{00B7} Color")
+        XCTAssertFalse(InspectorSections.changed(InspectorSections.scanner, for: s))
+        XCTAssertEqual(InspectorSections.accessibleName(InspectorSections.scanner, for: s),
+                       "Scanner, Flatbed \u{00B7} 300 dpi \u{00B7} Color")
+        XCTAssertEqual(InspectorSections.summary(InspectorSections.output, for: s), "PDF \u{00B7} Standard")
+        XCTAssertFalse(InspectorSections.changed(InspectorSections.output, for: s))
+        XCTAssertEqual(InspectorSections.summary(InspectorSections.pages, for: s), "")
+        XCTAssertFalse(InspectorSections.changed(InspectorSections.pages, for: s))
+        XCTAssertEqual(InspectorSections.accessibleName(InspectorSections.pages, for: s), "Pages")
+        XCTAssertEqual(InspectorSections.summary(InspectorSections.split, for: s), "Off")
+        XCTAssertFalse(InspectorSections.changed(InspectorSections.split, for: s))
+        XCTAssertEqual(InspectorSections.summary(InspectorSections.archive, for: s), "Off")
+        XCTAssertFalse(InspectorSections.changed(InspectorSections.archive, for: s))
+        XCTAssertEqual(InspectorSections.summary(InspectorSections.more, for: s), "")
+        XCTAssertFalse(InspectorSections.changed(InspectorSections.more, for: s))
+        XCTAssertEqual(InspectorSections.accessibleName(InspectorSections.more, for: s), "More options")
+        XCTAssertEqual(InspectorSections.summary(InspectorSections.task, for: s), "")
+        XCTAssertFalse(InspectorSections.changed(InspectorSections.task, for: s))
+
+        s.resolution = 600
+        s.output.alsoSaveText = true
+        s.output.protect = true
+        s.document.splitMode = .blankSheet
+        s.document.autoCrop = true
+        s.document.autoRotate = true
+        XCTAssertEqual(InspectorSections.summary(InspectorSections.pages, for: s), "Crop \u{00B7} Upright")
+        XCTAssertTrue(InspectorSections.changed(InspectorSections.pages, for: s))
+        XCTAssertEqual(InspectorSections.accessibleName(InspectorSections.pages, for: s), "Pages, 2 options on")
+        XCTAssertTrue(InspectorSections.changed(InspectorSections.scanner, for: s))
+        XCTAssertEqual(InspectorSections.summary(InspectorSections.more, for: s), ".txt")
+        XCTAssertTrue(InspectorSections.changed(InspectorSections.more, for: s))
+        XCTAssertEqual(InspectorSections.accessibleName(InspectorSections.archive, for: s), "Archive & password, Password on")
+        XCTAssertTrue(InspectorSections.changed(InspectorSections.split, for: s))
+        s.format = .word
+        XCTAssertEqual(InspectorSections.summary(InspectorSections.more, for: s), "")
+        XCTAssertEqual(InspectorSections.summary(InspectorSections.output, for: s), "Word")
+        XCTAssertTrue(InspectorSections.changed(InspectorSections.output, for: s))
+
+        var photos: ScanSettings = ScanSettings()
+        photos.intent = .photo
+        XCTAssertEqual(InspectorSections.accessibleName(InspectorSections.output, for: photos), "Photos, JPEG")
+    }
 }

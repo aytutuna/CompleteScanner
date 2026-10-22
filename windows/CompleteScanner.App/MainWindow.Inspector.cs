@@ -136,8 +136,7 @@ public partial class MainWindow
         bool copy = flow == TaskFlowKind.Copy, receipts = flow == TaskFlowKind.ReceiptSplit;
         bool documents = s.Intent == ScanIntent.Document;
         var shownFormat = ShownFormat(s);
-        bool savesPdf = receipts ? OutputFormats.PageFormat(s.Format) == OutputFormat.Pdf : OutputFormats.SavesPdf(s.Format, s.DocumentMultiPage);
-        bool textApplies = documents && savesPdf && (flow == TaskFlowKind.DocumentQueue || receipts);
+        bool textApplies = InspectorSections.TextApplies(s);
 
         PagesSection.Visibility = documents && !copy && !receipts ? Visibility.Visible : Visibility.Collapsed;
         SplitSection.Visibility = PagesSection.Visibility;
@@ -205,47 +204,23 @@ public partial class MainWindow
     /// (<see cref="OutputFormats.PageFormat"/>), and a copy with Also save as PDF on saves a PDF
     /// whatever the format. Photos never do.
     /// </summary>
-    internal static bool WritesPdf(ScanSettings s)
-    {
-        if (s.Intent != ScanIntent.Document) return false;
-        return TaskCatalog.FlowOf(s) switch
-        {
-            TaskFlowKind.Copy => s.TaskOptions.CopyAlsoSavePdf,
-            TaskFlowKind.ReceiptSplit or TaskFlowKind.IdCard => OutputFormats.PageFormat(s.Format) == OutputFormat.Pdf,
-            _ => OutputFormats.SavesPdf(s.Format, s.DocumentMultiPage),
-        };
-    }
+    internal static bool WritesPdf(ScanSettings s) => InspectorSections.WritesPdf(s);
 
     /// <summary>
     /// The format the inspector shows: photos save an image (a PDF or text format shows as JPEG),
     /// receipts a PDF or an image (Word and text show as PDF).
     /// </summary>
-    private static OutputFormat ShownFormat(ScanSettings s) =>
-        TaskCatalog.FlowOf(s) == TaskFlowKind.ReceiptSplit ? OutputFormats.PageFormat(s.Format)
-        : s.Intent == ScanIntent.Photo ? OutputFormats.ImageFormatOrJpeg(s.Format)
-        : s.Format;
+    private static OutputFormat ShownFormat(ScanSettings s) => InspectorSections.ShownFormat(s);
 
     // MARK: - File name: the Insert menu and the preview
-
-    /// <summary>The parts the Insert menu offers, with what each becomes.</summary>
-    private static readonly (string Label, string Token)[] FileNameTokens =
-    [
-        ("Date", "{date}"),
-        ("Time", "{time}"),
-        ("Number", "{counter}"),
-        ("Mode", "{intent}"),
-        ("Task", "{task}"),
-        ("Document name", "{label}"),
-        ("Receipt date", "{docdate}"),
-    ];
 
     private void InsertToken_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu { PlacementTarget = InsertTokenButton, Placement = PlacementMode.Bottom };
-        foreach (var (label, token) in FileNameTokens)
+        foreach (var part in NamingTokens.All)
         {
-            var item = new MenuItem { Header = label, InputGestureText = token };
-            item.Click += (_, _) => InsertToken(token);
+            var item = new MenuItem { Header = part.Label, InputGestureText = part.Token };
+            item.Click += (_, _) => InsertToken(part.Token);
             menu.Items.Add(item);
         }
         menu.IsOpen = true;
@@ -254,12 +229,9 @@ public partial class MainWindow
     /// <summary>Puts <paramref name="token"/> where the caret was in the file name, and saves the name.</summary>
     internal void InsertToken(string token)
     {
-        int at = Math.Clamp(TemplateBox.CaretIndex, 0, TemplateBox.Text.Length);
-        string text = TemplateBox.Text;
-        bool space = at > 0 && !char.IsWhiteSpace(text[at - 1]);
-        string inserted = (space ? " " : "") + token;
-        TemplateBox.Text = text.Insert(at, inserted);
-        TemplateBox.CaretIndex = at + inserted.Length;
+        var insertion = NamingTokens.Insert(token, TemplateBox.Text, TemplateBox.CaretIndex);
+        TemplateBox.Text = insertion.Text;
+        TemplateBox.CaretIndex = insertion.Caret;
         TemplateBox.Focus();
         if (!string.IsNullOrWhiteSpace(TemplateBox.Text))
         {

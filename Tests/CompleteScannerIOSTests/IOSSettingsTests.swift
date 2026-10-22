@@ -1,0 +1,247 @@
+#if os(iOS)
+import CoreGraphics
+import Foundation
+import SwiftUI
+import XCTest
+@testable import CompleteScannerIOS
+@testable import CompleteScannerKit
+
+// The settings screen, the file name editor and the iPad's layout without a screen (I15): the sections
+// built on the shared InspectorSections (each once, in order, with their summaries), which are open, the
+// adjustments' sliders, the naming editor's parts, example and problems, the sidebar's width rule, the
+// keyboard shortcuts, moving a page of the strip by dragging it, and a dropped file.
+
+/// A page of the test's own, its own every time.
+private func settingsPage() -> ScannedPage {
+    let context: CGContext = ImportTestSupport.context(width: 30, height: 40)
+    context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 30, height: 40))
+    return ScannedPage(image: context.makeImage()!, dpi: 60, colorMode: .color)
+}
+
+final class IOSSettingsTests: XCTestCase {
+    private var folder: URL!
+
+    override func setUpWithError() throws {
+        folder = try ImportTestSupport.makeFolder("settings")
+    }
+
+    override func tearDownWithError() throws {
+        if let folder {
+            try? FileManager.default.removeItem(at: folder)
+        }
+    }
+
+    // MARK: The sections
+
+    func test_sections_areTheSharedOnes_eachOnce_inOrder_withTheirSummaries() {
+        let s: ScanSettings = ScanSettings()
+        let sections: [IOSSettingsSection] = IOSSettingsSections.sections(s)
+        var ids: [String] = []
+        for section in sections {
+            ids.append(section.id)
+            XCTAssertEqual(section.title, InspectorSections.title(section.id, for: s))
+            XCTAssertEqual(section.summary, InspectorSections.summary(section.id, for: s), section.id)
+            XCTAssertEqual(section.changed, InspectorSections.changed(section.id, for: s), section.id)
+        }
+        XCTAssertEqual(ids, InspectorSections.shown(s))
+        XCTAssertEqual(Set(ids).count, ids.count)
+        XCTAssertEqual(ids, ["scanner", "output", "adjustments", "pages", "split", "archive", "more"])
+        XCTAssertEqual(sections[0].accessibilityLabel, "Scanner, Flatbed \u{00B7} 300 dpi \u{00B7} Color")
+        XCTAssertEqual(sections[1].summary, "PDF \u{00B7} Standard")
+        XCTAssertEqual(sections[3].accessibilityLabel, "Pages")
+
+        var protected: ScanSettings = ScanSettings()
+        protected.output.protect = true
+        var archiveLocked: Bool = false
+        for section in IOSSettingsSections.sections(protected) where section.id == InspectorSections.archive {
+            archiveLocked = section.locked
+            XCTAssertEqual(section.summary, "Password on")
+        }
+        XCTAssertTrue(archiveLocked)
+    }
+
+    func test_sections_aQueueSavedAsPictures_writesNoPDF_soArchiveIsHidden() {
+        var pictures: ScanSettings = ScanSettings()
+        pictures.format = .jpeg
+        pictures.output.alsoSaveText = true
+        XCTAssertTrue(InspectorSections.shown(pictures).contains(InspectorSections.archive), "The desktop saves a PDF")
+        XCTAssertFalse(IOSSettingsSections.writesPDF(pictures))
+        XCTAssertFalse(IOSSettingsSections.textApplies(pictures))
+        var ids: [String] = []
+        var more: String?
+        for section in IOSSettingsSections.sections(pictures) {
+            ids.append(section.id)
+            if section.id == InspectorSections.more { more = section.summary }
+        }
+        XCTAssertEqual(ids, ["scanner", "output", "adjustments", "pages", "split", "more"])
+        XCTAssertEqual(more, "")
+
+        var receipts: ScanSettings = TaskCatalog.apply(.receipt, to: ScanSettings())
+        receipts.format = .pdf
+        let receiptSections: [IOSSettingsSection] = IOSSettingsSections.sections(receipts)
+        XCTAssertEqual(receiptSections.first?.id, InspectorSections.task)
+        XCTAssertEqual(receiptSections.first?.title, "Receipts")
+
+        var photos: ScanSettings = ScanSettings()
+        photos.intent = .photo
+        var titles: [String] = []
+        for section in IOSSettingsSections.sections(photos) {
+            titles.append(section.title)
+        }
+        XCTAssertEqual(titles, ["Scanner", "Photos", "Adjustments", "More options"])
+    }
+
+    func test_openSections_keptAsText_theTaskScannerAndOutputOpenAtFirst() {
+        XCTAssertEqual(IOSSettingsSections.defaultText, "task,scanner,output")
+        XCTAssertEqual(IOSSettingsSections.open("scanner,bogus,more"), Set<String>(["scanner", "more"]))
+        XCTAssertEqual(IOSSettingsSections.open(""), Set<String>())
+        XCTAssertEqual(IOSSettingsSections.text(Set<String>(["more", "scanner"])), "scanner,more")
+        let stored: Set<String> = IOSSettingsSections.open(IOSSettingsSections.defaultText)
+        XCTAssertTrue(IOSSettingsSections.isOpen("scanner", stored: stored, openedByTask: []))
+        XCTAssertFalse(IOSSettingsSections.isOpen("pages", stored: stored, openedByTask: []))
+        XCTAssertTrue(IOSSettingsSections.isOpen("pages", stored: stored, openedByTask: ["pages"]))
+    }
+
+    func test_adjustments_mapTheSlidersOntoTheSettings() {
+        let neutral: AdjustmentSettings = AdjustmentSettings()
+        for adjustment in IOSAdjustment.allCases {
+            XCTAssertEqual(adjustment.amount(neutral), 0, accuracy: 1e-9, adjustment.label)
+            let changed: AdjustmentSettings = adjustment.setting(37, in: neutral)
+            XCTAssertEqual(adjustment.amount(changed), 37, accuracy: 1e-9, adjustment.label)
+        }
+        XCTAssertEqual(IOSAdjustment.brightness.setting(100, in: neutral).brightness, 1, accuracy: 1e-9)
+        XCTAssertEqual(IOSAdjustment.contrast.setting(100, in: neutral).contrast, 4, accuracy: 1e-9)
+        XCTAssertEqual(IOSAdjustment.contrast.setting(-100, in: neutral).contrast, 0.25, accuracy: 1e-9)
+        XCTAssertEqual(IOSAdjustment.saturation.setting(-100, in: neutral).saturation, 0, accuracy: 1e-9)
+        XCTAssertEqual(IOSAdjustment.sharpness.setting(100, in: neutral).sharpness, 2, accuracy: 1e-9)
+        XCTAssertEqual(IOSAdjustment.amountText(12.4), "+12")
+        XCTAssertEqual(IOSAdjustment.amountText(-5), "-5")
+        XCTAssertEqual(IOSAdjustment.amountText(0.3), "0")
+
+        var edited: AdjustmentSettings = IOSAdjustment.brightness.setting(40, in: neutral)
+        edited.descreen = true
+        XCTAssertFalse(IOSAdjustment.isNeutral(edited))
+        let reset: AdjustmentSettings = IOSAdjustment.neutral(edited)
+        XCTAssertTrue(IOSAdjustment.isNeutral(reset))
+        XCTAssertTrue(reset.descreen, "Reset puts the sliders back, not the switches")
+    }
+
+    func test_version_fromTheAppsInfo() {
+        let info: [String: Any] = ["CFBundleShortVersionString": "0.1.0", "CFBundleVersion": "7"]
+        XCTAssertEqual(IOSSettingsText.version(info), "Version 0.1.0 (7)")
+        let noBuild: [String: Any] = ["CFBundleShortVersionString": "0.1.0"]
+        XCTAssertEqual(IOSSettingsText.version(noBuild), "Version 0.1.0")
+        XCTAssertEqual(IOSSettingsText.version(nil), "Version ?")
+    }
+
+    // MARK: The file name
+
+    @MainActor
+    func test_namingEditor_putsTheTemplateInUse_showsTheNextName_andWhatIsWrong() {
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        let model: IOSNamingModel = IOSNamingModel(state: state)
+        XCTAssertEqual(model.text, state.settings.namingTemplate)
+        XCTAssertEqual(model.parts.count, 7)
+        XCTAssertNil(model.problem)
+
+        model.setText("Invoice {date}")
+        XCTAssertEqual(state.settings.namingTemplate, "Invoice {date}")
+        XCTAssertNil(model.problem)
+        XCTAssertTrue(model.example.hasPrefix("Invoice "), model.example)
+        XCTAssertTrue(model.example.hasSuffix(".pdf"), model.example)
+
+        model.setText("   ")
+        XCTAssertEqual(model.problem, NamingTokens.emptyProblem)
+        XCTAssertEqual(state.settings.namingTemplate, "Invoice {date}", "A blank name keeps the last one in use")
+
+        model.setText("Invoice {foo}")
+        XCTAssertEqual(model.problem, "Unknown part {foo}")
+        XCTAssertEqual(state.settings.namingTemplate, "Invoice {foo}")
+
+        model.insert("{counter}")
+        XCTAssertEqual(model.text, "Invoice {foo} {counter}")
+        XCTAssertEqual(state.settings.namingTemplate, "Invoice {foo} {counter}")
+
+        // The scan screen saves a picture a page as JPEGs.
+        state.settings.format = .jpeg
+        XCTAssertEqual(model.format, OutputFormat.jpeg)
+        XCTAssertTrue(model.example.hasSuffix(".jpg"), model.example)
+
+        model.reset()
+        XCTAssertEqual(model.text, "Scan {date} {counter}")
+        XCTAssertEqual(state.settings.namingTemplate, "Scan {date} {counter}")
+    }
+
+    // MARK: The iPad
+
+    func test_layout_theSidebar_onlyOnARegularWidth() {
+        XCTAssertTrue(IOSLayout.usesSidebar(UserInterfaceSizeClass.regular))
+        XCTAssertFalse(IOSLayout.usesSidebar(UserInterfaceSizeClass.compact))
+        XCTAssertFalse(IOSLayout.usesSidebar(nil))
+    }
+
+    @MainActor
+    func test_shortcuts_saveNewDocumentSettingsAndTheShutter() {
+        XCTAssertEqual(IOSShortcuts.save.key, "s")
+        XCTAssertTrue(IOSShortcuts.save.command)
+        XCTAssertEqual(IOSShortcuts.newDocument.key, "n")
+        XCTAssertTrue(IOSShortcuts.newDocument.command)
+        XCTAssertEqual(IOSShortcuts.settings.key, ",")
+        XCTAssertTrue(IOSShortcuts.settings.command)
+        XCTAssertEqual(IOSShortcuts.shutter.key, " ")
+        XCTAssertFalse(IOSShortcuts.shutter.command)
+        var seen: Set<String> = []
+        for shortcut in IOSShortcuts.all {
+            XCTAssertFalse(shortcut.title.isEmpty)
+            seen.insert("\(shortcut.command)-\(shortcut.key)")
+        }
+        XCTAssertEqual(seen.count, IOSShortcuts.all.count, "No two actions share a key")
+        XCTAssertEqual(IOSShortcuts.save.keyboardShortcut.modifiers, EventModifiers.command)
+        XCTAssertEqual(IOSShortcuts.shutter.keyboardShortcut.modifiers, EventModifiers())
+    }
+
+    @MainActor
+    func test_pageDrop_aPageDraggedOntoAnother_takesItsPlace() {
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        let pages: [ScannedPage] = [settingsPage(), settingsPage(), settingsPage(), settingsPage()]
+        let a: UUID = pages[0].id
+        let b: UUID = pages[1].id
+        let c: UUID = pages[2].id
+        let d: UUID = pages[3].id
+        XCTAssertEqual(IOSPageDrop.offset(moving: a, onto: c, in: [a, b, c, d]), 2)
+        XCTAssertEqual(IOSPageDrop.offset(moving: d, onto: b, in: [a, b, c, d]), -2)
+        XCTAssertNil(IOSPageDrop.offset(moving: a, onto: a, in: [a, b, c, d]))
+        XCTAssertNil(IOSPageDrop.offset(moving: UUID(), onto: a, in: [a, b, c, d]))
+        XCTAssertEqual(IOSPageDrop.pageID(a.uuidString), a)
+        XCTAssertNil(IOSPageDrop.pageID("not a page"))
+
+        state.scannedPages = pages
+        XCTAssertTrue(IOSPageDrop.move(a, onto: c, in: state))
+        XCTAssertEqual(order(state), [b, c, a, d])
+        XCTAssertTrue(IOSPageDrop.move(d, onto: b, in: state))
+        XCTAssertEqual(order(state), [d, b, c, a])
+        XCTAssertFalse(IOSPageDrop.move(c, onto: c, in: state))
+        XCTAssertFalse(IOSPageDrop.move(UUID(), onto: c, in: state))
+        XCTAssertEqual(order(state), [d, b, c, a])
+    }
+
+    func test_droppedFiles_comeInByTheirKind() {
+        let pdf: IOSImportItem = IOSDroppedFile(data: Data("%PDF-1.4".utf8), kind: .pdf).item
+        XCTAssertEqual(pdf.kind, IOSImportItem.Kind.pdf)
+        XCTAssertEqual(pdf.name, "Dropped PDF")
+        let picture: IOSImportItem = IOSDroppedFile(data: Data([0x89, 0x50]), kind: .image).item
+        XCTAssertEqual(picture.kind, IOSImportItem.Kind.image)
+        XCTAssertEqual(picture.name, "Dropped picture")
+    }
+
+    @MainActor
+    private func order(_ state: AppState) -> [UUID] {
+        var ids: [UUID] = []
+        for page in state.scannedPages {
+            ids.append(page.id)
+        }
+        return ids
+    }
+}
+#endif

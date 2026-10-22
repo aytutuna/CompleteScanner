@@ -2,22 +2,36 @@
 import CompleteScannerKit
 import QuickLook
 import SwiftUI
+import UIKit
 
-/// The app's window: the task start screen, the scan screen pushed over it, the share sheet, Mail's
-/// composer and the Quick Look preview the file actions ask for, the corner editor of an imported photo, the troubleshooter,
+/// The app's window: on a compact width (iPhone, a narrow iPad window) the task start screen with the scan
+/// screen pushed over it; on a regular width (iPad, `IOSLayout.usesSidebar`) a sidebar with the tasks, the
+/// presets, the scanners and the library beside the scan screen (or the start screen, the presets, the
+/// scans or the saved files). Settings opens as a sheet (Command-comma). Also the share sheet, Mail's
+/// composer and the Quick Look preview the file actions ask for (`FileActionPresenters`, which the Settings
+/// sheet has too), the scan screen's covers (`ScanCovers`, kept here so they outlive a change of layout),
+/// the corner editor of an imported photo, the troubleshooter,
 /// the question about a network scanner's changed certificate, and the error alert (with Troubleshoot
-/// when it is about a scanner). Photos and PDFs opened in this app from another one ("Open in
+/// when it is about a scanner; in the Settings sheet it opens Settings' own troubleshooter). It keeps the
+/// screen on while a network scanner's job runs. Photos and PDFs opened in this app from another one ("Open in
 /// CompleteScanner") are imported: into the task set up when it takes photos (`IOSShell.takesPhotos`), else
-/// into Document to PDF; while an import runs they wait for it (`IOSImportSession`). Going back from the
-/// scan screen stops an import. The photo and ID card reviews are the scan screen's.
+/// into Document to PDF; while an import runs they wait for it (`IOSImportSession`). Leaving the scan screen
+/// stops an import and closes the scan screen's covers. The scan screen opens the photo and ID card reviews.
 public struct IOSRootView: View {
     @EnvironmentObject private var state: AppState
+    @Environment(\.horizontalSizeClass) private var sizeClass: UserInterfaceSizeClass?
     @ObservedObject private var fileActions: IOSFileActions
     @ObservedObject private var importer: IOSImportSession
     private let launchImports: [IOSImportItem]
     private let launchTask: ScanTask?
     private let picker: IOSScannerPickerModel
     @State private var showsScanner: Bool = false
+    @State private var detail: IOSDetail = IOSDetail.start
+    @State private var showsSettings: Bool = false
+    @State private var showsSettingsTroubleshooter: Bool = false
+    @State private var scanCover: ScanCover?
+    @State private var spreadEditor: SpreadEditorSource?
+    @State private var columns: NavigationSplitViewVisibility = NavigationSplitViewVisibility.all
     @State private var started: Bool = false
 
     /// `importer` brings photos and PDFs in for the state the view is given; `launchImports` are the files
@@ -33,17 +47,23 @@ public struct IOSRootView: View {
     }
 
     public var body: some View {
-        NavigationStack {
-            TaskStartScreen(onOpenScanner: openScanner)
-                .navigationDestination(isPresented: $showsScanner) {
-                    ScanScreen(picker: picker)
-                }
+        Group {
+            if IOSLayout.usesSidebar(sizeClass) {
+                sidebarLayout
+            } else {
+                stackLayout
+            }
         }
         .onChange(of: showsScanner) { (_: Bool, shown: Bool) in
             // Pages of an import must not land in a task picked after leaving its scan screen.
             if !shown {
                 importer.stop()
+                scanCover = nil
+                spreadEditor = nil
             }
+        }
+        .onChange(of: state.isBusy) { (_: Bool, busy: Bool) in
+            keepAwake(busy)
         }
         .environmentObject(importer)
         .task {
@@ -52,17 +72,11 @@ public struct IOSRootView: View {
         .onOpenURL { (url: URL) in
             openFiles([url])
         }
-        .sheet(item: $fileActions.shareRequest) { (request: ShareRequest) in
-            ActivityView(items: request.urls, onDone: closeShareSheet)
-        }
-        .background {
-            MailSheet(fileActions: fileActions)
-        }
+        .modifier(FileActionPresenters(fileActions: fileActions, state: state))
+        .modifier(ScanCovers(state: state, importer: importer, cover: $scanCover, spreadEditor: $spreadEditor))
         .fullScreenCover(item: cornerRequest) { (request: PhotoCornersRequest) in
             CornerEditorView(request: request, onAnswer: answerCorners, onStop: stopImport)
         }
-        .quickLookPreview($fileActions.previewURL)
-        .modifier(ErrorAlert(state: state))
         .sheet(isPresented: $state.showTroubleshooter) {
             TroubleshooterScreen(makeAddModel: makeAddModel, onClose: closeTroubleshooter)
                 .environmentObject(state)
@@ -72,6 +86,89 @@ public struct IOSRootView: View {
                 CertificateQuestion(network: network)
             }
         }
+        .sheet(isPresented: $showsSettings) {
+            NavigationStack {
+                SettingsScreen(makeAddModel: makeAddModel, onPresetApplied: presetApplied, onClose: closeSettings,
+                               showsTroubleshooter: $showsSettingsTroubleshooter)
+            }
+            .modifier(FileActionPresenters(fileActions: fileActions, state: state,
+                                           onTroubleshoot: openSettingsTroubleshooter))
+            .environmentObject(state)
+            .environmentObject(importer)
+        }
+    }
+
+    /// iPhone: the start screen, the scan screen pushed over it.
+    private var stackLayout: some View {
+        NavigationStack {
+            TaskStartScreen(onOpenScanner: openScanner, onOpenSettings: openSettings)
+                .navigationDestination(isPresented: $showsScanner) {
+                    ScanScreen(picker: picker, cover: $scanCover, spreadEditor: $spreadEditor,
+                               onOpenSettings: openSettings)
+                }
+        }
+    }
+
+    /// iPad: the sidebar, and the scan screen (or what the sidebar's library picked) beside it.
+    private var sidebarLayout: some View {
+        NavigationSplitView(columnVisibility: $columns) {
+            IOSSidebar(picker: picker, scannerShown: showsScanner, detail: detail, onTask: pickTask,
+                       onPresetApplied: openScanner, onDetail: showDetail, onSettings: openSettings)
+                .navigationTitle("CompleteScanner")
+        } detail: {
+            NavigationStack {
+                splitDetail
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var splitDetail: some View {
+        if showsScanner {
+            ScanScreen(picker: picker, cover: $scanCover, spreadEditor: $spreadEditor, pickerInSidebar: true)
+        } else {
+            switch detail {
+            case .start:
+                TaskStartScreen(onOpenScanner: openScanner)
+            case .presets:
+                PresetsScreen(onApplied: openScanner)
+            case .history:
+                HistoryScreen()
+            case .saved:
+                SavedFilesScreen()
+            }
+        }
+    }
+
+    private func pickTask(_ task: ScanTask) {
+        if state.startTask(task) {
+            openScanner()
+        }
+    }
+
+    private func showDetail(_ shown: IOSDetail) {
+        detail = shown
+        showsScanner = false
+    }
+
+    private func openSettings() {
+        showsSettingsTroubleshooter = false
+        showsSettings = true
+    }
+
+    private func closeSettings() {
+        showsSettings = false
+    }
+
+    /// The root cannot present the troubleshooter over Settings, so the error alert there opens Settings' own.
+    private func openSettingsTroubleshooter() {
+        showsSettingsTroubleshooter = true
+    }
+
+    /// A preset picked in Settings is in use: Settings closes and the scan screen opens.
+    private func presetApplied() {
+        showsSettings = false
+        openScanner()
     }
 
     private func makeAddModel() -> IOSAddScannerModel {
@@ -80,6 +177,15 @@ public struct IOSRootView: View {
 
     private func closeTroubleshooter() {
         state.showTroubleshooter = false
+    }
+
+    /// While a network scanner's job runs, the screen stays on: iOS would suspend the app soon after it
+    /// locked, cutting a feeder batch short. Set here, not by the scan screen: a change of layout builds that
+    /// screen anew, and the old copy's onDisappear may run after the new copy's onAppear.
+    private func keepAwake(_ busy: Bool) {
+        let selected: String? = state.selectedDeviceID
+        let device: ScannerInfo? = state.devices.first(where: { (info: ScannerInfo) -> Bool in info.id == selected })
+        UIApplication.shared.isIdleTimerDisabled = IOSShell.keepsScreenAwake(isBusy: busy, device: device)
     }
 
     /// The corner editor waiting for an answer; closing it any other way skips the photo. While our
@@ -105,10 +211,6 @@ public struct IOSRootView: View {
 
     private func openScanner() {
         showsScanner = true
-    }
-
-    private func closeShareSheet() {
-        fileActions.shareRequest = nil
     }
 
     private func startOnce() {
@@ -157,6 +259,33 @@ public struct IOSRootView: View {
         if pushed {
             try? await Task.sleep(nanoseconds: 700_000_000)
         }
+    }
+}
+
+/// The share sheet, Mail's composer and the Quick Look preview the file actions ask for, and the error
+/// alert. The root view has them, and so does the Settings sheet: a sheet's view cannot present while
+/// another is up over it, so Saved files in Settings would otherwise show nothing until Settings closed.
+@MainActor
+private struct FileActionPresenters: ViewModifier {
+    @ObservedObject var fileActions: IOSFileActions
+    @ObservedObject var state: AppState
+    /// The error alert's Troubleshoot (`ErrorAlert.onTroubleshoot`).
+    var onTroubleshoot: (@MainActor () -> Void)? = nil
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(item: $fileActions.shareRequest) { (request: ShareRequest) in
+                ActivityView(items: request.urls, onDone: closeShareSheet)
+            }
+            .background {
+                MailSheet(fileActions: fileActions)
+            }
+            .quickLookPreview($fileActions.previewURL)
+            .modifier(ErrorAlert(state: state, onTroubleshoot: onTroubleshoot))
+    }
+
+    private func closeShareSheet() {
+        fileActions.shareRequest = nil
     }
 }
 
@@ -219,6 +348,9 @@ private struct CertificateQuestion: View {
 @MainActor
 struct ErrorAlert: ViewModifier {
     @ObservedObject var state: AppState
+    /// Opens a troubleshooter where the root's cannot show (the Settings sheet); nil: the root's
+    /// (`AppState.showTroubleshooter`).
+    var onTroubleshoot: (@MainActor () -> Void)? = nil
 
     func body(content: Content) -> some View {
         content
@@ -237,9 +369,14 @@ struct ErrorAlert: ViewModifier {
     /// Opens the troubleshooter once the alert has gone.
     private func openTroubleshooter() {
         let appState: AppState = state
+        let open: (@MainActor () -> Void)? = onTroubleshoot
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 400_000_000)
-            appState.showTroubleshooter = true
+            if let troubleshoot = open {
+                troubleshoot()
+            } else {
+                appState.showTroubleshooter = true
+            }
         }
     }
 

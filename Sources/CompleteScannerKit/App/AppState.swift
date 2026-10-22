@@ -1819,6 +1819,17 @@ public final class AppState: ObservableObject {
         presetStore.save(presets)
     }
 
+    /// Gives a preset a new name (trimmed); a blank name, or a preset that is gone, changes nothing.
+    /// Returns whether it was renamed.
+    @discardableResult
+    public func renamePreset(id: UUID, to name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = presets.firstIndex(where: { $0.id == id }) else { return false }
+        presets[index].name = trimmed
+        presetStore.save(presets)
+        return true
+    }
+
     // MARK: Helpers
 
     /// Shows the file in Finder, selected (`FileActionService.reveal`).
@@ -2172,11 +2183,21 @@ public final class AppState: ObservableObject {
         return url
     }
 
+    /// Where the running number of {counter} is kept, in the user's defaults.
+    static let counterKey = "CompleteScanner.counter"
+
     private func nextCounter() -> Int {
-        let key = "CompleteScanner.counter"
-        let value = UserDefaults.standard.integer(forKey: key) + 1
-        UserDefaults.standard.set(value, forKey: key)
+        let value = UserDefaults.standard.integer(forKey: Self.counterKey) + 1
+        UserDefaults.standard.set(value, forKey: Self.counterKey)
         return value
+    }
+
+    /// The name the next file saved as `format` would get with `template` (the file name field's
+    /// example, `NamingTokens.example`); the running number is read, not taken. Twin of the Windows
+    /// view model's `FileNamePreview`.
+    public func fileNameExample(_ template: String, format: OutputFormat) -> String {
+        let next = UserDefaults.standard.integer(forKey: Self.counterKey) + 1
+        return NamingTokens.example(template, settings: settings, format: format, counter: next, date: Date())
     }
 
     func outputURL(fileExtension: String, index: Int? = nil, documentDate: DocumentDate? = nil,

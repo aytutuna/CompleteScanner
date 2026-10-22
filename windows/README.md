@@ -168,7 +168,9 @@ texts); the Mac mirrors the layout (see the main README).
   task section, Scanner and Output start open, the rest collapsed; each stays as the user leaves
   it (`inspectorSections` in `preferences.json`, not in presets), and the Restore old photos, Book
   or magazine, Separate documents and Archive tasks open their own section (`InspectorSections` in
-  Core). A collapsed header shows what is on
+  Core, which also decides which sections a setting shows, their titles, summaries, dots and accessible
+  names: `Shown`, `Title`, `Summary`, `Changed`, `AccessibleName`, `WritesPdf`, `TextApplies`, the rules
+  the iPhone's Settings screen is built on). A collapsed header shows what is on
   in it ("Skip blank · Upright +1", "Separator sheets", a lock and "Password on") with an accent
   dot when anything differs from the defaults; its accessible name carries the same summary.
 - **Hide or disable.** What does nothing for the task or format is hidden (Pages and Split for
@@ -189,7 +191,9 @@ texts); the Mac mirrors the layout (see the main README).
   selected, "Using the selected area" (with × to clear it) under Paper size, "Drop to add as pages"
   while photo files are dragged over the window, a **Not split** badge with **Split…** on a spread
   kept whole, a scissors or link on the gap between two pages (Split here / Join), the next file's
-  name under File name (with an **Insert** menu for its parts), "1 · front" and "1 · left" side
+  name under File name (with an **Insert** menu for its parts; the parts, putting one in at the caret
+  and the next file's name are `NamingTokens` in Core, shared with the iPhone's file name editor, which
+  also says what is wrong with a template: "Needs a file name", "Unknown part {foo}"), "1 · front" and "1 · left" side
   badges (named "Sheet 1, front" and "Spread 1, left page" for screen readers), and the strip's
   "6 pages · 1 blank skipped".
 - **Save** is a split button: **Save PDF** with a badge of the pages it saves and a lock while the
@@ -215,11 +219,11 @@ texts); the Mac mirrors the layout (see the main README).
   the password dialog keeps its warning and a strength bar, and the add-scanner, crop, spread,
   corner and save-preset dialogs keep one line each.
 
-The short texts both apps show are in Core with Swift twins (`StatusLine`, `InspectorSections`,
+The short texts both apps show are in Core with Swift twins (`StatusLine`, `InspectorSections`, `NamingTokens`,
 and the reasons with the types they belong to: `DocumentSides.NeedsFeederReason`,
 `BookPages.NotWithTwoSidedReason`, `BlankSensitivities.HighWarning`, `PaperSizes.SelectedAreaNote`,
 `SplitMode` captions and steps, `BarcodeSeparators.StartsDocumentCaption`, `IdCardSteps.PrivacyNote`,
-`PhotoImport.DropOverlay`), checked by `StatusLineTests`, `InspectorSectionsTests` and the tests of
+`PhotoImport.DropOverlay`), checked by `StatusLineTests`, `InspectorSectionsTests`, `NamingTokensTests` and the tests of
 those types on both platforms. The Windows-only short texts are in `LessText.cs` (`ShortText`),
 checked by `LessTextTests` in `CompleteScanner.App.Tests`; the PDF/A and password texts live in
 `PdfA.cs` and `PdfEncryption.cs`, whose Swift twins the Mac shows. Renaming the four tasks changed no

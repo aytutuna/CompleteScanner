@@ -168,4 +168,106 @@ public enum InspectorSections {
         let heading: String = title(pages)
         return on == 0 ? heading : "\(heading), \(on) option\(on == 1 ? "" : "s") on"
     }
+
+    // MARK: The sections for a setting
+
+    /// The sections shown for `s`, in order (hide what can't apply): the task's own for Photocopy and
+    /// Receipts; Scanner, Output and Adjustments always; Pages and Split into documents for document pages
+    /// outside those two tasks; Archive & password while a save writes a PDF (`writesPDF`); More options always.
+    public static func shown(_ s: ScanSettings) -> [String] {
+        let flow: TaskFlowKind = TaskCatalog.flow(of: s)
+        let pageSections: Bool = s.intent == .document && flow != .copy && flow != .receiptSplit
+        var result: [String] = []
+        for section in all {
+            switch section {
+            case task:
+                if taskTitle(s) != nil { result.append(section) }
+            case pages, split:
+                if pageSections { result.append(section) }
+            case archive:
+                if writesPDF(s) { result.append(section) }
+            default:
+                result.append(section)
+            }
+        }
+        return result
+    }
+
+    /// The task's own section's header: "Photocopy" or "Receipts"; nil for a task without one.
+    public static func taskTitle(_ s: ScanSettings) -> String? {
+        switch TaskCatalog.flow(of: s) {
+        case .copy: return "Photocopy"
+        case .receiptSplit: return "Receipts"
+        default: return nil
+        }
+    }
+
+    /// A section's header for `s`: the task's own named by its task, Output named "Photos" in Photos mode,
+    /// the others by `title(_:)`.
+    public static func title(_ section: String, for s: ScanSettings) -> String {
+        if section == task { return taskTitle(s) ?? title(task) }
+        if section == output && s.intent == .photo { return "Photos" }
+        return title(section)
+    }
+
+    /// The format the column shows: receipts save a PDF or an image, photos an image, else the format.
+    public static func shownFormat(_ s: ScanSettings) -> OutputFormat {
+        if TaskCatalog.flow(of: s) == .receiptSplit { return s.format.pageFormat }
+        if s.intent == .photo { return s.format.imageFormatOrJPEG }
+        return s.format
+    }
+
+    /// A save of `s` writes a PDF, so Archive & password apply: a queue of image pages too, receipts and the
+    /// ID card saved as a PDF, and a copy also saved as a PDF; never photos.
+    public static func writesPDF(_ s: ScanSettings) -> Bool {
+        guard s.intent == .document else { return false }
+        switch TaskCatalog.flow(of: s) {
+        case .copy:
+            return s.taskOptions.copyAlsoSavePdf
+        case .receiptSplit, .idCard:
+            return s.format.pageFormat == .pdf
+        default:
+            return s.format.savesPDF(collectsPages: s.documentMultiPage)
+        }
+    }
+
+    /// Also save text applies: document pages collected or saved as a PDF, and receipts saved as PDFs.
+    public static func textApplies(_ s: ScanSettings) -> Bool {
+        guard s.intent == .document else { return false }
+        let flow: TaskFlowKind = TaskCatalog.flow(of: s)
+        if flow == .receiptSplit { return s.format.pageFormat == .pdf }
+        return flow == .documentQueue && s.format.savesPDF(collectsPages: s.documentMultiPage)
+    }
+
+    /// The summary a collapsed header shows for `s`; "" for none (the task's section has none).
+    public static func summary(_ section: String, for s: ScanSettings) -> String {
+        switch section {
+        case scanner: return scannerSummary(s)
+        case output: return outputSummary(s, shownFormat: shownFormat(s))
+        case adjustments: return adjustmentsSummary(s.adjustments)
+        case pages: return pagesSummary(s.document)
+        case split: return splitSummary(s.document)
+        case archive: return archiveSummary(s.output)
+        case more: return moreSummary(s.output, textShown: textApplies(s))
+        default: return ""
+        }
+    }
+
+    /// Something in the section differs from the default for `s` (the collapsed header's dot).
+    public static func changed(_ section: String, for s: ScanSettings) -> Bool {
+        switch section {
+        case scanner: return scannerChanged(s)
+        case output: return outputChanged(s, shownFormat: shownFormat(s))
+        case split: return s.document.splitMode != SplitMode.none
+        case archive: return s.output.protect || s.output.archival
+        case task: return false
+        default: return !summary(section, for: s).isEmpty
+        }
+    }
+
+    /// The header's accessibility label for `s`: Pages counts its options, the others are `headerName`.
+    public static func accessibleName(_ section: String, for s: ScanSettings) -> String {
+        if section == pages { return pagesHeaderName(s.document) }
+        return headerName(title(section, for: s), summary: summary(section, for: s))
+    }
 }

@@ -153,4 +153,108 @@ public static class InspectorSections
         string title = Title(Pages);
         return on == 0 ? title : $"{title}, {on} option{(on == 1 ? "" : "s")} on";
     }
+
+    // MARK: - The sections for a setting
+
+    /// <summary>
+    /// The sections shown for <paramref name="s"/>, in order (hide what can't apply): the task's own for
+    /// Photocopy and Receipts; Scanner, Output and Adjustments always; Pages and Split into documents for
+    /// document pages outside those two tasks; Archive &amp; password while a save writes a PDF
+    /// (<see cref="WritesPdf"/>); More options always.
+    /// </summary>
+    public static IReadOnlyList<string> Shown(ScanSettings s)
+    {
+        var flow = TaskCatalog.FlowOf(s);
+        bool pageSections = s.Intent == ScanIntent.Document && flow != TaskFlowKind.Copy && flow != TaskFlowKind.ReceiptSplit;
+        var result = new List<string>();
+        foreach (string section in All)
+        {
+            bool shown = section switch
+            {
+                Task => TaskTitle(s) is not null,
+                Pages or Split => pageSections,
+                Archive => WritesPdf(s),
+                _ => true,
+            };
+            if (shown) result.Add(section);
+        }
+        return result;
+    }
+
+    /// <summary>The task's own section's header: "Photocopy" or "Receipts"; null for a task without one.</summary>
+    public static string? TaskTitle(ScanSettings s) => TaskCatalog.FlowOf(s) switch
+    {
+        TaskFlowKind.Copy => "Photocopy",
+        TaskFlowKind.ReceiptSplit => "Receipts",
+        _ => null,
+    };
+
+    /// <summary>
+    /// A section's header for <paramref name="s"/>: the task's own named by its task, Output named "Photos"
+    /// in Photos mode, the others by <see cref="Title(string)"/>.
+    /// </summary>
+    public static string Title(string section, ScanSettings s)
+    {
+        if (section == Task) return TaskTitle(s) ?? Title(Task);
+        if (section == Output && s.Intent == ScanIntent.Photo) return "Photos";
+        return Title(section);
+    }
+
+    /// <summary>The format the column shows: receipts save a PDF or an image, photos an image, else the format.</summary>
+    public static OutputFormat ShownFormat(ScanSettings s) =>
+        TaskCatalog.FlowOf(s) == TaskFlowKind.ReceiptSplit ? OutputFormats.PageFormat(s.Format)
+        : s.Intent == ScanIntent.Photo ? OutputFormats.ImageFormatOrJpeg(s.Format)
+        : s.Format;
+
+    /// <summary>
+    /// A save of <paramref name="s"/> writes a PDF, so Archive &amp; password apply: a queue of image pages
+    /// too, receipts and the ID card saved as a PDF, and a copy also saved as a PDF; never photos.
+    /// </summary>
+    public static bool WritesPdf(ScanSettings s)
+    {
+        if (s.Intent != ScanIntent.Document) return false;
+        return TaskCatalog.FlowOf(s) switch
+        {
+            TaskFlowKind.Copy => s.TaskOptions.CopyAlsoSavePdf,
+            TaskFlowKind.ReceiptSplit or TaskFlowKind.IdCard => OutputFormats.PageFormat(s.Format) == OutputFormat.Pdf,
+            _ => OutputFormats.SavesPdf(s.Format, s.DocumentMultiPage),
+        };
+    }
+
+    /// <summary>Also save text applies: document pages collected or saved as a PDF, and receipts saved as PDFs.</summary>
+    public static bool TextApplies(ScanSettings s)
+    {
+        if (s.Intent != ScanIntent.Document) return false;
+        var flow = TaskCatalog.FlowOf(s);
+        if (flow == TaskFlowKind.ReceiptSplit) return OutputFormats.PageFormat(s.Format) == OutputFormat.Pdf;
+        return flow == TaskFlowKind.DocumentQueue && OutputFormats.SavesPdf(s.Format, s.DocumentMultiPage);
+    }
+
+    /// <summary>The summary a collapsed header shows for <paramref name="s"/>; "" for none (the task's section has none).</summary>
+    public static string Summary(string section, ScanSettings s) => section switch
+    {
+        Scanner => ScannerSummary(s),
+        Output => OutputSummary(s, ShownFormat(s)),
+        Adjustments => AdjustmentsSummary(s.Adjustments),
+        Pages => PagesSummary(s.Document),
+        Split => SplitSummary(s.Document),
+        Archive => ArchiveSummary(s.Output),
+        More => MoreSummary(s.Output, TextApplies(s)),
+        _ => "",
+    };
+
+    /// <summary>Something in the section differs from the default for <paramref name="s"/> (the collapsed header's dot).</summary>
+    public static bool Changed(string section, ScanSettings s) => section switch
+    {
+        Scanner => ScannerChanged(s),
+        Output => OutputChanged(s, ShownFormat(s)),
+        Split => s.Document.SplitMode != SplitMode.None,
+        Archive => s.Output.Protect || s.Output.Archival,
+        Task => false,
+        _ => Summary(section, s).Length > 0,
+    };
+
+    /// <summary>The header's accessible name for <paramref name="s"/>: Pages counts its options, the others are <see cref="HeaderName"/>.</summary>
+    public static string AccessibleName(string section, ScanSettings s) =>
+        section == Pages ? PagesHeaderName(s.Document) : HeaderName(Title(section, s), Summary(section, s));
 }

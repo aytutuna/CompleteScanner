@@ -151,6 +151,9 @@ final class IOSFileActionsTests: XCTestCase {
         let spaced = URL(fileURLWithPath: "/var/mobile/Documents/My Scans/Scan 1.pdf")
         XCTAssertEqual(IOSFileActions.filesAppURL(for: [spaced])?.absoluteString,
                        "shareddocuments:///var/mobile/Documents/My%20Scans/")
+        let saveFolder = URL(fileURLWithPath: "/var/mobile/Documents/My Scans", isDirectory: true)
+        XCTAssertEqual(IOSFileActions.filesAppURL(for: [saveFolder])?.absoluteString,
+                       "shareddocuments:///var/mobile/Documents/My%20Scans/")
         XCTAssertNil(IOSFileActions.filesAppURL(for: []))
         let web: URL = try XCTUnwrap(URL(string: "https://example.com/scan.pdf"))
         XCTAssertNil(IOSFileActions.filesAppURL(for: [web]))

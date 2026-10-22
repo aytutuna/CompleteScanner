@@ -24,7 +24,8 @@ import UIKit
 /// (`CameraTaskCatalog`: what to point at, "Turn the sheet over and take its back." while a back is due,
 /// "The next page starts a new document." after New document) shows under the top bar, with the task's
 /// buttons between shots (No back, Now the backs, New document, `CameraTaskButtons`) over the shutter;
-/// Quick scan's page takes the camera's place once taken.
+/// Quick scan's page takes the camera's place once taken. With a keyboard (I15), Space takes a photo and
+/// Escape is Done.
 struct CameraScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -148,6 +149,7 @@ struct CameraScreen: View {
             }
             .buttonStyle(.bordered)
             .tint(Color.white)
+            .keyboardShortcut(.cancelAction)
             .accessibilityIdentifier("camera.done")
             Spacer(minLength: 0)
             Button {
@@ -321,6 +323,7 @@ struct CameraScreen: View {
             }
             .buttonStyle(.plain)
             .disabled(!canShoot)
+            .keyboardShortcut(IOSShortcuts.shutter.keyboardShortcut)
             .opacity(canShoot ? 1 : 0.4)
             .accessibilityLabel(Text(IOSCameraText.shutterLabel))
             .accessibilityHint(Text(IOSCameraText.shutterHint))

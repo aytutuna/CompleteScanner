@@ -46,9 +46,9 @@ enum IOSPDFOptions {
 
 /// The camera's buttons between shots for the task set up: No back (flip & capture, while a back is
 /// due), Now the backs and Put in order or Combine anyway (fronts first), and New document (Separate
-/// documents, the main button there). Nothing for the other tasks. `onDark` draws them for the camera's
-/// black screen: the bordered ones white, the prominent ones in the accent color, as the camera's own
-/// buttons are (a white fill would hide their white labels).
+/// documents, the main button there; Command-N). Nothing for the other tasks. `onDark` draws them for the
+/// camera's black screen: the bordered ones white, the prominent ones in the accent color, as the camera's
+/// own buttons are (a white fill would hide their white labels).
 struct CameraTaskButtons: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -93,6 +93,7 @@ struct CameraTaskButtons: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(busy || !state.canStartNewDocument)
+                .keyboardShortcut(IOSShortcuts.newDocument.keyboardShortcut)
                 .accessibilityHint(Text(CameraTaskCatalog.newDocumentPrompt))
                 .accessibilityIdentifier("task.newDocument")
             }

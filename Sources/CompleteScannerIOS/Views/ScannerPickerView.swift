@@ -24,13 +24,9 @@ struct ScannerPickerSheet: View {
     }
 }
 
-/// The scanners to pick from (the sheet's list on iPhone, the sidebar on iPad): the explanation card before
-/// the first search, the line about Local Network access being off, one row per scanner with how it is
-/// reached, "Looking for scanners…" while the search has just started, else "No scanner found" with
-/// Troubleshoot, and the buttons to add a scanner by address and open the
-/// troubleshooter. The rows follow the app's state, and the network scanners' when there are any.
+/// The scanners to pick from as a list of their own (the sheet's list on iPhone), with the sheets its
+/// buttons open: Add by address and the troubleshooter.
 struct ScannerPickerList: View {
-    @EnvironmentObject private var state: AppState
     let picker: IOSScannerPickerModel
     /// Runs after the user picked a scanner (the sheet closes).
     var onPicked: (() -> Void)?
@@ -38,100 +34,43 @@ struct ScannerPickerList: View {
     @State private var showsTroubleshooter: Bool = false
 
     var body: some View {
-        Group {
-            if let network = picker.network {
-                NetworkObserving(network: network) {
-                    content
-                }
-            } else {
-                content
-            }
-        }
-        .sheet(isPresented: $showsAdd) {
-            AddScannerView(model: picker.makeAddModel(), onAdded: added, onClose: closeAdd)
-                .environmentObject(state)
-        }
-        .sheet(isPresented: $showsTroubleshooter) {
-            TroubleshooterScreen(makeAddModel: makeAddModel, onClose: closeTroubleshooter)
-                .environmentObject(state)
-        }
-    }
-
-    private var content: some View {
         List {
-            if picker.showsExplanation {
-                Section {
-                    ExplanationCard(onContinue: continueAfterExplanation)
-                }
-            }
-            if picker.showsDenied {
-                Section {
-                    DeniedRow(onSettings: openSettings)
-                }
-            }
-            Section {
-                ForEach(picker.rows) { (row: IOSScannerRow) in
-                    ScannerRowView(row: row, enabled: !state.isBusy, onPick: { pick(row) },
-                                   onRemove: { picker.removeAddresses(row) })
-                }
-                if picker.showsSearching {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .accessibilityHidden(true)
-                        Text(IOSNetworkText.searching)
-                            .foregroundStyle(Color.secondary)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("scanners.searching")
-                }
-                if picker.showsEmpty && !picker.showsExplanation {
-                    HStack(spacing: 8) {
-                        Text(IOSNetworkText.noScanner)
-                            .foregroundStyle(Color.secondary)
-                            .accessibilityIdentifier("scanners.empty")
-                        Spacer(minLength: 0)
-                        Button(IOSNetworkText.troubleshoot) {
-                            showsTroubleshooter = true
-                        }
-                        .accessibilityIdentifier("scanners.troubleshoot")
-                    }
-                }
-            }
-            if !picker.showsExplanation {
-                Section {
-                    if picker.offersAddByAddress {
-                        Button {
-                            showsAdd = true
-                        } label: {
-                            Label(IOSNetworkText.addButton, systemImage: "plus")
-                        }
-                        .accessibilityIdentifier("scanner.add")
-                    }
-                    if !picker.showsEmpty {
-                        Button {
-                            showsTroubleshooter = true
-                        } label: {
-                            Label(IOSNetworkText.troubleshoot, systemImage: "questionmark.circle")
-                        }
-                        .accessibilityIdentifier("scanners.troubleshoot.link")
-                    }
-                }
-            }
+            ScannerPickerSections(picker: picker, onPicked: onPicked, onAdd: openAdd, onTroubleshoot: openTroubleshooter)
         }
         .listStyle(.insetGrouped)
+        .modifier(ScannerPickerSheets(picker: picker, showsAdd: $showsAdd, showsTroubleshooter: $showsTroubleshooter))
+    }
+
+    private func openAdd() {
+        showsAdd = true
+    }
+
+    private func openTroubleshooter() {
+        showsTroubleshooter = true
+    }
+}
+
+/// Add by address and the troubleshooter, as sheets of the list (or the sidebar) the picker's sections are in.
+struct ScannerPickerSheets: ViewModifier {
+    @EnvironmentObject private var state: AppState
+    let picker: IOSScannerPickerModel
+    @Binding var showsAdd: Bool
+    @Binding var showsTroubleshooter: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $showsAdd) {
+                AddScannerView(model: picker.makeAddModel(), onAdded: added, onClose: closeAdd)
+                    .environmentObject(state)
+            }
+            .sheet(isPresented: $showsTroubleshooter) {
+                TroubleshooterScreen(makeAddModel: makeAddModel, onClose: closeTroubleshooter)
+                    .environmentObject(state)
+            }
     }
 
     private func makeAddModel() -> IOSAddScannerModel {
         picker.makeAddModel()
-    }
-
-    private func continueAfterExplanation() {
-        picker.continueAfterExplanation()
-    }
-
-    private func pick(_ row: IOSScannerRow) {
-        picker.select(row)
-        onPicked?()
     }
 
     private func added(_ deviceID: String) {
@@ -145,6 +84,117 @@ struct ScannerPickerList: View {
 
     private func closeTroubleshooter() {
         showsTroubleshooter = false
+    }
+}
+
+/// The scanners to pick from, as sections of a list (the sheet's list on iPhone, a part of the sidebar on
+/// iPad): the explanation card before the first search, the line about Local Network access being off, one
+/// row per scanner with how it is reached, "Looking for scanners…" while the search has just started, else
+/// "No scanner found" with Troubleshoot, and the buttons to add a scanner by address and open the
+/// troubleshooter. The rows follow the app's state, and the network scanners' when there are any.
+struct ScannerPickerSections: View {
+    let picker: IOSScannerPickerModel
+    /// Runs after the user picked a scanner (the sheet closes).
+    var onPicked: (() -> Void)?
+    let onAdd: () -> Void
+    let onTroubleshoot: () -> Void
+    /// The rows' section header (the sidebar's "Scanners"); none in the sheet, whose title says it.
+    var header: String?
+
+    var body: some View {
+        if let network = picker.network {
+            NetworkObserving(network: network) {
+                ScannerPickerContent(picker: picker, onPicked: onPicked, onAdd: onAdd, onTroubleshoot: onTroubleshoot,
+                                     header: header)
+            }
+        } else {
+            ScannerPickerContent(picker: picker, onPicked: onPicked, onAdd: onAdd, onTroubleshoot: onTroubleshoot,
+                                 header: header)
+        }
+    }
+}
+
+/// The picker's sections themselves.
+private struct ScannerPickerContent: View {
+    @EnvironmentObject private var state: AppState
+    let picker: IOSScannerPickerModel
+    let onPicked: (() -> Void)?
+    let onAdd: () -> Void
+    let onTroubleshoot: () -> Void
+    let header: String?
+
+    var body: some View {
+        if picker.showsExplanation {
+            Section {
+                ExplanationCard(onContinue: continueAfterExplanation)
+            }
+        }
+        if picker.showsDenied {
+            Section {
+                DeniedRow(onSettings: openSettings)
+            }
+        }
+        Section {
+            ForEach(picker.rows) { (row: IOSScannerRow) in
+                ScannerRowView(row: row, enabled: !state.isBusy, onPick: { pick(row) },
+                               onRemove: { picker.removeAddresses(row) })
+            }
+            if picker.showsSearching {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .accessibilityHidden(true)
+                    Text(IOSNetworkText.searching)
+                        .foregroundStyle(Color.secondary)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("scanners.searching")
+            }
+            if picker.showsEmpty && !picker.showsExplanation {
+                HStack(spacing: 8) {
+                    Text(IOSNetworkText.noScanner)
+                        .foregroundStyle(Color.secondary)
+                        .accessibilityIdentifier("scanners.empty")
+                    Spacer(minLength: 0)
+                    Button(IOSNetworkText.troubleshoot) {
+                        onTroubleshoot()
+                    }
+                    .accessibilityIdentifier("scanners.troubleshoot")
+                }
+            }
+        } header: {
+            if let header {
+                Text(header)
+            }
+        }
+        if !picker.showsExplanation {
+            Section {
+                if picker.offersAddByAddress {
+                    Button {
+                        onAdd()
+                    } label: {
+                        Label(IOSNetworkText.addButton, systemImage: "plus")
+                    }
+                    .accessibilityIdentifier("scanner.add")
+                }
+                if !picker.showsEmpty {
+                    Button {
+                        onTroubleshoot()
+                    } label: {
+                        Label(IOSNetworkText.troubleshoot, systemImage: "questionmark.circle")
+                    }
+                    .accessibilityIdentifier("scanners.troubleshoot.link")
+                }
+            }
+        }
+    }
+
+    private func continueAfterExplanation() {
+        picker.continueAfterExplanation()
+    }
+
+    private func pick(_ row: IOSScannerRow) {
+        picker.select(row)
+        onPicked?()
     }
 
     private func openSettings() {

@@ -451,14 +451,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         var s = Settings;
         try
         {
-            var flow = TaskCatalog.FlowOf(s);
-            var format = flow == TaskFlowKind.ReceiptSplit ? OutputFormats.PageFormat(s.Format)
-                : s.Intent == ScanIntent.Photo ? OutputFormats.ImageFormatOrJpeg(s.Format)
-                : s.DocumentMultiPage ? OutputFormats.QueueFormat(s.Format)
-                : s.Format;
-            string name = new NamingTemplate(template)
-                .BaseFilename(new NamingContext(PeekCounter() + 1, DateTime.Now, s.Intent) { Task = TaskCatalog.Infer(s) });
-            return $"{name}.{format.FileExtension()}";
+            return NamingTokens.Example(template, s, NamingTokens.SavedFormat(s), PeekCounter() + 1, DateTime.Now);
         }
         catch
         {

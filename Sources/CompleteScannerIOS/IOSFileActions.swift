@@ -38,7 +38,7 @@ public struct MailRequest: Identifiable, Equatable {
 /// where the user picks Mail, Files or another app), Email opens a Mail message with the files attached
 /// when Mail is set up (`MFMailComposeViewController.canSendMail`) and the share sheet otherwise, Show in
 /// folder opens the Files app at the file's folder, and Copy puts the files (and the picture of a single
-/// image) on the pasteboard, on this device only. The app's root view presents what `shareRequest`,
+/// image) on the pasteboard, on this device only. Show in folder for a folder opens that folder. The app's root view presents what `shareRequest`,
 /// `mailRequest` and `previewURL` ask for; nothing leaves the device unless the user sends the message or
 /// picks where it goes in the share sheet.
 @MainActor
@@ -145,10 +145,11 @@ public final class IOSFileActions: ObservableObject, FileActionService {
     }
 
     /// The Files app's address of the folder holding the first file (`shareddocuments://` and the
-    /// folder's path); nil for no file or one that is not a local file.
+    /// folder's path), or of the folder itself when the first is a folder (Show in Files for the save
+    /// folder); nil for none or one that is not local.
     public nonisolated static func filesAppURL(for urls: [URL]) -> URL? {
         guard let first = urls.first, first.isFileURL else { return nil }
-        let folder: URL = first.deletingLastPathComponent()
+        let folder: URL = first.hasDirectoryPath ? first : first.deletingLastPathComponent()
         let text: String = folder.absoluteString
         let prefix: String = "file://"
         guard text.hasPrefix(prefix) else { return nil }

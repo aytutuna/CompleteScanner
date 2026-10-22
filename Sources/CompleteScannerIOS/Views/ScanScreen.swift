@@ -23,26 +23,35 @@ enum ScanCover: String, Identifiable {
 /// and Scan and Save (as a PDF or a JPEG a page, `IOSShell.saveFormats`); once saved, the saved file with
 /// Share and Show in Files. Camera opens our own camera (`CameraScreen`), the default; Use Apple's scanner
 /// opens Apple's document scanner. The scanner row opens the scanner picker as a sheet on iPhone; on iPad
-/// the picker is a sidebar beside the screen. The screen stays awake while a network scanner's job runs.
+/// the picker is a sidebar beside the screen. The screen stays awake while a network scanner's job runs
+/// (`IOSRootView`, since resizing the window builds this screen anew).
 /// Save is shown for the tasks that collect pages; photos and receipts open the photo review once found
 /// and the ID card its review once its sides are in, each full screen (in place of the camera). Since I14:
 /// the camera's buttons between shots (No back, Now the backs, New document), how the two-sided task and
 /// a book are taken, Separate documents' separator sheets, the PDF's size, Archive and Password, a book
-/// page's spread split again (`SpreadSplitSheet`), and Quick scan's page full screen once taken.
+/// page's spread split again (`SpreadSplitSheet`), and Quick scan's page full screen once taken. Since I15:
+/// PDFs and pictures dropped on the screen are imported as Files' are, Command-S saves, and Settings
+/// (Command-comma) is in the toolbar where the sidebar does not offer it. Its covers and the spread's sheet
+/// are the root view's (`ScanCovers`), so resizing the window across the width classes, which builds this
+/// screen anew, leaves them open.
 struct ScanScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
     @Environment(\.horizontalSizeClass) private var sizeClass: UserInterfaceSizeClass?
     /// The scanners to pick from.
     let picker: IOSScannerPickerModel
-    @State private var cover: ScanCover?
+    @Binding var cover: ScanCover?
+    @Binding var spreadEditor: SpreadEditorSource?
+    /// The iPad's sidebar lists the scanners, so the scanner row only names the one in use.
+    var pickerInSidebar: Bool = false
+    /// Opens Settings; nil when the sidebar has it.
+    var onOpenSettings: (() -> Void)?
     @State private var scanner: IOSCameraAvailability = .noCamera
     @State private var showsPicker: Bool = false
-    @State private var spreadEditor: SpreadEditorSource?
 
     var body: some View {
         Group {
-            if sizeClass == .regular {
+            if sizeClass == .regular && !pickerInSidebar {
                 HStack(spacing: 0) {
                     ScannerPickerList(picker: picker)
                         .frame(width: 320)
@@ -57,6 +66,22 @@ struct ScanScreen: View {
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle(state.activeTaskDefinition?.title ?? "Scanner")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if let open = onOpenSettings {
+                    Button {
+                        open()
+                    } label: {
+                        Label(IOSSettingsText.title, systemImage: "gearshape")
+                    }
+                    .keyboardShortcut(IOSShortcuts.settings.keyboardShortcut)
+                    .accessibilityIdentifier("scan.settings")
+                }
+            }
+        }
+        .dropDestination(for: IOSDroppedFile.self) { (items: [IOSDroppedFile], _: CGPoint) -> Bool in
+            importDropped(items)
+        }
         .onAppear {
             scanner = IOSCameraAvailability.current
             if state.showPhotoReview {
@@ -76,42 +101,14 @@ struct ScanScreen: View {
         .onChange(of: state.quickScanPage != nil) { (_: Bool, shown: Bool) in
             showReview(shown, as: .quickScan)
         }
-        .onChange(of: state.isBusy) { (_: Bool, busy: Bool) in
-            keepAwake(busy)
-        }
-        .onDisappear {
-            keepAwake(false)
+        .onChange(of: cover) { (_: ScanCover?, shown: ScanCover?) in
+            if shown == nil {
+                scanner = IOSCameraAvailability.current
+            }
         }
         .sheet(isPresented: $showsPicker) {
             ScannerPickerSheet(picker: picker, onClose: closePicker)
                 .environmentObject(state)
-        }
-        .sheet(item: $spreadEditor) { (source: SpreadEditorSource) in
-            SpreadSplitSheet(source: source, onClose: closeSpreadEditor)
-                .environmentObject(state)
-        }
-        .fullScreenCover(item: $cover) { (shown: ScanCover) in
-            switch shown {
-            case .scanner:
-                DocumentCameraView(onFinish: cameraFinished, onCancel: closeCamera, onFail: cameraFailed)
-                    .ignoresSafeArea()
-            case .camera:
-                CameraScreen(onClose: closeCamera)
-                    .environmentObject(state)
-                    .environmentObject(importer)
-            case .crop:
-                CropScreen(onClose: closeCrop)
-                    .environmentObject(state)
-            case .photoReview:
-                PhotoReviewScreen(model: IOSPhotoReviewModel(state: state))
-                    .environmentObject(state)
-            case .idCardReview:
-                IdCardReviewScreen(model: IOSPhotoReviewModel(state: state))
-                    .environmentObject(state)
-            case .quickScan:
-                QuickScanScreen(model: IOSQuickScanModel(state: state))
-                    .environmentObject(state)
-            }
         }
     }
 
@@ -148,16 +145,6 @@ struct ScanScreen: View {
         }
     }
 
-    // MARK: The screen kept awake
-
-    /// While a network scanner's job runs, the screen stays on: iOS would suspend the app soon after it
-    /// locked, cutting a feeder batch short.
-    private func keepAwake(_ busy: Bool) {
-        let selected: String? = state.selectedDeviceID
-        let device: ScannerInfo? = state.devices.first(where: { (info: ScannerInfo) -> Bool in info.id == selected })
-        UIApplication.shared.isIdleTimerDisabled = IOSShell.keepsScreenAwake(isBusy: busy, device: device)
-    }
-
     // MARK: The scanner picker
 
     private func openPicker() {
@@ -182,9 +169,21 @@ struct ScanScreen: View {
         cover = .camera
     }
 
-    private func closeCamera() {
-        cover = nil
-        scanner = IOSCameraAvailability.current
+    // MARK: Dropped files
+
+    /// PDFs and pictures dropped on the screen come in as files picked in Files do, while this task takes
+    /// photos and nothing else is being brought in.
+    private func importDropped(_ items: [IOSDroppedFile]) -> Bool {
+        guard !items.isEmpty, importer.canImport, IOSShell.takesPhotos(state.settings) else { return false }
+        var imports: [IOSImportItem] = []
+        for dropped in items {
+            imports.append(dropped.item)
+        }
+        let session: IOSImportSession = importer
+        Task { @MainActor in
+            await session.importItems(imports)
+        }
+        return true
     }
 
     // MARK: The reviews
@@ -209,34 +208,12 @@ struct ScanScreen: View {
         }
     }
 
-    private func closeSpreadEditor() {
-        spreadEditor = nil
-    }
-
     // MARK: The scan area
 
     /// The flatbed preview full screen, to choose the scan area on (`CropScreen`).
     private func openCrop() {
         guard state.overviewImage != nil, !state.isBusy else { return }
         cover = .crop
-    }
-
-    private func closeCrop() {
-        cover = nil
-    }
-
-    private func cameraFinished(_ images: [CGImage]) {
-        closeCamera()
-        let pages: [ScannedPage] = IOSDocumentCamera.pages(images)
-        let session: IOSImportSession = importer
-        Task { @MainActor in
-            await session.bringInScans(pages)
-        }
-    }
-
-    private func cameraFailed(_ message: String) {
-        closeCamera()
-        state.errorMessage = message
     }
 
     /// The current step's one-line prompt, with its fuller help below (the camera's line in its place,
@@ -291,14 +268,14 @@ struct ScanScreen: View {
                             .foregroundStyle(Color.orange)
                             .accessibilityIdentifier("scanner.note")
                     }
-                    if sizeClass != .regular {
+                    if !pickerBeside {
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.caption)
                             .accessibilityHidden(true)
                     }
                 }
             }
-            .disabled(sizeClass == .regular)
+            .disabled(pickerBeside)
             .accessibilityLabel(Text("Scanner: \(deviceName)"))
             .accessibilityIdentifier("scanner.menu")
             Spacer(minLength: 0)
@@ -307,6 +284,11 @@ struct ScanScreen: View {
                     .accessibilityIdentifier("busy")
             }
         }
+    }
+
+    /// The scanners are listed beside the screen (the iPad's sidebar, or the column of a wide window).
+    private var pickerBeside: Bool {
+        pickerInSidebar || sizeClass == .regular
     }
 
     /// "Not encrypted" for a network scanner reached over plain HTTP after HTTPS could not be used.
@@ -449,6 +431,7 @@ struct ScanScreen: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(state.isBusy || importer.isImporting || saveCount == 0)
+                    .keyboardShortcut(IOSShortcuts.save.keyboardShortcut)
                     .accessibilityIdentifier("save.button")
                 }
             }
@@ -528,7 +511,14 @@ private struct PreviewArea: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 320)
+        .containerRelativeFrame(Axis.Set.vertical) { (length: CGFloat, _: Axis) -> CGFloat in
+            PreviewArea.height(for: length)
+        }
+    }
+
+    /// About half the visible height, so it fits a phone, an iPad and any Stage Manager window size.
+    static func height(for visible: CGFloat) -> CGFloat {
+        min(max(visible * 0.45, 200), 560)
     }
 }
 
@@ -570,6 +560,70 @@ private struct SavedFilesRow: View {
             names.append(url.lastPathComponent)
         }
         return names.joined(separator: ", ")
+    }
+}
+
+/// The scan screen's full-screen covers (Apple's scanner, our camera, the scan area, the reviews, Quick
+/// scan's page) and a book spread's split sheet. The root view presents them, not the scan screen: the
+/// window's two layouts each build their own scan screen, and one going away would close them mid-task.
+@MainActor
+struct ScanCovers: ViewModifier {
+    @ObservedObject var state: AppState
+    @ObservedObject var importer: IOSImportSession
+    @Binding var cover: ScanCover?
+    @Binding var spreadEditor: SpreadEditorSource?
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(item: $spreadEditor) { (source: SpreadEditorSource) in
+                SpreadSplitSheet(source: source, onClose: closeSpreadEditor)
+                    .environmentObject(state)
+            }
+            .fullScreenCover(item: $cover) { (shown: ScanCover) in
+                switch shown {
+                case .scanner:
+                    DocumentCameraView(onFinish: cameraFinished, onCancel: closeCover, onFail: cameraFailed)
+                        .ignoresSafeArea()
+                case .camera:
+                    CameraScreen(onClose: closeCover)
+                        .environmentObject(state)
+                        .environmentObject(importer)
+                case .crop:
+                    CropScreen(onClose: closeCover)
+                        .environmentObject(state)
+                case .photoReview:
+                    PhotoReviewScreen(model: IOSPhotoReviewModel(state: state))
+                        .environmentObject(state)
+                case .idCardReview:
+                    IdCardReviewScreen(model: IOSPhotoReviewModel(state: state))
+                        .environmentObject(state)
+                case .quickScan:
+                    QuickScanScreen(model: IOSQuickScanModel(state: state))
+                        .environmentObject(state)
+                }
+            }
+    }
+
+    private func closeCover() {
+        cover = nil
+    }
+
+    private func closeSpreadEditor() {
+        spreadEditor = nil
+    }
+
+    private func cameraFinished(_ images: [CGImage]) {
+        closeCover()
+        let pages: [ScannedPage] = IOSDocumentCamera.pages(images)
+        let session: IOSImportSession = importer
+        Task { @MainActor in
+            await session.bringInScans(pages)
+        }
+    }
+
+    private func cameraFailed(_ message: String) {
+        closeCover()
+        state.errorMessage = message
     }
 }
 #endif

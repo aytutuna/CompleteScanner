@@ -117,4 +117,100 @@ public class InspectorSectionsTests
         s.Output.AfterSave = AfterSaveAction.Share;
         Assert.Equal("Share after saving · .txt", InspectorSections.MoreSummary(s.Output, textShown: true));
     }
+
+    [Fact]
+    public void Shown_HidesWhatCannotApply_EachSectionOnce()
+    {
+        var s = new ScanSettings();
+        Assert.Equal(["scanner", "output", "adjustments", "pages", "split", "archive", "more"], InspectorSections.Shown(s));
+        Assert.Equal("Output", InspectorSections.Title(InspectorSections.Output, s));
+        Assert.True(InspectorSections.TextApplies(s));
+
+        s.Format = OutputFormat.Word;
+        Assert.Equal(["scanner", "output", "adjustments", "pages", "split", "more"], InspectorSections.Shown(s));
+        Assert.False(InspectorSections.WritesPdf(s));
+        Assert.False(InspectorSections.TextApplies(s));
+
+        // A queue of image pages is saved as a PDF.
+        s.Format = OutputFormat.Jpeg;
+        Assert.True(InspectorSections.WritesPdf(s));
+        s.DocumentMultiPage = false;
+        Assert.False(InspectorSections.WritesPdf(s));
+
+        var photos = new ScanSettings { Intent = ScanIntent.Photo };
+        Assert.Equal(["scanner", "output", "adjustments", "more"], InspectorSections.Shown(photos));
+        Assert.Equal("Photos", InspectorSections.Title(InspectorSections.Output, photos));
+        Assert.Equal(OutputFormat.Jpeg, InspectorSections.ShownFormat(photos));
+
+        var receipts = TaskCatalog.Apply(ScanTask.Receipt, new ScanSettings());
+        receipts.Format = OutputFormat.Word;
+        Assert.Equal(["task", "scanner", "output", "adjustments", "archive", "more"], InspectorSections.Shown(receipts));
+        Assert.Equal("Receipts", InspectorSections.Title(InspectorSections.Task, receipts));
+        Assert.Equal(OutputFormat.Pdf, InspectorSections.ShownFormat(receipts));
+        Assert.True(InspectorSections.TextApplies(receipts));
+        receipts.Format = OutputFormat.Png;
+        Assert.DoesNotContain(InspectorSections.Archive, InspectorSections.Shown(receipts));
+
+        var copy = TaskCatalog.Apply(ScanTask.Copy, new ScanSettings());
+        copy.TaskOptions.CopyAlsoSavePdf = false;
+        Assert.Equal(["task", "scanner", "output", "adjustments", "more"], InspectorSections.Shown(copy));
+        Assert.Equal("Photocopy", InspectorSections.Title(InspectorSections.Task, copy));
+        copy.TaskOptions.CopyAlsoSavePdf = true;
+        Assert.Contains(InspectorSections.Archive, InspectorSections.Shown(copy));
+        Assert.False(InspectorSections.TextApplies(copy));
+
+        Assert.Null(InspectorSections.TaskTitle(new ScanSettings()));
+        Assert.Equal("Task", InspectorSections.Title(InspectorSections.Task, new ScanSettings()));
+        foreach (var settings in new[] { s, photos, receipts, copy })
+        {
+            var shown = InspectorSections.Shown(settings);
+            Assert.Equal(shown.Count, shown.Distinct().Count());
+            Assert.Equal(InspectorSections.All.Where(shown.Contains), shown);
+        }
+    }
+
+    [Fact]
+    public void Headers_ForASetting_HaveTheirSummaryDotAndName()
+    {
+        var s = new ScanSettings();
+        Assert.Equal("Flatbed · 300 dpi · Color", InspectorSections.Summary(InspectorSections.Scanner, s));
+        Assert.False(InspectorSections.Changed(InspectorSections.Scanner, s));
+        Assert.Equal("Scanner, Flatbed · 300 dpi · Color", InspectorSections.AccessibleName(InspectorSections.Scanner, s));
+        Assert.Equal("PDF · Standard", InspectorSections.Summary(InspectorSections.Output, s));
+        Assert.False(InspectorSections.Changed(InspectorSections.Output, s));
+        Assert.Equal("", InspectorSections.Summary(InspectorSections.Pages, s));
+        Assert.False(InspectorSections.Changed(InspectorSections.Pages, s));
+        Assert.Equal("Pages", InspectorSections.AccessibleName(InspectorSections.Pages, s));
+        Assert.Equal("Off", InspectorSections.Summary(InspectorSections.Split, s));
+        Assert.False(InspectorSections.Changed(InspectorSections.Split, s));
+        Assert.Equal("Off", InspectorSections.Summary(InspectorSections.Archive, s));
+        Assert.False(InspectorSections.Changed(InspectorSections.Archive, s));
+        Assert.Equal("", InspectorSections.Summary(InspectorSections.More, s));
+        Assert.False(InspectorSections.Changed(InspectorSections.More, s));
+        Assert.Equal("More options", InspectorSections.AccessibleName(InspectorSections.More, s));
+        Assert.Equal("", InspectorSections.Summary(InspectorSections.Task, s));
+        Assert.False(InspectorSections.Changed(InspectorSections.Task, s));
+
+        s.Resolution = 600;
+        s.Output.AlsoSaveText = true;
+        s.Output.Protect = true;
+        s.Document.SplitMode = SplitMode.BlankSheet;
+        s.Document.AutoCrop = true;
+        s.Document.AutoRotate = true;
+        Assert.Equal("Crop · Upright", InspectorSections.Summary(InspectorSections.Pages, s));
+        Assert.True(InspectorSections.Changed(InspectorSections.Pages, s));
+        Assert.Equal("Pages, 2 options on", InspectorSections.AccessibleName(InspectorSections.Pages, s));
+        Assert.True(InspectorSections.Changed(InspectorSections.Scanner, s));
+        Assert.Equal(".txt", InspectorSections.Summary(InspectorSections.More, s));
+        Assert.True(InspectorSections.Changed(InspectorSections.More, s));
+        Assert.Equal("Archive & password, Password on", InspectorSections.AccessibleName(InspectorSections.Archive, s));
+        Assert.True(InspectorSections.Changed(InspectorSections.Split, s));
+        s.Format = OutputFormat.Word;
+        Assert.Equal("", InspectorSections.Summary(InspectorSections.More, s));
+        Assert.Equal("Word", InspectorSections.Summary(InspectorSections.Output, s));
+        Assert.True(InspectorSections.Changed(InspectorSections.Output, s));
+
+        var photos = new ScanSettings { Intent = ScanIntent.Photo };
+        Assert.Equal("Photos, JPEG", InspectorSections.AccessibleName(InspectorSections.Output, photos));
+    }
 }

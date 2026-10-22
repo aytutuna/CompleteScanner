@@ -1,0 +1,109 @@
+#if os(iOS)
+import CompleteScannerKit
+import CoreTransferable
+import Foundation
+import SwiftUI
+import UniformTypeIdentifiers
+
+/// How the window is laid out for its width. A regular width (an iPad, full screen or in a wide Stage
+/// Manager window) gets the sidebar: the tasks, the presets, the scanners and the library beside the screen
+/// in use; a compact width (an iPhone, a narrow iPad window, Slide Over) gets the start screen with the
+/// scan screen pushed over it. Decided again whenever the width class changes, so resizing a window
+/// moves between the two.
+public enum IOSLayout {
+    public static func usesSidebar(_ horizontal: UserInterfaceSizeClass?) -> Bool {
+        horizontal == .regular
+    }
+}
+
+/// A keyboard shortcut of the iPad's main actions: its key, whether it takes Command, and its name.
+public struct IOSShortcut: Equatable {
+    public let key: Character
+    public let command: Bool
+    public let title: String
+
+    @MainActor
+    public var keyboardShortcut: KeyboardShortcut {
+        let modifiers: EventModifiers = command ? EventModifiers.command : []
+        return KeyboardShortcut(KeyEquivalent(key), modifiers: modifiers)
+    }
+}
+
+/// The keyboard shortcuts, as the iPad's Command key overlay lists them: Command-S saves the pages,
+/// Command-N starts a new document (Separate documents), Command-comma opens Settings, Space takes a photo
+/// while the camera is up (Escape closes it).
+public enum IOSShortcuts {
+    public static let save = IOSShortcut(key: "s", command: true, title: "Save")
+    public static let newDocument = IOSShortcut(key: "n", command: true, title: "New document")
+    public static let settings = IOSShortcut(key: ",", command: true, title: "Settings")
+    public static let shutter = IOSShortcut(key: " ", command: false, title: "Take photo")
+
+    public static let all: [IOSShortcut] = [save, newDocument, settings, shutter]
+}
+
+/// Moving a page of the strip by dragging it onto another: it takes that page's place, the pages between
+/// moving up or down one (`AppState.movePage`, one place at a time).
+public enum IOSPageDrop {
+    /// The signed number of places the page `moving` goes to take `target`'s place; nil when either is not
+    /// in `ids` or they are the same page.
+    public static func offset(moving: UUID, onto target: UUID, in ids: [UUID]) -> Int? {
+        guard let from = ids.firstIndex(of: moving), let to = ids.firstIndex(of: target), from != to else { return nil }
+        return to - from
+    }
+
+    /// The dragged page's id, carried as its text.
+    public static func pageID(_ text: String) -> UUID? {
+        UUID(uuidString: text)
+    }
+
+    /// Moves the page `moving` to `target`'s place in the queue; false when nothing moved (an unknown page,
+    /// the same page, or an operation running).
+    @MainActor
+    @discardableResult
+    public static func move(_ moving: UUID, onto target: UUID, in state: AppState) -> Bool {
+        guard !state.isBusy else { return false }
+        var ids: [UUID] = []
+        for page in state.scannedPages {
+            ids.append(page.id)
+        }
+        guard let offset = offset(moving: moving, onto: target, in: ids) else { return false }
+        let step: Int = offset > 0 ? 1 : -1
+        var moved: Int = 0
+        while moved < abs(offset) {
+            state.movePage(id: moving, by: step)
+            moved += 1
+        }
+        return true
+    }
+}
+
+/// A PDF or a picture dropped on the scan screen (from Files, Photos or another app beside this one), as
+/// its file's bytes; it comes in through the same import as a file picked in Files.
+public struct IOSDroppedFile: Transferable, Sendable {
+    public let data: Data
+    public let kind: IOSImportItem.Kind
+
+    public init(data: Data, kind: IOSImportItem.Kind) {
+        self.data = data
+        self.kind = kind
+    }
+
+    public static let pdfName = "Dropped PDF"
+    public static let imageName = "Dropped picture"
+
+    /// The item the import reads: named by its kind, since a drop carries no file name here.
+    public var item: IOSImportItem {
+        let name: String = kind == .pdf ? IOSDroppedFile.pdfName : IOSDroppedFile.imageName
+        return IOSImportItem(name: name, data: data, kind: kind)
+    }
+
+    public static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(importedContentType: UTType.pdf) { (data: Data) -> IOSDroppedFile in
+            IOSDroppedFile(data: data, kind: IOSImportItem.Kind.pdf)
+        }
+        DataRepresentation(importedContentType: UTType.image) { (data: Data) -> IOSDroppedFile in
+            IOSDroppedFile(data: data, kind: IOSImportItem.Kind.image)
+        }
+    }
+}
+#endif

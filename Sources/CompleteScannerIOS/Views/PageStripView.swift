@@ -53,7 +53,8 @@ struct PageStripCell: Identifiable {
 
 /// The collected pages, left to right, with the queue's summary: each page with its side or book badge
 /// and the title of the document it starts; a page's menu removes it, and for a book's page splits its
-/// spread again (`onEditSpread`) or joins its two pages.
+/// spread again (`onEditSpread`) or joins its two pages. A page dragged onto another takes its place
+/// (`IOSPageDrop`); VoiceOver has Move left and Move right for the same.
 struct PageStripView: View {
     @EnvironmentObject private var state: AppState
     /// Opens the split sheet for the spread the page with this id was cut from.
@@ -131,9 +132,25 @@ struct PageStripView: View {
                 Label("Remove", systemImage: "trash")
             }
         }
+        .draggable(pageID.uuidString)
+        .dropDestination(for: String.self) { (items: [String], _: CGPoint) -> Bool in
+            dropPage(items, onto: pageID)
+        }
         .accessibilityElement()
         .accessibilityLabel(Text(cell.accessibilityLabel))
+        .accessibilityAction(named: Text("Move left")) {
+            state.movePage(id: pageID, by: -1)
+        }
+        .accessibilityAction(named: Text("Move right")) {
+            state.movePage(id: pageID, by: 1)
+        }
         .accessibilityIdentifier("page.\(cell.number)")
+    }
+
+    /// A page of the strip dropped here: it takes this page's place.
+    private func dropPage(_ items: [String], onto target: UUID) -> Bool {
+        guard let text = items.first, let moving = IOSPageDrop.pageID(text) else { return false }
+        return IOSPageDrop.move(moving, onto: target, in: state)
     }
 }
 #endif

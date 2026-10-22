@@ -283,7 +283,13 @@ text; Email a document through Mail's composer (or the share sheet); Archive doc
 size, Archive and Password choices, the password asked for in a sheet and never stored; network
 scanners (AirScan/eSCL) found on the Wi-Fi or added by address, picked from a sheet on iPhone or a
 sidebar on iPad, with a flatbed preview to choose the scan area on, a feeder's progress with Cancel,
-the screen kept on while a network scanner works, and the troubleshooter with its iPhone checks) is
+the screen kept on while a network scanner works, and the troubleshooter with its iPhone checks;
+Settings with the same sections and collapsed-header summaries as the desktop's settings column, the
+presets (save the current settings under a name, rename, delete, apply; also on the start screen),
+this session's scans, the saved files with Share and Show in Files, and the file name with a button
+per part and the next file's name; on iPad a sidebar with the tasks, presets, scanners and library,
+Command-S, Command-N and Command-comma, Space for the shutter, pages reordered by dragging them in the
+strip and PDFs or pictures dropped on the scan screen, in any window size Stage Manager gives) is
 an Xcode project that
 [XcodeGen](https://github.com/yonaskolb/XcodeGen) writes from `ios/project.yml`; CI pins XcodeGen's
 release and checks its SHA-256. To build it and run its UI smoke test on the Simulator:
@@ -310,7 +316,10 @@ focus and macro switching, low light, the torch, Pro and non-Pro models, the aut
 timing and thresholds on real frames, the clean-up on real photos, heat and memory over a long queue;
 iCloud-only photos, large HEIC files and saving to the Files app; thermal and crumpled receipts, glossy
 prints, holograms and laminate glare; a printed separator sheet photographed, a real book, Mail's
-composer and Live Text) are checked on a real iPhone.
+composer and Live Text) are checked on a real iPhone; iPad multitasking (Split View, Stage Manager
+window sizes, the camera in a window that is not full screen, the camera or the scan area staying open
+while a window is resized between the sidebar and the narrow layout, a hardware keyboard, dragging files
+in from another app) on a real iPad.
 
 Network scanners on the iPhone: the first time the scanner picker opens, a short card says why
 iOS is about to ask for Local Network access (camera scanning works without it); the search starts
@@ -407,7 +416,10 @@ target for each platform's own parts:
   and its rectangles for several objects in one shot, the import session), the photo, receipt and ID
   card reviews (`Review/`, `Views/PhotoReviewScreen.swift`, `Views/IdCardReviewScreen.swift`, the
   card's guide frame on the camera), Quick scan's screen with Live Text, the tasks' camera buttons and
-  choices (`Views/TaskControls.swift`), a spread split again, network scanners (`Network/`: the search, run only while the app is in
+  choices (`Views/TaskControls.swift`), a spread split again, the presets, the scans and the saved
+  files (`Library/`), Settings and the file name editor (`Settings/`, `Views/SettingsScreen.swift`,
+  `Views/NamingEditorScreen.swift`), the iPad's sidebar, keyboard shortcuts and drag and drop
+  (`IOSLayout.swift`, `Views/IOSSidebar.swift`), network scanners (`Network/`: the search, run only while the app is in
   front, after a short card that explains the system's Local Network prompt; adding a scanner by
   address; the scanner picker, a sheet on iPhone and a sidebar on iPad; the troubleshooter's
   system side), `CompleteScannerIOSApp` and its SwiftUI views (also the flatbed preview with its
@@ -417,7 +429,8 @@ target for each platform's own parts:
   UI tests (`CompleteScanneriOSUITests`: the smoke test, the photo import, with its fixture
   photo, two prints in one shot under the Photos task saved as two JPEGs, two pages under the
   two-sided task saved as one PDF, a patch-code sheet splitting a PDF into two, the camera screen's
-  no-camera state, and the scanner picker with the add-by-address sheet); the `.xcodeproj` XcodeGen
+  no-camera state, the scanner picker with the add-by-address sheet, and Settings with a preset saved
+  and listed); the `.xcodeproj` XcodeGen
   writes is not checked in
 - `Sources/CompleteScanner` — the Mac app's entry point
 - `Tests/CompleteScannerTests` — unit tests (synthetic-image based), run on macOS and on the iOS
