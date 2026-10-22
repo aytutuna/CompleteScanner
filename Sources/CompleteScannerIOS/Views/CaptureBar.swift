@@ -7,7 +7,8 @@ import UniformTypeIdentifiers
 
 /// The ways pages come in besides the scanner: Camera (our own camera, `CameraScreen`, the default on
 /// every task that collects pages; its screen says why when there is no camera or access is off), Photos
-/// (the system's photo picker, several in the order picked) and Files (photos and PDFs); below them, on
+/// (the system's photo picker, several in the order picked) and Files (photos and PDFs, and a CompleteScanner
+/// document, which goes to the scan screen's banner instead); below them, on
 /// the Document, Email and Word tasks, Use Apple's scanner (Apple's document scanner, a secondary way in,
 /// dimmed with one short line where there is none, as in the Simulator). Imported photos go to the corner
 /// editor one by one (`IOSImportSession`); the root view shows it. Each picked photo is loaded only when
@@ -85,13 +86,25 @@ struct CaptureBar: View {
                 }
             }
         }
-        .fileImporter(isPresented: $showsFiles, allowedContentTypes: [UTType.image, UTType.pdf],
+        .fileImporter(isPresented: $showsFiles, allowedContentTypes: [UTType.image, UTType.pdf, IOSShell.packageType],
                       allowsMultipleSelection: true) { (result: Result<[URL], Error>) in
             switch result {
             case .success(let urls):
                 let session: IOSImportSession = importer
+                let appState: AppState = state
+                var imports: [URL] = []
+                for url in urls {
+                    if IOSShell.isPackage(url) {
+                        Task { @MainActor in
+                            await IOSShell.openPackage(url, in: appState)
+                        }
+                    } else {
+                        imports.append(url)
+                    }
+                }
+                let files: [URL] = imports
                 Task { @MainActor in
-                    await session.importFiles(urls)
+                    await session.importFiles(files)
                 }
             case .failure(let error):
                 state.errorMessage = error.localizedDescription

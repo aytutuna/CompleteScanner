@@ -326,6 +326,11 @@ public final class AppState: ObservableObject {
     var copyPagesRecorded = false
     /// The held copy is of an area selected on the preview, so it prints centred.
     var copyAreaSelected = false
+    /// A `.csdoc` opened by hand, offered on a banner until its pages are added, opened as a new queue
+    /// or dismissed (AppState+Package.swift); nil otherwise.
+    @Published public internal(set) var pendingPackage: PendingPackage?
+    /// Counts the `.csdoc` files opened, so a slow read does not replace a file opened after it.
+    var packageOpens = 0
     /// Whether the connected scanner's feeder scans both sides is known: ImageCaptureCore reports it
     /// only once the feeder has been selected (`ScannerSession.feederSupportsDuplex`). Set once the
     /// scanner has answered; one that did not answer is asked again the next time.

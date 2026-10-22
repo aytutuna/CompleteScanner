@@ -135,6 +135,30 @@
                             Text="From your phone" FontWeight="SemiBold" /><Run Text="  " /><Run x:Name="PhoneBarMessage" /></TextBlock>
                 </DockPanel>
             </Border>
+
+            <!-- A .csdoc opened by hand (dropped, picked, or opened from File Explorer): its pages wait
+                 here until they are added or opened as a new document. Shown while the view model offers it. -->
+            <Border x:Name="PackageBar" Style="{StaticResource SavedBarStyle}" Visibility="Collapsed">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource GlyphText}" Text="&#xE8A5;" Margin="0,0,12,0"
+                               VerticalAlignment="Center" />
+                    <Button DockPanel.Dock="Right" Style="{StaticResource SmallIconButtonStyle}" Content="&#xE711;"
+                            ToolTip="Dismiss" AutomationProperties.Name="Dismiss" VerticalAlignment="Center"
+                            Margin="4,0,0,0" Click="PackageBarClose_Click" />
+                    <StackPanel DockPanel.Dock="Right" x:Name="PackageBarButtons" Orientation="Horizontal"
+                                VerticalAlignment="Center" Margin="8,0,0,0">
+                        <Button x:Name="PackageAddButton" Style="{StaticResource SubtleButtonStyle}"
+                                local:Icon.Glyph="&#xE710;" Content="{x:Static local:PackageText.AddToPages}"
+                                ToolTip="Add its pages after the pages in the queue" Click="PackageAdd_Click" />
+                        <Button x:Name="PackageOpenButton" Style="{StaticResource SubtleButtonStyle}"
+                                local:Icon.Glyph="&#xE8E5;" Content="{x:Static local:PackageText.OpenAsNew}"
+                                ToolTip="Clear the queue and open the document in its place" Click="PackageOpen_Click" />
+                    </StackPanel>
+                    <TextBlock x:Name="PackageBarText" Style="{StaticResource BodyText}" TextWrapping="Wrap"
+                               VerticalAlignment="Center" Padding="0,4"
+                               AutomationProperties.LiveSetting="Polite"><Run x:Name="PackageBarMessage" /></TextBlock>
+                </DockPanel>
+            </Border>
         </StackPanel>
 
         <DockPanel Grid.Row="1" x:Name="MainContent">

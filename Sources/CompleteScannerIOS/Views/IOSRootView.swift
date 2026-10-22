@@ -15,7 +15,8 @@ import UIKit
 /// when it is about a scanner; in the Settings sheet it opens Settings' own troubleshooter). It keeps the
 /// screen on while a network scanner's job runs. Photos and PDFs opened in this app from another one ("Open in
 /// CompleteScanner") are imported: into the task set up when it takes photos (`IOSShell.takesPhotos`), else
-/// into Document to PDF; while an import runs they wait for it (`IOSImportSession`). Leaving the scan screen
+/// into Document to PDF; while an import runs they wait for it (`IOSImportSession`). A CompleteScanner
+/// document (`.csdoc`, I18) is not imported: the scan screen offers it on its banner. Leaving the scan screen
 /// stops an import and closes the scan screen's covers. The scan screen opens the photo and ID card reviews.
 public struct IOSRootView: View {
     @EnvironmentObject private var state: AppState
@@ -228,14 +229,37 @@ public struct IOSRootView: View {
         }
     }
 
-    /// Files opened in this app: imported into the queue, the scan screen shown.
+    /// Files opened in this app: a CompleteScanner document to the scan screen's banner, the others
+    /// imported into the queue; the scan screen shown.
     private func openFiles(_ urls: [URL]) {
-        guard !urls.isEmpty else { return }
+        var imports: [URL] = []
+        for url in urls {
+            if IOSShell.isPackage(url) {
+                openPackage(url)
+            } else {
+                imports.append(url)
+            }
+        }
+        guard !imports.isEmpty else { return }
         let pushed: Bool = prepareForImport(nil)
         let session: IOSImportSession = importer
         Task { @MainActor in
             await IOSRootView.settle(pushed)
-            await session.importFiles(urls)
+            await session.importFiles(imports)
+        }
+    }
+
+    /// A `.csdoc` opened in this app, offered on the scan screen's banner. Document to PDF is set up when no
+    /// task is; a task set up is kept (an ID card half taken, say), and the banner says when it does not
+    /// collect pages.
+    private func openPackage(_ url: URL) {
+        if state.activeTask == nil {
+            _ = state.startTask(.document)
+        }
+        showsScanner = true
+        let appState: AppState = state
+        Task { @MainActor in
+            await IOSShell.openPackage(url, in: appState)
         }
     }
 

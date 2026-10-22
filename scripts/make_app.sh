@@ -30,6 +30,27 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>NSHighResolutionCapable</key>   <true/>
     <key>NSPrincipalClass</key>          <string>NSApplication</string>
     <key>NSApplicationSupportsSecureRestorableState</key> <true/>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>      <string>CompleteScanner document</string>
+            <key>CFBundleTypeRole</key>      <string>Viewer</string>
+            <key>LSHandlerRank</key>         <string>Owner</string>
+            <key>LSItemContentTypes</key>    <array><string>com.completescanner.package</string></array>
+        </dict>
+    </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>      <string>com.completescanner.package</string>
+            <key>UTTypeDescription</key>     <string>CompleteScanner document</string>
+            <key>UTTypeConformsTo</key>      <array><string>public.data</string><string>public.content</string></array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key> <array><string>csdoc</string></array>
+            </dict>
+        </dict>
+    </array>
 </dict>
 </plist>
 PLIST

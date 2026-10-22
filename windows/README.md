@@ -554,7 +554,9 @@ background). A document sent as new starts a document of its own in the queue, u
 came with; one sent to the current document joins it. While the queue does not collect pages
 (Photos mode, the ID card, copy and receipt tasks, a review open) or a scan runs, the document waits
 and says so, and is added as soon as it can be. Pages the phone kept as photographed can be shown
-that way with one click, as for imported photos.
+that way with one click, as for imported photos. A `.csdoc` opened from File Explorer (the app
+registers the type for your user each time it starts), dropped on the window or picked with Import
+photos is not added on its own: a bar offers **Add to pages** or **Open as new**.
 
 How it is kept safe: the phone and the PC talk directly (HTTP over TLS 1.2/1.3) with no server or
 account in between. The PC's certificate (an ECDSA P-256 key of its own in the user's certificate

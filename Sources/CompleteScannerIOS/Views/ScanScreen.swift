@@ -35,7 +35,9 @@ enum ScanCover: String, Identifiable {
 /// PDFs and pictures dropped on the screen are imported as Files' are, Command-S saves, and Settings
 /// (Command-comma) is in the toolbar where the sidebar does not offer it. Since I16: the photocopy's pages
 /// full screen once taken, to print over AirPrint (`CopyScreen`). While Save writes a PDF, the pages can
-/// also be added to the end of a PDF picked in Files (`AppState.appendToPDF(at:)`). Its covers and the
+/// also be added to the end of a PDF picked in Files (`AppState.appendToPDF(at:)`). Since I18: a
+/// CompleteScanner document opened in the app or picked in Files is offered on a banner (Add to pages,
+/// Open as new), and the queue can be shared as one (`IOSShell.sharePackage`). Its covers and the
 /// spread's sheet are the root view's (`ScanCovers`), so resizing the window across the width classes,
 /// which builds this screen anew, leaves them open.
 struct ScanScreen: View {
@@ -54,6 +56,8 @@ struct ScanScreen: View {
     @State private var showsPicker: Bool = false
     /// Files is open to pick the PDF the pages are added to.
     @State private var picksPDF: Bool = false
+    /// The queue is being written to be shared as a CompleteScanner document.
+    @State private var sharesPackage: Bool = false
 
     var body: some View {
         Group {
@@ -384,6 +388,15 @@ struct ScanScreen: View {
         }
     }
 
+    private func sharePackage() {
+        sharesPackage = true
+        let appState: AppState = state
+        Task { @MainActor in
+            await IOSShell.sharePackage(appState)
+            sharesPackage = false
+        }
+    }
+
     private var bottomBar: some View {
         let options: DocumentOptions = state.settings.document
         let plan: SavePlan = SavePlan.make(state.scannedPages, options: options)
@@ -394,6 +407,9 @@ struct ScanScreen: View {
         return VStack(alignment: .leading, spacing: 10) {
             if state.isBusy {
                 ScanProgressRow(progress: state.progress)
+            }
+            if let offered = state.pendingPackage {
+                PackageBanner(offered: offered)
             }
             Text(statusText)
                 .font(.footnote)
@@ -441,9 +457,20 @@ struct ScanScreen: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(state.isBusy || importer.isImporting || saveCount == 0)
+                    // Saving deletes the spooled pages a share may still be writing.
+                    .disabled(state.isBusy || importer.isImporting || sharesPackage || saveCount == 0)
                     .keyboardShortcut(IOSShortcuts.save.keyboardShortcut)
                     .accessibilityIdentifier("save.button")
+                    Button {
+                        sharePackage()
+                    } label: {
+                        Label(IOSShell.sharePackageLabel, systemImage: "square.and.arrow.up")
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(state.isBusy || importer.isImporting || sharesPackage || state.scannedPages.isEmpty)
+                    .accessibilityLabel(Text(IOSShell.sharePackageLabel))
+                    .accessibilityIdentifier("share.package")
                 }
             }
             if IOSShell.offersPDFOptions(state.settings) {
@@ -591,6 +618,49 @@ private struct SavedFilesRow: View {
             names.append(url.lastPathComponent)
         }
         return names.joined(separator: ", ")
+    }
+}
+
+/// A CompleteScanner document opened in the app or picked in Files, offered until it is taken or closed:
+/// "Opened Receipt.csdoc: 3 pages", with Add to pages (after the queued pages) and Open as new (in place
+/// of them).
+private struct PackageBanner: View {
+    @EnvironmentObject private var state: AppState
+    let offered: PendingPackage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: "doc.on.doc.fill")
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+                Text(PackageText.openedMessage(offered.fileName, pageCount: offered.pageCount))
+                    .font(.subheadline)
+                    .lineLimit(2)
+                    .accessibilityIdentifier("package.opened")
+                Spacer(minLength: 0)
+                Button {
+                    state.dismissPendingPackage()
+                } label: {
+                    Label("Close", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
+                }
+                .accessibilityLabel(Text("Close"))
+                .accessibilityIdentifier("package.close")
+            }
+            HStack(spacing: 12) {
+                Button(PackageText.addToPages) {
+                    _ = state.addPendingPackageToPages()
+                }
+                .accessibilityIdentifier("package.add")
+                Button(PackageText.openAsNew) {
+                    _ = state.openPendingPackageAsNew()
+                }
+                .accessibilityIdentifier("package.new")
+            }
+            .buttonStyle(.bordered)
+            .disabled(!state.canIngest)
+        }
     }
 }
 

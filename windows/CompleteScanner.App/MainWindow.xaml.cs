@@ -90,6 +90,9 @@ public partial class MainWindow : Window
             ViewModel.Start();
             // Receives from paired phones on trusted networks; nothing listens while no phone is paired.
             ViewModel.StartCompanionIfPaired();
+            // Opened from File Explorer: the .csdoc is offered on its bar.
+            OpenCommandLinePackage();
+            _ = Task.Run(Services.FileAssociation.RegisterForCurrentUser);
             if (StartTab.IsSelected) StartView.FocusDefaultCard();
         };
         // A printer added or removed while the app was in the background (in Windows Settings, say)
@@ -392,6 +395,7 @@ public partial class MainWindow : Window
         }
         HistoryView.Refresh();
         SyncSavedBar();
+        SyncPackageBar();
 
         // Capabilities-driven pickers.
         SyncCapabilityPickers();

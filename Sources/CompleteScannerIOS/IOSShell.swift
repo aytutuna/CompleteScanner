@@ -1,6 +1,7 @@
 #if os(iOS)
 import CompleteScannerKit
 import Foundation
+import UniformTypeIdentifiers
 
 /// What the app was launched with. `-demoScanner` (the UI smoke test's) keeps the app on the demo
 /// scanner alone: the iPhone has no other connection yet, and once it has (eSCL), a test launched this
@@ -229,6 +230,92 @@ public enum IOSShell {
             return AppState.imagesSaveTitle(settings.format, pageCount: plan.pageCount)
         }
         return plan.saveTitle(settings.format)
+    }
+
+    /// The `.csdoc` type the app declares (Info.plist's UTExportedTypeDeclarations), which Files offers
+    /// beside photos and PDFs.
+    public static let packageType: UTType = UTType(exportedAs: "com.completescanner.package", conformingTo: .data)
+
+    /// The Save row's button that shares the queue as one `.csdoc` (`sharePackage`).
+    public static let sharePackageLabel = "Share as CompleteScanner document"
+
+    /// Whether a file opened in this app (AirDrop, Files, Mail) or picked in Files is a CompleteScanner
+    /// document: it goes to the scan screen's banner (`openPackage`), never into a task's import.
+    public static func isPackage(_ url: URL) -> Bool {
+        url.pathExtension.lowercased() == CompanionPackage.fileExtension
+    }
+
+    /// Offers the `.csdoc` at `url` on the scan screen's banner (`AppState.openPackage(at:)`). It is copied
+    /// into a folder of its own first, through its security scope and a coordinated read: the package is
+    /// read a picture at a time while its pages are decoded, and a file opened in place may be another
+    /// app's (iCloud Drive, a file provider). The copy goes once it is read.
+    @MainActor
+    public static func openPackage(_ url: URL, in state: AppState) async {
+        // One open after another, so the file opened last is the one offered however long its copy
+        // takes (a file in iCloud Drive is downloaded first).
+        let previous: Task<Void, Never>? = lastPackageOpen
+        let open: Task<Void, Never> = Task { @MainActor in
+            await previous?.value
+            await openPackageNow(url, in: state)
+        }
+        lastPackageOpen = open
+        await open.value
+    }
+
+    @MainActor private static var lastPackageOpen: Task<Void, Never>?
+
+    private static func openPackageNow(_ url: URL, in state: AppState) async {
+        let copied: Result<URL, Error> = await Task.detached(priority: .userInitiated) { () -> Result<URL, Error> in
+            Result { try IOSShell.copyPackage(url) }
+        }.value
+        switch copied {
+        case .success(let copy):
+            await state.openPackage(at: copy)
+            try? FileManager.default.removeItem(at: copy.deletingLastPathComponent())
+        case .failure(let error):
+            state.errorMessage = PhotoImport.unreadableMessage(url.lastPathComponent, detail: error.localizedDescription)
+        }
+    }
+
+    /// A copy of the file at `url`, under its own name, in a new folder in the temporary folder.
+    static func copyPackage(_ url: URL) throws -> URL {
+        let folder: URL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let copy: URL = folder.appendingPathComponent(url.lastPathComponent)
+        do {
+            try IOSPDFAppend.access(url, writing: false) { (file: URL) throws -> Void in
+                try FileManager.default.copyItem(at: file, to: copy)
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: folder)
+            throw error
+        }
+        return copy
+    }
+
+    /// The folder the queue is written in to be shared, emptied before each `.csdoc` is written.
+    static var packageShareFolder: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("Shared documents", isDirectory: true)
+    }
+
+    /// Share as CompleteScanner document: the queue written as one `.csdoc` in `packageShareFolder`
+    /// (`AppState.exportPackage(to:)`, named as the next saved file would be), then the share sheet with
+    /// it. Returns the file; nil when it could not be written, which the error alert says.
+    @MainActor
+    @discardableResult
+    public static func sharePackage(_ state: AppState) async -> URL? {
+        let folder: URL = packageShareFolder
+        do {
+            try? FileManager.default.removeItem(at: folder)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let url: URL = try await state.exportPackage(to: folder)
+            state.runFileAction(.share, urls: [url])
+            return url
+        } catch {
+            state.errorMessage = error.localizedDescription
+            return nil
+        }
     }
 
     /// Whether a start-screen tile can be picked, and if not, why: a task this app does not offer

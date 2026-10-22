@@ -1,6 +1,7 @@
 #if os(macOS)
 import CompleteScannerKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var state: AppState
@@ -62,6 +63,11 @@ struct ContentView: View {
                         .environmentObject(state)
                 }
                 Divider()
+                // A `.csdoc` opened by hand, on every tab (AppState+Package.swift).
+                if let package = state.pendingPackage {
+                    PackageBannerView(package: package)
+                    Divider()
+                }
                 switch detailTab {
                 case .start:
                     startDetail
@@ -111,6 +117,17 @@ struct ContentView: View {
         // Below this the layout cannot stay usable; the inspector adds its own
         // width requirement only while shown.
         .frame(minWidth: 700, minHeight: 560)
+        // Pictures from File > Import from iPhone or iPad (Continuity Camera) become pages as dropped
+        // photo files do.
+        .importsItemProviders([.image]) { providers in
+            state.importFromDevice(providers)
+        }
+        // A `.csdoc` opened from the Finder is offered on the banner, in this window rather than a new one.
+        .onOpenURL { url in
+            guard url.pathExtension.lowercased() == CompanionPackage.fileExtension else { return }
+            Task { await state.openPackage(at: url) }
+        }
+        .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         .onAppear {
             guard !choseOpeningView else { return }
             choseOpeningView = true
@@ -143,10 +160,18 @@ struct ContentView: View {
             Divider()
             StatusBarView()
         }
-        // Photos of documents dropped on the scanner view become pages (AppState+Import.swift); other
-        // drops are refused.
+        // Photos of documents dropped on the scanner view become pages (AppState+Import.swift), a
+        // `.csdoc` is offered on the banner (photos dropped with it are imported as well, so such a drop
+        // is refused while photos cannot be taken); other drops are refused.
         .dropDestination(for: URL.self) { urls, _ in
-            guard state.canImportPhotos, !PhotoImport.photoFiles(urls.map(\.path)).isEmpty else { return false }
+            let hasPhotos = !PhotoImport.photoFiles(urls.map(\.path)).isEmpty
+            if let package = urls.first(where: { $0.pathExtension.lowercased() == CompanionPackage.fileExtension }) {
+                guard !hasPhotos || state.canImportPhotos else { return false }
+                Task { await state.openPackage(at: package) }
+                if hasPhotos { state.importPhotos(urls) }
+                return true
+            }
+            guard state.canImportPhotos, hasPhotos else { return false }
             state.importPhotos(urls)
             return true
         } isTargeted: { targeted in

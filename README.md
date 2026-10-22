@@ -111,7 +111,10 @@ scanners** — including the Epson Perfection V39 II.
   whole photo, or to skip it. The page gets the resolution of the paper size its shape matches (A4,
   Letter, Legal, ID-1), else 200 dpi, is labelled **Photo** in the page strip, and one click shows
   it as photographed. The photo files themselves are only read, never changed or moved. On Windows,
-  HEIC photos need Microsoft's free HEIF Image Extensions.
+  HEIC photos need Microsoft's free HEIF Image Extensions. On the Mac, **File > Import from iPhone or
+  iPad** takes a photo or a scanned document from a nearby iPhone or iPad the same way (Continuity
+  Camera), and a CompleteScanner document (`.csdoc`) opened in the Finder, dropped on the window or
+  picked with Import offers **Add to pages** or **Open as new** on a banner.
 - **Send from your phone** (Windows now): pair a phone once by scanning a QR code on the PC, and
   documents scanned with CompleteScanner on the phone are added to the PC's page queue on their own,
   labelled **From phone**. The phone and the PC talk directly, encrypted and pinned to the PC's own
@@ -286,7 +289,9 @@ size and fitted to the page otherwise, with Copies, Also save a PDF and Copy aga
 printer; Email a document through Mail's composer (or the share sheet); Archive document and the PDF's
 size, Archive and Password choices, the password asked for in a sheet and never stored; the pages
 added to the end of a PDF picked in Files or in the saved files, as the same incremental update as on
-the desktop (signed files and PDF/A files that may not stay PDF/A asked about first); network
+the desktop (signed files and PDF/A files that may not stay PDF/A asked about first); the queue shared
+as a CompleteScanner document (`.csdoc`), and one opened from AirDrop, Files or Mail offered on a
+banner with Add to pages or Open as new; network
 scanners (AirScan/eSCL) found on the Wi-Fi or added by address, picked from a sheet on iPhone or a
 sidebar on iPad, with a flatbed preview to choose the scan area on, a feeder's progress with Cancel,
 the screen kept on while a network scanner works, and the troubleshooter with its iPhone checks;

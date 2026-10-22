@@ -16,6 +16,10 @@ public struct CompleteScannerApp: App {
                 .environmentObject(state)
                 .onAppear { NSApp.activate(ignoringOtherApps: true) }
         }
+        .commands {
+            // File > Import from iPhone or iPad: Continuity Camera, taken by ContentView's importsItemProviders.
+            ImportFromDevicesCommands()
+        }
     }
 }
 
