@@ -16,9 +16,7 @@ final class ScannerPickerTests: XCTestCase {
         app.launchArguments = ["-demoScanner"]
         app.launch()
 
-        let tile: XCUIElement = app.buttons["task.document"]
-        XCTAssertTrue(tile.waitForExistence(timeout: 60), "The start screen's Document to PDF tile")
-        tile.tap()
+        app.pickTask("document")
 
         // On iPhone the scanner row opens the picker as a sheet; on iPad the picker is the sidebar.
         let row: XCUIElement = app.buttons["scanner.menu"]

@@ -3,23 +3,24 @@ import CompleteScannerKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The start screen: what are you scanning? The user's presets first (when there are any, as on the
+/// The task list: what are you scanning? On the iPhone the task sheet over the scan screen (`TaskSheet`), on
+/// the iPad the detail beside the sidebar. The user's presets first (when there are any, as on the
 /// Mac), then one tile per task (`TaskCatalog.sections`) in its group: an icon, the title and the
 /// one-line subtitle. A task that cannot be started (no feeder, or not in this version yet,
 /// `IOSShell.availability`) is dimmed with one short line saying why. Picking a tile sets the task (or
 /// the preset's settings) up and opens the scan screen (`onOpenScanner`); not while an import runs, whose
 /// pages belong to the task set up. With a side of an ID card held, either kind of tile asks to discard the
-/// card first (`IdCardDiscardQuestion`). Settings (Command-comma) where the sidebar does not offer it.
-/// After the tasks, "Add pages to a PDF" (`IOSAppendTile`) picks a PDF in Files first, then sets up
-/// Document to PDF with that file as the append target, so Save adds the pages to it.
+/// card first (`IdCardDiscardQuestion`). After the tasks, "Add pages to a PDF" (`IOSAppendTile`) picks a
+/// PDF in Files first, then sets up Document to PDF with that file as the append target, so Save adds the
+/// pages to it.
 struct TaskStartScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
 
     /// Opens the scan screen (after a tile was set up, or for the Scanner button).
     let onOpenScanner: @MainActor () -> Void
-    /// Opens Settings; nil when the sidebar has it (iPad).
-    var onOpenSettings: (() -> Void)?
+    /// Closes the task sheet (iPhone): Done in place of the Scanner button.
+    var onClose: (() -> Void)?
     @State private var askedToDiscard: Bool = false
     /// Files is open to pick the PDF for "Add pages to a PDF".
     @State private var picksPDF: Bool = false
@@ -72,24 +73,20 @@ struct TaskStartScreen: View {
             }
         }
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                if let open = onOpenSettings {
-                    Button {
-                        open()
-                    } label: {
-                        Label(IOSSettingsText.title, systemImage: "gearshape")
-                    }
-                    .keyboardShortcut(IOSShortcuts.settings.keyboardShortcut)
-                    .accessibilityIdentifier("open.settings")
-                }
-            }
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    onOpenScanner()
-                } label: {
-                    Label("Scanner", systemImage: "scanner")
+                if let close = onClose {
+                    Button(IOSSettingsText.doneLabel) {
+                        close()
+                    }
+                    .accessibilityIdentifier("tasks.done")
+                } else {
+                    Button {
+                        onOpenScanner()
+                    } label: {
+                        Label("Scanner", systemImage: "scanner")
+                    }
+                    .accessibilityIdentifier("open.scanner")
                 }
-                .accessibilityIdentifier("open.scanner")
             }
         }
     }
@@ -173,6 +170,58 @@ struct TaskStartScreen: View {
         if applied == IOSPresetApply.waitsForDiscard {
             askedToDiscard = true
         }
+    }
+}
+
+/// The task list in a sheet over the iPhone's scan screen or our camera, half height first: picking a
+/// tile or a preset sets it up and closes the sheet (`onPicked`); Done closes it as it was.
+struct TaskSheet: View {
+    @EnvironmentObject private var state: AppState
+    let onPicked: @MainActor () -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            TaskStartScreen(onOpenScanner: onPicked, onClose: onClose)
+                .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium, .large])
+        // The root's alert cannot show over a sheet.
+        .modifier(ErrorAlert(state: state))
+    }
+}
+
+/// The task set up, at the top of the iPhone's scan screen and of our camera (`onDark`): its title with a
+/// chevron; it opens the task sheet.
+struct TaskChip: View {
+    let title: String
+    var onDark: Bool = false
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .accessibilityHidden(true)
+            }
+            .foregroundStyle(onDark ? Color.white : Color.primary)
+            .padding(.horizontal, onDark ? 14 : 0)
+            .padding(.vertical, onDark ? 8 : 0)
+            .background {
+                if onDark {
+                    Capsule().fill(Color.black.opacity(0.6))
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Task: \(title)"))
+        .accessibilityHint(Text("Opens the list of tasks"))
+        .accessibilityIdentifier("task.chip")
     }
 }
 

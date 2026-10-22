@@ -1,11 +1,14 @@
 #if os(iOS)
+import AVFoundation
 import CompleteScannerKit
 import QuickLook
 import SwiftUI
 import UIKit
 
-/// The app's window: on a compact width (iPhone, a narrow iPad window) the task start screen with the scan
-/// screen pushed over it; on a regular width (iPad, `IOSLayout.usesSidebar`) a sidebar with the tasks, the
+/// The app's window: on a compact width (iPhone, a narrow iPad window) the scan screen, set up at launch
+/// for the task used last (`IOSShell.launchTask`) with our camera opened at once where it can be used
+/// (`IOSShell.cameraOnOpen`; the first time, after a card saying why), the task list in a sheet over it and
+/// the library pushed; on a regular width (iPad, `IOSLayout.usesSidebar`) a sidebar with the tasks, the
 /// presets, the scanners and the library beside the scan screen (or the start screen, the presets, the
 /// scans or the saved files). Settings opens as a sheet (Command-comma). Also the share sheet, Mail's
 /// composer and the Quick Look preview the file actions ask for (`FileActionPresenters`, which the Settings
@@ -27,7 +30,15 @@ public struct IOSRootView: View {
     private let launchTask: ScanTask?
     private let picker: IOSScannerPickerModel
     private let companion: IOSCompanionBrowser?
+    private let demoScanner: Bool
+    /// On the iPad, whether the detail is the scan screen; on the iPhone it always is.
     @State private var showsScanner: Bool = false
+    @State private var showsTasks: Bool = false
+    /// A tile or a preset was picked in the task sheet: the camera opens once it has closed.
+    @State private var taskPicked: Bool = false
+    @State private var showsLibrary: Bool = false
+    @State private var showsCameraIntro: Bool = false
+    @AppStorage(IOSShell.cameraIntroKey) private var cameraIntroShown: Bool = false
     @State private var detail: IOSDetail = IOSDetail.start
     @State private var showsSettings: Bool = false
     @State private var showsSettingsTroubleshooter: Bool = false
@@ -39,14 +50,16 @@ public struct IOSRootView: View {
     /// `importer` brings photos and PDFs in for the state the view is given; `launchImports` are the files
     /// imported at launch (`IOSLaunchOptions`), in order, into `launchTask` when given; `picker` lists the
     /// scanners (with the network scanners, unless the app was launched with the demo scanner alone);
-    /// `companion` browses the computers on the network for Settings' My computer.
+    /// `companion` browses the computers on the network for Settings' My computer; `demoScanner` (the UI
+    /// tests' `-demoScanner`) keeps the camera from opening by itself.
     public init(fileActions: IOSFileActions, importer: IOSImportSession, picker: IOSScannerPickerModel,
                 launchImports: [IOSImportItem] = [], launchTask: ScanTask? = nil,
-                companion: IOSCompanionBrowser? = nil) {
+                companion: IOSCompanionBrowser? = nil, demoScanner: Bool = false) {
         _fileActions = ObservedObject(wrappedValue: fileActions)
         _importer = ObservedObject(wrappedValue: importer)
         self.picker = picker
         self.companion = companion
+        self.demoScanner = demoScanner
         self.launchImports = launchImports
         self.launchTask = launchTask
     }
@@ -103,14 +116,24 @@ public struct IOSRootView: View {
         }
     }
 
-    /// iPhone: the start screen, the scan screen pushed over it.
+    /// iPhone: the scan screen, with the task sheet over it and the library pushed.
     private var stackLayout: some View {
         NavigationStack {
-            TaskStartScreen(onOpenScanner: openScanner, onOpenSettings: openSettings)
-                .navigationDestination(isPresented: $showsScanner) {
-                    ScanScreen(picker: picker, cover: $scanCover, spreadEditor: $spreadEditor,
-                               onOpenSettings: openSettings)
+            ScanScreen(picker: picker, cover: $scanCover, spreadEditor: $spreadEditor, onOpenSettings: openSettings,
+                       onOpenTasks: openTasks, onOpenLibrary: openLibrary)
+                .navigationDestination(isPresented: $showsLibrary) {
+                    LibraryScreen()
                 }
+        }
+        .overlay {
+            if showsCameraIntro {
+                CameraIntroCard(onContinue: continueToCamera)
+            }
+        }
+        .sheet(isPresented: $showsTasks, onDismiss: tasksClosed) {
+            TaskSheet(onPicked: pickedInSheet, onClose: closeTasks)
+                .environmentObject(state)
+                .environmentObject(importer)
         }
     }
 
@@ -162,6 +185,58 @@ public struct IOSRootView: View {
         showsSettings = true
     }
 
+    private func openTasks() {
+        taskPicked = false
+        showsTasks = true
+    }
+
+    private func closeTasks() {
+        showsTasks = false
+    }
+
+    private func pickedInSheet() {
+        taskPicked = true
+        showsTasks = false
+    }
+
+    /// The camera opens only once the sheet has gone: a cover cannot be presented while it is still up.
+    private func tasksClosed() {
+        if taskPicked {
+            taskPicked = false
+            openCameraAtOnce()
+        }
+    }
+
+    private func openLibrary() {
+        showsLibrary = true
+    }
+
+    /// Our camera at once on the iPhone, for a task that takes photos where the camera can be used; the
+    /// first time, the card saying why comes before iOS asks for it.
+    private func openCameraAtOnce() {
+        guard !IOSLayout.usesSidebar(sizeClass), scanCover == nil, importer.canImport else { return }
+        let action: IOSCameraOnOpen = IOSShell.cameraOnOpen(
+            offersCamera: IOSShell.offersOwnCamera(state.settings), camera: IOSCameraAvailability.ownCamera,
+            authorization: AVCaptureDevice.authorizationStatus(for: .video), introShown: cameraIntroShown,
+            demo: demoScanner)
+        switch action {
+        case .open:
+            scanCover = .camera
+        case .introduce:
+            showsCameraIntro = true
+        case .stay:
+            break
+        }
+    }
+
+    private func continueToCamera() {
+        cameraIntroShown = true
+        showsCameraIntro = false
+        if scanCover == nil && importer.canImport {
+            scanCover = .camera
+        }
+    }
+
     private func closeSettings() {
         showsSettings = false
     }
@@ -171,7 +246,7 @@ public struct IOSRootView: View {
         showsSettingsTroubleshooter = true
     }
 
-    /// A preset picked in Settings is in use: Settings closes and the scan screen opens.
+    /// A preset picked in Settings is in use: Settings closes and the scan screen shows.
     private func presetApplied() {
         showsSettings = false
         openScanner()
@@ -215,14 +290,22 @@ public struct IOSRootView: View {
         importer.stop()
     }
 
+    /// The scan screen in front: the iPad's detail, and on the iPhone the library and the task sheet gone.
     private func openScanner() {
         showsScanner = true
+        showsLibrary = false
+        showsTasks = false
     }
 
     private func startOnce() {
         guard !started else { return }
         started = true
         state.start()
+        // Settings left without a task by hand are kept: only a first run or a task not offered here starts one.
+        let task: ScanTask = IOSShell.launchTask(state.settings)
+        if state.activeTask != task && (state.activeTask != nil || state.isFirstRun) {
+            _ = state.startTask(task)
+        }
         if !launchImports.isEmpty {
             let items: [IOSImportItem] = launchImports
             let pushed: Bool = prepareForImport(launchTask)
@@ -231,6 +314,9 @@ public struct IOSRootView: View {
                 await IOSRootView.settle(pushed)
                 await session.importItems(items)
             }
+        } else if !IOSLayout.usesSidebar(sizeClass) {
+            showsScanner = true
+            openCameraAtOnce()
         }
     }
 
@@ -256,12 +342,15 @@ public struct IOSRootView: View {
 
     /// A `.csdoc` opened in this app, offered on the scan screen's banner. Document to PDF is set up when no
     /// task is; a task set up is kept (an ID card half taken, say), and the banner says when it does not
-    /// collect pages.
+    /// collect pages. Our camera closes so the banner is seen.
     private func openPackage(_ url: URL) {
         if state.activeTask == nil {
             _ = state.startTask(.document)
         }
-        showsScanner = true
+        openScanner()
+        if scanCover == .camera {
+            scanCover = nil
+        }
         let appState: AppState = state
         Task { @MainActor in
             await IOSShell.openPackage(url, in: appState)
@@ -270,7 +359,8 @@ public struct IOSRootView: View {
 
     /// `task` is set up when given; otherwise the task set up takes photos (not the photocopy, which holds
     /// one batch of pages; a copy still held keeps its task and the import is refused as a held Quick scan is), or
-    /// Document to PDF is set up; the scan screen is shown. True when it was pushed now.
+    /// Document to PDF is set up; the scan screen is shown. True when it was brought to the front now (shown
+    /// on the iPad, or the library or the task sheet closed on the iPhone).
     private func prepareForImport(_ task: ScanTask?) -> Bool {
         if let wanted = task {
             if state.activeTask != wanted {
@@ -279,15 +369,58 @@ public struct IOSRootView: View {
         } else if state.activeTask == nil || !IOSShell.takesPhotos(state.settings) || (state.isCopyFlow && state.copyPages.isEmpty) {
             _ = state.startTask(.document)
         }
-        let pushed: Bool = !showsScanner
-        showsScanner = true
+        let pushed: Bool = !showsScanner || showsLibrary || showsTasks
+        openScanner()
         return pushed
     }
 
-    /// Lets the scan screen's push finish before the corner editor is presented over it.
+    /// Lets the scan screen come to the front before the corner editor is presented over it.
     private static func settle(_ pushed: Bool) async {
         if pushed {
             try? await Task.sleep(nanoseconds: 700_000_000)
+        }
+    }
+}
+
+/// The card over the scan screen before iOS first asks for the camera, so the question has a reason.
+private struct CameraIntroCard: View {
+    let onContinue: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+                .accessibilityHidden(true)
+            VStack(spacing: 14) {
+                Image(systemName: "camera.viewfinder")
+                    .font(.system(size: 44))
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+                Text(IOSCameraText.introLine)
+                    .font(.title3.weight(.semibold))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(IOSCameraText.introHelp)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    onContinue()
+                } label: {
+                    Text(IOSCameraText.continueLabel)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .accessibilityIdentifier("camera.intro.continue")
+            }
+            .padding(24)
+            .background(RoundedRectangle(cornerRadius: 20).fill(Color(uiColor: .systemBackground)))
+            .padding(24)
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isModal)
+            .accessibilityIdentifier("camera.intro")
         }
     }
 }

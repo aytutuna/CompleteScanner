@@ -7,8 +7,8 @@ import UniformTypeIdentifiers
 
 /// How the window is laid out for its width. A regular width (an iPad, full screen or in a wide Stage
 /// Manager window) gets the sidebar: the tasks, the presets, the scanners and the library beside the screen
-/// in use; a compact width (an iPhone, a narrow iPad window, Slide Over) gets the start screen with the
-/// scan screen pushed over it. Decided again whenever the width class changes, so resizing a window
+/// in use; a compact width (an iPhone, a narrow iPad window, Slide Over) gets the scan screen with the task
+/// list in a sheet over it. Decided again whenever the width class changes, so resizing a window
 /// moves between the two.
 public enum IOSLayout {
     public static func usesSidebar(_ horizontal: UserInterfaceSizeClass?) -> Bool {

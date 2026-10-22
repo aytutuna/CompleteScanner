@@ -10,6 +10,8 @@ public enum IOSSettingsText {
     public static let presetsLabel = "Presets"
     public static let historyLabel = "Scans"
     public static let savedLabel = "Saved files"
+    /// The iPhone's saved files and scans together (`LibraryScreen`).
+    public static let libraryLabel = "Library"
     /// The computer the phone is paired with (`CompanionScreen`, I20).
     public static let companionLabel = "My computer"
     public static let fileNameLabel = "File name"

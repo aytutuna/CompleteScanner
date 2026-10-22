@@ -272,7 +272,9 @@ tests run on the iOS Simulator with Xcode 26 or later, as CI's `ios` job runs th
 xcodebuild test -scheme CompleteScanner-Package   -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5'
 ```
 
-The app itself (one universal app for iPhone and iPad; so far the task start screen, the Demo Scanner,
+The app itself (one universal app for iPhone and iPad; on the iPhone it opens straight on the scan screen
+with the camera, the last task used set up and the other tasks in a sheet under its name at the top;
+so far the Demo Scanner,
 our own camera as the default way to take pages, with the page's outline drawn live over the
 preview, the lens that focuses close, the torch, an automatic shutter that takes each page once it
 holds still on a sharp, lit frame (Auto, on unless turned off, with a ring that fills as it waits) and
@@ -298,7 +300,7 @@ printer; Email a document through Mail's composer (or the share sheet); Archive 
 size, Archive and Password choices, the password asked for in a sheet and never stored; the pages
 added to the end of a PDF picked in Files or in the saved files, as the same incremental update as on
 the desktop (signed files and PDF/A files that may not stay PDF/A asked about first), from the menu
-beside Save or from the start screen's Add pages to a PDF, which picks the file first so that Save
+beside Save or from the task list's Add pages to a PDF, which picks the file first so that Save
 reads "Add to Contract.pdf"; the queue shared
 as a CompleteScanner document (`.csdoc`), and one opened from AirDrop, Files or Mail offered on a
 banner with Add to pages or Open as new; network
@@ -306,7 +308,7 @@ scanners (AirScan/eSCL) found on the Wi-Fi or added by address, picked from a sh
 sidebar on iPad, with a flatbed preview to choose the scan area on, a feeder's progress with Cancel,
 the screen kept on while a network scanner works, and the troubleshooter with its iPhone checks;
 Settings with the same sections and collapsed-header summaries as the desktop's settings column, the
-presets (save the current settings under a name, rename, delete, apply; also on the start screen),
+presets (save the current settings under a name, rename, delete, apply; also in the task list),
 this session's scans, the saved files with Share and Show in Files, and the file name with a button
 per part and the next file's name; on iPad a sidebar with the tasks, presets, scanners and library,
 Command-S, Command-N and Command-comma, Space for the shutter, pages reordered by dragging them in the

@@ -1,7 +1,7 @@
 import XCTest
 
 // Our own camera as a person meets it on the Simulator: launched on the demo scanner alone
-// (`-demoScanner`), pick Document to PDF, and the scan screen offers Camera, the default, with Apple's
+// (`-demoScanner`), pick Document to PDF in the task sheet, and the scan screen offers Camera, the default, with Apple's
 // document scanner below it as Use Apple's scanner (dimmed there with its reason). The Simulator has no
 // camera, so the camera screen opens and says so in one line, with the Auto toggle and the shutter
 // dimmed, and Done brings the scan screen back. Nothing is photographed and no permission prompt is
@@ -18,9 +18,7 @@ final class CameraTests: XCTestCase {
         app.launchArguments = ["-demoScanner"]
         app.launch()
 
-        let tile: XCUIElement = app.buttons["task.document"]
-        XCTAssertTrue(tile.waitForExistence(timeout: 60), "The start screen's Document to PDF tile")
-        tile.tap()
+        app.pickTask("document")
 
         // Our camera is the task's default; Apple's document scanner stays below it, dimmed in the Simulator.
         let camera: XCUIElement = app.buttons["capture.camera"]

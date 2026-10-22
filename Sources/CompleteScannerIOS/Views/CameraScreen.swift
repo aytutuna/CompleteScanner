@@ -25,13 +25,17 @@ import UIKit
 /// "The next page starts a new document." after New document) shows under the top bar, with the task's
 /// buttons between shots (No back, Now the backs, New document, `CameraTaskButtons`) over the shutter;
 /// Quick scan's page takes the camera's place once taken. With a keyboard (I15), Space takes a photo and
-/// Escape is Done.
+/// Escape is Done. On the iPhone the camera is what the app opens on: the task chip under the top bar opens
+/// the task sheet here, the last page with the count goes back to the page strip as Done does, and Photos
+/// and Files sit beside the shutter; the camera rests while the sheet, Photos or Files covers it, so Auto
+/// takes nothing meanwhile.
 struct CameraScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model: IOSCameraModel
     @State private var waitAnnouncer: IOSWaitAnnouncer = IOSWaitAnnouncer()
+    @State private var showsTasks: Bool = false
     let onClose: @MainActor () -> Void
 
     init(onClose: @escaping @MainActor () -> Void) {
@@ -53,9 +57,10 @@ struct CameraScreen: View {
             importer.editorInCamera = true
             let shown: IOSCameraModel = model
             let session: IOSImportSession = importer
-            let continuous: Bool = IOSShell.capturesContinuously(state.settings)
+            let appState: AppState = state
+            // Read at each shot: a task picked in the task sheet here changes it.
             shown.onAutoShot = { (shot: IOSCameraShot) async -> Void in
-                _ = await session.importShot(shot, asksOnlyWhenUnsure: continuous)
+                _ = await session.importShot(shot, asksOnlyWhenUnsure: IOSShell.capturesContinuously(appState.settings))
             }
             shown.canTakePage = { () -> Bool in
                 !session.isImporting && session.canImport
@@ -77,6 +82,14 @@ struct CameraScreen: View {
         }
         .onChange(of: importer.cornerRequest != nil) { (_: Bool, reviewing: Bool) in
             model.apply(reviewing ? IOSCameraEvent.reviewStarted : IOSCameraEvent.reviewEnded)
+        }
+        .onChange(of: showsTasks) { (_: Bool, shown: Bool) in
+            rest(shown)
+        }
+        .sheet(isPresented: $showsTasks) {
+            TaskSheet(onPicked: closeTasks, onClose: closeTasks)
+                .environmentObject(state)
+                .environmentObject(importer)
         }
         .onChange(of: waitCue) { (_: IOSWaitCue, cue: IOSWaitCue) in
             // Spoken once per wait, when the line is first shown, so a VoiceOver user knows why nothing is
@@ -106,6 +119,8 @@ struct CameraScreen: View {
             }
             VStack(spacing: 0) {
                 topBar
+                TaskChip(title: state.activeTaskDefinition?.title ?? "Pick a task", onDark: true, onTap: openTasks)
+                    .padding(.top, 10)
                 if model.message == nil, cardPrompt == nil, let line = taskLine {
                     Text(line.prompt)
                         .font(.headline)
@@ -286,21 +301,29 @@ struct CameraScreen: View {
         let last: CGImage? = state.scannedPages.last?.image
         let ring: CGFloat = ringProgress
         return HStack(alignment: .center) {
-            HStack(spacing: 8) {
-                if let image = last {
-                    Image(image, scale: 1, label: Text(IOSCameraText.lastPageLabel))
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 44, height: 56)
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .accessibilityIdentifier("camera.lastPage")
+            Button {
+                onClose()
+            } label: {
+                HStack(spacing: 8) {
+                    if let image = last {
+                        Image(image, scale: 1, label: Text(IOSCameraText.lastPageLabel))
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 44, height: 56)
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .accessibilityIdentifier("camera.lastPage")
+                    }
+                    Text(IOSCameraText.pageCount(count))
+                        .font(.footnote)
+                        .foregroundStyle(Color.white)
+                        .accessibilityIdentifier("camera.count")
                 }
-                Text(IOSCameraText.pageCount(count))
-                    .font(.footnote)
-                    .foregroundStyle(Color.white)
-                    .accessibilityIdentifier("camera.count")
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityHint(Text(IOSCameraText.pagesHint))
+            .accessibilityIdentifier("camera.pages")
             .frame(maxWidth: .infinity, alignment: .leading)
             Button {
                 shoot()
@@ -328,12 +351,26 @@ struct CameraScreen: View {
             .accessibilityLabel(Text(IOSCameraText.shutterLabel))
             .accessibilityHint(Text(IOSCameraText.shutterHint))
             .accessibilityIdentifier("camera.shutter")
-            Color.clear
-                .frame(maxWidth: .infinity, maxHeight: 1)
-                .accessibilityHidden(true)
+            ImportButtons(onDark: true, onPresenting: rest)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 24)
+    }
+
+    private func openTasks() {
+        showsTasks = true
+    }
+
+    private func closeTasks() {
+        showsTasks = false
+    }
+
+    /// The session stops while something covers the camera (as for the corner editor) and runs again once
+    /// nothing does.
+    private func rest(_ covered: Bool) {
+        let reviewing: Bool = covered || importer.cornerRequest != nil
+        model.apply(reviewing ? IOSCameraEvent.reviewStarted : IOSCameraEvent.reviewEnded)
     }
 
     /// The camera is live, no photo is being taken or read, and the queue can take a page.

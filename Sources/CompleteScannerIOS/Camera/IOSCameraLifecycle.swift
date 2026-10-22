@@ -197,6 +197,12 @@ public enum IOSCameraText {
     public static let lastPageLabel = "Last page"
     public static let torchLabel = "Torch"
     public static let settingsLabel = "Settings"
+    /// The last page and the count: back to the page strip (camera) or the strip shown or hidden (scan screen).
+    public static let pagesHint = "Shows the pages taken"
+    /// The card before the first camera permission prompt (`IOSShell.cameraOnOpen`).
+    public static let introLine = "CompleteScanner scans with the camera."
+    public static let introHelp = "iOS asks once for access. Photos and Files work without it."
+    public static let continueLabel = "Continue"
     /// The session could not be set up, or stopped with errors.
     public static let notStarted = "Camera did not start"
     public static let tooWarm = "Paused: too warm"

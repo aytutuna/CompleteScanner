@@ -1,4 +1,5 @@
 #if os(iOS)
+import AVFoundation
 import CompleteScannerKit
 import Foundation
 import UniformTypeIdentifiers
@@ -140,6 +141,41 @@ public enum IOSShell {
         let pending: Bool = sides?.next == .back || newDocument
         guard pending || !(turningOverByHand || usesNetworkScanner(device)) else { return nil }
         return CameraTaskCatalog.current(task, options: options, sides: sides, newDocument: newDocument)
+    }
+
+    /// Whether the scan screen shows the step card: while the step's own words stay (the ID card's sides, a
+    /// network scanner, a stack turned over by hand: `cameraLine` is nil), a back is due or the next page
+    /// starts a new document. Otherwise the camera's line is on our camera's screen only.
+    public static func showsStepCard(_ task: ScanTask?, options: TaskOptions, sides: CameraSides?, newDocument: Bool,
+                                     turningOverByHand: Bool, device: ScannerInfo?) -> Bool {
+        if sides?.next == .back || newDocument { return true }
+        return cameraLine(task, options: options, sides: sides, newDocument: newDocument,
+                          turningOverByHand: turningOverByHand, device: device) == nil
+    }
+
+    /// The task the iPhone opens on: the one set up last time (kept in the settings), else Document to PDF.
+    public static func launchTask(_ settings: ScanSettings) -> ScanTask {
+        if let task = settings.task, offers(task) {
+            return task
+        }
+        return .document
+    }
+
+    /// The user's defaults key: the card saying why the camera is asked for was shown (`cameraOnOpen`).
+    public static let cameraIntroKey = "camera.introShown"
+
+    /// What the iPhone does with our camera when the scan screen opens (at launch, or a task picked in the
+    /// task sheet): opens it for a task that takes photos where it can be used, first with the card saying
+    /// why while iOS has not asked for the camera yet and the card was never shown; stays on the scan screen
+    /// without a camera (the Simulator), with access off or not allowed, and under `-demoScanner` (the UI
+    /// tests).
+    public static func cameraOnOpen(offersCamera: Bool, camera: IOSCameraAvailability, authorization: AVAuthorizationStatus,
+                                    introShown: Bool, demo: Bool) -> IOSCameraOnOpen {
+        guard !demo, offersCamera, camera.isAvailable else { return .stay }
+        if authorization == .notDetermined && !introShown {
+            return .introduce
+        }
+        return .open
     }
 
     /// Whether the book's Right to left switch is shown: while its spreads are cut at the spine for the
@@ -423,6 +459,14 @@ public enum IOSShell {
         default: return "scanner"
         }
     }
+}
+
+/// What the scan screen does with our camera when it opens (`IOSShell.cameraOnOpen`).
+public enum IOSCameraOnOpen: Equatable, Sendable {
+    case open
+    /// The card saying why the camera is asked for, then the camera.
+    case introduce
+    case stay
 }
 
 /// A start-screen tile: the task, its title and subtitle, its symbol, and whether it can be picked.

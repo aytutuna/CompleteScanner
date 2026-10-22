@@ -314,6 +314,48 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/app-build" \
             -resultBundlePath "$RUNNER_TEMP/ios-app-tests.xcresult" \
             CODE_SIGNING_ALLOWED=NO
+      # The screens ScreenshotTests keeps, renamed from the export's own file names to their attachment
+      # names (01-scan.png, ...) through the manifest the export writes.
+      - name: Export the screenshots
+        if: always()
+        run: |
+          out="$RUNNER_TEMP/ios-screenshots"
+          if [ ! -d "$RUNNER_TEMP/ios-app-tests.xcresult" ]; then
+            echo "No app test results to export"
+            exit 0
+          fi
+          xcrun xcresulttool export attachments \
+            --path "$RUNNER_TEMP/ios-app-tests.xcresult" \
+            --output-path "$out"
+          if [ -f "$out/manifest.json" ]; then
+            python3 - "$out" <<'EOF'
+          import json, os, re, sys
+          out = sys.argv[1]
+          with open(os.path.join(out, "manifest.json")) as f:
+              tests = json.load(f)
+          for test in tests:
+              for attachment in test.get("attachments", []):
+                  src = os.path.join(out, attachment.get("exportedFileName", ""))
+                  name = attachment.get("suggestedHumanReadableName", "")
+                  # The suggested name ends in "_<index>_<UUID>" before the extension.
+                  name = re.sub(r"(_\d+)?_[0-9A-Fa-f-]{36}(?=\.\w+$)", "", name)
+                  if not name or not src.endswith(".png") or not os.path.isfile(src):
+                      continue
+                  if not name.endswith(".png"):
+                      name += ".png"
+                  dst = os.path.join(out, name)
+                  if not os.path.exists(dst):
+                      os.rename(src, dst)
+          EOF
+          fi
+          ls "$out"
+      - name: Upload the screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-screenshots
+          path: ${{ runner.temp }}/ios-screenshots
+          if-no-files-found: warn
       - name: Upload the test results
         if: failure()
         uses: actions/upload-artifact@v7

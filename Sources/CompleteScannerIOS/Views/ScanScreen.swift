@@ -36,13 +36,17 @@ enum ScanCover: String, Identifiable {
 /// (Command-comma) is in the toolbar where the sidebar does not offer it. Since I16: the photocopy's pages
 /// full screen once taken, to print over AirPrint (`CopyScreen`). While Save writes a PDF, the menu beside
 /// it can also add the pages to the end of a PDF picked in Files (`AppState.appendToPDF(at:)`); with a PDF
-/// picked on the start screen (`AppState.appendTarget`) Save adds them to that one. Since I18: a
+/// picked in the task list (`AppState.appendTarget`) Save adds them to that one. Since I18: a
 /// CompleteScanner document opened in the app or picked in Files is offered on a banner (Add to pages,
 /// Open as new), and the queue can be shared as one (`IOSShell.sharePackage`). Since I20: with a computer
 /// paired, Send to computer sends the queue to it as a new document or into the one open there
 /// (`AppState.sendQueueToDesktop`), the status line saying how it went. Its covers and the
 /// spread's sheet are the root view's (`ScanCovers`), so resizing the window across the width classes,
-/// which builds this screen anew, leaves them open.
+/// which builds this screen anew, leaves them open. On the iPhone it is the app's first screen: the task
+/// chip at the top opens the task sheet (`onOpenTasks`), the library (`onOpenLibrary`) and Settings sit
+/// beside it, and the capture bar (`CaptureBar`) is right above Save; the step card shows only while a step
+/// needs it (`IOSShell.showsStepCard`), and how the task is taken, Apple's scanner and the PDF's choices are
+/// below the preview.
 struct ScanScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -55,7 +59,12 @@ struct ScanScreen: View {
     var pickerInSidebar: Bool = false
     /// Opens Settings; nil when the sidebar has it.
     var onOpenSettings: (() -> Void)?
+    /// Opens the task sheet (iPhone); nil when the sidebar lists the tasks.
+    var onOpenTasks: (() -> Void)?
+    /// Opens the library (iPhone); nil when the sidebar has it.
+    var onOpenLibrary: (() -> Void)?
     @State private var scanner: IOSCameraAvailability = .noCamera
+    @State private var stripShown: Bool = true
     @State private var showsPicker: Bool = false
     /// Files is open to pick the PDF the pages are added to.
     @State private var picksPDF: Bool = false
@@ -84,6 +93,21 @@ struct ScanScreen: View {
         .navigationTitle(state.activeTaskDefinition?.title ?? "Scanner")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if let open = onOpenLibrary {
+                    Button {
+                        open()
+                    } label: {
+                        Label(IOSSettingsText.libraryLabel, systemImage: "books.vertical")
+                    }
+                    .accessibilityIdentifier("open.library")
+                }
+            }
+            ToolbarItem(placement: .principal) {
+                if let open = onOpenTasks {
+                    TaskChip(title: state.activeTaskDefinition?.title ?? "Pick a task", onTap: open)
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 if let open = onOpenSettings {
                     Button {
@@ -139,10 +163,6 @@ struct ScanScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     stepCard
-                    TaskWayPicker()
-                    CaptureBar(offersScanner: IOSShell.offersCamera(state.activeTask), scanner: scanner,
-                               onScanner: openScanner, offersCamera: IOSShell.offersOwnCamera(state.settings),
-                               onCamera: openOwnCamera)
                     CameraTaskButtons()
                     if let mismatch = state.sidesMismatch, state.cameraSides != nil {
                         Label(mismatch, systemImage: "exclamationmark.triangle.fill")
@@ -150,21 +170,31 @@ struct ScanScreen: View {
                             .foregroundStyle(Color.orange)
                             .accessibilityIdentifier("task.mismatch")
                     }
-                    SeparatorSheetRow()
                     scannerRow
                     PreviewArea(image: state.canvasImage, overview: state.overviewImage, onChooseArea: openCrop)
                     previewControls
+                    SeparatorSheetRow()
+                    TaskWayPicker()
+                    if IOSShell.offersCamera(state.activeTask) {
+                        AppleScannerRow(scanner: scanner, onScanner: openScanner)
+                    }
                     if IOSShell.offersPDFOptions(state.settings) {
                         PDFOptionsSection()
                     }
                 }
                 .padding(16)
             }
-            Divider()
-            PageStripView(onEditSpread: openSpreadEditor)
+            if stripShown && !state.scannedPages.isEmpty {
+                Divider()
+                PageStripView(onEditSpread: openSpreadEditor)
+            }
             Divider()
             bottomBar
         }
+    }
+
+    private func toggleStrip() {
+        stripShown.toggle()
     }
 
     // MARK: The scanner picker
@@ -242,7 +272,7 @@ struct ScanScreen: View {
     /// `IOSShell.cameraLine`); the back of an ID card offers "No back side".
     @ViewBuilder
     private var stepCard: some View {
-        if let step = state.taskFlow?.current {
+        if let step = state.taskFlow?.current, showsStepCard {
             let camera: CameraStepText? = cameraLine
             VStack(alignment: .leading, spacing: 8) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -268,13 +298,19 @@ struct ScanScreen: View {
         }
     }
 
+    private var showsStepCard: Bool {
+        IOSShell.showsStepCard(state.activeTask, options: state.settings.taskOptions, sides: state.cameraSides,
+                               newDocument: state.newDocumentPending, turningOverByHand: state.isTurningOverByHand,
+                               device: selectedDevice)
+    }
+
     private var cameraLine: CameraStepText? {
         IOSShell.cameraLine(state.activeTask, options: state.settings.taskOptions, sides: state.cameraSides,
                             newDocument: state.newDocumentPending, turningOverByHand: state.isTurningOverByHand,
                             device: selectedDevice)
     }
 
-    /// The scanner in use, with how it is reached; on iPhone it opens the scanner picker.
+    /// The scanner in use, with how it is reached (on iPhone it opens the scanner picker), and Scan.
     private var scannerRow: some View {
         HStack(spacing: 8) {
             Image(systemName: "scanner")
@@ -305,6 +341,14 @@ struct ScanScreen: View {
                 ProgressView()
                     .accessibilityIdentifier("busy")
             }
+            Button {
+                state.performScan()
+            } label: {
+                Text(state.primaryActionLabel)
+            }
+            .buttonStyle(.bordered)
+            .disabled(!canScan)
+            .accessibilityIdentifier("scan.button")
         }
     }
 
@@ -422,7 +466,16 @@ struct ScanScreen: View {
         let collects: Bool = IOSShell.collectsPages(state.settings)
         return VStack(alignment: .leading, spacing: 10) {
             if state.isBusy {
-                ScanProgressRow(progress: state.progress)
+                HStack(spacing: 12) {
+                    ScanProgressRow(progress: state.progress)
+                    Button(role: .cancel) {
+                        state.cancelScan()
+                    } label: {
+                        Text("Cancel")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("cancel.button")
+                }
             }
             if let offered = state.pendingPackage {
                 PackageBanner(offered: offered)
@@ -436,49 +489,23 @@ struct ScanScreen: View {
             if !state.lastSavedURLs.isEmpty && !state.isBusy {
                 SavedFilesRow()
             }
-            if collects && !formats.isEmpty {
-                Picker("Save as", selection: formatChoice) {
-                    ForEach(formats) { (format: OutputFormat) in
-                        Text(format.label).tag(format)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .disabled(state.isBusy)
-                .accessibilityIdentifier("save.format")
-            }
-            HStack(spacing: 12) {
-                if state.isBusy {
-                    Button(role: .cancel) {
-                        state.cancelScan()
-                    } label: {
-                        Text("Cancel")
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("cancel.button")
-                }
-                Button {
-                    state.performScan()
-                } label: {
-                    Text(state.primaryActionLabel)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!canScan)
-                .accessibilityIdentifier("scan.button")
-                if collects {
+            CaptureBar(offersCamera: IOSShell.offersOwnCamera(state.settings), onCamera: openOwnCamera,
+                       stripShown: stripShown, onPages: toggleStrip)
+            if collects {
+                HStack(spacing: 12) {
                     Button {
                         save()
                     } label: {
                         Text(saveTitle)
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.borderedProminent)
                     // Saving deletes the spooled pages a share may still be writing.
                     .disabled(state.isBusy || importer.isImporting || sharesPackage || sendsToComputer || saveCount == 0)
                     .keyboardShortcut(IOSShortcuts.save.keyboardShortcut)
                     .accessibilityIdentifier("save.button")
-                    if IOSShell.offersPDFOptions(state.settings) || state.appendTarget != nil {
-                        saveMenu(canSave: saveCount > 0)
+                    if !formats.isEmpty || state.appendTarget != nil {
+                        saveMenu(canSave: saveCount > 0, formats: formats)
                             .disabled(state.isBusy || importer.isImporting || sharesPackage || sendsToComputer)
                     }
                     Button {
@@ -529,36 +556,21 @@ struct ScanScreen: View {
         }
     }
 
-    /// The menu beside Save, as on Windows: a new PDF even while a picked PDF takes the pages, the pages
-    /// added to a PDF picked now, and while one is picked, back to saving new files.
-    private func saveMenu(canSave: Bool) -> some View {
+    /// The menu beside Save: PDF or JPEG (`IOSShell.saveFormats`), and while Save writes a PDF or a picked
+    /// PDF takes the pages, as on Windows, a new PDF even while a picked PDF takes them, the pages added to a
+    /// PDF picked now, and while one is picked, back to saving new files.
+    private func saveMenu(canSave: Bool, formats: [OutputFormat]) -> some View {
         Menu {
-            // Word and text queues save their own format once the target is cleared.
-            if state.settings.format.queueFormat == .pdf {
-                Button {
-                    state.clearAppendTarget()
-                    state.savePDF()
-                } label: {
-                    Label(PDFAppender.saveAsNewLabel, systemImage: "doc.badge.arrow.up")
+            if !formats.isEmpty {
+                Picker("Save as", selection: formatChoice) {
+                    ForEach(formats) { (format: OutputFormat) in
+                        Text(format.label).tag(format)
+                    }
                 }
-                .disabled(!canSave)
-                .accessibilityIdentifier("save.new")
+                .accessibilityIdentifier("save.format")
             }
-            Button {
-                picksPDF = true
-            } label: {
-                Label(PDFAppender.buttonLabel, systemImage: "doc.badge.plus")
-            }
-            .disabled(!canSave)
-            .accessibilityHint(Text(PDFAppender.buttonHint))
-            .accessibilityIdentifier("append.button")
-            if let target = state.appendTarget {
-                Button {
-                    state.clearAppendTarget()
-                } label: {
-                    Label(Self.clearTargetLabel(target), systemImage: "xmark.circle")
-                }
-                .accessibilityIdentifier("append.target.clear")
+            if IOSShell.offersPDFOptions(state.settings) || state.appendTarget != nil {
+                saveMenuItems(canSave: canSave)
             }
         } label: {
             Label("More ways to save", systemImage: "chevron.down")
@@ -570,8 +582,39 @@ struct ScanScreen: View {
         .accessibilityIdentifier("save.menu")
     }
 
-    /// The Save button's title: "Add to Contract.pdf" while the pages go into a PDF picked on the start
-    /// screen, else the queue's own (`IOSShell.saveTitle`).
+    @ViewBuilder
+    private func saveMenuItems(canSave: Bool) -> some View {
+        // Word and text queues save their own format once the target is cleared.
+        if state.settings.format.queueFormat == .pdf {
+            Button {
+                state.clearAppendTarget()
+                state.savePDF()
+            } label: {
+                Label(PDFAppender.saveAsNewLabel, systemImage: "doc.badge.arrow.up")
+            }
+            .disabled(!canSave)
+            .accessibilityIdentifier("save.new")
+        }
+        Button {
+            picksPDF = true
+        } label: {
+            Label(PDFAppender.buttonLabel, systemImage: "doc.badge.plus")
+        }
+        .disabled(!canSave)
+        .accessibilityHint(Text(PDFAppender.buttonHint))
+        .accessibilityIdentifier("append.button")
+        if let target = state.appendTarget {
+            Button {
+                state.clearAppendTarget()
+            } label: {
+                Label(Self.clearTargetLabel(target), systemImage: "xmark.circle")
+            }
+            .accessibilityIdentifier("append.target.clear")
+        }
+    }
+
+    /// The Save button's title: "Add to Contract.pdf" while the pages go into a PDF picked in the task
+    /// list, else the queue's own (`IOSShell.saveTitle`).
     static func saveTitle(_ settings: ScanSettings, plan: SavePlan, target: URL?) -> String {
         if let target {
             return PDFAppender.saveTitle(target.lastPathComponent)

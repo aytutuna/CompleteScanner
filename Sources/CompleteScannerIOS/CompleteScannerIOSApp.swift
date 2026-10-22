@@ -3,7 +3,7 @@ import CompleteScannerKit
 import Foundation
 import SwiftUI
 
-/// The iPhone and iPad app: one window with the task start screen and the scan screen. The Xcode
+/// The iPhone and iPad app: one window with the scan screen (and on the iPad the task list). The Xcode
 /// project's app target (ios/project.yml) only starts it (`CompleteScannerIOSApp.main()`). A protected PDF's
 /// password is asked for with the password sheet (`IOSPasswordPrompt`), which the state keeps, and the
 /// question before adding pages to a signed or PDF/A file with an alert (`IOSPDFAppend.confirm`). Network
@@ -18,6 +18,7 @@ public struct CompleteScannerIOSApp: App {
     private let companion: IOSCompanionBrowser?
     private let launchImports: [IOSImportItem]
     private let launchTask: ScanTask?
+    private let demoScanner: Bool
 
     public init() {
         let process: ProcessInfo = ProcessInfo.processInfo
@@ -40,12 +41,13 @@ public struct CompleteScannerIOSApp: App {
         companion = browser
         launchImports = options.launchImports
         launchTask = options.launchTask
+        demoScanner = options.demoScannerOnly
     }
 
     public var body: some Scene {
         WindowGroup {
             IOSRootView(fileActions: fileActions, importer: importer, picker: picker, launchImports: launchImports,
-                        launchTask: launchTask, companion: companion)
+                        launchTask: launchTask, companion: companion, demoScanner: demoScanner)
                 .environmentObject(state)
         }
     }
