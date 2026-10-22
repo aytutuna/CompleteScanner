@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using CompleteScanner.Core;
 using Xunit;
 
@@ -173,6 +174,71 @@ public sealed class PairedDeviceStoreTests : IDisposable
         Assert.Null(device.Paired);
         Assert.NotNull(store.Authenticate("phone-0001", CompanionVectors.SecretText, Now));
         Assert.True(CompanionProtocol.IsValidId(store.DesktopId));
+    }
+
+    [Fact]
+    public void Pair_MakesASyncKeyKeptProtected()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var store = new PairedDeviceStore(_directory);
+        store.Pair("phone-0001", "Phone", "ios", "1.0", Now);
+        byte[] key = Assert.IsType<byte[]>(store.SyncKey("phone-0001"));
+        Assert.Equal(SyncPackage.KeyByteCount, key.Length);
+        Assert.Equal(key, new PairedDeviceStore(_directory).SyncKey("phone-0001"));
+        string file = File.ReadAllText(FilePath);
+        Assert.Contains("\"syncKeyProtected\"", file);
+        Assert.DoesNotContain(Convert.ToBase64String(key), file);
+        Assert.DoesNotContain(CompanionProtocol.EncodeBase64Url(key), file);
+        Assert.Null(store.SyncKey("phone-0002"));
+        Assert.True(store.HasSyncKey("phone-0001"));
+        Assert.False(store.HasSyncKey("phone-0002"));
+
+        // Pairing again keeps the key; removing the phone drops it, and pairing after that makes a new one.
+        store.Pair("phone-0001", "Phone", "ios", "1.0", Now);
+        Assert.Equal(key, store.SyncKey("phone-0001"));
+        store.Remove("phone-0001");
+        Assert.Null(store.SyncKey("phone-0001"));
+        store.Pair("phone-0001", "Phone", "ios", "1.0", Now);
+        Assert.NotEqual(key, store.SyncKey("phone-0001"));
+        store.Pair("phone-0002", "Phone", "ios", "1.0", Now);
+        store.RemoveAll();
+        Assert.Null(store.SyncKey("phone-0002"));
+    }
+
+    [Fact]
+    public void SyncKey_ThatCannotBeUnprotected_Throws_AndPairingAgainMakesANewOne()
+    {
+        File.WriteAllText(FilePath,
+            """{"devices":[{"id":"phone-0001","secretHash":""" + $"\"{CompanionVectors.SecretHash}\""
+            + ""","syncKeyProtected":"bm90IGEgYmxvYg=="},{"id":"phone-0002","syncKeyProtected":"%%"}]}""");
+        var store = new PairedDeviceStore(_directory);
+        Assert.Null(store.SyncKey("phone-0002"));
+        Assert.NotNull(store.Authenticate("phone-0001", CompanionVectors.SecretText, Now));
+        if (!OperatingSystem.IsWindows()) return;
+        Assert.ThrowsAny<CryptographicException>(() => store.SyncKey("phone-0001"));
+        Assert.False(store.HasSyncKey("phone-0001"));
+        Assert.False(store.HasSyncKey("phone-0002"));
+
+        store.Pair("phone-0001", "Phone", "ios", "1.0", Now);
+        Assert.Equal(SyncPackage.KeyByteCount, store.SyncKey("phone-0001")?.Length);
+    }
+
+    [Fact]
+    public void SyncFolder_IsKeptWithThePhones()
+    {
+        var store = new PairedDeviceStore(_directory);
+        Assert.Null(store.SyncFolder);
+        int changes = 0;
+        store.Changed += (_, _) => changes++;
+        string folder = Path.Combine(_directory, "OneDrive", "Scans");
+        Assert.True(store.SetSyncFolder(folder));
+        Assert.Equal(folder, new PairedDeviceStore(_directory).SyncFolder);
+        store.Pair("phone-0001", "Phone", "ios", "1.0", Now);
+        store.RemoveAll();
+        Assert.Equal(folder, store.SyncFolder);
+        Assert.True(store.SetSyncFolder(null));
+        Assert.Null(new PairedDeviceStore(_directory).SyncFolder);
+        Assert.Equal(4, changes);
     }
 
     [Fact]

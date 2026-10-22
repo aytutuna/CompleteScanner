@@ -21,10 +21,17 @@ public sealed record CompanionSnapshot
     public IReadOnlyList<string> BlockingRules { get; init; } = [];
     public int PairedCount { get; init; }
     public bool PairingOpen { get; init; }
+    /// <summary>A cloud sync folder is chosen (C2).</summary>
+    public bool SyncFolderChosen { get; init; }
+    /// <summary>How long since a paired phone last reached this desktop; null when none is paired.</summary>
+    public TimeSpan? PhonesQuietFor { get; init; }
 }
 
 public static class CompanionTroubleshooter
 {
+    /// <summary>How long no paired phone may go unseen before the cloud folder is suggested.</summary>
+    public static readonly TimeSpan QuietTime = TimeSpan.FromDays(3);
+
     /// <summary>The checks: problems first, then warnings, then what is fine, then tips (each group in this order).</summary>
     public static IReadOnlyList<TroubleshootCheck> Diagnose(CompanionSnapshot snapshot)
     {
@@ -32,6 +39,7 @@ public static class CompanionTroubleshooter
         if (ListenCheck(snapshot) is { } listen) checks.Add(listen);
         foreach (var state in snapshot.Networks) checks.Add(NetworkCheck(state));
         if (FirewallCheck(snapshot) is { } firewall) checks.Add(firewall);
+        if (SyncFolderCheck(snapshot) is { } syncFolder) checks.Add(syncFolder);
         checks.Add(new TroubleshootCheck(
             "phoneIsolation", CheckStatus.Tip, "Phone cannot connect on the same Wi-Fi?",
             "Some networks, often at schools, hotels and on guest Wi-Fi, keep devices from reaching each other "
@@ -160,6 +168,20 @@ public static class CompanionTroubleshooter
             default:
                 return null;
         }
+    }
+
+    private static TroubleshootCheck? SyncFolderCheck(CompanionSnapshot snapshot)
+    {
+        if (snapshot.PairedCount == 0 || snapshot.SyncFolderChosen || snapshot.PhonesQuietFor is not { } quiet || quiet < QuietTime)
+        {
+            return null;
+        }
+        return new TroubleshootCheck(
+            "phoneSyncFolder", CheckStatus.Tip, "Phone has not reached this PC lately?",
+            $"No paired phone has connected for {(int)quiet.TotalDays} days. If the phone and this PC are often on a "
+            + "network that keeps devices apart, choose a cloud folder above, one synced by OneDrive or iCloud Drive. "
+            + "The phone then puts documents there when it cannot reach this PC, and they are added here.",
+            []);
     }
 
     private static int Rank(CheckStatus status) => status switch

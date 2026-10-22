@@ -558,6 +558,14 @@ that way with one click, as for imported photos. A `.csdoc` opened from File Exp
 registers the type for your user each time it starts), dropped on the window or picked with Import
 photos is not added on its own: a bar offers **Add to pages** or **Open as new**.
 
+When the network keeps the phone and this PC apart, the phone can put its documents, sealed with a
+key only this PC and that phone hold, in a folder synced through OneDrive or iCloud Drive; the PC
+watches that folder (`SyncFolderWatcher.cs`, `SyncPackage.cs`), adds them as if they had been sent
+directly and deletes each file once it is in the queue. The folder is chosen under **Cloud folder**
+in the Phone window, which also says whether it is being watched and names the last file it could
+not read; when no paired phone has connected for three days and no folder is chosen, the connection
+checks suggest one.
+
 How it is kept safe: the phone and the PC talk directly (HTTP over TLS 1.2/1.3) with no server or
 account in between. The PC's certificate (an ECDSA P-256 key of its own in the user's certificate
 store, made the first time a pairing code is shown) is pinned by the phone from the QR code, so the first

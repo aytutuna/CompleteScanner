@@ -60,11 +60,15 @@ public struct CompanionSnapshot: Equatable {
     public var blockingRules: [String]
     public var pairedCount: Int
     public var pairingOpen: Bool
+    /// A cloud sync folder is chosen (C2).
+    public var syncFolderChosen: Bool
+    /// How long since a paired phone last reached this desktop; nil when none is paired.
+    public var phonesQuietFor: TimeInterval?
 
     public init(platform: TroubleshootPlatform = .windows, networks: [CompanionNetworkState] = [],
                 listen: CompanionListenState = .off, port: Int = 0, listenError: String? = nil,
                 firewall: CompanionFirewallVerdict = .unknown, blockingRules: [String] = [], pairedCount: Int = 0,
-                pairingOpen: Bool = false) {
+                pairingOpen: Bool = false, syncFolderChosen: Bool = false, phonesQuietFor: TimeInterval? = nil) {
         self.platform = platform
         self.networks = networks
         self.listen = listen
@@ -74,10 +78,15 @@ public struct CompanionSnapshot: Equatable {
         self.blockingRules = blockingRules
         self.pairedCount = pairedCount
         self.pairingOpen = pairingOpen
+        self.syncFolderChosen = syncFolderChosen
+        self.phonesQuietFor = phonesQuietFor
     }
 }
 
 public enum CompanionTroubleshooter {
+    /// How long no paired phone may go unseen before the cloud folder is suggested.
+    public static let quietTime: TimeInterval = 3 * 24 * 60 * 60
+
     /// The checks: problems first, then warnings, then what is fine, then tips (each group in this order).
     public static func diagnose(_ snapshot: CompanionSnapshot) -> [TroubleshootCheck] {
         let computer = snapshot.platform == .windows ? "PC" : "Mac"
@@ -87,6 +96,7 @@ public enum CompanionTroubleshooter {
             checks.append(networkCheck(state, platform: snapshot.platform, computer: computer))
         }
         if let firewall = firewallCheck(snapshot) { checks.append(firewall) }
+        if let syncFolder = syncFolderCheck(snapshot, computer: computer) { checks.append(syncFolder) }
         checks.append(TroubleshootCheck(
             id: "phoneIsolation", status: .tip, title: "Phone cannot connect on the same Wi-Fi?",
             detail: "Some networks, often at schools, hotels and on guest Wi-Fi, keep devices from reaching each other "
@@ -241,6 +251,17 @@ public enum CompanionTroubleshooter {
         default:
             return nil
         }
+    }
+
+    private static func syncFolderCheck(_ snapshot: CompanionSnapshot, computer: String) -> TroubleshootCheck? {
+        guard snapshot.pairedCount > 0, !snapshot.syncFolderChosen, let quiet = snapshot.phonesQuietFor,
+              quiet >= quietTime else { return nil }
+        return TroubleshootCheck(
+            id: "phoneSyncFolder", status: .tip, title: "Phone has not reached this \(computer) lately?",
+            detail: "No paired phone has connected for \(Int(quiet / (24 * 60 * 60))) days. If the phone and this \(computer) "
+                + "are often on a network that keeps devices apart, choose a cloud folder above, one synced by OneDrive or "
+                + "iCloud Drive. The phone then puts documents there when it cannot reach this \(computer), and they are added here.",
+            actions: [])
     }
 
     private static func rank(_ status: CheckStatus) -> Int {

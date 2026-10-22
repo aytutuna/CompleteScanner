@@ -6,8 +6,8 @@ import XCTest
 @testable import CompleteScannerKit
 
 // The iPhone's side of the companion without a screen: the Keychain store, My computer's pairing text and
-// check code, what the shell wires into AppState (the secrets, the browse, pulling while the app is in
-// front) and when Send to computer is offered. Nothing here reaches a real computer: the paired desktop
+// check code, its cloud folder, what the shell wires into AppState (the secrets, the browse, pulling while
+// the app is in front, the cloud folder's bookmark) and when Send to computer is offered. Nothing here reaches a real computer: the paired desktop
 // is at 127.0.0.1 on a closed port, and the browse is a stand-in.
 
 private struct CompanionShellScorer: OrientationScorer {
@@ -162,6 +162,13 @@ final class IOSCompanionTests: XCTestCase {
                  barcodeReader: CompanionShellBarcodes(), files: AppStateFiles.all(in: folder))
     }
 
+    private func pairedDesktop() -> PairedDesktop {
+        // Port 9 on this device: nothing listens, so every request fails at once.
+        PairedDesktop(id: IOSCompanionTests.desktopId, name: "Office PC",
+                      fingerprint: CompanionProtocol.encodeBase64Url(IOSCompanionTests.fingerprint),
+                      addresses: ["127.0.0.1"], port: 9, phoneId: PairedDesktop.makePhoneId())
+    }
+
     private func pairingText() throws -> String {
         let token: String = CompanionProtocol.encodeBase64Url(Data(repeating: 7, count: PairingUri.tokenByteCount))
         return try PairingUri(desktopId: IOSCompanionTests.desktopId, name: "Office PC",
@@ -192,6 +199,29 @@ final class IOSCompanionTests: XCTestCase {
         try secrets.delete(for: IOSCompanionTests.desktopId)
         XCTAssertEqual(IOSKeychainError(status: errSecInteractionNotAllowed).localizedDescription,
                        CompanionText.notSavedMessage)
+    }
+
+    func test_keychain_keepsTheSyncKeyNextToTheSecret() throws {
+        let secrets = IOSCompanionSecrets(service: "com.completescanner.companion.tests-\(UUID().uuidString)")
+        let secret = Data(repeating: 3, count: PairedDeviceStore.secretByteCount)
+        let syncKey = Data((1...32).map { UInt8($0) })
+        do {
+            try secrets.save(secret, for: IOSCompanionTests.desktopId)
+        } catch let error as IOSKeychainError where error.status == errSecMissingEntitlement {
+            throw XCTSkip("This test host has no Keychain access.")
+        }
+        let store = PairedDesktopStore(directory: folder, secrets: secrets)
+        defer { store.remove() }
+        let desktop: PairedDesktop = pairedDesktop()
+
+        try store.save(desktop, secret: secret, syncKey: syncKey)
+
+        XCTAssertEqual(store.secret(for: desktop), secret)
+        XCTAssertEqual(store.syncKey(for: desktop), syncKey)
+        XCTAssertEqual(try secrets.load(for: IOSCompanionTests.desktopId + ".sync"), syncKey)
+        store.forgetSecret(of: desktop)
+        XCTAssertNil(store.syncKey(for: desktop))
+        XCTAssertNil(try secrets.load(for: IOSCompanionTests.desktopId + ".sync"))
     }
 
     // MARK: My computer
@@ -237,6 +267,99 @@ final class IOSCompanionTests: XCTestCase {
         XCTAssertEqual(IOSCompanionText.waiting(0), "Nothing waiting to be sent")
         XCTAssertEqual(IOSCompanionText.waiting(1), "1 document waiting to be sent")
         XCTAssertEqual(IOSCompanionText.waiting(4), "4 documents waiting to be sent")
+        XCTAssertEqual(IOSCompanionText.inCloudFolder(1), "1 document in the cloud folder")
+        XCTAssertEqual(IOSCompanionText.inCloudFolder(3), "3 documents in the cloud folder")
+    }
+
+    // MARK: The cloud folder
+
+    @MainActor
+    func test_cloudFolder_aPickedFolderOpens_andOneThatDoesNotIsNil() throws {
+        let picked: URL = folder.appendingPathComponent("OneDrive", isDirectory: true)
+        try FileManager.default.createDirectory(at: picked, withIntermediateDirectories: true)
+        defer { IOSSyncFolder.close() }
+        XCTAssertNil(IOSSyncFolder.resolve(Data("not a bookmark".utf8)))
+
+        let bookmark: Data = try IOSSyncFolder.bookmark(of: picked)
+        guard let opened = IOSSyncFolder.resolve(bookmark) else {
+            throw XCTSkip("A bookmark of a temporary folder does not resolve here.")
+        }
+        XCTAssertEqual(opened.folder.resolvingSymlinksInPath().path, picked.resolvingSymlinksInPath().path)
+        XCTAssertEqual(IOSSyncFolder.resolve(bookmark)?.folder, opened.folder)
+
+        XCTAssertEqual(IOSSyncFolder.waitingCount(in: picked), 0)
+        try Data([1]).write(to: picked.appendingPathComponent(SyncPackage.fileName("pkg_one_0001")))
+        try Data([1]).write(to: picked.appendingPathComponent("." + SyncPackage.fileName("pkg_two_0002")))
+        try Data([1]).write(to: picked.appendingPathComponent("Notes.txt"))
+        XCTAssertEqual(IOSSyncFolder.waitingCount(in: picked), 1)
+        XCTAssertEqual(IOSSyncFolder.waitingCount(in: folder.appendingPathComponent("Gone", isDirectory: true)), 0)
+    }
+
+    @MainActor
+    func test_cloudFolderRow_none_cannotBeOpened_thenThePickedFolder() throws {
+        let secrets = MemorySecrets()
+        let companionFolder: URL = folder.appendingPathComponent("Network", isDirectory: true)
+        try FileManager.default.createDirectory(at: companionFolder, withIntermediateDirectories: true)
+        try PairedDesktopStore(directory: companionFolder, secrets: secrets)
+            .save(pairedDesktop(), secret: Data(repeating: 3, count: PairedDeviceStore.secretByteCount),
+                  syncKey: Data((1...32).map { UInt8($0) }))
+        let state: AppState = makeState()
+        state.setUpCompanion(in: companionFolder, secrets: secrets)
+        state.resolveSyncFolderBookmark = { (bookmark: Data) -> (folder: URL, bookmark: Data)? in
+            IOSSyncFolder.resolve(bookmark)
+        }
+        defer { IOSSyncFolder.close() }
+        let model = IOSCompanionModel(state: state, browser: nil)
+
+        model.lookAtCloudFolder()
+        XCTAssertTrue(model.offersCloudFolder)
+        XCTAssertEqual(IOSCompanionText.cloudFolderLabel, "Cloud folder")
+        XCTAssertEqual(IOSCompanionText.chooseFolderButton, "Choose\u{2026}")
+        XCTAssertEqual(IOSCompanionText.clearButton, "Clear")
+        XCTAssertEqual(CompanionText.syncFolderLine,
+                       "A folder in iCloud Drive or OneDrive that your computer also syncs. Documents go here, encrypted, when the computer cannot be reached.")
+        XCTAssertEqual(model.cloudFolderValue, "None")
+        XCTAssertEqual(model.inCloudFolder, 0)
+
+        // Set, but it does not open now: kept, and said.
+        state.setSyncFolder(bookmark: Data("not a bookmark".utf8))
+        model.lookAtCloudFolder()
+        XCTAssertEqual(model.cloudFolderValue, "Cannot be opened")
+        XCTAssertEqual(state.companionDesktop?.syncFolderBookmark, Data("not a bookmark".utf8))
+
+        model.clearCloudFolder()
+        XCTAssertNil(state.companionDesktop?.syncFolderBookmark)
+        XCTAssertEqual(model.cloudFolderValue, "None")
+
+        let picked: URL = folder.appendingPathComponent("OneDrive", isDirectory: true)
+        try FileManager.default.createDirectory(at: picked, withIntermediateDirectories: true)
+        try Data([1]).write(to: picked.appendingPathComponent(SyncPackage.fileName("pkg_one_0001")))
+        model.chooseCloudFolder(picked)
+        XCTAssertNotNil(state.companionDesktop?.syncFolderBookmark)
+        XCTAssertNil(state.errorMessage)
+        guard model.cloudFolderName != nil else {
+            throw XCTSkip("A bookmark of a temporary folder does not resolve here.")
+        }
+        XCTAssertEqual(model.cloudFolderValue, "OneDrive")
+        XCTAssertEqual(model.inCloudFolder, 1)
+        XCTAssertNotNil(PairedDesktopStore(directory: companionFolder, secrets: secrets).load()?.syncFolderBookmark)
+    }
+
+    @MainActor
+    func test_cloudFolderRow_isNotOffered_forAComputerWithoutASyncKey() throws {
+        let secrets = MemorySecrets()
+        let companionFolder: URL = folder.appendingPathComponent("Network", isDirectory: true)
+        try FileManager.default.createDirectory(at: companionFolder, withIntermediateDirectories: true)
+        try PairedDesktopStore(directory: companionFolder, secrets: secrets)
+            .save(pairedDesktop(), secret: Data(repeating: 3, count: PairedDeviceStore.secretByteCount))
+        let state: AppState = makeState()
+        state.setUpCompanion(in: companionFolder, secrets: secrets)
+        let model = IOSCompanionModel(state: state, browser: nil)
+
+        model.lookAtCloudFolder()
+
+        XCTAssertFalse(model.offersCloudFolder)
+        XCTAssertNil(model.cloudFolderName)
     }
 
     // MARK: The shell's wiring
@@ -250,6 +373,7 @@ final class IOSCompanionTests: XCTestCase {
         XCTAssertNotNil(state.companionOutbox)
         // No browser under -demoScanner: whether a desktop is on the network is not known.
         XCTAssertNil(state.companionDesktopSeenOnNetwork)
+        XCTAssertNotNil(state.resolveSyncFolderBookmark)
     }
 
     @MainActor
@@ -257,10 +381,7 @@ final class IOSCompanionTests: XCTestCase {
         let secrets = MemorySecrets()
         let companionFolder: URL = folder.appendingPathComponent("Network", isDirectory: true)
         try FileManager.default.createDirectory(at: companionFolder, withIntermediateDirectories: true)
-        // Port 9 on this device: nothing listens, so every request fails at once.
-        let desktop = PairedDesktop(id: IOSCompanionTests.desktopId, name: "Office PC",
-                                    fingerprint: CompanionProtocol.encodeBase64Url(IOSCompanionTests.fingerprint),
-                                    addresses: ["127.0.0.1"], port: 9, phoneId: PairedDesktop.makePhoneId())
+        let desktop: PairedDesktop = pairedDesktop()
         try PairedDesktopStore(directory: companionFolder, secrets: secrets)
             .save(desktop, secret: Data(repeating: 3, count: PairedDeviceStore.secretByteCount))
         let resolver = StubCompanionResolver()

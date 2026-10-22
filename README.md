@@ -124,7 +124,11 @@ scanners** — including the Epson Perfection V39 II.
   networks, and ones you allow in the app, such as your school's Wi-Fi) and only while a phone is
   paired or a pairing code is shown. The iPhone app pairs from Settings > My computer. On the Mac,
   the **Phone** button in the sidebar pairs a phone, and each network needs **Allow receiving on this
-  network** once, since macOS does not mark networks as private.
+  network** once, since macOS does not mark networks as private. Where a network keeps the phone and
+  the computer apart, the phone can put its documents, encrypted, in a folder synced through iCloud
+  Drive or OneDrive, and the computer watching the same folder takes them from there. On the Mac,
+  choose that folder under **Cloud folder** in the Phone window; each phone's key for it stays in the
+  login keychain. On the iPhone, choose it under Cloud folder in Settings > My computer.
 - **Rotate pages upright**: a page put in upside down or sideways is turned the right way up by
   reading its text (Vision on the Mac, Windows OCR on Windows). Only a page whose text reads clearly
   better one way is turned; blank pages, separator sheets, photos and pages the reading is unsure

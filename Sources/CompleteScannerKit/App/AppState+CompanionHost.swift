@@ -44,8 +44,9 @@ public enum CompanionHostText {
 }
 
 extension AppState {
-    /// Keeps the platform's pieces of the phone link (the Mac's keychain identity, interfaces and
-    /// DNS-SD) and starts it when a phone is paired; nothing listens otherwise, and no certificate is made.
+    /// Keeps the platform's pieces of the phone link (the Mac's keychain identity, interfaces, DNS-SD and
+    /// the phones' sync keys) and starts it when a phone is paired; nothing listens otherwise, and no
+    /// certificate is made. The cloud folder is watched while it runs.
     public func setUpCompanionHost(_ options: CompanionServiceOptions) {
         companionHostOptions = options
         if PairedDeviceStore(directory: options.settingsDirectory).count > 0 {
@@ -81,6 +82,12 @@ extension AppState {
         service.onPackageReceived = { [weak self] package, device in
             Task { @MainActor in self?.queuePhoneDocument(package, phoneName: device.name) }
         }
+        service.onSyncFolderProblem = { [weak self] message in
+            Task { @MainActor in
+                self?.syncFolderProblem = message
+                self?.statusMessage = message
+            }
+        }
         service.onChange = { [weak self] in
             Task { @MainActor in self?.companionHostChanged() }
         }
@@ -97,6 +104,15 @@ extension AppState {
             queuePhoneDocument(package, phoneName: names[package.deviceId] ?? "")
         }
         return service
+    }
+
+    /// Chooses the cloud folder phones put documents in (nil: none); false when that could not be saved.
+    /// Twin of C# `SetPhoneSyncFolder`.
+    @discardableResult
+    public func setPhoneSyncFolder(_ folder: URL?) -> Bool {
+        guard let service = companionService, service.setSyncFolder(folder) else { return false }
+        syncFolderProblem = nil
+        return true
     }
 
     /// Closes the bar above the window.
@@ -123,7 +139,8 @@ extension AppState {
         return pages
     }
 
-    /// A document a phone sent: added to the queue now, or as soon as the queue can take it.
+    /// A document a phone sent, or put in the cloud folder (C2): added to the queue now, or as soon as the
+    /// queue can take it.
     func queuePhoneDocument(_ package: ReceivedPackage, phoneName: String) {
         phoneDocuments.append((package, phoneName.isEmpty ? "a phone" : phoneName))
         addWaitingPhoneDocuments()

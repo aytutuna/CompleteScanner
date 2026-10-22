@@ -45,9 +45,12 @@ public struct PairedDevicesFile: Codable, Equatable, Sendable {
     /// This desktop's id for phones (32 hex digits), made on first use.
     public var desktopId = ""
     public var devices: [PairedDevice] = []
+    /// The cloud sync folder phones put documents in when they cannot reach this computer (C2), as a
+    /// path; "" for none.
+    public var syncFolder = ""
 
     enum CodingKeys: String, CodingKey {
-        case desktopId, devices
+        case desktopId, devices, syncFolder
     }
 
     public init() {}
@@ -59,6 +62,7 @@ extension PairedDevicesFile {
         self.init()
         desktopId = c.decodeLenient(forKey: .desktopId, default: desktopId)
         devices = c.decodeLenient(forKey: .devices, default: devices)
+        syncFolder = c.decodeLenient(forKey: .syncFolder, default: syncFolder)
     }
 }
 
@@ -74,7 +78,9 @@ public enum PairedDeviceStoreError: Error, Equatable, Sendable {
 
 /// The phones paired with this desktop (companion-devices.json in the settings folder, rule 6 of
 /// CONTRACTS.md). Pairing makes a random 256-bit secret, hands it to the phone once and keeps only its
-/// SHA-256; a request is accepted when its device id and secret match an entry. The file is re-read
+/// SHA-256; a request is accepted when its device id and secret match an entry. It also makes the phone's
+/// sync key for the cloud sync folder, kept in `syncKeyStore` (the Mac's Keychain), never in the file;
+/// without a store no key is made, and the phone is not offered the folder. The file is re-read
 /// for every check and before every change, so a phone removed elsewhere is refused at once; a phone
 /// removed while the file could not be written stays removed for the rest of the session. Safe to use
 /// from any thread.
@@ -88,6 +94,7 @@ public final class PairedDeviceStore: @unchecked Sendable {
     public static let lastSeenResolution: TimeInterval = 60
 
     private let url: URL
+    private let syncKeyStore: (any CompanionSecretStore)?
     private let lock = NSLock()
     private var file: PairedDevicesFile
     /// Phones removed in this session: never accepted again, whatever the file says.
@@ -100,9 +107,11 @@ public final class PairedDeviceStore: @unchecked Sendable {
         self.init(directory: StoreFiles.defaultDirectory)
     }
 
-    /// Keeps companion-devices.json in `directory` (tests).
-    public init(directory: URL) {
+    /// Keeps companion-devices.json in `directory`, and the phones' sync keys in `syncKeyStore` under
+    /// their ids.
+    public init(directory: URL, syncKeyStore: (any CompanionSecretStore)? = nil) {
         url = directory.appendingPathComponent(PairedDeviceStore.fileName)
+        self.syncKeyStore = syncKeyStore
         file = PairedDeviceStore.load(url) ?? PairedDevicesFile()
     }
 
@@ -133,8 +142,31 @@ public final class PairedDeviceStore: @unchecked Sendable {
         return file.devices.count
     }
 
-    /// Pairs the phone `id` (pairing again replaces its entry and secret) and returns its new secret
-    /// (base64url of 32 bytes), to be sent to the phone once.
+    /// The cloud sync folder phones put documents in (C2); nil when none is chosen.
+    public var syncFolder: URL? {
+        lock.lock()
+        defer { lock.unlock() }
+        reload()
+        return file.syncFolder.isEmpty ? nil : URL(fileURLWithPath: file.syncFolder, isDirectory: true)
+    }
+
+    /// Chooses the cloud sync folder (nil: none); false when that could not be saved.
+    @discardableResult
+    public func setSyncFolder(_ folder: URL?) -> Bool {
+        lock.lock()
+        reload()
+        let previous = file.syncFolder
+        file.syncFolder = folder?.path ?? ""
+        let saved = StoreFiles.write(file, to: url)
+        if !saved { file.syncFolder = previous }
+        lock.unlock()
+        if saved { onChange?() }
+        return saved
+    }
+
+    /// Pairs the phone `id` (pairing again replaces its entry and secret, and keeps its sync key, so what
+    /// it put in the sync folder before still opens) and returns its new secret (base64url of 32 bytes),
+    /// to be sent to the phone once.
     public func pair(id: String, name: String, platform: String, appVersion: String, now: Date) throws -> String {
         var generator = SystemRandomNumberGenerator()
         let secret = Data((0..<PairedDeviceStore.secretByteCount).map { _ in UInt8.random(in: UInt8.min...UInt8.max, using: &generator) })
@@ -167,8 +199,33 @@ public final class PairedDeviceStore: @unchecked Sendable {
             }
             removed.remove(id)
         }
+        if let store = syncKeyStore, (try? store.load(for: id))?.count != SyncPackage.keyByteCount {
+            var generator = SystemRandomNumberGenerator()
+            let key = Data((0..<SyncPackage.keyByteCount).map { _ in UInt8.random(in: UInt8.min...UInt8.max, using: &generator) })
+            // A key that cannot be kept is not handed out: the phone pairs without the sync folder.
+            if (try? store.save(key, for: id)) == nil { try? store.delete(for: id) }
+        }
         onChange?()
         return CompanionProtocol.encodeBase64Url(secret)
+    }
+
+    /// The sync key of the paired phone `id` (32 bytes, sent to it at pairing and opening what it puts in
+    /// the sync folder); nil when it has none. Throws the store's error when it cannot be read now (a
+    /// locked keychain).
+    public func syncKey(for id: String) throws -> Data? {
+        guard let store = syncKeyStore, CompanionProtocol.isValidId(id) else { return nil }
+        lock.lock()
+        reload()
+        let paired = !removed.contains(id) && file.devices.contains { $0.id == id }
+        lock.unlock()
+        guard paired, let key = try store.load(for: id), key.count == SyncPackage.keyByteCount else { return nil }
+        return key
+    }
+
+    /// Whether the paired phone `id` has a sync key that can be read now (one paired before the sync
+    /// folder has none).
+    public func hasSyncKey(_ id: String) -> Bool {
+        (try? syncKey(for: id)) != nil
     }
 
     /// The paired phone `id` when `secret` is its secret (compared in constant time); nil otherwise.
@@ -208,6 +265,7 @@ public final class PairedDeviceStore: @unchecked Sendable {
         let wasPaired = file.devices.count != before
         if wasPaired { StoreFiles.write(file, to: url) }
         lock.unlock()
+        try? syncKeyStore?.delete(for: id)
         if wasPaired { onChange?() }
         return wasPaired
     }
@@ -218,10 +276,12 @@ public final class PairedDeviceStore: @unchecked Sendable {
         lock.lock()
         reload()
         let count = file.devices.count
-        for device in file.devices { removed.insert(device.id) }
+        let ids = file.devices.map(\.id)
+        for id in ids { removed.insert(id) }
         file.devices = []
         StoreFiles.write(file, to: url)
         lock.unlock()
+        for id in ids { try? syncKeyStore?.delete(for: id) }
         if count > 0 { onChange?() }
         return count
     }

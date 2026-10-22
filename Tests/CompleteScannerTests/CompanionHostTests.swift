@@ -384,6 +384,19 @@ final class CompanionHostTests: XCTestCase {
         XCTAssertEqual(try service.fingerprint(), before)
         _ = try await client.hello()
     }
+
+    func testSnapshot_SaysWhetherAFolderIsChosen_AndHowLongThePhonesWereAway() throws {
+        XCTAssertNil(service.snapshot().phonesQuietFor)
+        _ = try service.devices.pair(id: "phone-0001", name: "Test phone", platform: "ios", appVersion: "1.0", now: clock.value)
+        clock.value = clock.value.addingTimeInterval(4 * 24 * 60 * 60)
+        XCTAssertEqual(service.snapshot().phonesQuietFor, 4 * 24 * 60 * 60)
+        let cloud = directory.appendingPathComponent("Cloud", isDirectory: true)
+        XCTAssertFalse(service.snapshot().syncFolderChosen)
+        XCTAssertTrue(service.setSyncFolder(cloud))
+        XCTAssertTrue(service.snapshot().syncFolderChosen)
+        XCTAssertTrue(service.setSyncFolder(nil))
+        XCTAssertFalse(service.snapshot().syncFolderChosen)
+    }
 }
 
 /// The code's addresses and name, apart from the host's cases so they run where the keychain cannot.

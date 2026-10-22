@@ -288,16 +288,23 @@ public sealed record PairRequest(string Token, string PhoneId, string PhoneName,
     }
 }
 
-/// <summary>The answer to a pairing the user allowed: who the desktop is and the phone's secret.</summary>
-public sealed record PairResponse(string DesktopId, string DesktopName, string DeviceSecret, int ProtocolVersion)
+/// <summary>
+/// The answer to a pairing the user allowed: who the desktop is, the phone's secret and, from a
+/// desktop that has the cloud sync folder (C2), the key packages put there are sealed with
+/// (<see cref="SyncPackage"/>).
+/// </summary>
+/// <param name="SyncKey">Base64url of the 32-byte sync key; null from a desktop without the sync folder (left out of the JSON).</param>
+public sealed record PairResponse(string DesktopId, string DesktopName, string DeviceSecret, int ProtocolVersion,
+                                  string? SyncKey = null)
 {
     public string ToJson() =>
         $"{{\"protocolVersion\":{CompanionProtocol.Integer(ProtocolVersion)},\"desktopId\":{CompanionPackage.Quote(DesktopId)}"
-        + $",\"desktopName\":{CompanionPackage.Quote(DesktopName)},\"deviceSecret\":{CompanionPackage.Quote(DeviceSecret)}}}";
+        + $",\"desktopName\":{CompanionPackage.Quote(DesktopName)},\"deviceSecret\":{CompanionPackage.Quote(DeviceSecret)}"
+        + (SyncKey is null ? "" : $",\"syncKey\":{CompanionPackage.Quote(SyncKey)}") + "}";
 
     public static PairResponse? FromJson(ReadOnlySpan<byte> json) =>
         CompanionProtocol.Decode<Dto>(json) is { } dto
-            ? new PairResponse(dto.DesktopId, dto.DesktopName, dto.DeviceSecret, dto.ProtocolVersion)
+            ? new PairResponse(dto.DesktopId, dto.DesktopName, dto.DeviceSecret, dto.ProtocolVersion, dto.SyncKey)
             : null;
 
     private sealed class Dto
@@ -307,6 +314,7 @@ public sealed record PairResponse(string DesktopId, string DesktopName, string D
         public string DesktopId { get; set; } = "";
         public string DesktopName { get; set; } = "";
         public string DeviceSecret { get; set; } = "";
+        public string? SyncKey { get; set; }
     }
 }
 

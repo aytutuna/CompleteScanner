@@ -12,8 +12,9 @@ public struct IOSKeychainError: Error, Equatable, LocalizedError {
 }
 
 /// The iPhone's `CompanionSecretStore`: each desktop's device secret as a generic password in the
-/// Keychain (service `service`, account the desktop's id), readable only while the phone is unlocked and
-/// never moved to another device, in a backup or otherwise.
+/// Keychain (service `service`, account the desktop's id) and the sync key of its cloud folder next to it
+/// (account "<desktopId>.sync", as `PairedDesktopStore` names it), readable only while the phone is
+/// unlocked and never moved to another device, in a backup or otherwise.
 public struct IOSCompanionSecrets: CompanionSecretStore {
     public static let service = "com.completescanner.companion"
 

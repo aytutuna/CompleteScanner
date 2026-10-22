@@ -26,9 +26,12 @@ public struct PairedDesktop: Codable, Equatable, Sendable {
     /// The ids of the outbox items taken from the desktop, oldest first, the last `maxReceived`: one the
     /// desktop lists again (its acknowledgement was lost) is acknowledged again, not saved twice.
     public var received: [String] = []
+    /// The cloud sync folder documents go into when the desktop cannot be reached (C2), as the bookmark
+    /// the shell made of the folder picked (`AppState.resolveSyncFolderBookmark` opens it); nil for none.
+    public var syncFolderBookmark: Data?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, fingerprint, addresses, port, phoneId, pairedAt, lastSeen, received
+        case id, name, fingerprint, addresses, port, phoneId, pairedAt, lastSeen, received, syncFolderBookmark
     }
 
     public init() {}
@@ -77,5 +80,6 @@ extension PairedDesktop {
         pairedAt = c.decodeLenient(forKey: .pairedAt, default: pairedAt)
         lastSeen = c.decodeLenient(forKey: .lastSeen, default: lastSeen)
         received = c.decodeLenient(forKey: .received, default: received)
+        syncFolderBookmark = c.decodeLenient(forKey: .syncFolderBookmark, default: syncFolderBookmark)
     }
 }

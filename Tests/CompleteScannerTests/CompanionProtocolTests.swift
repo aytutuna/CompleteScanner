@@ -77,6 +77,10 @@ final class CompanionProtocolTests: XCTestCase {
         XCTAssertEqual(
             PairResponse(desktopId: desktopId, desktopName: "AYTU-PC", deviceSecret: CompanionVectors.secretText, protocolVersion: 1).toJSON(),
             #"{"protocolVersion":1,"desktopId":"0123456789abcdef0123456789abcdef","desktopName":"AYTU-PC","deviceSecret":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"}"#)
+        XCTAssertEqual(
+            PairResponse(desktopId: desktopId, desktopName: "AYTU-PC", deviceSecret: CompanionVectors.secretText, protocolVersion: 1,
+                         syncKey: CompanionVectors.secretText).toJSON(),
+            #"{"protocolVersion":1,"desktopId":"0123456789abcdef0123456789abcdef","desktopName":"AYTU-PC","deviceSecret":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8","syncKey":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"}"#)
         XCTAssertEqual(HealthResponse(protocolVersion: 1, paired: false).toJSON(),
                        #"{"service":"completescanner","protocolVersion":1,"paired":false}"#)
         XCTAssertEqual(
@@ -99,6 +103,9 @@ final class CompanionProtocolTests: XCTestCase {
         XCTAssertEqual(PairRequest.fromJSON(utf8(pair.toJSON())), pair)
         let response = PairResponse(desktopId: desktopId, desktopName: "AYTU-PC", deviceSecret: CompanionVectors.secretText, protocolVersion: 1)
         XCTAssertEqual(PairResponse.fromJSON(utf8(response.toJSON())), response)
+        var withKey = response
+        withKey.syncKey = CompanionVectors.secretText
+        XCTAssertEqual(PairResponse.fromJSON(utf8(withKey.toJSON())), withKey)
         let health = HealthResponse(protocolVersion: 1, paired: true)
         XCTAssertEqual(HealthResponse.fromJSON(utf8(health.toJSON())), health)
         let hello = HelloResponse(desktopId: desktopId, desktopName: "AYTU-PC", protocolVersion: 1, queuedPages: 0,
@@ -116,6 +123,11 @@ final class CompanionProtocolTests: XCTestCase {
         XCTAssertEqual(HelloResponse.fromJSON(utf8(#"{"protocolVersion":1,"desktopId":"d","queuedPages":"12","maxUploadBytes":-5}"#)),
                        HelloResponse(desktopId: "d", desktopName: "", protocolVersion: 1, queuedPages: 0, maxUploadBytes: -5))
         XCTAssertEqual(InboxResponse.fromJSON(utf8("{}")), InboxResponse(packageId: "", pageCount: 0, duplicate: false))
+        // A desktop from before the sync folder sends no key.
+        let old = PairResponse.fromJSON(utf8(#"{"protocolVersion":1,"desktopId":"d","desktopName":"PC","deviceSecret":"s"}"#))
+        XCTAssertEqual(old, PairResponse(desktopId: "d", desktopName: "PC", deviceSecret: "s", protocolVersion: 1))
+        XCTAssertNil(old?.syncKey)
+        XCTAssertNil(PairResponse.fromJSON(utf8(#"{"deviceSecret":"s","syncKey":5}"#))?.syncKey)
         // Not an object at all.
         XCTAssertNil(PairRequest.fromJSON(utf8("[]")))
         XCTAssertNil(PairRequest.fromJSON(utf8("null")))

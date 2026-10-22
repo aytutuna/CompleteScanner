@@ -292,7 +292,8 @@ public final class CompanionRouter: @unchecked Sendable {
         }
         if let device = devices.devices.first(where: { $0.id == pair.phoneId }) { onDevicePaired?(device) }
         return .json(200, PairResponse(desktopId: devices.desktopId, desktopName: desktopName(), deviceSecret: secret,
-                                       protocolVersion: CompanionProtocol.version).toJSON())
+                                       protocolVersion: CompanionProtocol.version,
+                                       syncKey: (try? devices.syncKey(for: pair.phoneId)).map(CompanionProtocol.encodeBase64Url)).toJSON())
     }
 
     /// The user's answer; false when none came within `approvalTimeout` or the request was cut off.

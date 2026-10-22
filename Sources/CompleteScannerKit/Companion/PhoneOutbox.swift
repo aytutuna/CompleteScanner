@@ -21,9 +21,17 @@ public struct PhoneOutboxItem: Codable, Equatable, Sendable {
     public var attempts = 0
     /// Why it failed last; "" when it has not.
     public var lastError = ""
+    /// It goes through the cloud sync folder (C2): putting it there failed once, so the next round tries
+    /// the folder first, and the network only when no folder can be used.
+    public var viaSyncFolder = false
+    /// It is in the cloud sync folder: it stays until its file leaves the folder (the desktop took it) or
+    /// it is sent over the network, so a desktop that can no longer open the file still gets it.
+    public var inSyncFolder = false
+    /// The desktop refused it (too large, not readable): it never goes into the cloud sync folder.
+    public var refused = false
 
     enum CodingKeys: String, CodingKey {
-        case id, fileName, desktopId, target, created, attempts, lastError
+        case id, fileName, desktopId, target, created, attempts, lastError, viaSyncFolder, inSyncFolder, refused
     }
 
     public init() {}
@@ -40,6 +48,9 @@ extension PhoneOutboxItem {
         created = c.decodeLenient(forKey: .created, default: created)
         attempts = c.decodeLenient(forKey: .attempts, default: attempts)
         lastError = c.decodeLenient(forKey: .lastError, default: lastError)
+        viaSyncFolder = c.decodeLenient(forKey: .viaSyncFolder, default: viaSyncFolder)
+        inSyncFolder = c.decodeLenient(forKey: .inSyncFolder, default: inSyncFolder)
+        refused = c.decodeLenient(forKey: .refused, default: refused)
     }
 }
 
@@ -156,6 +167,34 @@ public final class PhoneOutbox: @unchecked Sendable {
         guard let index = file.items.firstIndex(where: { $0.id == id }) else { return }
         file.items[index].attempts += 1
         file.items[index].lastError = error
+        StoreFiles.write(file, to: url)
+    }
+
+    /// Sends it through the cloud sync folder from now on (`PhoneOutboxItem.viaSyncFolder`).
+    public func markViaSyncFolder(_ id: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let index = file.items.firstIndex(where: { $0.id == id }), !file.items[index].viaSyncFolder else { return }
+        file.items[index].viaSyncFolder = true
+        StoreFiles.write(file, to: url)
+    }
+
+    /// Notes whether it is in the cloud sync folder (`PhoneOutboxItem.inSyncFolder`).
+    public func markInSyncFolder(_ id: String, _ inSyncFolder: Bool = true) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let index = file.items.firstIndex(where: { $0.id == id }), file.items[index].inSyncFolder != inSyncFolder
+        else { return }
+        file.items[index].inSyncFolder = inSyncFolder
+        StoreFiles.write(file, to: url)
+    }
+
+    /// The desktop refused it (`PhoneOutboxItem.refused`).
+    public func markRefused(_ id: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let index = file.items.firstIndex(where: { $0.id == id }), !file.items[index].refused else { return }
+        file.items[index].refused = true
         StoreFiles.write(file, to: url)
     }
 

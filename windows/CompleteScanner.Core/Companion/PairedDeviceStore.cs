@@ -24,6 +24,12 @@ public sealed class PairedDevice
     public DateTimeOffset? Paired { get; set; }
     /// <summary>When the phone last made a request, to the minute.</summary>
     public DateTimeOffset? LastSeen { get; set; }
+    /// <summary>
+    /// The phone's key for the cloud sync folder (<see cref="SyncPackage"/>), protected with the Data
+    /// Protection API for the current user, base64; "" when it has none (paired before the sync folder,
+    /// or not on Windows). <see cref="PairedDeviceStore.SyncKey"/> gives the key.
+    /// </summary>
+    public string SyncKeyProtected { get; set; } = "";
 
     internal PairedDevice Copy() => new()
     {
@@ -34,6 +40,7 @@ public sealed class PairedDevice
         SecretHash = SecretHash,
         Paired = Paired,
         LastSeen = LastSeen,
+        SyncKeyProtected = SyncKeyProtected,
     };
 }
 
@@ -43,12 +50,15 @@ public sealed class PairedDevicesFile
     /// <summary>This desktop's id for phones (32 hex digits), made on first use.</summary>
     public string DesktopId { get; set; } = "";
     public List<PairedDevice> Devices { get; set; } = [];
+    /// <summary>The cloud sync folder phones put documents in when they cannot reach this computer (C2); "" for none.</summary>
+    public string SyncFolder { get; set; } = "";
 }
 
 /// <summary>
 /// The phones paired with this desktop (companion-devices.json in the settings folder, rule 6 of
 /// CONTRACTS.md). Pairing makes a random 256-bit secret, hands it to the phone once and keeps only
-/// its SHA-256; a request is accepted when its device id and secret match an entry. The file is
+/// its SHA-256; a request is accepted when its device id and secret match an entry. It also makes the
+/// phone's sync key for the cloud sync folder, kept protected for the current user. The file is
 /// re-read for every check and before every change, so a phone removed by another window of the
 /// app is refused at once; a phone removed while the file could not be written stays removed for
 /// the rest of the session. Safe to use from any thread.
@@ -124,9 +134,39 @@ public sealed class PairedDeviceStore
         }
     }
 
+    /// <summary>The cloud sync folder phones put documents in (C2); null when none is chosen.</summary>
+    public string? SyncFolder
+    {
+        get
+        {
+            lock (_gate)
+            {
+                Reload();
+                return _file.SyncFolder.Length > 0 ? _file.SyncFolder : null;
+            }
+        }
+    }
+
+    /// <summary>Chooses the cloud sync folder (null: none); false when that could not be saved.</summary>
+    public bool SetSyncFolder(string? path)
+    {
+        bool saved;
+        lock (_gate)
+        {
+            Reload();
+            string previous = _file.SyncFolder;
+            _file.SyncFolder = path ?? "";
+            saved = StoreFiles.Write(_file, _path);
+            if (!saved) _file.SyncFolder = previous;
+        }
+        if (saved) Changed?.Invoke(this, EventArgs.Empty);
+        return saved;
+    }
+
     /// <summary>
-    /// Pairs the phone <paramref name="id"/> (pairing again replaces its entry and secret) and
-    /// returns its new secret (base64url of 32 bytes), to be sent to the phone once. Throws
+    /// Pairs the phone <paramref name="id"/> (pairing again replaces its entry and secret, and keeps
+    /// its sync key, so what it put in the sync folder before still opens) and returns its new secret
+    /// (base64url of 32 bytes), to be sent to the phone once. Throws
     /// <see cref="InvalidOperationException"/> when <see cref="MaxDevices"/> other phones are
     /// paired, <see cref="ArgumentException"/> for an invalid id, and <see cref="IOException"/>
     /// when the pairing cannot be saved (a phone must not believe it is paired when it is not).
@@ -144,6 +184,8 @@ public sealed class PairedDeviceStore
             Reload();
             var others = _file.Devices.Where(d => d.Id != id).ToList();
             if (others.Count >= MaxDevices) throw new InvalidOperationException("Too many phones are paired.");
+            string syncKey = _file.Devices.FirstOrDefault(d => d.Id == id)?.SyncKeyProtected ?? "";
+            if (!OpensSyncKey(syncKey)) syncKey = ProtectSyncKey(RandomNumberGenerator.GetBytes(SyncPackage.KeyByteCount));
             var device = new PairedDevice
             {
                 Id = id,
@@ -153,6 +195,7 @@ public sealed class PairedDeviceStore
                 SecretHash = HashSecret(secret),
                 Paired = now,
                 LastSeen = now,
+                SyncKeyProtected = syncKey,
             };
             var previous = _file.Devices;
             _file.Devices = [.. others, device];
@@ -191,6 +234,36 @@ public sealed class PairedDeviceStore
                 StoreFiles.Write(_file, _path);
             }
             return device.Copy();
+        }
+    }
+
+    /// <summary>
+    /// The sync key of the paired phone <paramref name="id"/> (32 bytes, to be sent to it at pairing
+    /// and to open what it puts in the sync folder); null when it has none. Throws
+    /// <see cref="CryptographicException"/> when it cannot be unprotected now.
+    /// </summary>
+    public byte[]? SyncKey(string id)
+    {
+        string protectedKey;
+        lock (_gate)
+        {
+            Reload();
+            if (_removed.Contains(id)) return null;
+            protectedKey = _file.Devices.FirstOrDefault(d => d.Id == id)?.SyncKeyProtected ?? "";
+        }
+        return UnprotectSyncKey(protectedKey);
+    }
+
+    /// <summary>Whether the paired phone <paramref name="id"/> has a sync key that can be read now (one paired before the sync folder has none).</summary>
+    public bool HasSyncKey(string id)
+    {
+        try
+        {
+            return SyncKey(id) is not null;
+        }
+        catch (CryptographicException)
+        {
+            return false;
         }
     }
 
@@ -252,6 +325,49 @@ public sealed class PairedDeviceStore
             file.DesktopId = _file.DesktopId;
         }
         _file = file;
+    }
+
+    /// <summary>The key protected for the current user, base64; "" where the Data Protection API is not.</summary>
+    private static string ProtectSyncKey(byte[] key)
+    {
+        if (!OperatingSystem.IsWindows()) return "";
+        try
+        {
+            return Convert.ToBase64String(ProtectedData.Protect(key, null, DataProtectionScope.CurrentUser));
+        }
+        catch (CryptographicException)
+        {
+            return "";
+        }
+    }
+
+    /// <summary>The key in <paramref name="protectedKey"/>; null for none, or text that is not base64. Throws <see cref="CryptographicException"/>.</summary>
+    private static byte[]? UnprotectSyncKey(string protectedKey)
+    {
+        if (protectedKey.Length == 0 || !OperatingSystem.IsWindows()) return null;
+        byte[] blob;
+        try
+        {
+            blob = Convert.FromBase64String(protectedKey);
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+        byte[] key = ProtectedData.Unprotect(blob, null, DataProtectionScope.CurrentUser);
+        return key.Length == SyncPackage.KeyByteCount ? key : null;
+    }
+
+    private static bool OpensSyncKey(string protectedKey)
+    {
+        try
+        {
+            return UnprotectSyncKey(protectedKey) is not null;
+        }
+        catch (CryptographicException)
+        {
+            return false;
+        }
     }
 
     private static bool IsHex(string text) => text.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');

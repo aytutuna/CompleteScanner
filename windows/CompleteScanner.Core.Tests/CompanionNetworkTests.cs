@@ -340,4 +340,25 @@ public sealed class CompanionNetworkTests : IDisposable
         Assert.Equal("Listening on port 5000 while the pairing code is shown.", pairing.Single(c => c.Id == "phoneListening").Detail);
         Assert.Equal(CheckStatus.Ok, pairing.Single(c => c.Id == "phoneFirewall").Status);
     }
+
+    [Fact]
+    public void Checks_SuggestTheCloudFolderWhenPhonesStayAway()
+    {
+        var quiet = new CompanionSnapshot
+        {
+            Networks = [State(Networks.Home(), NetworkTrust.Private)],
+            Listen = CompanionListenState.Listening,
+            Port = 52731,
+            PairedCount = 1,
+            PhonesQuietFor = TimeSpan.FromDays(4.5),
+        };
+        var check = CompanionTroubleshooter.Diagnose(quiet).Single(c => c.Id == "phoneSyncFolder");
+        Assert.Equal(CheckStatus.Tip, check.Status);
+        Assert.Contains("for 4 days", check.Detail);
+        Assert.Contains("OneDrive or iCloud Drive", check.Detail);
+        Assert.Equal("phoneIsolation", CompanionTroubleshooter.Diagnose(quiet)[^1].Id);
+        Assert.DoesNotContain(CompanionTroubleshooter.Diagnose(quiet with { SyncFolderChosen = true }), c => c.Id == "phoneSyncFolder");
+        Assert.DoesNotContain(CompanionTroubleshooter.Diagnose(quiet with { PhonesQuietFor = TimeSpan.FromDays(1) }), c => c.Id == "phoneSyncFolder");
+        Assert.DoesNotContain(CompanionTroubleshooter.Diagnose(quiet with { PairedCount = 0, PhonesQuietFor = null }), c => c.Id == "phoneSyncFolder");
+    }
 }

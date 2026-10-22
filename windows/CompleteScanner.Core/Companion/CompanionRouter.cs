@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Security.Cryptography;
 
 namespace CompleteScanner.Core;
 
@@ -358,7 +359,17 @@ public sealed class CompanionRouter
             return CompanionResponse.Error(500, CompanionError.ServerError);
         }
         if (_devices.Devices.FirstOrDefault(d => d.Id == pair.PhoneId) is { } device) DevicePaired?.Invoke(this, device);
-        return CompanionResponse.Json(200, new PairResponse(_devices.DesktopId, DesktopName(), secret, CompanionProtocol.Version).ToJson());
+        string? syncKey = null;
+        try
+        {
+            if (_devices.SyncKey(pair.PhoneId) is { } key) syncKey = CompanionProtocol.EncodeBase64Url(key);
+        }
+        catch (CryptographicException)
+        {
+            // Paired without the sync folder.
+        }
+        return CompanionResponse.Json(200, new PairResponse(_devices.DesktopId, DesktopName(), secret, CompanionProtocol.Version,
+                                                            syncKey).ToJson());
     }
 
     private async Task<CompanionResponse> InboxAsync(CompanionRequest request, string packageId, DateTimeOffset now,

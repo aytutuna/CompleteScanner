@@ -152,6 +152,61 @@ final class PairedDeviceStoreTests: XCTestCase {
         XCTAssertTrue(CompanionProtocol.isValidId(store.desktopId))
     }
 
+    func testPair_MakesASyncKeyKeptInItsStore() throws {
+        let keys = MemorySecretStore()
+        let store = PairedDeviceStore(directory: directory, syncKeyStore: keys)
+        _ = try store.pair(id: "phone-0001", name: "Phone", platform: "ios", appVersion: "1.0", now: now)
+        let key = try XCTUnwrap(try store.syncKey(for: "phone-0001"))
+        XCTAssertEqual(key.count, SyncPackage.keyByteCount)
+        XCTAssertEqual(try keys.load(for: "phone-0001"), key)
+        XCTAssertEqual(try PairedDeviceStore(directory: directory, syncKeyStore: keys).syncKey(for: "phone-0001"), key)
+        let file = try String(contentsOf: fileURL, encoding: .utf8)
+        XCTAssertFalse(file.contains(CompanionProtocol.encodeBase64Url(key)))
+        XCTAssertFalse(file.contains(key.base64EncodedString()))
+        XCTAssertNil(try store.syncKey(for: "phone-0002"))
+        XCTAssertTrue(store.hasSyncKey("phone-0001"))
+        XCTAssertFalse(store.hasSyncKey("phone-0002"))
+        // Without a store no key is made.
+        XCTAssertNil(try makeStore().syncKey(for: "phone-0001"))
+
+        // Pairing again keeps the key; removing the phone drops it, and pairing after that makes a new one.
+        _ = try store.pair(id: "phone-0001", name: "Phone", platform: "ios", appVersion: "1.0", now: now)
+        XCTAssertEqual(try store.syncKey(for: "phone-0001"), key)
+        store.remove("phone-0001")
+        XCTAssertNil(try store.syncKey(for: "phone-0001"))
+        XCTAssertNil(try keys.load(for: "phone-0001"))
+        _ = try store.pair(id: "phone-0001", name: "Phone", platform: "ios", appVersion: "1.0", now: now)
+        XCTAssertNotEqual(try store.syncKey(for: "phone-0001"), key)
+        _ = try store.pair(id: "phone-0002", name: "Phone", platform: "ios", appVersion: "1.0", now: now)
+        store.removeAll()
+        XCTAssertNil(try store.syncKey(for: "phone-0002"))
+        XCTAssertEqual(keys.count, 0)
+
+        // A store that cannot be read now says so, where a phone without a key has none.
+        _ = try store.pair(id: "phone-0001", name: "Phone", platform: "ios", appVersion: "1.0", now: now)
+        keys.loadFails = true
+        XCTAssertThrowsError(try store.syncKey(for: "phone-0001"))
+        XCTAssertFalse(store.hasSyncKey("phone-0001"))
+        keys.loadFails = false
+        XCTAssertNotNil(try store.syncKey(for: "phone-0001"))
+    }
+
+    func testSyncFolder_IsKeptWithThePhones() throws {
+        let store = makeStore()
+        XCTAssertNil(store.syncFolder)
+        var changes = 0
+        store.onChange = { changes += 1 }
+        let folder = directory.appendingPathComponent("OneDrive/Scans", isDirectory: true)
+        XCTAssertTrue(store.setSyncFolder(folder))
+        XCTAssertEqual(makeStore().syncFolder?.path, folder.path)
+        _ = try store.pair(id: "phone-0001", name: "Phone", platform: "ios", appVersion: "1.0", now: now)
+        store.removeAll()
+        XCTAssertEqual(store.syncFolder?.path, folder.path)
+        XCTAssertTrue(store.setSyncFolder(nil))
+        XCTAssertNil(makeStore().syncFolder)
+        XCTAssertEqual(changes, 4)
+    }
+
     func testRemovedPhone_StaysRemovedWhenTheFileComesBack() throws {
         let store = makeStore()
         let secret = try store.pair(id: "phone-0001", name: "Phone", platform: "ios", appVersion: "1.0", now: now)

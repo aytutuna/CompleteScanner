@@ -228,6 +228,22 @@ final class CompanionStubProtocol: URLProtocol {
 final class MemorySecretStore: CompanionSecretStore, @unchecked Sendable {
     private let lock = NSLock()
     private var secrets: [String: Data] = [:]
+    private var failing = false
+    private var loadCount = 0
+
+    /// Loading throws while set, as a locked keychain does.
+    var loadFails: Bool {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return failing
+        }
+        set {
+            lock.lock()
+            failing = newValue
+            lock.unlock()
+        }
+    }
 
     func save(_ secret: Data, for desktopId: String) throws {
         lock.lock()
@@ -238,6 +254,8 @@ final class MemorySecretStore: CompanionSecretStore, @unchecked Sendable {
     func load(for desktopId: String) throws -> Data? {
         lock.lock()
         defer { lock.unlock() }
+        loadCount += 1
+        if failing { throw CocoaError(.fileReadNoPermission) }
         return secrets[desktopId]
     }
 
@@ -251,6 +269,13 @@ final class MemorySecretStore: CompanionSecretStore, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return secrets.count
+    }
+
+    /// How many times a secret was loaded.
+    var loads: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return loadCount
     }
 }
 

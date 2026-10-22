@@ -11,6 +11,7 @@ using System.Windows.Threading;
 using CompleteScanner.App.Services;
 using CompleteScanner.App.Services.Companion;
 using CompleteScanner.Core;
+using Microsoft.Win32;
 
 namespace CompleteScanner.App;
 
@@ -18,7 +19,8 @@ namespace CompleteScanner.App;
 /// "Send from your phone": whether this PC receives from phones and on which networks (with
 /// "Allow receiving on this network" for a network Windows treats as public), pairing a phone by
 /// QR code (asking the user to allow the phone that presents it), the paired phones with Remove,
-/// and the connection checks (<see cref="CompanionTroubleshooter"/>). It reads the firewall's
+/// the cloud folder phones put documents in when they cannot reach this PC (C2), and the connection
+/// checks (<see cref="CompanionTroubleshooter"/>). It reads the firewall's
 /// rules but never changes them, nor any network setting.
 /// </summary>
 public partial class PhoneWindow : Window
@@ -112,6 +114,7 @@ public partial class PhoneWindow : Window
             _shownNetworks = null;
             PhonesPanel.Children.Clear();
             _removeButtons.Clear();
+            ShowSyncFolder();
             ShowChecks(new CompanionSnapshot
             {
                 Listen = _viewModel.CompanionElsewhere ? CompanionListenState.Elsewhere : CompanionListenState.Failed,
@@ -131,6 +134,7 @@ public partial class PhoneWindow : Window
         ShowNetworks(snapshot);
         ShowPairing();
         ShowPhones();
+        ShowSyncFolder();
         ShowChecks(snapshot);
     }
 
@@ -457,6 +461,10 @@ public partial class PhoneWindow : Window
             var texts = new StackPanel();
             texts.Children.Add(new TextBlock { Text = device.Name.Length > 0 ? device.Name : "Phone", Style = (Style)FindResource("BodyStrongText") });
             texts.Children.Add(new TextBlock { Text = PhoneCaption(device), Style = (Style)FindResource("CaptionText"), TextWrapping = TextWrapping.Wrap });
+            if (_companion?.Devices.HasSyncKey(device.Id) == false)
+            {
+                texts.Children.Add(new TextBlock { Text = "Pair again to use the cloud folder", Style = (Style)FindResource("CaptionText"), TextWrapping = TextWrapping.Wrap });
+            }
             var row = new DockPanel();
             row.Children.Add(remove);
             row.Children.Add(texts);
@@ -539,6 +547,43 @@ public partial class PhoneWindow : Window
         {
             ShowStatus($"Pairing could not be reset: {error.Message}");
         }
+        Refresh();
+    }
+
+    // MARK: - Cloud folder
+
+    private void ShowSyncFolder()
+    {
+        string? folder = _companion?.SyncFolder;
+        SyncFolderBox.Text = folder ?? "";
+        ChooseSyncFolderButton.IsEnabled = _companion is not null;
+        ClearSyncFolderButton.IsEnabled = folder is not null;
+        SyncFolderStatus.Text = _companion is null ? "Not watching."
+            : folder is null ? "Not watching: no folder chosen."
+            : Directory.Exists(folder) ? $"Watching {folder}."
+            : $"Waiting for {folder}: the folder is not there now.";
+        string? problem = _companion is null ? null : _viewModel.SyncFolderProblem;
+        SyncFolderProblemText.Text = problem ?? "";
+        SyncFolderProblemText.Visibility = problem is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void ChooseSyncFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog { Title = "Choose the cloud folder" };
+        if (_companion?.SyncFolder is { } folder) dialog.InitialDirectory = folder;
+        if (dialog.ShowDialog(this) == true) SetSyncFolder(dialog.FolderName);
+    }
+
+    private void ClearSyncFolder_Click(object sender, RoutedEventArgs e)
+    {
+        SetSyncFolder(null);
+        ChooseSyncFolderButton.Focus();
+    }
+
+    /// <summary>Chooses the cloud folder (null: none; Choose… and Clear; harnesses).</summary>
+    internal void SetSyncFolder(string? path)
+    {
+        if (!_viewModel.SetPhoneSyncFolder(path)) ShowStatus("The setting could not be saved.");
         Refresh();
     }
 

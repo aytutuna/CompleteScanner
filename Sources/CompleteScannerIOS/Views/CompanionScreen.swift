@@ -2,16 +2,20 @@
 import CompleteScannerKit
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// My computer, pushed from Settings (`IOSCompanionModel`): with no computer paired, Pair with a computer
 /// (the camera looking for its code, the code's text to enter instead, the check code to compare, the
 /// name the computer will list the phone under, Pair); once paired, the computer's name and state
 /// (checked when the screen opens, and on Refresh), Unpair, and the documents waiting to be sent with
-/// Send again and Remove. A computer that no longer knows the phone is shown with pairing offered again.
-/// Local Network access that is off is said with Open Settings.
+/// Send again and Remove, and those in the cloud folder the computer has not taken yet. For a computer that
+/// handed out a sync key, the cloud folder (Choose…, Clear) documents go to when it cannot be reached. A
+/// computer that no longer knows the phone is shown with pairing offered again. Local Network access that
+/// is off is said with Open Settings.
 struct CompanionScreen: View {
     @EnvironmentObject private var state: AppState
     @StateObject private var model: IOSCompanionModel
+    @State private var choosingFolder: Bool = false
 
     init(state: AppState, browser: IOSCompanionBrowser?) {
         _model = StateObject(wrappedValue: IOSCompanionModel(state: state, browser: browser))
@@ -56,6 +60,10 @@ struct CompanionScreen: View {
                 Section {
                     Text(IOSCompanionText.waiting(state.companionOutboxCount))
                         .accessibilityIdentifier("companion.outbox")
+                    if model.inCloudFolder > 0 {
+                        Text(IOSCompanionText.inCloudFolder(model.inCloudFolder))
+                            .accessibilityIdentifier("companion.inCloudFolder")
+                    }
                     if state.companionOutboxCount > 0 {
                         Button(IOSCompanionText.sendAgainButton) {
                             Task { await model.sendAgain() }
@@ -69,6 +77,9 @@ struct CompanionScreen: View {
                     }
                 }
             }
+            if model.offersCloudFolder && !model.needsPairing {
+                cloudFolderSection
+            }
             if let browser = model.browser {
                 CompanionNetworkLine(browser: browser)
             }
@@ -77,8 +88,46 @@ struct CompanionScreen: View {
         .onAppear {
             model.appear()
         }
+        .onChange(of: state.companionOutboxCount) { (_: Int, _: Int) in
+            model.lookAtCloudFolder()
+        }
         .onDisappear {
             model.disappear()
+        }
+    }
+
+    private var cloudFolderSection: some View {
+        Section {
+            LabeledContent(IOSCompanionText.cloudFolderLabel) {
+                Text(model.cloudFolderValue)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .accessibilityIdentifier("companion.cloudFolder")
+            HStack {
+                Button(IOSCompanionText.chooseFolderButton) {
+                    choosingFolder = true
+                }
+                .accessibilityIdentifier("companion.cloudFolder.choose")
+                if state.companionDesktop?.syncFolderBookmark != nil {
+                    Spacer()
+                    Button(IOSCompanionText.clearButton) {
+                        model.clearCloudFolder()
+                    }
+                    .accessibilityIdentifier("companion.cloudFolder.clear")
+                }
+            }
+            .buttonStyle(.borderless)
+            .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [UTType.folder]) { (result: Result<URL, Error>) in
+                switch result {
+                case .success(let url):
+                    model.chooseCloudFolder(url)
+                case .failure(let error):
+                    state.errorMessage = error.localizedDescription
+                }
+            }
+        } footer: {
+            Text(CompanionText.syncFolderLine)
         }
     }
 

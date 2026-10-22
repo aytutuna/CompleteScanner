@@ -483,7 +483,7 @@ extension AppState {
     /// (`IOSPDFAppend.access`), with the question before adding pages to a signed or PDF/A file asked by
     /// `confirmAppend` (none: such a file gets no pages); the companion (`IOSShell.setUpCompanion`) in the
     /// network folder with its secrets in the Keychain, the computers on the network browsed by
-    /// `companion` (none: not browsed).
+    /// `companion` (none: not browsed), and its cloud folder opened through `IOSSyncFolder`.
     @MainActor
     public static func makeForIOS(options: IOSLaunchOptions, fileActions: IOSFileActions,
                                   networkScanners: IOSNetworkScanners?,
@@ -511,6 +511,9 @@ extension AppState {
             IOSSaveFolder.resolve(bookmark)
         }
         state.openBookmarkedFolder()
+        state.resolveSyncFolderBookmark = { (bookmark: Data) -> (folder: URL, bookmark: Data)? in
+            IOSSyncFolder.resolve(bookmark)
+        }
         IOSShell.setUpCompanion(state, folder: IOSNetworkScanners.filesFolder(), secrets: IOSCompanionSecrets(),
                                 browser: companion, lifecycle: lifecycle)
         return state

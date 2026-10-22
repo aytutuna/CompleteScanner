@@ -23,6 +23,11 @@ public enum IOSCompanionText {
     public static let checking = "Checking\u{2026}"
     public static let connected = "Connected"
     public static let nothingWaiting = "Nothing waiting to be sent"
+    public static let cloudFolderLabel = "Cloud folder"
+    public static let noCloudFolder = "None"
+    public static let cloudFolderOutOfReach = "Cannot be opened"
+    public static let chooseFolderButton = "Choose\u{2026}"
+    public static let clearButton = "Clear"
     /// The scan screen's button and its question.
     public static let sendButton = "Send to computer"
     public static let sendQuestion = "Send the pages to the computer"
@@ -51,11 +56,17 @@ public enum IOSCompanionText {
         if count == 0 { return nothingWaiting }
         return (count == 1 ? "1 document" : "\(count) documents") + " waiting to be sent"
     }
+
+    /// "2 documents in the cloud folder": put there, not taken by the computer yet.
+    public static func inCloudFolder(_ count: Int) -> String {
+        (count == 1 ? "1 document" : "\(count) documents") + " in the cloud folder"
+    }
 }
 
 /// My computer: pairing with a computer from its code (scanned, or its text entered, with the check code
-/// to compare), then the paired computer's state, what waits to be sent to it, and unpairing. While the
-/// screen is shown the desktops on the network are browsed (`IOSCompanionBrowser`).
+/// to compare), then the paired computer's state, what waits to be sent to it, the cloud folder documents
+/// go to when it cannot be reached (`IOSSyncFolder`, for a computer that handed out a sync key), and
+/// unpairing. While the screen is shown the desktops on the network are browsed (`IOSCompanionBrowser`).
 @MainActor
 public final class IOSCompanionModel: ObservableObject {
     /// The pairing code's text, scanned or entered.
@@ -65,6 +76,12 @@ public final class IOSCompanionModel: ObservableObject {
     @Published public var phoneName: String
     /// The desktop is asked (it asks its user first: up to two minutes).
     @Published public private(set) var isPairing: Bool = false
+    /// The paired computer handed out a sync key, so a cloud folder can be set (`AppState.canUseSyncFolder`).
+    @Published public private(set) var offersCloudFolder: Bool = false
+    /// The cloud folder's name; nil when none is set or it does not open now.
+    @Published public private(set) var cloudFolderName: String?
+    /// The documents in the cloud folder the computer has not taken yet.
+    @Published public private(set) var inCloudFolder: Int = 0
 
     public let state: AppState
     public let browser: IOSCompanionBrowser?
@@ -108,6 +125,14 @@ public final class IOSCompanionModel: ObservableObject {
         code != nil && !isPairing
     }
 
+    /// The cloud folder row's value: the folder's name, "None", or "Cannot be opened" for one set that
+    /// does not open now.
+    public var cloudFolderValue: String {
+        if let name = cloudFolderName { return name }
+        return state.companionDesktop?.syncFolderBookmark == nil
+            ? IOSCompanionText.noCloudFolder : IOSCompanionText.cloudFolderOutOfReach
+    }
+
     /// The camera read a pairing code.
     public func scanned(_ value: String) {
         text = value
@@ -117,6 +142,7 @@ public final class IOSCompanionModel: ObservableObject {
     /// screen goes first).
     public func appear() {
         browser?.begin()
+        lookAtCloudFolder()
         guard state.companionDesktop != nil else { return }
         let appState: AppState = state
         Task { @MainActor in
@@ -143,10 +169,41 @@ public final class IOSCompanionModel: ObservableObject {
             text = ""
             state.pullFromDesktop()
         }
+        lookAtCloudFolder()
     }
 
     public func sendAgain() async {
         await state.drainOutbox()
+        lookAtCloudFolder()
+    }
+
+    /// `folder`, picked in Files, becomes the cloud folder.
+    public func chooseCloudFolder(_ folder: URL) {
+        do {
+            let bookmark: Data = try IOSSyncFolder.bookmark(of: folder)
+            state.setSyncFolder(bookmark: bookmark)
+        } catch {
+            state.errorMessage = error.localizedDescription
+        }
+        lookAtCloudFolder()
+    }
+
+    public func clearCloudFolder() {
+        state.setSyncFolder(bookmark: nil)
+        IOSSyncFolder.close()
+        lookAtCloudFolder()
+    }
+
+    /// Reads again whether a cloud folder can be set, its name and what waits in it.
+    public func lookAtCloudFolder() {
+        offersCloudFolder = state.canUseSyncFolder
+        guard let folder = state.openSyncFolder() else {
+            cloudFolderName = nil
+            inCloudFolder = 0
+            return
+        }
+        cloudFolderName = folder.lastPathComponent
+        inCloudFolder = IOSSyncFolder.waitingCount(in: folder)
     }
 
     public func removeWaiting() {
@@ -155,6 +212,8 @@ public final class IOSCompanionModel: ObservableObject {
 
     public func unpair() async {
         await state.unpairDesktop()
+        IOSSyncFolder.close()
+        lookAtCloudFolder()
     }
 
     private var entered: String {

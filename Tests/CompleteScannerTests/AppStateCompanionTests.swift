@@ -117,6 +117,28 @@ final class AppStateCompanionTests: XCTestCase {
         XCTAssertNil(state.errorMessage)
     }
 
+    /// The sync key the desktop hands out in `pairWithSyncKey`: 0x01...0x20.
+    private let syncKey = Data((1...32).map { UInt8($0) })
+
+    /// Pairs with a desktop that has the cloud sync folder.
+    @MainActor
+    private func pairWithSyncKey(_ state: AppState, with fake: CompanionFakeDesktop) async throws {
+        fake.on("POST " + CompanionProtocol.pairPath,
+                .json(200, PairResponse(desktopId: CompanionLink.desktopId, desktopName: "Office PC",
+                                        deviceSecret: CompanionVectors.secretText, protocolVersion: CompanionProtocol.version,
+                                        syncKey: CompanionProtocol.encodeBase64Url(syncKey)).toJSON()))
+        let uri = try code(fake)
+        await state.pairDesktop(uri: uri, phoneName: "Test phone")
+        XCTAssertNil(state.errorMessage)
+    }
+
+    /// Sets `cloud` as the sync folder, opened by a resolver standing in for the iPhone's bookmarks.
+    @MainActor
+    private func setSyncFolder(_ state: AppState, _ cloud: URL) {
+        state.resolveSyncFolderBookmark = { bookmark in (folder: cloud, bookmark: bookmark) }
+        state.setSyncFolder(bookmark: Data("cloud folder".utf8))
+    }
+
     @MainActor
     func test_pairDesktop_keepsTheDesktopAndItsSecret() async throws {
         let fake = CompanionFakeDesktop()
@@ -495,5 +517,179 @@ final class AppStateCompanionTests: XCTestCase {
         XCTAssertEqual(state.companionStatus, .notPaired)
         XCTAssertEqual(secrets.count, 0)
         XCTAssertNil(PairedDesktopStore(directory: companionFolder, secrets: secrets).load())
+    }
+
+    @MainActor
+    func test_pairDesktop_keepsTheSyncKey_andAnOldDesktopGivesNone() async throws {
+        let fake = CompanionFakeDesktop()
+        let state = try await makeState()
+        try await pair(state, with: fake)
+        XCTAssertFalse(state.canUseSyncFolder)
+
+        try await pairWithSyncKey(state, with: fake)
+
+        XCTAssertTrue(state.canUseSyncFolder)
+        XCTAssertEqual(try secrets.load(for: CompanionLink.desktopId + ".sync"), syncKey)
+    }
+
+    @MainActor
+    func test_drainOutbox_unreachable_putsTheDocumentInTheSyncFolder() async throws {
+        let fake = CompanionFakeDesktop()
+        let state = try await makeState(pages: 1)
+        try await pairWithSyncKey(state, with: fake)
+        let cloud = folder.appendingPathComponent("iCloud Drive", isDirectory: true)
+        try FileManager.default.createDirectory(at: cloud, withIntermediateDirectories: true)
+        setSyncFolder(state, cloud)
+        fake.downHosts = [CompanionLink.address]
+
+        await state.sendQueueToDesktop(target: .current)
+
+        XCTAssertNil(state.errorMessage)
+        XCTAssertEqual(state.companionOutboxCount, 1)
+        XCTAssertEqual(state.companionOutbox?.items.first?.inSyncFolder, true)
+        let names = try FileManager.default.contentsOfDirectory(atPath: cloud.path)
+        XCTAssertEqual(names.count, 1)
+        let name = try XCTUnwrap(names.first)
+        XCTAssertTrue(name.hasSuffix("." + SyncPackage.fileExtension))
+        let packageId = String(name.dropLast(SyncPackage.fileExtension.count + 1))
+        XCTAssertTrue(CompanionProtocol.isValidId(packageId))
+        let desktop = try XCTUnwrap(state.companionDesktop)
+        let opened = try SyncPackage.open(Data(contentsOf: cloud.appendingPathComponent(name)), packageId: packageId,
+                                          phoneId: desktop.phoneId, key: syncKey)
+        XCTAssertEqual(opened.target, .current)
+        XCTAssertEqual(try CompanionPackage.read(opened.plaintext).pages.count, 1)
+        let status = state.statusMessage
+        XCTAssertTrue(status.hasPrefix("Put "), status)
+        XCTAssertTrue(status.hasSuffix(" in the cloud folder for Office PC."), status)
+
+        // It waits until the desktop takes the file out of the folder.
+        await state.drainOutbox()
+        XCTAssertEqual(state.companionOutboxCount, 1)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: cloud.path), [name])
+        try FileManager.default.removeItem(at: cloud.appendingPathComponent(name))
+        await state.drainOutbox()
+        XCTAssertEqual(state.companionOutboxCount, 0)
+    }
+
+    @MainActor
+    func test_drainOutbox_unreachable_leavesWhatTheDesktopRefusedOutOfTheSyncFolder() async throws {
+        let fake = CompanionFakeDesktop()
+        let state = try await makeState(pages: 1)
+        try await pairWithSyncKey(state, with: fake)
+        let cloud = folder.appendingPathComponent("OneDrive", isDirectory: true)
+        try FileManager.default.createDirectory(at: cloud, withIntermediateDirectories: true)
+        setSyncFolder(state, cloud)
+        fake.on("PUT " + CompanionProtocol.inboxPrefix + "*",
+                .error(422, CompanionError(code: CompanionErrorCode.invalidPackage, message: "Page 2's picture is damaged.")))
+        await state.sendQueueToDesktop(target: .new)
+        XCTAssertEqual(state.companionOutbox?.items.first?.refused, true)
+
+        fake.downHosts = [CompanionLink.address]
+        await state.sendQueueToDesktop(target: .new)
+
+        let items = try XCTUnwrap(state.companionOutbox?.items)
+        XCTAssertEqual(items.count, 2)
+        XCTAssertFalse(items[0].inSyncFolder)
+        XCTAssertTrue(items[1].inSyncFolder)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: cloud.path), [SyncPackage.fileName(items[1].id)])
+    }
+
+    @MainActor
+    func test_drainOutbox_anotherErrorStatus_stillLetsTheDocumentGoInTheSyncFolder() async throws {
+        let fake = CompanionFakeDesktop()
+        let state = try await makeState(pages: 1)
+        try await pairWithSyncKey(state, with: fake)
+        let cloud = folder.appendingPathComponent("OneDrive", isDirectory: true)
+        try FileManager.default.createDirectory(at: cloud, withIntermediateDirectories: true)
+        setSyncFolder(state, cloud)
+        fake.on("PUT " + CompanionProtocol.inboxPrefix + "*",
+                .error(500, CompanionError.serverError))
+        await state.sendQueueToDesktop(target: .new)
+        let item = try XCTUnwrap(state.companionOutbox?.items.first)
+        XCTAssertFalse(item.refused)
+        XCTAssertTrue(state.errorMessage?.hasPrefix(item.fileName + " was not sent: ") == true, state.errorMessage ?? "")
+
+        fake.downHosts = [CompanionLink.address]
+        await state.drainOutbox()
+
+        XCTAssertEqual(state.companionOutbox?.items.first?.inSyncFolder, true)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: cloud.path), [SyncPackage.fileName(item.id)])
+    }
+
+    @MainActor
+    func test_drainOutbox_unreachableWithoutAFolder_saysWhereToSetOneOnce() async throws {
+        let fake = CompanionFakeDesktop()
+        let state = try await makeState(pages: 1)
+        try await pairWithSyncKey(state, with: fake)
+        fake.downHosts = [CompanionLink.address]
+
+        await state.sendQueueToDesktop(target: .new)
+
+        XCTAssertEqual(state.statusMessage,
+                       "Office PC cannot be reached on this network. Set a cloud folder in My computer to send when the PC cannot be reached.")
+        XCTAssertEqual(state.companionOutboxCount, 1)
+
+        await state.drainOutbox()
+        XCTAssertEqual(state.statusMessage, "Office PC cannot be reached on this network.")
+        XCTAssertEqual(state.companionOutboxCount, 1)
+    }
+
+    @MainActor
+    func test_sendThroughSyncFolder_aWriteThatFails_keepsTheDocumentForTheFolder() async throws {
+        let fake = CompanionFakeDesktop()
+        let state = try await makeState(pages: 1)
+        try await pairWithSyncKey(state, with: fake)
+        setSyncFolder(state, folder.appendingPathComponent("Not there", isDirectory: true))
+        fake.downHosts = [CompanionLink.address]
+
+        await state.sendQueueToDesktop(target: .new)
+
+        XCTAssertEqual(state.companionOutboxCount, 1)
+        let item = try XCTUnwrap(state.companionOutbox?.items.first)
+        XCTAssertTrue(item.viaSyncFolder)
+        XCTAssertTrue(state.errorMessage?.hasPrefix(item.fileName + " was not sent: ") == true, state.errorMessage ?? "")
+
+        // The folder is there now: the next round puts it there without asking the desktop.
+        let cloud = folder.appendingPathComponent("Not there")
+        try FileManager.default.createDirectory(at: cloud, withIntermediateDirectories: true)
+        fake.downHosts = []
+        let puts = fake.requests.filter { $0.method == "PUT" }.count
+        await state.drainOutbox()
+
+        XCTAssertEqual(state.companionOutboxCount, 1)
+        XCTAssertEqual(fake.requests.filter { $0.method == "PUT" }.count, puts)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: cloud.path), [SyncPackage.fileName(item.id)])
+
+        // Sent over the network after all: it leaves the outbox, and its file the folder.
+        fake.on("PUT " + CompanionProtocol.inboxPrefix + "*") { request in
+            let id = String(request.path.dropFirst(CompanionProtocol.inboxPrefix.count))
+            return .json(201, InboxResponse(packageId: id, pageCount: 1, duplicate: false).toJSON())
+        }
+        fake.on("GET " + CompanionProtocol.helloPath, CompanionLink.hello())
+        await state.drainOutbox()
+
+        XCTAssertEqual(state.companionOutboxCount, 0)
+        XCTAssertEqual(fake.requests.filter { $0.method == "PUT" }.count, puts + 1)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: cloud.path), [])
+    }
+
+    @MainActor
+    func test_checkDesktop_devicesKeptApart_withASyncFolder_saysTheFolderIsUsed() async throws {
+        let fake = CompanionFakeDesktop()
+        let state = try await makeState()
+        try await pairWithSyncKey(state, with: fake)
+        fake.downHosts = [CompanionLink.address]
+        state.companionDesktopSeenOnNetwork = { _ in true }
+
+        await state.checkDesktop()
+        XCTAssertEqual(state.companionStatus, .unreachable(reason: CompanionText.clientIsolationReason))
+
+        setSyncFolder(state, folder)
+        await state.checkDesktop()
+        XCTAssertEqual(state.companionStatus, .unreachable(reason: CompanionText.clientIsolationSyncFolderReason))
+
+        state.companionDesktopSeenOnNetwork = { _ in false }
+        await state.checkDesktop()
+        XCTAssertEqual(state.companionStatus, .unreachable(reason: "Office PC is not on this network."))
     }
 }

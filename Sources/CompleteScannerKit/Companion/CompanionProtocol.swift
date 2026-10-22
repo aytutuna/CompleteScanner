@@ -274,29 +274,34 @@ public struct PairRequest: Equatable, Sendable {
     }
 }
 
-/// The answer to a pairing the user allowed: who the desktop is and the phone's secret.
+/// The answer to a pairing the user allowed: who the desktop is, the phone's secret and, from a desktop
+/// that has the cloud sync folder (C2), the key packages put there are sealed with (`SyncPackage`).
 public struct PairResponse: Equatable, Sendable {
     public var desktopId: String
     public var desktopName: String
     public var deviceSecret: String
     public var protocolVersion: Int
+    /// Base64url of the 32-byte sync key; nil from a desktop without the sync folder (left out of the JSON).
+    public var syncKey: String?
 
-    public init(desktopId: String, desktopName: String, deviceSecret: String, protocolVersion: Int) {
+    public init(desktopId: String, desktopName: String, deviceSecret: String, protocolVersion: Int, syncKey: String? = nil) {
         self.desktopId = desktopId
         self.desktopName = desktopName
         self.deviceSecret = deviceSecret
         self.protocolVersion = protocolVersion
+        self.syncKey = syncKey
     }
 
     public func toJSON() -> String {
         "{\"protocolVersion\":\(CompanionProtocol.integer(protocolVersion)),\"desktopId\":\(CompanionPackage.quote(desktopId))"
-            + ",\"desktopName\":\(CompanionPackage.quote(desktopName)),\"deviceSecret\":\(CompanionPackage.quote(deviceSecret))}"
+            + ",\"desktopName\":\(CompanionPackage.quote(desktopName)),\"deviceSecret\":\(CompanionPackage.quote(deviceSecret))"
+            + (syncKey.map { ",\"syncKey\":\(CompanionPackage.quote($0))" } ?? "") + "}"
     }
 
     public static func fromJSON(_ json: Data) -> PairResponse? {
         guard let dto = CompanionProtocol.decode(PairResponseDTO.self, json) else { return nil }
         return PairResponse(desktopId: dto.desktopId, desktopName: dto.desktopName, deviceSecret: dto.deviceSecret,
-                            protocolVersion: Int(dto.protocolVersion))
+                            protocolVersion: Int(dto.protocolVersion), syncKey: dto.syncKey)
     }
 }
 
@@ -465,8 +470,9 @@ private struct PairResponseDTO: Decodable {
     var desktopId = ""
     var desktopName = ""
     var deviceSecret = ""
+    var syncKey: String?
 
-    enum CodingKeys: String, CodingKey { case protocolVersion, desktopId, desktopName, deviceSecret }
+    enum CodingKeys: String, CodingKey { case protocolVersion, desktopId, desktopName, deviceSecret, syncKey }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -474,6 +480,7 @@ private struct PairResponseDTO: Decodable {
         desktopId = c.decodeLenient(forKey: .desktopId, default: desktopId)
         desktopName = c.decodeLenient(forKey: .desktopName, default: desktopName)
         deviceSecret = c.decodeLenient(forKey: .deviceSecret, default: deviceSecret)
+        syncKey = c.decodeLenient(forKey: .syncKey, default: syncKey)
     }
 }
 

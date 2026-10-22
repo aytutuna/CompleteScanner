@@ -119,5 +119,45 @@ final class PhoneOutboxTests: XCTestCase {
         XCTAssertEqual(item.id, "pkg-0001-abcd")
         XCTAssertEqual(item.target, .new)
         XCTAssertEqual(item.attempts, 0)
+        XCTAssertFalse(item.viaSyncFolder)
+    }
+
+    func test_markViaSyncFolder_isKept_andReadLeniently() throws {
+        let outbox = PhoneOutbox(directory: outboxFolder)
+        let item = try outbox.enqueue(try package("Scan.csdoc"), target: .new, desktopId: desk)
+        XCTAssertFalse(item.viaSyncFolder)
+
+        outbox.markViaSyncFolder(item.id)
+
+        XCTAssertEqual(outbox.items.first?.viaSyncFolder, true)
+        XCTAssertEqual(PhoneOutbox(directory: outboxFolder).items.first?.viaSyncFolder, true)
+        let text = try String(contentsOf: outboxFolder.appendingPathComponent(PhoneOutbox.fileName), encoding: .utf8)
+        XCTAssertTrue(text.contains("\"viaSyncFolder\""))
+
+        let json = #"{"items":[{"id":"pkg-0001-abcd","fileName":"Scan.csdoc","viaSyncFolder":"yes"}]}"#
+        try Data(json.utf8).write(to: outboxFolder.appendingPathComponent(PhoneOutbox.fileName))
+        XCTAssertEqual(PhoneOutbox(directory: outboxFolder).items.first?.viaSyncFolder, false)
+    }
+
+    func test_markInSyncFolder_andMarkRefused_areKept_andReadLeniently() throws {
+        let outbox = PhoneOutbox(directory: outboxFolder)
+        let item = try outbox.enqueue(try package("Scan.csdoc"), target: .new, desktopId: desk)
+        XCTAssertFalse(item.inSyncFolder)
+        XCTAssertFalse(item.refused)
+
+        outbox.markInSyncFolder(item.id)
+        outbox.markRefused(item.id)
+
+        let kept = try XCTUnwrap(PhoneOutbox(directory: outboxFolder).items.first)
+        XCTAssertTrue(kept.inSyncFolder)
+        XCTAssertTrue(kept.refused)
+        outbox.markInSyncFolder(item.id, false)
+        XCTAssertEqual(PhoneOutbox(directory: outboxFolder).items.first?.inSyncFolder, false)
+
+        let json = #"{"items":[{"id":"pkg-0001-abcd","fileName":"Scan.csdoc","inSyncFolder":"yes","refused":"no"}]}"#
+        try Data(json.utf8).write(to: outboxFolder.appendingPathComponent(PhoneOutbox.fileName))
+        let lenient = try XCTUnwrap(PhoneOutbox(directory: outboxFolder).items.first)
+        XCTAssertFalse(lenient.inSyncFolder)
+        XCTAssertFalse(lenient.refused)
     }
 }

@@ -17,6 +17,9 @@ public struct CompanionServiceOptions {
     public var identity: CompanionIdentity
     public var networks: CompanionNetworkSource
     public var advertiser: DnsSdAdvertiser = NoDnsSdAdvertiser()
+    /// Where the phones' sync keys for the cloud sync folder are kept (the Mac's Keychain); nil: no keys
+    /// are made, and phones pair without the folder.
+    public var syncKeyStore: (any CompanionSecretStore)?
     public var clock: () -> Date = { Date() }
     /// The name phones show, the DNS-SD instance's name.
     public var desktopName: String
@@ -36,8 +39,9 @@ public struct CompanionServiceOptions {
 /// The desktop's companion, put together: the paired phones and approved networks, the inbox and
 /// outbox, the server's requests and the host that listens only while it is wanted (a phone is
 /// paired, a pairing code is shown, or a phone that presented the code waits for the user's answer)
-/// and only on trusted networks. The app adds the platform's pieces (identity, networks, DNS-SD)
-/// and its window. Safe to use from any thread.
+/// and only on trusted networks, and the cloud sync folder phones put documents in when they cannot
+/// reach it (C2, `SyncFolderWatcher`), watched while the service runs. The app adds the platform's
+/// pieces (identity, networks, DNS-SD, the sync keys' store) and its window. Safe to use from any thread.
 public final class CompanionService: @unchecked Sendable {
     public let devices: PairedDeviceStore
     public let trustedNetworks: TrustedNetworkStore
@@ -53,17 +57,21 @@ public final class CompanionService: @unchecked Sendable {
     private var session: PairingSession?
     private var pairingTimer: Task<Void, Never>?
     private var pages = 0
+    private var syncWatcher: SyncFolderWatcher?
 
     /// Called (on any thread) when the status, the paired phones, the networks or the pairing changed.
     public var onChange: (() -> Void)?
     /// A phone was paired (on the request's task).
     public var onDevicePaired: ((PairedDevice) -> Void)?
-    /// A paired phone sent a document (on the request's task). Release it from `inbox` once imported.
+    /// A paired phone sent a document (on the request's task), or put it in the sync folder (on the
+    /// watcher's task). Release it from `inbox` once imported.
     public var onPackageReceived: ((ReceivedPackage, PairedDevice) -> Void)?
+    /// A file in the sync folder could not be read: the message for the status, once per file.
+    public var onSyncFolderProblem: ((String) -> Void)?
 
     public init(_ options: CompanionServiceOptions) {
         self.options = options
-        devices = PairedDeviceStore(directory: options.settingsDirectory)
+        devices = PairedDeviceStore(directory: options.settingsDirectory, syncKeyStore: options.syncKeyStore)
         trustedNetworks = TrustedNetworkStore(directory: options.settingsDirectory)
         inbox = CompanionInbox(directory: options.dataDirectory.appendingPathComponent("Inbox", isDirectory: true))
         outbox = CompanionOutbox(directory: options.dataDirectory.appendingPathComponent("Outbox", isDirectory: true))
@@ -140,9 +148,23 @@ public final class CompanionService: @unchecked Sendable {
         return pin
     }
 
-    /// Starts following the networks: listens if a phone is paired and a trusted network is connected.
+    /// The cloud sync folder (C2); nil when none is chosen.
+    public var syncFolder: URL? { devices.syncFolder }
+
+    /// Starts following the networks: listens if a phone is paired and a trusted network is connected;
+    /// watches the sync folder when one is chosen.
     public func start() async {
+        watchSyncFolder()
         await host.refresh()
+    }
+
+    /// Chooses the cloud sync folder (nil: none) and watches it from now on; false when that could not
+    /// be saved.
+    @discardableResult
+    public func setSyncFolder(_ folder: URL?) -> Bool {
+        guard devices.setSyncFolder(folder) else { return false }
+        watchSyncFolder()
+        return true
     }
 
     public func refresh() async {
@@ -237,14 +259,17 @@ public final class CompanionService: @unchecked Sendable {
                                                       trust: TrustedNetworkPolicy.trust(network) { trusted.isApproved($0) }))
             }
         }
+        let lastSeen = devices.devices.compactMap(\.lastSeen).max()
         return CompanionSnapshot(platform: platform, networks: networks, listen: status.state, port: status.port,
                                  listenError: status.error, pairedCount: devices.count,
-                                 pairingOpen: pairing != nil || awaitingApproval)
+                                 pairingOpen: pairing != nil || awaitingApproval, syncFolderChosen: syncFolder != nil,
+                                 phonesQuietFor: lastSeen.map { options.clock().timeIntervalSince($0) })
     }
 
     /// Stops listening and withdraws the advertisements (the app quits).
     public func dispose() async {
         cancelPairingTimer()
+        stopSyncWatcher()
         await host.dispose()
     }
 
@@ -301,6 +326,29 @@ public final class CompanionService: @unchecked Sendable {
     }
 
     // MARK: - Private
+
+    /// Watches the folder chosen now, and no other.
+    private func watchSyncFolder() {
+        let folder = devices.syncFolder
+        lock.lock()
+        defer { lock.unlock() }
+        guard syncWatcher?.folder.path != folder?.path else { return }
+        syncWatcher?.stop()
+        syncWatcher = nil
+        guard let folder else { return }
+        let watcher = SyncFolderWatcher(folder: folder, devices: devices, inbox: inbox)
+        watcher.onPackageReceived = { [weak self] package, device in self?.onPackageReceived?(package, device) }
+        watcher.onProblem = { [weak self] message in self?.onSyncFolderProblem?(message) }
+        watcher.start()
+        syncWatcher = watcher
+    }
+
+    private func stopSyncWatcher() {
+        lock.lock()
+        syncWatcher?.stop()
+        syncWatcher = nil
+        lock.unlock()
+    }
 
     private var isWanted: Bool {
         devices.count > 0 || pairing != nil || awaitingApproval

@@ -9,7 +9,8 @@ namespace CompleteScanner.App;
 /// <summary>
 /// The phone link (<see cref="CompanionService"/>): started when a phone is paired (or the Phone
 /// window opens), receiving only on trusted networks, and documents from paired phones added to the
-/// queue on their own, with a notification. Windows only for now; the Mac's server comes later.
+/// queue on their own, with a notification. Documents phones put in the cloud sync folder (C2) come
+/// the same way: the service watches the folder while it runs and receives them into the inbox.
 /// </summary>
 public sealed partial class AppViewModel
 {
@@ -34,6 +35,9 @@ public sealed partial class AppViewModel
 
     /// <summary>Why the link could not start; null when it started or was not tried.</summary>
     public string? CompanionError { get; private set; }
+
+    /// <summary>The last file in the cloud folder that could not be read; null since the folder was chosen.</summary>
+    public string? SyncFolderProblem { get; private set; }
 
     /// <summary>
     /// Asks the user whether a phone that presented the pairing code may pair (the Phone window shows
@@ -108,6 +112,13 @@ public sealed partial class AppViewModel
             companion.PackageReceived += (_, e) =>
                 _dispatcher.BeginInvoke(() => QueuePhoneDocument(e.Package, e.Device.Name));
             companion.Changed += (_, _) => _dispatcher.BeginInvoke(() => CompanionChanged?.Invoke());
+            companion.SyncFolderProblem += (_, message) => _dispatcher.BeginInvoke(() =>
+            {
+                SyncFolderProblem = message;
+                StatusMessage = message;
+                NotifyAll();
+                CompanionChanged?.Invoke();
+            });
             _companion = companion;
             _queuedPageCount = ScannedPages.Count;
             ScannedPages.CollectionChanged += (_, _) => _queuedPageCount = ScannedPages.Count;
@@ -121,6 +132,15 @@ public sealed partial class AppViewModel
             System.Diagnostics.Trace.TraceError($"The phone link did not start: {e}");
         }
         return _companion;
+    }
+
+    /// <summary>Chooses the cloud folder phones put documents in (null: none); false when that could not be saved.</summary>
+    public bool SetPhoneSyncFolder(string? path)
+    {
+        if (_companion is null || !_companion.SetSyncFolder(path)) return false;
+        SyncFolderProblem = null;
+        CompanionChanged?.Invoke();
+        return true;
     }
 
     /// <summary>Documents received before the app last closed, not yet in the queue; an inbox that cannot be read is left for next time.</summary>

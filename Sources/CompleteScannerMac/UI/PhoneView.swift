@@ -5,10 +5,10 @@ import SwiftUI
 
 /// "Send from your phone": whether this Mac receives from phones and on which networks (with "Allow
 /// receiving on this network" for each), pairing a phone by QR code (asking the user to allow the
-/// phone that presents it), the paired phones with Remove, the connection checks
-/// (`CompanionTroubleshooter`) and Reset pairing. Shown as a sheet from the sidebar, like the
-/// troubleshooter; the pairing code stops working when it closes. It changes no system setting. Twin
-/// of the Windows `PhoneWindow`.
+/// phone that presents it), the paired phones with Remove, the cloud folder phones put documents in
+/// when they cannot reach this Mac (C2), the connection checks (`CompanionTroubleshooter`) and Reset
+/// pairing. Shown as a sheet from the sidebar, like the troubleshooter; the pairing code stops working
+/// when it closes. It changes no system setting. Twin of the Windows `PhoneWindow`.
 struct PhoneView: View {
     @EnvironmentObject var state: AppState
     @Environment(\.dismiss) private var dismiss
@@ -68,6 +68,9 @@ struct PhoneView: View {
                     ForEach(devices, id: \.id) { device in
                         phoneRow(device, service: service)
                     }
+
+                    sectionTitle("Cloud folder")
+                    syncFolderCard(service)
 
                     sectionTitle("Connection checks")
                     Text(CompanionTroubleshooter.summary(checks))
@@ -377,6 +380,11 @@ struct PhoneView: View {
                 Text(PhoneView.caption(device))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if service?.devices.hasSyncKey(device.id) == false {
+                    Text("Pair again to use the cloud folder")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             Spacer(minLength: 8)
             Button("Remove") {
@@ -407,6 +415,86 @@ struct PhoneView: View {
                 : "last seen \(seen.formatted(date: .numeric, time: .omitted))")
         }
         return parts.joined(separator: " \u{00B7} ")
+    }
+
+    // MARK: - Cloud folder
+
+    private func syncFolderCard(_ service: CompanionService?) -> some View {
+        let folder = service?.syncFolder
+        let problem = service == nil ? nil : state.syncFolderProblem
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("A folder synced by iCloud Drive or OneDrive. The phone puts documents here when it cannot reach this Mac; "
+                 + "they are encrypted with a key only this Mac and the phone know.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Text(folder?.path ?? "")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+                    .help(folder?.path ?? "")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Choose\u{2026}") {
+                    chooseSyncFolder(folder)
+                }
+                .disabled(service == nil)
+                .help("Choose the cloud folder")
+                Button("Clear") {
+                    setSyncFolder(nil)
+                }
+                .disabled(folder == nil)
+                .help("Stop watching the cloud folder")
+            }
+            Text(PhoneView.syncFolderStatus(folder, running: service != nil))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let problem {
+                Text(problem)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .phoneCard()
+        .accessibilityElement(children: .contain)
+    }
+
+    static func syncFolderStatus(_ folder: URL?, running: Bool) -> String {
+        guard running else { return "Not watching." }
+        guard let folder else { return "Not watching: no folder chosen." }
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue else {
+            return "Waiting for \(folder.path): the folder is not there now."
+        }
+        return "Watching \(folder.path)."
+    }
+
+    /// Starts in the folder chosen now, or else in iCloud Drive when it is set up on this Mac.
+    private func chooseSyncFolder(_ current: URL?) {
+        let panel = NSOpenPanel()
+        panel.title = "Choose the cloud folder"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        let iCloud = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
+        if let current, FileManager.default.fileExists(atPath: current.path) {
+            panel.directoryURL = current
+        } else if FileManager.default.fileExists(atPath: iCloud.path) {
+            panel.directoryURL = iCloud
+        }
+        panel.prompt = "Choose"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        setSyncFolder(url)
+    }
+
+    private func setSyncFolder(_ folder: URL?) {
+        if !state.setPhoneSyncFolder(folder) {
+            footerMessage = "The setting could not be saved."
+        }
     }
 
     // MARK: - Reset and checks

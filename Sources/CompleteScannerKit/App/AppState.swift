@@ -289,6 +289,12 @@ public final class AppState: ObservableObject {
     /// so a desktop that does not answer is told from a network that keeps devices apart
     /// (`companionUnreachableReason`). Set by the iPhone's shell; nil: not known.
     public var companionDesktopSeenOnNetwork: ((String) -> Bool)?
+    /// Opens the cloud sync folder of `PairedDesktop.syncFolderBookmark` and gives it with the bookmark to
+    /// keep, made again when the old one is stale; nil when it no longer resolves (`openSyncFolder`). Set
+    /// by `makeForIOS`, like `resolveDestinationBookmark`; without it no sync folder is used.
+    public var resolveSyncFolderBookmark: (@MainActor (Data) -> (folder: URL, bookmark: Data)?)?
+    /// The status said once this session where to set a sync folder (`drainOutbox`).
+    var companionSyncFolderHinted = false
     /// The companion's files and the client of the paired desktop (`setUpCompanion`,
     /// AppState+Companion.swift); nil until the shell sets them up.
     var companionStore: PairedDesktopStore?
@@ -310,6 +316,8 @@ public final class AppState: ObservableObject {
     @Published public internal(set) var companionHostStatus = CompanionHostStatus.initial
     /// Why the phone link could not start; nil when it started or was not tried.
     @Published public internal(set) var companionHostError: String?
+    /// The last file in the cloud folder that could not be read; nil since the folder was chosen.
+    @Published public internal(set) var syncFolderProblem: String?
     /// Asks the user whether a phone that presented the pairing code may pair (the Phone window answers;
     /// declined when the asking task is cancelled). Without it the pairing is allowed: the code was
     /// only on this screen.

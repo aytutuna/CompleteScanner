@@ -124,6 +124,30 @@
                 <TextBlock Text="Paired phones" Style="{StaticResource SectionHeaderText}" Margin="0,16,0,8" />
                 <StackPanel x:Name="PhonesPanel" AutomationProperties.Name="Paired phones" />
 
+                <!-- The cloud folder phones put documents in when they cannot reach this PC (C2). -->
+                <TextBlock x:Name="SyncFolderLabel" Text="Cloud folder" Style="{StaticResource SectionHeaderText}" Margin="0,16,0,8" />
+                <Border Style="{StaticResource CardStyle}" Padding="16,12,16,12">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" Margin="0,0,0,8"
+                                   Text="A folder synced by OneDrive or iCloud Drive. The phone puts documents here when it cannot reach this PC; they are encrypted with a key only this PC and the phone know." />
+                        <DockPanel>
+                            <Button x:Name="ClearSyncFolderButton" DockPanel.Dock="Right" Content="Clear" Margin="4,0,0,0"
+                                    Style="{StaticResource SubtleButtonStyle}"
+                                    ToolTip="Stop watching the cloud folder" Click="ClearSyncFolder_Click" />
+                            <Button x:Name="ChooseSyncFolderButton" DockPanel.Dock="Right" Content="Choose…" Margin="4,0,0,0"
+                                    ToolTip="Choose the cloud folder" Click="ChooseSyncFolder_Click" />
+                            <TextBox x:Name="SyncFolderBox" IsReadOnly="True"
+                                     ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
+                                     AutomationProperties.LabeledBy="{Binding ElementName=SyncFolderLabel}" />
+                        </DockPanel>
+                        <TextBlock x:Name="SyncFolderStatus" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                   AutomationProperties.LiveSetting="Polite" />
+                        <TextBlock x:Name="SyncFolderProblemText" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0"
+                                   Foreground="{DynamicResource SystemFillColorCriticalBrush}" Visibility="Collapsed"
+                                   AutomationProperties.LiveSetting="Polite" />
+                    </StackPanel>
+                </Border>
+
                 <!-- Why a phone may not connect: the checks, one card each. -->
                 <TextBlock Text="Connection checks" Style="{StaticResource SectionHeaderText}" Margin="0,16,0,4" />
                 <TextBlock x:Name="SummaryText" Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" Margin="0,0,0,8"

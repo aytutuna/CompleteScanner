@@ -100,6 +100,36 @@ final class PairedDesktopStoreTests: XCTestCase {
         XCTAssertEqual(secrets.count, 0)
     }
 
+    func test_syncKey_isKeptBesideTheSecret_andGoesWithIt() throws {
+        let secrets = MemorySecretStore()
+        let store = PairedDesktopStore(directory: folder, secrets: secrets)
+        let key = Data(repeating: 9, count: SyncPackage.keyByteCount)
+        var paired = desktop()
+        paired.syncFolderBookmark = Data("bookmark".utf8)
+        try store.save(paired, secret: CompanionVectors.secret, syncKey: key)
+
+        XCTAssertEqual(store.syncKey(for: paired), key)
+        XCTAssertEqual(try secrets.load(for: "desk-0001-abcd.sync"), key)
+        XCTAssertEqual(store.load(), paired)
+        let text = try String(contentsOf: folder.appendingPathComponent(PairedDesktopStore.fileName), encoding: .utf8)
+        XCTAssertFalse(text.contains(key.base64EncodedString()))
+
+        // A desktop without the sync folder pairs again: the key goes.
+        try store.save(paired, secret: CompanionVectors.secret)
+        XCTAssertNil(store.syncKey(for: paired))
+
+        try store.save(paired, secret: CompanionVectors.secret, syncKey: key)
+        store.forgetSecret(of: paired)
+        XCTAssertNil(store.syncKey(for: paired))
+        XCTAssertEqual(secrets.count, 0)
+
+        try store.save(paired, secret: CompanionVectors.secret, syncKey: key)
+        try store.save(desktop(id: "desk-0002-abcd"), secret: CompanionVectors.secret, syncKey: key)
+        XCTAssertNil(try secrets.load(for: "desk-0001-abcd.sync"))
+        store.remove()
+        XCTAssertEqual(secrets.count, 0)
+    }
+
     func test_received_keepsTheNewestIds() throws {
         let store = PairedDesktopStore(directory: folder, secrets: MemorySecretStore())
         var paired = desktop()

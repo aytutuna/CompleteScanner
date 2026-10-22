@@ -28,7 +28,8 @@ extension AppState {
     /// The Mac app's state: ImageCaptureCore's scanners and the demo scanner, with the Mac's file
     /// actions, troubleshooter links, printing and app lifecycle, the password dialog of a protected
     /// PDF (`PDFPasswordWindow`), the question before adding pages to a signed or PDF/A file, and the
-    /// phone link's pieces (the keychain identity, the interfaces, DNS-SD), started when a phone is paired.
+    /// phone link's pieces (the keychain identity, the interfaces, DNS-SD, the phones' sync keys in the
+    /// keychain), started when a phone is paired.
     @MainActor
     static func makeForMac() -> AppState {
         let backends: [any ScannerBackend] = [ICScannerBackend(), AppState.makeDemoBackend()]
@@ -46,6 +47,7 @@ extension AppState {
                                                 identity: CompanionCertificateStore(hostName: hostName),
                                                 networks: MacNetworkSource(), desktopName: computerName)
         companion.advertiser = MacDnsSdAdvertiser()
+        companion.syncKeyStore = MacCompanionSyncKeys()
         state.setUpCompanionHost(companion)
         return state
     }

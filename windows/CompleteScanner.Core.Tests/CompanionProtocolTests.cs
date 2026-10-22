@@ -96,6 +96,9 @@ public class CompanionProtocolTests
         Assert.Equal(
             """{"protocolVersion":1,"desktopId":"0123456789abcdef0123456789abcdef","desktopName":"AYTU-PC","deviceSecret":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"}""",
             new PairResponse(DesktopId, "AYTU-PC", CompanionVectors.SecretText, 1).ToJson());
+        Assert.Equal(
+            """{"protocolVersion":1,"desktopId":"0123456789abcdef0123456789abcdef","desktopName":"AYTU-PC","deviceSecret":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8","syncKey":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"}""",
+            new PairResponse(DesktopId, "AYTU-PC", CompanionVectors.SecretText, 1, CompanionVectors.SecretText).ToJson());
         Assert.Equal("""{"service":"completescanner","protocolVersion":1,"paired":false}""", new HealthResponse(1, false).ToJson());
         Assert.Equal(
             """{"protocolVersion":1,"desktopId":"0123456789abcdef0123456789abcdef","desktopName":"AYTU-PC","queuedPages":12,"maxUploadBytes":553648128}""",
@@ -116,6 +119,8 @@ public class CompanionProtocolTests
         Assert.Equal(pair, PairRequest.FromJson(Utf8(pair.ToJson())));
         var response = new PairResponse(DesktopId, "AYTU-PC", CompanionVectors.SecretText, 1);
         Assert.Equal(response, PairResponse.FromJson(Utf8(response.ToJson())));
+        var withKey = response with { SyncKey = CompanionVectors.SecretText };
+        Assert.Equal(withKey, PairResponse.FromJson(Utf8(withKey.ToJson())));
         Assert.Equal(new HealthResponse(1, true), HealthResponse.FromJson(Utf8(new HealthResponse(1, true).ToJson())));
         var hello = new HelloResponse(DesktopId, "AYTU-PC", 1, 0, CompanionProtocol.MaxUploadBytes);
         Assert.Equal(hello, HelloResponse.FromJson(Utf8(hello.ToJson())));
@@ -133,6 +138,11 @@ public class CompanionProtocolTests
         var hello = HelloResponse.FromJson(Utf8("""{"protocolVersion":1,"desktopId":"d","queuedPages":"12","maxUploadBytes":-5}"""));
         Assert.Equal(new HelloResponse("d", "", 1, 0, -5), hello);
         Assert.Equal(new InboxResponse("", 0, false), InboxResponse.FromJson(Utf8("{}")));
+        // A desktop from before the sync folder sends no key.
+        var old = PairResponse.FromJson(Utf8("""{"protocolVersion":1,"desktopId":"d","desktopName":"PC","deviceSecret":"s"}"""));
+        Assert.Equal(new PairResponse("d", "PC", "s", 1), old);
+        Assert.Null(old!.SyncKey);
+        Assert.Null(PairResponse.FromJson(Utf8("""{"deviceSecret":"s","syncKey":5}"""))!.SyncKey);
         // Not an object at all.
         Assert.Null(PairRequest.FromJson(Utf8("[]")));
         Assert.Null(PairRequest.FromJson(Utf8("null")));

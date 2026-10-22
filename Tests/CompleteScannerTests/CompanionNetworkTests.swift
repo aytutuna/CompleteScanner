@@ -252,4 +252,30 @@ final class CompanionNetworkTests: XCTestCase {
         let offline = CompanionTroubleshooter.diagnose(CompanionSnapshot(platform: .mac, listen: .offline))
         XCTAssertTrue(offline[0].detail.hasPrefix("This Mac is not on a network"))
     }
+
+    func testChecks_SuggestTheCloudFolderWhenPhonesStayAway() {
+        let day: TimeInterval = 24 * 60 * 60
+        let quiet = CompanionSnapshot(networks: [state(TestNetworks.home(), .privateNetwork)], listen: .listening, port: 52731,
+                                      pairedCount: 1, phonesQuietFor: 4.5 * day)
+        let checks = CompanionTroubleshooter.diagnose(quiet)
+        let check = checks.first { $0.id == "phoneSyncFolder" }
+        XCTAssertEqual(check?.status, .tip)
+        XCTAssertEqual(check?.detail.contains("for 4 days"), true)
+        XCTAssertEqual(check?.detail.contains("OneDrive or iCloud Drive"), true)
+        XCTAssertEqual(checks.last?.id, "phoneIsolation")
+        var chosen = quiet
+        chosen.syncFolderChosen = true
+        XCTAssertFalse(CompanionTroubleshooter.diagnose(chosen).contains { $0.id == "phoneSyncFolder" })
+        var recent = quiet
+        recent.phonesQuietFor = day
+        XCTAssertFalse(CompanionTroubleshooter.diagnose(recent).contains { $0.id == "phoneSyncFolder" })
+        var none = quiet
+        none.pairedCount = 0
+        none.phonesQuietFor = nil
+        XCTAssertFalse(CompanionTroubleshooter.diagnose(none).contains { $0.id == "phoneSyncFolder" })
+        var mac = quiet
+        mac.platform = .mac
+        XCTAssertEqual(CompanionTroubleshooter.diagnose(mac).first { $0.id == "phoneSyncFolder" }?.title,
+                       "Phone has not reached this Mac lately?")
+    }
 }
