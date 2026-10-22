@@ -29,7 +29,8 @@ final class PhotosTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["review.card.1"].exists, "The first print's card")
         XCTAssertTrue(app.descendants(matching: .any)["review.card.2"].exists, "The second print's card")
         XCTAssertFalse(app.descendants(matching: .any)["review.card.3"].exists, "Only the two prints")
-        XCTAssertTrue(app.buttons["review.keep.1"].exists, "Keep on each card")
+        // Keep carries the toggle trait, so it is not among the buttons.
+        XCTAssertTrue(app.descendants(matching: .any)["review.keep.1"].exists, "Keep on each card")
         XCTAssertTrue(app.buttons["review.crop.1"].exists, "Fix crop on each card")
         XCTAssertTrue(app.buttons["review.cancel"].exists, "Cancel")
         XCTAssertEqual(save.label, "Save 2 photos")
