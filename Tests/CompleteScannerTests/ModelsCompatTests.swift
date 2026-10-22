@@ -283,9 +283,12 @@ final class ModelsCompatTests: XCTestCase {
     }
 
     func test_roundTrip_preservesEveryField() throws {
+        var bookmarked = ScanSettings()
+        bookmarked.destinationBookmark = Data([0, 1, 2, 250, 251, 255])
         let presets = [
             Preset(id: sampleID, name: "Receipts", settings: nonDefaultSettings()),
             Preset(name: "Defaults", settings: ScanSettings()),
+            Preset(name: "iCloud Drive", settings: bookmarked),
         ]
         let decoded = try JSONDecoder().decode([Preset].self, from: encode(presets))
         XCTAssertEqual(decoded, presets)
@@ -375,6 +378,66 @@ final class ModelsCompatTests: XCTestCase {
             "document", "taskOptions",
         ])
         XCTAssertEqual(written["taskId"] as? String, "document")
+    }
+
+    // MARK: Save folder (CONTRACTS.md, rule 6; the iPhone's bookmark and container)
+
+    func test_noBookmark_isLeftOutOfTheFile() throws {
+        XCTAssertNil(try jsonObject(encode(ScanSettings()))["destinationBookmark"])
+        XCTAssertNil(try decode([Preset].self, currentFormatPresetsJSON)[0].settings.destinationBookmark)
+    }
+
+    func test_bookmark_isWrittenAsBase64_withTheEarlierKeys() throws {
+        var settings = nonDefaultSettings()
+        settings.destinationBookmark = Data([0, 1, 2, 250, 251, 255])
+        let written = try jsonObject(encode(settings))
+        XCTAssertEqual(Set(written.keys), [
+            "intent", "source", "resolution", "colorMode", "format", "jpegQuality",
+            "destinationPath", "destinationBookmark", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
+            "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
+            "pdfSearchable", "ocrLanguages", "adjustments", "output", "duplex", "backBinding", "paperSize",
+            "document", "taskOptions",
+        ])
+        XCTAssertEqual(written["destinationBookmark"] as? String, "AAEC+vv/")
+        XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: encode(settings)), settings)
+    }
+
+    func test_wrongTypedBookmark_isNone_restIntact() throws {
+        let number = try decode(ScanSettings.self, #"{"destinationBookmark": 5, "resolution": 150}"#)
+        XCTAssertNil(number.destinationBookmark)
+        XCTAssertEqual(number.resolution, 150)
+        XCTAssertNil(try decode(ScanSettings.self, #"{"destinationBookmark": "not base64!"}"#).destinationBookmark)
+        XCTAssertNil(try decode(ScanSettings.self, #"{"destinationBookmark": null}"#).destinationBookmark)
+    }
+
+    func test_savePath_inAnEarlierInstallsDocuments_movesIntoThisOnes() {
+        let documents = URL(fileURLWithPath: "/var/mobile/Containers/Data/Application/0B3C9D1E-5F0A-4C2B-9E7D-1A2B3C4D5E6F/Documents",
+                            isDirectory: true)
+        let earlier = "/private/var/mobile/Containers/Data/Application/7A1F2E3D-4C5B-4A69-8778-96A5B4C3D2E1/Documents"
+        XCTAssertEqual(ScanSettings.rebasedDestinationPath(earlier + "/CompleteScanner", documents: documents),
+                       documents.path + "/CompleteScanner")
+        XCTAssertEqual(ScanSettings.rebasedDestinationPath(earlier + "/CompleteScanner/Receipts", documents: documents),
+                       documents.path + "/CompleteScanner/Receipts")
+        XCTAssertEqual(ScanSettings.rebasedDestinationPath(earlier, documents: documents), documents.path)
+        XCTAssertEqual(ScanSettings.rebasedDestinationPath(documents.path + "/CompleteScanner", documents: documents),
+                       documents.path + "/CompleteScanner")
+        // The Mac keeps every path.
+        XCTAssertEqual(ScanSettings.rebasedDestinationPath(earlier + "/CompleteScanner", documents: nil),
+                       earlier + "/CompleteScanner")
+    }
+
+    func test_savePath_outsideAnAppsDocuments_isKept() {
+        let documents = URL(fileURLWithPath: "/var/mobile/Containers/Data/Application/0B3C9D1E-5F0A-4C2B-9E7D-1A2B3C4D5E6F/Documents",
+                            isDirectory: true)
+        let kept = [
+            "/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Scans",
+            "/Users/someone/Documents/CompleteScanner",
+            "/var/mobile/Containers/Data/Application/7A1F2E3D-4C5B-4A69-8778-96A5B4C3D2E1/tmp/Documents",
+            "/var/mobile/Containers/Data/Application/not-a-uuid/Documents/CompleteScanner",
+        ]
+        for path in kept {
+            XCTAssertEqual(ScanSettings.rebasedDestinationPath(path, documents: documents), path)
+        }
     }
 
     // MARK: PDF size (CONTRACTS.md, rule 6; standard is the default for everyone)

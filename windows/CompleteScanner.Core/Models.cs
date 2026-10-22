@@ -744,6 +744,13 @@ public sealed class ScanSettings
     /// <summary>0 ... 1</summary>
     public double JpegQuality { get; set; } = 0.9;
     public string DestinationPath { get; set; } = DefaultDestinationPath;
+    /// <summary>
+    /// The save folder picked outside the app on the iPhone (iCloud Drive, a USB drive), as a
+    /// bookmark: iOS lets the app back into such a folder only through one. Not used here; kept so
+    /// settings and presets round-trip unchanged. Left out of the file when null.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public byte[]? DestinationBookmark { get; set; }
     public string NamingTemplate { get; set; } = "Scan {date} {counter}";
 
     // Photo mode
@@ -819,6 +826,7 @@ public sealed class ScanSettings
 #pragma warning disable CS0618 // deep-copy the legacy field so the clone stays independent
         copy.OcrLanguages = [.. OcrLanguages];
 #pragma warning restore CS0618
+        copy.DestinationBookmark = DestinationBookmark?.ToArray();
         copy.Adjustments = Adjustments.Clone();
         copy.Output = Output.Clone();
         copy.Document = Document.Clone();

@@ -12,6 +12,9 @@ public enum IOSSettingsText {
     public static let savedLabel = "Saved files"
     public static let fileNameLabel = "File name"
     public static let saveToLabel = "Save to"
+    /// Picks a save folder in Files (iCloud Drive, a USB drive); Use app folder goes back to the app's own.
+    public static let chooseFolderLabel = "Choose\u{2026}"
+    public static let appFolderLabel = "Use app folder"
     public static let troubleshootLabel = "Troubleshoot"
     public static let aboutLabel = "About"
     /// The ruler test page, to check that AirPrint copies come out at real size (I16).

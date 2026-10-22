@@ -73,6 +73,12 @@ public struct IOSLaunchOptions: Equatable, Sendable {
 /// What the iPhone's and iPad's app shell passes `AppState`: its scanner connections, its file actions,
 /// its troubleshooter service, its lifecycle and AirPrint printing (`IOSPrintService`, I16).
 public enum IOSShell {
+    /// The app's Documents folder in this install; the save folder kept from an earlier one is moved into
+    /// it (`ScanSettings.rebasedDestinationPath`).
+    public static var documentsFolder: URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+    }
+
     /// The demo scanner alone, whatever `options` say: the connections without the network, for tests and
     /// previews. The app's are `backends(options:networkScanners:)`.
     @MainActor
@@ -342,6 +348,11 @@ extension AppState {
                 await prompt.ask()
             }
         }
+        state.documentsFolder = IOSShell.documentsFolder
+        state.resolveDestinationBookmark = { (bookmark: Data) -> (folder: URL, bookmark: Data)? in
+            IOSSaveFolder.resolve(bookmark)
+        }
+        state.openBookmarkedFolder()
         return state
     }
 }

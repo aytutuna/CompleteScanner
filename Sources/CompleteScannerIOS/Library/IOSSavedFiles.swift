@@ -63,9 +63,23 @@ public enum IOSSavedFiles {
     /// The extensions of the files the app saves.
     public static let knownExtensions: Set<String> = ["pdf", "jpg", "jpeg", "png", "tiff", "tif", "txt", "docx"]
 
-    /// The folder the settings save to.
+    /// The folder the settings save to, in this install's Documents folder when it was the app's own
+    /// folder of an earlier one. A picked folder's path is its own, even in another app's Documents.
     public static func folder(_ settings: ScanSettings) -> URL {
-        let path: String = (settings.destinationPath as NSString).expandingTildeInPath
+        var path: String = (settings.destinationPath as NSString).expandingTildeInPath
+        if settings.destinationBookmark == nil {
+            path = ScanSettings.rebasedDestinationPath(path, documents: IOSShell.documentsFolder)
+        }
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    /// The folder the Saved files list and the Save to row show: the app's own folder while a picked
+    /// folder is out of reach (its drive unplugged, say), since a save goes there meanwhile
+    /// (`AppState.destinationDirectory`); else `folder(_:)`.
+    public static func shownFolder(_ settings: ScanSettings) -> URL {
+        let picked: URL = folder(settings)
+        guard settings.destinationBookmark != nil, (try? picked.checkResourceIsReachable()) != true else { return picked }
+        let path: String = ScanSettings.rebasedDestinationPath(ScanSettings.defaultDestinationPath, documents: IOSShell.documentsFolder)
         return URL(fileURLWithPath: path, isDirectory: true)
     }
 

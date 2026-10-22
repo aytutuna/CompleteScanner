@@ -1,6 +1,7 @@
 #if os(iOS)
 import CompleteScannerKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Settings: the presets, this session's scans and the saved files first, then the settings in the shared
 /// sections (`IOSSettingsSections`, built on `InspectorSections`: which are shown, in which order, their
@@ -385,13 +386,15 @@ private struct OutputSettingsRows: View {
     }
 }
 
-/// Where files are saved: the app's own folder in Files (On My iPhone › CompleteScanner), with Show in
-/// Files. Choosing another folder comes with the bookmarked folders of I3.
+/// Where files are saved: the app's own folder in Files (On My iPhone › CompleteScanner) or one picked with
+/// Choose… (iCloud Drive, a USB drive; `IOSSaveFolder`), with Show in Files. Use app folder goes back to
+/// the app's own once another is picked.
 private struct SaveFolderRow: View {
     @EnvironmentObject private var state: AppState
+    @State private var choosing: Bool = false
 
     var body: some View {
-        let folder: URL = IOSSavedFiles.folder(state.settings)
+        let folder: URL = IOSSavedFiles.shownFolder(state.settings)
         LabeledContent(IOSSettingsText.saveToLabel) {
             HStack(spacing: 8) {
                 Text(folder.lastPathComponent)
@@ -404,6 +407,33 @@ private struct SaveFolderRow: View {
                 }
                 .buttonStyle(.borderless)
                 .accessibilityLabel(Text(IOSSavedFiles.revealLabel))
+            }
+        }
+        HStack {
+            Button(IOSSettingsText.chooseFolderLabel) {
+                choosing = true
+            }
+            .accessibilityIdentifier("settings.saveFolder.choose")
+            if state.settings.destinationBookmark != nil {
+                Spacer()
+                Button(IOSSettingsText.appFolderLabel) {
+                    state.settings = IOSSaveFolder.appFolder(state.settings)
+                }
+                .accessibilityIdentifier("settings.saveFolder.app")
+            }
+        }
+        .buttonStyle(.borderless)
+        .fileImporter(isPresented: $choosing, allowedContentTypes: [UTType.folder]) { (result: Result<URL, Error>) in
+            switch result {
+            case .success(let url):
+                do {
+                    state.settings = try IOSSaveFolder.choosing(url, in: state.settings)
+                    state.openBookmarkedFolder()
+                } catch {
+                    state.errorMessage = error.localizedDescription
+                }
+            case .failure(let error):
+                state.errorMessage = error.localizedDescription
             }
         }
     }

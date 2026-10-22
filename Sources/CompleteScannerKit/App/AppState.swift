@@ -264,6 +264,14 @@ public final class AppState: ObservableObject {
     /// The password of the save running now (`protectionFor`); nil between saves.
     var savePassword: PDFProtection?
 
+    /// Opens the folder of `ScanSettings.destinationBookmark` (the iPhone's save folder outside the app)
+    /// and gives it with the bookmark to keep, made again when the old one is stale; nil when it no longer
+    /// resolves. Set by `makeForIOS`; without it the bookmark is not used.
+    public var resolveDestinationBookmark: (@MainActor (Data) -> (folder: URL, bookmark: Data)?)?
+    /// This install's Documents folder, which a save folder kept as a path into an earlier install's is
+    /// moved into (`ScanSettings.rebasedDestinationPath`); nil on the Mac. Set by `makeForIOS`.
+    public package(set) var documentsFolder: URL?
+
     @Published public private(set) var presets: [Preset] = []
 
     /// "Why isn't my scanner listed?" is open (`TroubleshooterView`, shown from the sidebar and
@@ -1440,7 +1448,8 @@ public final class AppState: ObservableObject {
             self.showPhotoReview = false
             self.photoSourceImages = [:]
             self.resetFlow()
-            self.statusMessage = "Saved \(saved.count) photo\(saved.count == 1 ? "" : "s") to \(s.destinationPath)"
+            let folder = saved.first?.deletingLastPathComponent().path ?? s.destinationPath
+            self.statusMessage = "Saved \(saved.count) photo\(saved.count == 1 ? "" : "s") to \(folder)"
             self.runAfterSave(s.output.afterSave, saved: saved)
         }
     }
@@ -1832,6 +1841,7 @@ public final class AppState: ObservableObject {
     public func applyPreset(_ preset: Preset) {
         let adapted = SettingsAdapter.adapt(preset.settings, to: sidesCapabilities)
         settings = adapted.settings
+        openBookmarkedFolder()
         statusMessage = Self.withNotes("Applied preset “\(preset.name)”.", adapted.notes)
     }
 
@@ -2206,9 +2216,37 @@ public final class AppState: ObservableObject {
     }
 
     func destinationDirectory() throws -> URL {
-        let url = URL(fileURLWithPath: (settings.destinationPath as NSString).expandingTildeInPath, isDirectory: true)
+        let url: URL
+        if let folder = openBookmarkedFolder() {
+            url = folder
+        } else {
+            var path = settings.destinationPath
+            if settings.destinationBookmark != nil, resolveDestinationBookmark != nil {
+                // The picked folder is out of reach now (its drive unplugged, say): this save goes to the
+                // app's folder and the bookmark is kept for the next one.
+                path = ScanSettings.defaultDestinationPath
+                errorMessage = "The save folder could not be opened, so this save went to the app's folder."
+            }
+            path = ScanSettings.rebasedDestinationPath((path as NSString).expandingTildeInPath, documents: documentsFolder)
+            url = URL(fileURLWithPath: path, isDirectory: true)
+        }
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    /// The folder of `settings.destinationBookmark` opened through `resolveDestinationBookmark`, its
+    /// bookmark and path brought up to date; nil without a bookmark or a resolver, or when it does not
+    /// resolve now. Such a bookmark is kept, since its drive may only be unplugged; only Use app folder
+    /// drops it.
+    @discardableResult
+    public func openBookmarkedFolder() -> URL? {
+        guard let bookmark = settings.destinationBookmark, let resolve = resolveDestinationBookmark,
+              let resolved = resolve(bookmark) else { return nil }
+        var updated = settings
+        updated.destinationBookmark = resolved.bookmark
+        updated.destinationPath = resolved.folder.path
+        if updated != settings { settings = updated }
+        return resolved.folder
     }
 
     /// Where the running number of {counter} is kept, in the user's defaults.

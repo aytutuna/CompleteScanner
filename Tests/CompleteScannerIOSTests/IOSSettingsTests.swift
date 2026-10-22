@@ -9,7 +9,8 @@ import XCTest
 // The settings screen, the file name editor and the iPad's layout without a screen (I15): the sections
 // built on the shared InspectorSections (each once, in order, with their summaries), which are open, the
 // adjustments' sliders, the naming editor's parts, example and problems, the sidebar's width rule, the
-// keyboard shortcuts, moving a page of the strip by dragging it, and a dropped file.
+// keyboard shortcuts, moving a page of the strip by dragging it, a dropped file, and the save folder (I3:
+// a folder picked in Files kept as a bookmark, the app's folder moved with the container).
 
 /// A page of the test's own, its own every time.
 private func settingsPage() -> ScannedPage {
@@ -233,6 +234,83 @@ final class IOSSettingsTests: XCTestCase {
         let picture: IOSImportItem = IOSDroppedFile(data: Data([0x89, 0x50]), kind: .image).item
         XCTAssertEqual(picture.kind, IOSImportItem.Kind.image)
         XCTAssertEqual(picture.name, "Dropped picture")
+    }
+
+    // MARK: The save folder
+
+    @MainActor
+    func test_saveFolder_aBookmarkThatDoesNotOpenNow_isKept_andTheSaveGoesToTheAppsFolder() throws {
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        state.resolveDestinationBookmark = { (bookmark: Data) -> (folder: URL, bookmark: Data)? in
+            IOSSaveFolder.resolve(bookmark)
+        }
+        let unplugged: String = folder.appendingPathComponent("Unplugged", isDirectory: true).path
+        state.settings.destinationBookmark = Data("not a bookmark".utf8)
+        state.settings.destinationPath = unplugged
+        XCTAssertNil(state.openBookmarkedFolder())
+        XCTAssertEqual(state.settings.destinationBookmark, Data("not a bookmark".utf8))
+        XCTAssertEqual(state.settings.destinationPath, unplugged)
+        XCTAssertNil(state.errorMessage)
+
+        XCTAssertEqual(try state.destinationDirectory().path, ScanSettings.defaultDestinationPath)
+        XCTAssertEqual(state.errorMessage,
+                       "The save folder could not be opened, so this save went to the app's folder.")
+        XCTAssertEqual(state.settings.destinationBookmark, Data("not a bookmark".utf8))
+        XCTAssertEqual(state.settings.destinationPath, unplugged)
+        XCTAssertEqual(IOSSavedFiles.folder(state.settings).path, unplugged)
+        // The list shows where that save went, not the folder nobody can reach.
+        XCTAssertEqual(IOSSavedFiles.shownFolder(state.settings).path, ScanSettings.defaultDestinationPath)
+    }
+
+    @MainActor
+    func test_saveFolder_aPickedFolder_isBookmarked_andSavesGoThere() throws {
+        let picked: URL = folder.appendingPathComponent("Picked", isDirectory: true)
+        try FileManager.default.createDirectory(at: picked, withIntermediateDirectories: true)
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        state.resolveDestinationBookmark = { (bookmark: Data) -> (folder: URL, bookmark: Data)? in
+            IOSSaveFolder.resolve(bookmark)
+        }
+        state.settings = try IOSSaveFolder.choosing(picked, in: state.settings)
+        XCTAssertNotNil(state.settings.destinationBookmark)
+        XCTAssertEqual(state.settings.destinationPath, picked.path)
+        guard let opened = state.openBookmarkedFolder() else {
+            throw XCTSkip("A bookmark of a temporary folder does not resolve here.")
+        }
+        XCTAssertEqual(opened.resolvingSymlinksInPath().path, picked.resolvingSymlinksInPath().path)
+        XCTAssertEqual(try state.destinationDirectory().resolvingSymlinksInPath().path,
+                       picked.resolvingSymlinksInPath().path)
+        XCTAssertNotNil(state.settings.destinationBookmark)
+
+        let back: ScanSettings = IOSSaveFolder.appFolder(state.settings)
+        XCTAssertNil(back.destinationBookmark)
+        XCTAssertEqual(back.destinationPath, ScanSettings.defaultDestinationPath)
+    }
+
+    @MainActor
+    func test_saveFolder_words_theAppsFolderOfAnEarlierInstall_andShowInFiles() throws {
+        XCTAssertEqual(IOSSettingsText.saveToLabel, "Save to")
+        XCTAssertEqual(IOSSettingsText.chooseFolderLabel, "Choose\u{2026}")
+        XCTAssertEqual(IOSSettingsText.appFolderLabel, "Use app folder")
+
+        let documents: URL = try XCTUnwrap(IOSShell.documentsFolder)
+        var settings: ScanSettings = ScanSettings()
+        settings.destinationPath =
+            "/var/mobile/Containers/Data/Application/7A1F2E3D-4C5B-4A69-8778-96A5B4C3D2E1/Documents/CompleteScanner"
+        XCTAssertEqual(IOSSavedFiles.folder(settings).path, documents.appendingPathComponent("CompleteScanner").path)
+        let otherApp: String =
+            "/private/var/mobile/Containers/Data/Application/0B9C8D7E-6F5A-4B3C-9D2E-1F0A9B8C7D6E/Documents/Scans"
+        settings.destinationPath = otherApp
+        settings.destinationBookmark = Data("picked".utf8)
+        XCTAssertEqual(IOSSavedFiles.folder(settings).path, otherApp)
+        let actions = IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in })
+        let made: AppState = AppState.makeForIOS(options: IOSLaunchOptions(demoScannerOnly: true), fileActions: actions)
+        XCTAssertEqual(made.documentsFolder, documents)
+        XCTAssertNotNil(made.resolveDestinationBookmark)
+
+        let iCloud = URL(fileURLWithPath: "/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Scans",
+                         isDirectory: true)
+        XCTAssertEqual(IOSFileActions.filesAppURL(for: [iCloud])?.absoluteString,
+                       "shareddocuments:///private/var/mobile/Library/Mobile%20Documents/com~apple~CloudDocs/Scans/")
     }
 
     @MainActor

@@ -631,6 +631,10 @@ public struct ScanSettings: Codable, Equatable, Sendable {
     /// 0 ... 1
     public var jpegQuality: Double = 0.9
     public var destinationPath: String = ScanSettings.defaultDestinationPath
+    /// The save folder picked outside the app on the iPhone (iCloud Drive, a USB drive), as a bookmark:
+    /// iOS lets the app back into such a folder only through one. `destinationPath` is its path. Not
+    /// used on the Mac and Windows. Left out of the file when nil.
+    public var destinationBookmark: Data?
     public var namingTemplate: String = "Scan {date} {counter}"
 
     // Photo mode
@@ -687,9 +691,31 @@ public struct ScanSettings: Codable, Equatable, Sendable {
         (NSHomeDirectory() as NSString).appendingPathComponent("Documents/CompleteScanner")
     }
 
+    /// `path` moved into `documents` when it lies in another iOS app container's Documents folder
+    /// (…/Application/<UUID>/Documents/…): the container's path changes with every update of the app, so
+    /// a save folder kept as a full path would point into one that is gone. Any other path, and every
+    /// path when `documents` is nil (the Mac), is returned as it is.
+    public static func rebasedDestinationPath(_ path: String, documents: URL?) -> String {
+        guard let documents else { return path }
+        let parts: [String] = (path as NSString).pathComponents
+        var index: Int = 2
+        while index < parts.count {
+            if parts[index] == "Documents", parts[index - 2] == "Application", UUID(uuidString: parts[index - 1]) != nil {
+                var rebased: String = documents.path
+                for part in parts[(index + 1)...] {
+                    rebased = (rebased as NSString).appendingPathComponent(part)
+                }
+                return rebased
+            }
+            index += 1
+        }
+        return path
+    }
+
     /// Same keys the synthesized implementation used; `encode(to:)` stays synthesized.
     private enum CodingKeys: String, CodingKey {
         case intent, source, resolution, colorMode, format, jpegQuality, destinationPath, namingTemplate
+        case destinationBookmark
         case photoAutoSplit, photoAutoDeskew, photoMinSideInches, photoCropInsetPixels
         case documentMultiPage, pdfSearchable, ocrLanguages
         case adjustments
@@ -714,6 +740,7 @@ extension ScanSettings {
         format = container.decodeLenient(forKey: .format, default: format)
         jpegQuality = container.decodeLenient(forKey: .jpegQuality, default: jpegQuality)
         destinationPath = container.decodeLenient(forKey: .destinationPath, default: destinationPath)
+        destinationBookmark = container.decodeLenient(forKey: .destinationBookmark, default: destinationBookmark)
         namingTemplate = container.decodeLenient(forKey: .namingTemplate, default: namingTemplate)
         photoAutoSplit = container.decodeLenient(forKey: .photoAutoSplit, default: photoAutoSplit)
         photoAutoDeskew = container.decodeLenient(forKey: .photoAutoDeskew, default: photoAutoDeskew)

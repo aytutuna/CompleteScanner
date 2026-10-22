@@ -325,6 +325,7 @@ public class ModelsCompatTests
         [
             new Preset("Receipts", CompatFixtures.NonDefaultSettings()) { Id = CompatFixtures.SampleId },
             new Preset("Defaults", new ScanSettings()),
+            new Preset("iCloud Drive", new ScanSettings { DestinationBookmark = [0, 1, 2, 250, 251, 255] }),
         ];
         var decoded = Decode<List<Preset>>(CompatFixtures.Encode(presets));
         Assert.Equal(presets.Select(p => p.Id), decoded.Select(p => p.Id));
@@ -440,6 +441,46 @@ public class ModelsCompatTests
             ],
             written.RootElement.EnumerateObject().Select(p => p.Name));
         Assert.Equal("document", written.RootElement.GetProperty("taskId").GetString());
+    }
+
+    // MARK: - Save folder (CONTRACTS.md, rule 6; the iPhone's bookmark, kept but not used here)
+
+    [Fact]
+    public void NoBookmark_IsLeftOutOfTheFile()
+    {
+        Assert.DoesNotContain("destinationBookmark", CompatFixtures.Encode(new ScanSettings()));
+        Assert.Null(Decode<List<Preset>>(CompatFixtures.CurrentFormatPresetsJson)[0].Settings.DestinationBookmark);
+    }
+
+    [Fact]
+    public void Bookmark_IsWrittenAsBase64_WithTheEarlierKeys()
+    {
+        var settings = CompatFixtures.NonDefaultSettings();
+        settings.DestinationBookmark = [0, 1, 2, 250, 251, 255];
+        using var written = JsonDocument.Parse(CompatFixtures.Encode(settings));
+        Assert.Equal(
+            [
+                "intent", "source", "resolution", "colorMode", "format", "jpegQuality",
+                "destinationPath", "destinationBookmark", "namingTemplate", "photoAutoSplit", "photoAutoDeskew",
+                "photoMinSideInches", "photoCropInsetPixels", "documentMultiPage",
+                "pdfSearchable", "ocrLanguages", "adjustments", "output", "duplex", "backBinding", "paperSize",
+                "document", "taskOptions",
+            ],
+            written.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal("AAEC+vv/", written.RootElement.GetProperty("destinationBookmark").GetString());
+        CompatFixtures.AssertSettingsEqual(settings, Decode<ScanSettings>(CompatFixtures.Encode(settings)));
+        Assert.Equal(settings.DestinationBookmark, settings.Clone().DestinationBookmark);
+        Assert.NotSame(settings.DestinationBookmark, settings.Clone().DestinationBookmark);
+    }
+
+    [Fact]
+    public void WrongTypedBookmark_IsNone_RestIntact()
+    {
+        var number = Decode<ScanSettings>("""{"destinationBookmark": 5, "resolution": 150}""");
+        Assert.Null(number.DestinationBookmark);
+        Assert.Equal(150, number.Resolution);
+        Assert.Null(Decode<ScanSettings>("""{"destinationBookmark": "not base64!"}""").DestinationBookmark);
+        Assert.Null(Decode<ScanSettings>("""{"destinationBookmark": null}""").DestinationBookmark);
     }
 
     // MARK: - PDF size (CONTRACTS.md, rule 6; Standard is the default for everyone)

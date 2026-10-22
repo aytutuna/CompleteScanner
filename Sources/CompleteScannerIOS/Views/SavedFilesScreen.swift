@@ -11,7 +11,7 @@ struct SavedFilesScreen: View {
     @State private var folder: IOSSavedFolder = IOSSavedFolder(files: [], failed: false)
 
     var body: some View {
-        let place: URL = IOSSavedFiles.folder(state.settings)
+        let place: URL = IOSSavedFiles.shownFolder(state.settings)
         List {
             if folder.files.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -55,7 +55,7 @@ struct SavedFilesScreen: View {
     }
 
     private func reload() {
-        folder = IOSSavedFiles.list(in: IOSSavedFiles.folder(state.settings), justSaved: state.lastSavedURLs)
+        folder = IOSSavedFiles.list(in: IOSSavedFiles.shownFolder(state.settings), justSaved: state.lastSavedURLs)
     }
 
     private func run(_ action: FileAction, _ file: IOSSavedFile) {
