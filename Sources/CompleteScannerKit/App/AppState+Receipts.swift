@@ -10,17 +10,17 @@ extension AppState {
     /// The scans of the settings are receipts (the Receipts task).
     public var isReceiptFlow: Bool { TaskCatalog.flow(of: settings) == .receiptSplit }
 
-    /// The review's title: "Found 3 receipts", or for photos "Detected photos (3)".
+    /// The review's title: "Found 3 receipts", or for photos "Found 3 photos" (`PhotoReview.title`).
     public var reviewTitle: String {
-        isReceiptReview ? Receipts.reviewTitle(detectedPhotos.count) : "Detected photos (\(detectedPhotos.count))"
+        isReceiptReview ? Receipts.reviewTitle(detectedPhotos.count) : PhotoReview.title(detectedPhotos.count)
     }
 
-    /// The review's save button: "Save 2 Receipts", "Save as One PDF", "Save 3 Photos".
+    /// The review's save button: "Save 2 Receipts", "Save as One PDF", "Save 3 photos" (`PhotoReview.saveTitle`).
     public var reviewSaveTitle: String {
         let included = detectedPhotos.filter(\.included).count
         return isReceiptReview
             ? Receipts.saveTitle(included: included, combine: settings.taskOptions.receiptCombine, format: settings.format)
-            : "Save \(included) Photo\(included == 1 ? "" : "s")"
+            : PhotoReview.saveTitle(included)
     }
 
     public func setReceiptNameByDate(_ byDate: Bool) {
@@ -37,6 +37,14 @@ extension AppState {
     /// whole sheet as one from the feeder; the whole page when nothing looks like a receipt.
     nonisolated static func splitReceipts(from page: ScannedPage, settings s: ScanSettings) -> [DetectedPhoto] {
         guard let scan = RgbaImage(cgImage: page.image) else { return [] }
+        // One receipt of a camera's shot, cut out already at its roll's width: the whole page, made easy
+        // to read as a receipt found on the glass is.
+        if CaptureObjects.isCutOut(page), let quad = page.capture?.quad {
+            let cleaned: RgbaImage = ReceiptEnhancer.enhance(scan, dpi: page.dpi)
+            guard let image = cleaned.makeCGImage() else { return [] }
+            return [DetectedPhoto(region: CaptureObjects.region(around: quad), image: image, dpi: page.dpi,
+                                  sourcePageID: page.id)]
+        }
         let options = ReceiptDetectorOptions(singleReceipt: s.source == .documentFeeder)
         var regions = ReceiptDetector.detectRegions(in: scan, dpi: page.dpi, options: options)
         if regions.isEmpty {
@@ -69,8 +77,11 @@ extension AppState {
         }.value
         guard isCurrent(generation) else { return }
         if flag.isCancelled { throw ScanError.cancelled }
-        // Every page's full-resolution scan stays while the review is open, for Fix crop.
-        photoSourceImages = Dictionary(uniqueKeysWithValues: processed.map { ($0.id, $0.image) })
+        // Every page's full-resolution scan stays while the review is open, for Fix crop (a camera's
+        // receipt: the photo it was cut from, with its corners).
+        let sources: ReviewSources = Self.reviewSources(processed)
+        photoSourceImages = sources.images
+        photoCaptureFacts = sources.facts
         detectedPhotos = found
         isReceiptReview = true
         recordCaptures(found.map(\.id))

@@ -6,7 +6,9 @@ import Foundation
 /// scanner alone: the iPhone has no other connection yet, and once it has (eSCL), a test launched this
 /// way still scans the same made-up pages. `-importFixture` (the import UI test's) imports one photo at
 /// launch into the Document task, as the Files app would hand it over: its PNG bytes, base64, in the
-/// environment variable `importFixtureVariable`, since a UI test cannot drive the system's pickers.
+/// environment variable `importFixtureVariable`, since a UI test cannot drive the system's pickers;
+/// `-importTask` followed by a task's name (`ScanTask`'s raw value, "photos") imports it into that task
+/// instead (I13: the photos UI test).
 public struct IOSLaunchOptions: Equatable, Sendable {
     /// The launch argument for the demo scanner alone.
     public static let demoScannerArgument = "-demoScanner"
@@ -16,15 +18,21 @@ public struct IOSLaunchOptions: Equatable, Sendable {
     public static let importFixtureVariable = "COMPLETESCANNER_IMPORT_FIXTURE"
     /// The name the photo imported at launch is shown with.
     public static let importFixtureName = "fixture.png"
+    /// The launch argument naming the task the photo imported at launch goes into (the next argument).
+    public static let importTaskArgument = "-importTask"
 
     /// Only the demo scanner is offered.
     public let demoScannerOnly: Bool
     /// The photo to import at launch; nil for none.
     public let launchImport: IOSImportItem?
+    /// The task the photo imported at launch goes into; nil: the task set up when it takes photos, else
+    /// Document to PDF.
+    public let launchTask: ScanTask?
 
     public init(demoScannerOnly: Bool) {
         self.demoScannerOnly = demoScannerOnly
         self.launchImport = nil
+        self.launchTask = nil
     }
 
     /// The options in the process's launch arguments.
@@ -42,6 +50,12 @@ public struct IOSLaunchOptions: Equatable, Sendable {
             item = IOSImportItem(name: IOSLaunchOptions.importFixtureName, data: data, kind: .image)
         }
         self.launchImport = item
+        var task: ScanTask?
+        if item != nil, let index = arguments.firstIndex(of: IOSLaunchOptions.importTaskArgument),
+           index + 1 < arguments.count {
+            task = ScanTask(rawValue: arguments[index + 1])
+        }
+        self.launchTask = task
     }
 }
 
@@ -93,13 +107,36 @@ public enum IOSShell {
         return device.backend == "escl"
     }
 
-    /// Whether this app offers a task yet: the tasks whose pages are collected and saved, without a
-    /// review screen of their own. Photos, receipts and the ID card need their review screens, the
-    /// photocopy a printer, Quick scan an area chosen on the preview, and the Archive document task
-    /// the Archive & password settings (the PDF/A writer is shared already), which come later.
+    /// Whether this app offers a task yet: the tasks whose pages are collected and saved, and since I13
+    /// Photos, Restore old photos and Receipts (several objects in one shot, then the photo review) and the
+    /// ID card (front then back, then its review). The photocopy needs a printer, Quick scan an area chosen
+    /// on the preview, and the Archive document task the Archive & password settings (the PDF/A writer is
+    /// shared already), which come later.
     public static func offers(_ task: ScanTask) -> Bool {
         if task == .quickScan || task == .archive { return false }
-        return TaskCatalog.definition(task).flow == .documentQueue
+        return takesPhotos(flow: TaskCatalog.definition(task).flow)
+    }
+
+    /// Whether the scan screen takes photos for the settings' task (our camera, Photos and Files): pages
+    /// collected in the queue, the objects of a shot for the photo review (photos, receipts), or a side of
+    /// the ID card; not for a photocopy, which prints a scanner's page.
+    public static func takesPhotos(_ settings: ScanSettings) -> Bool {
+        takesPhotos(flow: TaskCatalog.flow(of: settings))
+    }
+
+    private static func takesPhotos(flow: TaskFlowKind) -> Bool {
+        switch flow {
+        case .documentQueue, .photoSplit, .receiptSplit, .idCard:
+            return true
+        case .copy:
+            return false
+        }
+    }
+
+    /// Whether the scan screen collects pages to save (Save and the PDF or JPEG choice): the document
+    /// tasks. Photos, receipts and the ID card are saved from their reviews.
+    public static func collectsPages(_ settings: ScanSettings) -> Bool {
+        TaskCatalog.flow(of: settings) == .documentQueue
     }
 
     /// Why a task is not offered yet: the tile's one visible line.
@@ -113,16 +150,18 @@ public enum IOSShell {
     }
 
     /// Whether the scan screen offers our own camera (`CameraScreen`), the default way to take pages:
-    /// wherever pages are collected in the queue (`PhotoImport.isOffered`), as photos are imported.
+    /// wherever photos are taken (`takesPhotos`), as photos are imported.
     public static func offersOwnCamera(_ settings: ScanSettings) -> Bool {
-        PhotoImport.isOffered(settings)
+        takesPhotos(settings)
     }
 
     /// Whether our camera takes page after page (continuous capture): the task collects several pages in
-    /// the queue, so the camera stays open after each photo and the corner editor opens only for a page
-    /// its photo's own search is unsure of.
+    /// the queue, or takes the ID card's front then its back, so the camera stays open after each photo
+    /// and the corner editor opens only for a page (or card) its photo's own search is unsure of.
     public static func capturesContinuously(_ settings: ScanSettings) -> Bool {
-        offersOwnCamera(settings) && settings.documentMultiPage
+        let flow: TaskFlowKind = TaskCatalog.flow(of: settings)
+        if flow == .idCard { return true }
+        return flow == .documentQueue && settings.documentMultiPage
     }
 
     /// The formats the scan screen's Save offers: PDF or JPEG (a picture a page) while the queue would

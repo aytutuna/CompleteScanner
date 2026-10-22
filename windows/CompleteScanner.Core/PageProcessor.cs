@@ -235,12 +235,19 @@ public sealed class OrientationStep(IOrientationScorer scorer, double maxSeconds
 /// its other version (the page as scanned, kept by crop and straighten or by softening the spine's
 /// shadow), so either can be shown. A camera page <see cref="EnhanceStep"/> made gray or black and white
 /// in a color task (a page without color) keeps that mode (<see cref="ModeFor"/>); its other version, the
-/// photo, takes the task's.
+/// photo, takes the task's. With <see cref="AdjustsAlternate"/> false the other version stays as it is.
 /// </summary>
-public sealed class AdjustmentStep(AdjustmentSettings adjustments, ColorMode colorMode) : IPageStep
+public sealed class AdjustmentStep(AdjustmentSettings adjustments, ColorMode colorMode, bool adjustsAlternate = true) : IPageStep
 {
     public AdjustmentSettings Adjustments { get; } = adjustments;
     public ColorMode ColorMode { get; } = colorMode;
+
+    /// <summary>
+    /// The other version is adjusted too. False for the objects of a camera's shot, whose other version is
+    /// the whole shot they share, kept as taken for Fix crop and the glare check.
+    /// </summary>
+    public bool AdjustsAlternate { get; } = adjustsAlternate;
+
     public string Name => "adjust";
 
     /// <summary>
@@ -257,7 +264,7 @@ public sealed class AdjustmentStep(AdjustmentSettings adjustments, ColorMode col
     {
         var pageMode = ModeFor(page);
         var adjusted = page.WithImage(ImagePipeline.Apply(Adjustments, page.Image, pageMode), pageMode);
-        return page.Alternate is { Image: { } other } version
+        return AdjustsAlternate && page.Alternate is { Image: { } other } version
             ? adjusted.WithAlternate(version with { Image = ImagePipeline.Apply(Adjustments, other, ColorMode) })
             : adjusted;
     }
@@ -402,13 +409,24 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// The steps for pages taken by a camera (<see cref="ScannedPage.Capture"/>), which go to the queue
     /// like imported photos: <see cref="PerspectiveStep"/> cuts each page out of its photo at its real
     /// size, <see cref="EnhanceStep"/> cleans it up in the task's mode (<see cref="DocumentEnhancer.ModeFor(ScanSettings)"/>),
-    /// then the steps of <see cref="ForPhotoImport"/>.
+    /// then the steps of <see cref="ForPhotoImport"/> for pages that go to the queue. The objects of the
+    /// other tasks (photos, receipts, an ID card: <see cref="CaptureObjects"/>) get only the adjustments
+    /// after that, unless they change nothing, and not on the shot kept as their other version: no
+    /// blank-page or separator check, no barcodes, and no text recognition to turn them upright, so an ID
+    /// card is never read.
     /// </summary>
     public static PageProcessor ForCapture(ScanSettings settings, IOrientationScorer? scorer = null,
                                            IBarcodeReader? barcodes = null)
     {
         var steps = new List<IPageStep> { new PerspectiveStep(), new EnhanceStep(DocumentEnhancer.ModeFor(settings)) };
-        steps.AddRange(ForPhotoImport(settings, scorer, barcodes).Steps);
+        if (TaskCatalog.FlowOf(settings) == TaskFlowKind.DocumentQueue)
+        {
+            steps.AddRange(ForPhotoImport(settings, scorer, barcodes).Steps);
+        }
+        else if (!(settings.Adjustments.IsIdentity && settings.ColorMode == ColorMode.Color))
+        {
+            steps.Add(new AdjustmentStep(settings.Adjustments, settings.ColorMode, adjustsAlternate: false));
+        }
         return new PageProcessor(steps);
     }
 

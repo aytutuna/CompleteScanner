@@ -17,7 +17,10 @@ import UIKit
 /// otherwise the corner editor opens here, in place of the preview (the camera stops meanwhile), and Use
 /// corners puts the page in the queue. Done goes back to the page strip. Where the camera cannot be used
 /// (no camera, as in the Simulator; access off, with Settings; not allowed) or waits (too warm,
-/// interrupted), one short line says why.
+/// interrupted), one short line says why. For photos and receipts (I13) the objects of each shot go to the
+/// photo review, which takes the camera's place; for the ID card a guide frame of the card's shape asks for
+/// the front, then the back (with No back side), the glare hint follows a side taken with glare on it, and
+/// the card's review takes the camera's place once the sides are in.
 struct CameraScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -93,11 +96,23 @@ struct CameraScreen: View {
                     .ignoresSafeArea()
                     .accessibilityHidden(true)
             }
+            if model.message == nil, let prompt = cardPrompt {
+                IdCardGuide(prompt: prompt)
+            }
             VStack(spacing: 0) {
                 topBar
                 Spacer(minLength: 0)
                 notice
                 Spacer(minLength: 0)
+                if state.canSkipStep {
+                    Button(IdCardSteps.skipBackLabel) {
+                        state.skipStep()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(state.isBusy || importer.isImporting)
+                    .padding(.bottom, 12)
+                    .accessibilityIdentifier("camera.skipBack")
+                }
                 bottomBar
             }
         }
@@ -191,6 +206,13 @@ struct CameraScreen: View {
             .background(Capsule().fill(Color.black.opacity(0.6)))
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("camera.progress")
+        } else if let glare = glareLine {
+            Label(glare, systemImage: "exclamationmark.triangle.fill")
+                .font(.headline)
+                .foregroundStyle(Color.white)
+                .padding(12)
+                .background(Capsule().fill(Color.black.opacity(0.6)))
+                .accessibilityIdentifier("camera.glare")
         } else if let reason = waitLine {
             Text(reason)
                 .font(.headline)
@@ -199,6 +221,18 @@ struct CameraScreen: View {
                 .background(Capsule().fill(Color.black.opacity(0.6)))
                 .accessibilityIdentifier("camera.wait")
         }
+    }
+
+    /// The ID card's guide frame's line: the side to take ("Fit the front in the frame"); nil for other tasks.
+    private var cardPrompt: String? {
+        guard CaptureObjects.kind(for: state.settings) == .idCard else { return nil }
+        return IOSIdCardGuide.prompt(stepID: state.taskFlow?.current?.id)
+    }
+
+    /// The glare hint while the back is next and the front was taken with glare on it.
+    private var glareLine: String? {
+        guard CaptureObjects.kind(for: state.settings) == .idCard else { return nil }
+        return IOSIdCardGuide.glareLine(stepID: state.taskFlow?.current?.id, frontNote: state.idCardFrontNote)
     }
 
     /// Why the page held still is not taken yet (a blurred or dark frame), while the automatic shutter waits.

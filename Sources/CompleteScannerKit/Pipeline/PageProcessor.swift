@@ -245,15 +245,20 @@ public struct OrientationStep: CancellablePageStep {
 /// The image adjustments and the color mode (`ImagePipeline.apply`), on the page and on its other
 /// version (the page as scanned, kept by crop and straighten or by softening the spine's shadow), so either
 /// can be shown. A camera page `EnhanceStep` made gray or black and white in a color task (a page without
-/// color) keeps that mode (`mode(for:)`); its other version, the photo, takes the task's.
+/// color) keeps that mode (`mode(for:)`); its other version, the photo, takes the task's. With
+/// `adjustsAlternate` false the other version stays as it is. Twin of C# `AdjustmentStep`.
 public struct AdjustmentStep: PageStep {
     public let adjustments: AdjustmentSettings
     public let colorMode: ColorMode
+    /// The other version is adjusted too. False for the objects of a camera's shot, whose other version is the
+    /// whole shot they share, kept as taken for Fix crop and the glare check.
+    public let adjustsAlternate: Bool
     public var name: String { "adjust" }
 
-    public init(adjustments: AdjustmentSettings, colorMode: ColorMode) {
+    public init(adjustments: AdjustmentSettings, colorMode: ColorMode, adjustsAlternate: Bool = true) {
         self.adjustments = adjustments
         self.colorMode = colorMode
+        self.adjustsAlternate = adjustsAlternate
     }
 
     /// The color mode `page` is adjusted in: the page's own when the task is color and the camera's
@@ -269,7 +274,7 @@ public struct AdjustmentStep: PageStep {
         let pageMode: ColorMode = self.mode(for: page)
         let adjusted = page.withImage(ImagePipeline.apply(adjustments, to: page.image, colorMode: pageMode),
                                       colorMode: pageMode)
-        guard var version = page.alternate, let other = version.image else { return adjusted }
+        guard adjustsAlternate, var version = page.alternate, let other = version.image else { return adjusted }
         version.image = ImagePipeline.apply(adjustments, to: other, colorMode: colorMode)
         return adjusted.withAlternate(version)
     }
@@ -393,13 +398,21 @@ public struct PageProcessor {
 
     /// The steps for pages taken by a camera (`ScannedPage.capture`), which go to the queue like imported
     /// photos: `PerspectiveStep` cuts each page out of its photo at its real size, `EnhanceStep` cleans it up
-    /// in the task's mode (`DocumentEnhancer.mode(for:)`), then the steps of `forPhotoImport`. Twin of C#
-    /// `PageProcessor.ForCapture`.
+    /// in the task's mode (`DocumentEnhancer.mode(for:)`), then the steps of `forPhotoImport` for pages that
+    /// go to the queue. The objects of the other tasks (photos, receipts, an ID card: `CaptureObjects`) get
+    /// only the adjustments after that, unless they change nothing, and not on the shot kept as their other
+    /// version: no blank-page or separator check, no barcodes, and no text recognition to turn them upright,
+    /// so an ID card is never read. Twin of C# `PageProcessor.ForCapture`.
     public static func forCapture(_ settings: ScanSettings, scorer: (any OrientationScorer)? = nil,
                                   barcodes: (any BarcodeReader)? = nil) -> PageProcessor {
         var steps: [any PageStep] = [PerspectiveStep(), EnhanceStep(mode: DocumentEnhancer.mode(for: settings))]
-        let rest = forPhotoImport(settings, scorer: scorer, barcodes: barcodes)
-        for step in rest.steps { steps.append(step) }
+        if TaskCatalog.flow(of: settings) == .documentQueue {
+            let rest = forPhotoImport(settings, scorer: scorer, barcodes: barcodes)
+            for step in rest.steps { steps.append(step) }
+        } else if !(settings.adjustments.isIdentity && settings.colorMode == .color) {
+            steps.append(AdjustmentStep(adjustments: settings.adjustments, colorMode: settings.colorMode,
+                                        adjustsAlternate: false))
+        }
         return PageProcessor(steps: steps)
     }
 

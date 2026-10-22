@@ -13,6 +13,7 @@ public struct CompleteScannerIOSApp: App {
     @StateObject private var importer: IOSImportSession
     private let picker: IOSScannerPickerModel
     private let launchImport: IOSImportItem?
+    private let launchTask: ScanTask?
 
     public init() {
         let process: ProcessInfo = ProcessInfo.processInfo
@@ -26,11 +27,13 @@ public struct CompleteScannerIOSApp: App {
         _importer = StateObject(wrappedValue: session)
         picker = IOSScannerPickerModel(state: appState, network: network)
         launchImport = options.launchImport
+        launchTask = options.launchTask
     }
 
     public var body: some Scene {
         WindowGroup {
-            IOSRootView(fileActions: fileActions, importer: importer, picker: picker, launchImport: launchImport)
+            IOSRootView(fileActions: fileActions, importer: importer, picker: picker, launchImport: launchImport,
+                        launchTask: launchTask)
                 .environmentObject(state)
         }
     }

@@ -4,12 +4,15 @@ import CoreGraphics
 import SwiftUI
 import UIKit
 
-/// The full-screen covers the scan screen opens: Apple's document scanner, our own camera, or the flatbed
-/// preview to choose the scan area on.
+/// The full-screen covers the scan screen opens: Apple's document scanner, our own camera, the flatbed
+/// preview to choose the scan area on, and (I13) the photo or receipt review and the ID card's review,
+/// which take the camera's place when they open.
 enum ScanCover: String, Identifiable {
     case scanner
     case camera
     case crop
+    case photoReview
+    case idCardReview
 
     var id: String { rawValue }
 }
@@ -20,6 +23,8 @@ enum ScanCover: String, Identifiable {
 /// Share and Show in Files. Camera opens our own camera (`CameraScreen`), the default; Use Apple's scanner
 /// opens Apple's document scanner. The scanner row opens the scanner picker as a sheet on iPhone; on iPad
 /// the picker is a sidebar beside the screen. The screen stays awake while a network scanner's job runs.
+/// Save is shown for the tasks that collect pages; photos and receipts open the photo review once found
+/// and the ID card its review once its sides are in, each full screen (in place of the camera).
 struct ScanScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -49,6 +54,17 @@ struct ScanScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             scanner = IOSCameraAvailability.current
+            if state.showPhotoReview {
+                cover = .photoReview
+            } else if state.showIdCardReview {
+                cover = .idCardReview
+            }
+        }
+        .onChange(of: state.showPhotoReview) { (_: Bool, shown: Bool) in
+            showReview(shown, as: .photoReview)
+        }
+        .onChange(of: state.showIdCardReview) { (_: Bool, shown: Bool) in
+            showReview(shown, as: .idCardReview)
         }
         .onChange(of: state.isBusy) { (_: Bool, busy: Bool) in
             keepAwake(busy)
@@ -71,6 +87,12 @@ struct ScanScreen: View {
                     .environmentObject(importer)
             case .crop:
                 CropScreen(onClose: closeCrop)
+                    .environmentObject(state)
+            case .photoReview:
+                PhotoReviewScreen(model: IOSPhotoReviewModel(state: state))
+                    .environmentObject(state)
+            case .idCardReview:
+                IdCardReviewScreen(model: IOSPhotoReviewModel(state: state))
                     .environmentObject(state)
             }
         }
@@ -136,6 +158,18 @@ struct ScanScreen: View {
         scanner = IOSCameraAvailability.current
     }
 
+    // MARK: The reviews
+
+    /// A review opened (in place of the camera or another cover) or closed (saved, discarded, or a side of
+    /// the ID card to take again).
+    private func showReview(_ shown: Bool, as review: ScanCover) {
+        if shown {
+            cover = review
+        } else if cover == review {
+            cover = nil
+        }
+    }
+
     // MARK: The scan area
 
     /// The flatbed preview full screen, to choose the scan area on (`CropScreen`).
@@ -162,21 +196,32 @@ struct ScanScreen: View {
         state.errorMessage = message
     }
 
-    /// The current step's one-line prompt, with its fuller help below.
+    /// The current step's one-line prompt, with its fuller help below; the back of an ID card offers
+    /// "No back side".
     @ViewBuilder
     private var stepCard: some View {
         if let step = state.taskFlow?.current {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(step.prompt)
-                    .font(.body)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(step.help)
-                    .font(.footnote)
-                    .foregroundStyle(Color.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(step.prompt)
+                        .font(.body)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(step.help)
+                        .font(.footnote)
+                        .foregroundStyle(Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("step.prompt")
+                if state.canSkipStep {
+                    Button(IdCardSteps.skipBackLabel) {
+                        state.skipStep()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(state.isBusy)
+                    .accessibilityIdentifier("step.skip")
+                }
             }
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("step.prompt")
         }
     }
 
@@ -299,6 +344,7 @@ struct ScanScreen: View {
         let saveTitle: String = IOSShell.saveTitle(state.settings, plan: plan)
         let saveCount: Int = plan.pageCount
         let formats: [OutputFormat] = IOSShell.saveFormats(state.settings)
+        let collects: Bool = IOSShell.collectsPages(state.settings)
         return VStack(alignment: .leading, spacing: 10) {
             if state.isBusy {
                 ScanProgressRow(progress: state.progress)
@@ -312,7 +358,7 @@ struct ScanScreen: View {
             if !state.lastSavedURLs.isEmpty && !state.isBusy {
                 SavedFilesRow()
             }
-            if !formats.isEmpty {
+            if collects && !formats.isEmpty {
                 Picker("Save as", selection: formatChoice) {
                     ForEach(formats) { (format: OutputFormat) in
                         Text(format.label).tag(format)
@@ -341,15 +387,17 @@ struct ScanScreen: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(!canScan)
                 .accessibilityIdentifier("scan.button")
-                Button {
-                    save()
-                } label: {
-                    Text(saveTitle)
-                        .frame(maxWidth: .infinity)
+                if collects {
+                    Button {
+                        save()
+                    } label: {
+                        Text(saveTitle)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(state.isBusy || importer.isImporting || saveCount == 0)
+                    .accessibilityIdentifier("save.button")
                 }
-                .buttonStyle(.bordered)
-                .disabled(state.isBusy || importer.isImporting || saveCount == 0)
-                .accessibilityIdentifier("save.button")
             }
         }
         .padding(16)

@@ -303,9 +303,11 @@ final class IOSImportSessionTests: XCTestCase {
     }
 
     @MainActor
-    func test_settingsThatCollectNoPages_refuseTheImport_withWhy() async throws {
+    func test_settingsThatTakeNoPhotos_refuseTheImport_withWhy() async throws {
         let state: AppState = ImportTestSupport.makeState(in: folder)
-        state.settings.intent = .photo
+        // A photocopy prints a scanner's page: no photo is taken for it.
+        state.settings = TaskCatalog.apply(.copy, to: state.settings)
+        XCTAssertFalse(IOSShell.takesPhotos(state.settings))
         let importer = IOSImportSession(state: state, finder: fixedFinder(sheetQuad, reason: .none))
         XCTAssertFalse(importer.canImport)
         let outcome: IOSImportOutcome = await importer.importItems([IOSImportItem(name: "a.png", data: sheetPNG(), kind: .image)])

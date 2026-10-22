@@ -7,27 +7,29 @@ import SwiftUI
 /// Quick Look preview the file actions ask for, the corner editor of an imported photo, the troubleshooter,
 /// the question about a network scanner's changed certificate, and the error alert (with Troubleshoot
 /// when it is about a scanner). Photos and PDFs opened in this app from another one ("Open in
-/// CompleteScanner") are imported into the queue: into the task set up when it collects pages, else into
-/// Document to PDF; while an import runs they wait for it (`IOSImportSession`). Going back from the scan
-/// screen stops an import.
+/// CompleteScanner") are imported: into the task set up when it takes photos (`IOSShell.takesPhotos`), else
+/// into Document to PDF; while an import runs they wait for it (`IOSImportSession`). Going back from the
+/// scan screen stops an import. The photo and ID card reviews are the scan screen's.
 public struct IOSRootView: View {
     @EnvironmentObject private var state: AppState
     @ObservedObject private var fileActions: IOSFileActions
     @ObservedObject private var importer: IOSImportSession
     private let launchImport: IOSImportItem?
+    private let launchTask: ScanTask?
     private let picker: IOSScannerPickerModel
     @State private var showsScanner: Bool = false
     @State private var started: Bool = false
 
     /// `importer` brings photos and PDFs in for the state the view is given; `launchImport` is the photo
-    /// imported at launch (`IOSLaunchOptions`), nil for none; `picker` lists the scanners (with the network
-    /// scanners, unless the app was launched with the demo scanner alone).
+    /// imported at launch (`IOSLaunchOptions`), nil for none, into `launchTask` when given; `picker` lists the
+    /// scanners (with the network scanners, unless the app was launched with the demo scanner alone).
     public init(fileActions: IOSFileActions, importer: IOSImportSession, picker: IOSScannerPickerModel,
-                launchImport: IOSImportItem? = nil) {
+                launchImport: IOSImportItem? = nil, launchTask: ScanTask? = nil) {
         _fileActions = ObservedObject(wrappedValue: fileActions)
         _importer = ObservedObject(wrappedValue: importer)
         self.picker = picker
         self.launchImport = launchImport
+        self.launchTask = launchTask
     }
 
     public var body: some View {
@@ -111,7 +113,7 @@ public struct IOSRootView: View {
         started = true
         state.start()
         if let item = launchImport {
-            let pushed: Bool = prepareForImport()
+            let pushed: Bool = prepareForImport(launchTask)
             let session: IOSImportSession = importer
             Task { @MainActor in
                 await IOSRootView.settle(pushed)
@@ -123,7 +125,7 @@ public struct IOSRootView: View {
     /// Files opened in this app: imported into the queue, the scan screen shown.
     private func openFiles(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
-        let pushed: Bool = prepareForImport()
+        let pushed: Bool = prepareForImport(nil)
         let session: IOSImportSession = importer
         Task { @MainActor in
             await IOSRootView.settle(pushed)
@@ -131,11 +133,15 @@ public struct IOSRootView: View {
         }
     }
 
-    /// The task set up collects pages, or Document to PDF is set up; the scan screen is shown. True when
-    /// it was pushed now.
-    private func prepareForImport() -> Bool {
-        if state.activeTask == nil || !PhotoImport.isOffered(state.settings) {
-            state.startTask(.document)
+    /// `task` is set up when given; otherwise the task set up takes photos, or Document to PDF is set up;
+    /// the scan screen is shown. True when it was pushed now.
+    private func prepareForImport(_ task: ScanTask?) -> Bool {
+        if let wanted = task {
+            if state.activeTask != wanted {
+                _ = state.startTask(wanted)
+            }
+        } else if state.activeTask == nil || !IOSShell.takesPhotos(state.settings) {
+            _ = state.startTask(.document)
         }
         let pushed: Bool = !showsScanner
         showsScanner = true

@@ -35,15 +35,19 @@ extension AppState {
     /// One side of the ID card was scanned and found (`AppState.performScan`): the step records it
     /// and moves on (past a back already scanned or skipped, when the front was scanned again), and
     /// once the sides are in, the review opens. `source` (the scan) is kept only while the side is,
-    /// so its crop can be fixed, with what it covers (`area`).
+    /// so its crop can be fixed, with what it covers (`area`; nil for a camera's shot, which covers no
+    /// glass) and, for a side cut out of a camera's shot, its capture facts (`capture`: the corners in
+    /// `source`, the photo as taken).
     func recordIdCardSide(_ side: PageSide, photo: DetectedPhoto, note: String?, source: CGImage,
-                          area: IdCardScanArea) {
+                          area: IdCardScanArea?, capture: CaptureFacts? = nil) {
         guard isIdCardFlow else {
             dropIdCardScanOutsideTask()
             return
         }
-        idCardSourceImages[photo.sourcePageID ?? photo.id] = source
-        idCardScanAreas[photo.sourcePageID ?? photo.id] = area
+        let sourceID: UUID = photo.sourcePageID ?? photo.id
+        idCardSourceImages[sourceID] = source
+        idCardScanAreas[sourceID] = area
+        idCardCaptureFacts[sourceID] = capture
         setIdCardSide(side, photo: photo, note: note)
         if taskFlow != nil {
             taskFlow?.record(stepID: IdCardSteps.stepID(side), captureID: photo.id)
@@ -83,6 +87,7 @@ extension AppState {
         if let id = old?.sourcePageID, idCardFront?.sourcePageID != id, idCardBack?.sourcePageID != id {
             idCardSourceImages[id] = nil
             idCardScanAreas[id] = nil
+            idCardCaptureFacts[id] = nil
         }
     }
 
@@ -324,6 +329,7 @@ extension AppState {
         idCardBackNote = nil
         idCardSourceImages = [:]
         idCardScanAreas = [:]
+        idCardCaptureFacts = [:]
         if showIdCardReview { showIdCardReview = false }
         idCardPreview = nil
         idCardLayoutCaption = ""

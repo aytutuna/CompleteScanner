@@ -267,7 +267,13 @@ continuous capture, page after page, with the corner editor only for a page the 
 camera pages cleaned up with their lighting evened out, the paper white and the print black, in the
 task's color mode; Apple's document scanner kept as "Use Apple's scanner" on Document to PDF, Email a
 document and Scan to Word; photos and PDFs imported from Photos, Files or other apps with a touch
-corner editor and magnifier, the page strip, Save as PDF or JPEG and the share sheet; network
+corner editor and magnifier, the page strip, Save as PDF or JPEG and the share sheet; several
+receipts or photos in one shot for Receipts, Photos and Restore old photos, each found with Vision's
+rectangles, cut out at its real size and reviewed (keep, rotate, fix the crop with the corner editor,
+save; receipts named by their date), a shot in which none is outlined searched whole as the scanner's
+glass is; the ID card in a frame of the card's shape, front then back, laid out at real size on one
+page, kept in memory only (never written before Save, never in Photos, never read), with a one-line
+"Tilt to avoid glare" when a reflection hid part of it; network
 scanners (AirScan/eSCL) found on the Wi-Fi or added by address, picked from a sheet on iPhone or a
 sidebar on iPad, with a flatbed preview to choose the scan area on, a feeder's progress with Cancel,
 the screen kept on while a network scanner works, and the troubleshooter with its iPhone checks) is
@@ -284,13 +290,17 @@ xcodebuild test -project ios/CompleteScanneriOS.xcodeproj -scheme CompleteScanne
 The app's icon is drawn by `python scripts/make_ios_icon.py ios/CompleteScanneriOS/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`
 (standard library only), and the photo the import UI test brings in by
 `python scripts/make_ios_ui_fixture.py ios/CompleteScanneriOSUITests/Fixtures/document-photo.png`
-(a sheet with grey bars on a dark table; standard library only). The Simulator has no camera: there
+(a sheet with grey bars on a dark table; standard library only), and the Photos task's by
+`python scripts/make_ios_ui_fixture.py ios/CompleteScanneriOSUITests/Fixtures/photos-on-table.png photos`
+(two prints on a dark table, the same pixels as the unit tests' `ObjectShots.printsOnTable`). The
+Simulator has no camera: there
 the camera screen says so, and its live outline, lens choice, start and stop rules, shutter and
 automatic shutter (scripted sharp, blurred and dark frames) are checked with fixture frames and
 stand-ins. The cameras themselves (the wide lens's view at the start on Pro and dual-wide models,
 focus and macro switching, low light, the torch, Pro and non-Pro models, the automatic shutter's
 timing and thresholds on real frames, the clean-up on real photos, heat and memory over a long queue;
-and iCloud-only photos, large HEIC files and saving to the Files app) are checked on a real iPhone.
+iCloud-only photos, large HEIC files and saving to the Files app; thermal and crumpled receipts, glossy
+prints, holograms and laminate glare) are checked on a real iPhone.
 
 Network scanners on the iPhone: the first time the scanner picker opens, a short card says why
 iOS is about to ask for Local Network access (camera scanning works without it); the search starts
@@ -383,8 +393,10 @@ target for each platform's own parts:
   the app shell's services (`IOSShell`, `IOSFileActions`: Quick Look, the share
   sheet, the Files app), Apple's document scanner and our own camera (`Camera/`: the capture session,
   the lens choice, the live page outline, the automatic shutter, when the camera runs), importing photos and PDFs with the
-  corner editor (`Import/`: decoding with the EXIF turn, PDF pages at 300 dpi, Vision's page search,
-  the import session), network scanners (`Network/`: the search, run only while the app is in
+  corner editor (`Import/`: decoding with the EXIF turn, PDF pages at 300 dpi, Vision's page search
+  and its rectangles for several objects in one shot, the import session), the photo, receipt and ID
+  card reviews (`Review/`, `Views/PhotoReviewScreen.swift`, `Views/IdCardReviewScreen.swift`, the
+  card's guide frame on the camera), network scanners (`Network/`: the search, run only while the app is in
   front, after a short card that explains the system's Local Network prompt; adding a scanner by
   address; the scanner picker, a sheet on iPhone and a sidebar on iPad; the troubleshooter's
   system side), `CompleteScannerIOSApp` and its SwiftUI views (also the flatbed preview with its
@@ -392,8 +404,9 @@ target for each platform's own parts:
 - `ios/` — the iPhone and iPad app's Xcode project for XcodeGen (`project.yml`): the app target that
   only starts `CompleteScannerIOSApp`, its `Info.plist`, privacy manifest and asset catalog, and the
   UI tests (`CompleteScanneriOSUITests`: the smoke test, the photo import, with its fixture
-  photo, the camera screen's no-camera state, and the scanner picker with the add-by-address
-  sheet); the `.xcodeproj` XcodeGen writes is not checked in
+  photo, two prints in one shot under the Photos task saved as two JPEGs, the camera screen's
+  no-camera state, and the scanner picker with the add-by-address sheet); the `.xcodeproj` XcodeGen
+  writes is not checked in
 - `Sources/CompleteScanner` — the Mac app's entry point
 - `Tests/CompleteScannerTests` — unit tests (synthetic-image based), run on macOS and on the iOS
   Simulator; `Tests/CompleteScannerMacTests` and `Tests/CompleteScannerIOSTests` — each platform's own;

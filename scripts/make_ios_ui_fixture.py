@@ -1,10 +1,21 @@
-"""Draws the photo the iPhone app's import UI test brings in: a sheet of paper photographed at a
-slight angle on a dark wooden table. The sheet carries grey bars where a letter's heading, address
+"""Draws the photos the iPhone app's UI tests bring in.
+
+document (the default; Fixtures/document-photo.png, the import test's): a sheet of paper photographed
+at a slight angle on a dark wooden table. The sheet carries grey bars where a letter's heading, address
 block and paragraphs would be; there is no real text, logo or flag. The sheet is placed with a
 perspective transform (a unit square mapped onto its four corners), and every pixel is sampled 3 x 3
-so its edges are smooth. Only the standard library is used; the output is the same bytes on every run.
+so its edges are smooth.
 
-Usage: python scripts/make_ios_ui_fixture.py <out.png>
+photos (Fixtures/photos-on-table.png, the Photos task's test): two prints with white borders lying on a
+plain dark table, 1200 x 900: a 450 x 300 print at (120, 150) and a 420 x 280 print at (650, 420), each a
+soft color gradient inside an 18 px border (no picture of anything). Its pixels are those of
+ObjectShots.printsOnTable in the unit tests (the FNV-1a of its RGBA bytes is printed when it is drawn and
+pinned there), so the unit tests prove what the UI test relies on: the two prints are found, by Vision's
+rectangles or, where Vision finds none, by the photo search of the whole shot.
+
+Only the standard library is used; the output is the same bytes on every run.
+
+Usage: python scripts/make_ios_ui_fixture.py <out.png> [document|photos]
 """
 
 import math
@@ -105,21 +116,67 @@ def render():
     return b"".join(rows)
 
 
-def png(raw):
+PRINTS_WIDTH, PRINTS_HEIGHT = 1200, 900
+PRINT_BORDER = 18
+PRINT_PAPER = (245, 244, 238)
+PRINTS_TABLE = (40, 36, 34)
+
+
+def print_pixel(x, y):
+    """The photos fixture's pixel: the table, a print's white border, or the gradient inside it."""
+    b = PRINT_BORDER
+    if 120 <= x < 570 and 150 <= y < 450:
+        if 120 + b <= x < 570 - b and 150 + b <= y < 450 - b:
+            return (70 + (x - 120) * 120 // 450, 110 + (y - 150) * 90 // 300, 180)
+        return PRINT_PAPER
+    if 650 <= x < 1070 and 420 <= y < 700:
+        if 650 + b <= x < 1070 - b and 420 + b <= y < 700 - b:
+            return (190, 140 - (y - 420) * 70 // 280, 60 + (x - 650) * 100 // 420)
+        return PRINT_PAPER
+    return PRINTS_TABLE
+
+
+def render_prints():
+    """The photos fixture's rows for the PNG (filter Sub), and the FNV-1a of its RGBA bytes."""
+    rows = []
+    fnv = 0x811C9DC5
+    for j in range(PRINTS_HEIGHT):
+        row = bytearray([1])  # PNG filter: Sub
+        previous = (0, 0, 0)
+        for i in range(PRINTS_WIDTH):
+            pixel = print_pixel(i, j)
+            for value in (pixel[0], pixel[1], pixel[2], 255):
+                fnv = ((fnv ^ value) * 0x01000193) & 0xFFFFFFFF
+            row += bytes(((pixel[k] - previous[k]) & 0xFF) for k in range(3))
+            previous = pixel
+        rows.append(bytes(row))
+    return b"".join(rows), fnv
+
+
+def png(raw, width=WIDTH, height=HEIGHT):
     def chunk(kind, body):
         data = kind + body
         return struct.pack(">I", len(body)) + data + struct.pack(">I", zlib.crc32(data) & 0xFFFFFFFF)
 
-    header = struct.pack(">IIBBBBB", WIDTH, HEIGHT, 8, 2, 0, 0, 0)
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
     return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, 9))
             + chunk(b"IEND", b""))
 
 
 def main():
-    if len(sys.argv) != 2:
+    if len(sys.argv) not in (2, 3):
+        sys.exit(__doc__)
+    kind = sys.argv[2] if len(sys.argv) == 3 else "document"
+    if kind == "photos":
+        raw, fnv = render_prints()
+        data = png(raw, PRINTS_WIDTH, PRINTS_HEIGHT)
+        print("photos fixture: FNV-1a of the RGBA bytes 0x%08X" % fnv)
+    elif kind == "document":
+        data = png(render())
+    else:
         sys.exit(__doc__)
     with open(sys.argv[1], "wb") as out:
-        out.write(png(render()))
+        out.write(data)
 
 
 if __name__ == "__main__":

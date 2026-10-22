@@ -8,21 +8,26 @@ import SwiftUI
 /// a magnifier shows the photo around it. Use corners cuts the page out along them, Use whole photo takes
 /// the photo as it is, Skip photo leaves it out, Stop skips it and ends the import. VoiceOver reads each
 /// corner by the name of where it sits now on the outline, with where it is in the photo. What it does is `CornerEditorModel`; this view draws it.
+/// For Fix crop in a review (`fixesCrop`, I13) the same editor opens on the picture an object was cut from:
+/// Cancel in place of Skip photo, and no Stop, since no import runs.
 struct CornerEditorView: View {
     let request: PhotoCornersRequest
     let onAnswer: @MainActor (PhotoCornersAnswer) -> Void
     /// Ends the import: this photo is skipped and the ones after it are not imported.
     let onStop: @MainActor () -> Void
+    /// Fix crop in a review rather than an import.
+    let fixesCrop: Bool
 
     @State private var model: CornerEditorModel
     /// The photo made smaller for the screen.
     @State private var display: CGImage?
 
     init(request: PhotoCornersRequest, onAnswer: @escaping @MainActor (PhotoCornersAnswer) -> Void,
-         onStop: @escaping @MainActor () -> Void) {
+         onStop: @escaping @MainActor () -> Void, fixesCrop: Bool = false) {
         self.request = request
         self.onAnswer = onAnswer
         self.onStop = onStop
+        self.fixesCrop = fixesCrop
         _model = State(initialValue: CornerEditorModel(request: request))
     }
 
@@ -36,14 +41,14 @@ struct CornerEditorView: View {
                 footer
             }
             .background(Color(uiColor: .systemGroupedBackground))
-            .navigationTitle(PhotoImport.editorTitle)
+            .navigationTitle(fixesCrop ? IOSReviewText.fixCropLabel : PhotoImport.editorTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(PhotoImport.skipLabel) {
+                    Button(fixesCrop ? IOSReviewText.cancelLabel : PhotoImport.skipLabel) {
                         onAnswer(PhotoCornersAnswer.skip)
                     }
-                    .accessibilityIdentifier("corners.skip")
+                    .accessibilityIdentifier(fixesCrop ? "corners.cancel" : "corners.skip")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(PhotoImport.useCornersLabel) {
@@ -93,11 +98,13 @@ struct CornerEditorView: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            Button(IOSImportText.stopLabel, role: .cancel) {
-                onStop()
+            if !fixesCrop {
+                Button(IOSImportText.stopLabel, role: .cancel) {
+                    onStop()
+                }
+                .accessibilityHint(Text("Skips this photo and ends the import"))
+                .accessibilityIdentifier("corners.stop")
             }
-            .accessibilityHint(Text("Skips this photo and ends the import"))
-            .accessibilityIdentifier("corners.stop")
             Button("Reset") {
                 model.reset()
             }

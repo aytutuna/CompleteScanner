@@ -193,6 +193,16 @@ public enum IOSImportText {
 /// each page is added once the one before is in. What arrives while an import runs (another pick, a
 /// file opened in the app) waits and is imported after it; Stop drops what waits and ends the import
 /// after the item in hand. What could not be read is listed in one error at the end.
+///
+/// For the tasks that photograph objects (I13, `CaptureObjects.kind(for:)`) a photo is searched for them
+/// instead (`IOSObjectFinder`: Vision's rectangles, `MultiQuadPicker`): the receipts or photos of a shot come
+/// in together, each a page with its corners (the clean-up stage cuts each out at its real size and the
+/// photo review opens), with no corner editor; a shot in which none was found comes in whole
+/// (`CaptureObjects.fallbackPage`), for the flatbed's search of the task to look at it; the next photo, or
+/// the next page of a PDF, is read once that review is closed. An ID card found clearly in a shot that asks
+/// only when unsure (its shape snaps to ID-1) goes in as the step's side without the editor; one found
+/// otherwise opens the editor on its corners, one not found on the page finder's; Use whole photo takes the
+/// whole photo as the card.
 @MainActor
 public final class IOSImportSession: ObservableObject {
     /// The corner editor to show; nil when none is waiting.
@@ -209,6 +219,7 @@ public final class IOSImportSession: ObservableObject {
 
     private let state: AppState
     private let finder: @Sendable (RgbaImage) -> IOSFoundPage
+    private let objectFinder: @Sendable (RgbaImage, CaptureKind) -> [Quad]
     private var continuation: CheckedContinuation<PhotoCornersAnswer, Never>?
     private var stopRequested: Bool = false
     /// What waits for its turn, in order.
@@ -216,8 +227,9 @@ public final class IOSImportSession: ObservableObject {
     /// The photos taken so far in this import (for "Photo 2 of 5").
     private var photoNumber: Int = 0
 
-    /// `finder` nil: `IOSPageFinder.find` (tests pass their own).
-    public init(state: AppState, finder: (@Sendable (RgbaImage) -> IOSFoundPage)? = nil) {
+    /// `finder` nil: `IOSPageFinder.find`; `objectFinder` nil: `IOSObjectFinder.find` (tests pass their own).
+    public init(state: AppState, finder: (@Sendable (RgbaImage) -> IOSFoundPage)? = nil,
+                objectFinder: (@Sendable (RgbaImage, CaptureKind) -> [Quad])? = nil) {
         self.state = state
         if let finder {
             self.finder = finder
@@ -226,12 +238,20 @@ public final class IOSImportSession: ObservableObject {
                 IOSPageFinder.find(photo)
             }
         }
+        if let objectFinder {
+            self.objectFinder = objectFinder
+        } else {
+            self.objectFinder = { (photo: RgbaImage, kind: CaptureKind) -> [Quad] in
+                IOSObjectFinder.find(photo, kind: kind)
+            }
+        }
     }
 
-    /// Photos and PDFs can be imported now: the settings collect pages in the queue
-    /// (`PhotoImport.isOffered`), the state can take pages (`AppState.canIngest`), and no import runs.
+    /// Photos and PDFs can be imported now: the settings' task takes photos (`IOSShell.takesPhotos`: pages
+    /// for the queue, the objects of a shot, a side of the ID card), the state can take pages
+    /// (`AppState.canIngest`), and no import runs.
     public var canImport: Bool {
-        !isImporting && state.canIngest && PhotoImport.isOffered(state.settings)
+        !isImporting && state.canIngest && IOSShell.takesPhotos(state.settings)
     }
 
     /// How many items wait for their turn.
@@ -244,7 +264,7 @@ public final class IOSImportSession: ObservableObject {
     public func importSources(_ sources: [IOSImportSource]) async -> IOSImportOutcome {
         var outcome = IOSImportOutcome()
         if sources.isEmpty { return outcome }
-        guard PhotoImport.isOffered(state.settings) else {
+        guard IOSShell.takesPhotos(state.settings) else {
             state.errorMessage = PhotoImport.notOfferedMessage
             return outcome
         }
@@ -372,6 +392,9 @@ public final class IOSImportSession: ObservableObject {
         } else {
             progressText = IOSImportText.importingFile(source.name)
         }
+        // The objects of the shot before are in their review: the next shot is read once it is closed.
+        await waitForReview()
+        if stopRequested && state.showPhotoReview { return outcome }
         // Nothing is read while the state cannot take pages (a stack being turned over by hand, say).
         guard await canTakePages() else {
             outcome.add(IOSImportText.notAddedMessage(source.name))
@@ -406,16 +429,19 @@ public final class IOSImportSession: ObservableObject {
         let data: Data = item.data
         let name: String = item.name
         let finder: @Sendable (RgbaImage) -> IOSFoundPage = self.finder
+        let objectFinder: @Sendable (RgbaImage, CaptureKind) -> [Quad] = self.objectFinder
         let outline: Quad? = source.liveOutline
+        let kind: CaptureKind = CaptureObjects.kind(for: state.settings)
         let first: IOSFirstPage = await Task.detached(priority: .userInitiated) { () -> IOSFirstPage in
             let pageCount: Int = IOSPhotoDecoder.pageCount(data)
             let prepared: IOSPreparedPhoto = IOSPreparedPhoto.make(data, fileName: name, page: 1, finder: finder,
-                                                                   liveOutline: outline)
+                                                                   liveOutline: outline, kind: kind,
+                                                                   objectFinder: objectFinder)
             return IOSFirstPage(pageCount: pageCount, prepared: prepared)
         }.value
         let rest: Data? = first.pageCount > 1 ? data : nil
         return .photo(IOSPhotoFile(name: name, pageCount: first.pageCount, first: first.prepared, rest: rest,
-                                   asksOnlyWhenUnsure: source.asksOnlyWhenUnsure))
+                                   asksOnlyWhenUnsure: source.asksOnlyWhenUnsure, kind: kind))
     }
 
     /// The pages of one photo file (one, or a TIFF's several), each through the corner editor. Page 1 is
@@ -427,9 +453,16 @@ public final class IOSImportSession: ObservableObject {
         let name: String = file.name
         let pageCount: Int = file.pageCount
         let finder: @Sendable (RgbaImage) -> IOSFoundPage = self.finder
+        let objectFinder: @Sendable (RgbaImage, CaptureKind) -> [Quad] = self.objectFinder
+        let kind: CaptureKind = file.kind
         var page: Int = 1
         while page <= pageCount {
             if page > 1 && stopRequested { break }
+            if page > 1 && CaptureObjects.findsSeveral(kind) {
+                // The objects of the page before are in their review: the next page is read once it is closed.
+                await waitForReview()
+                if stopRequested { break }
+            }
             let count: Int = max(number, photoNumber + waitingPhotos)
             progressText = PhotoImport.progressMessage(number, of: count, page: page, pageCount: pageCount)
             let prepared: IOSPreparedPhoto
@@ -442,12 +475,18 @@ public final class IOSImportSession: ObservableObject {
                 }
                 let pageNumber: Int = page
                 prepared = await Task.detached(priority: .userInitiated) { () -> IOSPreparedPhoto in
-                    IOSPreparedPhoto.make(data, fileName: name, page: pageNumber, finder: finder)
+                    IOSPreparedPhoto.make(data, fileName: name, page: pageNumber, finder: finder, kind: kind,
+                                          objectFinder: objectFinder)
                 }.value
             }
             let shownName: String = PhotoImport.pageName(name, page: page, pageCount: pageCount)
-            let part: IOSImportOutcome = await importPage(prepared, shownName: shownName, number: number, count: count,
-                                                          asksOnlyWhenUnsure: file.asksOnlyWhenUnsure)
+            let part: IOSImportOutcome
+            if CaptureObjects.findsSeveral(kind) {
+                part = await importObjects(prepared, shownName: shownName, kind: kind)
+            } else {
+                part = await importPage(prepared, shownName: shownName, number: number, count: count,
+                                        asksOnlyWhenUnsure: file.asksOnlyWhenUnsure, kind: kind)
+            }
             outcome.merge(part)
             page += 1
         }
@@ -459,7 +498,7 @@ public final class IOSImportSession: ObservableObject {
     /// One photo read and searched: the corner editor (not for a page found clearly when
     /// `asksOnlyWhenUnsure`), then the page made and brought in.
     private func importPage(_ prepared: IOSPreparedPhoto, shownName: String, number: Int, count: Int,
-                            asksOnlyWhenUnsure: Bool) async -> IOSImportOutcome {
+                            asksOnlyWhenUnsure: Bool, kind: CaptureKind) async -> IOSImportOutcome {
         var outcome = IOSImportOutcome()
         if let problem = prepared.problem {
             outcome.add(problem)
@@ -489,14 +528,24 @@ public final class IOSImportSession: ObservableObject {
         switch reply.choice {
         case .useCorners:
             if let corners = reply.corners {
+                let pageKind: CaptureKind = kind == .idCard ? CaptureKind.idCard : CaptureKind.document
                 page = await Task.detached(priority: .userInitiated) { () -> ScannedPage? in
-                    IOSImportSession.capturedPage(photo, corners: corners, focalLength: focalLength)
+                    IOSImportSession.capturedPage(photo, corners: corners, focalLength: focalLength, kind: pageKind)
                 }.value
             }
         case .wholePhoto:
-            page = await Task.detached(priority: .userInitiated) { () -> ScannedPage? in
-                PhotoImport.wholePhotoPage(photo)
-            }.value
+            if kind == .idCard {
+                // The whole photo is the card: measured by its shape as any card is, never at a made-up size
+                // without its note.
+                let whole: Quad = PhotoImport.wholePhoto(width: photo.width, height: photo.height)
+                page = await Task.detached(priority: .userInitiated) { () -> ScannedPage? in
+                    IOSImportSession.capturedPage(photo, corners: whole, focalLength: focalLength, kind: CaptureKind.idCard)
+                }.value
+            } else {
+                page = await Task.detached(priority: .userInitiated) { () -> ScannedPage? in
+                    PhotoImport.wholePhotoPage(photo)
+                }.value
+            }
         case .skip:
             page = nil
         }
@@ -534,9 +583,16 @@ public final class IOSImportSession: ObservableObject {
             outcome.add(error.message)
             return outcome
         }
+        let kind: CaptureKind = CaptureObjects.kind(for: state.settings)
         var index: Int = 0
         while index < pageCount {
             if stopRequested { break }
+            if index > 0 && CaptureObjects.findsSeveral(kind) {
+                // The photos or receipts found on the page before are in their review: the next page is
+                // read once it is closed.
+                await waitForReview()
+                if stopRequested { break }
+            }
             progressText = IOSImportText.importingPage(index + 1, of: pageCount)
             let pageIndex: Int = index
             let page: ScannedPage? = await Task.detached(priority: .userInitiated) { () -> ScannedPage? in
@@ -555,6 +611,44 @@ public final class IOSImportSession: ObservableObject {
             index += 1
         }
         return outcome
+    }
+
+    /// The objects of one shot (receipts, photos) into the state together, each a page with its corners; the
+    /// whole shot when none was found. No corner editor: the photo review that opens has Fix crop.
+    private func importObjects(_ prepared: IOSPreparedPhoto, shownName: String, kind: CaptureKind) async -> IOSImportOutcome {
+        var outcome = IOSImportOutcome()
+        if let problem = prepared.problem {
+            outcome.add(problem)
+            return outcome
+        }
+        guard let decoded = prepared.decoded else {
+            outcome.add(PhotoImport.unreadableMessage(shownName, detail: PhotoImport.unreadableDetail))
+            return outcome
+        }
+        let photo: RgbaImage = decoded.photo
+        let quads: [Quad] = prepared.objects
+        let focalLength: Double? = decoded.focalLength
+        let pages: [ScannedPage] = await Task.detached(priority: .userInitiated) { () -> [ScannedPage] in
+            IOSImportSession.objectPages(photo, quads: quads, kind: kind, focalLength: focalLength)
+        }.value
+        guard !pages.isEmpty else {
+            outcome.add(PhotoImport.unreadableMessage(shownName, detail: PhotoImport.unreadableDetail))
+            return outcome
+        }
+        if await bringIn(pages) {
+            outcome.added += pages.count
+        } else {
+            outcome.add(IOSImportText.notAddedMessage(shownName))
+        }
+        return outcome
+    }
+
+    /// Waits while the photo review of the objects brought in before is open (receipts and photos), so the
+    /// next shot is read once it is closed; Stop ends the wait.
+    private func waitForReview() async {
+        while state.showPhotoReview && !stopRequested && CaptureObjects.findsSeveral(CaptureObjects.kind(for: state.settings)) {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
     }
 
     /// Shows the corner editor for `request` and waits for the answer (`answer`).
@@ -590,16 +684,24 @@ public final class IOSImportSession: ObservableObject {
     // MARK: Pages
 
     /// The photo as a page taken by a camera: the whole photo, with the corners placed (named again,
-    /// `Quad.fromCorners`), its size and the focal length as its capture facts, so the clean-up stage
-    /// cuts the page out at its real size (`PerspectiveStep`). Labelled as a photo.
-    nonisolated static func capturedPage(_ photo: RgbaImage, corners: Quad, focalLength: Double?) -> ScannedPage? {
+    /// `Quad.fromCorners`), its size, `kind` (a page, or an ID card's side) and the focal length as its
+    /// capture facts, so the clean-up stage cuts the page out at its real size (`PerspectiveStep`).
+    /// Labelled as a photo.
+    nonisolated static func capturedPage(_ photo: RgbaImage, corners: Quad, focalLength: Double?,
+                                         kind: CaptureKind = .document) -> ScannedPage? {
         guard let image = photo.makeCGImage() else { return nil }
-        let named: Quad = Quad.fromCorners(corners.corners)
-        let facts = CaptureFacts(quad: named, sourceWidth: photo.width, sourceHeight: photo.height, kind: .document,
-                                 focalLength: focalLength)
-        var page: ScannedPage = ScannedPage(image: image, dpi: CaptureScale.nominalDPI, colorMode: .color).withCapture(facts)
-        page.source = .photo
-        return page
+        return CaptureObjects.pages(image, quads: [corners], kind: kind, focalLength: focalLength).first
+    }
+
+    /// The pages of one shot's objects: a page for each of `quads` (`CaptureObjects.pages`, sharing the
+    /// photo's pixels), or the whole shot when none was found (`CaptureObjects.fallbackPage`).
+    nonisolated static func objectPages(_ photo: RgbaImage, quads: [Quad], kind: CaptureKind,
+                                        focalLength: Double?) -> [ScannedPage] {
+        guard let image = photo.makeCGImage() else { return [] }
+        if quads.isEmpty {
+            return [CaptureObjects.fallbackPage(image)]
+        }
+        return CaptureObjects.pages(image, quads: quads, kind: kind, focalLength: focalLength)
     }
 
     /// Where the corner editor starts on a photo from our camera: the page as found in the photo when it
@@ -650,15 +752,19 @@ final class IOSPhotoFile {
     let pageCount: Int
     /// Its pages skip the corner editor when found clearly (`IOSImportSource.asksOnlyWhenUnsure`).
     let asksOnlyWhenUnsure: Bool
+    /// What its pages were searched for (`CaptureObjects.kind(for:)` when it was read).
+    let kind: CaptureKind
     private var first: IOSPreparedPhoto?
     private(set) var rest: Data?
 
-    init(name: String, pageCount: Int, first: IOSPreparedPhoto, rest: Data?, asksOnlyWhenUnsure: Bool = false) {
+    init(name: String, pageCount: Int, first: IOSPreparedPhoto, rest: Data?, asksOnlyWhenUnsure: Bool = false,
+         kind: CaptureKind = .document) {
         self.name = name
         self.pageCount = pageCount
         self.first = first
         self.rest = rest
         self.asksOnlyWhenUnsure = asksOnlyWhenUnsure
+        self.kind = kind
     }
 
     /// Page 1 read and searched, handed over once; nil after that.
@@ -682,18 +788,43 @@ struct IOSFirstPage: Sendable {
 
 /// A photo read and searched, off the main actor: the photo and where its page is, or why it could not
 /// be read; `sure` when the photo's own search found the page clearly (before any live outline was used).
+/// For receipts and photos, the objects found in it instead (`objects`, empty when none was).
 struct IOSPreparedPhoto: Sendable {
     let decoded: IOSDecodedPhoto?
     let found: IOSFoundPage?
     let problem: String?
     var sure: Bool = false
+    var objects: [Quad] = []
 
     /// Page `page` (from 1) of the photo file `data`, read and searched; `liveOutline` (shares of the
     /// upright photo) is the start where the search finds no page clearly (`IOSImportSession.seeded`).
+    /// For receipts and photos (`kind`) its objects are searched for (`objectFinder`) instead of a page; for
+    /// an ID card the card first (sure only when its shape snaps to ID-1, `CaptureScale.measure`), then the
+    /// page finder when no card was found.
     static func make(_ data: Data, fileName: String, page: Int = 1, finder: (RgbaImage) -> IOSFoundPage,
-                     liveOutline: Quad? = nil) -> IOSPreparedPhoto {
+                     liveOutline: Quad? = nil, kind: CaptureKind = .document,
+                     objectFinder: ((RgbaImage, CaptureKind) -> [Quad])? = nil) -> IOSPreparedPhoto {
         do {
             let decoded: IOSDecodedPhoto = try IOSPhotoDecoder.decode(data, fileName: fileName, page: page)
+            if CaptureObjects.findsSeveral(kind) {
+                var objects: [Quad] = []
+                if let search = objectFinder {
+                    objects = search(decoded.photo, kind)
+                }
+                return IOSPreparedPhoto(decoded: decoded, found: nil, problem: nil, sure: !objects.isEmpty,
+                                        objects: objects)
+            }
+            if kind == .idCard, let search = objectFinder, let card = search(decoded.photo, kind).first {
+                // The picker allows more slack than the ID-1 snap: a card that would not snap is not sure,
+                // so the editor opens on it rather than taking it at a made-up size.
+                let scale: CaptureScaleResult = CaptureScale.measure(card, imageWidth: decoded.photo.width,
+                                                                     imageHeight: decoded.photo.height, kind: .idCard,
+                                                                     focalLength: decoded.focalLength)
+                let reason: PhotoReviewReason = scale.isRealSize ? PhotoReviewReason.none : PhotoReviewReason.unsure
+                let found = IOSFoundPage(corners: card, reason: reason, byVision: true)
+                return IOSPreparedPhoto(decoded: decoded, found: found, problem: nil, sure: scale.isRealSize,
+                                        objects: [card])
+            }
             let searched: IOSFoundPage = finder(decoded.photo)
             let found: IOSFoundPage = IOSImportSession.seeded(searched, liveOutline: liveOutline,
                                                               width: decoded.photo.width, height: decoded.photo.height)

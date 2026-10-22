@@ -103,12 +103,13 @@ final class IOSShellTests: XCTestCase {
 
     // MARK: Start screen
 
-    func test_offeredTasks_areTheCollectedDocumentTasks() {
+    func test_offeredTasks_areTheCollectedDocumentTasks_photosReceiptsAndTheIdCard() {
         var offered: [ScanTask] = []
         for task in ScanTask.allCases where IOSShell.offers(task) {
             offered.append(task)
         }
-        XCTAssertEqual(offered, [.document, .feeder, .email, .twoSided, .word, .batch, .book])
+        XCTAssertEqual(offered, [.document, .feeder, .photos, .photoRestore, .email, .twoSided, .idCard, .word, .receipt,
+                                 .batch, .book])
     }
 
     func test_groups_followTheCatalogsSections_withEveryTaskOnce() {
@@ -151,7 +152,7 @@ final class IOSShellTests: XCTestCase {
         XCTAssertEqual(document.subtitle, TaskCatalog.definition(.document).subtitle)
         XCTAssertEqual(document.symbol, "doc.text")
         XCTAssertTrue(document.availability.isAvailable)
-        for task in [ScanTask.photos, .photoRestore, .quickScan, .idCard, .copy, .receipt] {
+        for task in [ScanTask.quickScan, .copy, .archive] {
             let tile: IOSTaskTile = try XCTUnwrap(tiles[task])
             XCTAssertFalse(tile.availability.isAvailable, task.rawValue)
             XCTAssertEqual(tile.availability.reason, IOSShell.notYetReason, task.rawValue)

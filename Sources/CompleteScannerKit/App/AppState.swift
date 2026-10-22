@@ -172,8 +172,17 @@ public final class AppState: ObservableObject {
     @Published public private(set) var scanHistory: [ScanHistoryEntry] = []
     /// Full-resolution sources of the current photo batch, keyed by scanned-page id and
     /// retained only while the photo review is open, so manual crop corrections can
-    /// re-extract each photo from the correct sheet at full quality.
-    var photoSourceImages: [UUID: CGImage] = [:]
+    /// re-extract each photo from the correct sheet at full quality. For an object a camera's shot was cut
+    /// into (`CaptureObjects`), the photo as taken, whose corners are in `photoCaptureFacts`.
+    var photoSourceImages: [UUID: CGImage] = [:] {
+        didSet {
+            if photoSourceImages.isEmpty && !photoCaptureFacts.isEmpty { photoCaptureFacts = [:] }
+        }
+    }
+    /// What the camera recorded about each object of the review cut out of a shot (its corners in the photo
+    /// kept in `photoSourceImages`, its kind and the camera's focal length), by scanned-page id, so its crop
+    /// can be fixed along four corners (AppState+Capture.swift). Dropped with the sources.
+    var photoCaptureFacts: [UUID: CaptureFacts] = [:]
 
     /// The full-resolution page a detected photo, or a side of the ID card, was extracted from
     /// (nil once the review is closed).
@@ -203,6 +212,10 @@ public final class AppState: ObservableObject {
     /// What each of those scans covers (resolution, size, selection), so a back that does not stand
     /// out takes the front's place only on a scan of the same part of the glass.
     var idCardScanAreas: [UUID: IdCardScanArea] = [:]
+    /// What the camera recorded about a side cut out of a shot (its corners in the photo kept in
+    /// `idCardSourceImages`), by scanned-page id, so its crop can be fixed along four corners. In memory
+    /// only, and dropped with the sides.
+    var idCardCaptureFacts: [UUID: CaptureFacts] = [:]
     /// Something asked for that would end the ID card task while a side is held and not saved
     /// (leaving it, picking a task or a preset): it waits until the user discards the card
     /// (`ContentView` asks; AppState+IdCard.swift).
@@ -1054,8 +1067,11 @@ public final class AppState: ObservableObject {
             guard self.isCurrent(generation) else { return nil }
             if flag.isCancelled { throw ScanError.cancelled }
             // Keep every sheet's full-resolution source while the review is open so
-            // manual crop corrections can re-extract from the correct page.
-            self.photoSourceImages = Dictionary(uniqueKeysWithValues: processed.map { ($0.id, $0.image) })
+            // manual crop corrections can re-extract from the correct page (a camera's object: the
+            // photo it was cut from, with its corners).
+            let sources: ReviewSources = Self.reviewSources(processed)
+            self.photoSourceImages = sources.images
+            self.photoCaptureFacts = sources.facts
             self.detectedPhotos = found
             self.isReceiptReview = false
             self.recordCaptures(found.map(\.id))
@@ -1068,6 +1084,13 @@ public final class AppState: ObservableObject {
             }
             self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
             guard let side = cardSide, let page = processed.last else { break }
+            if CaptureObjects.isCutOut(page) {
+                // A camera's shot, cut out along the card's corners at its real size (the ID-1 snap): the
+                // whole page is the side. Glare is looked for on the photo as taken, before the clean-up.
+                let kept: Bool = try await self.recordCapturedIdCardSide(side, page: page, flag: flag, generation: generation)
+                guard kept else { return nil }
+                break
+            }
             self.statusMessage = "Finding the card\u{2026}"
             // A back that does not stand out takes the front's place, the card turned over where it
             // lay, when both scans cover the same part of the glass.
@@ -1119,6 +1142,8 @@ public final class AppState: ObservableObject {
     }
 
     private nonisolated static func splitPhotos(from page: ScannedPage, settings s: ScanSettings) -> [DetectedPhoto] {
+        // One object of a camera's shot, cut out already: the photo is the page.
+        if let cut = cutOutPhoto(page) { return [cut] }
         guard s.photoAutoSplit else {
             return [wholePagePhoto(page)]
         }

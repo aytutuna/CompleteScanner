@@ -931,12 +931,16 @@ final class IOSCameraTests: XCTestCase {
     // MARK: Where it is offered, and the Simulator
 
     @MainActor
-    func test_ourCamera_isOfferedWherePagesAreCollected_besideApplesScanner() {
+    func test_ourCamera_isOfferedWherePhotosAreTaken_besideApplesScanner() {
         let state: AppState = ImportTestSupport.makeState(in: folder)
         XCTAssertTrue(IOSShell.offersOwnCamera(state.settings))
+        // Since I13 also for photos (several in one shot), receipts and the ID card; never for a photocopy.
         var photos: ScanSettings = state.settings
         photos.intent = .photo
-        XCTAssertFalse(IOSShell.offersOwnCamera(photos))
+        XCTAssertTrue(IOSShell.offersOwnCamera(photos))
+        XCTAssertTrue(IOSShell.offersOwnCamera(TaskCatalog.apply(.receipt, to: state.settings)))
+        XCTAssertTrue(IOSShell.offersOwnCamera(TaskCatalog.apply(.idCard, to: state.settings)))
+        XCTAssertFalse(IOSShell.offersOwnCamera(TaskCatalog.apply(.copy, to: state.settings)))
         // Apple's scanner stays on its three tasks, as the secondary way in.
         XCTAssertTrue(IOSShell.offersCamera(.document))
         XCTAssertFalse(IOSShell.offersCamera(.feeder))
@@ -947,7 +951,10 @@ final class IOSCameraTests: XCTestCase {
         var single: ScanSettings = state.settings
         single.documentMultiPage = false
         XCTAssertFalse(IOSShell.capturesContinuously(single))
+        // Photos and receipts go to the review after each shot; the ID card takes its front, then its back.
         XCTAssertFalse(IOSShell.capturesContinuously(photos))
+        XCTAssertFalse(IOSShell.capturesContinuously(TaskCatalog.apply(.receipt, to: state.settings)))
+        XCTAssertTrue(IOSShell.capturesContinuously(TaskCatalog.apply(.idCard, to: state.settings)))
     }
 
     @MainActor
