@@ -6,9 +6,9 @@ import XCTest
 
 // The host's cases of windows/CompleteScanner.Core.Tests/CompanionLoopbackTests.cs: CompanionService
 // with a stand-in network source and advertiser, so nothing listens on or is advertised to the real
-// network, and the server on loopback with a keychain test identity (skipped where the keychain cannot
-// hold one, as in CompanionLoopbackTests). The phone is the I20 `CompanionClient`. The second network
-// is ::1, since macOS has no 127.0.0.2 unless it is added by hand.
+// network, and the server on loopback with the fixture identity of CompanionLoopbackTests. The phone is
+// the I20 `CompanionClient`. The second network is ::1, since macOS has no 127.0.0.2 unless it is added
+// by hand.
 
 /// Networks a test sets and changes.
 final class FakeNetworkSource: CompanionNetworkSource, @unchecked Sendable {
@@ -72,27 +72,18 @@ final class FakeAdvertiser: DnsSdAdvertiser, @unchecked Sendable {
     }
 }
 
-/// Keychain test identities: the current one, and a new one for each renewal (or a failure when
-/// `renewFails`). `remove()` deletes them all.
+/// The fixture identity, or a failure to renew it when `renewFails`.
 private final class RenewableTestIdentity: CompanionIdentity {
-    private var made = [KeychainTestIdentity()]
+    private let fixture = FixtureIdentity()
     var renewFails = false
 
     func current(now: Date) throws -> SecIdentity {
-        try made[made.count - 1].current(now: now)
+        try fixture.current(now: now)
     }
 
     func renew(now: Date) throws -> SecIdentity {
         if renewFails { throw SelfSignedCertificateError("The key could not be made.") }
-        let next = KeychainTestIdentity()
-        made.append(next)
-        return try next.current(now: now)
-    }
-
-    func remove() {
-        for identity in made {
-            identity.remove()
-        }
+        return try fixture.renew(now: now)
     }
 }
 
@@ -108,7 +99,7 @@ final class CompanionHostTests: XCTestCase {
     override func setUp() async throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("CompanionHostTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        // Skipped here when the keychain cannot hold the test identity.
+        // Skipped here when the system cannot import the test identity to memory.
         _ = try identity.current(now: clock.value)
         let clock = self.clock
         var options = CompanionServiceOptions(settingsDirectory: directory.appendingPathComponent("Settings", isDirectory: true),
@@ -123,7 +114,6 @@ final class CompanionHostTests: XCTestCase {
 
     override func tearDown() async throws {
         await service?.dispose()
-        identity.remove()
         if let directory {
             try? FileManager.default.removeItem(at: directory)
         }

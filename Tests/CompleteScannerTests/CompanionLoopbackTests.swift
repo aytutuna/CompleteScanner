@@ -5,98 +5,70 @@ import XCTest
 @testable import CompleteScannerKit
 
 // The Swift server end to end, the twin of the windows/CompleteScanner.Core.Tests/CompanionLoopbackTests.cs
-// cases about the server: CompanionServer on 127.0.0.1 (loopback only, nothing advertised) with a
-// SelfSignedCertificate identity, and the phone's CompanionClient pinned to that certificate's key, as
-// the C# FakePhone is. The cases about the host (networks, advertising, listening only while wanted,
-// Reset pairing) are in CompanionHostTests. A SecIdentity needs its key in a keychain: the Mac's default
-// keychain, the data protection keychain on the iPhone and its Simulator; where the keychain cannot
-// hold the test identity (locked, or no entitlement) these tests are skipped.
+// cases about the server: CompanionServer on 127.0.0.1 (loopback only, nothing advertised) with a fixed
+// identity from Tests/Fixtures/Companion, and the phone's CompanionClient pinned to that certificate's key,
+// as the C# FakePhone is. The cases about the host (networks, advertising, listening only while wanted,
+// Reset pairing) are in CompanionHostTests. The identity is imported to memory, so no keychain is needed:
+// a runner's keychain refuses new keys (errSecMissingEntitlement).
 
-/// A server identity made for one test: a P-256 key kept in the keychain under a tag of its own, a
-/// SelfSignedCertificate added next to it, and the identity the keychain pairs them into. `remove()`
-/// deletes both.
-final class KeychainTestIdentity: CompanionIdentity {
-    private let tag = Data("com.completescanner.tests.\(UUID().uuidString)".utf8)
-    private let label = "CompleteScanner test \(UUID().uuidString)"
-    private var made: SecIdentity?
+extension CompanionFixtures {
+    /// The desktop identities the loopback server serves: test fixtures only, no key ships in the app.
+    static let desktopA = "tls-desktop-a.p12"
+    static let desktopB = "tls-desktop-b.p12"
+
+    /// The SHA-256 of the SubjectPublicKeyInfo of `desktopA` and `desktopB`.
+    static let desktopAFingerprint = "d0b8817381596dee250bb3b57b81b2fbbe172d3369226ecccd87eea543cd97a2"
+    static let desktopBFingerprint = "e648402792146a52071a9fd3c170c3793cfaffaaf3ba4c8d9078276483a6f7da"
+
+    /// The password of the `desktopA` and `desktopB` files.
+    static let loopbackPassword = "loopback-desktop"
+
+    /// Tests/Fixtures/Companion in the repository.
+    static func url(_ name: String) -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()   // CompleteScannerTests
+            .deletingLastPathComponent()   // Tests
+            .appendingPathComponent("Fixtures/Companion", isDirectory: true)
+            .appendingPathComponent(name)
+    }
+}
+
+/// The server identity of the tests: `desktopA`, and `desktopB` once renewed, so Reset pairing still
+/// changes the key.
+final class FixtureIdentity: CompanionIdentity {
+    private var served: SecIdentity?
 
     func current(now: Date) throws -> SecIdentity {
-        if let made { return made }
-        let identity = try make(now: now)
-        made = identity
-        return identity
+        if let served { return served }
+        let loaded = try FixtureIdentity.load(CompanionFixtures.desktopA)
+        served = loaded
+        return loaded
     }
 
     func renew(now: Date) throws -> SecIdentity {
-        remove()
-        return try current(now: now)
+        let loaded = try FixtureIdentity.load(CompanionFixtures.desktopB)
+        served = loaded
+        return loaded
     }
 
-    func remove() {
-        made = nil
-        let key: [String: Any] = [kSecClass as String: kSecClassKey, kSecAttrApplicationTag as String: tag]
-        let certificate: [String: Any] = [kSecClass as String: kSecClassCertificate, kSecAttrLabel as String: label]
-        SecItemDelete(key as CFDictionary)
-        SecItemDelete(certificate as CFDictionary)
-    }
-
-    private func make(now: Date) throws -> SecIdentity {
-        let privateAttributes: [String: Any] = [
-            kSecAttrIsPermanent as String: true,
-            kSecAttrApplicationTag as String: tag,
-            kSecAttrLabel as String: label,
-        ]
-        let attributes: [String: Any] = [
-            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
-            kSecAttrKeySizeInBits as String: 256,
-            kSecPrivateKeyAttrs as String: privateAttributes,
-        ]
-        var error: Unmanaged<CFError>?
-        guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else {
-            let failure: CFError = error!.takeRetainedValue()
-            try KeychainTestIdentity.skipIfUnavailable(OSStatus(CFErrorGetCode(failure)))
-            throw failure as Error
+    /// A fixture identity, imported into memory only.
+    static func load(_ file: String) throws -> SecIdentity {
+        let data = try Data(contentsOf: CompanionFixtures.url(file))
+        var options: [String: Any] = [kSecImportExportPassphrase as String: CompanionFixtures.loopbackPassword]
+        #if os(macOS)
+        if #available(macOS 15.0, *) {
+            options[kSecImportToMemoryOnly as String] = true
+        } else {
+            throw XCTSkip("Importing a test identity without a keychain needs macOS 15.")
         }
-        let der = try SelfSignedCertificate.make(hostName: "localhost", key: key, now: now)
-        guard let certificate = SelfSignedCertificate.certificate(der) else {
-            remove()
-            throw SelfSignedCertificateError("The test certificate does not read.")
+        #endif
+        var items: CFArray?
+        let status = SecPKCS12Import(data as CFData, options as CFDictionary, &items)
+        guard status == errSecSuccess, let list = items as? [[String: Any]], let first = list.first,
+              let found = first[kSecImportItemIdentity as String] else {
+            throw SelfSignedCertificateError("\(file) could not be imported (\(status)).")
         }
-        let item: [String: Any] = [
-            kSecClass as String: kSecClassCertificate,
-            kSecValueRef as String: certificate,
-            kSecAttrLabel as String: label,
-        ]
-        let added = SecItemAdd(item as CFDictionary, nil)
-        guard added == errSecSuccess else {
-            remove()
-            try KeychainTestIdentity.skipIfUnavailable(added)
-            throw SelfSignedCertificateError("The test certificate was not added to the keychain (\(added)).")
-        }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassIdentity,
-            kSecReturnRef as String: true,
-            kSecMatchLimit as String: kSecMatchLimitAll,
-        ]
-        var result: CFTypeRef?
-        let found = SecItemCopyMatching(query as CFDictionary, &result)
-        if found == errSecSuccess, let items = result as? [Any] {
-            for item in items {
-                let identity = item as! SecIdentity
-                if SelfSignedCertificate.der(of: identity) == der { return identity }
-            }
-        }
-        remove()
-        try KeychainTestIdentity.skipIfUnavailable(found)
-        throw SelfSignedCertificateError("The keychain did not pair the test key with its certificate (\(found)).")
-    }
-
-    private static func skipIfUnavailable(_ status: OSStatus) throws {
-        let unavailable: [OSStatus] = [errSecMissingEntitlement, errSecInteractionNotAllowed, errSecNotAvailable,
-                                       errSecNoSuchKeychain]
-        if unavailable.contains(status) {
-            throw XCTSkip("The keychain cannot hold a test identity here (\(status)).")
-        }
+        return found as! SecIdentity
     }
 }
 
@@ -203,8 +175,7 @@ private final class RawConnection: @unchecked Sendable {
 final class CompanionLoopbackTests: XCTestCase {
     private var directory: URL!
     private var clock: LoopbackClock!
-    private var identity: KeychainTestIdentity?
-    private var devices: PairedDeviceStore!
+        private var devices: PairedDeviceStore!
     private var inbox: CompanionInbox!
     private var outbox: CompanionOutbox!
     private var server: CompanionServer?
@@ -219,9 +190,7 @@ final class CompanionLoopbackTests: XCTestCase {
         // To the second, as packages and the outbox write dates.
         let clock = LoopbackClock(Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down)))
         self.clock = clock
-        let identity = KeychainTestIdentity()
-        self.identity = identity
-        let serverIdentity = try identity.current(now: clock.now)
+        let serverIdentity = try FixtureIdentity().current(now: clock.now)
         pin = try XCTUnwrap(SelfSignedCertificate.der(of: serverIdentity).flatMap { SpkiFingerprint.of($0) })
 
         devices = PairedDeviceStore(directory: directory.appendingPathComponent("Settings", isDirectory: true))
@@ -246,7 +215,6 @@ final class CompanionLoopbackTests: XCTestCase {
 
     override func tearDown() async throws {
         await server?.stop()
-        identity?.remove()
         if let directory {
             try? FileManager.default.removeItem(at: directory)
         }
@@ -330,6 +298,19 @@ final class CompanionLoopbackTests: XCTestCase {
     }
 
     // MARK: - Cases
+
+    func testTheFixtureIdentitiesHaveTheirFingerprints() throws {
+        let pinned = [CompanionFixtures.desktopA: CompanionFixtures.desktopAFingerprint,
+                      CompanionFixtures.desktopB: CompanionFixtures.desktopBFingerprint]
+        for (file, fingerprint) in pinned {
+            // Loaded outside the assertion, so the XCTSkip of earlier systems skips the test.
+            let identity = try FixtureIdentity.load(file)
+            let der = try XCTUnwrap(SelfSignedCertificate.der(of: identity), file)
+            let digest = try XCTUnwrap(SpkiFingerprint.of(der), file)
+            XCTAssertEqual(SpkiFingerprint.hex(digest), fingerprint, file)
+        }
+        XCTAssertEqual(SpkiFingerprint.hex(pin), CompanionFixtures.desktopAFingerprint)
+    }
 
     func testPair_ThenSend_AddsTheDocumentOnce() async throws {
         let opened = try openPairing()
