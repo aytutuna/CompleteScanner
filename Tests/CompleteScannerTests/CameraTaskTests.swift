@@ -139,10 +139,13 @@ final class CameraTaskTests: XCTestCase {
         return state
     }
 
-    /// Brings `page` in from a photo and waits until it is in.
+    /// Brings `page` in from a photo as a shot of its own (every shot is a new page; the same page twice
+    /// would share an id) and waits until it is in.
     @MainActor
     private func bringIn(_ state: AppState, _ page: ScannedPage) async throws {
-        XCTAssertTrue(state.ingest([page], source: .photo))
+        var shot: ScannedPage = ScannedPage(image: page.image, dpi: page.dpi, colorMode: page.colorMode)
+        shot.source = page.source
+        XCTAssertTrue(state.ingest([shot], source: .photo))
         try await waitUntil(timeout: 60) { !state.isBusy }
         XCTAssertNil(state.errorMessage)
     }
