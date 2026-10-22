@@ -65,8 +65,8 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 10), "The name field")
         field.tap()
         field.typeText(name)
-        // By identifier: the list's Save preset button carries the same label.
-        let confirm: XCUIElement = app.buttons["presets.name.save"]
+        // By identifier, first match: the Simulator lists an alert's button twice.
+        let confirm: XCUIElement = app.buttons["presets.name.save"].firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 10), "The alert's Save preset")
         confirm.tap()
 
