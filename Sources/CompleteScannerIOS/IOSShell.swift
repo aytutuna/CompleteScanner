@@ -264,7 +264,7 @@ public enum IOSShell {
 
     @MainActor private static var lastPackageOpen: Task<Void, Never>?
 
-    private static func openPackageNow(_ url: URL, in state: AppState) async {
+    @MainActor private static func openPackageNow(_ url: URL, in state: AppState) async {
         let copied: Result<URL, Error> = await Task.detached(priority: .userInitiated) { () -> Result<URL, Error> in
             Result { try IOSShell.copyPackage(url) }
         }.value
