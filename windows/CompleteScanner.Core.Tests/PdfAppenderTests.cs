@@ -10,7 +10,8 @@ namespace CompleteScanner.Core.Tests;
 // the update in the same style as the file's newest section, the new pages as PdfBuilder writes
 // them; checked in the bytes, by reading the result back with PdfReaderLite, and through PdfPig (a
 // test-only package) with its lenient parsing off, so a broken offset fails instead of being
-// repaired. No Swift twin: the Mac adds pages with PDFKit (CONTRACTS.md).
+// repaired. The Swift twin is PDFAppenderTests.swift, with the same cases; it reads the results
+// with PDFReaderLite and PDFKit.
 
 public class PdfAppenderTests
 {

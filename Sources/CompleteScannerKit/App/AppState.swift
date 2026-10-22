@@ -252,9 +252,9 @@ public final class AppState: ObservableObject {
     @Published public internal(set) var lastSavedURLs: [URL] = []
     /// Size of the PDF saved last in this session, in bytes; nil before the first one. Shown
     /// under the PDF size choice.
-    @Published public private(set) var lastPDFByteCount: Int64?
+    @Published public internal(set) var lastPDFByteCount: Int64?
     /// The PDF saved last was password-protected: its status says so after its size.
-    @Published public private(set) var lastPDFProtected = false
+    @Published public internal(set) var lastPDFProtected = false
 
     /// Asks for the password of a protected PDF (`OutputOptions.protect`) when a save needs one: the
     /// Mac's window shows its dialog; nil (cancelled, or nobody to ask) saves nothing. Asked once per
@@ -263,6 +263,14 @@ public final class AppState: ObservableObject {
     public var askPDFPassword: (@MainActor () async -> PDFProtection?)?
     /// The password of the save running now (`protectionFor`); nil between saves.
     var savePassword: PDFProtection?
+    /// Asks whether to add pages to a PDF despite what `PDFAppendTarget.warnings` say (a signed file, a
+    /// PDF/A level the pages may not keep): the Mac shows an alert, the iPhone its own; no answer, or
+    /// nobody to ask, adds nothing (AppState+Append.swift). Twin of the Windows view model's `ConfirmAppend`.
+    public var confirmAppend: (@MainActor (String) async -> Bool)?
+    /// Reads (`writing` false) or updates the PDF pages are added to through `body`, given the URL to
+    /// use: the iPhone opens the picked file's security scope and coordinates the access, so iCloud Drive
+    /// and other providers see the new file. Nil (the Mac) uses the file as it is. Set by `makeForIOS`.
+    public var accessPDFForAppend: (@Sendable (_ url: URL, _ writing: Bool, _ body: (URL) throws -> Void) throws -> Void)?
 
     /// Opens the folder of `ScanSettings.destinationBookmark` (the iPhone's save folder outside the app)
     /// and gives it with the bookmark to keep, made again when the old one is stale; nil when it no longer

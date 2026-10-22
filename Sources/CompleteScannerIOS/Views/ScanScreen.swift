@@ -3,6 +3,7 @@ import CompleteScannerKit
 import CoreGraphics
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// The full-screen covers the scan screen opens: Apple's document scanner, our own camera, the flatbed
 /// preview to choose the scan area on, (I13) the photo or receipt review and the ID card's review, (I14)
@@ -33,9 +34,10 @@ enum ScanCover: String, Identifiable {
 /// page's spread split again (`SpreadSplitSheet`), and Quick scan's page full screen once taken. Since I15:
 /// PDFs and pictures dropped on the screen are imported as Files' are, Command-S saves, and Settings
 /// (Command-comma) is in the toolbar where the sidebar does not offer it. Since I16: the photocopy's pages
-/// full screen once taken, to print over AirPrint (`CopyScreen`). Its covers and the spread's sheet
-/// are the root view's (`ScanCovers`), so resizing the window across the width classes, which builds this
-/// screen anew, leaves them open.
+/// full screen once taken, to print over AirPrint (`CopyScreen`). While Save writes a PDF, the pages can
+/// also be added to the end of a PDF picked in Files (`AppState.appendToPDF(at:)`). Its covers and the
+/// spread's sheet are the root view's (`ScanCovers`), so resizing the window across the width classes,
+/// which builds this screen anew, leaves them open.
 struct ScanScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -50,6 +52,8 @@ struct ScanScreen: View {
     var onOpenSettings: (() -> Void)?
     @State private var scanner: IOSCameraAvailability = .noCamera
     @State private var showsPicker: Bool = false
+    /// Files is open to pick the PDF the pages are added to.
+    @State private var picksPDF: Bool = false
 
     var body: some View {
         Group {
@@ -442,8 +446,28 @@ struct ScanScreen: View {
                     .accessibilityIdentifier("save.button")
                 }
             }
+            if IOSShell.offersPDFOptions(state.settings) {
+                Button {
+                    picksPDF = true
+                } label: {
+                    Label(PDFAppender.buttonLabel, systemImage: "doc.badge.plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(state.isBusy || importer.isImporting || saveCount == 0)
+                .accessibilityHint(Text(PDFAppender.buttonHint))
+                .accessibilityIdentifier("append.button")
+            }
         }
         .padding(16)
+        .fileImporter(isPresented: $picksPDF, allowedContentTypes: [UTType.pdf]) { (result: Result<URL, Error>) in
+            switch result {
+            case .success(let url):
+                state.appendToPDF(at: url)
+            case .failure(let error):
+                state.errorMessage = error.localizedDescription
+            }
+        }
     }
 
     /// The status in six words at most (`StatusLine.shown`), as on the Mac's status bar.

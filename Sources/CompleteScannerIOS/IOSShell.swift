@@ -331,12 +331,16 @@ extension AppState {
     /// app's page in Settings, the pasteboard, the network path) and UIKit's lifecycle; the iPhone's
     /// troubleshooter checks and connection ranking (`platform` `.ios`); the password of a protected PDF
     /// asked for by `passwordPrompt` (none: such a save saves nothing); AirPrint printing through
-    /// `IOSPrintService` (I16), used for the photocopy, the ID card page and the ruler test page.
+    /// `IOSPrintService` (I16), used for the photocopy, the ID card page and the ruler test page; a PDF
+    /// pages are added to read and replaced through its security scope and a coordinated access
+    /// (`IOSPDFAppend.access`), with the question before adding pages to a signed or PDF/A file asked by
+    /// `confirmAppend` (none: such a file gets no pages).
     @MainActor
     public static func makeForIOS(options: IOSLaunchOptions, fileActions: IOSFileActions,
                                   networkScanners: IOSNetworkScanners?,
                                   passwordPrompt: IOSPasswordPrompt? = nil,
-                                  printService: IOSPrintService? = nil) -> AppState {
+                                  printService: IOSPrintService? = nil,
+                                  confirmAppend: (@MainActor (String) async -> Bool)? = nil) -> AppState {
         let backends: [any ScannerBackend] = IOSShell.backends(options: options, networkScanners: networkScanners)
         let lifecycle: UIKitLifecycle = UIKitLifecycle()
         let state: AppState = AppState(backends: backends, fileActions: fileActions,
@@ -347,6 +351,10 @@ extension AppState {
             state.askPDFPassword = { () async -> PDFProtection? in
                 await prompt.ask()
             }
+        }
+        state.confirmAppend = confirmAppend
+        state.accessPDFForAppend = { (url: URL, writing: Bool, body: (URL) throws -> Void) throws -> Void in
+            try IOSPDFAppend.access(url, writing: writing, body)
         }
         state.documentsFolder = IOSShell.documentsFolder
         state.resolveDestinationBookmark = { (bookmark: Data) -> (folder: URL, bookmark: Data)? in

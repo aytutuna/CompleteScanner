@@ -5,7 +5,8 @@ import SwiftUI
 
 /// The iPhone and iPad app: one window with the task start screen and the scan screen. The Xcode
 /// project's app target (ios/project.yml) only starts it (`CompleteScannerIOSApp.main()`). A protected PDF's
-/// password is asked for with the password sheet (`IOSPasswordPrompt`), which the state keeps. Network
+/// password is asked for with the password sheet (`IOSPasswordPrompt`), which the state keeps, and the
+/// question before adding pages to a signed or PDF/A file with an alert (`IOSPDFAppend.confirm`). Network
 /// scanners are offered unless the app was launched with `-demoScanner` (the UI tests), which keeps the
 /// demo scanner alone and never searches the network.
 public struct CompleteScannerIOSApp: App {
@@ -23,7 +24,10 @@ public struct CompleteScannerIOSApp: App {
         let network: IOSNetworkScanners? = options.demoScannerOnly ? nil : IOSNetworkScanners()
         let prompt: IOSPasswordPrompt = IOSPasswordPrompt()
         let appState: AppState = AppState.makeForIOS(options: options, fileActions: actions, networkScanners: network,
-                                                     passwordPrompt: prompt)
+                                                     passwordPrompt: prompt,
+                                                     confirmAppend: { (question: String) async -> Bool in
+                                                         await IOSPDFAppend.confirm(question)
+                                                     })
         let session: IOSImportSession = IOSImportSession(state: appState)
         _fileActions = StateObject(wrappedValue: actions)
         _state = StateObject(wrappedValue: appState)

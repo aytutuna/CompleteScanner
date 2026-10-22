@@ -103,12 +103,23 @@ struct PagesStripView: View {
                     ? saveTitle.replacingOccurrences(of: "PDF", with: "password-protected PDF")
                     : saveTitle))
 
-                Button("Clear") {
-                    state.clearPages()
+                HStack(spacing: 8) {
+                    // Pages go into an existing PDF as PDF pages, so only while the queue is saved as one.
+                    if state.settings.format.queueFormat == .pdf {
+                        Button(PDFAppender.buttonLabel) {
+                            state.chooseAndAppendToPDF()
+                        }
+                        .disabled(state.isBusy || saveCount == 0)
+                        .help(saveCount == 0 ? PageFilter.nothingToSaveMessage : PDFAppender.buttonHint)
+                        .accessibilityHint(Text(PDFAppender.buttonHint))
+                    }
+                    Button("Clear") {
+                        state.clearPages()
+                    }
+                    .disabled(state.isBusy)
+                    .help("Remove all pages")
+                    .accessibilityHint(Text("Remove every page from the queue"))
                 }
-                .disabled(state.isBusy)
-                .help("Remove all pages")
-                .accessibilityHint(Text("Remove every page from the queue"))
             }
             .padding(.trailing, 12)
         }

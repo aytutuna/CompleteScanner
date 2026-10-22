@@ -4,6 +4,9 @@ using System.Text;
 
 namespace CompleteScanner.Core;
 
+// Twin of Sources/CompleteScannerKit/Output/PDFSyntax.swift: the same values, lexer, filter, limits
+// and error texts.
+
 // The object syntax of an existing PDF, as PdfReaderLite reads it and PdfAppender writes back the
 // few objects it changes: the values (ISO 32000-1 7.3), a lexer over the file's bytes, the
 // FlateDecode filter with its PNG and TIFF predictors (7.4.4), and the way each value is written

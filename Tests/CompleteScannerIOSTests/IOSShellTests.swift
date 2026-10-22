@@ -281,5 +281,68 @@ final class IOSShellTests: XCTestCase {
         XCTAssertFalse(state.hasPrinter)
         state.clearPages()
     }
+
+    // MARK: Adding pages to a PDF
+
+    @MainActor
+    func test_appendToPDF_goesThroughTheShellsCoordinatedAccess_andItsQuestion() async throws {
+        let actions = IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in },
+                                     mailAvailable: { () -> Bool in false })
+        let plain: AppState = AppState.makeForIOS(options: IOSLaunchOptions(demoScannerOnly: true), fileActions: actions)
+        XCTAssertNil(plain.confirmAppend)
+        XCTAssertNotNil(plain.accessPDFForAppend)
+        var questions: [String] = []
+        let made: AppState = AppState.makeForIOS(options: IOSLaunchOptions(demoScannerOnly: true), fileActions: actions,
+                                                 networkScanners: nil,
+                                                 confirmAppend: { (question: String) async -> Bool in
+                                                     questions.append(question)
+                                                     return true
+                                                 })
+        XCTAssertNotNil(made.confirmAppend)
+
+        let state = AppState(presetStore: PresetStore(directory: folder), orientationScorer: ShellScorer(),
+                             barcodeReader: ShellBarcodes(), files: AppStateFiles.all(in: folder))
+        state.settings.intent = .document
+        state.settings.documentMultiPage = true
+        state.settings.taskId = nil
+        state.settings.format = .pdf
+        state.settings.pdfSearchable = false
+        state.settings.destinationPath = folder.path
+        state.confirmAppend = made.confirmAppend
+        state.accessPDFForAppend = made.accessPDFForAppend
+        XCTAssertTrue(IOSShell.offersPDFOptions(state.settings))
+
+        let context = CGContext(data: nil, width: 300, height: 400, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(CGColor(red: 0.95, green: 0.95, blue: 0.93, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 300, height: 400))
+        let image: CGImage = context.makeImage()!
+        let page = ScannedPage(image: image, dpi: 50, colorMode: .color)
+        let url: URL = folder.appendingPathComponent("Shared.pdf")
+        try PDFBuilder.makePDF(pages: [page], pdfSize: .best, progress: nil, textLayer: nil).write(to: url)
+        XCTAssertTrue(state.ingest([page], source: .photo))
+        try await waitFor(timeout: 60) { !state.isBusy }
+        XCTAssertTrue(state.canAppendPages)
+
+        state.appendToPDF(at: url)
+        try await waitFor(timeout: 60) { !state.isBusy }
+        XCTAssertNil(state.errorMessage)
+        XCTAssertEqual(questions, [])
+        XCTAssertTrue(state.scannedPages.isEmpty)
+        XCTAssertEqual(try PDFReaderLite(data: Data(contentsOf: url)).pageCount, 2)
+
+        // What fails inside the coordinated access is what the append throws.
+        XCTAssertThrowsError(try IOSPDFAppend.access(url, writing: true) { (_: URL) throws -> Void in
+            throw CocoaError(.fileWriteOutOfSpace)
+        }) { (error: Error) in
+            XCTAssertEqual((error as? CocoaError)?.code, .fileWriteOutOfSpace)
+        }
+        var read: URL?
+        try IOSPDFAppend.access(url, writing: false) { (file: URL) throws -> Void in
+            read = file
+        }
+        XCTAssertEqual(read?.standardizedFileURL.path, url.standardizedFileURL.path)
+    }
 }
 #endif

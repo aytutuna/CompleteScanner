@@ -3,6 +3,9 @@ using System.Text;
 
 namespace CompleteScanner.Core;
 
+// Twin of Sources/CompleteScannerKit/Output/PDFAppender.swift: the same update, byte for byte, with
+// the same refusals and messages.
+
 /// <summary>Why pages could not be added to a PDF (<see cref="PdfAppendException"/>).</summary>
 public enum PdfAppendProblem
 {

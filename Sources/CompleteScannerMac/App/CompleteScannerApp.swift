@@ -21,8 +21,8 @@ public struct CompleteScannerApp: App {
 
 extension AppState {
     /// The Mac app's state: ImageCaptureCore's scanners and the demo scanner, with the Mac's file
-    /// actions, troubleshooter links, printing and app lifecycle, and the password dialog of a
-    /// protected PDF (`PDFPasswordWindow`).
+    /// actions, troubleshooter links, printing and app lifecycle, the password dialog of a protected
+    /// PDF (`PDFPasswordWindow`) and the question before adding pages to a signed or PDF/A file.
     @MainActor
     static func makeForMac() -> AppState {
         let backends: [any ScannerBackend] = [ICScannerBackend(), AppState.makeDemoBackend()]
@@ -32,6 +32,7 @@ extension AppState {
                              printService: SystemPrintService(),
                              lifecycle: AppKitLifecycle())
         state.askPDFPassword = { PDFPasswordWindow.ask() }
+        state.confirmAppend = { AppState.confirmAppendAlert($0) }
         return state
     }
 }

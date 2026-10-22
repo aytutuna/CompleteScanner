@@ -6,8 +6,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// The "Saved" tab: everything in the destination folder, newest first, with open, open with,
-/// show in Finder, share, email, copy (`AppState.runFileAction`) and 90°-rotation for saved image
-/// files. Every action is also in the card's More menu and context menu.
+/// show in Finder, share, email, copy (`AppState.runFileAction`), 90°-rotation for saved image
+/// files and, for a PDF, adding the queued pages to its end (`AppState.appendToPDF(at:)`). Every
+/// action is also in the card's More menu and context menu.
 struct SavedFilesView: View {
     @EnvironmentObject var state: AppState
 
@@ -27,8 +28,10 @@ struct SavedFilesView: View {
                         ForEach(files) { file in
                             SavedFileCard(file: file,
                                           rotating: rotatingPaths.contains(file.url.path),
+                                          canAppend: state.canAppendPages,
                                           onAction: { state.runFileAction($0, urls: [file.url]) },
-                                          onRotate: { rotate(file) })
+                                          onRotate: { rotate(file) },
+                                          onAppend: { state.appendToPDF(at: file.url) })
                         }
                     }
                     .padding()
@@ -184,8 +187,11 @@ fileprivate struct SavedFileItem: Identifiable, Equatable {
 fileprivate struct SavedFileCard: View {
     let file: SavedFileItem
     let rotating: Bool
+    /// There are queued pages to add to a PDF (`AppState.canAppendPages`).
+    let canAppend: Bool
     let onAction: (FileAction) -> Void
     let onRotate: () -> Void
+    let onAppend: () -> Void
 
     @State private var thumbnail: CGImage?
 
@@ -277,7 +283,8 @@ fileprivate struct SavedFileCard: View {
         ByteCountFormatter.string(fromByteCount: Int64(file.fileSize), countStyle: .file)
     }
 
-    /// Every action on the file, then Rotate for image files: the More menu and the context menu.
+    /// Every action on the file, then Rotate for image files and adding the queued pages for a PDF:
+    /// the More menu and the context menu.
     @ViewBuilder
     private var actionMenu: some View {
         ForEach(SaveActions.offered(fileCount: 1)) { action in
@@ -295,6 +302,16 @@ fileprivate struct SavedFileCard: View {
                 Label("Rotate 90\u{00B0} Clockwise", systemImage: "rotate.right")
             }
             .disabled(rotating)
+        }
+        if file.isPdf {
+            Divider()
+            Button {
+                onAppend()
+            } label: {
+                Label(PDFAppender.savedMenuLabel, systemImage: "doc.badge.plus")
+            }
+            .disabled(!canAppend)
+            .help(PDFAppender.savedMenuHint)
         }
     }
 }

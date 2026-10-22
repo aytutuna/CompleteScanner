@@ -49,7 +49,7 @@ scanners** — including the Epson Perfection V39 II.
   still has to be confirmed on a Mac.
 - **Black & white as CCITT G4**: black & white pages are stored as lossless 1-bit CCITT Group 4
   images, in every PDF (at every size, up to 600 dpi at Standard and 300 dpi at Compact and
-  Smallest; PDF/A and password-protected ones too, and on Windows added pages) and in TIFF files
+  Smallest; PDF/A and password-protected ones too, and added pages) and in TIFF files
   (compression 4, one page or several). A 300 dpi letter page is 33 KB instead of a 527 KB gray
   JPEG at Standard. The encoder is the app's own code, with no library, and writes the same bytes
   on both platforms.
@@ -67,12 +67,13 @@ scanners** — including the Epson Perfection V39 II.
   apps honor as a request, not a lock. A PDF/A file can't have a password, so the two switches
   exclude each other. The iPhone app has the same writer and switches, and asks for the password
   in a sheet of its own.
-- **Add pages to an existing PDF** (Windows for now): **Add to existing PDF…** under the queue,
+- **Add pages to an existing PDF**: **Add to existing PDF…** under the queue,
   or a PDF's menu in the Saved tab, adds the scanned pages to the end of a PDF you pick, such as
   a signature page for a contract. The file's existing bytes are kept as they are (the pages are
   added as an incremental update), and the file is replaced only once the new one has been
   written and checked. Password-protected and damaged files are refused; signed files and PDF/A
-  files that may not stay PDF/A are asked about first. The Mac will add pages with PDFKit.
+  files that may not stay PDF/A are asked about first. The Mac writes the same update, from the
+  button beside Save and a PDF's menu in the Saved tab.
 - **Share, email, open with, copy**: after a save, and on every file in the Saved tab, open the
   file, open it with another app, show it in Finder, share it (Mail, Messages, AirDrop, …), start
   a Mail message with it attached, or copy it (an image also as a picture). **After saving** can
@@ -283,7 +284,9 @@ as whole spreads cut at the spine, split again by hand; Quick scan with Live Tex
 text; the photocopy printed over AirPrint from the phone, at real size when the page matched a paper
 size and fitted to the page otherwise, with Copies, Also save a PDF and Copy again on the same
 printer; Email a document through Mail's composer (or the share sheet); Archive document and the PDF's
-size, Archive and Password choices, the password asked for in a sheet and never stored; network
+size, Archive and Password choices, the password asked for in a sheet and never stored; the pages
+added to the end of a PDF picked in Files or in the saved files, as the same incremental update as on
+the desktop (signed files and PDF/A files that may not stay PDF/A asked about first); network
 scanners (AirScan/eSCL) found on the Wi-Fi or added by address, picked from a sheet on iPhone or a
 sidebar on iPad, with a flatbed preview to choose the scan area on, a feeder's progress with Cancel,
 the screen kept on while a network scanner works, and the troubleshooter with its iPhone checks;

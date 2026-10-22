@@ -4,6 +4,9 @@ using System.Xml.Linq;
 
 namespace CompleteScanner.Core;
 
+// Twin of Sources/CompleteScannerKit/Output/PDFReaderLite.swift: the same layouts, limits, refusals
+// and error texts.
+
 /// <summary>
 /// Just enough of a PDF reader to add pages to an existing file (<see cref="PdfAppender"/>): the
 /// cross-reference data — classic tables and cross-reference streams (with their PNG predictors),

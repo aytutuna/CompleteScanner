@@ -3,6 +3,9 @@ using System.Text;
 
 namespace CompleteScanner.Core;
 
+// Twin of Sources/CompleteScannerKit/Output/PDFObjectWriter.swift: the same bytes, the update's
+// sections included.
+
 /// <summary>
 /// The byte-level layer of the PDF writer: the header, numbered objects with their byte offsets,
 /// streams, and the classic cross-reference table and trailer. It knows nothing about pages or

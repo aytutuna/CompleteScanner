@@ -7,7 +7,7 @@ namespace CompleteScanner.App;
 /// <summary>
 /// Adding the queued pages to the end of an existing PDF the user picks (Add to existing PDF… under
 /// the queue, or a PDF's menu in the Saved tab), as an incremental update (<see cref="PdfAppender"/>).
-/// The Mac adds pages with PDFKit instead (CONTRACTS.md).
+/// The Mac and the iPhone add pages the same way (Sources/CompleteScannerKit/App/AppState+Append.swift).
 /// </summary>
 public sealed partial class AppViewModel
 {

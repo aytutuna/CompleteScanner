@@ -4,8 +4,9 @@ import SwiftUI
 
 /// Everything in the save folder, newest first (`IOSSavedFiles`): each file with its picture, name, date
 /// and size, the files of the last save marked New; Share and Show in Files on each, and its other actions
-/// (open, open with, email, copy) in its menu, through `AppState.runFileAction` as on the desktop. Read
-/// again whenever something is saved and when pulled down.
+/// (open, open with, email, copy) in its menu, through `AppState.runFileAction` as on the desktop, and for
+/// a PDF, adding the queued pages to its end (`AppState.appendToPDF(at:)`). Read again whenever something
+/// is saved and when pulled down.
 struct SavedFilesScreen: View {
     @EnvironmentObject private var state: AppState
     @State private var folder: IOSSavedFolder = IOSSavedFolder(files: [], failed: false)
@@ -28,7 +29,8 @@ struct SavedFilesScreen: View {
             }
             Section {
                 ForEach(folder.files) { (file: IOSSavedFile) in
-                    SavedFileRow(file: file, onAction: run)
+                    SavedFileRow(file: file, canAppend: state.canAppendPages, onAction: run,
+                                 onAppend: { (file: IOSSavedFile) -> Void in state.appendToPDF(at: file.url) })
                 }
             } header: {
                 Text(place.lastPathComponent)
@@ -67,7 +69,10 @@ struct SavedFilesScreen: View {
 /// Show in Files and More.
 private struct SavedFileRow: View {
     let file: IOSSavedFile
+    /// There are queued pages to add to a PDF (`AppState.canAppendPages`).
+    let canAppend: Bool
     let onAction: (FileAction, IOSSavedFile) -> Void
+    let onAppend: (IOSSavedFile) -> Void
     @State private var thumbnail: CGImage?
 
     var body: some View {
@@ -163,6 +168,15 @@ private struct SavedFileRow: View {
             } label: {
                 Label(IOSSavedFiles.label(action), systemImage: IOSSavedFiles.symbol(action))
             }
+        }
+        if file.isPDF {
+            Button {
+                onAppend(file)
+            } label: {
+                Label(PDFAppender.savedMenuLabel, systemImage: "doc.badge.plus")
+            }
+            .disabled(!canAppend)
+            .accessibilityHint(Text(PDFAppender.savedMenuHint))
         }
     }
 

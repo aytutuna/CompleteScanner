@@ -5,8 +5,8 @@ using Xunit;
 namespace CompleteScanner.Core.Tests;
 
 // The reader the appender stands on: PDF syntax, the filters it undoes, every way the
-// cross-reference data can be laid out, the page tree, and the files it refuses. No Swift twin:
-// the Mac adds pages with PDFKit (CONTRACTS.md, "Adding pages to an existing PDF").
+// cross-reference data can be laid out, the page tree, and the files it refuses. The Swift twins
+// have the same cases: PDFSyntaxTests.swift (syntax and filters) and PDFReaderLiteTests.swift.
 
 public class PdfReaderLiteTests
 {
@@ -101,6 +101,10 @@ public class PdfReaderLiteTests
     {
         byte[] data = Encoding.ASCII.GetBytes("hello hello hello");
         Assert.Equal(data, PdfFilters.Decode(PdfFixture.Deflate(data), new PdfName("FlateDecode"), null));
+        byte[] wrong = PdfFixture.Deflate(data);
+        wrong[^1] ^= 1; // the Adler-32
+        Assert.Equal(PdfReadProblem.Damaged,
+                     Assert.Throws<PdfReadException>(() => PdfFilters.Decode(wrong, new PdfName("FlateDecode"), null)).Problem);
         Assert.Equal(data, PdfFilters.Decode(data, null, null));
         Assert.Equal(PdfReadProblem.Unsupported,
                      Assert.Throws<PdfReadException>(() => PdfFilters.Decode(data, new PdfName("LZWDecode"), null)).Problem);
