@@ -1,6 +1,7 @@
 #if os(iOS)
 import CompleteScannerKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The start screen: what are you scanning? The user's presets first (when there are any, as on the
 /// Mac), then one tile per task (`TaskCatalog.sections`) in its group: an icon, the title and the
@@ -9,6 +10,8 @@ import SwiftUI
 /// the preset's settings) up and opens the scan screen (`onOpenScanner`); not while an import runs, whose
 /// pages belong to the task set up. With a side of an ID card held, either kind of tile asks to discard the
 /// card first (`IdCardDiscardQuestion`). Settings (Command-comma) where the sidebar does not offer it.
+/// After the tasks, "Add pages to a PDF" (`IOSAppendTile`) picks a PDF in Files first, then sets up
+/// Document to PDF with that file as the append target, so Save adds the pages to it.
 struct TaskStartScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -18,6 +21,8 @@ struct TaskStartScreen: View {
     /// Opens Settings; nil when the sidebar has it (iPad).
     var onOpenSettings: (() -> Void)?
     @State private var askedToDiscard: Bool = false
+    /// Files is open to pick the PDF for "Add pages to a PDF".
+    @State private var picksPDF: Bool = false
 
     private let columns: [GridItem] = [GridItem(.adaptive(minimum: 150, maximum: 280), spacing: 12, alignment: .top)]
 
@@ -48,12 +53,24 @@ struct TaskStartScreen: View {
                         }
                     }
                 }
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                    appendButton(IOSAppendTile.availability(state.taskCards))
+                }
             }
             .padding(16)
         }
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("What are you scanning?")
         .modifier(IdCardDiscardQuestion(state: state, asked: $askedToDiscard))
+        .fileImporter(isPresented: $picksPDF, allowedContentTypes: [UTType.pdf]) { (result: Result<URL, Error>) in
+            switch result {
+            case .success(let url):
+                // The URL as Files gives it: its security scope is opened when the pages are added.
+                pick(.document, target: url)
+            case .failure(let error):
+                state.errorMessage = error.localizedDescription
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 if let open = onOpenSettings {
@@ -84,7 +101,8 @@ struct TaskStartScreen: View {
         return Button {
             pick(tile.task)
         } label: {
-            TaskTileLabel(tile: tile)
+            TaskTileLabel(symbol: tile.symbol, title: tile.title, subtitle: tile.subtitle,
+                          availability: tile.availability, isCurrent: tile.isCurrent)
         }
         .buttonStyle(TaskTileButtonStyle())
         .disabled(!available || state.isBusy || importer.isImporting)
@@ -94,12 +112,35 @@ struct TaskStartScreen: View {
         .accessibilityIdentifier("task.\(tile.task.rawValue)")
     }
 
+    private func appendButton(_ availability: TaskAvailability) -> some View {
+        let available: Bool = availability.isAvailable
+        let hint: String = available ? IOSAppendTile.subtitle
+            : "\(IOSAppendTile.subtitle) Not available: \(availability.reason ?? "")"
+        return Button {
+            picksPDF = true
+        } label: {
+            TaskTileLabel(symbol: IOSAppendTile.symbol, title: IOSAppendTile.title, subtitle: IOSAppendTile.subtitle,
+                          availability: availability, isCurrent: false)
+        }
+        .buttonStyle(TaskTileButtonStyle())
+        .disabled(!available || state.isBusy || importer.isImporting)
+        .accessibilityLabel(Text(IOSAppendTile.title))
+        .accessibilityHint(Text(hint))
+        .accessibilityIdentifier("task.appendToPDF")
+    }
+
     /// Picking a task ends the ID card task, so with a side of the card held it asks first, as a preset does.
-    private func pick(_ task: ScanTask) {
+    /// Any other tile ends adding to a picked PDF.
+    private func pick(_ task: ScanTask, target: URL? = nil) {
         let appState: AppState = state
         let open: @MainActor () -> Void = onOpenScanner
         state.leaveIdCard {
             if appState.startTask(task) {
+                if let target {
+                    appState.setAppendTarget(target)
+                } else {
+                    appState.clearAppendTarget()
+                }
                 open()
             }
         }
@@ -125,7 +166,11 @@ struct TaskStartScreen: View {
 
     private func applyPreset(_ id: UUID) {
         let model: IOSPresetsModel = IOSPresetsModel(state: state, importer: importer)
-        if model.apply(id, then: onOpenScanner) == IOSPresetApply.waitsForDiscard {
+        let open: @MainActor () -> Void = onOpenScanner
+        let applied: IOSPresetApply = model.apply(id) {
+            open()
+        }
+        if applied == IOSPresetApply.waitsForDiscard {
             askedToDiscard = true
         }
     }
@@ -163,20 +208,24 @@ private struct PresetTileLabel: View {
 /// The inside of a tile: the icon (with "Current" for the task set up now), the title, the subtitle,
 /// and for a task that cannot be started, why.
 private struct TaskTileLabel: View {
-    let tile: IOSTaskTile
+    let symbol: String
+    let title: String
+    let subtitle: String
+    let availability: TaskAvailability
+    let isCurrent: Bool
 
     var body: some View {
-        let available: Bool = tile.availability.isAvailable
+        let available: Bool = availability.isAvailable
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top) {
-                Image(systemName: tile.symbol)
+                Image(systemName: symbol)
                     .font(.system(size: 22))
                     .foregroundStyle(Color.accentColor)
                     .frame(width: 32, height: 32)
                     .opacity(available ? 1 : 0.4)
                     .accessibilityHidden(true)
                 Spacer(minLength: 4)
-                if tile.isCurrent {
+                if isCurrent {
                     Text("Current")
                         .font(.caption)
                         .foregroundStyle(Color.white)
@@ -185,12 +234,12 @@ private struct TaskTileLabel: View {
                         .background(RoundedRectangle(cornerRadius: 4).fill(Color.accentColor))
                 }
             }
-            Text(tile.title)
+            Text(title)
                 .font(.headline)
                 .foregroundStyle(available ? Color.primary : Color.secondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(available ? tile.subtitle : (tile.availability.reason ?? ""))
+            Text(available ? subtitle : (availability.reason ?? ""))
                 .font(.caption)
                 .foregroundStyle(Color.secondary)
                 .lineLimit(3)
@@ -201,6 +250,23 @@ private struct TaskTileLabel: View {
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 116, alignment: .topLeading)
         .contentShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+/// The start screen's "Add pages to a PDF": not a task of the catalog but Document to PDF with a PDF picked
+/// first (`AppState.setAppendTarget`), so it can be picked when Document to PDF can.
+enum IOSAppendTile {
+    static let title = "Add pages to a PDF"
+    static let subtitle = "Pick a PDF, then scan the pages to add"
+    static let symbol = "doc.badge.plus"
+
+    static func availability(_ cards: [TaskCard]) -> TaskAvailability {
+        guard let card = cards.first(where: { (candidate: TaskCard) -> Bool in
+            candidate.definition.task == .document
+        }) else {
+            return TaskAvailability(isAvailable: false, reason: IOSShell.notYetReason)
+        }
+        return IOSShell.availability(card)
     }
 }
 

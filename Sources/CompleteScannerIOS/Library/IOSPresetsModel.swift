@@ -102,8 +102,8 @@ public final class IOSPresetsModel {
         state.deletePreset(id: id)
     }
 
-    /// The preset's settings put in use, fitted to the scanner (`AppState.applyPreset`), then `done`
-    /// runs; with an ID card side held, both wait until the user discards the card. Refused while an
+    /// The preset's settings put in use, fitted to the scanner (`AppState.applyPreset`), and a PDF picked
+    /// to add the pages to forgotten, then `done` runs; with an ID card side held, both wait until the user discards the card. Refused while an
     /// operation or an import runs.
     @discardableResult
     public func apply(_ id: UUID, then done: @escaping @MainActor () -> Void) -> IOSPresetApply {
@@ -115,6 +115,7 @@ public final class IOSPresetsModel {
         let appState: AppState = state
         state.leaveIdCard {
             appState.applyPreset(preset)
+            appState.clearAppendTarget()
             done()
         }
         return held ? .waitsForDiscard : .applied

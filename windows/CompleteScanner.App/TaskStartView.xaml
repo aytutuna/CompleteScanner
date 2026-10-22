@@ -115,6 +115,23 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+
+            <!-- Not a task of the catalog: the window asks for the PDF first, then sets up Document to
+                 PDF so that Save adds the scanned pages to it (AppViewModel.AppendTarget). -->
+            <WrapPanel Margin="{Binding GridMargin, RelativeSource={RelativeSource AncestorType=local:TaskStartView}}">
+                <Button x:Name="AddToPdfTile" Style="{StaticResource TaskTileButtonStyle}" Click="AddToPdfTile_Click"
+                        AutomationProperties.Name="Add pages to a PDF"
+                        AutomationProperties.HelpText="Pick a PDF, then scan the pages to add">
+                    <Button.ToolTip>
+                        <TextBlock Text="Pick a PDF, then scan the pages to add" TextWrapping="Wrap" MaxWidth="280" />
+                    </Button.ToolTip>
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Text="&#xE8E5;" Style="{StaticResource TaskTileGlyphStyle}" />
+                        <TextBlock Text="Add pages to a PDF" Style="{StaticResource BodyStrongText}" TextWrapping="Wrap"
+                                   Margin="0,6,0,0" VerticalAlignment="Top" />
+                    </DockPanel>
+                </Button>
+            </WrapPanel>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

@@ -1307,6 +1307,17 @@
                                                 ToolTipService.ShowOnDisabled="True"
                                                 Click="ClearPages_Click" />
                                     </Grid>
+                                    <!-- Live state: Save adds the pages to a PDF picked on the start screen, with × to save a new one instead. -->
+                                    <DockPanel x:Name="AppendTargetRow" Margin="0,4,0,0" Visibility="Collapsed">
+                                        <Button DockPanel.Dock="Right" x:Name="ClearAppendTargetButton" Style="{StaticResource SmallIconButtonStyle}"
+                                                Content="&#xE711;" Width="24" Height="24" FontSize="11"
+                                                ToolTip="Save a new PDF instead"
+                                                AutomationProperties.Name="Save a new PDF instead of adding to this one"
+                                                Click="ClearAppendTarget_Click" />
+                                        <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE8E5;" />
+                                        <TextBlock x:Name="AppendTargetText" Style="{StaticResource ReasonText}" VerticalAlignment="Center"
+                                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                    </DockPanel>
                                 </StackPanel>
                             </Border>
                         </Grid>

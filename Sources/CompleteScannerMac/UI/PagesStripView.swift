@@ -5,7 +5,7 @@ import CoreGraphics
 import SwiftUI
 
 /// Bottom strip listing the document page queue. The parent only shows this view
-/// when `state.scannedPages` is non-empty. Pages that look blank carry a badge; with Skip blank
+/// when `state.scannedPages` is non-empty or a picked PDF takes the pages (`appendTarget`). Pages that look blank carry a badge; with Skip blank
 /// pages on they are dimmed and left out when saving, and one click on Keep (or Skip) changes
 /// that for the page (`PageFilter`). When the queue is split into documents (`DocumentSplitter`)
 /// separator pages are flagged and dimmed, each document's first page is titled, and the gap before
@@ -20,9 +20,10 @@ struct PagesStripView: View {
     /// The spread being split by hand (the split sheet).
     @State private var editingSpread: SpreadEditorSource?
 
-    /// The pages are saved as a PDF that gets a password (`OutputOptions.protect`).
+    /// The pages are saved as a PDF that gets a password (`OutputOptions.protect`). Not when they go
+    /// into a picked PDF: that file decides.
     private var lockedSave: Bool {
-        state.settings.format.queueFormat == .pdf && state.settings.output.protect
+        state.settings.format.queueFormat == .pdf && state.settings.output.protect && state.appendTarget == nil
     }
 
     var body: some View {
@@ -31,7 +32,8 @@ struct PagesStripView: View {
         let savePlan = SavePlan.make(state.scannedPages, options: options)
         let showsBreaks = DocumentSplitter.showsBreaks(plan, options: options)
         let saveCount = savePlan.pageCount
-        let saveTitle = savePlan.saveTitle(state.settings.format)
+        let target = state.appendTarget
+        let saveTitle = target.map { PDFAppender.saveTitle($0.lastPathComponent) } ?? savePlan.saveTitle(state.settings.format)
         let saveHelp: String = saveCount == 0 && !state.scannedPages.isEmpty ? PageFilter.nothingToSaveMessage : ""
         // Worked out once per refresh, in one pass over the queue.
         let bookLabels = BookPages.labels(state.scannedPages)
@@ -86,32 +88,52 @@ struct PagesStripView: View {
                 Text(DocumentSplitter.queueSummary(state.scannedPages, options: options))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button {
-                    state.savePDF()
-                } label: {
-                    // A lock while the PDF gets a password (asked for when saving), as on Windows.
-                    if lockedSave {
-                        Label(saveTitle, systemImage: "lock.fill")
-                    } else {
-                        Text(saveTitle)
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(state.isBusy || saveCount == 0)
-                .help(saveHelp)
-                .accessibilityLabel(Text(lockedSave
-                    ? saveTitle.replacingOccurrences(of: "PDF", with: "password-protected PDF")
-                    : saveTitle))
-
-                HStack(spacing: 8) {
-                    // Pages go into an existing PDF as PDF pages, so only while the queue is saved as one.
-                    if state.settings.format.queueFormat == .pdf {
+                // Pages go into an existing PDF as PDF pages, so the menu is there while the queue is saved
+                // as one, or while it goes into a PDF picked on the start screen.
+                if state.settings.format.queueFormat == .pdf || target != nil {
+                    Menu {
+                        // Word and text queues save their own format once the target is cleared.
+                        if state.settings.format.queueFormat == .pdf {
+                            Button(PDFAppender.saveAsNewLabel) {
+                                state.clearAppendTarget()
+                                state.savePDF()
+                            }
+                        }
                         Button(PDFAppender.buttonLabel) {
                             state.chooseAndAppendToPDF()
                         }
-                        .disabled(state.isBusy || saveCount == 0)
-                        .help(saveCount == 0 ? PageFilter.nothingToSaveMessage : PDFAppender.buttonHint)
-                        .accessibilityHint(Text(PDFAppender.buttonHint))
+                    } label: {
+                        saveLabel(saveTitle)
+                    } primaryAction: {
+                        state.savePDF()
+                    }
+                    .menuStyle(.button)
+                    .buttonStyle(.borderedProminent)
+                    .fixedSize()
+                    .disabled(state.isBusy || saveCount == 0)
+                    .help(saveHelp.isEmpty ? (target?.path ?? "") : saveHelp)
+                    .accessibilityLabel(Text(saveAccessibilityLabel(saveTitle)))
+                } else {
+                    Button {
+                        state.savePDF()
+                    } label: {
+                        saveLabel(saveTitle)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(state.isBusy || saveCount == 0)
+                    .help(saveHelp)
+                    .accessibilityLabel(Text(saveAccessibilityLabel(saveTitle)))
+                }
+
+                HStack(spacing: 8) {
+                    // Outside the menu, which is off while there is nothing to save.
+                    if let target {
+                        Button("Stop Adding") {
+                            state.clearAppendTarget()
+                        }
+                        .disabled(state.isBusy)
+                        .help("Stop Adding to \(target.lastPathComponent)")
+                        .accessibilityLabel(Text("Stop Adding to \(target.lastPathComponent)"))
                     }
                     Button("Clear") {
                         state.clearPages()
@@ -146,6 +168,20 @@ struct PagesStripView: View {
                 }
             }
         }
+    }
+
+    /// A lock while the PDF gets a password (asked for when saving), as on Windows.
+    @ViewBuilder
+    private func saveLabel(_ title: String) -> some View {
+        if lockedSave {
+            Label(title, systemImage: "lock.fill")
+        } else {
+            Text(title)
+        }
+    }
+
+    private func saveAccessibilityLabel(_ title: String) -> String {
+        lockedSave ? title.replacingOccurrences(of: "PDF", with: "password-protected PDF") : title
     }
 }
 

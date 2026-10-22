@@ -3,12 +3,24 @@ import Foundation
 // Twin of windows/CompleteScanner.App/AppViewModel.Append.cs: the queued pages added to the end of a
 // PDF the user picks, as an incremental update (`PDFAppender`). The window asks the question
 // (`confirmAppend`); the iPhone also wraps the file's reading and its update in the picked file's
-// security scope and a coordinated access (`accessPDFForAppend`), which Windows has no need of.
+// security scope and a coordinated access (`accessPDFForAppend`), which Windows has no need of. A PDF
+// picked before scanning (`appendTarget`) takes the queue when it is saved (`savePDF()`).
 
 extension AppState {
     /// There are pages to add (some are not left out) and nothing else is running.
     public var canAppendPages: Bool {
         !isBusy && SavePlan.make(scannedPages, options: settings.document).pageCount > 0
+    }
+
+    /// Makes Save add the queue to the PDF at `url` (read when the pages are added, not now) until the
+    /// pages are in or `clearAppendTarget()` is called.
+    public func setAppendTarget(_ url: URL) {
+        appendTarget = url
+    }
+
+    /// Save writes a new file again.
+    public func clearAppendTarget() {
+        appendTarget = nil
     }
 
     /// Adds the pages the queue would save (all its documents, in order; pages left out stay out) to
@@ -18,7 +30,7 @@ extension AppState {
     /// decides the rest: no password is added (the password switch is for new files) and a PDF/A file
     /// stays one where it can (`PDFAppender.keepsPdfA`), with a question first where it may not, or
     /// where it is signed. Once the pages are in, the queue is cleared and the file is offered like a
-    /// saved one, with the after-save action.
+    /// saved one, with the after-save action, and the `appendTarget` is cleared.
     public func appendToPDF(at url: URL) {
         guard !scannedPages.isEmpty else { return }
         let s: ScanSettings = settings
@@ -73,6 +85,7 @@ extension AppState {
             self.lastPDFProtected = false
             // The URL picked, not the result's path: on the iPhone it carries the file's security scope.
             self.lastSavedURLs = [url]
+            self.appendTarget = nil
             self.deleteSpoolFiles(of: queued)
             self.scannedPages = []
             self.resetFlow()

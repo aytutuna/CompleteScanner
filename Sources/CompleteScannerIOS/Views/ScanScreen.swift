@@ -34,8 +34,9 @@ enum ScanCover: String, Identifiable {
 /// page's spread split again (`SpreadSplitSheet`), and Quick scan's page full screen once taken. Since I15:
 /// PDFs and pictures dropped on the screen are imported as Files' are, Command-S saves, and Settings
 /// (Command-comma) is in the toolbar where the sidebar does not offer it. Since I16: the photocopy's pages
-/// full screen once taken, to print over AirPrint (`CopyScreen`). While Save writes a PDF, the pages can
-/// also be added to the end of a PDF picked in Files (`AppState.appendToPDF(at:)`). Since I18: a
+/// full screen once taken, to print over AirPrint (`CopyScreen`). While Save writes a PDF, the menu beside
+/// it can also add the pages to the end of a PDF picked in Files (`AppState.appendToPDF(at:)`); with a PDF
+/// picked on the start screen (`AppState.appendTarget`) Save adds them to that one. Since I18: a
 /// CompleteScanner document opened in the app or picked in Files is offered on a banner (Add to pages,
 /// Open as new), and the queue can be shared as one (`IOSShell.sharePackage`). Since I20: with a computer
 /// paired, Send to computer sends the queue to it as a new document or into the one open there
@@ -387,7 +388,7 @@ struct ScanScreen: View {
     }
 
     private func save() {
-        if IOSShell.savesImages(state.settings) {
+        if state.appendTarget == nil && IOSShell.savesImages(state.settings) {
             state.saveImages()
         } else {
             state.savePDF()
@@ -415,7 +416,7 @@ struct ScanScreen: View {
     private var bottomBar: some View {
         let options: DocumentOptions = state.settings.document
         let plan: SavePlan = SavePlan.make(state.scannedPages, options: options)
-        let saveTitle: String = IOSShell.saveTitle(state.settings, plan: plan)
+        let saveTitle: String = Self.saveTitle(state.settings, plan: plan, target: state.appendTarget)
         let saveCount: Int = plan.pageCount
         let formats: [OutputFormat] = IOSShell.saveFormats(state.settings)
         let collects: Bool = IOSShell.collectsPages(state.settings)
@@ -476,6 +477,10 @@ struct ScanScreen: View {
                     .disabled(state.isBusy || importer.isImporting || sharesPackage || sendsToComputer || saveCount == 0)
                     .keyboardShortcut(IOSShortcuts.save.keyboardShortcut)
                     .accessibilityIdentifier("save.button")
+                    if IOSShell.offersPDFOptions(state.settings) || state.appendTarget != nil {
+                        saveMenu(canSave: saveCount > 0)
+                            .disabled(state.isBusy || importer.isImporting || sharesPackage || sendsToComputer)
+                    }
                     Button {
                         sharePackage()
                     } label: {
@@ -512,18 +517,6 @@ struct ScanScreen: View {
                     .accessibilityIdentifier("send.computer.current")
                 }
             }
-            if IOSShell.offersPDFOptions(state.settings) {
-                Button {
-                    picksPDF = true
-                } label: {
-                    Label(PDFAppender.buttonLabel, systemImage: "doc.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .disabled(state.isBusy || importer.isImporting || saveCount == 0)
-                .accessibilityHint(Text(PDFAppender.buttonHint))
-                .accessibilityIdentifier("append.button")
-            }
         }
         .padding(16)
         .fileImporter(isPresented: $picksPDF, allowedContentTypes: [UTType.pdf]) { (result: Result<URL, Error>) in
@@ -534,6 +527,61 @@ struct ScanScreen: View {
                 state.errorMessage = error.localizedDescription
             }
         }
+    }
+
+    /// The menu beside Save, as on Windows: a new PDF even while a picked PDF takes the pages, the pages
+    /// added to a PDF picked now, and while one is picked, back to saving new files.
+    private func saveMenu(canSave: Bool) -> some View {
+        Menu {
+            // Word and text queues save their own format once the target is cleared.
+            if state.settings.format.queueFormat == .pdf {
+                Button {
+                    state.clearAppendTarget()
+                    state.savePDF()
+                } label: {
+                    Label(PDFAppender.saveAsNewLabel, systemImage: "doc.badge.arrow.up")
+                }
+                .disabled(!canSave)
+                .accessibilityIdentifier("save.new")
+            }
+            Button {
+                picksPDF = true
+            } label: {
+                Label(PDFAppender.buttonLabel, systemImage: "doc.badge.plus")
+            }
+            .disabled(!canSave)
+            .accessibilityHint(Text(PDFAppender.buttonHint))
+            .accessibilityIdentifier("append.button")
+            if let target = state.appendTarget {
+                Button {
+                    state.clearAppendTarget()
+                } label: {
+                    Label(Self.clearTargetLabel(target), systemImage: "xmark.circle")
+                }
+                .accessibilityIdentifier("append.target.clear")
+            }
+        } label: {
+            Label("More ways to save", systemImage: "chevron.down")
+                .labelStyle(.iconOnly)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.bordered)
+        .accessibilityLabel(Text("More ways to save"))
+        .accessibilityIdentifier("save.menu")
+    }
+
+    /// The Save button's title: "Add to Contract.pdf" while the pages go into a PDF picked on the start
+    /// screen, else the queue's own (`IOSShell.saveTitle`).
+    static func saveTitle(_ settings: ScanSettings, plan: SavePlan, target: URL?) -> String {
+        if let target {
+            return PDFAppender.saveTitle(target.lastPathComponent)
+        }
+        return IOSShell.saveTitle(settings, plan: plan)
+    }
+
+    /// The Save menu's item that goes back to saving new files.
+    static func clearTargetLabel(_ target: URL) -> String {
+        "Stop Adding to \(target.lastPathComponent)"
     }
 
     /// The status in six words at most (`StatusLine.shown`), as on the Mac's status bar.

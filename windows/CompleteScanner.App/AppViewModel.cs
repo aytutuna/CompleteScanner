@@ -1673,10 +1673,12 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// Saves the collected pages as one file: a PDF (with its text beside it when
     /// <see cref="OutputOptions.AlsoSaveText"/> is on), or a Word document or text file when that
     /// is the format chosen (<see cref="OutputFormats.QueueFormat"/>). OCR reads each page once.
+    /// With an <see cref="AppendTarget"/> the pages are added to that PDF instead (<see cref="AppendToPdf"/>).
     /// </summary>
     public Task SavePdf()
     {
         if (ScannedPages.Count == 0) return Task.CompletedTask;
+        if (AppendTarget is { } target) return AppendToPdf(target);
         var s = Settings.Clone();
         return RunExclusive(async token =>
         {

@@ -72,8 +72,10 @@ scanners** — including the Epson Perfection V39 II.
   a signature page for a contract. The file's existing bytes are kept as they are (the pages are
   added as an incremental update), and the file is replaced only once the new one has been
   written and checked. Password-protected and damaged files are refused; signed files and PDF/A
-  files that may not stay PDF/A are asked about first. The Mac writes the same update, from the
-  button beside Save and a PDF's menu in the Saved tab.
+  files that may not stay PDF/A are asked about first. The start screen's **Add pages to a PDF**
+  picks the PDF first, so Save reads "Add to Contract.pdf" and adds the pages scanned next. The
+  Mac writes the same update, from the Save button's menu, a PDF's menu in the Saved tab and the
+  same start-screen tile.
 - **Share, email, open with, copy**: after a save, and on every file in the Saved tab, open the
   file, open it with another app, show it in Finder, share it (Mail, Messages, AirDrop, …), start
   a Mail message with it attached, or copy it (an image also as a picture). **After saving** can
@@ -291,7 +293,9 @@ size and fitted to the page otherwise, with Copies, Also save a PDF and Copy aga
 printer; Email a document through Mail's composer (or the share sheet); Archive document and the PDF's
 size, Archive and Password choices, the password asked for in a sheet and never stored; the pages
 added to the end of a PDF picked in Files or in the saved files, as the same incremental update as on
-the desktop (signed files and PDF/A files that may not stay PDF/A asked about first); the queue shared
+the desktop (signed files and PDF/A files that may not stay PDF/A asked about first), from the menu
+beside Save or from the start screen's Add pages to a PDF, which picks the file first so that Save
+reads "Add to Contract.pdf"; the queue shared
 as a CompleteScanner document (`.csdoc`), and one opened from AirDrop, Files or Mail offered on a
 banner with Add to pages or Open as new; network
 scanners (AirScan/eSCL) found on the Wi-Fi or added by address, picked from a sheet on iPhone or a

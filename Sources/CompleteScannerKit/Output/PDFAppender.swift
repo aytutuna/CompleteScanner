@@ -162,6 +162,14 @@ public enum PDFAppender {
     public static let pickerTitle = "Add the pages to which PDF?"
     public static let confirmQuestion = "Add the pages anyway?"
 
+    /// The other item of the Save button's menu, beside `buttonLabel`.
+    public static let saveAsNewLabel = "Save as new PDF"
+
+    /// The Save button while the queue goes into a picked PDF (`AppState.appendTarget`).
+    public static func saveTitle(_ fileName: String) -> String {
+        "Add to \(fileName)"
+    }
+
     /// Said after adding pages while Protect with a password is on: the file decides, and it has none.
     public static let noPasswordNote = "The file has no password, so the added pages have none either."
 

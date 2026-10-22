@@ -119,6 +119,9 @@ public static class PdfAppender
     public const string PickerTitle = "Add the pages to which PDF?";
     public const string ConfirmQuestion = "Add the pages anyway?";
 
+    /// <summary>The Save button while the queue goes into a picked PDF (the app's AppendTarget).</summary>
+    public static string SaveTitle(string fileName) => $"Add to {fileName}";
+
     /// <summary>Said after adding pages while Protect with a password is on: the file decides, and it has none.</summary>
     public const string NoPasswordNote = "The file has no password, so the added pages have none either.";
 

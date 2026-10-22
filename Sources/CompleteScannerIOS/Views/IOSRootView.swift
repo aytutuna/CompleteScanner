@@ -147,6 +147,7 @@ public struct IOSRootView: View {
 
     private func pickTask(_ task: ScanTask) {
         if state.startTask(task) {
+            state.clearAppendTarget()
             openScanner()
         }
     }

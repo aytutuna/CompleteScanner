@@ -8,19 +8,25 @@ extension AppState {
     /// Picks a PDF with the open panel, starting in the save folder, and adds the queued pages to its
     /// end (`appendToPDF(at:)`).
     public func chooseAndAppendToPDF() {
-        guard canAppendPages else { return }
+        guard canAppendPages, let url = choosePDFForAppend(prompt: "Add Pages") else { return }
+        appendToPDF(at: url)
+    }
+
+    /// The open panel of `chooseAndAppendToPDF()`, also used by the start screen's "Add pages to a PDF",
+    /// which picks the file before anything is scanned; nil when cancelled.
+    func choosePDFForAppend(prompt: String) -> URL? {
         let panel = NSOpenPanel()
         panel.title = PDFAppender.pickerTitle
         panel.message = PDFAppender.buttonHint
-        panel.prompt = "Add Pages"
+        panel.prompt = prompt
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.allowedContentTypes = [.pdf]
         // Start where the app saves, where the PDF the pages belong to most likely is.
         let folder = URL(fileURLWithPath: (settings.destinationPath as NSString).expandingTildeInPath, isDirectory: true)
         if FileManager.default.fileExists(atPath: folder.path) { panel.directoryURL = folder }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        appendToPDF(at: url)
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
     }
 
     /// `confirmAppend` on the Mac: the warnings of `question` (`PDFAppendTarget.confirmMessage`) under

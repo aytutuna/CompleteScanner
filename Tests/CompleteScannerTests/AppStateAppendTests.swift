@@ -161,6 +161,47 @@ final class AppStateAppendTests: XCTestCase {
     }
 
     @MainActor
+    func test_save_withATarget_addsTheQueueToIt_andClearsTheTarget() async throws {
+        let state = try await makeState(pages: 2)
+        let url = try builtPDF("Contract.pdf")
+        let original = try Data(contentsOf: url)
+        state.setAppendTarget(url)
+        XCTAssertEqual(state.appendTarget, url)
+        XCTAssertEqual(PDFAppender.saveTitle(url.lastPathComponent), "Add to Contract.pdf")
+        state.savePDF()
+        try await waitUntil(timeout: 60) { !state.isBusy }
+        XCTAssertNil(state.errorMessage)
+        XCTAssertNil(state.appendTarget)
+        XCTAssertTrue(state.scannedPages.isEmpty)
+        XCTAssertEqual(state.lastSavedURLs, [url])
+        let updated = try Data(contentsOf: url)
+        XCTAssertEqual(updated.prefix(original.count), original)
+        XCTAssertEqual(PDFDocument(url: url)?.pageCount, 3)
+        let pdfs = try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.hasSuffix(".pdf") }
+        XCTAssertEqual(pdfs, ["Contract.pdf"])
+    }
+
+    @MainActor
+    func test_save_afterTheTargetIsCleared_writesANewFile() async throws {
+        let state = try await makeState(pages: 1)
+        let url = try builtPDF("Contract.pdf")
+        let original = try Data(contentsOf: url)
+        state.setAppendTarget(url)
+        state.clearAppendTarget()
+        XCTAssertNil(state.appendTarget)
+        state.savePDF()
+        try await waitUntil(timeout: 60) { !state.isBusy }
+        XCTAssertNil(state.errorMessage)
+        XCTAssertTrue(state.scannedPages.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        XCTAssertEqual(state.lastSavedURLs.count, 1)
+        let saved = try XCTUnwrap(state.lastSavedURLs.first)
+        XCTAssertNotEqual(saved.standardizedFileURL, url.standardizedFileURL)
+        XCTAssertEqual(PDFDocument(url: saved)?.pageCount, 1)
+        XCTAssertEqual(PDFAppender.saveAsNewLabel, "Save as new PDF")
+    }
+
+    @MainActor
     func test_appendToPDF_withThePasswordSwitchOn_addsNoPassword_andSaysSo() async throws {
         let state = try await makeState(pages: 1)
         state.settings.output.protect = true

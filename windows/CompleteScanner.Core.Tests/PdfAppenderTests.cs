@@ -376,6 +376,13 @@ public class PdfAppenderTests
                      Enum.GetValues<PdfAppendProblem>().Select(p => PdfAppender.Message(p, "x.pdf")).Distinct().Count());
     }
 
+    [Fact]
+    public void SaveTexts_NameTheTarget()
+    {
+        Assert.Equal("Add to Contract.pdf", PdfAppender.SaveTitle("Contract.pdf"));
+        Assert.Equal("Add to existing PDF…", PdfAppender.ButtonLabel);
+    }
+
     // MARK: - The file on disk
 
     private sealed class Folder : IDisposable

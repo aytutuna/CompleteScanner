@@ -1107,7 +1107,10 @@ struct InspectorView: View {
                     ForEach(state.presets) { preset in
                         Button(preset.name) {
                             let appState = state
-                            appState.leaveIdCard { appState.applyPreset(preset) }
+                            appState.leaveIdCard {
+                                appState.applyPreset(preset)
+                                appState.clearAppendTarget()
+                            }
                         }
                     }
                 }

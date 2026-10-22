@@ -940,9 +940,13 @@ gets pages without one, and the status says so when the switch is on.
 The Mac and the iPhone write the same incremental update with the Swift twins of the reader and
 the appender (`PDFReaderLite.swift`, `PDFAppender.swift`).
 
-**Not done yet** (from the M21 spec): the start screen's "Add pages to a PDF" task; and the picker
-showing the chosen file's first page. (The "Save as new PDF / Add to existing PDF…" split button
-is there now: Save with its ▾ menu.)
+The start screen's "Add pages to a PDF" tile asks for the PDF first and then sets up Document to
+PDF: Save reads "Add to Contract.pdf", with the file's path and a × under it to save a new PDF
+instead, and adds the scanned pages to that file. Picking another task or a preset forgets the file.
+
+**Not done yet** (from the M21 spec): the picker showing the chosen file's first page. (The split
+button is there now: Save with Add to existing PDF… in its ▾ menu; instead of a "Save as new PDF"
+item, the × under Save goes back to new files while a picked PDF takes the pages.)
 
 Checked here: `PdfReaderLiteTests` and `PdfAppenderTests` (hand-made fixtures for each
 cross-reference layout, page-tree shape and refusal, and our own plain, PDF/A and

@@ -8,6 +8,7 @@ namespace CompleteScanner.App;
 /// Adding the queued pages to the end of an existing PDF the user picks (Add to existing PDF… under
 /// the queue, or a PDF's menu in the Saved tab), as an incremental update (<see cref="PdfAppender"/>).
 /// The Mac and the iPhone add pages the same way (Sources/CompleteScannerKit/App/AppState+Append.swift).
+/// A PDF picked before scanning (<see cref="AppendTarget"/>) takes the queue when it is saved.
 /// </summary>
 public sealed partial class AppViewModel
 {
@@ -17,6 +18,29 @@ public sealed partial class AppViewModel
     /// answer, or nobody to ask, adds nothing.
     /// </summary>
     public Func<string, bool>? ConfirmAppend { get; set; }
+
+    /// <summary>
+    /// The PDF Save adds the queue to instead of writing a new file (the start screen's "Add pages to
+    /// a PDF"); null otherwise. Kept for this session only.
+    /// </summary>
+    public string? AppendTarget { get; private set; }
+
+    /// <summary>
+    /// Makes Save add the queue to <paramref name="path"/> (read when the pages are added, not now)
+    /// until the pages are in or <see cref="ClearAppendTarget"/> is called.
+    /// </summary>
+    public void SetAppendTarget(string path)
+    {
+        AppendTarget = path;
+        NotifyAll();
+    }
+
+    /// <summary>Save writes a new file again.</summary>
+    public void ClearAppendTarget()
+    {
+        AppendTarget = null;
+        NotifyAll();
+    }
 
     /// <summary>There are pages to add (some are not left out) and nothing else is running.</summary>
     public bool CanAppendPages =>
@@ -30,7 +54,8 @@ public sealed partial class AppViewModel
     /// queue. The file decides the rest: no password is added (the password switch is for new
     /// files) and a PDF/A file stays one where it can (<see cref="PdfAppender.KeepsPdfA"/>), with a
     /// question first where it may not, or where it is signed. Once the pages are in, the queue is
-    /// cleared and the file is offered like a saved one, with the after-save action.
+    /// cleared and the file is offered like a saved one, with the after-save action, and the
+    /// <see cref="AppendTarget"/> is cleared.
     /// </summary>
     public Task AppendToPdf(string targetPath)
     {
@@ -68,6 +93,7 @@ public sealed partial class AppViewModel
             LastPdfBytes = result.Bytes;
             LastPdfProtected = false;
             MarkSaved([result.Path]);
+            AppendTarget = null;
             DeleteSpoolFiles(queued);
             ScannedPages.Clear();
             ResetFlow();

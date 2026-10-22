@@ -228,6 +228,28 @@ final class IOSShellTests: XCTestCase {
         XCTAssertEqual(other.accessibilityValue, "")
     }
 
+    func test_addPagesTile_isPickedWhenDocumentToPDFIs() {
+        XCTAssertEqual(IOSAppendTile.title, "Add pages to a PDF")
+        XCTAssertEqual(IOSAppendTile.subtitle, "Pick a PDF, then scan the pages to add")
+        XCTAssertTrue(IOSAppendTile.availability([card(.photos), card(.document)]).isAvailable)
+        let noScanner = TaskAvailability(isAvailable: false, reason: "No scanner")
+        XCTAssertEqual(IOSAppendTile.availability([card(.document, availability: noScanner)]), noScanner)
+        let none: TaskAvailability = IOSAppendTile.availability([card(.photos)])
+        XCTAssertFalse(none.isAvailable)
+        XCTAssertEqual(none.reason, IOSShell.notYetReason)
+    }
+
+    @MainActor
+    func test_save_withATarget_namesTheFile() {
+        var settings = ScanSettings()
+        settings.format = .pdf
+        let plan: SavePlan = SavePlan.make([], options: settings.document)
+        let target = URL(fileURLWithPath: "/tmp/Contract.pdf")
+        XCTAssertEqual(ScanScreen.saveTitle(settings, plan: plan, target: target), "Add to Contract.pdf")
+        XCTAssertEqual(ScanScreen.saveTitle(settings, plan: plan, target: nil), IOSShell.saveTitle(settings, plan: plan))
+        XCTAssertEqual(ScanScreen.clearTargetLabel(target), "Stop Adding to Contract.pdf")
+    }
+
     // MARK: The shell's way through a task
 
     @MainActor

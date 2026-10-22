@@ -30,8 +30,8 @@ enum TaskSymbols {
 /// The start screen: what are you scanning? The user's presets first (when there are any), then one
 /// tile per task (`TaskCatalog.sections`) in its group: an icon and the title. What the task does and
 /// what it sets are the tile's help; a task the connected scanner cannot do is dimmed with one short
-/// line saying why. Picking a tile sets it up and opens the scanner view (`onOpenScanner`). Twin of
-/// the Windows `TaskStartView`.
+/// line saying why. Picking a tile sets it up and opens the scanner view (`onOpenScanner`). After the
+/// tasks comes "Add pages to a PDF" (`addPagesTile`). Twin of the Windows `TaskStartView`.
 struct TaskStartView: View {
     @EnvironmentObject var state: AppState
 
@@ -59,6 +59,9 @@ struct TaskStartView: View {
                             taskTile(card)
                         }
                     }
+                }
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                    addPagesTile
                 }
             }
             .padding(24)
@@ -114,7 +117,10 @@ struct TaskStartView: View {
             let openScanner = onOpenScanner
             let task = card.definition.task
             appState.leaveIdCard {
-                if appState.startTask(task) { openScanner() }
+                if appState.startTask(task) {
+                    appState.clearAppendTarget()
+                    openScanner()
+                }
             }
         } label: {
             TaskTileLabel(symbol: TaskSymbols.systemImage(card.definition.iconKey),
@@ -129,6 +135,32 @@ struct TaskStartView: View {
         .accessibilityHint(Text(hint))
     }
 
+    /// "Add pages to a PDF" is not a task of the catalog: the PDF is picked first, then Document to PDF
+    /// is set up with it as the append target, so Save adds the pages scanned next to its end.
+    private var addPagesTile: some View {
+        let title = "Add pages to a PDF"
+        let subtitle = "Pick a PDF, then scan the pages to add"
+        return Button {
+            // The file first: cancelling the panel keeps a held ID card side.
+            let appState = state
+            let openScanner = onOpenScanner
+            guard let url = appState.choosePDFForAppend(prompt: "Choose") else { return }
+            appState.leaveIdCard {
+                if appState.startTask(.document) {
+                    appState.setAppendTarget(url)
+                    openScanner()
+                }
+            }
+        } label: {
+            TaskTileLabel(symbol: "doc.badge.plus", title: title, reason: nil, isCurrent: false)
+        }
+        .buttonStyle(TaskCardButtonStyle())
+        .disabled(state.isBusy)
+        .help(subtitle)
+        .accessibilityLabel(Text(title))
+        .accessibilityHint(Text(subtitle))
+    }
+
     private func presetTile(_ preset: Preset) -> some View {
         let task: ScanTask = TaskCatalog.infer(preset.settings)
         let taskTitle: String = TaskCatalog.definition(task).title
@@ -139,6 +171,7 @@ struct TaskStartView: View {
             let openScanner = onOpenScanner
             appState.leaveIdCard {
                 appState.applyPreset(preset)
+                appState.clearAppendTarget()
                 openScanner()
             }
         } label: {

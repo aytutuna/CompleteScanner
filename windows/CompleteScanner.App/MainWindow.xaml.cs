@@ -46,6 +46,7 @@ public partial class MainWindow : Window
         StartView.PresetChosen += StartPreset;
         AskDiscardIdCard = AskDiscardIdCardInDialog;
         StartView.GoToScanRequested += () => ShowScanScreen();
+        StartView.AddToPdfRequested += StartAddingToPdf;
         // A first run opens on the start screen; later runs open where scanning happens, with
         // the task (and its banner) the user had last.
         MainTabs.SelectedItem = ViewModel.IsFirstRun ? StartTab : ScanTab;
@@ -322,6 +323,8 @@ public partial class MainWindow : Window
                                    && !ViewModel.IsReceiptFlow)
                                   || pageCount > 0
             ? Visibility.Visible : Visibility.Collapsed;
+        // The target row belongs to Save: it goes when the queue's buttons do.
+        AppendTargetRow.Visibility = ViewModel.AppendTarget is not null ? QueueButtons.Visibility : Visibility.Collapsed;
         PageList.IsEnabled = !ViewModel.IsBusy;
 
         // As on macOS, the preview is of the flatbed: not offered while the feeder is the source.
@@ -973,6 +976,7 @@ public partial class MainWindow : Window
     {
         if (ViewModel.IsBusy || !ConfirmDropIdCard()) return;
         if (!ViewModel.StartTask(task)) return;
+        ViewModel.ClearAppendTarget();
         OpenSectionFor(task);
         PushSettingsToUi();
         ShowScanScreen();
@@ -1010,6 +1014,7 @@ public partial class MainWindow : Window
     {
         if (ViewModel.IsBusy || !ConfirmDropIdCard()) return;
         ViewModel.ApplyPreset(preset);
+        ViewModel.ClearAppendTarget();
         PushSettingsToUi();
         _savedTabStale = true;
         ShowScanScreen();
@@ -1928,6 +1933,7 @@ public partial class MainWindow : Window
         {
             if (!ConfirmDropIdCard()) return;
             ViewModel.ApplyPreset(preset);
+            ViewModel.ClearAppendTarget();
             PushSettingsToUi();
             _savedTabStale = true;
         }

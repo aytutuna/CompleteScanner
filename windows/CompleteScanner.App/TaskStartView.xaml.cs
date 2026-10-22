@@ -36,6 +36,8 @@ public partial class TaskStartView : UserControl
     public event Action<Preset>? PresetChosen;
     /// <summary>"Go to Scan": open the scan screen without changing anything.</summary>
     public event Action? GoToScanRequested;
+    /// <summary>"Add pages to a PDF": the window picks the PDF and starts Document to PDF.</summary>
+    public event Action? AddToPdfRequested;
 
     public TaskStartView()
     {
@@ -94,6 +96,7 @@ public partial class TaskStartView : UserControl
         // in progress works from a snapshot of: they wait until it ends.
         TaskGrid.IsEnabled = !vm.IsBusy;
         PresetGrid.IsEnabled = !vm.IsBusy;
+        AddToPdfTile.IsEnabled = !vm.IsBusy;
     }
 
     /// <summary>The task tiles on screen, in reading order (group by group).</summary>
@@ -142,6 +145,8 @@ public partial class TaskStartView : UserControl
     }
 
     private void GoToScan_Click(object sender, RoutedEventArgs e) => GoToScanRequested?.Invoke();
+
+    private void AddToPdfTile_Click(object sender, RoutedEventArgs e) => AddToPdfRequested?.Invoke();
 
     /// <summary>The scroll viewport changed width (resize, scrollbar shown or hidden): re-centre the tiles.</summary>
     private void Scroller_ScrollChanged(object sender, ScrollChangedEventArgs e)

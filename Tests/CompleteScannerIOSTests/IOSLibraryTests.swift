@@ -101,6 +101,8 @@ final class IOSLibraryTests: XCTestCase {
         plain.taskId = nil
         plain.resolution = 150
         state.settings = plain
+        // A PDF picked on the start screen is forgotten: the preset's pages are not added to it.
+        state.setAppendTarget(folder.appendingPathComponent("Contract.pdf"))
         let applied: LibraryFlag = LibraryFlag()
         let outcome: IOSPresetApply = model.apply(id) {
             applied.value = true
@@ -109,6 +111,7 @@ final class IOSLibraryTests: XCTestCase {
         XCTAssertTrue(applied.value)
         XCTAssertEqual(state.settings.resolution, 600)
         XCTAssertEqual(state.activeTask, ScanTask.receipt)
+        XCTAssertNil(state.appendTarget)
         XCTAssertTrue(state.statusMessage.contains("Till slips"), state.statusMessage)
         let missing: IOSPresetApply = model.apply(UUID()) {}
         XCTAssertEqual(missing, IOSPresetApply.refused)

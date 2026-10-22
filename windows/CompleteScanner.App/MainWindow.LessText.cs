@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Automation;
@@ -47,15 +48,20 @@ public partial class MainWindow
     /// "Save PDF" with a badge of the pages it saves ("Save 3 PDFs" for a split queue), a lock instead
     /// of the PDF glyph while the PDF gets a password, and its name for screen readers: "Save PDF, 5
     /// pages" or "Save password-protected PDF, 5 pages". With pages queued but none to save, it is
-    /// greyed out and its tooltip says why.
+    /// greyed out and its tooltip says why. While a PDF picked on the start screen takes the pages it
+    /// reads "Add to Contract.pdf", with the file's path and a × under it.
     /// </summary>
     private void SyncSaveButton(SavePlan savePlan, int pageCount)
     {
         var format = ViewModel.Settings.Format;
         int saveCount = savePlan.PageCount;
-        string label = Regex.Replace(savePlan.SaveTitle(format), @" \(\d+ pages?\)$", "");
-        bool pdf = OutputFormats.QueueFormat(format) == OutputFormat.Pdf;
-        bool locked = pdf && ViewModel.Settings.Output.Protect;
+        string? target = ViewModel.AppendTarget;
+        string label = target is not null
+            ? PdfAppender.SaveTitle(Path.GetFileName(target))
+            : Regex.Replace(savePlan.SaveTitle(format), @" \(\d+ pages?\)$", "");
+        bool pdf = target is not null || OutputFormats.QueueFormat(format) == OutputFormat.Pdf;
+        // The file decides: pages added to it get no password.
+        bool locked = target is null && pdf && ViewModel.Settings.Output.Protect;
         SavePdfButton.Content = label;
         SavePdfButton.Tag = saveCount > 0 ? saveCount.ToString(System.Globalization.CultureInfo.CurrentCulture) : null;
         global::CompleteScanner.App.Icon.SetGlyph(SavePdfButton, locked ? "" : pdf ? "" : "");
@@ -70,6 +76,9 @@ public partial class MainWindow
         SaveMenuButton.IsEnabled = saveCount > 0 && !ViewModel.IsBusy;
         AddToPdfButton.IsEnabled = saveCount > 0 && !ViewModel.IsBusy;
         AddToPdfButton.ToolTip = nothingToSave ? PageFilter.NothingToSaveMessage : PdfAppender.ButtonHint;
+        AppendTargetText.Text = target ?? "";
+        AppendTargetText.ToolTip = target;
+        ClearAppendTargetButton.IsEnabled = !ViewModel.IsBusy;
     }
 
     /// <summary>The Save button's ▾: the other ways to save the queue.</summary>

@@ -274,6 +274,9 @@ public final class AppState: ObservableObject {
     /// use: the iPhone opens the picked file's security scope and coordinates the access, so iCloud Drive
     /// and other providers see the new file. Nil (the Mac) uses the file as it is. Set by `makeForIOS`.
     public var accessPDFForAppend: (@Sendable (_ url: URL, _ writing: Bool, _ body: (URL) throws -> Void) throws -> Void)?
+    /// The PDF Save adds the queue to instead of writing a new file (`setAppendTarget`, the start screen's
+    /// "Add pages to a PDF"); nil otherwise. Kept for this session only (AppState+Append.swift).
+    @Published public internal(set) var appendTarget: URL?
 
     /// Opens the folder of `ScanSettings.destinationBookmark` (the iPhone's save folder outside the app)
     /// and gives it with the bookmark to keep, made again when the old one is stale; nil when it no longer
@@ -1315,9 +1318,14 @@ public final class AppState: ObservableObject {
 
     /// Saves the collected pages as one file: a PDF (with its text beside it when
     /// `OutputOptions.alsoSaveText` is on), or a Word document or text file when that is the format
-    /// chosen (`OutputFormat.queueFormat`). OCR reads each page once.
+    /// chosen (`OutputFormat.queueFormat`). OCR reads each page once. With an `appendTarget` the pages
+    /// are added to that PDF instead (`appendToPDF(at:)`).
     public func savePDF() {
         guard !scannedPages.isEmpty else { return }
+        if let target = appendTarget {
+            appendToPDF(at: target)
+            return
+        }
         let s = settings
         runExclusive { flag in
             // Let page swaps and turns that were clicked before the save land first.
