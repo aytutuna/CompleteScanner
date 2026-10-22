@@ -145,6 +145,7 @@ final class CameraTaskTests: XCTestCase {
     private func bringIn(_ state: AppState, _ page: ScannedPage) async throws {
         var shot: ScannedPage = ScannedPage(image: page.image, dpi: page.dpi, colorMode: page.colorMode)
         shot.source = page.source
+        shot.capture = page.capture
         XCTAssertTrue(state.ingest([shot], source: .photo))
         try await waitUntil(timeout: 60) { !state.isBusy }
         XCTAssertNil(state.errorMessage)
@@ -424,8 +425,9 @@ final class CameraTaskTests: XCTestCase {
         XCTAssertEqual(state.cameraSides?.next, .back)
         try await bringIn(state, page)
         try await bringIn(state, page)
-        let backs: [UUID] = Array(state.scannedPages.map(\.id).suffix(2))
-        // As many backs as fronts: put in order by itself, the backs first sheet first.
+        // As many backs as fronts: put in order by itself, the backs first sheet first (so the backs are
+        // read from the queue already in order).
+        let backs: [UUID] = state.scannedPages.map(\.id).filter { (id: UUID) -> Bool in !fronts.contains(id) }
         XCTAssertEqual(state.scannedPages.map(\.id), [fronts[0], backs[0], fronts[1], backs[1]])
         XCTAssertEqual(state.scannedPages.map(\.side), [.front, .back, .front, .back])
         XCTAssertEqual(state.scannedPages.map(\.sheetIndex), [0, 0, 1, 1])
@@ -609,7 +611,9 @@ final class CameraTaskTests: XCTestCase {
         shot.source = .photo
         try await bringIn(state, shot)
         XCTAssertEqual(state.scannedPages.count, 2)
-        XCTAssertTrue(state.scannedPages.allSatisfy { $0.spreadID == shot.id })
+        let spread: UUID? = state.scannedPages.first?.spreadID
+        XCTAssertNotNil(spread)
+        XCTAssertTrue(state.scannedPages.allSatisfy { $0.spreadID == spread })
         let first: UUID = try XCTUnwrap(state.scannedPages.first?.id)
         XCTAssertTrue(state.canEditSpread(id: first))
         // Joined by hand, as on the Mac: one page again.
