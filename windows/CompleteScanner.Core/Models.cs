@@ -954,6 +954,14 @@ public sealed class ScannedPage
     /// </summary>
     public CaptureFacts? Capture { get; init; }
 
+    /// <summary>
+    /// Whether the page can be printed at its real size: a scan or an imported file carries a true
+    /// resolution (no capture facts), and a camera page only when <see cref="CaptureScale"/> snapped it
+    /// to a known size (<see cref="CaptureScaleResult.IsRealSize"/>). A camera page whose size was guessed
+    /// is fitted to the page instead (<see cref="PrintLayout.CopyFitsToPage"/>).
+    /// </summary>
+    public bool PrintsAtRealSize => Capture is null || (Capture.Scale?.IsRealSize ?? false);
+
     public ScannedPage(RgbaImage image, int dpi, ColorMode colorMode, Guid? id = null,
                        DateTime? createdAt = null, string? filePath = null, SizeD? fullPixelSize = null)
     {

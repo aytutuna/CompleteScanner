@@ -807,6 +807,12 @@ public struct ScannedPage: Identifiable {
     /// and files. Carried by every rebuild of the page and by companion packages.
     public var capture: CaptureFacts?
 
+    /// Whether the page can be printed at its real size: a scan or an imported file carries a true
+    /// resolution (no capture facts), and a camera page only when `CaptureScale` snapped it to a known
+    /// size (`CaptureScaleResult.isRealSize`). A camera page whose size was guessed is fitted to the
+    /// page instead (`PrintLayout.copyFitsToPage`). Twin of C# `ScannedPage.PrintsAtRealSize`.
+    public var printsAtRealSize: Bool { capture == nil || (capture?.scale?.isRealSize ?? false) }
+
     /// The spread this page was cut from (`spread`); nil for other pages.
     public var spreadID: UUID? { spread?.spreadID }
 

@@ -256,4 +256,50 @@ public class PrintLayoutTests
         Assert.Equal(128, Gray(small, 72, 10));
         Assert.Equal(0, Gray(small, 100, 80));
     }
+
+    // MARK: - Real size or fit to page
+
+    [Fact]
+    public void CopyFitsToPage_RealSizePages_FollowsTheUsersChoice()
+    {
+        Assert.False(PrintLayout.CopyFitsToPage(chosenFit: false, allPagesRealSize: true));
+        Assert.True(PrintLayout.CopyFitsToPage(chosenFit: true, allPagesRealSize: true));
+    }
+
+    [Fact]
+    public void CopyFitsToPage_AGuessedSize_IsForcedToFit()
+    {
+        Assert.True(PrintLayout.CopyFitsToPage(chosenFit: false, allPagesRealSize: false));
+        Assert.True(PrintLayout.CopyFitsToPage(chosenFit: true, allPagesRealSize: false));
+    }
+
+    [Fact]
+    public void PrintsAtRealSize_ScannerAndImportedPages_AreRealSize()
+    {
+        var scan = new ScannedPage(RgbaImage.Filled(10, 10, 255, 255, 255), 300, ColorMode.Color);
+        Assert.True(scan.PrintsAtRealSize);
+    }
+
+    [Fact]
+    public void PrintsAtRealSize_CameraPageSnappedToAKnownSize_IsRealSize()
+    {
+        var page = CameraPage(new CaptureScaleResult(CaptureScaleBasis.Paper, "a4", 300, 2480, 3508, 8.2667, 11.6933));
+        Assert.True(page.PrintsAtRealSize);
+    }
+
+    [Fact]
+    public void PrintsAtRealSize_CameraPageWithAGuessedSize_IsNotRealSize()
+    {
+        var nominal = new CaptureScaleResult(CaptureScaleBasis.Nominal, null, 200, 2000, 1500, 10, 7.5);
+        Assert.False(CameraPage(nominal).PrintsAtRealSize);
+        // Not yet cut out (no scale): treated as not real size, so a copy is fitted to the page.
+        Assert.False(CameraPage(null).PrintsAtRealSize);
+    }
+
+    private static ScannedPage CameraPage(CaptureScaleResult? scale)
+    {
+        var quad = new Quad(new PointD(0, 0), new PointD(100, 0), new PointD(100, 100), new PointD(0, 100));
+        var facts = new CaptureFacts(quad, 100, 100) { Scale = scale };
+        return new ScannedPage(RgbaImage.Filled(10, 10, 255, 255, 255), 300, ColorMode.Color).WithCapture(facts);
+    }
 }

@@ -249,4 +249,46 @@ final class PrintLayoutTests: XCTestCase {
         XCTAssertEqual(gray(small, 72, 10), 128)
         XCTAssertEqual(gray(small, 100, 80), 0)
     }
+
+    // MARK: - Real size or fit to page
+
+    func test_copyFitsToPage_realSizePages_followsTheUsersChoice() {
+        XCTAssertFalse(PrintLayout.copyFitsToPage(chosenFit: false, allPagesRealSize: true))
+        XCTAssertTrue(PrintLayout.copyFitsToPage(chosenFit: true, allPagesRealSize: true))
+    }
+
+    func test_copyFitsToPage_aGuessedSize_isForcedToFit() {
+        XCTAssertTrue(PrintLayout.copyFitsToPage(chosenFit: false, allPagesRealSize: false))
+        XCTAssertTrue(PrintLayout.copyFitsToPage(chosenFit: true, allPagesRealSize: false))
+    }
+
+    func test_printsAtRealSize_scannerAndImportedPages_areRealSize() {
+        XCTAssertTrue(scannerPage().printsAtRealSize)
+    }
+
+    func test_printsAtRealSize_cameraPageSnappedToAKnownSize_isRealSize() {
+        let scale = CaptureScaleResult(basis: .paper, size: "a4", dpi: 300, pixelWidth: 2480, pixelHeight: 3508,
+                                       widthInches: 8.2667, heightInches: 11.6933)
+        XCTAssertTrue(cameraPage(scale).printsAtRealSize)
+    }
+
+    func test_printsAtRealSize_cameraPageWithAGuessedSize_isNotRealSize() {
+        let nominal = CaptureScaleResult(basis: .nominal, size: nil, dpi: 200, pixelWidth: 2000, pixelHeight: 1500,
+                                         widthInches: 10, heightInches: 7.5)
+        XCTAssertFalse(cameraPage(nominal).printsAtRealSize)
+        // Not yet cut out (no scale): treated as not real size, so a copy is fitted to the page.
+        XCTAssertFalse(cameraPage(nil).printsAtRealSize)
+    }
+
+    private func scannerPage() -> ScannedPage {
+        ScannedPage(image: RgbaImage.filled(width: 10, height: 10, r: 255, g: 255, b: 255).makeCGImage()!,
+                    dpi: 300, colorMode: .color)
+    }
+
+    private func cameraPage(_ scale: CaptureScaleResult?) -> ScannedPage {
+        let quad = Quad(topLeft: CGPoint(x: 0, y: 0), topRight: CGPoint(x: 100, y: 0),
+                        bottomRight: CGPoint(x: 100, y: 100), bottomLeft: CGPoint(x: 0, y: 100))
+        let facts = CaptureFacts(quad: quad, sourceWidth: 100, sourceHeight: 100, scale: scale)
+        return scannerPage().withCapture(facts)
+    }
 }

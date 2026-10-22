@@ -221,7 +221,8 @@ public sealed partial class AppViewModel
                                    CancellationToken token)
     {
         var options = s.TaskOptions;
-        var mode = options.CopyFitToPage ? PrintMode.FitToPrintable : PrintMode.ActualSize;
+        bool allRealSize = pages.All(p => p.PrintsAtRealSize);
+        var mode = PrintLayout.CopyFitsToPage(options.CopyFitToPage, allRealSize) ? PrintMode.FitToPrintable : PrintMode.ActualSize;
         var align = PrintLayout.AlignFor(areaSelected);
         var printPages = pages
             .Select(p => new PrintPage(p.Image, p.Dpi, PrintLayout.Place(p.Image.Width, p.Image.Height, p.Dpi, setup.Paper, mode, align)))

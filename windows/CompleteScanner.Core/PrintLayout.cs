@@ -141,6 +141,13 @@ public static class PrintLayout
     public static PrintAlign AlignFor(bool hasSelection) => hasSelection ? PrintAlign.Center : PrintAlign.PaperOrigin;
 
     /// <summary>
+    /// Whether a copy is fitted to the page: the user asked for it (<paramref name="chosenFit"/>), or
+    /// some page's real size is not known (<paramref name="allPagesRealSize"/> is false, a camera page
+    /// that snapped to no known size), when printing at real size would use a made-up size.
+    /// </summary>
+    public static bool CopyFitsToPage(bool chosenFit, bool allPagesRealSize) => chosenFit || !allPagesRealSize;
+
+    /// <summary>
     /// What to tell the user about a page cut off by more than <see cref="ClipWarningInches"/>: a page
     /// larger than the paper, or edges in the printer's margins; null when nothing worth saying is cut off.
     /// </summary>
@@ -265,6 +272,12 @@ public static class PrintText
 
     /// <summary>The error when there is nothing to print on.</summary>
     public const string NoPrinterMessage = "No printer is installed. Add a printer, then try again.";
+
+    /// <summary>
+    /// Why a copy is fitted to the page although real size was not asked for: a page's real size is not
+    /// known (a camera page that matched no known size), so printing it at a made-up size would be wrong.
+    /// </summary>
+    public const string RealSizeUnavailable = "Some pages have no known size, so the copy is fitted to the page.";
 
     /// <summary>"Sent 1 page to Office Printer.", "Sent 2 pages to Office Printer, 3 copies."</summary>
     public static string Sent(int pageCount, int copies, string printerName)

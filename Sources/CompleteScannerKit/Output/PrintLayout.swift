@@ -157,6 +157,13 @@ public enum PrintLayout {
     /// area selected on the preview is centred.
     public static func align(hasSelection: Bool) -> PrintAlign { hasSelection ? .center : .paperOrigin }
 
+    /// Whether a copy is fitted to the page: the user asked for it (`chosenFit`), or some page's real
+    /// size is not known (`allPagesRealSize` is false, a camera page that snapped to no known size),
+    /// when printing at real size would use a made-up size. Twin of C# `PrintLayout.CopyFitsToPage`.
+    public static func copyFitsToPage(chosenFit: Bool, allPagesRealSize: Bool) -> Bool {
+        chosenFit || !allPagesRealSize
+    }
+
     /// What to tell the user about a page cut off by more than `clipWarningInches`: a page larger
     /// than the paper, or edges in the printer's margins; nil when nothing worth saying is cut off.
     public static func clipWarning(_ placement: PrintPlacement, paper: CGSize) -> String? {
@@ -296,6 +303,11 @@ public enum PrintText {
 
     /// The error when there is nothing to print on.
     public static let noPrinterMessage = "No printer is installed. Add a printer, then try again."
+
+    /// Why a copy is fitted to the page although real size was not asked for: a page's real size is not
+    /// known (a camera page that matched no known size), so printing it at a made-up size would be wrong.
+    /// Twin of C# `PrintText.RealSizeUnavailable`.
+    public static let realSizeUnavailable = "Some pages have no known size, so the copy is fitted to the page."
 
     /// "Sent 1 page to Office Printer.", "Sent 2 pages to Office Printer, 3 copies."
     public static func sent(pageCount: Int, copies: Int, printerName: String) -> String {

@@ -118,7 +118,9 @@ extension AppState {
     func printCopyPages(_ pages: [ScannedPage], settings s: ScanSettings, setup: PrinterSetup, areaSelected: Bool,
                         flag: CancelFlag) async throws {
         let options = s.taskOptions
-        let mode: PrintMode = options.copyFitToPage ? .fitToPrintable : .actualSize
+        let allRealSize = pages.allSatisfy { $0.printsAtRealSize }
+        let fit = PrintLayout.copyFitsToPage(chosenFit: options.copyFitToPage, allPagesRealSize: allRealSize)
+        let mode: PrintMode = fit ? .fitToPrintable : .actualSize
         let align = PrintLayout.align(hasSelection: areaSelected)
         let printPages = pages.map { page in
             PrintPage(image: page.image, dpi: page.dpi,
