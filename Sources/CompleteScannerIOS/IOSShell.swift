@@ -178,7 +178,7 @@ public enum IOSShell {
     /// Whether the scan screen offers the PDF's choices (its size, Archive and Password): its Save writes a
     /// PDF.
     public static func offersPDFOptions(_ settings: ScanSettings) -> Bool {
-        collectsPages(settings) && settings.format.savesPDF(collectsPages: true)
+        collectsPages(settings) && !savesImages(settings) && settings.format.savesPDF(collectsPages: true)
     }
 
     /// Why a task is not offered yet: the tile's one visible line.
