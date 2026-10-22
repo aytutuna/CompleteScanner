@@ -192,6 +192,27 @@ final class VisionBarcodeTests: XCTestCase {
         }
     }
 
+    func test_aPhotographedQrSheet_isRead_throughTheCamerasCleanUp() throws {
+        try skipUnlessVisionReadsCodes()
+        let code = try XCTUnwrap(CoreImageQrEncoder().encode(QrSeparatorSheet.text("Lease 2026")))
+        // The sheet printed at 100 dpi and photographed square on a table, as the iPhone's camera takes it;
+        // the camera's clean-up stage cuts it out at Letter size, then reads its code with Vision.
+        let sheet: GrayImage = QrSeparatorSheet.render(code, name: "Lease 2026", widthInches: 8.5, heightInches: 11, dpi: 100)
+        let table: TablePhoto = CameraSheets.squareOnATable(sheet.toRgba(), margin: 40)
+        let photo: CGImage = try XCTUnwrap(table.photo.makeCGImage())
+        var page: ScannedPage = ScannedPage(image: photo, dpi: CaptureScale.nominalDPI, colorMode: .color)
+            .withCapture(CaptureFacts(quad: table.quad, sourceWidth: table.photo.width, sourceHeight: table.photo.height))
+        page.source = .photo
+        var s: ScanSettings = TaskCatalog.apply(.batch, to: ScanSettings())
+        s.document.splitMode = .barcode
+        let processed: ScannedPage = try XCTUnwrap(
+            try PageProcessor.forCapture(s, barcodes: VisionBarcodeReader()).process([page]).pages.first)
+        XCTAssertEqual(processed.dpi, 100)
+        XCTAssertEqual(processed.barcodes?.first?.text, QrSeparatorSheet.text("Lease 2026"))
+        XCTAssertTrue(BarcodeSeparators.isSeparatorPage(processed, options: s.document))
+        XCTAssertEqual(BarcodeSeparators.codeLabel(processed.barcodes?.first?.text, options: s.document), "Lease 2026")
+    }
+
     func test_theDemoScannersCode39Sheet_readsAsItsText() throws {
         try skipUnlessVisionReadsCodes()
         // The demo's sheets carry the separator prefix and a name (`MockScannerBackend.batchBarcodeText`).

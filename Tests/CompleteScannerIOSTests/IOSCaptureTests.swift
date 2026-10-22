@@ -173,6 +173,23 @@ final class IOSCaptureTests: XCTestCase {
         XCTAssertEqual(IOSLaunchOptions.importFixtureArgument, "-importFixture")
     }
 
+    func test_theImportLaunchOption_carriesSeveralFiles_aPDFAsOne() {
+        let photo = Data([0x89, 0x50, 0x4E, 0x47, 1, 2, 3])
+        let pdf = Data("%PDF-1.4\n%fixture\n".utf8)
+        let text: String = photo.base64EncodedString() + "," + pdf.base64EncodedString()
+        let options = IOSLaunchOptions(arguments: ["CompleteScanner", "-demoScanner", "-importFixture", "-importTask", "twoSided"],
+                                       environment: [IOSLaunchOptions.importFixtureVariable: text])
+        XCTAssertEqual(options.launchImports, [IOSImportItem(name: "fixture.png", data: photo, kind: .image),
+                                               IOSImportItem(name: "fixture.pdf", data: pdf, kind: .pdf)])
+        XCTAssertEqual(options.launchImport, options.launchImports.first)
+        XCTAssertEqual(options.launchTask, .twoSided)
+        // A part that does not read is left out; the others come in.
+        let mixed = IOSLaunchOptions(arguments: ["CompleteScanner", "-importFixture"],
+                                     environment: [IOSLaunchOptions.importFixtureVariable: "%%%," + pdf.base64EncodedString()])
+        XCTAssertEqual(mixed.launchImports.map(\.kind), [.pdf])
+        XCTAssertTrue(IOSLaunchOptions(demoScannerOnly: false).launchImports.isEmpty)
+    }
+
     func test_anUprightPicture_isKept_andATurnedOneIsDrawnUpright() throws {
         let picture: CGImage = scannedPicture(width: 30, height: 20)
         let upright = UIImage(cgImage: picture, scale: 1, orientation: .up)

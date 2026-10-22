@@ -8,7 +8,8 @@ import Foundation
 /// launch into the Document task, as the Files app would hand it over: its PNG bytes, base64, in the
 /// environment variable `importFixtureVariable`, since a UI test cannot drive the system's pickers;
 /// `-importTask` followed by a task's name (`ScanTask`'s raw value, "photos") imports it into that task
-/// instead (I13: the photos UI test).
+/// instead (I13: the photos UI test). Since I14 the variable may hold several files, comma-separated, and
+/// a file whose bytes start as a PDF comes in as one (the two-sided and batch UI tests).
 public struct IOSLaunchOptions: Equatable, Sendable {
     /// The launch argument for the demo scanner alone.
     public static let demoScannerArgument = "-demoScanner"
@@ -18,22 +19,27 @@ public struct IOSLaunchOptions: Equatable, Sendable {
     public static let importFixtureVariable = "COMPLETESCANNER_IMPORT_FIXTURE"
     /// The name the photo imported at launch is shown with.
     public static let importFixtureName = "fixture.png"
+    /// The name a PDF imported at launch is shown with.
+    public static let importFixturePDFName = "fixture.pdf"
     /// The launch argument naming the task the photo imported at launch goes into (the next argument).
     public static let importTaskArgument = "-importTask"
 
     /// Only the demo scanner is offered.
     public let demoScannerOnly: Bool
-    /// The photo to import at launch; nil for none.
-    public let launchImport: IOSImportItem?
+    /// The files to import at launch, in order; none when the app was not launched to import.
+    public let launchImports: [IOSImportItem]
     /// The task the photo imported at launch goes into; nil: the task set up when it takes photos, else
     /// Document to PDF.
     public let launchTask: ScanTask?
 
     public init(demoScannerOnly: Bool) {
         self.demoScannerOnly = demoScannerOnly
-        self.launchImport = nil
+        self.launchImports = []
         self.launchTask = nil
     }
+
+    /// The first file to import at launch; nil for none.
+    public var launchImport: IOSImportItem? { launchImports.first }
 
     /// The options in the process's launch arguments.
     public init(arguments: [String]) {
@@ -43,15 +49,20 @@ public struct IOSLaunchOptions: Equatable, Sendable {
     /// The options in the process's launch arguments and environment (`ProcessInfo`).
     public init(arguments: [String], environment: [String: String]) {
         self.demoScannerOnly = arguments.contains(IOSLaunchOptions.demoScannerArgument)
-        var item: IOSImportItem?
+        var items: [IOSImportItem] = []
         if arguments.contains(IOSLaunchOptions.importFixtureArgument),
-           let text = environment[IOSLaunchOptions.importFixtureVariable],
-           let data = Data(base64Encoded: text, options: [.ignoreUnknownCharacters]), !data.isEmpty {
-            item = IOSImportItem(name: IOSLaunchOptions.importFixtureName, data: data, kind: .image)
+           let text = environment[IOSLaunchOptions.importFixtureVariable] {
+            for part in text.split(separator: ",") {
+                guard let data = Data(base64Encoded: String(part), options: [.ignoreUnknownCharacters]),
+                      !data.isEmpty else { continue }
+                let kind: IOSImportItem.Kind = IOSImportItem.kind(forFileName: IOSLaunchOptions.importFixtureName, data: data)
+                let name: String = kind == .pdf ? IOSLaunchOptions.importFixturePDFName : IOSLaunchOptions.importFixtureName
+                items.append(IOSImportItem(name: name, data: data, kind: kind))
+            }
         }
-        self.launchImport = item
+        self.launchImports = items
         var task: ScanTask?
-        if item != nil, let index = arguments.firstIndex(of: IOSLaunchOptions.importTaskArgument),
+        if !items.isEmpty, let index = arguments.firstIndex(of: IOSLaunchOptions.importTaskArgument),
            index + 1 < arguments.count {
             task = ScanTask(rawValue: arguments[index + 1])
         }
@@ -103,18 +114,42 @@ public enum IOSShell {
     /// after the screen locked, cutting a feeder batch short. Other work (the demo scanner, saving) lets it
     /// sleep as usual.
     public static func keepsScreenAwake(isBusy: Bool, device: ScannerInfo?) -> Bool {
-        guard isBusy, let device else { return false }
-        return device.backend == "escl"
+        isBusy && usesNetworkScanner(device)
     }
 
-    /// Whether this app offers a task yet: the tasks whose pages are collected and saved, and since I13
+    /// Whether a network scanner (eSCL) is the one selected (`device`); otherwise the pages come from the
+    /// camera, Photos or Files (the demo scanner aside).
+    public static func usesNetworkScanner(_ device: ScannerInfo?) -> Bool {
+        device?.backend == "escl"
+    }
+
+    /// The camera's line the scan screen's step card shows in place of the task's step, which speaks of the
+    /// glass and the feeder (`CameraTaskCatalog.current`): for every task but the ID card, whose steps say
+    /// which side is next, while the pages come from the camera, Photos or Files. With a network scanner in
+    /// use, or a stack turned over by hand, only while a back is due in the camera's two-sided steps or the
+    /// next page starts a new document. Nil when the step's own words stay.
+    public static func cameraLine(_ task: ScanTask?, options: TaskOptions, sides: CameraSides?, newDocument: Bool,
+                                  turningOverByHand: Bool, device: ScannerInfo?) -> CameraStepText? {
+        guard task != .idCard else { return nil }
+        let pending: Bool = sides?.next == .back || newDocument
+        guard pending || !(turningOverByHand || usesNetworkScanner(device)) else { return nil }
+        return CameraTaskCatalog.current(task, options: options, sides: sides, newDocument: newDocument)
+    }
+
+    /// Whether the book's Right to left switch is shown: while its spreads are cut at the spine for the
+    /// source in use, a network scanner's scans (`PageProcessor.forScan`) or the camera's whole spreads
+    /// (`PageProcessor.splitsCameraSpreads`).
+    public static func showsRightToLeft(_ settings: ScanSettings, device: ScannerInfo?) -> Bool {
+        PageProcessor.splitsFacingPages(settings) && (settings.taskOptions.cameraSpreads || usesNetworkScanner(device))
+    }
+
+    /// Whether this app offers a task yet: the tasks whose pages are collected and saved, since I13
     /// Photos, Restore old photos and Receipts (several objects in one shot, then the photo review) and the
-    /// ID card (front then back, then its review). The photocopy needs a printer, Quick scan an area chosen
-    /// on the preview, and the Archive document task the Archive & password settings (the PDF/A writer is
-    /// shared already), which come later.
+    /// ID card (front then back, then its review), and since I14 Quick scan (one shot, then a picture or its
+    /// text) and Archive document (with the Archive & password choices). Only the photocopy, which needs a
+    /// printer (AirPrint, I16), is not offered yet.
     public static func offers(_ task: ScanTask) -> Bool {
-        if task == .quickScan || task == .archive { return false }
-        return takesPhotos(flow: TaskCatalog.definition(task).flow)
+        takesPhotos(flow: TaskCatalog.definition(task).flow)
     }
 
     /// Whether the scan screen takes photos for the settings' task (our camera, Photos and Files): pages
@@ -134,9 +169,16 @@ public enum IOSShell {
     }
 
     /// Whether the scan screen collects pages to save (Save and the PDF or JPEG choice): the document
-    /// tasks. Photos, receipts and the ID card are saved from their reviews.
+    /// tasks that collect pages. Photos, receipts and the ID card are saved from their reviews, a Quick scan
+    /// from its own screen.
     public static func collectsPages(_ settings: ScanSettings) -> Bool {
-        TaskCatalog.flow(of: settings) == .documentQueue
+        TaskCatalog.flow(of: settings) == .documentQueue && settings.documentMultiPage
+    }
+
+    /// Whether the scan screen offers the PDF's choices (its size, Archive and Password): its Save writes a
+    /// PDF.
+    public static func offersPDFOptions(_ settings: ScanSettings) -> Bool {
+        collectsPages(settings) && settings.format.savesPDF(collectsPages: true)
     }
 
     /// Why a task is not offered yet: the tile's one visible line.
@@ -165,7 +207,8 @@ public enum IOSShell {
     }
 
     /// The formats the scan screen's Save offers: PDF or JPEG (a picture a page) while the queue would
-    /// be saved as a PDF; none to choose for Word and text, which are saved as chosen.
+    /// be saved as a PDF; none to choose for Word and text, which are saved as chosen. A .txt beside the
+    /// PDF is one of the PDF's choices (`PDFOptionsSection`).
     public static func saveFormats(_ settings: ScanSettings) -> [OutputFormat] {
         if settings.format.isTextFormat { return [] }
         return [.pdf, .jpeg]
@@ -277,22 +320,29 @@ extension AppState {
     /// The iPhone's and iPad's state without network scanners (the demo scanner alone).
     @MainActor
     public static func makeForIOS(options: IOSLaunchOptions, fileActions: IOSFileActions) -> AppState {
-        makeForIOS(options: options, fileActions: fileActions, networkScanners: nil)
+        makeForIOS(options: options, fileActions: fileActions, networkScanners: nil, passwordPrompt: nil)
     }
 
     /// The iPhone's and iPad's state: the scanner connections of `IOSShell.backends(options:networkScanners:)`,
     /// the iOS file actions (share sheet, Quick Look, the Files app), the iOS troubleshooter service (the
     /// app's page in Settings, the pasteboard, the network path) and UIKit's lifecycle; the iPhone's
-    /// troubleshooter checks and connection ranking (`platform` `.ios`); no printer yet (the Kit's stand-in
+    /// troubleshooter checks and connection ranking (`platform` `.ios`); the password of a protected PDF
+    /// asked for by `passwordPrompt` (none: such a save saves nothing); no printer yet (the Kit's stand-in
     /// refuses it).
     @MainActor
     public static func makeForIOS(options: IOSLaunchOptions, fileActions: IOSFileActions,
-                                  networkScanners: IOSNetworkScanners?) -> AppState {
+                                  networkScanners: IOSNetworkScanners?,
+                                  passwordPrompt: IOSPasswordPrompt? = nil) -> AppState {
         let backends: [any ScannerBackend] = IOSShell.backends(options: options, networkScanners: networkScanners)
         let lifecycle: UIKitLifecycle = UIKitLifecycle()
         let state: AppState = AppState(backends: backends, fileActions: fileActions,
                                        troubleshooterService: IOSTroubleshooterService(), lifecycle: lifecycle)
         state.platform = .ios
+        if let prompt = passwordPrompt {
+            state.askPDFPassword = { () async -> PDFProtection? in
+                await prompt.ask()
+            }
+        }
         return state
     }
 }

@@ -199,6 +199,140 @@ public class CapturePageTests
         Assert.Equal(DocumentEnhanceMode.Gray, processed.Capture.Enhancement);
     }
 
+    /// <summary>
+    /// <paramref name="sheet"/> photographed square on, on a dark table with <paramref name="margin"/> px of
+    /// table round it, and its outline in the photo.
+    /// </summary>
+    internal static (RgbaImage Photo, Quad Sheet) SquareOnATable(RgbaImage sheet, int margin = 60)
+    {
+        int w = sheet.Width + 2 * margin, h = sheet.Height + 2 * margin;
+        var pixels = new byte[w * h * 4];
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                int i = (y * w + x) * 4;
+                int sx = x - margin, sy = y - margin;
+                if (sx >= 0 && sx < sheet.Width && sy >= 0 && sy < sheet.Height)
+                {
+                    int j = (sy * sheet.Width + sx) * 4;
+                    pixels[i] = sheet.Pixels[j];
+                    pixels[i + 1] = sheet.Pixels[j + 1];
+                    pixels[i + 2] = sheet.Pixels[j + 2];
+                }
+                else
+                {
+                    pixels[i] = 52;
+                    pixels[i + 1] = 40;
+                    pixels[i + 2] = 34;
+                }
+                pixels[i + 3] = 255;
+            }
+        }
+        var quad = new Quad(new PointD(margin, margin), new PointD(margin + sheet.Width, margin),
+                            new PointD(margin + sheet.Width, margin + sheet.Height), new PointD(margin, margin + sheet.Height));
+        return (new RgbaImage(w, h, pixels), quad);
+    }
+
+    [Fact]
+    public void ForCapture_AWholeSpreadIsCutOutOfItsPhoto_ThenSplitAtItsSpine()
+    {
+        var s = TaskCatalog.Apply(ScanTask.Book, new ScanSettings());
+        // Page by page, the phone's default: each shot is one page, as any camera page.
+        Assert.False(PageProcessor.SplitsCameraSpreads(s));
+        var single = PageProcessor.ForCapture(s);
+        Assert.Null(single.Book);
+        Assert.Empty(single.Prepare);
+        Assert.Equal(["perspective", "enhance", "blank", "separator"], single.Steps.Select(step => step.Name));
+
+        s.TaskOptions.CameraSpreads = true;
+        Assert.True(PageProcessor.SplitsCameraSpreads(s));
+        var processor = PageProcessor.ForCapture(s);
+        Assert.Equal(["perspective", "enhance"], processor.Prepare.Select(step => step.Name));
+        Assert.True(Assert.IsType<PerspectiveStep>(processor.Prepare[0]).Spread);
+        Assert.False(Assert.IsType<PerspectiveStep>(single.Steps[0]).Spread);
+        Assert.Equal(["blank", "spineShadow", "separator"], processor.Steps.Select(step => step.Name));
+        Assert.Equal(BookSplitOptions.Of(s), processor.Book);
+        // Not for another task, nor for a scan.
+        var document = TaskCatalog.Apply(ScanTask.Document, new ScanSettings());
+        document.TaskOptions.CameraSpreads = true;
+        Assert.False(PageProcessor.SplitsCameraSpreads(document));
+        Assert.Empty(PageProcessor.ForScan(s).Prepare);
+
+        // The open book as the camera takes it: TestPages.ShadowSpread (1100 × 850, its spine at x = 572).
+        var (photo, quad) = SquareOnATable(TestPages.ShadowSpread().ToRgba());
+        var page = new ScannedPage(photo, 72, ColorMode.Color) { Source = PageSource.Photo }
+            .WithCapture(new CaptureFacts(quad, photo.Width, photo.Height));
+        var result = processor.Process([page]);
+        // The spread as cut out of the photo is what is kept to split it again by hand: at its own pixels,
+        // matched against no sheet.
+        var spread = Assert.Single(result.Spreads);
+        Assert.Equal(page.Id, spread.Id);
+        Assert.Equal(GeometryBasis.Perspective, spread.Geometry!.Basis);
+        Assert.Equal(CaptureScaleBasis.Nominal, spread.Capture!.Scale!.Basis);
+        Assert.Equal((1100, 850, CaptureScale.NominalDpi), (spread.Image.Width, spread.Image.Height, spread.Dpi));
+        Assert.Equal(2, result.Pages.Count);
+        Assert.All(result.Pages, p => Assert.Equal(page.Id, p.SpreadId));
+        Assert.Equal([true, false], result.Pages.Select(p => p.Spread!.IsLeft));
+        // Cut at the spine: the left page ends near x = 572.
+        var gutter = result.Pages[0].Spread!.Gutter!;
+        Assert.Equal(GutterAxis.Vertical, gutter.Axis);
+        Assert.InRange(result.Pages[0].Image.Width, 540, 600);
+        Assert.All(result.Pages, p => Assert.Equal(CaptureScale.NominalDpi, p.Dpi));
+        // Each page keeps where it came from and what the camera recorded.
+        Assert.All(result.Pages, p => Assert.Equal(PageSource.Photo, p.Source));
+        Assert.All(result.Pages, p => Assert.Equal(spread.Capture, p.Capture));
+
+        // A book read from right to left: its right page comes first.
+        s.TaskOptions.BookRightToLeft = true;
+        var rtl = PageProcessor.ForCapture(s).Process([page]).Pages;
+        Assert.Equal([false, true], rtl.Select(p => p.Spread!.IsLeft));
+    }
+
+    [Theory]
+    [InlineData(1700, 1100, PaperSize.IdCard)] // a Letter book's 17 × 11 in spread has nearly an ID card's shape
+    [InlineData(1414, 1000, PaperSize.A4)] // an A4 book's spread is A3, A4's shape
+    public void ForCapture_AWholeSpreadKeepsItsPixels_NotASingleSheetsSize(int width, int height, PaperSize lookalike)
+    {
+        var s = TaskCatalog.Apply(ScanTask.Book, new ScanSettings());
+        s.TaskOptions.CameraSpreads = true;
+        var (photo, quad) = SquareOnATable(TestPages.Spread(width / 2, 20, 80, 250, 17, 0xB00C0011, width, height).ToRgba());
+        // As one page, the spread would snap to a sheet it only looks like.
+        Assert.Equal(lookalike, CaptureScale.Match((double)width / height, CaptureScale.Papers)!.Paper);
+
+        var result = PageProcessor.ForCapture(s).Process([Captured(photo, new CaptureFacts(quad, photo.Width, photo.Height))]);
+        var spread = Assert.Single(result.Spreads);
+        Assert.Equal(CaptureScaleBasis.Nominal, spread.Capture!.Scale!.Basis);
+        Assert.Equal((width, height, CaptureScale.NominalDpi), (spread.Image.Width, spread.Image.Height, spread.Dpi));
+        Assert.Equal(2, result.Pages.Count);
+        Assert.All(result.Pages, p =>
+        {
+            Assert.Equal(height, p.Image.Height);
+            Assert.InRange(p.Image.Width, width / 2 - 60, width / 2 + 60);
+            Assert.Equal(CaptureScale.NominalDpi, p.Dpi);
+        });
+    }
+
+    [Fact]
+    public void ForCapture_ThePagesOfASpreadMadeGrayStayGrayInAColorTask()
+    {
+        var s = TaskCatalog.Apply(ScanTask.Book, new ScanSettings());
+        s.TaskOptions.CameraSpreads = true;
+        s.ColorMode = ColorMode.Color;
+        s.Adjustments.Brightness = 0.1;
+        var processor = PageProcessor.ForCapture(s);
+        Assert.Equal("adjust", processor.Steps[^1].Name);
+        var (photo, quad) = SquareOnATable(TestPages.ShadowSpread().ToRgba());
+        var result = processor.Process([Captured(photo, new CaptureFacts(quad, photo.Width, photo.Height))]);
+        Assert.Equal(DocumentEnhanceMode.Gray, Assert.Single(result.Spreads).Capture!.Enhancement);
+        Assert.Equal(2, result.Pages.Count);
+        Assert.All(result.Pages, p =>
+        {
+            Assert.Equal(DocumentEnhanceMode.Gray, p.Capture!.Enhancement);
+            Assert.Equal(ColorMode.Grayscale, p.ColorMode);
+        });
+    }
+
     [Fact]
     public void AdjustmentsKeepACameraPageWithoutColorGrayInAColorTask()
     {

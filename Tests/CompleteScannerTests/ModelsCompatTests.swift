@@ -78,6 +78,8 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.taskOptions.receiptCombine = true
     settings.taskOptions.bookRightToLeft = true
     settings.taskOptions.bookRotationQuarterTurns = 1
+    settings.taskOptions.cameraFrontsFirst = true
+    settings.taskOptions.cameraSpreads = true
     return settings
 }
 
@@ -149,6 +151,7 @@ private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
     .replacingOccurrences(of: "\"source\" : \"documentFeeder\"",
                           with: "\"source\" : \"documentFeeder\",\n      \"taskOptions\" : {\n"
                               + "        \"bookRightToLeft\" : true,\n        \"bookRotationQuarterTurns\" : 1,\n"
+                              + "        \"cameraFrontsFirst\" : true,\n        \"cameraSpreads\" : true,\n"
                               + "        \"copyAlsoSavePdf\" : true,\n        \"copyCount\" : 3,\n        \"copyFitToPage\" : true,\n"
                               + "        \"copyPrinterName\" : \"Office printer\",\n        \"idCardPaper\" : \"letter\",\n"
                               + "        \"idCardSaveSidesAsImages\" : true,\n        \"receiptCombine\" : true,\n"
@@ -1066,7 +1069,8 @@ final class ModelsCompatTests: XCTestCase {
                 // No printer chosen: the key is left out (C# leaves out a null too).
                 XCTAssertEqual(Set(written.keys), ["idCardPaper", "idCardSaveSidesAsImages", "copyCount", "copyFitToPage",
                                                    "copyAlsoSavePdf", "receiptNameByDate", "receiptCombine",
-                                                   "bookRightToLeft", "bookRotationQuarterTurns"])
+                                                   "bookRightToLeft", "bookRotationQuarterTurns", "cameraFrontsFirst",
+                                                   "cameraSpreads"])
                 XCTAssertEqual(written["idCardPaper"] as? String, paper.rawValue)
                 XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: data).taskOptions, settings.taskOptions)
             }
@@ -1200,6 +1204,50 @@ final class ModelsCompatTests: XCTestCase {
         XCTAssertEqual(original.taskOptions.bookRotationQuarterTurns, 1)
         XCTAssertNotEqual(original.document, copy.document)
         XCTAssertNotEqual(original.taskOptions, copy.taskOptions)
+    }
+
+    // MARK: The iPhone camera's choices (CONTRACTS.md, rule 6)
+
+    func test_cameraOptions_areOffByDefault_readLeniently_andRoundTrip() throws {
+        let settings = ScanSettings()
+        XCTAssertFalse(settings.taskOptions.cameraFrontsFirst)
+        XCTAssertFalse(settings.taskOptions.cameraSpreads)
+        let older = try decode(ScanSettings.self, """
+            {"taskOptions": {"copyCount": 2, "bookRightToLeft": true}}
+            """)
+        XCTAssertEqual(older.taskOptions.copyCount, 2)
+        XCTAssertTrue(older.taskOptions.bookRightToLeft)
+        XCTAssertFalse(older.taskOptions.cameraFrontsFirst)
+        XCTAssertFalse(older.taskOptions.cameraSpreads)
+        let corrupt = try decode(ScanSettings.self, """
+            {"resolution": 150, "taskOptions": {"cameraFrontsFirst": "yes", "cameraSpreads": true, "copyCount": 4}}
+            """)
+        XCTAssertEqual(corrupt.resolution, 150)
+        XCTAssertEqual(corrupt.taskOptions.copyCount, 4)
+        XCTAssertFalse(corrupt.taskOptions.cameraFrontsFirst)
+        XCTAssertTrue(corrupt.taskOptions.cameraSpreads)
+        let nulls = try decode(ScanSettings.self, """
+            {"taskOptions": {"cameraFrontsFirst": true, "cameraSpreads": null}}
+            """)
+        XCTAssertTrue(nulls.taskOptions.cameraFrontsFirst)
+        XCTAssertFalse(nulls.taskOptions.cameraSpreads)
+        for frontsFirst in [false, true] {
+            for spreads in [false, true] {
+                var chosen = ScanSettings()
+                chosen.taskOptions.cameraFrontsFirst = frontsFirst
+                chosen.taskOptions.cameraSpreads = spreads
+                let back = try JSONDecoder().decode(ScanSettings.self, from: try encode(chosen))
+                XCTAssertEqual(back.taskOptions, chosen.taskOptions)
+            }
+        }
+        // Picking a task keeps them: they say how the user takes that task with the camera.
+        let kept = TaskCatalog.apply(.book, to: nonDefaultSettings())
+        XCTAssertTrue(kept.taskOptions.cameraFrontsFirst)
+        XCTAssertTrue(kept.taskOptions.cameraSpreads)
+        var copy = kept
+        copy.taskOptions.cameraSpreads = false
+        XCTAssertTrue(kept.taskOptions.cameraSpreads)
+        XCTAssertNotEqual(kept.taskOptions, copy.taskOptions)
     }
 
     // MARK: Softening the spine's shadow (CONTRACTS.md, rule 6)

@@ -313,6 +313,57 @@ public class BarcodeTests
         Assert.Null(PageFacts.Of(PageOf(), Options()).Barcode);
     }
 
+    // MARK: - Separator sheets photographed (the iPhone's Separate documents)
+
+    /// <summary><paramref name="sheet"/> photographed square on, as the camera's clean-up stage gets it.</summary>
+    private static ScannedPage Photographed(RgbaImage sheet)
+    {
+        var (photo, quad) = CapturePageTests.SquareOnATable(sheet, 40);
+        return new ScannedPage(photo, CaptureScale.NominalDpi, ColorMode.Color) { Source = PageSource.Photo }
+            .WithCapture(new CaptureFacts(quad, photo.Width, photo.Height));
+    }
+
+    [Fact]
+    public void APhotographedPatchSheet_SnappedToItsPaper_IsASeparator()
+    {
+        var s = TaskCatalog.Apply(ScanTask.Batch, new ScanSettings());
+        var sheet = PatchCodeDetector.RenderSheet(SeparatorSheet.Code, 8.5, 11, 60).ToRgba();
+        var text = TestPages.SinglePageAcross().ToRgba();
+        var processor = PageProcessor.ForCapture(s);
+        var pages = processor.Process([Photographed(text), Photographed(sheet), Photographed(text)]).Pages;
+        // Cut out at Letter size, so its bars have their real widths and the patch code is read.
+        Assert.Equal(60, pages[1].Dpi);
+        Assert.Equal(PatchCode.PatchT, pages[1].Patch);
+        Assert.Null(pages[0].Patch);
+        var plan = DocumentSplitter.Plan(pages, s.Document);
+        Assert.Equal([[0], [2]], Documents(plan));
+        Assert.Equal(1, plan.SeparatorCount);
+    }
+
+    [Fact]
+    public void APhotographedQrSheet_ReadAsTheSheetsPayload_SplitsAndNamesTheNextDocument()
+    {
+        var s = TaskCatalog.Apply(ScanTask.Batch, new ScanSettings());
+        s.Document.SplitMode = SplitMode.Barcode;
+        var page = Photographed(TestPages.SinglePageAcross().ToRgba());
+        // The payload the phone's saved QR sheet carries, as Vision (or ZXing) hands it back.
+        var payload = QrSeparatorSheet.Text("Lease 2026", s.Document.SplitBarcodePrefix);
+        Assert.Equal("CS-SEP Lease 2026", payload);
+        var sheet = PageProcessor.ForCapture(s, barcodes: new FakeReader(Qr(payload))).Process([page]).Pages.Single();
+        var content = PageProcessor.ForCapture(s, barcodes: new FakeReader()).Process([page, page]).Pages;
+        Assert.Equal(payload, Assert.Single(sheet.Barcodes!).Text);
+        Assert.True(BarcodeSeparators.IsSeparatorPage(sheet, s.Document));
+        var plan = DocumentSplitter.Plan([content[0], sheet, content[1]], s.Document);
+        Assert.Equal([[0], [2]], Documents(plan));
+        Assert.Equal([null, "Lease 2026"], plan.Documents.Select(d => d.Label));
+        // A payload of another prefix is a page's own code: no split.
+        var own = PageProcessor.ForCapture(s, barcodes: new FakeReader(Qr("INV-42"))).Process([page]).Pages.Single();
+        Assert.False(BarcodeSeparators.IsSeparatorPage(own, s.Document));
+        // Without the barcode split, nothing is read on a photographed page.
+        var plain = TaskCatalog.Apply(ScanTask.Batch, new ScanSettings());
+        Assert.Null(PageProcessor.ForCapture(plain, barcodes: new FakeReader(Qr(payload))).Process([page]).Pages.Single().Barcodes);
+    }
+
     // MARK: - Splitting at barcode or QR sheets
 
     [Fact]

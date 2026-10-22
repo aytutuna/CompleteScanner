@@ -65,7 +65,8 @@ scanners** — including the Epson Perfection V39 II.
   2.0 standard security handler). The password is asked for at each save, typed twice, with a
   hint about its strength, and never stored; printing and copying can be disallowed, which PDF
   apps honor as a request, not a lock. A PDF/A file can't have a password, so the two switches
-  exclude each other. The iPhone app has the same writer; its switches come later.
+  exclude each other. The iPhone app has the same writer and switches, and asks for the password
+  in a sheet of its own.
 - **Add pages to an existing PDF** (Windows for now): **Add to existing PDF…** under the queue,
   or a PDF's menu in the Saved tab, adds the scanned pages to the end of a PDF you pick, such as
   a signature page for a contract. The file's existing bytes are kept as they are (the pages are
@@ -273,7 +274,13 @@ rectangles, cut out at its real size and reviewed (keep, rotate, fix the crop wi
 save; receipts named by their date), a shot in which none is outlined searched whole as the scanner's
 glass is; the ID card in a frame of the card's shape, front then back, laid out at real size on one
 page, kept in memory only (never written before Save, never in Photos, never read), with a one-line
-"Tilt to avoid glare" when a reflection hid part of it; network
+"Tilt to avoid glare" when a reflection hid part of it; two-sided documents taken as Flip & capture
+(each front, then its back, with No back for an empty one) or every front then every back, put in
+order; Separate documents with a New document button between shots and separator sheets (patch code,
+or QR read with Vision) found on the pages, the sheet saved as a PDF to print; a book page by page or
+as whole spreads cut at the spine, split again by hand; Quick scan with Live Text, Save JPEG and Copy
+text; Email a document through Mail's composer (or the share sheet); Archive document and the PDF's
+size, Archive and Password choices, the password asked for in a sheet and never stored; network
 scanners (AirScan/eSCL) found on the Wi-Fi or added by address, picked from a sheet on iPhone or a
 sidebar on iPad, with a flatbed preview to choose the scan area on, a feeder's progress with Cancel,
 the screen kept on while a network scanner works, and the troubleshooter with its iPhone checks) is
@@ -292,7 +299,9 @@ The app's icon is drawn by `python scripts/make_ios_icon.py ios/CompleteScanneri
 `python scripts/make_ios_ui_fixture.py ios/CompleteScanneriOSUITests/Fixtures/document-photo.png`
 (a sheet with grey bars on a dark table; standard library only), and the Photos task's by
 `python scripts/make_ios_ui_fixture.py ios/CompleteScanneriOSUITests/Fixtures/photos-on-table.png photos`
-(two prints on a dark table, the same pixels as the unit tests' `ObjectShots.printsOnTable`). The
+(two prints on a dark table, the same pixels as the unit tests' `ObjectShots.printsOnTable`), and the
+two-sided and Separate documents tests' PDFs by `... Fixtures/two-sided.pdf two-sided` (two pages of grey
+lines) and `... Fixtures/batch.pdf batch` (a page, the Patch T sheet's bars, a page). The
 Simulator has no camera: there
 the camera screen says so, and its live outline, lens choice, start and stop rules, shutter and
 automatic shutter (scripted sharp, blurred and dark frames) are checked with fixture frames and
@@ -300,7 +309,8 @@ stand-ins. The cameras themselves (the wide lens's view at the start on Pro and 
 focus and macro switching, low light, the torch, Pro and non-Pro models, the automatic shutter's
 timing and thresholds on real frames, the clean-up on real photos, heat and memory over a long queue;
 iCloud-only photos, large HEIC files and saving to the Files app; thermal and crumpled receipts, glossy
-prints, holograms and laminate glare) are checked on a real iPhone.
+prints, holograms and laminate glare; a printed separator sheet photographed, a real book, Mail's
+composer and Live Text) are checked on a real iPhone.
 
 Network scanners on the iPhone: the first time the scanner picker opens, a short card says why
 iOS is about to ask for Local Network access (camera scanning works without it); the search starts
@@ -391,12 +401,13 @@ target for each platform's own parts:
 - `Sources/CompleteScannerIOS` — the iPhone and iPad only (each file inside `#if os(iOS)`):
   `UIKitLifecycle`, `UIKitBackgroundActivity` (the system's background time for a network scan),
   the app shell's services (`IOSShell`, `IOSFileActions`: Quick Look, the share
-  sheet, the Files app), Apple's document scanner and our own camera (`Camera/`: the capture session,
+  sheet, Mail's composer, the Files app), the password sheet (`Protection/`), Apple's document scanner and our own camera (`Camera/`: the capture session,
   the lens choice, the live page outline, the automatic shutter, when the camera runs), importing photos and PDFs with the
   corner editor (`Import/`: decoding with the EXIF turn, PDF pages at 300 dpi, Vision's page search
   and its rectangles for several objects in one shot, the import session), the photo, receipt and ID
   card reviews (`Review/`, `Views/PhotoReviewScreen.swift`, `Views/IdCardReviewScreen.swift`, the
-  card's guide frame on the camera), network scanners (`Network/`: the search, run only while the app is in
+  card's guide frame on the camera), Quick scan's screen with Live Text, the tasks' camera buttons and
+  choices (`Views/TaskControls.swift`), a spread split again, network scanners (`Network/`: the search, run only while the app is in
   front, after a short card that explains the system's Local Network prompt; adding a scanner by
   address; the scanner picker, a sheet on iPhone and a sidebar on iPad; the troubleshooter's
   system side), `CompleteScannerIOSApp` and its SwiftUI views (also the flatbed preview with its
@@ -404,7 +415,8 @@ target for each platform's own parts:
 - `ios/` — the iPhone and iPad app's Xcode project for XcodeGen (`project.yml`): the app target that
   only starts `CompleteScannerIOSApp`, its `Info.plist`, privacy manifest and asset catalog, and the
   UI tests (`CompleteScanneriOSUITests`: the smoke test, the photo import, with its fixture
-  photo, two prints in one shot under the Photos task saved as two JPEGs, the camera screen's
+  photo, two prints in one shot under the Photos task saved as two JPEGs, two pages under the
+  two-sided task saved as one PDF, a patch-code sheet splitting a PDF into two, the camera screen's
   no-camera state, and the scanner picker with the add-by-address sheet); the `.xcodeproj` XcodeGen
   writes is not checked in
 - `Sources/CompleteScanner` — the Mac app's entry point

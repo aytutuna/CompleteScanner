@@ -325,6 +325,21 @@ public class DocumentSidesTests
     }
 
     [Fact]
+    public void MarkCamera_MarksTheSide_KeepsTheSheet_AndNeverTurnsABack()
+    {
+        var pages = new[] { TwoPixelPage(), TwoPixelPage().WithSide(null, 4) };
+        var backs = DocumentSides.MarkCamera(pages, PageSide.Back);
+        Assert.Equal([PageSide.Back, PageSide.Back], backs.Select(p => p.Side!.Value));
+        Assert.Equal(new int?[] { null, 4 }, backs.Select(p => p.SheetIndex));
+        Assert.Equal(pages.Select(p => p.Id), backs.Select(p => p.Id));
+        // The user turned the sheet over: the binding has no say, the picture stays as taken.
+        Assert.All(backs, page => Assert.True(RedOnTheLeft(page) && page.RotationQuarterTurns == 0));
+        var fronts = DocumentSides.MarkCamera(pages, PageSide.Front);
+        Assert.All(fronts, page => Assert.True(page.Side == PageSide.Front && RedOnTheLeft(page)));
+        Assert.All(pages, page => Assert.Null(page.Side));
+    }
+
+    [Fact]
     public void MarkManual_ASpooledBackTurnsItsPreviewNowAndItsFileWhenSaved()
     {
         var spooled = TwoPixelPage("page.png");

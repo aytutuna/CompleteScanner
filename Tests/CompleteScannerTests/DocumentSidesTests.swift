@@ -277,6 +277,19 @@ final class DocumentSidesTests: XCTestCase {
         XCTAssertTrue(longEdge.allSatisfy(redOnTheLeft))
     }
 
+    func test_markCamera_marksTheSide_keepsTheSheet_andNeverTurnsABack() {
+        let pages: [ScannedPage] = [twoPixelPage(), twoPixelPage().withSide(nil, sheetIndex: 4)]
+        let backs: [ScannedPage] = DocumentSides.markCamera(pages, side: .back)
+        XCTAssertEqual(backs.map(\.side), [.back, .back])
+        XCTAssertEqual(backs.map(\.sheetIndex), [nil, 4])
+        XCTAssertEqual(backs.map(\.id), pages.map(\.id))
+        // The user turned the sheet over: the binding has no say, the picture stays as taken.
+        XCTAssertTrue(backs.allSatisfy { redOnTheLeft($0) && $0.rotationQuarterTurns == 0 })
+        let fronts: [ScannedPage] = DocumentSides.markCamera(pages, side: .front)
+        XCTAssertTrue(fronts.allSatisfy { $0.side == .front && redOnTheLeft($0) })
+        XCTAssertTrue(pages.allSatisfy { $0.side == nil })
+    }
+
     func test_markManual_aSpooledBackTurnsItsPreviewNowAndItsFileWhenSaved() throws {
         let url = URL(fileURLWithPath: "/tmp/page.tiff")
         let back = try XCTUnwrap(DocumentSides.markManual([twoPixelPage(fileURL: url)], side: .back,

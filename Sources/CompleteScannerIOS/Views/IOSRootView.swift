@@ -3,8 +3,8 @@ import CompleteScannerKit
 import QuickLook
 import SwiftUI
 
-/// The app's window: the task start screen, the scan screen pushed over it, the share sheet and the
-/// Quick Look preview the file actions ask for, the corner editor of an imported photo, the troubleshooter,
+/// The app's window: the task start screen, the scan screen pushed over it, the share sheet, Mail's
+/// composer and the Quick Look preview the file actions ask for, the corner editor of an imported photo, the troubleshooter,
 /// the question about a network scanner's changed certificate, and the error alert (with Troubleshoot
 /// when it is about a scanner). Photos and PDFs opened in this app from another one ("Open in
 /// CompleteScanner") are imported: into the task set up when it takes photos (`IOSShell.takesPhotos`), else
@@ -14,21 +14,21 @@ public struct IOSRootView: View {
     @EnvironmentObject private var state: AppState
     @ObservedObject private var fileActions: IOSFileActions
     @ObservedObject private var importer: IOSImportSession
-    private let launchImport: IOSImportItem?
+    private let launchImports: [IOSImportItem]
     private let launchTask: ScanTask?
     private let picker: IOSScannerPickerModel
     @State private var showsScanner: Bool = false
     @State private var started: Bool = false
 
-    /// `importer` brings photos and PDFs in for the state the view is given; `launchImport` is the photo
-    /// imported at launch (`IOSLaunchOptions`), nil for none, into `launchTask` when given; `picker` lists the
+    /// `importer` brings photos and PDFs in for the state the view is given; `launchImports` are the files
+    /// imported at launch (`IOSLaunchOptions`), in order, into `launchTask` when given; `picker` lists the
     /// scanners (with the network scanners, unless the app was launched with the demo scanner alone).
     public init(fileActions: IOSFileActions, importer: IOSImportSession, picker: IOSScannerPickerModel,
-                launchImport: IOSImportItem? = nil, launchTask: ScanTask? = nil) {
+                launchImports: [IOSImportItem] = [], launchTask: ScanTask? = nil) {
         _fileActions = ObservedObject(wrappedValue: fileActions)
         _importer = ObservedObject(wrappedValue: importer)
         self.picker = picker
-        self.launchImport = launchImport
+        self.launchImports = launchImports
         self.launchTask = launchTask
     }
 
@@ -54,6 +54,9 @@ public struct IOSRootView: View {
         }
         .sheet(item: $fileActions.shareRequest) { (request: ShareRequest) in
             ActivityView(items: request.urls, onDone: closeShareSheet)
+        }
+        .background {
+            MailSheet(fileActions: fileActions)
         }
         .fullScreenCover(item: cornerRequest) { (request: PhotoCornersRequest) in
             CornerEditorView(request: request, onAnswer: answerCorners, onStop: stopImport)
@@ -112,12 +115,13 @@ public struct IOSRootView: View {
         guard !started else { return }
         started = true
         state.start()
-        if let item = launchImport {
+        if !launchImports.isEmpty {
+            let items: [IOSImportItem] = launchImports
             let pushed: Bool = prepareForImport(launchTask)
             let session: IOSImportSession = importer
             Task { @MainActor in
                 await IOSRootView.settle(pushed)
-                await session.importItems([item])
+                await session.importItems(items)
             }
         }
     }
@@ -153,6 +157,28 @@ public struct IOSRootView: View {
         if pushed {
             try? await Task.sleep(nanoseconds: 700_000_000)
         }
+    }
+}
+
+/// Mail's composer for the files the Email task saved (`IOSFileActions.mailRequest`), in a sheet of its own
+/// beside the share sheet's.
+private struct MailSheet: View {
+    @ObservedObject var fileActions: IOSFileActions
+
+    var body: some View {
+        Color.clear
+            .sheet(item: $fileActions.mailRequest) { (request: MailRequest) in
+                #if canImport(MessageUI)
+                MailComposeView(request: request, onDone: close)
+                    .ignoresSafeArea()
+                #else
+                ActivityView(items: request.urls, onDone: close)
+                #endif
+            }
+    }
+
+    private func close() {
+        fileActions.mailRequest = nil
     }
 }
 

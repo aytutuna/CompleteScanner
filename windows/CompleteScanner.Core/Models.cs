@@ -668,6 +668,20 @@ public sealed class TaskOptions : IEquatable<TaskOptions>
     /// </summary>
     public int BookRotationQuarterTurns { get; set; } = 0;
 
+    /// <summary>
+    /// The iPhone's camera takes both sides of each sheet for the two-sided task as all the fronts
+    /// first, then all the backs. Off: "Flip &amp; capture", each front followed by its back. The
+    /// Windows app keeps it as it is.
+    /// </summary>
+    public bool CameraFrontsFirst { get; set; } = false;
+
+    /// <summary>
+    /// The iPhone's camera takes a book as whole spreads, each cut at its spine
+    /// (<see cref="PageProcessor.SplitsCameraSpreads"/>). Off: page by page, one page a shot. The
+    /// Windows app keeps it as it is.
+    /// </summary>
+    public bool CameraSpreads { get; set; } = false;
+
     public TaskOptions Clone() => (TaskOptions)MemberwiseClone();
 
     public bool Equals(TaskOptions? other) =>
@@ -675,7 +689,8 @@ public sealed class TaskOptions : IEquatable<TaskOptions>
         && CopyCount == other.CopyCount && CopyFitToPage == other.CopyFitToPage
         && CopyPrinterName == other.CopyPrinterName && CopyAlsoSavePdf == other.CopyAlsoSavePdf
         && ReceiptNameByDate == other.ReceiptNameByDate && ReceiptCombine == other.ReceiptCombine
-        && BookRightToLeft == other.BookRightToLeft && BookRotationQuarterTurns == other.BookRotationQuarterTurns;
+        && BookRightToLeft == other.BookRightToLeft && BookRotationQuarterTurns == other.BookRotationQuarterTurns
+        && CameraFrontsFirst == other.CameraFrontsFirst && CameraSpreads == other.CameraSpreads;
     public override bool Equals(object? obj) => Equals(obj as TaskOptions);
     public override int GetHashCode()
     {
@@ -690,6 +705,8 @@ public sealed class TaskOptions : IEquatable<TaskOptions>
         hash.Add(ReceiptCombine);
         hash.Add(BookRightToLeft);
         hash.Add(BookRotationQuarterTurns);
+        hash.Add(CameraFrontsFirst);
+        hash.Add(CameraSpreads);
         return hash.ToHashCode();
     }
 }

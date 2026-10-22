@@ -38,12 +38,15 @@ final class IOSFileActionsTests: XCTestCase {
         pasteboard = nil
     }
 
+    /// File actions with a pasteboard of their own, on a device where Mail is set up (`mail`) or not.
     @MainActor
-    private func makeActions(_ opened: OpenedAddresses) -> IOSFileActions {
+    private func makeActions(_ opened: OpenedAddresses, mail: Bool = false) -> IOSFileActions {
         let own: UIPasteboard = UIPasteboard.withUniqueName()
         pasteboard = own
         return IOSFileActions(pasteboard: own, openSystemURL: { (url: URL) -> Void in
             opened.urls.append(url)
+        }, mailAvailable: { () -> Bool in
+            mail
         })
     }
 
@@ -81,6 +84,30 @@ final class IOSFileActionsTests: XCTestCase {
         try actions.composeEmail([scan])
         XCTAssertEqual(actions.shareRequest?.urls, [scan])
         XCTAssertEqual(actions.shareRequest?.title, SaveActions.shareTitle([scan]))
+    }
+
+    @MainActor
+    func test_email_withMailSetUp_composesAMessage_withTheFilesAttached() throws {
+        let actions = makeActions(OpenedAddresses(), mail: true)
+        let first = try file("Scan 1.pdf")
+        let second = try file("Scan 2.pdf")
+        let probe: SendProbe = actions.sendProbe(for: [first])
+        XCTAssertEqual(probe, SendProbe(canCompose: true, canShare: true))
+        XCTAssertEqual(SaveActions.emailRoute(probe), SendRoute.compose)
+        try actions.composeEmail([first, second])
+        XCTAssertEqual(actions.mailRequest?.urls, [first, second])
+        XCTAssertEqual(actions.mailRequest?.subject, "2 files")
+        XCTAssertNil(actions.shareRequest)
+        // Share still opens the share sheet.
+        try actions.share([first], title: first.lastPathComponent)
+        XCTAssertEqual(actions.shareRequest?.urls, [first])
+        // The attachments as the composer adds them: each file's bytes and type.
+        let attachments: [MailAttachment] = MailAttachment.of([first])
+        XCTAssertEqual(attachments.count, 1)
+        XCTAssertEqual(attachments.first?.mimeType, "application/pdf")
+        XCTAssertEqual(attachments.first?.fileName, "Scan 1.pdf")
+        XCTAssertEqual(attachments.first?.data, try Data(contentsOf: first))
+        XCTAssertTrue(MailAttachment.of([folder.appendingPathComponent("gone.pdf")]).isEmpty)
     }
 
     @MainActor

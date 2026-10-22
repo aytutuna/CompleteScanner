@@ -101,15 +101,73 @@ final class IOSShellTests: XCTestCase {
         }
     }
 
+    // MARK: The step card
+
+    func test_stepCard_speaksOfTheCamera_unlessANetworkScannerIsInUse() {
+        let network: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
+        let demo: ScannerInfo = ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true, backend: "mock")
+        XCTAssertTrue(IOSShell.usesNetworkScanner(network))
+        XCTAssertFalse(IOSShell.usesNetworkScanner(demo))
+        XCTAssertFalse(IOSShell.usesNetworkScanner(nil))
+        let options = TaskOptions()
+        let tasks: [ScanTask] = [.document, .feeder, .quickScan, .email, .twoSided, .word, .batch, .book, .archive]
+        for task in tasks {
+            let camera: CameraStepText = CameraTaskCatalog.text(task, options: options)
+            for device in [nil, demo] as [ScannerInfo?] {
+                XCTAssertEqual(IOSShell.cameraLine(task, options: options, sides: nil, newDocument: false,
+                                                   turningOverByHand: false, device: device), camera, task.rawValue)
+            }
+            XCTAssertNil(IOSShell.cameraLine(task, options: options, sides: nil, newDocument: false,
+                                             turningOverByHand: false, device: network), task.rawValue)
+        }
+        // The ID card's steps say which side is next; a stack turned over by hand has its own steps.
+        XCTAssertNil(IOSShell.cameraLine(.idCard, options: options, sides: nil, newDocument: false,
+                                         turningOverByHand: false, device: nil))
+        XCTAssertNil(IOSShell.cameraLine(.twoSided, options: options, sides: nil, newDocument: false,
+                                         turningOverByHand: true, device: nil))
+        XCTAssertNil(IOSShell.cameraLine(nil, options: options, sides: nil, newDocument: false,
+                                         turningOverByHand: false, device: nil))
+        // With a network scanner, a back due or a new document pending is still said.
+        var flip = CameraSides(mode: .flip)
+        flip.took([UUID()])
+        XCTAssertEqual(IOSShell.cameraLine(.twoSided, options: options, sides: flip, newDocument: false,
+                                           turningOverByHand: false, device: network)?.prompt,
+                       CameraTaskCatalog.turnOverPrompt)
+        XCTAssertEqual(IOSShell.cameraLine(.batch, options: options, sides: nil, newDocument: true,
+                                           turningOverByHand: false, device: network)?.prompt,
+                       CameraTaskCatalog.newDocumentPrompt)
+    }
+
+    func test_rightToLeft_isShownWhileTheSourceInUseCutsSpreads() {
+        let network: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
+        let demo: ScannerInfo = ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true, backend: "mock")
+        var book: ScanSettings = TaskCatalog.apply(.book, to: ScanSettings())
+        book.source = .flatbed
+        XCTAssertTrue(PageProcessor.splitsFacingPages(book))
+        // Page by page: the camera takes one page a shot, but a network scanner's spreads are still cut.
+        book.taskOptions.cameraSpreads = false
+        XCTAssertTrue(IOSShell.showsRightToLeft(book, device: network))
+        XCTAssertFalse(IOSShell.showsRightToLeft(book, device: demo))
+        XCTAssertFalse(IOSShell.showsRightToLeft(book, device: nil))
+        book.taskOptions.cameraSpreads = true
+        for device in [nil, demo, network] as [ScannerInfo?] {
+            XCTAssertTrue(IOSShell.showsRightToLeft(book, device: device))
+        }
+        // Nothing is cut once facing pages aren't split.
+        book.document.splitFacingPages = false
+        XCTAssertFalse(IOSShell.showsRightToLeft(book, device: network))
+        XCTAssertFalse(IOSShell.showsRightToLeft(book, device: nil))
+    }
+
     // MARK: Start screen
 
-    func test_offeredTasks_areTheCollectedDocumentTasks_photosReceiptsAndTheIdCard() {
+    func test_offeredTasks_areEveryTaskButThePhotocopy() {
         var offered: [ScanTask] = []
         for task in ScanTask.allCases where IOSShell.offers(task) {
             offered.append(task)
         }
-        XCTAssertEqual(offered, [.document, .feeder, .photos, .photoRestore, .email, .twoSided, .idCard, .word, .receipt,
-                                 .batch, .book])
+        XCTAssertEqual(offered, [.document, .feeder, .photos, .photoRestore, .quickScan, .email, .twoSided, .idCard, .word,
+                                 .receipt, .batch, .book, .archive])
     }
 
     func test_groups_followTheCatalogsSections_withEveryTaskOnce() {
@@ -152,10 +210,12 @@ final class IOSShellTests: XCTestCase {
         XCTAssertEqual(document.subtitle, TaskCatalog.definition(.document).subtitle)
         XCTAssertEqual(document.symbol, "doc.text")
         XCTAssertTrue(document.availability.isAvailable)
-        for task in [ScanTask.quickScan, .copy, .archive] {
+        let copy: IOSTaskTile = try XCTUnwrap(tiles[.copy])
+        XCTAssertFalse(copy.availability.isAvailable)
+        XCTAssertEqual(copy.availability.reason, IOSShell.notYetReason)
+        for task in [ScanTask.quickScan, .archive, .twoSided, .batch, .book, .email] {
             let tile: IOSTaskTile = try XCTUnwrap(tiles[task])
-            XCTAssertFalse(tile.availability.isAvailable, task.rawValue)
-            XCTAssertEqual(tile.availability.reason, IOSShell.notYetReason, task.rawValue)
+            XCTAssertTrue(tile.availability.isAvailable, task.rawValue)
         }
     }
 

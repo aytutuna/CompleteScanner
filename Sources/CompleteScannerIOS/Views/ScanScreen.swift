@@ -5,14 +5,15 @@ import SwiftUI
 import UIKit
 
 /// The full-screen covers the scan screen opens: Apple's document scanner, our own camera, the flatbed
-/// preview to choose the scan area on, and (I13) the photo or receipt review and the ID card's review,
-/// which take the camera's place when they open.
+/// preview to choose the scan area on, (I13) the photo or receipt review and the ID card's review, and
+/// (I14) Quick scan's page, which take the camera's place when they open.
 enum ScanCover: String, Identifiable {
     case scanner
     case camera
     case crop
     case photoReview
     case idCardReview
+    case quickScan
 
     var id: String { rawValue }
 }
@@ -24,7 +25,10 @@ enum ScanCover: String, Identifiable {
 /// opens Apple's document scanner. The scanner row opens the scanner picker as a sheet on iPhone; on iPad
 /// the picker is a sidebar beside the screen. The screen stays awake while a network scanner's job runs.
 /// Save is shown for the tasks that collect pages; photos and receipts open the photo review once found
-/// and the ID card its review once its sides are in, each full screen (in place of the camera).
+/// and the ID card its review once its sides are in, each full screen (in place of the camera). Since I14:
+/// the camera's buttons between shots (No back, Now the backs, New document), how the two-sided task and
+/// a book are taken, Separate documents' separator sheets, the PDF's size, Archive and Password, a book
+/// page's spread split again (`SpreadSplitSheet`), and Quick scan's page full screen once taken.
 struct ScanScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -34,6 +38,7 @@ struct ScanScreen: View {
     @State private var cover: ScanCover?
     @State private var scanner: IOSCameraAvailability = .noCamera
     @State private var showsPicker: Bool = false
+    @State private var spreadEditor: SpreadEditorSource?
 
     var body: some View {
         Group {
@@ -58,6 +63,8 @@ struct ScanScreen: View {
                 cover = .photoReview
             } else if state.showIdCardReview {
                 cover = .idCardReview
+            } else if state.quickScanPage != nil {
+                cover = .quickScan
             }
         }
         .onChange(of: state.showPhotoReview) { (_: Bool, shown: Bool) in
@@ -65,6 +72,9 @@ struct ScanScreen: View {
         }
         .onChange(of: state.showIdCardReview) { (_: Bool, shown: Bool) in
             showReview(shown, as: .idCardReview)
+        }
+        .onChange(of: state.quickScanPage != nil) { (_: Bool, shown: Bool) in
+            showReview(shown, as: .quickScan)
         }
         .onChange(of: state.isBusy) { (_: Bool, busy: Bool) in
             keepAwake(busy)
@@ -74,6 +84,10 @@ struct ScanScreen: View {
         }
         .sheet(isPresented: $showsPicker) {
             ScannerPickerSheet(picker: picker, onClose: closePicker)
+                .environmentObject(state)
+        }
+        .sheet(item: $spreadEditor) { (source: SpreadEditorSource) in
+            SpreadSplitSheet(source: source, onClose: closeSpreadEditor)
                 .environmentObject(state)
         }
         .fullScreenCover(item: $cover) { (shown: ScanCover) in
@@ -94,6 +108,9 @@ struct ScanScreen: View {
             case .idCardReview:
                 IdCardReviewScreen(model: IOSPhotoReviewModel(state: state))
                     .environmentObject(state)
+            case .quickScan:
+                QuickScanScreen(model: IOSQuickScanModel(state: state))
+                    .environmentObject(state)
             }
         }
     }
@@ -103,17 +120,29 @@ struct ScanScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     stepCard
+                    TaskWayPicker()
                     CaptureBar(offersScanner: IOSShell.offersCamera(state.activeTask), scanner: scanner,
                                onScanner: openScanner, offersCamera: IOSShell.offersOwnCamera(state.settings),
                                onCamera: openOwnCamera)
+                    CameraTaskButtons()
+                    if let mismatch = state.sidesMismatch, state.cameraSides != nil {
+                        Label(mismatch, systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(Color.orange)
+                            .accessibilityIdentifier("task.mismatch")
+                    }
+                    SeparatorSheetRow()
                     scannerRow
                     PreviewArea(image: state.canvasImage, overview: state.overviewImage, onChooseArea: openCrop)
                     previewControls
+                    if IOSShell.offersPDFOptions(state.settings) {
+                        PDFOptionsSection()
+                    }
                 }
                 .padding(16)
             }
             Divider()
-            PageStripView()
+            PageStripView(onEditSpread: openSpreadEditor)
             Divider()
             bottomBar
         }
@@ -170,6 +199,20 @@ struct ScanScreen: View {
         }
     }
 
+    // MARK: A book's spread
+
+    /// The split sheet for the spread the page was cut from, once its picture is read.
+    private func openSpreadEditor(_ pageID: UUID) {
+        let appState: AppState = state
+        Task { @MainActor in
+            spreadEditor = await appState.spreadEditor(for: pageID)
+        }
+    }
+
+    private func closeSpreadEditor() {
+        spreadEditor = nil
+    }
+
     // MARK: The scan area
 
     /// The flatbed preview full screen, to choose the scan area on (`CropScreen`).
@@ -196,17 +239,18 @@ struct ScanScreen: View {
         state.errorMessage = message
     }
 
-    /// The current step's one-line prompt, with its fuller help below; the back of an ID card offers
-    /// "No back side".
+    /// The current step's one-line prompt, with its fuller help below (the camera's line in its place,
+    /// `IOSShell.cameraLine`); the back of an ID card offers "No back side".
     @ViewBuilder
     private var stepCard: some View {
         if let step = state.taskFlow?.current {
+            let camera: CameraStepText? = cameraLine
             VStack(alignment: .leading, spacing: 8) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(step.prompt)
+                    Text(camera?.prompt ?? step.prompt)
                         .font(.body)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(step.help)
+                    Text(camera?.help ?? step.help)
                         .font(.footnote)
                         .foregroundStyle(Color.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -223,6 +267,12 @@ struct ScanScreen: View {
                 }
             }
         }
+    }
+
+    private var cameraLine: CameraStepText? {
+        IOSShell.cameraLine(state.activeTask, options: state.settings.taskOptions, sides: state.cameraSides,
+                            newDocument: state.newDocumentPending, turningOverByHand: state.isTurningOverByHand,
+                            device: selectedDevice)
     }
 
     /// The scanner in use, with how it is reached; on iPhone it opens the scanner picker.
@@ -310,9 +360,12 @@ struct ScanScreen: View {
     }
 
     private var deviceName: String {
+        selectedDevice?.name ?? "No scanner"
+    }
+
+    private var selectedDevice: ScannerInfo? {
         let selected: String? = state.selectedDeviceID
-        let device: ScannerInfo? = state.devices.first(where: { (info: ScannerInfo) -> Bool in info.id == selected })
-        return device?.name ?? "No scanner"
+        return state.devices.first(where: { (info: ScannerInfo) -> Bool in info.id == selected })
     }
 
     /// Scan once the scanner is connected and nothing else runs.

@@ -20,7 +20,11 @@ import UIKit
 /// interrupted), one short line says why. For photos and receipts (I13) the objects of each shot go to the
 /// photo review, which takes the camera's place; for the ID card a guide frame of the card's shape asks for
 /// the front, then the back (with No back side), the glare hint follows a side taken with glare on it, and
-/// the card's review takes the camera's place once the sides are in.
+/// the card's review takes the camera's place once the sides are in. Since I14 the task's camera line
+/// (`CameraTaskCatalog`: what to point at, "Turn the sheet over and take its back." while a back is due,
+/// "The next page starts a new document." after New document) shows under the top bar, with the task's
+/// buttons between shots (No back, Now the backs, New document, `CameraTaskButtons`) over the shutter;
+/// Quick scan's page takes the camera's place once taken.
 struct CameraScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -101,9 +105,23 @@ struct CameraScreen: View {
             }
             VStack(spacing: 0) {
                 topBar
+                if model.message == nil, cardPrompt == nil, let line = taskLine {
+                    Text(line.prompt)
+                        .font(.headline)
+                        .foregroundStyle(Color.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(Color.black.opacity(0.6)))
+                        .padding(.top, 10)
+                        .accessibilityHint(Text(line.help))
+                        .accessibilityIdentifier("camera.prompt")
+                }
                 Spacer(minLength: 0)
                 notice
                 Spacer(minLength: 0)
+                CameraTaskButtons(onDark: true)
+                    .padding(.bottom, 12)
                 if state.canSkipStep {
                     Button(IdCardSteps.skipBackLabel) {
                         state.skipStep()
@@ -221,6 +239,12 @@ struct CameraScreen: View {
                 .background(Capsule().fill(Color.black.opacity(0.6)))
                 .accessibilityIdentifier("camera.wait")
         }
+    }
+
+    /// The task's camera line now (`CameraTaskCatalog.current`); nil without a task.
+    private var taskLine: CameraStepText? {
+        CameraTaskCatalog.current(state.activeTask, options: state.settings.taskOptions, sides: state.cameraSides,
+                                  newDocument: state.newDocumentPending)
     }
 
     /// The ID card's guide frame's line: the side to take ("Fit the front in the frame"); nil for other tasks.

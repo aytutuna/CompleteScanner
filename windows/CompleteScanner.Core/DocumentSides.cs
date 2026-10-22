@@ -240,6 +240,15 @@ public static class DocumentSides
         return pages.Select(page => Mark(page, side, null, turns)).ToList();
     }
 
+    /// <summary>
+    /// The pages a camera took of one side of their sheets, marked as that side; the sheet a page was
+    /// given already is kept. Never turned for a binding: the user turned the sheet over by hand, either
+    /// way round, and turning pages upright (<see cref="OrientationStep"/>) fixes a back that came out
+    /// upside down. Only the iPhone takes such pages.
+    /// </summary>
+    public static List<ScannedPage> MarkCamera(IReadOnlyList<ScannedPage> pages, PageSide side) =>
+        pages.Select(page => page.WithSide(side, page.SheetIndex)).ToList();
+
     private static ScannedPage Mark(ScannedPage page, PageSide side, int? sheet, int turns)
     {
         var marked = page.WithSide(side, sheet);

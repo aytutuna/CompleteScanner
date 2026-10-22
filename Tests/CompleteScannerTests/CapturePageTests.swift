@@ -27,6 +27,48 @@ private func captured(_ photo: CGImage, _ capture: CaptureFacts) -> ScannedPage 
     ScannedPage(image: photo, dpi: 72, colorMode: .color).withCapture(capture)
 }
 
+/// A sheet photographed square on, and its outline in the photo (`CameraSheets.squareOnATable`).
+struct TablePhoto {
+    let photo: RgbaImage
+    let quad: Quad
+}
+
+/// Sheets as the camera takes them, for the camera's clean-up stage. Twin of C#
+/// `CapturePageTests.SquareOnATable`.
+enum CameraSheets {
+    /// `sheet` photographed square on, on a dark table with `margin` px of table round it.
+    static func squareOnATable(_ sheet: RgbaImage, margin: Int = 60) -> TablePhoto {
+        let w: Int = sheet.width + 2 * margin
+        let h: Int = sheet.height + 2 * margin
+        var pixels: [UInt8] = [UInt8](repeating: 0, count: w * h * 4)
+        for y in 0..<h {
+            for x in 0..<w {
+                let i: Int = (y * w + x) * 4
+                let sx: Int = x - margin
+                let sy: Int = y - margin
+                if sx >= 0 && sx < sheet.width && sy >= 0 && sy < sheet.height {
+                    let j: Int = (sy * sheet.width + sx) * 4
+                    pixels[i] = sheet.pixels[j]
+                    pixels[i + 1] = sheet.pixels[j + 1]
+                    pixels[i + 2] = sheet.pixels[j + 2]
+                } else {
+                    pixels[i] = 52
+                    pixels[i + 1] = 40
+                    pixels[i + 2] = 34
+                }
+                pixels[i + 3] = 255
+            }
+        }
+        let left: Double = Double(margin)
+        let top: Double = Double(margin)
+        let right: Double = Double(margin + sheet.width)
+        let bottom: Double = Double(margin + sheet.height)
+        let quad = Quad(topLeft: CGPoint(x: left, y: top), topRight: CGPoint(x: right, y: top),
+                        bottomRight: CGPoint(x: right, y: bottom), bottomLeft: CGPoint(x: left, y: bottom))
+        return TablePhoto(photo: RgbaImage(width: w, height: h, pixels: pixels), quad: quad)
+    }
+}
+
 final class CapturePageTests: XCTestCase {
     func testPerspectiveStepCutsTheSheetOutAtItsRealSize() throws {
         let photoPixels = WarpFixtures.photo(640, 480)
@@ -239,6 +281,112 @@ final class CapturePageTests: XCTestCase {
         XCTAssertEqual(processed.colorMode, .grayscale)
         XCTAssertNotNil(processed.capture?.scale)
         XCTAssertEqual(processed.capture?.enhancement, .gray)
+    }
+
+    func testForCaptureCutsAWholeSpreadOutOfItsPhotoThenSplitsItAtItsSpine() throws {
+        var s = TaskCatalog.apply(.book, to: ScanSettings())
+        // Page by page, the phone's default: each shot is one page, as any camera page.
+        XCTAssertFalse(PageProcessor.splitsCameraSpreads(s))
+        let single = PageProcessor.forCapture(s)
+        XCTAssertNil(single.book)
+        XCTAssertTrue(single.prepare.isEmpty)
+        XCTAssertEqual(single.steps.map(\.name), ["perspective", "enhance", "blank", "separator"])
+
+        s.taskOptions.cameraSpreads = true
+        XCTAssertTrue(PageProcessor.splitsCameraSpreads(s))
+        let processor = PageProcessor.forCapture(s)
+        XCTAssertEqual(processor.prepare.map(\.name), ["perspective", "enhance"])
+        XCTAssertEqual((processor.prepare.first as? PerspectiveStep)?.spread, true)
+        XCTAssertEqual((single.steps.first as? PerspectiveStep)?.spread, false)
+        XCTAssertEqual(processor.steps.map(\.name), ["blank", "spineShadow", "separator"])
+        XCTAssertEqual(processor.book, BookSplitOptions.of(s))
+        // Not for another task, nor for a scan.
+        var document = TaskCatalog.apply(.document, to: ScanSettings())
+        document.taskOptions.cameraSpreads = true
+        XCTAssertFalse(PageProcessor.splitsCameraSpreads(document))
+        XCTAssertTrue(PageProcessor.forScan(s).prepare.isEmpty)
+
+        // The open book as the camera takes it: TestPages.shadowSpread (1100 × 850, its spine at x = 572).
+        let table: TablePhoto = CameraSheets.squareOnATable(TestPages.shadowSpread().toRgba())
+        var page = captured(image(table.photo),
+                            CaptureFacts(quad: table.quad, sourceWidth: table.photo.width, sourceHeight: table.photo.height))
+        page.source = .photo
+        let result = try processor.process([page])
+        // The spread as cut out of the photo is what is kept to split it again by hand: at its own pixels,
+        // matched against no sheet.
+        XCTAssertEqual(result.spreads.count, 1)
+        let spread = try XCTUnwrap(result.spreads.first)
+        XCTAssertEqual(spread.id, page.id)
+        XCTAssertEqual(spread.geometry?.basis, .perspective)
+        XCTAssertEqual(spread.capture?.scale?.basis, .nominal)
+        XCTAssertEqual(spread.image.width, 1100)
+        XCTAssertEqual(spread.image.height, 850)
+        XCTAssertEqual(spread.dpi, CaptureScale.nominalDPI)
+        XCTAssertEqual(result.pages.count, 2)
+        XCTAssertTrue(result.pages.allSatisfy { $0.spreadID == page.id })
+        XCTAssertEqual(result.pages.map { $0.spread?.isLeft }, [true, false])
+        // Cut at the spine: the left page ends near x = 572.
+        XCTAssertEqual(result.pages[0].spread?.gutter?.axis, .vertical)
+        XCTAssertGreaterThanOrEqual(result.pages[0].image.width, 540)
+        XCTAssertLessThanOrEqual(result.pages[0].image.width, 600)
+        XCTAssertTrue(result.pages.allSatisfy { $0.dpi == CaptureScale.nominalDPI })
+        // Each page keeps where it came from and what the camera recorded.
+        XCTAssertTrue(result.pages.allSatisfy { $0.source == .photo })
+        XCTAssertTrue(result.pages.allSatisfy { $0.capture == spread.capture })
+
+        // A book read from right to left: its right page comes first.
+        s.taskOptions.bookRightToLeft = true
+        let rtl = try PageProcessor.forCapture(s).process([page]).pages
+        XCTAssertEqual(rtl.map { $0.spread?.isLeft }, [false, true])
+    }
+
+    func testForCaptureAWholeSpreadKeepsItsPixelsNotASingleSheetsSize() throws {
+        var s = TaskCatalog.apply(.book, to: ScanSettings())
+        s.taskOptions.cameraSpreads = true
+        // A Letter book's 17 × 11 in spread has nearly an ID card's shape; an A4 book's spread is A3, A4's shape.
+        let cases: [(width: Int, height: Int, lookalike: PaperSize)] = [(1700, 1100, .idCard), (1414, 1000, .a4)]
+        for (width, height, lookalike) in cases {
+            let sheet: RgbaImage = TestPages.spread(width / 2, innerMargin: 20, outerMargin: 80, shadowDepth: 250,
+                                                    shadowRadius: 17, seed: 0xB00C_0011, width: width, height: height).toRgba()
+            let table: TablePhoto = CameraSheets.squareOnATable(sheet)
+            // As one page, the spread would snap to a sheet it only looks like.
+            XCTAssertEqual(CaptureScale.match(Double(width) / Double(height), candidates: CaptureScale.papers)?.paper, lookalike)
+
+            let page = captured(image(table.photo),
+                                CaptureFacts(quad: table.quad, sourceWidth: table.photo.width, sourceHeight: table.photo.height))
+            let result = try PageProcessor.forCapture(s).process([page])
+            let spread = try XCTUnwrap(result.spreads.first)
+            XCTAssertEqual(spread.capture?.scale?.basis, .nominal)
+            XCTAssertEqual(spread.image.width, width)
+            XCTAssertEqual(spread.image.height, height)
+            XCTAssertEqual(spread.dpi, CaptureScale.nominalDPI)
+            XCTAssertEqual(result.pages.count, 2)
+            for half in result.pages {
+                XCTAssertEqual(half.image.height, height)
+                XCTAssertGreaterThanOrEqual(half.image.width, width / 2 - 60)
+                XCTAssertLessThanOrEqual(half.image.width, width / 2 + 60)
+                XCTAssertEqual(half.dpi, CaptureScale.nominalDPI)
+            }
+        }
+    }
+
+    func testForCaptureThePagesOfASpreadMadeGrayStayGrayInAColorTask() throws {
+        var s = TaskCatalog.apply(.book, to: ScanSettings())
+        s.taskOptions.cameraSpreads = true
+        s.colorMode = .color
+        s.adjustments.brightness = 0.1
+        let processor = PageProcessor.forCapture(s)
+        XCTAssertEqual(processor.steps.last?.name, "adjust")
+        let table: TablePhoto = CameraSheets.squareOnATable(TestPages.shadowSpread().toRgba())
+        let page = captured(image(table.photo),
+                            CaptureFacts(quad: table.quad, sourceWidth: table.photo.width, sourceHeight: table.photo.height))
+        let result = try processor.process([page])
+        XCTAssertEqual(result.spreads.first?.capture?.enhancement, .gray)
+        XCTAssertEqual(result.pages.count, 2)
+        for half in result.pages {
+            XCTAssertEqual(half.capture?.enhancement, .gray)
+            XCTAssertEqual(half.colorMode, .grayscale)
+        }
     }
 
     func testAdjustmentsKeepACameraPageWithoutColorGrayInAColorTask() throws {

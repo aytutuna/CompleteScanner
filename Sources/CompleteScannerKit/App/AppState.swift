@@ -84,6 +84,8 @@ struct PageIntake {
     var askedBothSides = false
     /// The side of a stack turned over by hand the pages are; nil otherwise.
     var manualSide: PageSide?
+    /// The side of a sheet the camera's pages are in the two-sided task (`AppState.cameraSides`); nil otherwise.
+    var cameraSide: PageSide?
     /// The side of the ID card the pages are; nil outside the ID card task.
     var cardSide: PageSide?
     /// The part of the glass scanned (normalized, origin top left); nil for the whole glass or the feeder.
@@ -122,6 +124,7 @@ public final class AppState: ObservableObject {
             // the task's source) ends; its steps follow the task (AppState+Tasks.swift).
             if let task = settings.task, !TaskCatalog.fits(task, settings) { settings.taskId = nil }
             syncTaskFlow()
+            syncCameraSides()
             // A named document whose first page the settings now leave out keeps its name.
             if settings.document != oldValue.document { carryDocumentLabels(settingsBefore: oldValue.document) }
             // Split at barcode or QR sheets just chosen (by hand or with a preset, or document pages
@@ -288,6 +291,14 @@ public final class AppState: ObservableObject {
     /// nil otherwise. The user scans the backs again, combines the pages as they are, or keeps
     /// the fronts only.
     @Published public internal(set) var sidesMismatch: String?
+    /// The camera takes both sides of each sheet in the two-sided task: the side the next shot is, and the
+    /// fronts and backs taken (AppState+CameraTasks.swift); nil for the other tasks.
+    @Published public internal(set) var cameraSides: CameraSides?
+    /// Separate documents: the next page taken starts a new document (`startNewDocument`).
+    @Published public internal(set) var newDocumentPending = false
+    /// Quick scan on the camera: the page taken, held until it is saved as a picture, its text copied, or
+    /// discarded (AppState+CameraTasks.swift); nil otherwise.
+    @Published public internal(set) var quickScanPage: ScannedPage?
     /// Whether the connected scanner's feeder scans both sides is known: ImageCaptureCore reports it
     /// only once the feeder has been selected (`ScannerSession.feederSupportsDuplex`). Set once the
     /// scanner has answered; one that did not answer is asked again the next time.
@@ -420,6 +431,7 @@ public final class AppState: ObservableObject {
         self.qrEncoder = qrEncoder ?? CoreImageQrEncoder()
         self.presets = presetStore.load()
         syncTaskFlow()
+        syncCameraSides()
         // Clear page spill files left behind by a previous run.
         try? FileManager.default.removeItem(at: files.spoolDirectory)
         try? FileManager.default.createDirectory(at: files.spoolDirectory, withIntermediateDirectories: true)
@@ -889,6 +901,23 @@ public final class AppState: ObservableObject {
         }
         let copy = TaskCatalog.flow(of: settings) == .copy
         let s = settings
+        // The two-sided task's camera pages are the side its steps are at; flip & capture knows their sheet.
+        var incoming: [ScannedPage] = pages
+        var arrangement: ScanArrangement = .asScanned
+        var cameraSide: PageSide?
+        if source == .photo, s.documentMultiPage, let sides = cameraSides {
+            arrangement = sides.arrangement
+            cameraSide = sides.next
+            if let sheet = sides.sheetForNext {
+                incoming = []
+                for page in pages {
+                    incoming.append(page.withSide(nil, sheetIndex: sheet))
+                }
+            }
+        }
+        let marked: [ScannedPage] = incoming
+        let markedArrangement: ScanArrangement = arrangement
+        let markedSide: PageSide? = cameraSide
         runExclusive { flag in
             var copySetup: PrinterSetup?
             if copy {
@@ -900,7 +929,9 @@ public final class AppState: ObservableObject {
             var intake = PageIntake(settings: s, source: source, generation: nil)
             intake.cardSide = cardSide
             intake.copySetup = copySetup
-            _ = try await self.ingestPages(pages, intake: intake, flag: flag)
+            intake.arrangement = markedArrangement
+            intake.cameraSide = markedSide
+            _ = try await self.ingestPages(marked, intake: intake, flag: flag)
         }
         return true
     }
@@ -911,7 +942,7 @@ public final class AppState: ObservableObject {
     /// same rule as `canImportPhotos` without its settings check, and as the Windows
     /// `AppViewModel.CanTakePhonePages`.
     public var canIngest: Bool {
-        !isBusy && !isTurningOverByHand && !showPhotoReview && !showIdCardReview
+        !isBusy && !isTurningOverByHand && !showPhotoReview && !showIdCardReview && quickScanPage == nil
     }
 
     /// The clean-up stage for pages from `source`: a scan's (`PageProcessor.forScan`, arranged as
@@ -925,7 +956,7 @@ public final class AppState: ObservableObject {
         case .scanner:
             return PageProcessor.forScan(settings, arrangement: arrangement, scorer: scorer, barcodes: barcodes)
         case .photo:
-            return PageProcessor.forCapture(settings, scorer: scorer, barcodes: barcodes)
+            return PageProcessor.forCapture(settings, scorer: scorer, barcodes: barcodes, arrangement: arrangement)
         case .phone:
             return PageProcessor(steps: [], arrangement: arrangement, binding: settings.backBinding)
         }
@@ -1046,6 +1077,15 @@ public final class AppState: ObservableObject {
                 if PageProcessor.turnsPagesUpright(s) && !scorer.isAvailable {
                     self.statusMessage += PageTurns.unavailableNote
                 }
+                // The camera's two-sided steps and New document (AppState+CameraTasks.swift).
+                let added: [UUID] = spooled.map(\.id)
+                if let side = intake.cameraSide {
+                    self.afterCameraSide(side, ids: added)
+                }
+                self.applyNewDocument(to: added)
+            } else if Self.holdsQuickScan(s, source: source) {
+                self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
+                self.holdQuickScan(processed)
             } else {
                 self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
                 try await self.saveImmediately(processed, settings: s, flag: flag)
@@ -1430,6 +1470,7 @@ public final class AppState: ObservableObject {
             deleteSpoolFiles(of: [page])
         }
         scannedPages.removeAll { $0.id == id }
+        cameraPageRemoved(id)
     }
 
     public func movePage(id: UUID, by offset: Int) {
@@ -1848,7 +1889,14 @@ public final class AppState: ObservableObject {
     /// (never after a cancelled or failed one). A refusal is reported; the save stands.
     func runAfterSave(_ action: AfterSaveAction, saved: [URL]) {
         guard let step = SaveActions.plan(action, saved: saved) else { return }
-        runFileAction(step.fileAction, urls: step.urls)
+        runFileAction(Self.afterSaveFileAction(step.fileAction, task: settings.task, platform: platform), urls: step.urls)
+    }
+
+    /// The file action an after-save step runs: the iPhone's Email task sends what it shares by email (a
+    /// mail message when Mail is set up, the share sheet otherwise: `SaveActions.emailRoute`); everything
+    /// else as the step says. Nothing is sent until the user sends it.
+    nonisolated static func afterSaveFileAction(_ action: FileAction, task: ScanTask?, platform: TroubleshootPlatform) -> FileAction {
+        platform == .ios && task == .email && action == .share ? .email : action
     }
 
     /// The message of a refused file action, without ScanError's "Saving failed:" style prefix.
@@ -2103,6 +2151,11 @@ public final class AppState: ObservableObject {
             }
             self.statusMessage = TextExport.copiedMessage(pageNumber: index + 1, hasText: !text.isEmpty)
         }
+    }
+
+    /// Puts `text` on the pasteboard through the app shell's file actions (Quick scan's Copy text).
+    func copyTextToPasteboard(_ text: String) throws {
+        try fileActions.copyText(text)
     }
 
     func deleteSpoolFiles(of pages: [ScannedPage]) {

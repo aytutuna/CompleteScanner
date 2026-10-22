@@ -13,9 +13,16 @@ ObjectShots.printsOnTable in the unit tests (the FNV-1a of its RGBA bytes is pri
 pinned there), so the unit tests prove what the UI test relies on: the two prints are found, by Vision's
 rectangles or, where Vision finds none, by the photo search of the whole shot.
 
+two-sided (Fixtures/two-sided.pdf, the two-sided task's test): a PDF of two Letter pages, each a 60 dpi
+grey picture of printed lines (three blocks on the front, two on the back), so neither looks blank.
+
+batch (Fixtures/batch.pdf, the Separate documents test): a PDF of three Letter pages: printed lines, the
+Patch T separator sheet's bars as PatchCodeDetector.renderSheet draws them at 60 dpi (8.5 x 11 in; its
+words left out), and printed lines again.
+
 Only the standard library is used; the output is the same bytes on every run.
 
-Usage: python scripts/make_ios_ui_fixture.py <out.png> [document|photos]
+Usage: python scripts/make_ios_ui_fixture.py <out> [document|photos|two-sided|batch]
 """
 
 import math
@@ -163,6 +170,85 @@ def png(raw, width=WIDTH, height=HEIGHT):
             + chunk(b"IEND", b""))
 
 
+LETTER_DPI = 60
+LETTER_WIDTH, LETTER_HEIGHT = 510, 660
+
+
+def printed_page(blocks):
+    """A Letter page at 60 dpi, grey bytes row by row: lines of print, six to a block, the last one short."""
+    pixels = bytearray([247] * (LETTER_WIDTH * LETTER_HEIGHT))
+    for line in range(blocks * 6):
+        top = 60 + 60 * (line // 6) + 8 * (line % 6)
+        right = 60 + (240 if line % 6 == 5 else 390)
+        for y in range(top, top + 4):
+            for x in range(60, right):
+                pixels[y * LETTER_WIDTH + x] = 52
+    return bytes(pixels)
+
+
+def round_pixels(hundredths, dpi):
+    """PatchCodeDetector.roundPixels: hundredths of an inch at dpi, rounded half away from zero."""
+    return int(math.floor(hundredths * dpi / 100.0 + 0.5))
+
+
+def patch_t_sheet():
+    """The separator sheet's bars (Patch T: narrow, wide, narrow, wide) 1 in from the top, and again half a
+    turn round 1 in from the bottom, as PatchCodeDetector.renderSheet draws them; its words are left out."""
+    w, h, d = LETTER_WIDTH, LETTER_HEIGHT, LETTER_DPI
+    pixels = bytearray([255] * (w * h))
+    narrow, wide, gap = round_pixels(8, d), round_pixels(20, d), round_pixels(8, d)
+    margin = round_pixels(100, d)
+    length = min(round_pixels(600, d), w - 2 * round_pixels(50, d))
+    x0 = (w - length) // 2
+    bars = [False, True, False, True]
+
+    def fill(x, y, width, height):
+        for row in range(max(0, y), min(h, y + height)):
+            for column in range(max(0, x), min(w, x + width)):
+                pixels[row * w + column] = 0
+
+    y = margin
+    for is_wide in bars:
+        thickness = wide if is_wide else narrow
+        fill(x0, y, length, thickness)
+        y += thickness + gap
+    y = h - margin
+    for is_wide in bars:
+        thickness = wide if is_wide else narrow
+        fill(x0, y - thickness, length, thickness)
+        y -= thickness + gap
+    return bytes(pixels)
+
+
+def pdf(pages):
+    """A PDF of Letter pages, each one grey picture (8 bits, Flate) over the whole page."""
+    objects = [b"<< /Type /Catalog /Pages 2 0 R >>", None]
+    kids = []
+    for index, gray in enumerate(pages):
+        page_number = 3 + index * 3
+        kids.append("%d 0 R" % page_number)
+        image = zlib.compress(gray, 9)
+        content = b"q 612 0 0 792 0 0 cm /Im0 Do Q"
+        objects.append(("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im0 %d 0 R >> >>"
+                        " /Contents %d 0 R >>" % (page_number + 2, page_number + 1)).encode("ascii"))
+        objects.append(b"<< /Length %d >>\nstream\n" % len(content) + content + b"\nendstream")
+        objects.append(("<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceGray"
+                        " /BitsPerComponent 8 /Filter /FlateDecode /Length %d >>\nstream\n"
+                        % (LETTER_WIDTH, LETTER_HEIGHT, len(image))).encode("ascii") + image + b"\nendstream")
+    objects[1] = ("<< /Type /Pages /Kids [%s] /Count %d >>" % (" ".join(kids), len(pages))).encode("ascii")
+    out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % number + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    for offset in offsets:
+        out += b"%010d 00000 n \n" % offset
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (len(objects) + 1, xref)
+    return bytes(out)
+
+
 def main():
     if len(sys.argv) not in (2, 3):
         sys.exit(__doc__)
@@ -173,6 +259,10 @@ def main():
         print("photos fixture: FNV-1a of the RGBA bytes 0x%08X" % fnv)
     elif kind == "document":
         data = png(render())
+    elif kind == "two-sided":
+        data = pdf([printed_page(3), printed_page(2)])
+    elif kind == "batch":
+        data = pdf([printed_page(3), patch_t_sheet(), printed_page(2)])
     else:
         sys.exit(__doc__)
     with open(sys.argv[1], "wb") as out:

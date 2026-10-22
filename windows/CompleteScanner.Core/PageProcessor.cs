@@ -48,10 +48,13 @@ public sealed class BlankDetectionStep(BlankPageOptions options) : IPageStep
 /// (<see cref="ScannedPage.WithGeometry"/>, <see cref="GeometryBasis.Perspective"/> with the corners),
 /// the facts in that photo's pixels. Other pages, corners that outline no page, and a photo whose shape
 /// is not the facts' (turned without them, <see cref="CaptureFacts.DescribesPhoto"/>) stay as they are.
-/// Runs first, before the blank check.
+/// Runs first, before the blank check. A book's whole spread (<paramref name="spread"/>) is matched against
+/// no size and keeps its pixels at <see cref="CaptureScale.NominalDpi"/>: two facing pages have the shape of
+/// no single sheet, and a spread snapped to one would be shrunk to it.
 /// </summary>
-public sealed class PerspectiveStep : IPageStep
+public sealed class PerspectiveStep(bool spread = false) : IPageStep
 {
+    public bool Spread { get; } = spread;
     public string Name => "perspective";
 
     public ScannedPage Apply(ScannedPage page)
@@ -68,7 +71,8 @@ public sealed class PerspectiveStep : IPageStep
         }
         var quad = facts.Quad;
         if (!quad.IsConvex) return page;
-        var scale = CaptureScale.Measure(quad, photo.Width, photo.Height, facts.Kind, facts.FocalLength);
+        var scale = CaptureScale.Measure(quad, photo.Width, photo.Height,
+                                         Spread ? Array.Empty<CaptureSize>() : CaptureScale.Candidates(facts.Kind), facts.FocalLength);
         if (PerspectiveWarp.Warp(photo, quad, scale.PixelWidth, scale.PixelHeight) is not { } warped) return page;
         // The facts follow the photo kept as the other version, so its corners and its pixels agree.
         var measured = new ScannedPage(photo, scale.Dpi, page.ColorMode, page.Id, page.CreatedAt, page.FilePath, page.FullPixelSize)
@@ -281,6 +285,16 @@ public enum ScanArrangement
     TurnedOverFronts,
     /// <summary>The backs of a stack turned over by hand, last sheet first.</summary>
     TurnedOverBacks,
+    /// <summary>
+    /// Fronts a camera took (<see cref="DocumentSides.MarkCamera"/>): the iPhone's two-sided task. The
+    /// Windows app never takes camera shots.
+    /// </summary>
+    CameraFront,
+    /// <summary>
+    /// Backs a camera took, the user having turned each sheet over: never turned for the binding
+    /// (<see cref="DocumentSides.MarkCamera"/>).
+    /// </summary>
+    CameraBack,
 }
 
 /// <summary>The pages of one scan after processing.</summary>
@@ -311,18 +325,23 @@ public sealed record ProcessedScan(IReadOnlyList<ScannedPage> Arranged, IReadOnl
 /// is cut into its two pages when facing pages are split (<paramref name="book"/>), then every step
 /// runs on every page in order. The order of the steps is fixed: <see cref="ForScan"/> builds them
 /// from the settings: blank check (document pages), crop and straighten, softening the spine's shadow,
-/// separator sheets, barcodes, turning pages upright, then adjustments.
+/// separator sheets, barcodes, turning pages upright, then adjustments. <paramref name="prepare"/> runs
+/// on each arranged page before it is cut: a camera's spread is cut out of its photo first
+/// (<see cref="ForCapture"/>).
 /// </summary>
 public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
                                   ScanArrangement arrangement = ScanArrangement.AsScanned,
                                   DuplexBinding binding = DuplexBinding.LongEdge,
-                                  BookSplitOptions? book = null)
+                                  BookSplitOptions? book = null,
+                                  IReadOnlyList<IPageStep>? prepare = null)
 {
     public IReadOnlyList<IPageStep> Steps { get; } = steps;
     public ScanArrangement Arrangement { get; } = arrangement;
     public DuplexBinding Binding { get; } = binding;
     /// <summary>How the pages of each spread are turned and ordered; null when spreads are not split.</summary>
     public BookSplitOptions? Book { get; } = book;
+    /// <summary>The steps each arranged page goes through before a spread is cut; none for a scan.</summary>
+    public IReadOnlyList<IPageStep> Prepare { get; } = prepare ?? [];
 
     /// <summary>
     /// The steps for a scan made with <paramref name="settings"/>: the blank-page check for pages
@@ -413,22 +432,48 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// other tasks (photos, receipts, an ID card: <see cref="CaptureObjects"/>) get only the adjustments
     /// after that, unless they change nothing, and not on the shot kept as their other version: no
     /// blank-page or separator check, no barcodes, and no text recognition to turn them upright, so an ID
-    /// card is never read.
+    /// card is never read. A book's spread taken whole (<see cref="SplitsCameraSpreads"/>) is cut out of
+    /// its photo at its own pixels (<see cref="PerspectiveStep.Spread"/>) and cleaned up before it is cut at
+    /// its spine (<see cref="Prepare"/>); its pages then get
+    /// the spine's softening when asked for, between the blank-page and separator checks as on a scan.
+    /// <paramref name="arrangement"/> marks the sides of the iPhone's two-sided pages
+    /// (<see cref="ScanArrangement.CameraFront"/>, <see cref="ScanArrangement.CameraBack"/>).
     /// </summary>
     public static PageProcessor ForCapture(ScanSettings settings, IOrientationScorer? scorer = null,
-                                           IBarcodeReader? barcodes = null)
+                                           IBarcodeReader? barcodes = null,
+                                           ScanArrangement arrangement = ScanArrangement.AsScanned)
     {
-        var steps = new List<IPageStep> { new PerspectiveStep(), new EnhanceStep(DocumentEnhancer.ModeFor(settings)) };
+        var enhance = new EnhanceStep(DocumentEnhancer.ModeFor(settings));
+        var cut = new List<IPageStep> { new PerspectiveStep(), enhance };
         if (TaskCatalog.FlowOf(settings) == TaskFlowKind.DocumentQueue)
         {
-            steps.AddRange(ForPhotoImport(settings, scorer, barcodes).Steps);
+            var queue = ForPhotoImport(settings, scorer, barcodes).Steps.ToList();
+            if (SplitsCameraSpreads(settings))
+            {
+                if (SoftensSpineShadow(settings))
+                {
+                    queue.Insert(1, new SpineShadowStep(BookSplitOptions.Of(settings).RotationQuarterTurns));
+                }
+                return new PageProcessor(queue, arrangement, book: BookSplitOptions.Of(settings),
+                                         prepare: [new PerspectiveStep(spread: true), enhance]);
+            }
+            return new PageProcessor([.. cut, .. queue], arrangement);
         }
-        else if (!(settings.Adjustments.IsIdentity && settings.ColorMode == ColorMode.Color))
+        var steps = cut;
+        if (!(settings.Adjustments.IsIdentity && settings.ColorMode == ColorMode.Color))
         {
             steps.Add(new AdjustmentStep(settings.Adjustments, settings.ColorMode, adjustsAlternate: false));
         }
-        return new PageProcessor(steps);
+        return new PageProcessor(steps, arrangement);
     }
+
+    /// <summary>
+    /// Whether a camera's shot of a book is a whole spread, cut at its spine (the iPhone's "Whole
+    /// spread"): facing pages are split (<see cref="SplitsFacingPages"/>) and the task's camera takes
+    /// spreads (<see cref="TaskOptions.CameraSpreads"/>). Otherwise each shot is one page.
+    /// </summary>
+    public static bool SplitsCameraSpreads(ScanSettings settings) =>
+        SplitsFacingPages(settings) && settings.TaskOptions.CameraSpreads;
 
     /// <summary>
     /// Whether scans with these settings get the blank-page check: document pages collected in
@@ -493,8 +538,20 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
             ScanArrangement.TwoSided => DocumentSides.ArrangeTwoSided(scanned, Binding),
             ScanArrangement.TurnedOverFronts => DocumentSides.MarkManual(scanned, PageSide.Front, Binding),
             ScanArrangement.TurnedOverBacks => DocumentSides.MarkManual(scanned, PageSide.Back, Binding),
+            ScanArrangement.CameraFront => DocumentSides.MarkCamera(scanned, PageSide.Front),
+            ScanArrangement.CameraBack => DocumentSides.MarkCamera(scanned, PageSide.Back),
             _ => scanned,
         };
+        if (Prepare.Count > 0)
+        {
+            var prepared = new List<ScannedPage>(arranged.Count);
+            foreach (var page in arranged)
+            {
+                token.ThrowIfCancellationRequested();
+                prepared.Add(Run(Prepare, page, token));
+            }
+            arranged = prepared;
+        }
         var pages = new List<ScannedPage>(arranged.Count);
         foreach (var page in arranged)
         {
@@ -516,8 +573,9 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// book's rotation and the turn reading their text gave them (<see cref="BookSplitter.TotalTurns"/>).
     /// Each page records the spread (<see cref="SpreadPart"/>, with the spread's id, and whether it is the
     /// left or the right page, <see cref="SpreadPart.Left"/>), keeps the side and
-    /// sheet the spread was given (<see cref="ScannedPage.Side"/>, <see cref="ScannedPage.SheetIndex"/>)
-    /// and gets an id of its own. Used for every scan when facing pages are split, and to join or split
+    /// sheet the spread was given (<see cref="ScannedPage.Side"/>, <see cref="ScannedPage.SheetIndex"/>),
+    /// where it came from and what a camera recorded (<see cref="ScannedPage.Source"/>,
+    /// <see cref="ScannedPage.Capture"/>, so a page the clean-up made gray stays gray), and gets an id of its own. Used for every scan when facing pages are split, and to join or split
     /// a spread again.
     /// </summary>
     public IReadOnlyList<ScannedPage> ProcessSpread(ScannedPage spread, GutterResult? cut, BookSplitOptions options,
@@ -531,6 +589,8 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
                 Side = spread.Side,
                 SheetIndex = spread.SheetIndex,
                 Spread = new SpreadPart(spread.Id, part, part is null ? null : cut),
+                Source = spread.Source,
+                Capture = spread.Capture,
             };
         if (cut is null) return [RunSteps(Part(spread.Image, null), token)];
         var (first, second) = BookSplitter.Halves(spread.Image, cut);
@@ -546,10 +606,12 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     }
 
     /// <summary>Every step on <paramref name="page"/>, in order.</summary>
-    private ScannedPage RunSteps(ScannedPage page, CancellationToken token)
+    private ScannedPage RunSteps(ScannedPage page, CancellationToken token) => Run(Steps, page, token);
+
+    private static ScannedPage Run(IReadOnlyList<IPageStep> steps, ScannedPage page, CancellationToken token)
     {
         var current = page;
-        foreach (var step in Steps)
+        foreach (var step in steps)
         {
             token.ThrowIfCancellationRequested();
             current = step is ICancellablePageStep cancellable ? cancellable.Apply(current, token) : step.Apply(current);

@@ -343,6 +343,61 @@ final class BarcodeTests: XCTestCase {
         XCTAssertNil(PageFacts.of(pageOf(), options: options()).barcode)
     }
 
+    // MARK: Separator sheets photographed (the iPhone's Separate documents)
+
+    /// `sheet` photographed square on, as the camera's clean-up stage gets it.
+    private func photographed(_ sheet: RgbaImage) throws -> ScannedPage {
+        let table: TablePhoto = CameraSheets.squareOnATable(sheet, margin: 40)
+        let photo: CGImage = try XCTUnwrap(table.photo.makeCGImage())
+        var page: ScannedPage = ScannedPage(image: photo, dpi: CaptureScale.nominalDPI, colorMode: .color)
+            .withCapture(CaptureFacts(quad: table.quad, sourceWidth: table.photo.width, sourceHeight: table.photo.height))
+        page.source = .photo
+        return page
+    }
+
+    func test_aPhotographedPatchSheet_snappedToItsPaper_isASeparator() throws {
+        let s: ScanSettings = TaskCatalog.apply(.batch, to: ScanSettings())
+        let sheet: RgbaImage = PatchCodeDetector.renderSheet(SeparatorSheet.code, widthInches: 8.5, heightInches: 11,
+                                                             dpi: 60).toRgba()
+        let text: RgbaImage = TestPages.singlePageAcross().toRgba()
+        let processor: PageProcessor = PageProcessor.forCapture(s)
+        let pages: [ScannedPage] = try processor.process([try photographed(text), try photographed(sheet),
+                                                          try photographed(text)]).pages
+        // Cut out at Letter size, so its bars have their real widths and the patch code is read.
+        XCTAssertEqual(pages[1].dpi, 60)
+        XCTAssertEqual(pages[1].patch, .patchT)
+        XCTAssertNil(pages[0].patch)
+        let plan: SplitPlan = DocumentSplitter.plan(pages, options: s.document)
+        XCTAssertEqual(documents(plan), [[0], [2]])
+        XCTAssertEqual(plan.separatorCount, 1)
+    }
+
+    func test_aPhotographedQrSheet_readAsTheSheetsPayload_splitsAndNamesTheNextDocument() throws {
+        var s: ScanSettings = TaskCatalog.apply(.batch, to: ScanSettings())
+        s.document.splitMode = .barcode
+        let page: ScannedPage = try photographed(TestPages.singlePageAcross().toRgba())
+        // The payload the phone's saved QR sheet carries, as Vision (or ZXing) hands it back.
+        let payload: String = QrSeparatorSheet.text("Lease 2026", prefix: s.document.splitBarcodePrefix)
+        XCTAssertEqual(payload, "CS-SEP Lease 2026")
+        let sheetPages: [ScannedPage] = try PageProcessor.forCapture(s, barcodes: FakeReader(qr(payload))).process([page]).pages
+        let sheet: ScannedPage = try XCTUnwrap(sheetPages.first)
+        let content: [ScannedPage] = try PageProcessor.forCapture(s, barcodes: FakeReader()).process([page, page]).pages
+        XCTAssertEqual(sheet.barcodes?.map(\.text), [payload])
+        XCTAssertTrue(BarcodeSeparators.isSeparatorPage(sheet, options: s.document))
+        let plan: SplitPlan = DocumentSplitter.plan([content[0], sheet, content[1]], options: s.document)
+        XCTAssertEqual(documents(plan), [[0], [2]])
+        XCTAssertEqual(plan.documents.map(\.label), [nil, "Lease 2026"])
+        // A payload of another prefix is a page's own code: no split.
+        let own: ScannedPage = try XCTUnwrap(try PageProcessor.forCapture(s, barcodes: FakeReader(qr("INV-42")))
+            .process([page]).pages.first)
+        XCTAssertFalse(BarcodeSeparators.isSeparatorPage(own, options: s.document))
+        // Without the barcode split, nothing is read on a photographed page.
+        let plain: ScanSettings = TaskCatalog.apply(.batch, to: ScanSettings())
+        let unread: ScannedPage = try XCTUnwrap(try PageProcessor.forCapture(plain, barcodes: FakeReader(qr(payload)))
+            .process([page]).pages.first)
+        XCTAssertNil(unread.barcodes)
+    }
+
     // MARK: Splitting at barcode or QR sheets
 
     func test_barcodeSheets_oneSided_areLeftOut_andNameTheDocumentAfterThem() {

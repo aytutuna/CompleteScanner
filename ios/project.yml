@@ -58,10 +58,15 @@ targets:
         excludes:
           - Fixtures
           - Fixtures/**
-      # The photos the import and Photos tests bring in (drawn by scripts/make_ios_ui_fixture.py).
+      # The photos and PDFs the import, Photos, two-sided and batch tests bring in (drawn by
+      # scripts/make_ios_ui_fixture.py).
       - path: CompleteScanneriOSUITests/Fixtures/document-photo.png
         buildPhase: resources
       - path: CompleteScanneriOSUITests/Fixtures/photos-on-table.png
+        buildPhase: resources
+      - path: CompleteScanneriOSUITests/Fixtures/two-sided.pdf
+        buildPhase: resources
+      - path: CompleteScanneriOSUITests/Fixtures/batch.pdf
         buildPhase: resources
     dependencies:
       - target: CompleteScanneriOS

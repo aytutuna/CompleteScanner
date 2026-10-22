@@ -1,6 +1,9 @@
 #if os(iOS)
 import CompleteScannerKit
 import Foundation
+#if canImport(MessageUI)
+import MessageUI
+#endif
 import UIKit
 import UniformTypeIdentifiers
 
@@ -17,26 +20,45 @@ public struct ShareRequest: Identifiable, Equatable {
     }
 }
 
-/// The iPhone's and iPad's `FileActionService`. iOS has no Finder, no "Open With" menu and no
-/// direct Mail compose here, so: Open previews the file (Quick Look), Open With, Share and Email
-/// open the share sheet (`UIActivityViewController`, where the user picks Mail, Files or another
-/// app), Show in folder opens the Files app at the file's folder, and Copy puts the files (and the
-/// picture of a single image) on the pasteboard, on this device only. The app's root view presents
-/// what `shareRequest` and `previewURL` ask for; nothing leaves the device unless the user picks
-/// where it goes in the share sheet.
+/// A mail message with files attached, for the Mail composer (`MailComposeView`): the files and its subject.
+public struct MailRequest: Identifiable, Equatable {
+    public let id: UUID
+    public let urls: [URL]
+    public let subject: String
+
+    public init(urls: [URL], subject: String) {
+        self.id = UUID()
+        self.urls = urls
+        self.subject = subject
+    }
+}
+
+/// The iPhone's and iPad's `FileActionService`. iOS has no Finder and no "Open With" menu, so: Open
+/// previews the file (Quick Look), Open With and Share open the share sheet (`UIActivityViewController`,
+/// where the user picks Mail, Files or another app), Email opens a Mail message with the files attached
+/// when Mail is set up (`MFMailComposeViewController.canSendMail`) and the share sheet otherwise, Show in
+/// folder opens the Files app at the file's folder, and Copy puts the files (and the picture of a single
+/// image) on the pasteboard, on this device only. The app's root view presents what `shareRequest`,
+/// `mailRequest` and `previewURL` ask for; nothing leaves the device unless the user sends the message or
+/// picks where it goes in the share sheet.
 @MainActor
 public final class IOSFileActions: ObservableObject, FileActionService {
     /// The share sheet to show; the root view sets it back to nil when the sheet closes.
     @Published public var shareRequest: ShareRequest?
     /// The file to preview with Quick Look; nil when none is shown.
     @Published public var previewURL: URL?
+    /// The Mail message to compose; the root view sets it back to nil when the composer closes.
+    @Published public var mailRequest: MailRequest?
 
     private let pasteboard: UIPasteboard
     private let openSystemURL: @MainActor (URL) -> Void
+    private let mailAvailable: @MainActor () -> Bool
 
     /// `pasteboard` nil: the general pasteboard. `openSystemURL` nil: `UIApplication.open` (tests
-    /// pass their own to see the Files app's address without opening it).
-    public init(pasteboard: UIPasteboard? = nil, openSystemURL: (@MainActor (URL) -> Void)? = nil) {
+    /// pass their own to see the Files app's address without opening it). `mailAvailable` nil: whether
+    /// Mail is set up on the device (`canSendMail`; tests say).
+    public init(pasteboard: UIPasteboard? = nil, openSystemURL: (@MainActor (URL) -> Void)? = nil,
+                mailAvailable: (@MainActor () -> Bool)? = nil) {
         self.pasteboard = pasteboard ?? UIPasteboard.general
         if let openSystemURL {
             self.openSystemURL = openSystemURL
@@ -45,6 +67,22 @@ public final class IOSFileActions: ObservableObject, FileActionService {
                 UIApplication.shared.open(url, options: [:], completionHandler: nil)
             }
         }
+        if let mailAvailable {
+            self.mailAvailable = mailAvailable
+        } else {
+            self.mailAvailable = { () -> Bool in
+                IOSFileActions.canSendMail()
+            }
+        }
+    }
+
+    /// Mail is set up on this device, so a message can be composed here.
+    public static func canSendMail() -> Bool {
+        #if canImport(MessageUI)
+        return MFMailComposeViewController.canSendMail()
+        #else
+        return false
+        #endif
     }
 
     public func open(_ url: URL) throws {
@@ -61,7 +99,7 @@ public final class IOSFileActions: ObservableObject, FileActionService {
     }
 
     public func sendProbe(for urls: [URL]) -> SendProbe {
-        SendProbe(canCompose: false, canShare: true)
+        SendProbe(canCompose: mailAvailable(), canShare: true)
     }
 
     public func share(_ urls: [URL], title: String) throws {
@@ -72,7 +110,11 @@ public final class IOSFileActions: ObservableObject, FileActionService {
     }
 
     public func composeEmail(_ urls: [URL]) throws {
-        try share(urls, title: SaveActions.shareTitle(urls))
+        guard mailAvailable(), !urls.isEmpty else {
+            try share(urls, title: SaveActions.shareTitle(urls))
+            return
+        }
+        mailRequest = MailRequest(urls: urls, subject: SaveActions.shareTitle(urls))
     }
 
     public func copy(_ content: ClipboardContent) throws {

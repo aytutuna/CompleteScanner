@@ -576,6 +576,12 @@ public struct TaskOptions: Codable, Equatable, Sendable {
     /// Quarter turns clockwise every page of a book is turned, for a book lying sideways or upside down
     /// on the glass; read through `BookSplitter.normalizedTurns` (0 to 3). None unless chosen.
     public var bookRotationQuarterTurns: Int = 0
+    /// The iPhone's camera takes both sides of each sheet for the two-sided task as all the fronts first,
+    /// then all the backs. Off: "Flip & capture", each front followed by its back.
+    public var cameraFrontsFirst: Bool = false
+    /// The iPhone's camera takes a book as whole spreads, each cut at its spine
+    /// (`PageProcessor.splitsCameraSpreads`). Off: page by page, one page a shot.
+    public var cameraSpreads: Bool = false
 
     public init() {}
 
@@ -591,6 +597,8 @@ public struct TaskOptions: Codable, Equatable, Sendable {
         case receiptCombine
         case bookRightToLeft
         case bookRotationQuarterTurns
+        case cameraFrontsFirst
+        case cameraSpreads
     }
 }
 
@@ -609,6 +617,8 @@ extension TaskOptions {
         receiptCombine = container.decodeLenient(forKey: .receiptCombine, default: receiptCombine)
         bookRightToLeft = container.decodeLenient(forKey: .bookRightToLeft, default: bookRightToLeft)
         bookRotationQuarterTurns = container.decodeLenient(forKey: .bookRotationQuarterTurns, default: bookRotationQuarterTurns)
+        cameraFrontsFirst = container.decodeLenient(forKey: .cameraFrontsFirst, default: cameraFrontsFirst)
+        cameraSpreads = container.decodeLenient(forKey: .cameraSpreads, default: cameraSpreads)
     }
 }
 

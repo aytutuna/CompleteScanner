@@ -336,6 +336,31 @@ final class PageProcessorTests: XCTestCase {
         XCTAssertTrue(backs.pages.allSatisfy { $0.side == .back })
     }
 
+    func test_process_camera_marksTheSide_withoutTurningForTheBinding() throws {
+        let left: RgbaImage = twoTone(6, 4)
+        let image: CGImage = try XCTUnwrap(left.makeCGImage())
+        let scanned: [ScannedPage] = [page(image), page(image).withSide(nil, sheetIndex: 2)]
+        for binding in [DuplexBinding.longEdge, DuplexBinding.shortEdge] {
+            let backs: ProcessedScan = try PageProcessor(steps: [], arrangement: .cameraBack, binding: binding).process(scanned)
+            XCTAssertEqual(backs.pages.map(\.side), [.back, .back])
+            XCTAssertEqual(backs.pages.map(\.sheetIndex), [nil, 2])
+            // As taken: red still on the left, no turn waiting for the save.
+            for arranged in backs.arranged {
+                XCTAssertEqual(RgbaImage(cgImage: arranged.image)?.pixels, left.pixels)
+                XCTAssertEqual(arranged.rotationQuarterTurns, 0)
+            }
+            let fronts: ProcessedScan = try PageProcessor(steps: [], arrangement: .cameraFront, binding: binding).process(scanned)
+            XCTAssertTrue(fronts.pages.allSatisfy { $0.side == .front })
+        }
+        // A stack turned over by hand, by contrast, has its short-edge backs turned.
+        let turned: ProcessedScan = try PageProcessor(steps: [], arrangement: .turnedOverBacks, binding: .shortEdge).process(scanned)
+        for arranged in turned.arranged {
+            XCTAssertNotEqual(RgbaImage(cgImage: arranged.image)?.pixels, left.pixels)
+        }
+        XCTAssertEqual(PageProcessor.forCapture(ScanSettings(), arrangement: .cameraBack).arrangement, .cameraBack)
+        XCTAssertEqual(PageProcessor.forCapture(ScanSettings()).arrangement, .asScanned)
+    }
+
     func test_process_runsEveryStepOnEveryPage_inOrder() throws {
         var log: [String] = []
         let pages = [page(solid(2, 3, 0)), page(solid(2, 3, 0))]

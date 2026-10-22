@@ -234,6 +234,18 @@ public enum DocumentSides {
         return pages.map { mark($0, side: side, sheet: nil, turns: turns) }
     }
 
+    /// The pages a camera took of one side of their sheets, marked as that side; the sheet a page was given
+    /// already is kept. Never turned for a binding: the user turned the sheet over by hand, either way round,
+    /// and turning pages upright (`OrientationStep`) fixes a back that came out upside down. Only the iPhone
+    /// takes such pages.
+    public static func markCamera(_ pages: [ScannedPage], side: PageSide) -> [ScannedPage] {
+        var marked: [ScannedPage] = []
+        for page in pages {
+            marked.append(page.withSide(side, sheetIndex: page.sheetIndex))
+        }
+        return marked
+    }
+
     private static func mark(_ page: ScannedPage, side: PageSide, sheet: Int?, turns: Int) -> ScannedPage {
         let marked = page.withSide(side, sheetIndex: sheet)
         guard side == .back, turns % 4 != 0 else { return marked }

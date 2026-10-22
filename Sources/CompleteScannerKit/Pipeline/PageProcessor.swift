@@ -40,12 +40,17 @@ public struct BlankDetectionStep: PageStep {
 /// recorded on the capture (`CaptureFacts.scale`), and the photo kept as the other version
 /// (`ScannedPage.withGeometry`, `GeometryBasis.perspective` with the corners), the facts in that photo's
 /// pixels. Other pages, corners that outline no page, and a photo whose shape is not the facts' (turned
-/// without them, `CaptureFacts.describesPhoto`) stay as they are. Runs first, before the blank check.
-/// Twin of C# `PerspectiveStep`.
+/// without them, `CaptureFacts.describesPhoto`) stay as they are. Runs first, before the blank check. A
+/// book's whole spread (`spread`) is matched against no size and keeps its pixels at
+/// `CaptureScale.nominalDPI`: two facing pages have the shape of no single sheet, and a spread snapped to one
+/// would be shrunk to it. Twin of C# `PerspectiveStep`.
 public struct PerspectiveStep: PageStep {
+    public let spread: Bool
     public var name: String { "perspective" }
 
-    public init() {}
+    public init(spread: Bool = false) {
+        self.spread = spread
+    }
 
     public func apply(_ page: ScannedPage) -> ScannedPage {
         guard let capture = page.capture, capture.scale == nil, page.geometry == nil,
@@ -59,8 +64,9 @@ public struct PerspectiveStep: PageStep {
         }
         let quad: Quad = facts.quad
         guard quad.isConvex else { return page }
+        let sizes: [CaptureSize] = spread ? [] : CaptureScale.candidates(facts.kind)
         let scale = CaptureScale.measure(quad, imageWidth: photo.width, imageHeight: photo.height,
-                                         kind: facts.kind, focalLength: facts.focalLength)
+                                         candidates: sizes, focalLength: facts.focalLength)
         guard let warped = PerspectiveWarp.warp(photo, quad: quad, width: scale.pixelWidth, height: scale.pixelHeight),
               let image = warped.makeCGImage() else { return page }
         // The facts follow the photo kept as the other version, so its corners and its pixels agree.
@@ -290,6 +296,12 @@ public enum ScanArrangement: Sendable {
     case turnedOverFronts
     /// The backs of a stack turned over by hand, last sheet first.
     case turnedOverBacks
+    /// Fronts a camera took (`DocumentSides.markCamera`): the iPhone's two-sided task. The Windows app never
+    /// takes camera shots.
+    case cameraFront
+    /// Backs a camera took, the user having turned each sheet over: never turned for the binding
+    /// (`DocumentSides.markCamera`).
+    case cameraBack
 }
 
 /// The pages of one scan after processing. Twin of C# `ProcessedScan`.
@@ -316,7 +328,8 @@ public struct ProcessedScan {
 /// cut into its two pages when facing pages are split (`book`), then every step runs on every page in
 /// order. The order of the steps is fixed: `forScan` builds them from the settings: blank check
 /// (document pages), crop and straighten, softening the spine's shadow, separator sheets, barcodes,
-/// turning pages upright, then adjustments.
+/// turning pages upright, then adjustments. `prepare` runs on each arranged page before it is cut: a
+/// camera's spread is cut out of its photo first (`forCapture`).
 /// Twin of C# `PageProcessor`.
 public struct PageProcessor {
     public let steps: [any PageStep]
@@ -324,13 +337,16 @@ public struct PageProcessor {
     public let binding: DuplexBinding
     /// How the pages of each spread are turned and ordered; nil when spreads are not split.
     public let book: BookSplitOptions?
+    /// The steps each arranged page goes through before a spread is cut; none for a scan.
+    public let prepare: [any PageStep]
 
     public init(steps: [any PageStep], arrangement: ScanArrangement = .asScanned, binding: DuplexBinding = .longEdge,
-                book: BookSplitOptions? = nil) {
+                book: BookSplitOptions? = nil, prepare: [any PageStep] = []) {
         self.steps = steps
         self.arrangement = arrangement
         self.binding = binding
         self.book = book
+        self.prepare = prepare
     }
 
     /// The steps for a scan made with `settings`: the blank-page check for pages collected in the
@@ -402,18 +418,43 @@ public struct PageProcessor {
     /// go to the queue. The objects of the other tasks (photos, receipts, an ID card: `CaptureObjects`) get
     /// only the adjustments after that, unless they change nothing, and not on the shot kept as their other
     /// version: no blank-page or separator check, no barcodes, and no text recognition to turn them upright,
-    /// so an ID card is never read. Twin of C# `PageProcessor.ForCapture`.
+    /// so an ID card is never read. A book's spread taken whole (`splitsCameraSpreads`) is cut out of its photo
+    /// at its own pixels (`PerspectiveStep.spread`) and cleaned up before it is cut at its spine (`prepare`);
+    /// its pages then get the spine's softening when
+    /// asked for, between the blank-page and separator checks as on a scan. `arrangement` marks the sides of
+    /// the iPhone's two-sided pages (`ScanArrangement.cameraFront`, `.cameraBack`). Twin of C#
+    /// `PageProcessor.ForCapture`.
     public static func forCapture(_ settings: ScanSettings, scorer: (any OrientationScorer)? = nil,
-                                  barcodes: (any BarcodeReader)? = nil) -> PageProcessor {
-        var steps: [any PageStep] = [PerspectiveStep(), EnhanceStep(mode: DocumentEnhancer.mode(for: settings))]
+                                  barcodes: (any BarcodeReader)? = nil,
+                                  arrangement: ScanArrangement = .asScanned) -> PageProcessor {
+        let enhance = EnhanceStep(mode: DocumentEnhancer.mode(for: settings))
+        let cut: [any PageStep] = [PerspectiveStep(), enhance]
+        var steps: [any PageStep] = cut
         if TaskCatalog.flow(of: settings) == .documentQueue {
-            let rest = forPhotoImport(settings, scorer: scorer, barcodes: barcodes)
-            for step in rest.steps { steps.append(step) }
+            var queue: [any PageStep] = forPhotoImport(settings, scorer: scorer, barcodes: barcodes).steps
+            if splitsCameraSpreads(settings) {
+                if softensSpineShadow(settings) {
+                    let turns: Int = BookSplitOptions.of(settings).rotationQuarterTurns
+                    queue.insert(SpineShadowStep(rotationQuarterTurns: turns), at: 1)
+                }
+                let spreadCut: [any PageStep] = [PerspectiveStep(spread: true), enhance]
+                return PageProcessor(steps: queue, arrangement: arrangement, book: BookSplitOptions.of(settings),
+                                     prepare: spreadCut)
+            }
+            for step in queue { steps.append(step) }
         } else if !(settings.adjustments.isIdentity && settings.colorMode == .color) {
             steps.append(AdjustmentStep(adjustments: settings.adjustments, colorMode: settings.colorMode,
                                         adjustsAlternate: false))
         }
-        return PageProcessor(steps: steps)
+        return PageProcessor(steps: steps, arrangement: arrangement)
+    }
+
+    /// Whether a camera's shot of a book is a whole spread, cut at its spine (the iPhone's "Whole spread"):
+    /// facing pages are split (`splitsFacingPages`) and the task's camera takes spreads
+    /// (`TaskOptions.cameraSpreads`). Otherwise each shot is one page. Twin of C#
+    /// `PageProcessor.SplitsCameraSpreads`.
+    public static func splitsCameraSpreads(_ settings: ScanSettings) -> Bool {
+        splitsFacingPages(settings) && settings.taskOptions.cameraSpreads
     }
 
     /// Whether scans with these settings get the blank-page check: document pages collected in the
@@ -465,12 +506,22 @@ public struct PageProcessor {
     /// (`CancellablePageStep`); when it says no, `ScanError.cancelled` is thrown.
     public func process(_ scanned: [ScannedPage], shouldContinue: () -> Bool = { true }) throws -> ProcessedScan {
         guard shouldContinue() else { throw ScanError.cancelled }
-        let arranged: [ScannedPage]
+        var arranged: [ScannedPage]
         switch arrangement {
         case .twoSided: arranged = DocumentSides.arrangeTwoSided(scanned, binding: binding)
         case .turnedOverFronts: arranged = DocumentSides.markManual(scanned, side: .front, binding: binding)
         case .turnedOverBacks: arranged = DocumentSides.markManual(scanned, side: .back, binding: binding)
+        case .cameraFront: arranged = DocumentSides.markCamera(scanned, side: .front)
+        case .cameraBack: arranged = DocumentSides.markCamera(scanned, side: .back)
         case .asScanned: arranged = scanned
+        }
+        if !prepare.isEmpty {
+            var prepared: [ScannedPage] = []
+            for page in arranged {
+                guard shouldContinue() else { throw ScanError.cancelled }
+                prepared.append(try Self.runAll(prepare, on: page, shouldContinue: shouldContinue))
+            }
+            arranged = prepared
         }
         var pages: [ScannedPage] = []
         pages.reserveCapacity(arranged.count)
@@ -492,7 +543,9 @@ public struct PageProcessor {
     /// it is nil, each page turned as `options` say, then put in reading order: by where they lie once
     /// turned by the book's rotation and the turn reading their text gave them
     /// (`BookSplitter.totalTurns`). Each page records the spread (`SpreadPart`, with the spread's id,
-    /// and whether it is the left or the right page, `SpreadPart.left`), keeps the side and sheet the spread was given (`side`, `sheetIndex`) and gets an id of its own.
+    /// and whether it is the left or the right page, `SpreadPart.left`), keeps the side and sheet the spread
+    /// was given (`side`, `sheetIndex`), where it came from and what a camera recorded (`source`, `capture`, so
+    /// a page the clean-up made gray stays gray), and gets an id of its own.
     /// Used for every scan when facing pages are split, and to join or split a spread again. Twin of C#
     /// `PageProcessor.ProcessSpread`.
     public func processSpread(_ spread: ScannedPage, cut: GutterResult?, options: BookSplitOptions,
@@ -505,6 +558,8 @@ public struct PageProcessor {
             page.side = spread.side
             page.sheetIndex = spread.sheetIndex
             page.spread = SpreadPart(spreadID: spread.id, part: index, gutter: index == nil ? nil : gutter)
+            page.source = spread.source
+            page.capture = spread.capture
             return page
         }
         guard let cut, let halves = BookSplitter.halves(spread.image, gutter: cut) else {
@@ -524,6 +579,12 @@ public struct PageProcessor {
 
     /// Every step on `page`, in order.
     private func runSteps(_ page: ScannedPage, shouldContinue: () -> Bool) throws -> ScannedPage {
+        try Self.runAll(steps, on: page, shouldContinue: shouldContinue)
+    }
+
+    /// `steps` on `page`, in order.
+    private static func runAll(_ steps: [any PageStep], on page: ScannedPage,
+                               shouldContinue: () -> Bool) throws -> ScannedPage {
         var current = page
         for step in steps {
             guard shouldContinue() else { throw ScanError.cancelled }

@@ -86,6 +86,8 @@ internal static class CompatFixtures
         settings.TaskOptions.ReceiptCombine = true;
         settings.TaskOptions.BookRightToLeft = true;
         settings.TaskOptions.BookRotationQuarterTurns = 1;
+        settings.TaskOptions.CameraFrontsFirst = true;
+        settings.TaskOptions.CameraSpreads = true;
         return settings;
     }
 
@@ -151,7 +153,8 @@ internal static class CompatFixtures
         + "      \"taskOptions\": {\n        \"idCardPaper\": \"letter\",\n        \"idCardSaveSidesAsImages\": true,\n"
         + "        \"copyCount\": 3,\n        \"copyFitToPage\": true,\n        \"copyPrinterName\": \"Office printer\",\n"
         + "        \"copyAlsoSavePdf\": true,\n        \"receiptNameByDate\": false,\n        \"receiptCombine\": true,\n"
-        + "        \"bookRightToLeft\": true,\n        \"bookRotationQuarterTurns\": 1\n      }\n");
+        + "        \"bookRightToLeft\": true,\n        \"bookRotationQuarterTurns\": 1,\n"
+        + "        \"cameraFrontsFirst\": true,\n        \"cameraSpreads\": true\n      }\n");
 
     /// <summary>Field-by-field equality, including the legacy OCR languages.</summary>
     public static void AssertSettingsEqual(ScanSettings expected, ScanSettings actual)
@@ -1197,7 +1200,8 @@ public class ModelsCompatTests
                 using var written = JsonDocument.Parse(json);
                 // No printer chosen: the key is left out, as Swift leaves out a nil.
                 Assert.Equal(["idCardPaper", "idCardSaveSidesAsImages", "copyCount", "copyFitToPage", "copyAlsoSavePdf",
-                              "receiptNameByDate", "receiptCombine", "bookRightToLeft", "bookRotationQuarterTurns"],
+                              "receiptNameByDate", "receiptCombine", "bookRightToLeft", "bookRotationQuarterTurns",
+                              "cameraFrontsFirst", "cameraSpreads"],
                              written.RootElement.GetProperty("taskOptions").EnumerateObject().Select(p => p.Name));
                 Assert.Equal(settings.TaskOptions, Decode<ScanSettings>(json).TaskOptions);
             }
@@ -1324,6 +1328,42 @@ public class ModelsCompatTests
         Assert.NotEqual(original.Document, clone.Document);
         Assert.NotEqual(original.TaskOptions, clone.TaskOptions);
         Assert.NotEqual(original.TaskOptions.GetHashCode(), clone.TaskOptions.GetHashCode());
+    }
+
+    // MARK: - The iPhone camera's choices (CONTRACTS.md, rule 6)
+
+    [Fact]
+    public void CameraOptions_AreOffByDefault_ReadLeniently_AndRoundTrip()
+    {
+        var settings = new ScanSettings();
+        Assert.Equal((false, false), (settings.TaskOptions.CameraFrontsFirst, settings.TaskOptions.CameraSpreads));
+        var older = Decode<ScanSettings>("""{"taskOptions": {"copyCount": 2, "bookRightToLeft": true}}""");
+        Assert.Equal((2, true, false, false), (older.TaskOptions.CopyCount, older.TaskOptions.BookRightToLeft,
+                                               older.TaskOptions.CameraFrontsFirst, older.TaskOptions.CameraSpreads));
+        var corrupt = Decode<ScanSettings>("""
+            {"resolution": 150, "taskOptions": {"cameraFrontsFirst": "yes", "cameraSpreads": true, "copyCount": 4}}
+            """);
+        Assert.Equal((150, 4, false, true), (corrupt.Resolution, corrupt.TaskOptions.CopyCount,
+                                             corrupt.TaskOptions.CameraFrontsFirst, corrupt.TaskOptions.CameraSpreads));
+        var nulls = Decode<ScanSettings>("""{"taskOptions": {"cameraFrontsFirst": true, "cameraSpreads": null}}""");
+        Assert.Equal((true, false), (nulls.TaskOptions.CameraFrontsFirst, nulls.TaskOptions.CameraSpreads));
+        foreach (bool frontsFirst in new[] { false, true })
+        {
+            foreach (bool spreads in new[] { false, true })
+            {
+                var chosen = new ScanSettings();
+                chosen.TaskOptions.CameraFrontsFirst = frontsFirst;
+                chosen.TaskOptions.CameraSpreads = spreads;
+                Assert.Equal(chosen.TaskOptions, Decode<ScanSettings>(CompatFixtures.Encode(chosen)).TaskOptions);
+            }
+        }
+        // Picking a task keeps them: they say how the user takes that task with the camera.
+        var kept = TaskCatalog.Apply(ScanTask.Book, CompatFixtures.NonDefaultSettings());
+        Assert.Equal((true, true), (kept.TaskOptions.CameraFrontsFirst, kept.TaskOptions.CameraSpreads));
+        var clone = kept.Clone();
+        clone.TaskOptions.CameraSpreads = false;
+        Assert.True(kept.TaskOptions.CameraSpreads);
+        Assert.NotEqual(kept.TaskOptions, clone.TaskOptions);
     }
 
     // MARK: - Softening the spine's shadow (CONTRACTS.md, rule 6)

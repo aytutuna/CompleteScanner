@@ -82,6 +82,7 @@ extension AppState {
         taskFlow = nil
         flowTask = nil
         flowIsManual = false
+        if newDocumentPending { newDocumentPending = false }
         settings = adapted.settings
         if let section = InspectorSections.openedBy(task) { sectionsOpenedByTask.insert(section) }
         statusMessage = Self.withNotes("Ready for \u{201C}\(TaskCatalog.definition(task).title)\u{201D}.",
@@ -140,10 +141,16 @@ extension AppState {
         openIdCardReview()
     }
 
-    /// Back to the first step with nothing captured; a stack's count mismatch goes with it.
+    /// Back to the first step with nothing captured; a stack's count mismatch goes with it, and so do the
+    /// camera's two-sided steps and a pending New document.
     func resetFlow() {
         taskFlow?.reset()
         if sidesMismatch != nil { sidesMismatch = nil }
+        if var sides = cameraSides {
+            sides.reset()
+            cameraSides = sides
+        }
+        if newDocumentPending { newDocumentPending = false }
     }
 
     /// Notes the current step of the active task what a scan produced (page or photo ids).

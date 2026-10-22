@@ -289,6 +289,27 @@ public class PageProcessorTests
     }
 
     [Fact]
+    public void Process_Camera_MarksTheSide_WithoutTurningForTheBinding()
+    {
+        var left = TwoTone(6, 4);
+        var scanned = new[] { Page(left), Page(left).WithSide(null, 2) };
+        foreach (var binding in new[] { DuplexBinding.LongEdge, DuplexBinding.ShortEdge })
+        {
+            var backs = new PageProcessor([], ScanArrangement.CameraBack, binding).Process(scanned);
+            Assert.Equal([(PageSide.Back, (int?)null), (PageSide.Back, 2)], backs.Pages.Select(p => (p.Side!.Value, p.SheetIndex)));
+            // As taken: red still on the left, no turn waiting for the save.
+            Assert.All(backs.Arranged, p => Assert.Equal((left.Pixels, 0), (p.Image.Pixels, p.RotationQuarterTurns)));
+            var fronts = new PageProcessor([], ScanArrangement.CameraFront, binding).Process(scanned);
+            Assert.All(fronts.Pages, p => Assert.Equal(PageSide.Front, p.Side));
+        }
+        // A stack turned over by hand, by contrast, has its short-edge backs turned.
+        var turned = new PageProcessor([], ScanArrangement.TurnedOverBacks, DuplexBinding.ShortEdge).Process(scanned);
+        Assert.All(turned.Arranged, p => Assert.NotEqual(left.Pixels, p.Image.Pixels));
+        Assert.Equal(ScanArrangement.CameraBack, PageProcessor.ForCapture(new ScanSettings(), arrangement: ScanArrangement.CameraBack).Arrangement);
+        Assert.Equal(ScanArrangement.AsScanned, PageProcessor.ForCapture(new ScanSettings()).Arrangement);
+    }
+
+    [Fact]
     public void Process_RunsEveryStepOnEveryPage_InOrder()
     {
         var log = new List<string>();
