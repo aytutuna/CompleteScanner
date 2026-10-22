@@ -69,9 +69,17 @@ final class SmokeTests: XCTestCase {
         let confirm: XCUIElement = app.buttons["presets.name.save"].firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 10), "The alert's Save preset")
         confirm.tap()
+        let closed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: alert)
+        XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 10), .completed, "The alert closed after Save")
 
-        let row: XCUIElement = app.buttons["preset.\(name)"]
-        XCTAssertTrue(row.waitForExistence(timeout: 30), "The new preset in the list")
+        // A List row is not always a button to the test: look among every element.
+        let row: XCUIElement = app.descendants(matching: .any)["preset.\(name)"]
+        if !row.waitForExistence(timeout: 30) {
+            let lines: [String] = app.debugDescription.components(separatedBy: "\n")
+                .filter { $0.contains("preset") || $0.contains("Preset") || $0.contains("Alert") }
+            XCTFail("The new preset in the list; tree: \(lines.joined(separator: " | "))")
+            return
+        }
         XCTAssertEqual(row.label, "\(name) preset")
     }
 
