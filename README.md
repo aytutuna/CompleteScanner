@@ -274,12 +274,15 @@ rectangles, cut out at its real size and reviewed (keep, rotate, fix the crop wi
 save; receipts named by their date), a shot in which none is outlined searched whole as the scanner's
 glass is; the ID card in a frame of the card's shape, front then back, laid out at real size on one
 page, kept in memory only (never written before Save, never in Photos, never read), with a one-line
-"Tilt to avoid glare" when a reflection hid part of it; two-sided documents taken as Flip & capture
+"Tilt to avoid glare" when a reflection hid part of it, and a Print button that prints both sides at
+real size over AirPrint (a ruler test page to check that is in Settings); two-sided documents taken as Flip & capture
 (each front, then its back, with No back for an empty one) or every front then every back, put in
 order; Separate documents with a New document button between shots and separator sheets (patch code,
 or QR read with Vision) found on the pages, the sheet saved as a PDF to print; a book page by page or
 as whole spreads cut at the spine, split again by hand; Quick scan with Live Text, Save JPEG and Copy
-text; Email a document through Mail's composer (or the share sheet); Archive document and the PDF's
+text; the photocopy printed over AirPrint from the phone, at real size when the page matched a paper
+size and fitted to the page otherwise, with Copies, Also save a PDF and Copy again on the same
+printer; Email a document through Mail's composer (or the share sheet); Archive document and the PDF's
 size, Archive and Password choices, the password asked for in a sheet and never stored; network
 scanners (AirScan/eSCL) found on the Wi-Fi or added by address, picked from a sheet on iPhone or a
 sidebar on iPad, with a flatbed preview to choose the scan area on, a feeder's progress with Cancel,

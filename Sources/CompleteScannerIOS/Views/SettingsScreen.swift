@@ -61,6 +61,15 @@ struct SettingsScreen: View {
                 }
             }
             Section {
+                if state.hasPrinter {
+                    Button {
+                        state.printRulerPage()
+                    } label: {
+                        Label(IOSSettingsText.rulerLabel, systemImage: "ruler")
+                    }
+                    .accessibilityHint(Text(IOSSettingsText.rulerHint))
+                    .accessibilityIdentifier("settings.ruler")
+                }
                 Button {
                     showsTroubleshooter = true
                 } label: {
@@ -198,7 +207,8 @@ private struct ReasonLine: View {
     }
 }
 
-/// Receipts: named by the date printed on them, one PDF for all. (The photocopy is not offered here yet.)
+/// Receipts: named by the date printed on them, one PDF for all. The photocopy's choices are on its own
+/// screen, once the page is in (`CopyScreen`).
 private struct TaskSettingsRows: View {
     @EnvironmentObject private var state: AppState
 
@@ -218,7 +228,7 @@ private struct TaskSettingsRows: View {
                 ReasonLine(text: IOSSettingsText.onlyPDFReason)
             }
         } else {
-            ReasonLine(text: IOSShell.notYetReason)
+            ReasonLine(text: IOSCopyText.settingsNote)
         }
     }
 

@@ -125,6 +125,7 @@ public final class AppState: ObservableObject {
             if let task = settings.task, !TaskCatalog.fits(task, settings) { settings.taskId = nil }
             syncTaskFlow()
             syncCameraSides()
+            if !copyPages.isEmpty && !isCopyFlow { copyPages = [] }
             // A named document whose first page the settings now leave out keeps its name.
             if settings.document != oldValue.document { carryDocumentLabels(settingsBefore: oldValue.document) }
             // Split at barcode or QR sheets just chosen (by hand or with a preset, or document pages
@@ -299,6 +300,16 @@ public final class AppState: ObservableObject {
     /// Quick scan on the camera: the page taken, held until it is saved as a picture, its text copied, or
     /// discarded (AppState+CameraTasks.swift); nil otherwise.
     @Published public internal(set) var quickScanPage: ScannedPage?
+    /// The Copy task on the iPhone and iPad: the pages brought in, held on the copy screen until they are
+    /// printed (as often as asked) or discarded (AppState+Copy.swift); empty otherwise.
+    @Published public internal(set) var copyPages: [ScannedPage] = [] {
+        didSet { copyPagesRecorded = false }
+    }
+    /// The held copy's pages are in the session history and the task's steps: they go in once, on the
+    /// first print.
+    var copyPagesRecorded = false
+    /// The held copy is of an area selected on the preview, so it prints centred.
+    var copyAreaSelected = false
     /// Whether the connected scanner's feeder scans both sides is known: ImageCaptureCore reports it
     /// only once the feeder has been selected (`ScannerSession.feederSupportsDuplex`). Set once the
     /// scanner has answered; one that did not answer is asked again the next time.
@@ -886,10 +897,11 @@ public final class AppState: ObservableObject {
     /// marked as coming from `source`, go through that source's clean-up stage (`cleanUpStage`), are
     /// recorded in the scan history and are handled as the task says, exactly as a scan's pages are:
     /// queued and spooled (or saved at once), searched for photos or receipts, taken as a side of the
-    /// ID card, or printed as a copy. Pages that belong to no scanner are kept when another scanner
-    /// is chosen meanwhile. Returns whether the pages were taken: not when there are none, nor when
-    /// they cannot be now (`canIngest`), nor when the ID card's sides are in already (its review
-    /// opens instead). A caller keeps the pages it was refused, to bring them in later.
+    /// ID card, or printed as a copy (held on the copy screen first on the iPhone and iPad, `copyPages`).
+    /// Pages that belong to no scanner are kept when another scanner is chosen meanwhile. Returns
+    /// whether the pages were taken: not when there are none, nor when they cannot be now
+    /// (`canIngest`), nor when the ID card's sides are in already (its review opens instead). A caller
+    /// keeps the pages it was refused, to bring them in later.
     @discardableResult
     public func ingest(_ pages: [ScannedPage], source: PageSource) -> Bool {
         guard !pages.isEmpty, canIngest else { return false }
@@ -938,11 +950,13 @@ public final class AppState: ObservableObject {
 
     /// Pages can be brought in now (`ingest`): nothing else is running, no stack is being turned over
     /// by hand (its steps count the scanner's fronts and backs), and neither the photo or receipt
-    /// review nor the ID card's review is open (new pages would replace what is being reviewed). The
-    /// same rule as `canImportPhotos` without its settings check, and as the Windows
+    /// review nor the ID card's review is open (new pages would replace what is being reviewed), and no
+    /// Quick scan page or copy is held on the phone. The same rule as `canImportPhotos` without its
+    /// settings check, and as the Windows
     /// `AppViewModel.CanTakePhonePages`.
     public var canIngest: Bool {
         !isBusy && !isTurningOverByHand && !showPhotoReview && !showIdCardReview && quickScanPage == nil
+            && copyPages.isEmpty
     }
 
     /// The clean-up stage for pages from `source`: a scan's (`PageProcessor.forScan`, arranged as
@@ -969,8 +983,9 @@ public final class AppState: ObservableObject {
     }
 
     /// The pages of a scan, or of `ingest`, from the clean-up stage to the task: processed off the
-    /// main actor, the last one shown, recorded in the history (not an ID card's), then queued, saved,
-    /// searched for photos or receipts, taken as a side of the ID card or printed. Returns how many
+    /// main actor, the last one shown, recorded in the history (not an ID card's, nor a copy held on the
+    /// phone until it prints), then queued, saved, searched for photos or receipts, taken as a side of the
+    /// ID card, or printed (held for the copy screen on the iPhone and iPad). Returns how many
     /// pages there were as scanned (for `ScanStop.message`); nil when another scanner was chosen
     /// meanwhile and the pages were dropped.
     func ingestPages(_ incoming: [ScannedPage], intake: PageIntake, flag: CancelFlag) async throws -> Int? {
@@ -1015,25 +1030,11 @@ public final class AppState: ObservableObject {
         let rawPixelSize = rawLast.map { CGSize(width: $0.width, height: $0.height) }
 
         // Record every scanned page in the session history (small previews only). ID cards are
-        // kept out of it: nothing of them is left once saved or discarded.
-        if cardSide == nil {
-            let historyThumbs: [(CGImage, CGSize, Int)] = await Task.detached(priority: .utility) {
-                raw.map { page in
-                    (Self.makePreview(page.image, maxSide: 700) ?? page.image,
-                     CGSize(width: page.image.width, height: page.image.height),
-                     page.dpi)
-                }
-            }.value
-            guard self.isCurrent(generation) else { return nil }
-            let now = Date()
-            let entries = historyThumbs.map {
-                ScanHistoryEntry(date: now, intent: s.intent, dpi: $0.2,
-                                 thumbnail: $0.0, pixelSize: $0.1)
-            }
-            self.scanHistory.insert(contentsOf: entries.reversed(), at: 0)
-            if self.scanHistory.count > 50 {
-                self.scanHistory.removeSubrange(50...)
-            }
+        // kept out of it: nothing of them is left once saved or discarded. A copy held on the phone
+        // goes in once it is printed.
+        let copyHeld = self.holdsCopy(s)
+        if cardSide == nil && !copyHeld {
+            guard await self.addToHistory(raw, intent: s.intent, generation: generation) else { return nil }
         }
 
         switch TaskCatalog.flow(of: s) {
@@ -1156,6 +1157,10 @@ public final class AppState: ObservableObject {
             self.recordIdCardSide(side, photo: found.0, note: found.1, source: page.image, area: area)
         case .copy:
             self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
+            if copyHeld {
+                self.holdCopy(processed, areaSelected: intake.areaSelected)
+                break
+            }
             guard let copySetup = intake.copySetup else { throw PrintError.noPrinter }
             try await self.printCopyPages(processed, settings: s, setup: copySetup, areaSelected: intake.areaSelected,
                                           flag: flag)
@@ -1165,6 +1170,29 @@ public final class AppState: ObservableObject {
             try await self.showReceipts(processed, settings: s, flag: flag, generation: generation)
         }
         return raw.count
+    }
+
+    /// Puts small previews of `pages` at the top of the session history, keeping the 50 newest. False,
+    /// with nothing added, when another scanner was chosen meanwhile (`generation`).
+    func addToHistory(_ pages: [ScannedPage], intent: ScanIntent, generation: Int?) async -> Bool {
+        let historyThumbs: [(CGImage, CGSize, Int)] = await Task.detached(priority: .utility) {
+            pages.map { page in
+                (Self.makePreview(page.image, maxSide: 700) ?? page.image,
+                 CGSize(width: page.image.width, height: page.image.height),
+                 page.dpi)
+            }
+        }.value
+        guard isCurrent(generation) else { return false }
+        let now = Date()
+        let entries = historyThumbs.map {
+            ScanHistoryEntry(date: now, intent: intent, dpi: $0.2,
+                             thumbnail: $0.0, pixelSize: $0.1)
+        }
+        scanHistory.insert(contentsOf: entries.reversed(), at: 0)
+        if scanHistory.count > 50 {
+            scanHistory.removeSubrange(50...)
+        }
+        return true
     }
 
     /// The capabilities could not be read on connect (the scanner was off, say) yet a scan just

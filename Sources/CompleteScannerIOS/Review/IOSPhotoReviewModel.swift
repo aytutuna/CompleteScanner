@@ -36,6 +36,9 @@ public enum IOSReviewText {
     public static let sidesAsImagesLabel = "Also save sides as images"
     public static let discardLabel = "Discard"
     public static let discardHint = "Delete both sides; can't be undone"
+    /// The ID card review's Print button (AirPrint, I16).
+    public static let printLabel = "Print"
+    public static let printIdCardHint = "Print both sides at real size on an AirPrint printer"
 
     /// The ID card's guide frame on the camera: what to fit in it, by side.
     public static let cardFrontPrompt = "Fit the front in the frame"

@@ -394,7 +394,7 @@ extension AppState {
             self.statusMessage = "Printing the separator sheet on \(setup.printerName)\u{2026}"
             let job = PrintJob(printerName: setup.printerName, jobName: qr ? QrSeparatorSheet.jobName : "Separator sheet (Patch T)",
                                paper: paper, copies: 1)
-            guard try self.printService.print(document, job: job) else {
+            guard try await self.printService.print(document, job: job) else {
                 self.statusMessage = "Printing cancelled."
                 return
             }

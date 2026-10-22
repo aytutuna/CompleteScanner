@@ -71,8 +71,7 @@ public struct IOSLaunchOptions: Equatable, Sendable {
 }
 
 /// What the iPhone's and iPad's app shell passes `AppState`: its scanner connections, its file actions,
-/// its troubleshooter service and its lifecycle. Printing is not passed yet, so the Kit's stand-in
-/// refuses it (no printer).
+/// its troubleshooter service, its lifecycle and AirPrint printing (`IOSPrintService`, I16).
 public enum IOSShell {
     /// The demo scanner alone, whatever `options` say: the connections without the network, for tests and
     /// previews. The app's are `backends(options:networkScanners:)`.
@@ -143,28 +142,26 @@ public enum IOSShell {
         PageProcessor.splitsFacingPages(settings) && (settings.taskOptions.cameraSpreads || usesNetworkScanner(device))
     }
 
-    /// Whether this app offers a task yet: the tasks whose pages are collected and saved, since I13
-    /// Photos, Restore old photos and Receipts (several objects in one shot, then the photo review) and the
-    /// ID card (front then back, then its review), and since I14 Quick scan (one shot, then a picture or its
-    /// text) and Archive document (with the Archive & password choices). Only the photocopy, which needs a
-    /// printer (AirPrint, I16), is not offered yet.
+    /// Whether this app offers a task: the tasks whose pages are collected and saved, since I13 Photos,
+    /// Restore old photos and Receipts (several objects in one shot, then the photo review) and the ID card
+    /// (front then back, then its review), since I14 Quick scan (one shot, then a picture or its text) and
+    /// Archive document (with the Archive & password choices), and since I16 the photocopy (the page held on
+    /// the copy screen, then printed over AirPrint). Every task is offered now.
     public static func offers(_ task: ScanTask) -> Bool {
         takesPhotos(flow: TaskCatalog.definition(task).flow)
     }
 
     /// Whether the scan screen takes photos for the settings' task (our camera, Photos and Files): pages
-    /// collected in the queue, the objects of a shot for the photo review (photos, receipts), or a side of
-    /// the ID card; not for a photocopy, which prints a scanner's page.
+    /// collected in the queue, the objects of a shot for the photo review (photos, receipts), a side of the
+    /// ID card, or the page of a photocopy.
     public static func takesPhotos(_ settings: ScanSettings) -> Bool {
         takesPhotos(flow: TaskCatalog.flow(of: settings))
     }
 
     private static func takesPhotos(flow: TaskFlowKind) -> Bool {
         switch flow {
-        case .documentQueue, .photoSplit, .receiptSplit, .idCard:
+        case .documentQueue, .photoSplit, .receiptSplit, .idCard, .copy:
             return true
-        case .copy:
-            return false
         }
     }
 
@@ -327,16 +324,18 @@ extension AppState {
     /// the iOS file actions (share sheet, Quick Look, the Files app), the iOS troubleshooter service (the
     /// app's page in Settings, the pasteboard, the network path) and UIKit's lifecycle; the iPhone's
     /// troubleshooter checks and connection ranking (`platform` `.ios`); the password of a protected PDF
-    /// asked for by `passwordPrompt` (none: such a save saves nothing); no printer yet (the Kit's stand-in
-    /// refuses it).
+    /// asked for by `passwordPrompt` (none: such a save saves nothing); AirPrint printing through
+    /// `IOSPrintService` (I16), used for the photocopy, the ID card page and the ruler test page.
     @MainActor
     public static func makeForIOS(options: IOSLaunchOptions, fileActions: IOSFileActions,
                                   networkScanners: IOSNetworkScanners?,
-                                  passwordPrompt: IOSPasswordPrompt? = nil) -> AppState {
+                                  passwordPrompt: IOSPasswordPrompt? = nil,
+                                  printService: IOSPrintService? = nil) -> AppState {
         let backends: [any ScannerBackend] = IOSShell.backends(options: options, networkScanners: networkScanners)
         let lifecycle: UIKitLifecycle = UIKitLifecycle()
         let state: AppState = AppState(backends: backends, fileActions: fileActions,
-                                       troubleshooterService: IOSTroubleshooterService(), lifecycle: lifecycle)
+                                       troubleshooterService: IOSTroubleshooterService(),
+                                       printService: printService ?? IOSPrintService(), lifecycle: lifecycle)
         state.platform = .ios
         if let prompt = passwordPrompt {
             state.askPDFPassword = { () async -> PDFProtection? in

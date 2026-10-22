@@ -38,7 +38,7 @@ import PDFKit
         return PrinterSetup(printerName: info.printer.name, paper: PrinterPaper.make(paper: paper, printable: printable))
     }
 
-    public func print(_ document: Data, job: PrintJob) throws -> Bool {
+    public func print(_ document: Data, job: PrintJob) async throws -> Bool {
         guard let pdf = PDFDocument(data: document) else { throw PrintError.failed("The pages could not be prepared for printing.") }
         let info = printInfo(printerName: job.printerName, paper: job.paper.paper)
         info.topMargin = 0

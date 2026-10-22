@@ -80,7 +80,7 @@ private final class SeamPrintService: PrintService {
         nil
     }
 
-    func print(_ document: Data, job: PrintJob) throws -> Bool {
+    func print(_ document: Data, job: PrintJob) async throws -> Bool {
         throw PrintError.noPrinter
     }
 }

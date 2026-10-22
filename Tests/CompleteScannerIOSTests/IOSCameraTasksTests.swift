@@ -93,7 +93,7 @@ final class IOSCameraTasksTests: XCTestCase {
                 XCTAssertEqual(current, text, task.rawValue)
             }
         }
-        XCTAssertEqual(offered, ScanTask.allCases.count - 1)
+        XCTAssertEqual(offered, ScanTask.allCases.count)
     }
 
     // MARK: Archive and Password

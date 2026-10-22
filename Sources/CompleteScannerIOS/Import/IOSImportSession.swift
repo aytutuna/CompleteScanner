@@ -534,12 +534,14 @@ public final class IOSImportSession: ObservableObject {
                 }.value
             }
         case .wholePhoto:
-            if kind == .idCard {
+            if kind == .idCard || state.isCopyFlow {
                 // The whole photo is the card: measured by its shape as any card is, never at a made-up size
-                // without its note.
+                // without its note. A copy's whole photo is measured too, so it prints at real size only
+                // when it snapped to a paper size.
                 let whole: Quad = PhotoImport.wholePhoto(width: photo.width, height: photo.height)
+                let wholeKind: CaptureKind = kind == .idCard ? CaptureKind.idCard : CaptureKind.document
                 page = await Task.detached(priority: .userInitiated) { () -> ScannedPage? in
-                    IOSImportSession.capturedPage(photo, corners: whole, focalLength: focalLength, kind: CaptureKind.idCard)
+                    IOSImportSession.capturedPage(photo, corners: whole, focalLength: focalLength, kind: wholeKind)
                 }.value
             } else {
                 page = await Task.detached(priority: .userInitiated) { () -> ScannedPage? in

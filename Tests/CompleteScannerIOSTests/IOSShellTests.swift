@@ -161,13 +161,10 @@ final class IOSShellTests: XCTestCase {
 
     // MARK: Start screen
 
-    func test_offeredTasks_areEveryTaskButThePhotocopy() {
-        var offered: [ScanTask] = []
-        for task in ScanTask.allCases where IOSShell.offers(task) {
-            offered.append(task)
+    func test_offeredTasks_areEveryTask_sinceThePhotocopyPrintsOverAirPrint() {
+        for task in ScanTask.allCases {
+            XCTAssertTrue(IOSShell.offers(task), task.rawValue)
         }
-        XCTAssertEqual(offered, [.document, .feeder, .photos, .photoRestore, .quickScan, .email, .twoSided, .idCard, .word,
-                                 .receipt, .batch, .book, .archive])
     }
 
     func test_groups_followTheCatalogsSections_withEveryTaskOnce() {
@@ -194,7 +191,7 @@ final class IOSShellTests: XCTestCase {
         }
     }
 
-    func test_tiles_keepTheCatalogsWording_andSayWhyATaskIsNotHereYet() throws {
+    func test_tiles_keepTheCatalogsWording_andOfferEveryTask() throws {
         var cards: [TaskCard] = []
         for definition in TaskCatalog.all {
             cards.append(card(definition.task))
@@ -210,10 +207,7 @@ final class IOSShellTests: XCTestCase {
         XCTAssertEqual(document.subtitle, TaskCatalog.definition(.document).subtitle)
         XCTAssertEqual(document.symbol, "doc.text")
         XCTAssertTrue(document.availability.isAvailable)
-        let copy: IOSTaskTile = try XCTUnwrap(tiles[.copy])
-        XCTAssertFalse(copy.availability.isAvailable)
-        XCTAssertEqual(copy.availability.reason, IOSShell.notYetReason)
-        for task in [ScanTask.quickScan, .archive, .twoSided, .batch, .book, .email] {
+        for task in [ScanTask.copy, .quickScan, .archive, .twoSided, .batch, .book, .email] {
             let tile: IOSTaskTile = try XCTUnwrap(tiles[task])
             XCTAssertTrue(tile.availability.isAvailable, task.rawValue)
         }

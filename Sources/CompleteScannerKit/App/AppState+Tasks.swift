@@ -79,6 +79,7 @@ extension AppState {
         // Fresh steps, even when the same task is picked again: nothing of an ID card is kept, on
         // the stage either.
         if isIdCardFlow || hasIdCardCaptures || showIdCardReview { clearIdCard(clearCanvas: true) }
+        if !copyPages.isEmpty { copyPages = [] }
         taskFlow = nil
         flowTask = nil
         flowIsManual = false

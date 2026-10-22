@@ -239,14 +239,15 @@ public struct IOSRootView: View {
         }
     }
 
-    /// `task` is set up when given; otherwise the task set up takes photos, or Document to PDF is set up;
-    /// the scan screen is shown. True when it was pushed now.
+    /// `task` is set up when given; otherwise the task set up takes photos (not the photocopy, which holds
+    /// one batch of pages; a copy still held keeps its task and the import is refused as a held Quick scan is), or
+    /// Document to PDF is set up; the scan screen is shown. True when it was pushed now.
     private func prepareForImport(_ task: ScanTask?) -> Bool {
         if let wanted = task {
             if state.activeTask != wanted {
                 _ = state.startTask(wanted)
             }
-        } else if state.activeTask == nil || !IOSShell.takesPhotos(state.settings) {
+        } else if state.activeTask == nil || !IOSShell.takesPhotos(state.settings) || (state.isCopyFlow && state.copyPages.isEmpty) {
             _ = state.startTask(.document)
         }
         let pushed: Bool = !showsScanner

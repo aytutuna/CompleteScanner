@@ -934,13 +934,13 @@ final class IOSCameraTests: XCTestCase {
     func test_ourCamera_isOfferedWherePhotosAreTaken_besideApplesScanner() {
         let state: AppState = ImportTestSupport.makeState(in: folder)
         XCTAssertTrue(IOSShell.offersOwnCamera(state.settings))
-        // Since I13 also for photos (several in one shot), receipts and the ID card; never for a photocopy.
+        // Since I13 also for photos (several in one shot), receipts and the ID card; since I16 for a photocopy.
         var photos: ScanSettings = state.settings
         photos.intent = .photo
         XCTAssertTrue(IOSShell.offersOwnCamera(photos))
         XCTAssertTrue(IOSShell.offersOwnCamera(TaskCatalog.apply(.receipt, to: state.settings)))
         XCTAssertTrue(IOSShell.offersOwnCamera(TaskCatalog.apply(.idCard, to: state.settings)))
-        XCTAssertFalse(IOSShell.offersOwnCamera(TaskCatalog.apply(.copy, to: state.settings)))
+        XCTAssertTrue(IOSShell.offersOwnCamera(TaskCatalog.apply(.copy, to: state.settings)))
         // Apple's scanner stays on its three tasks, as the secondary way in.
         XCTAssertTrue(IOSShell.offersCamera(.document))
         XCTAssertFalse(IOSShell.offersCamera(.feeder))

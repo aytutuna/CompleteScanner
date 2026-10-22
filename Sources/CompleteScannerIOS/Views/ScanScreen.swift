@@ -5,8 +5,8 @@ import SwiftUI
 import UIKit
 
 /// The full-screen covers the scan screen opens: Apple's document scanner, our own camera, the flatbed
-/// preview to choose the scan area on, (I13) the photo or receipt review and the ID card's review, and
-/// (I14) Quick scan's page, which take the camera's place when they open.
+/// preview to choose the scan area on, (I13) the photo or receipt review and the ID card's review, (I14)
+/// Quick scan's page and (I16) the photocopy's screen, which take the camera's place when they open.
 enum ScanCover: String, Identifiable {
     case scanner
     case camera
@@ -14,6 +14,7 @@ enum ScanCover: String, Identifiable {
     case photoReview
     case idCardReview
     case quickScan
+    case copy
 
     var id: String { rawValue }
 }
@@ -31,7 +32,8 @@ enum ScanCover: String, Identifiable {
 /// a book are taken, Separate documents' separator sheets, the PDF's size, Archive and Password, a book
 /// page's spread split again (`SpreadSplitSheet`), and Quick scan's page full screen once taken. Since I15:
 /// PDFs and pictures dropped on the screen are imported as Files' are, Command-S saves, and Settings
-/// (Command-comma) is in the toolbar where the sidebar does not offer it. Its covers and the spread's sheet
+/// (Command-comma) is in the toolbar where the sidebar does not offer it. Since I16: the photocopy's pages
+/// full screen once taken, to print over AirPrint (`CopyScreen`). Its covers and the spread's sheet
 /// are the root view's (`ScanCovers`), so resizing the window across the width classes, which builds this
 /// screen anew, leaves them open.
 struct ScanScreen: View {
@@ -90,6 +92,8 @@ struct ScanScreen: View {
                 cover = .idCardReview
             } else if state.quickScanPage != nil {
                 cover = .quickScan
+            } else if !state.copyPages.isEmpty {
+                cover = .copy
             }
         }
         .onChange(of: state.showPhotoReview) { (_: Bool, shown: Bool) in
@@ -100,6 +104,9 @@ struct ScanScreen: View {
         }
         .onChange(of: state.quickScanPage != nil) { (_: Bool, shown: Bool) in
             showReview(shown, as: .quickScan)
+        }
+        .onChange(of: state.copyPages.isEmpty) { (_: Bool, empty: Bool) in
+            showReview(!empty, as: .copy)
         }
         .onChange(of: cover) { (_: ScanCover?, shown: ScanCover?) in
             if shown == nil {
@@ -599,6 +606,9 @@ struct ScanCovers: ViewModifier {
                         .environmentObject(state)
                 case .quickScan:
                     QuickScanScreen(model: IOSQuickScanModel(state: state))
+                        .environmentObject(state)
+                case .copy:
+                    CopyScreen(model: IOSCopyModel(state: state))
                         .environmentObject(state)
                 }
             }

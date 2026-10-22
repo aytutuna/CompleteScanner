@@ -4,8 +4,9 @@ import Foundation
 /// Printing: the Copy task (scan, then print at real size, like a photocopier), printing the ID
 /// card's page, and the ruler test page. Pages are placed with `PrintLayout` on a PDF the size of the
 /// paper (`PrintDocument`) and printed through `PrintService`, which shows the standard print panel
-/// set to 100 %. The printer and the number of copies are chosen in the inspector (`TaskOptions`).
-/// The stored state is in AppState.swift (`printerNames`, `defaultPrinterPaper`, `copySetup`).
+/// set to 100 %. The printer and the number of copies are chosen in the inspector (`TaskOptions`);
+/// on the iPhone and iPad a copy's pages are held on its screen and printed from there (`copyPages`).
+/// The stored state is in AppState.swift (`printerNames`, `defaultPrinterPaper`, `copySetup`, `copyPages`).
 /// Twin of the Windows `AppViewModel.Copy.cs`.
 extension AppState {
     /// Whether a printer is installed.
@@ -61,6 +62,11 @@ extension AppState {
         return printService.setup(printerName: nil, requestedPaper: requestedPaper)
     }
 
+    /// The printer a job went to: read again once it printed, since iOS picks it in its picker meanwhile.
+    func printedOn(_ setup: PrinterSetup, _ s: ScanSettings) -> String {
+        setupForPrinting(s, requestedPaper: nil)?.printerName ?? setup.printerName
+    }
+
     /// The paper asked of the printer for copies: the paper size chosen in the inspector; nil (the
     /// printer's own) for Automatic.
     static func requestedPaper(_ s: ScanSettings) -> PaperSize? {
@@ -114,9 +120,12 @@ extension AppState {
     /// against the corner as it lay on the glass or centred when an area was selected, as many copies
     /// as asked; then saves them as a PDF too when asked, also when printing failed (the pages are kept
     /// nowhere else; the print error is reported after), not when the print panel was cancelled. The
-    /// status says where they went and what the printer's margins cut off.
+    /// status says where they went and what the printer's margins cut off. `reusePrinter` prints on the
+    /// printer picked last without asking (`PrintService.printAgain`). False when the print panel was
+    /// cancelled.
+    @discardableResult
     func printCopyPages(_ pages: [ScannedPage], settings s: ScanSettings, setup: PrinterSetup, areaSelected: Bool,
-                        flag: CancelFlag) async throws {
+                        reusePrinter: Bool = false, flag: CancelFlag) async throws -> Bool {
         let options = s.taskOptions
         let allRealSize = pages.allSatisfy { $0.printsAtRealSize }
         let fit = PrintLayout.copyFitsToPage(chosenFit: options.copyFitToPage, allPagesRealSize: allRealSize)
@@ -148,26 +157,43 @@ extension AppState {
         let job = PrintJob(printerName: setup.printerName, jobName: "Copy", paper: setup.paper, copies: copies)
         var printError: Error?
         do {
-            guard try printService.print(document, job: job) else {
+            let printed: Bool
+            if reusePrinter {
+                printed = try await printService.printAgain(document, job: job)
+            } else {
+                printed = try await printService.print(document, job: job)
+            }
+            guard printed else {
                 statusMessage = "Printing cancelled."
-                return
+                return false
             }
         } catch {
             // The PDF asked for is still written: the pages are kept nowhere else.
             guard options.copyAlsoSavePdf else { throw error }
             printError = error
         }
-        let sent = PrintText.sent(pageCount: pages.count, copies: copies, printerName: setup.printerName)
+        // A held copy goes into the history and the task's steps once, on its first print, whatever
+        // becomes of its PDF.
+        if printError == nil && holdsCopy(s) && !copyPagesRecorded {
+            copyPagesRecorded = true
+            _ = await addToHistory(pages, intent: s.intent, generation: nil)
+            recordCaptures(pages.map(\.id))
+        }
+        let sent = PrintText.sent(pageCount: pages.count, copies: copies, printerName: printedOn(setup, s))
         let warning = printPages.lazy.compactMap { PrintLayout.clipWarning($0.placement, paper: paper) }.first
         let warningNote = warning.map { " \($0)" } ?? ""
         guard options.copyAlsoSavePdf else {
             statusMessage = sent + warningNote
-            return
+            return true
         }
         if noPassword {
             guard let printError else {
                 statusMessage = "\(sent) \(PDFProtection.notSavedMessage)\(warningNote)"
-                return
+                return true
+            }
+            // A held copy stays on its screen, so it is not queued as well.
+            if holdsCopy(s) {
+                throw AppState.copyNotPrinted(printError, setup: setup, pdfNote: " \(PDFProtection.notSavedMessage)")
             }
             // Neither printed nor saved: the pages wait in the queue rather than being lost.
             let spool = spoolDirectory
@@ -201,7 +227,7 @@ extension AppState {
                 statusMessage = AppState.isPasswordNotGiven(error)
                     ? "\(sent) \(PDFProtection.notSavedMessage)"
                     : "\(sent) PDF not saved (cancelled)."
-                return
+                return true
             }
             guard let printError else { throw error }
             throw AppState.copyNotPrinted(printError, setup: setup,
@@ -213,6 +239,7 @@ extension AppState {
             throw AppState.copyNotPrinted(printError, setup: setup, pdfNote: " The scan was saved as \(url.lastPathComponent).")
         }
         statusMessage = "\(sent) Saved \(url.lastPathComponent)\(pdfSizeSuffix).\(warningNote)"
+        return true
     }
 
     /// Whether `error` is a cancelled operation (Cancel was pressed).
@@ -227,6 +254,58 @@ extension AppState {
             ? printError.localizedDescription
             : "Could not print on \(setup.printerName): \(printError.localizedDescription)"
         return PrintError.failed(reason + pdfNote)
+    }
+
+    // MARK: Copy on the iPhone and iPad
+
+    /// The phone has no inspector to set a copy up before it is taken, so a copy's pages (from the camera,
+    /// Photos, Files or a network scanner) are cleaned up as any copy's, then held for the copy screen and
+    /// printed from there; not queued, not spooled, and not in the history until they print.
+    func holdsCopy(_ s: ScanSettings) -> Bool {
+        platform == .ios && TaskCatalog.flow(of: s) == .copy
+    }
+
+    /// Holds a copy's pages, in memory only, for the copy screen; an area selected on the preview prints
+    /// centred, as on the Mac.
+    func holdCopy(_ pages: [ScannedPage], areaSelected: Bool) {
+        copyPages = pages
+        copyAreaSelected = areaSelected
+        statusMessage = "Copy ready to print."
+    }
+
+    /// Some held page has no known real size (a camera page that matched no paper size), so the copy is
+    /// fitted to the page whatever Fit to page says (`PrintLayout.copyFitsToPage`).
+    public var copyNeedsFit: Bool { copyPages.contains { !$0.printsAtRealSize } }
+
+    /// Prints the held copy on the printer chosen in the picker. The pages stay held, for Copy again.
+    public func printHeldCopy() {
+        printHeldCopy(reusePrinter: false)
+    }
+
+    /// Prints the held copy again on the printer picked last, without the picker.
+    public func printHeldCopyAgain() {
+        printHeldCopy(reusePrinter: true)
+    }
+
+    private func printHeldCopy(reusePrinter: Bool) {
+        let pages = copyPages
+        guard !pages.isEmpty else { return }
+        let s = settings
+        let areaSelected = copyAreaSelected
+        runExclusive { flag in
+            guard let setup = self.setupForPrinting(s, requestedPaper: Self.requestedPaper(s)) else {
+                throw PrintError.noPrinter
+            }
+            try await self.printCopyPages(pages, settings: s, setup: setup, areaSelected: areaSelected,
+                                          reusePrinter: reusePrinter, flag: flag)
+        }
+    }
+
+    /// Lets the held copy go.
+    public func discardHeldCopy() {
+        guard !isBusy, !copyPages.isEmpty else { return }
+        copyPages = []
+        statusMessage = "Copy discarded."
     }
 
     /// Prints the ID card's page: both sides at real size, laid out on the paper of the review (or the
@@ -266,13 +345,13 @@ extension AppState {
                                            scale: 1, quarterTurns: 0, clippedInches: clipped)
             self.statusMessage = "Printing the ID card on \(setup.printerName)\u{2026}"
             let job = PrintJob(printerName: setup.printerName, jobName: "ID card", paper: setup.paper, copies: 1)
-            guard try self.printService.print(drawn.0, job: job) else {
+            guard try await self.printService.print(drawn.0, job: job) else {
                 self.statusMessage = "Printing cancelled."
                 return
             }
             let size = layout.scaledToFit ? "made smaller to fit" : "at real size"
             let warning = PrintLayout.clipWarning(placement, paper: paperInches)
-            self.statusMessage = "Sent the ID card to \(setup.printerName) on \(setup.paper.description), \(size)."
+            self.statusMessage = "Sent the ID card to \(self.printedOn(setup, s)) on \(setup.paper.description), \(size)."
                 + (warning.map { " \($0)" } ?? "")
         }
     }
@@ -297,11 +376,11 @@ extension AppState {
             if flag.isCancelled { throw ScanError.cancelled }
             self.statusMessage = "Printing the ruler test page on \(setup.printerName)\u{2026}"
             let job = PrintJob(printerName: setup.printerName, jobName: "Ruler test page", paper: paper, copies: 1)
-            guard try self.printService.print(document, job: job) else {
+            guard try await self.printService.print(document, job: job) else {
                 self.statusMessage = "Printing cancelled."
                 return
             }
-            self.statusMessage = "Sent the ruler test page to \(setup.printerName). At real size each square measures 1 inch (2.54 cm) and each tick 1 cm."
+            self.statusMessage = "Sent the ruler test page to \(self.printedOn(setup, s)). At real size each square measures 1 inch (2.54 cm) and each tick 1 cm."
         }
     }
 }

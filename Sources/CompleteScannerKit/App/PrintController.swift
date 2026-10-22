@@ -70,9 +70,20 @@ public enum PrintError: LocalizedError, Equatable {
     /// What printing on `printerName` (nil: the default printer) would use, on `requestedPaper` (nil:
     /// the printer's own paper); nil when no printer is installed.
     func setup(printerName: String?, requestedPaper: PaperSize?) -> PrinterSetup?
-    /// Shows the print panel for `document` (a PDF the size of the paper), set to the job's printer,
-    /// paper and copies at 100 %; true when the user printed, false when they cancelled.
-    func print(_ document: Data, job: PrintJob) throws -> Bool
+    /// Prints `document` (a PDF the size of the paper) on the job's printer, with its paper and copies
+    /// at 100 %. The Mac shows the standard print panel; iOS presents the AirPrint sheet. Async because
+    /// iOS reports the outcome through a completion handler. True when the document was printed, false
+    /// when the user cancelled.
+    func print(_ document: Data, job: PrintJob) async throws -> Bool
+    /// Prints `document` again on the printer picked last, without asking for one ("Copy again" on the
+    /// iPhone); the same as `print` where a printer is chosen beforehand.
+    func printAgain(_ document: Data, job: PrintJob) async throws -> Bool
+}
+
+extension PrintService {
+    public func printAgain(_ document: Data, job: PrintJob) async throws -> Bool {
+        try await print(document, job: job)
+    }
 }
 
 /// The PDF a print job prints: one page the size of the paper per page, each image (turned as
@@ -145,7 +156,7 @@ final class NoPrintService: PrintService {
         nil
     }
 
-    func print(_ document: Data, job: PrintJob) throws -> Bool {
+    func print(_ document: Data, job: PrintJob) async throws -> Bool {
         throw PrintError.noPrinter
     }
 }

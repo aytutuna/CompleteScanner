@@ -14,6 +14,9 @@ public enum IOSSettingsText {
     public static let saveToLabel = "Save to"
     public static let troubleshootLabel = "Troubleshoot"
     public static let aboutLabel = "About"
+    /// The ruler test page, to check that AirPrint copies come out at real size (I16).
+    public static let rulerLabel = "Print test ruler"
+    public static let rulerHint = "Prints a ruler to check copies come out at real size"
     public static let resetLabel = "Reset"
     public static let notCollectingReason = "Needs Collect pages"
     public static let docdateReason = "Needs {docdate} in File name"

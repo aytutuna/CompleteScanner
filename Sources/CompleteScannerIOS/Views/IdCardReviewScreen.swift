@@ -8,7 +8,8 @@ import SwiftUI
 /// it was cut from) and Scan again, its note (what to check, or the glare hint), a missing back with Scan
 /// the back, Swap sides, the page both go on with what it holds and whether it is at real size, then Paper,
 /// Save as, Also save sides as images, Discard and Save. The card stays in memory only until it is saved or
-/// discarded (AppState+IdCard.swift); printing comes with AirPrint (I16). It shows the error alert itself,
+/// discarded (AppState+IdCard.swift); Print prints both sides at real size over AirPrint
+/// (`IOSPrintService`, I16). It shows the error alert itself,
 /// since the root's cannot show over it.
 struct IdCardReviewScreen: View {
     @EnvironmentObject private var state: AppState
@@ -141,15 +142,26 @@ struct IdCardReviewScreen: View {
                 }
                 .accessibilityElement(children: .combine)
             }
-            Button {
-                state.saveIdCard()
-            } label: {
-                Text(IOSReviewText.idCardSaveTitle(state.settings.format))
-                    .frame(maxWidth: .infinity)
+            HStack(spacing: 12) {
+                Button {
+                    state.printIdCard()
+                } label: {
+                    Label(IOSReviewText.printLabel, systemImage: "printer")
+                }
+                .buttonStyle(.bordered)
+                .disabled(state.idCardFront == nil || state.isBusy)
+                .accessibilityHint(Text(IOSReviewText.printIdCardHint))
+                .accessibilityIdentifier("idcard.print")
+                Button {
+                    state.saveIdCard()
+                } label: {
+                    Text(IOSReviewText.idCardSaveTitle(state.settings.format))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(state.idCardFront == nil || state.isBusy)
+                .accessibilityIdentifier("idcard.save")
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(state.idCardFront == nil || state.isBusy)
-            .accessibilityIdentifier("idcard.save")
         }
         .disabled(state.isBusy)
         .padding(16)
