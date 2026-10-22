@@ -27,9 +27,11 @@ public enum PackageText {
 
 /// A `.csdoc` opened by hand and waiting on the banner: its file's name, its pages decoded as the
 /// queue takes them (`source == .phone`, as C1's), and the name its document carries ("" for none).
-/// Twin of C# `PendingPackage`.
+/// Twin of C# `PendingPackage`, plus the file it was read from (`url`), which says whether it came
+/// from the paired desktop.
 public struct PendingPackage {
     public let fileName: String
+    public let url: URL
     public let pages: [ScannedPage]
     public let documentName: String
 
@@ -73,7 +75,7 @@ public struct PendingPackage {
             pages.append(page)
         }
         let documentName = (document.suggestedName ?? document.title).trimmingCharacters(in: .whitespacesAndNewlines)
-        return PendingPackage(fileName: name, pages: pages, documentName: documentName)
+        return PendingPackage(fileName: name, url: url, pages: pages, documentName: documentName)
     }
 
     /// The pages as Open as new adds them: the first carries the document's name.
@@ -139,7 +141,9 @@ extension AppState {
     }
 
     public func dismissPendingPackage() {
+        guard let package = pendingPackage else { return }
         pendingPackage = nil
+        receivedPackageAnswered(package)
     }
 
     private func canTakePackage() -> Bool {
@@ -152,8 +156,9 @@ extension AppState {
     }
 
     private func takePackage(_ pages: [ScannedPage]) -> Bool {
-        guard canTakePackage(), ingest(pages, source: .phone) else { return false }
+        guard let package = pendingPackage, canTakePackage(), ingest(pages, source: .phone) else { return false }
         pendingPackage = nil
+        receivedPackageAnswered(package)
         return true
     }
 

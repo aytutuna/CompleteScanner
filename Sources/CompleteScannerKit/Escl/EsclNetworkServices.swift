@@ -10,21 +10,29 @@ import dnssd
 // advertised. Neither is ever made by a test (tests pass stand-ins to EsclDiscovery); the app makes them
 // only once the user has seen the Local Network explanation, and never under -demoScanner.
 
-/// NWBrowser for _uscan._tcp or _uscans._tcp, peer-to-peer off, on the main queue.
+/// NWBrowser for _uscan._tcp or _uscans._tcp, peer-to-peer off, on the main queue; the iPhone's companion
+/// browses the desktops' `CompanionProtocol.serviceType` with it too (`init(type:)`).
 @MainActor
 public final class EsclNWBrowser: EsclServiceBrowsing {
     public let secure: Bool
     public var onStatus: ((EsclBrowserStatus) -> Void)?
     public var onResults: (([EsclBrowseResult]) -> Void)?
+    private let type: String
     private var browser: NWBrowser?
 
     public init(secure: Bool) {
         self.secure = secure
+        self.type = secure ? "_uscans._tcp" : "_uscan._tcp"
+    }
+
+    /// Browses `type` ("_completescan._tcp"); `secure` is false.
+    public init(type: String) {
+        self.secure = false
+        self.type = type
     }
 
     public func start() {
         guard browser == nil else { return }
-        let type: String = secure ? "_uscans._tcp" : "_uscan._tcp"
         let parameters: NWParameters = NWParameters()
         parameters.includePeerToPeer = false
         let descriptor: NWBrowser.Descriptor = NWBrowser.Descriptor.bonjourWithTXTRecord(type: type, domain: nil)

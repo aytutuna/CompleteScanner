@@ -10,6 +10,8 @@ public enum IOSSettingsText {
     public static let presetsLabel = "Presets"
     public static let historyLabel = "Scans"
     public static let savedLabel = "Saved files"
+    /// The computer the phone is paired with (`CompanionScreen`, I20).
+    public static let companionLabel = "My computer"
     public static let fileNameLabel = "File name"
     public static let saveToLabel = "Save to"
     /// Picks a save folder in Files (iCloud Drive, a USB drive); Use app folder goes back to the app's own.

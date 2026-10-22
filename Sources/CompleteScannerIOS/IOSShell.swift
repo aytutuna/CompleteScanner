@@ -318,6 +318,66 @@ public enum IOSShell {
         }
     }
 
+    /// Whether the scan screen offers Send to computer: it collects pages (`collectsPages`) and a computer
+    /// is paired that still knows this phone.
+    public static func offersSendToComputer(_ settings: ScanSettings, status: CompanionStatus) -> Bool {
+        guard collectsPages(settings) else { return false }
+        switch status {
+        case .notPaired, .unpaired:
+            return false
+        case .checking, .reachable, .unreachable:
+            return true
+        }
+    }
+
+    /// The companion (I20): its files in `folder` (the network folder, out of backups), the device secret
+    /// in `secrets` (the Keychain), whether a desktop that does not answer is on the network and where it
+    /// is now from `browser`'s DNS-SD browse. While the app is in front with a desktop paired, what the
+    /// desktop holds for the phone is taken (`pullFromDesktop`, from becoming active until the app goes to
+    /// the background); each time it comes to the front the desktop is checked, browsing while the check
+    /// runs and, when it did not answer, a few seconds more before it is checked again, and what waits in
+    /// the outbox is sent. A desktop that did not answer and is found at new addresses is checked there.
+    @MainActor
+    static func setUpCompanion(_ state: AppState, folder: URL, secrets: any CompanionSecretStore,
+                               browser: IOSCompanionBrowser?, lifecycle: any PlatformLifecycle) {
+        state.setUpCompanion(in: folder, secrets: secrets)
+        if let browser {
+            state.companionDesktopSeenOnNetwork = { [weak browser] (desktopId: String) -> Bool in
+                browser?.isSeen(desktopId) ?? false
+            }
+            browser.onFound = { [weak state] (desktopId: String, addresses: [String], port: Int) -> Void in
+                guard let state else { return }
+                Task { @MainActor in
+                    if await state.desktopFound(id: desktopId, addresses: addresses, port: port),
+                       case .unreachable = state.companionStatus {
+                        await state.checkDesktop()
+                        await state.drainOutbox()
+                    }
+                }
+            }
+        }
+        lifecycle.observeDidBecomeActive { [weak state] in
+            guard let state, state.companionDesktop != nil else { return }
+            state.pullFromDesktop()
+            Task { @MainActor in
+                browser?.begin()
+                await state.checkDesktop()
+                if browser != nil, case .unreachable = state.companionStatus {
+                    // A refusal comes sooner than the browse: let it see the desktop, or find it elsewhere.
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                    if case .unreachable = state.companionStatus {
+                        await state.checkDesktop()
+                    }
+                }
+                browser?.end()
+                await state.drainOutbox()
+            }
+        }
+        lifecycle.observeWillTerminate { [weak state] in
+            state?.stopPulling()
+        }
+    }
+
     /// Whether a start-screen tile can be picked, and if not, why: a task this app does not offer
     /// yet says so; otherwise the card's own availability (a scanner without a feeder, say).
     public static func availability(_ card: TaskCard) -> TaskAvailability {
@@ -421,13 +481,16 @@ extension AppState {
     /// `IOSPrintService` (I16), used for the photocopy, the ID card page and the ruler test page; a PDF
     /// pages are added to read and replaced through its security scope and a coordinated access
     /// (`IOSPDFAppend.access`), with the question before adding pages to a signed or PDF/A file asked by
-    /// `confirmAppend` (none: such a file gets no pages).
+    /// `confirmAppend` (none: such a file gets no pages); the companion (`IOSShell.setUpCompanion`) in the
+    /// network folder with its secrets in the Keychain, the computers on the network browsed by
+    /// `companion` (none: not browsed).
     @MainActor
     public static func makeForIOS(options: IOSLaunchOptions, fileActions: IOSFileActions,
                                   networkScanners: IOSNetworkScanners?,
                                   passwordPrompt: IOSPasswordPrompt? = nil,
                                   printService: IOSPrintService? = nil,
-                                  confirmAppend: (@MainActor (String) async -> Bool)? = nil) -> AppState {
+                                  confirmAppend: (@MainActor (String) async -> Bool)? = nil,
+                                  companion: IOSCompanionBrowser? = nil) -> AppState {
         let backends: [any ScannerBackend] = IOSShell.backends(options: options, networkScanners: networkScanners)
         let lifecycle: UIKitLifecycle = UIKitLifecycle()
         let state: AppState = AppState(backends: backends, fileActions: fileActions,
@@ -448,6 +511,8 @@ extension AppState {
             IOSSaveFolder.resolve(bookmark)
         }
         state.openBookmarkedFolder()
+        IOSShell.setUpCompanion(state, folder: IOSNetworkScanners.filesFolder(), secrets: IOSCompanionSecrets(),
+                                browser: companion, lifecycle: lifecycle)
         return state
     }
 }

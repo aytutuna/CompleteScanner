@@ -120,7 +120,8 @@ scanners** — including the Epson Perfection V39 II.
   labelled **From phone**. The phone and the PC talk directly, encrypted and pinned to the PC's own
   key, with no account and no server; the PC listens only on networks you trust (Windows' Private
   networks, and ones you allow in the app, such as your school's Wi-Fi) and only while a phone is
-  paired or a pairing code is shown. The iPhone app and the Mac's side follow.
+  paired or a pairing code is shown. The iPhone app pairs from Settings > My computer; the Mac's side
+  follows.
 - **Rotate pages upright**: a page put in upside down or sideways is turned the right way up by
   reading its text (Vision on the Mac, Windows OCR on Windows). Only a page whose text reads clearly
   better one way is turned; blank pages, separator sheets, photos and pages the reading is unsure
@@ -344,6 +345,11 @@ Application Support/CompleteScanner/Network, out of backups. Launched with `-dem
 tests), the app has the Demo Scanner alone and never searches the network; the search itself is
 checked with stand-ins for the system's browsers, and the prompt, a denial, client-isolated Wi-Fi,
 IPv6 and a feeder batch while the app goes to the background need a real iPhone and scanner.
+
+Settings > My computer pairs the iPhone with CompleteScanner on a Windows PC from the PC's QR code
+(or its text, with a check code to compare), and Send to computer then sends the queue to it, keeping
+what could not go yet to send later; the Simulator has no camera for the code and the tests reach no PC,
+so those are checked with a real iPhone and PC.
 
 ## Windows version
 

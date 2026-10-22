@@ -37,7 +37,9 @@ enum ScanCover: String, Identifiable {
 /// full screen once taken, to print over AirPrint (`CopyScreen`). While Save writes a PDF, the pages can
 /// also be added to the end of a PDF picked in Files (`AppState.appendToPDF(at:)`). Since I18: a
 /// CompleteScanner document opened in the app or picked in Files is offered on a banner (Add to pages,
-/// Open as new), and the queue can be shared as one (`IOSShell.sharePackage`). Its covers and the
+/// Open as new), and the queue can be shared as one (`IOSShell.sharePackage`). Since I20: with a computer
+/// paired, Send to computer sends the queue to it as a new document or into the one open there
+/// (`AppState.sendQueueToDesktop`), the status line saying how it went. Its covers and the
 /// spread's sheet are the root view's (`ScanCovers`), so resizing the window across the width classes,
 /// which builds this screen anew, leaves them open.
 struct ScanScreen: View {
@@ -58,6 +60,10 @@ struct ScanScreen: View {
     @State private var picksPDF: Bool = false
     /// The queue is being written to be shared as a CompleteScanner document.
     @State private var sharesPackage: Bool = false
+    /// Send to computer asks where the pages go.
+    @State private var asksSendTarget: Bool = false
+    /// The queue is being written and sent to the paired computer.
+    @State private var sendsToComputer: Bool = false
 
     var body: some View {
         Group {
@@ -397,6 +403,15 @@ struct ScanScreen: View {
         }
     }
 
+    private func sendToComputer(_ target: CompanionTarget) {
+        sendsToComputer = true
+        let appState: AppState = state
+        Task { @MainActor in
+            await appState.sendQueueToDesktop(target: target)
+            sendsToComputer = false
+        }
+    }
+
     private var bottomBar: some View {
         let options: DocumentOptions = state.settings.document
         let plan: SavePlan = SavePlan.make(state.scannedPages, options: options)
@@ -458,7 +473,7 @@ struct ScanScreen: View {
                     }
                     .buttonStyle(.bordered)
                     // Saving deletes the spooled pages a share may still be writing.
-                    .disabled(state.isBusy || importer.isImporting || sharesPackage || saveCount == 0)
+                    .disabled(state.isBusy || importer.isImporting || sharesPackage || sendsToComputer || saveCount == 0)
                     .keyboardShortcut(IOSShortcuts.save.keyboardShortcut)
                     .accessibilityIdentifier("save.button")
                     Button {
@@ -468,9 +483,33 @@ struct ScanScreen: View {
                             .labelStyle(.iconOnly)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(state.isBusy || importer.isImporting || sharesPackage || state.scannedPages.isEmpty)
+                    .disabled(state.isBusy || importer.isImporting || sharesPackage || sendsToComputer
+                        || state.scannedPages.isEmpty)
                     .accessibilityLabel(Text(IOSShell.sharePackageLabel))
                     .accessibilityIdentifier("share.package")
+                }
+            }
+            if IOSShell.offersSendToComputer(state.settings, status: state.companionStatus) {
+                Button {
+                    asksSendTarget = true
+                } label: {
+                    Label(IOSCompanionText.sendButton, systemImage: "laptopcomputer")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(state.isBusy || importer.isImporting || sharesPackage || sendsToComputer
+                    || state.scannedPages.isEmpty)
+                .accessibilityIdentifier("send.computer")
+                .confirmationDialog(IOSCompanionText.sendQuestion, isPresented: $asksSendTarget,
+                                    titleVisibility: .visible) {
+                    Button(IOSCompanionText.newDocument) {
+                        sendToComputer(.new)
+                    }
+                    .accessibilityIdentifier("send.computer.new")
+                    Button(IOSCompanionText.intoOpenDocument) {
+                        sendToComputer(.current)
+                    }
+                    .accessibilityIdentifier("send.computer.current")
                 }
             }
             if IOSShell.offersPDFOptions(state.settings) {

@@ -6,7 +6,8 @@ import UniformTypeIdentifiers
 /// Settings: the presets, this session's scans and the saved files first, then the settings in the shared
 /// sections (`IOSSettingsSections`, built on `InspectorSections`: which are shown, in which order, their
 /// titles and the summaries their collapsed headers show; the task's own, Scanner and Output start open),
-/// then Troubleshoot and About. Which sections are open is kept for the user, not in presets; a task
+/// then Troubleshoot and About. My computer (since I20) pairs the phone with a computer and sends to it
+/// (`CompanionScreen`). Which sections are open is kept for the user, not in presets; a task
 /// started opens the section it needs (`AppState.sectionsOpenedByTask`) until it is closed. While an import
 /// runs the settings cannot be changed: its pages belong to the task and format it started with.
 struct SettingsScreen: View {
@@ -20,6 +21,8 @@ struct SettingsScreen: View {
     var onClose: (() -> Void)?
     /// The troubleshooter over Settings; the root view's, so the error alert in the sheet can open it too.
     @Binding var showsTroubleshooter: Bool
+    /// Browses the computers on the network for My computer; nil when the app does not (`-demoScanner`).
+    var companion: IOSCompanionBrowser?
     @AppStorage(IOSSettingsSections.storageKey) private var openText: String = IOSSettingsSections.defaultText
 
     var body: some View {
@@ -44,6 +47,12 @@ struct SettingsScreen: View {
                     Label(IOSSettingsText.savedLabel, systemImage: "tray")
                 }
                 .accessibilityIdentifier("settings.saved")
+                NavigationLink {
+                    CompanionScreen(state: state, browser: companion)
+                } label: {
+                    Label(IOSSettingsText.companionLabel, systemImage: "laptopcomputer.and.iphone")
+                }
+                .accessibilityIdentifier("settings.companion")
             }
             if importer.isImporting {
                 Section {

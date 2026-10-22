@@ -279,6 +279,21 @@ public final class AppState: ObservableObject {
     /// This install's Documents folder, which a save folder kept as a path into an earlier install's is
     /// moved into (`ScanSettings.rebasedDestinationPath`); nil on the Mac. Set by `makeForIOS`.
     public package(set) var documentsFolder: URL?
+    /// Whether the desktop with this id is seen on the network the phone is on (its DNS-SD browser),
+    /// so a desktop that does not answer is told from a network that keeps devices apart
+    /// (`companionUnreachableReason`). Set by the iPhone's shell; nil: not known.
+    public var companionDesktopSeenOnNetwork: ((String) -> Bool)?
+    /// The companion's files and the client of the paired desktop (`setUpCompanion`,
+    /// AppState+Companion.swift); nil until the shell sets them up.
+    var companionStore: PairedDesktopStore?
+    var companionOutbox: PhoneOutbox?
+    var companionInbox: URL?
+    var companionClient: CompanionClient?
+    /// The long poll for what the desktop holds (`pullFromDesktop`); nil when it does not run.
+    var companionPull: Task<Void, Never>?
+    var companionDraining = false
+    /// URLProtocol stubs for the companion client's sessions (tests).
+    var companionProtocolClasses: [AnyClass] = []
 
     @Published public private(set) var presets: [Preset] = []
 
@@ -331,6 +346,11 @@ public final class AppState: ObservableObject {
     @Published public internal(set) var pendingPackage: PendingPackage?
     /// Counts the `.csdoc` files opened, so a slow read does not replace a file opened after it.
     var packageOpens = 0
+    /// The desktop this phone is paired with (AppState+Companion.swift); nil when there is none.
+    @Published public internal(set) var companionDesktop: PairedDesktop?
+    @Published public internal(set) var companionStatus = CompanionStatus.notPaired
+    /// Documents waiting in the outbox to be sent to the desktop.
+    @Published public internal(set) var companionOutboxCount = 0
     /// Whether the connected scanner's feeder scans both sides is known: ImageCaptureCore reports it
     /// only once the feeder has been selected (`ScannerSession.feederSupportsDuplex`). Set once the
     /// scanner has answered; one that did not answer is asked again the next time.

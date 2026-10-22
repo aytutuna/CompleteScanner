@@ -26,6 +26,7 @@ public struct IOSRootView: View {
     private let launchImports: [IOSImportItem]
     private let launchTask: ScanTask?
     private let picker: IOSScannerPickerModel
+    private let companion: IOSCompanionBrowser?
     @State private var showsScanner: Bool = false
     @State private var detail: IOSDetail = IOSDetail.start
     @State private var showsSettings: Bool = false
@@ -37,12 +38,15 @@ public struct IOSRootView: View {
 
     /// `importer` brings photos and PDFs in for the state the view is given; `launchImports` are the files
     /// imported at launch (`IOSLaunchOptions`), in order, into `launchTask` when given; `picker` lists the
-    /// scanners (with the network scanners, unless the app was launched with the demo scanner alone).
+    /// scanners (with the network scanners, unless the app was launched with the demo scanner alone);
+    /// `companion` browses the computers on the network for Settings' My computer.
     public init(fileActions: IOSFileActions, importer: IOSImportSession, picker: IOSScannerPickerModel,
-                launchImports: [IOSImportItem] = [], launchTask: ScanTask? = nil) {
+                launchImports: [IOSImportItem] = [], launchTask: ScanTask? = nil,
+                companion: IOSCompanionBrowser? = nil) {
         _fileActions = ObservedObject(wrappedValue: fileActions)
         _importer = ObservedObject(wrappedValue: importer)
         self.picker = picker
+        self.companion = companion
         self.launchImports = launchImports
         self.launchTask = launchTask
     }
@@ -90,7 +94,7 @@ public struct IOSRootView: View {
         .sheet(isPresented: $showsSettings) {
             NavigationStack {
                 SettingsScreen(makeAddModel: makeAddModel, onPresetApplied: presetApplied, onClose: closeSettings,
-                               showsTroubleshooter: $showsSettingsTroubleshooter)
+                               showsTroubleshooter: $showsSettingsTroubleshooter, companion: companion)
             }
             .modifier(FileActionPresenters(fileActions: fileActions, state: state,
                                            onTroubleshoot: openSettingsTroubleshooter))
