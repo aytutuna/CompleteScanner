@@ -1,7 +1,7 @@
 import Foundation
 
 // Twin of windows/CompleteScanner.Core/Companion/CompanionHttp.cs: the same subset of HTTP/1.1, the
-// same limits and the same answers to malformed requests (for the Mac's server, later).
+// same limits and the same answers to malformed requests (CompanionServer.swift reads requests with it).
 
 /// How far parsing a request's head got.
 public enum HttpParseStatus: Equatable, Sendable {

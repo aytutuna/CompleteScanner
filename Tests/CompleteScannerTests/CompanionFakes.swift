@@ -3,7 +3,7 @@ import Foundation
 
 // A desktop played by a URLProtocol stub for CompanionClientTests and AppStateCompanionTests, and an
 // in-memory secret store. No request leaves the process; TLS is never reached, so the pinning itself
-// is tested on `CompanionClient.accepts` (the loopback against a real server comes with the Mac's).
+// is tested on `CompanionClient.accepts` (CompanionLoopbackTests runs the client against the real server).
 
 /// One request as the stub desktop saw it.
 struct CompanionStubRequest {

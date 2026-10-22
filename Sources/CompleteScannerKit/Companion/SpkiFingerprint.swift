@@ -111,7 +111,7 @@ public enum SpkiFingerprint {
     }
 
     /// One DER element: its tag, where its content starts and where it ends (exclusive).
-    private struct Element {
+    struct Element {
         let tag: UInt8
         let contentStart: Int
         let end: Int
@@ -119,7 +119,7 @@ public enum SpkiFingerprint {
 
     /// The DER element at `offset`, which must end by `limit`. Low tag numbers only; definite lengths
     /// in short form or long form of up to four bytes.
-    private static func readElement(_ der: [UInt8], offset: Int, limit: Int) -> Element? {
+    static func readElement(_ der: [UInt8], offset: Int, limit: Int) -> Element? {
         guard offset >= 0, limit <= der.count, offset + 2 <= limit else { return nil }
         let tag = der[offset]
         guard tag & 0x1F != 0x1F else { return nil }

@@ -5,6 +5,8 @@ import SwiftUI
 /// Left column: the list of discovered scanner devices.
 struct SidebarView: View {
     @EnvironmentObject var state: AppState
+    /// "Send from your phone" is open (`PhoneView`).
+    @State private var showPhone = false
 
     var body: some View {
         List(selection: deviceSelection) {
@@ -54,9 +56,19 @@ struct SidebarView: View {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
             .help("Look for scanners again")
+            Button {
+                showPhone = true
+            } label: {
+                Label("Phone", systemImage: "iphone")
+            }
+            .help("Send from your phone: pair a phone and see whether this Mac receives")
         }
         .sheet(isPresented: $state.showTroubleshooter) {
             TroubleshooterView()
+                .environmentObject(state)
+        }
+        .sheet(isPresented: $showPhone) {
+            PhoneView()
                 .environmentObject(state)
         }
     }

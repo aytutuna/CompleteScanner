@@ -30,6 +30,10 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>NSHighResolutionCapable</key>   <true/>
     <key>NSPrincipalClass</key>          <string>NSApplication</string>
     <key>NSApplicationSupportsSecureRestorableState</key> <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>CompleteScanner receives documents from your paired phone on your local network.</string>
+    <key>NSBonjourServices</key>
+    <array><string>_completescan._tcp</string></array>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>

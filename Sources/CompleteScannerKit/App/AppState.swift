@@ -164,7 +164,10 @@ public final class AppState: ObservableObject {
     /// The page queue. Spreads no page is cut from any more are dropped whenever it changes
     /// (`pruneSpreads`, AppState+Book.swift).
     @Published public internal(set) var scannedPages: [ScannedPage] = [] {
-        didSet { pruneSpreads() }
+        didSet {
+            pruneSpreads()
+            companionService?.queuedPages = scannedPages.count
+        }
     }
     /// The spreads the book pages in the queue were cut from, by spread id (AppState+Book.swift).
     var spreadSources: [UUID: SpreadSource] = [:]
@@ -294,6 +297,28 @@ public final class AppState: ObservableObject {
     var companionDraining = false
     /// URLProtocol stubs for the companion client's sessions (tests).
     var companionProtocolClasses: [AnyClass] = []
+    /// The desktop's side of C1 on the Mac (AppState+CompanionHost.swift): the platform's pieces the
+    /// shell set up, and the service once it runs; nil on the iPhone.
+    var companionHostOptions: CompanionServiceOptions?
+    public internal(set) var companionService: CompanionService?
+    /// The descriptor holding the lock that lets one copy of the app receive from phones; -1 when not held.
+    var companionHostLock: Int32 = -1
+    /// Whether the desktop receives from phones, or why not, as the host last said.
+    @Published public internal(set) var companionHostStatus = CompanionHostStatus.initial
+    /// Why the phone link could not start; nil when it started or was not tried.
+    @Published public internal(set) var companionHostError: String?
+    /// Asks the user whether a phone that presented the pairing code may pair (the Phone window answers;
+    /// declined when the asking task is cancelled). Without it the pairing is allowed: the code was
+    /// only on this screen.
+    public var confirmPhonePairing: (@MainActor (PairRequest) async -> Bool)?
+    /// What the bar above the window says: a phone's pages were added, or wait; nil when it is closed.
+    @Published public internal(set) var phoneBarMessage: String?
+    /// "3 pages from Aytu's iPhone will be added…" while documents from phones wait; nil otherwise.
+    @Published public internal(set) var phoneDocumentsWaitingMessage: String?
+    /// Documents from phones waiting to be added to the queue, oldest first, with the phone's name.
+    var phoneDocuments: [(package: ReceivedPackage, phoneName: String)] = []
+    /// Tries the waiting documents again shortly; nil when nothing waits.
+    var phoneRetry: Task<Void, Never>?
 
     @Published public private(set) var presets: [Preset] = []
 
@@ -583,6 +608,8 @@ public final class AppState: ObservableObject {
         }
         // Queued pages a scan or a busy moment left unread (AppState+Split.swift).
         readQueuedBarcodesAfterWork()
+        // Documents from phones that waited for the queue (AppState+CompanionHost.swift).
+        addWaitingPhoneDocuments()
     }
 
     /// The first real scanner (else the demo device), through its preferred connection. A scanner whose

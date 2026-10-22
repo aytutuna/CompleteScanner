@@ -116,8 +116,9 @@ struct TroubleshooterView: View {
 
 /// One check: the status symbol (named for VoiceOver), the title, the one-line detail, its buttons and
 /// "More help" with the rest. A check that passed and offers nothing to do is a compact row: its title,
-/// with what it found as its help. Refresh is the footer's, not repeated in a card.
-private struct TroubleshootCheckCard: View {
+/// with what it found as its help. Refresh is the footer's, not repeated in a card. The Phone window's
+/// checks use it too.
+struct TroubleshootCheckCard: View {
     let check: TroubleshootCheck
     let perform: (TroubleshootAction) -> Void
 

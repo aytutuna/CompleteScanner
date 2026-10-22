@@ -68,6 +68,11 @@ struct ContentView: View {
                     PackageBannerView(package: package)
                     Divider()
                 }
+                // A paired phone's document added to the queue, or waiting for it (AppState+CompanionHost.swift).
+                if let message = state.phoneBarMessage {
+                    PhoneBarView(message: message)
+                    Divider()
+                }
                 switch detailTab {
                 case .start:
                     startDetail

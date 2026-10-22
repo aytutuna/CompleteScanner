@@ -115,13 +115,14 @@ scanners** — including the Epson Perfection V39 II.
   iPad** takes a photo or a scanned document from a nearby iPhone or iPad the same way (Continuity
   Camera), and a CompleteScanner document (`.csdoc`) opened in the Finder, dropped on the window or
   picked with Import offers **Add to pages** or **Open as new** on a banner.
-- **Send from your phone** (Windows now): pair a phone once by scanning a QR code on the PC, and
+- **Send from your phone** (Windows and the Mac): pair a phone once by scanning a QR code on the PC, and
   documents scanned with CompleteScanner on the phone are added to the PC's page queue on their own,
   labelled **From phone**. The phone and the PC talk directly, encrypted and pinned to the PC's own
   key, with no account and no server; the PC listens only on networks you trust (Windows' Private
   networks, and ones you allow in the app, such as your school's Wi-Fi) and only while a phone is
-  paired or a pairing code is shown. The iPhone app pairs from Settings > My computer; the Mac's side
-  follows.
+  paired or a pairing code is shown. The iPhone app pairs from Settings > My computer. On the Mac,
+  the **Phone** button in the sidebar pairs a phone, and each network needs **Allow receiving on this
+  network** once, since macOS does not mark networks as private.
 - **Rotate pages upright**: a page put in upside down or sideways is turned the right way up by
   reading its text (Vision on the Mac, Windows OCR on Windows). Only a page whose text reads clearly
   better one way is turned; blank pages, separator sheets, photos and pages the reading is unsure
