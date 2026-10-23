@@ -197,7 +197,7 @@ public enum IOSCameraText {
     public static let lastPageLabel = "Last page"
     public static let torchLabel = "Torch"
     public static let settingsLabel = "Settings"
-    /// The last page and the count: back to the page strip (camera) or the strip shown or hidden (scan screen).
+    /// The last page and the count: back to the page strip (camera) or the strip opened as a sheet (scan screen).
     public static let pagesHint = "Shows the pages taken"
     /// The card before the first camera permission prompt (`IOSShell.cameraOnOpen`).
     public static let introLine = "CompleteScanner scans with the camera."

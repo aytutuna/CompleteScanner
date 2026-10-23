@@ -22,13 +22,15 @@ final class BatchTests: XCTestCase {
         app.launchEnvironment["COMPLETESCANNER_IMPORT_FIXTURE"] = bytes.base64EncodedString()
         app.launch()
 
+        app.openPages(3)
         let last: XCUIElement = app.descendants(matching: .any)["page.3"]
-        XCTAssertTrue(last.waitForExistence(timeout: 240), "The third page in the page strip")
         let sheet: XCUIElement = app.descendants(matching: .any)["page.2"]
         XCTAssertTrue(sheet.label.contains("Separator"), sheet.label)
         XCTAssertTrue(last.label.contains("Document 2"), last.label)
+        app.closePages()
         XCTAssertTrue(app.buttons["task.newDocument"].exists, "New document")
-        XCTAssertTrue(app.buttons["separator.save"].exists, "Separator sheet")
+        app.openOptions()
+        XCTAssertTrue(app.buttons["separator.save"].waitForExistence(timeout: 10), "Separator sheet")
 
         let save: XCUIElement = app.buttons["save.button"]
         waitUntilEnabled(save, timeout: 120)

@@ -23,12 +23,15 @@ final class TwoSidedTests: XCTestCase {
         app.launchEnvironment["COMPLETESCANNER_IMPORT_FIXTURE"] = bytes.base64EncodedString()
         app.launch()
 
+        app.openPages(2)
         let back: XCUIElement = app.descendants(matching: .any)["page.2"]
-        XCTAssertTrue(back.waitForExistence(timeout: 240), "The second page in the page strip")
         XCTAssertTrue(back.label.contains("Sheet 1, back"), back.label)
         let front: XCUIElement = app.descendants(matching: .any)["page.1"]
         XCTAssertTrue(front.label.contains("Sheet 1, front"), front.label)
-        XCTAssertTrue(app.descendants(matching: .any)["task.sidesWay"].exists, "Flip & capture or fronts first")
+        app.closePages()
+        app.openOptions()
+        XCTAssertTrue(app.descendants(matching: .any)["task.sidesWay"].waitForExistence(timeout: 10),
+                      "Flip & capture or fronts first")
 
         let save: XCUIElement = app.buttons["save.button"]
         waitUntilEnabled(save, timeout: 120)

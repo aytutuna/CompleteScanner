@@ -45,8 +45,10 @@ enum ScanCover: String, Identifiable {
 /// which builds this screen anew, leaves them open. On the iPhone it is the app's first screen: the task
 /// chip at the top opens the task sheet (`onOpenTasks`), the library (`onOpenLibrary`) and Settings sit
 /// beside it, and the capture bar (`CaptureBar`) is right above Save; the step card shows only while a step
-/// needs it (`IOSShell.showsStepCard`), and how the task is taken, Apple's scanner and the PDF's choices are
-/// below the preview.
+/// needs it (`IOSShell.showsStepCard`), the scanner row while a scanner is listed, and the preview once
+/// there is one (else the camera's line, centred in its place). How the task is taken, the flatbed's
+/// Preview, Apple's scanner and the PDF's choices are in Options below it, collapsed. The capture bar's
+/// last page opens the page strip in a sheet.
 struct ScanScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -64,7 +66,11 @@ struct ScanScreen: View {
     /// Opens the library (iPhone); nil when the sidebar has it.
     var onOpenLibrary: (() -> Void)?
     @State private var scanner: IOSCameraAvailability = .noCamera
-    @State private var stripShown: Bool = true
+    /// The page strip's sheet, opened from the capture bar's last page.
+    @State private var pagesShown: Bool = false
+    /// A book page whose spread is split again once the page strip's sheet has closed.
+    @State private var spreadAfterPages: UUID?
+    @State private var optionsShown: Bool = false
     @State private var showsPicker: Bool = false
     /// Files is open to pick the PDF the pages are added to.
     @State private var picksPDF: Bool = false
@@ -156,6 +162,15 @@ struct ScanScreen: View {
             ScannerPickerSheet(picker: picker, onClose: closePicker)
                 .environmentObject(state)
         }
+        .sheet(isPresented: $pagesShown, onDismiss: pagesClosed) {
+            PageStripSheet(onEditSpread: editSpreadFromPages, onClose: closePages)
+                .environmentObject(state)
+        }
+        .onChange(of: state.scannedPages.isEmpty) { (_: Bool, empty: Bool) in
+            if empty {
+                pagesShown = false
+            }
+        }
     }
 
     private var mainColumn: some View {
@@ -170,31 +185,91 @@ struct ScanScreen: View {
                             .foregroundStyle(Color.orange)
                             .accessibilityIdentifier("task.mismatch")
                     }
-                    scannerRow
-                    PreviewArea(image: state.canvasImage, overview: state.overviewImage, onChooseArea: openCrop)
-                    previewControls
-                    SeparatorSheetRow()
-                    TaskWayPicker()
-                    if IOSShell.offersCamera(state.activeTask) {
-                        AppleScannerRow(scanner: scanner, onScanner: openScanner)
+                    if !state.devices.isEmpty {
+                        scannerRow
                     }
-                    if IOSShell.offersPDFOptions(state.settings) {
-                        PDFOptionsSection()
+                    previewOrHint
+                    if hasOptions {
+                        DisclosureGroup(isExpanded: $optionsShown) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                previewControls
+                                SeparatorSheetRow()
+                                TaskWayPicker()
+                                if IOSShell.offersCamera(state.activeTask) {
+                                    AppleScannerRow(scanner: scanner, onScanner: openScanner)
+                                }
+                                if IOSShell.offersPDFOptions(state.settings) {
+                                    PDFOptionsSection()
+                                }
+                            }
+                            .padding(.top, 8)
+                        } label: {
+                            Text("Options")
+                                .accessibilityIdentifier("options.group")
+                        }
                     }
                 }
                 .padding(16)
-            }
-            if stripShown && !state.scannedPages.isEmpty {
-                Divider()
-                PageStripView(onEditSpread: openSpreadEditor)
             }
             Divider()
             bottomBar
         }
     }
 
-    private func toggleStrip() {
-        stripShown.toggle()
+    /// The flatbed preview or the last scan; with neither, the camera's line centred where the preview
+    /// would be, unless the step card already says what to do.
+    @ViewBuilder
+    private var previewOrHint: some View {
+        if state.canvasImage != nil {
+            PreviewArea(image: state.canvasImage, overview: state.overviewImage, onChooseArea: openCrop)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("preview.area")
+        } else if !showsStepCard, let camera = cameraLine {
+            VStack(spacing: 6) {
+                Text(camera.prompt)
+                if let device = selectedDevice {
+                    Text("Or scan from \(device.name).")
+                        .font(.footnote)
+                }
+            }
+            .foregroundStyle(Color.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .containerRelativeFrame(Axis.Set.vertical) { (length: CGFloat, _: Axis) -> CGFloat in
+                PreviewArea.height(for: length)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("preview.area")
+        }
+    }
+
+    /// Whether Options has anything in it for this task and scanner.
+    private var hasOptions: Bool {
+        let task: ScanTask? = state.activeTask
+        return usesFlatbed || task == .batch || task == .twoSided || task == .book
+            || IOSShell.offersCamera(task) || IOSShell.offersPDFOptions(state.settings)
+    }
+
+    // MARK: The page strip
+
+    private func openPages() {
+        pagesShown = true
+    }
+
+    private func closePages() {
+        pagesShown = false
+    }
+
+    /// The root view presents the split sheet, which it cannot while the strip's sheet is up.
+    private func editSpreadFromPages(_ pageID: UUID) {
+        spreadAfterPages = pageID
+        pagesShown = false
+    }
+
+    private func pagesClosed() {
+        guard let pageID = spreadAfterPages else { return }
+        spreadAfterPages = nil
+        openSpreadEditor(pageID)
     }
 
     // MARK: The scanner picker
@@ -370,8 +445,7 @@ struct ScanScreen: View {
     /// preview full screen, `CropScreen`), and Clear selection once an area is chosen.
     @ViewBuilder
     private var previewControls: some View {
-        let flatbed: Bool = state.capabilities?.sources.contains(.flatbed) == true && state.settings.source == .flatbed
-        if flatbed {
+        if usesFlatbed {
             HStack(spacing: 12) {
                 Button {
                     state.performOverview()
@@ -405,6 +479,10 @@ struct ScanScreen: View {
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    private var usesFlatbed: Bool {
+        state.capabilities?.sources.contains(.flatbed) == true && state.settings.source == .flatbed
     }
 
     private var deviceName: String {
@@ -490,7 +568,7 @@ struct ScanScreen: View {
                 SavedFilesRow()
             }
             CaptureBar(offersCamera: IOSShell.offersOwnCamera(state.settings), onCamera: openOwnCamera,
-                       stripShown: stripShown, onPages: toggleStrip)
+                       onPages: openPages)
             if collects {
                 HStack(spacing: 12) {
                     Button {
@@ -661,8 +739,8 @@ private struct ScanProgressRow: View {
     }
 }
 
-/// The flatbed preview with its scan area when there is one, else the last scan (or "No scan yet"). The
-/// preview is only shown here, in the scrolling column (a drag on it scrolls); tapping it opens it full
+/// The flatbed preview with its scan area when there is one, else the last scan. The preview is only
+/// shown here, in the scrolling column (a drag on it scrolls); tapping it opens it full
 /// screen to choose the area on (`onChooseArea`).
 private struct PreviewArea: View {
     @EnvironmentObject private var state: AppState
@@ -693,9 +771,6 @@ private struct PreviewArea: View {
                     .padding(8)
                     .accessibilityLabel(Text("Last scan"))
                     .accessibilityIdentifier("last.scan")
-            } else {
-                Text("No scan yet")
-                    .foregroundStyle(Color.secondary)
             }
         }
         .frame(maxWidth: .infinity)

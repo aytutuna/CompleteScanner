@@ -24,8 +24,8 @@ final class SmokeTests: XCTestCase {
         waitUntilEnabled(scan, timeout: 60)
         scan.tap()
 
-        let page: XCUIElement = app.descendants(matching: .any)["page.1"]
-        XCTAssertTrue(page.waitForExistence(timeout: 240), "The scanned page in the page strip")
+        app.openPages(1)
+        app.closePages()
 
         let save: XCUIElement = app.buttons["save.button"]
         waitUntilEnabled(save, timeout: 120)
@@ -43,7 +43,7 @@ final class SmokeTests: XCTestCase {
         app.launchArguments = ["-demoScanner"]
         app.launch()
 
-        let settings: XCUIElement = app.buttons["scan.settings"]
+        let settings: XCUIElement = app.descendants(matching: .any)["scan.settings"].firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 60), "The scan screen's Settings button")
         settings.tap()
 

@@ -6,11 +6,11 @@ import UIKit
 import UniformTypeIdentifiers
 
 /// The capture bar along the bottom of the scan screen: the last page taken with how many the queue holds
-/// (it shows or hides the page strip, `onPages`), the shutter, which opens our own camera (`CameraScreen`,
+/// (it opens the page strip in a sheet, `onPages`), the shutter, which opens our own camera (`CameraScreen`,
 /// the default way to take pages on every task that takes photos; its screen says why when there is no
 /// camera or access is off), and Photos and Files (`ImportButtons`). Imported photos go to the corner
 /// editor one by one (`IOSImportSession`); the root view shows it. While an import runs, its progress shows
-/// with Stop. Apple's document scanner is further up, below the preview (`AppleScannerRow`).
+/// with Stop. Apple's document scanner is further up, in the scan screen's Options (`AppleScannerRow`).
 struct CaptureBar: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -19,9 +19,7 @@ struct CaptureBar: View {
     let offersCamera: Bool
     /// Opens our own camera.
     let onCamera: @MainActor () -> Void
-    /// The page strip is shown.
-    let stripShown: Bool
-    /// Shows or hides the page strip.
+    /// Opens the page strip.
     let onPages: @MainActor () -> Void
 
     /// The most photos picked at once.
@@ -65,7 +63,7 @@ struct CaptureBar: View {
         }
     }
 
-    /// The last page taken and the count; it shows or hides the page strip.
+    /// The last page taken and the count; it opens the page strip.
     private var pagesButton: some View {
         let count: Int = state.scannedPages.count
         let last: CGImage? = state.scannedPages.last?.image
@@ -96,7 +94,6 @@ struct CaptureBar: View {
         .buttonStyle(.plain)
         .disabled(count == 0)
         .accessibilityLabel(Text(IOSCameraText.pageCount(count)))
-        .accessibilityValue(Text(stripShown ? "Page strip shown" : "Page strip hidden"))
         .accessibilityHint(Text(IOSCameraText.pagesHint))
         .accessibilityIdentifier("capture.pages")
     }
@@ -245,8 +242,8 @@ struct ImportButtons: View {
     }
 }
 
-/// Apple's document scanner on the Document, Email and Word tasks: a secondary way in, below the scan
-/// screen's preview, dimmed with one short line where it cannot run (as in the Simulator).
+/// Apple's document scanner on the Document, Email and Word tasks: a secondary way in, in the scan
+/// screen's Options, dimmed with one short line where it cannot run (as in the Simulator).
 struct AppleScannerRow: View {
     @EnvironmentObject private var importer: IOSImportSession
     /// Whether Apple's scanner can be opened here.

@@ -2,7 +2,7 @@ import XCTest
 
 // Our own camera as a person meets it on the Simulator: launched on the demo scanner alone
 // (`-demoScanner`), pick Document to PDF in the task sheet, and the scan screen offers Camera, the default, with Apple's
-// document scanner below it as Use Apple's scanner (dimmed there with its reason). The Simulator has no
+// document scanner in Options as Use Apple's scanner (dimmed there with its reason). The Simulator has no
 // camera, so the camera screen opens and says so in one line, with the Auto toggle and the shutter
 // dimmed, and Done brings the scan screen back. Nothing is photographed and no permission prompt is
 // shown.
@@ -20,11 +20,12 @@ final class CameraTests: XCTestCase {
 
         app.pickTask("document")
 
-        // Our camera is the task's default; Apple's document scanner stays below it, dimmed in the Simulator.
+        // Our camera is the task's default; Apple's document scanner is in Options, dimmed in the Simulator.
         let camera: XCUIElement = app.buttons["capture.camera"]
         XCTAssertTrue(camera.waitForExistence(timeout: 30), "The Camera button")
+        app.openOptions()
         let scanner: XCUIElement = app.buttons["capture.scanner"]
-        XCTAssertTrue(scanner.exists, "The Use Apple's scanner button")
+        XCTAssertTrue(scanner.waitForExistence(timeout: 10), "The Use Apple's scanner button")
         XCTAssertFalse(scanner.isEnabled, "No document scanner in the Simulator")
         XCTAssertTrue(app.staticTexts["scanner.reason"].exists, "Why there is no document scanner")
         waitUntilEnabled(camera, timeout: 60)
@@ -43,7 +44,7 @@ final class CameraTests: XCTestCase {
         app.buttons["camera.done"].tap()
         XCTAssertTrue(app.buttons["save.button"].waitForExistence(timeout: 30), "Back on the scan screen")
         waitUntilGone(message, timeout: 30)
-        XCTAssertFalse(app.descendants(matching: .any)["page.1"].exists, "No page came in")
+        XCTAssertEqual(app.descendants(matching: .any)["capture.pages"].firstMatch.label, "0 pages", "No page came in")
     }
 
     @MainActor

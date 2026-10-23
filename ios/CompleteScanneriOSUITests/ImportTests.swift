@@ -27,13 +27,14 @@ final class ImportTests: XCTestCase {
         waitUntilEnabled(use, timeout: 30)
         use.tap()
 
-        let page: XCUIElement = app.descendants(matching: .any)["page.1"]
-        XCTAssertTrue(page.waitForExistence(timeout: 240), "The imported page in the page strip")
+        app.openPages(1)
+        app.closePages()
 
-        // The Simulator has no document scanner: Use Apple's scanner is there, dimmed, with why; our
+        // The Simulator has no document scanner: Use Apple's scanner is in Options, dimmed, with why; our
         // camera, the default, is there too (its own screen says there is no camera).
+        app.openOptions()
         let scanner: XCUIElement = app.buttons["capture.scanner"]
-        XCTAssertTrue(scanner.exists, "The Use Apple's scanner button")
+        XCTAssertTrue(scanner.waitForExistence(timeout: 10), "The Use Apple's scanner button")
         XCTAssertFalse(scanner.isEnabled, "No document scanner in the Simulator")
         XCTAssertTrue(app.staticTexts["scanner.reason"].exists, "Why there is no document scanner")
         XCTAssertTrue(app.buttons["capture.camera"].exists, "The Camera button")
@@ -60,7 +61,8 @@ final class ImportTests: XCTestCase {
         XCTAssertTrue(app.buttons["save.button"].waitForExistence(timeout: 30), "The scan screen")
         waitUntilGone(app.descendants(matching: .any)["import.progress"], timeout: 30)
         XCTAssertFalse(app.buttons["import.stop"].exists, "The scan screen's Stop button")
-        XCTAssertFalse(app.descendants(matching: .any)["page.1"].exists, "A page came in after Stop")
+        XCTAssertEqual(app.descendants(matching: .any)["capture.pages"].firstMatch.label, "0 pages",
+                       "A page came in after Stop")
         XCTAssertFalse(app.buttons["save.button"].isEnabled, "Save with nothing to save")
     }
 

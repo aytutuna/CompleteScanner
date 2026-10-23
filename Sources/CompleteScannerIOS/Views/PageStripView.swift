@@ -153,4 +153,34 @@ struct PageStripView: View {
         return IOSPageDrop.move(moving, onto: target, in: state)
     }
 }
+
+/// The page strip in a sheet at half height that can grow, opened from the scan screen's capture bar
+/// (`capture.pages`), with Done.
+struct PageStripSheet: View {
+    @EnvironmentObject private var state: AppState
+    var onEditSpread: (@MainActor (UUID) -> Void)?
+    let onClose: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                PageStripView(onEditSpread: onEditSpread)
+                Spacer(minLength: 0)
+            }
+            .navigationTitle(IOSCameraText.pageCount(state.scannedPages.count))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        onClose()
+                    }
+                    .accessibilityIdentifier("pages.done")
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        // The root's alert cannot show over a sheet.
+        .modifier(ErrorAlert(state: state))
+    }
+}
 #endif
