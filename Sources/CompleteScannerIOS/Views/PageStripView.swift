@@ -64,10 +64,13 @@ struct PageStripView: View {
         let cells: [PageStripCell] = PageStripCell.cells(state.scannedPages, options: state.settings.document)
         let summary: String = DocumentSplitter.queueSummary(state.scannedPages, options: state.settings.document)
         VStack(alignment: .leading, spacing: 6) {
-            Text(cells.isEmpty ? "No pages yet" : summary)
-                .font(.caption)
-                .foregroundStyle(Color.secondary)
-                .accessibilityIdentifier("pages.summary")
+            // The sheet's title already gives the count; the line stays for what it adds (documents, separators).
+            if cells.isEmpty || summary != IOSCameraText.pageCount(state.scannedPages.count) {
+                Text(cells.isEmpty ? "No pages yet" : summary)
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+                    .accessibilityIdentifier("pages.summary")
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .bottom, spacing: 10) {
                     ForEach(cells) { (cell: PageStripCell) in
