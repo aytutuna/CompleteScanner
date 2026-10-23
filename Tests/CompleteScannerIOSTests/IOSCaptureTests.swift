@@ -135,16 +135,13 @@ final class IOSCaptureTests: XCTestCase {
         }
     }
 
-    func test_save_offersPDFOrJPEG_whileTheQueueIsSavedAsAPicture() {
+    func test_save_writesPictures_whileTheQueueIsSavedAsJPEG() {
         var settings = ScanSettings()
         settings.format = .pdf
-        XCTAssertEqual(IOSShell.saveFormats(settings), [.pdf, .jpeg])
         XCTAssertFalse(IOSShell.savesImages(settings))
         settings.format = .jpeg
-        XCTAssertEqual(IOSShell.saveFormats(settings), [.pdf, .jpeg])
         XCTAssertTrue(IOSShell.savesImages(settings))
         settings.format = .word
-        XCTAssertEqual(IOSShell.saveFormats(settings), [])
         XCTAssertFalse(IOSShell.savesImages(settings))
 
         let first = ScannedPage(image: scannedPicture(width: 40, height: 50), dpi: 100, colorMode: .color)

@@ -1,10 +1,12 @@
 import XCTest
 
-// Separate documents on the iPhone (I14), as a person does it on the Simulator: the app is launched on the
-// demo scanner with a PDF of three pages to import into the Separate documents task (`-importFixture` with
-// `-importTask batch`): a page, the Patch T separator sheet, and another page. The sheet is found on its
-// page (its bars are measured at the page's real size), marked as a separator and left out, so Save writes
-// two PDFs, one page each. The fixture (Fixtures/batch.pdf, drawn by scripts/make_ios_ui_fixture.py) holds
+// Separate documents on the iPhone (I14), as a person does it on the Simulator: a Document with Separate
+// documents on in Options' Export, which is the Separate documents task under the hood. The app is launched
+// on the demo scanner with a PDF of three pages to import into that task (`-importFixture` with
+// `-importTask batch`, at launch since a UI test cannot drive Files): a page, the Patch T separator sheet,
+// and another page. The sheet is found on its page (its bars are measured at the page's real size), marked
+// as a separator and left out, so Save writes two PDFs, one page each. The second case picks Document in
+// the task sheet, turns Separate documents on, picks QR code sheets and turns it off again. The fixture (Fixtures/batch.pdf, drawn by scripts/make_ios_ui_fixture.py) holds
 // grey lines and the sheet's bars on Letter pages, no real document.
 
 final class BatchTests: XCTestCase {
@@ -29,7 +31,11 @@ final class BatchTests: XCTestCase {
         XCTAssertTrue(last.label.contains("Document 2"), last.label)
         app.closePages()
         XCTAssertTrue(app.buttons["task.newDocument"].exists, "New document")
+        XCTAssertEqual(app.chipTitle, "Document")
         app.openOptions()
+        let separate: XCUIElement = app.switches["options.separate"].firstMatch
+        XCTAssertTrue(separate.waitForExistence(timeout: 10), "Separate documents in Options")
+        XCTAssertEqual(separate.value as? String, "1")
         XCTAssertTrue(app.buttons["separator.save"].waitForExistence(timeout: 10), "Separator sheet")
 
         let save: XCUIElement = app.buttons["save.button"]
@@ -43,6 +49,31 @@ final class BatchTests: XCTestCase {
         for name in names {
             XCTAssertTrue(name.hasSuffix(".pdf"), name)
         }
+    }
+
+    @MainActor
+    func test_document_withSeparateDocumentsInOptions_offersTheSeparatorSheets() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demoScanner"]
+        app.launch()
+
+        app.pickTask("document")
+        app.openOptions()
+        let sheet: XCUIElement = app.buttons["separator.save"]
+        XCTAssertFalse(sheet.exists, "One document until Separate documents is on")
+        app.turnSwitch("options.separate", on: true)
+        XCTAssertTrue(sheet.waitForExistence(timeout: 10), "Separator sheet")
+        XCTAssertTrue(app.buttons["task.newDocument"].exists, "New document")
+        XCTAssertEqual(app.chipTitle, "Document")
+
+        let kind: XCUIElement = app.descendants(matching: .any)["separator.kind"].firstMatch
+        XCTAssertTrue(kind.waitForExistence(timeout: 10), "Patch code or QR code")
+        kind.buttons["QR code"].tap()
+        XCTAssertTrue(app.textFields["separator.name"].waitForExistence(timeout: 10), "The QR sheet's name")
+
+        app.turnSwitch("options.separate", on: false)
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: sheet)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 10), .completed, "One document again")
     }
 
     @MainActor

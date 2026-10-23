@@ -167,65 +167,25 @@ final class IOSShellTests: XCTestCase {
         }
     }
 
-    func test_groups_followTheCatalogsSections_withEveryTaskOnce() {
+    func test_kindTiles_areEveryKindOnce_eachAvailable() {
         var cards: [TaskCard] = []
         for definition in TaskCatalog.all {
             cards.append(card(definition.task))
         }
-        let groups: [IOSTaskGroup] = IOSShell.groups(cards)
-        XCTAssertEqual(groups.count, TaskCatalog.sections.count)
-        var index: Int = 0
-        for section in TaskCatalog.sections {
-            XCTAssertEqual(groups[index].group, section.group)
-            XCTAssertEqual(groups[index].title, section.group.title)
-            var tasks: [ScanTask] = []
-            for tile in groups[index].tiles {
-                tasks.append(tile.task)
-            }
-            var expected: [ScanTask] = []
-            for definition in section.definitions {
-                expected.append(definition.task)
-            }
-            XCTAssertEqual(tasks, expected)
-            index += 1
+        let tiles: [IOSKindTile] = IOSShell.kindTiles(cards, current: .document)
+        XCTAssertEqual(tiles.map(\.kind), IOSScanKind.allCases)
+        for tile in tiles {
+            XCTAssertTrue(tile.availability.isAvailable, tile.kind.rawValue)
+            XCTAssertEqual(tile.summary, "300 dpi")
         }
     }
 
-    func test_tiles_keepTheCatalogsWording_andOfferEveryTask() throws {
-        var cards: [TaskCard] = []
-        for definition in TaskCatalog.all {
-            cards.append(card(definition.task))
-        }
-        var tiles: [ScanTask: IOSTaskTile] = [:]
-        for group in IOSShell.groups(cards) {
-            for tile in group.tiles {
-                tiles[tile.task] = tile
-            }
-        }
-        let document: IOSTaskTile = try XCTUnwrap(tiles[.document])
-        XCTAssertEqual(document.title, TaskCatalog.definition(.document).title)
-        XCTAssertEqual(document.subtitle, TaskCatalog.definition(.document).subtitle)
-        XCTAssertEqual(document.symbol, "doc.text")
-        XCTAssertTrue(document.availability.isAvailable)
-        for task in [ScanTask.copy, .quickScan, .archive, .twoSided, .batch, .book, .email] {
-            let tile: IOSTaskTile = try XCTUnwrap(tiles[task])
-            XCTAssertTrue(tile.availability.isAvailable, task.rawValue)
-        }
-    }
-
-    func test_anOfferedTask_keepsTheCardsOwnReason() {
-        let noFeeder = TaskAvailability(isAvailable: false, reason: TaskCatalog.needsFeederReason)
-        let tile = IOSTaskTile(card: card(.feeder, availability: noFeeder))
-        XCTAssertEqual(tile.availability, noFeeder)
-    }
-
-    func test_theCurrentTask_saysSoToVoiceOver() {
-        let current = IOSTaskTile(card: card(.word, isCurrent: true))
-        XCTAssertTrue(current.isCurrent)
-        XCTAssertEqual(current.accessibilityValue, "Current")
-        let other = IOSTaskTile(card: card(.document))
-        XCTAssertFalse(other.isCurrent)
-        XCTAssertEqual(other.accessibilityValue, "")
+    func test_aKindsTile_keepsItsCardsOwnReason() {
+        let noScanner = TaskAvailability(isAvailable: false, reason: "No scanner")
+        let tiles: [IOSKindTile] = IOSShell.kindTiles([card(.photos, availability: noScanner), card(.document)],
+                                                      current: .document)
+        XCTAssertEqual(tiles.map(\.kind), [.document, .photos])
+        XCTAssertEqual(tiles[1].availability, noScanner)
     }
 
     func test_addPagesTile_isPickedWhenDocumentToPDFIs() {
@@ -301,6 +261,76 @@ final class IOSShellTests: XCTestCase {
 
         // No printer is passed yet: the Kit's stand-in has none.
         XCTAssertFalse(state.hasPrinter)
+        state.clearPages()
+    }
+
+    @MainActor
+    func test_emailFromSave_sendsThatSaveByEmail_andTheNextSaveAsTheSettingsSay() async throws {
+        let actions = IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in },
+                                     mailAvailable: { () -> Bool in true })
+        let options = IOSLaunchOptions(arguments: ["CompleteScanner", IOSLaunchOptions.demoScannerArgument])
+        let state = AppState(backends: IOSShell.backends(options: options),
+                             presetStore: PresetStore(directory: folder), fileActions: actions,
+                             orientationScorer: ShellScorer(), barcodeReader: ShellBarcodes(),
+                             files: AppStateFiles.all(in: folder))
+        state.platform = .ios
+        state.start()
+        try await waitFor(timeout: 30) { state.capabilities != nil }
+        XCTAssertTrue(state.startTask(.document))
+        state.settings.destinationPath = folder.appendingPathComponent("Saved", isDirectory: true).path
+        state.settings.resolution = 75
+        state.settings.pdfSearchable = false
+
+        state.performScan()
+        try await waitFor(timeout: 120) { !state.isBusy }
+        state.saveAndEmail(images: false)
+        try await waitFor(timeout: 120) { !state.isBusy }
+        XCTAssertNil(state.errorMessage)
+        let pdf: URL = try XCTUnwrap(state.lastSavedURLs.first)
+        XCTAssertEqual(actions.mailRequest?.urls, [pdf])
+        XCTAssertEqual(state.activeTask, .document)
+
+        actions.mailRequest = nil
+        state.performScan()
+        try await waitFor(timeout: 120) { !state.isBusy }
+        state.savePDF()
+        try await waitFor(timeout: 120) { !state.isBusy }
+        XCTAssertNil(state.errorMessage)
+        XCTAssertEqual(state.lastSavedURLs.count, 1)
+        XCTAssertNil(actions.mailRequest)
+        XCTAssertNil(actions.shareRequest)
+        state.clearPages()
+    }
+
+    @MainActor
+    func test_optionSwitches_changeTheTaskUnderTheHood_andKeepThePages() async throws {
+        let state = AppState(backends: [], presetStore: PresetStore(directory: folder),
+                             fileActions: IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in }),
+                             orientationScorer: ShellScorer(), barcodeReader: ShellBarcodes(),
+                             files: AppStateFiles.all(in: folder))
+        state.platform = .ios
+        XCTAssertTrue(state.startTask(.document))
+        let image: CGImage = try XCTUnwrap(RgbaImage.filled(width: 400, height: 500, r: 255, g: 255, b: 255).makeCGImage())
+        XCTAssertTrue(state.ingest([ScannedPage(image: image, dpi: 100, colorMode: .color)], source: .photo))
+        try await waitFor(timeout: 60) { !state.isBusy }
+        XCTAssertEqual(state.scannedPages.count, 1)
+
+        state.settings = IOSShell.settingBothSides(true, in: state.settings)
+        XCTAssertEqual(state.activeTask, .twoSided)
+        XCTAssertNotNil(state.cameraSides)
+        XCTAssertEqual(state.scannedPages.count, 1)
+        state.settings = IOSShell.settingBothSides(false, in: state.settings)
+        XCTAssertEqual(state.activeTask, .document)
+        XCTAssertNil(state.cameraSides)
+        XCTAssertEqual(state.scannedPages.count, 1)
+
+        // Another kind keeps the queue too, and so does its option.
+        XCTAssertTrue(state.startTask(.photos))
+        state.settings = IOSShell.settingRestore(true, in: state.settings)
+        XCTAssertEqual(state.activeTask, .photoRestore)
+        state.settings = IOSShell.settingRestore(false, in: state.settings)
+        XCTAssertEqual(state.activeTask, .photos)
+        XCTAssertEqual(state.scannedPages.count, 1)
         state.clearPages()
     }
 

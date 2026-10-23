@@ -103,6 +103,18 @@ final class ScreenshotTests: XCTestCase {
         if tapIfThere(app, "options.group", for: "10-options") {
             Thread.sleep(forTimeInterval: 1)
             shot("10-options")
+            let format: XCUIElement = element(app, "options.format")
+            if format.waitForExistence(timeout: 5) {
+                var swipes: Int = 0
+                while !format.isHittable && swipes < 4 {
+                    app.swipeUp()
+                    swipes += 1
+                }
+                Thread.sleep(forTimeInterval: 1)
+                shot("11-export-options")
+            } else {
+                shot("skipped-11-export-options")
+            }
         }
     }
 

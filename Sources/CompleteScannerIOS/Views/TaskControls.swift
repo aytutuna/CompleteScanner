@@ -225,6 +225,156 @@ struct SeparatorSheetRow: View {
     }
 }
 
+/// Options' Both sides for the camera: the two-sided task under the hood (`IOSShell.settingBothSides`), so
+/// the camera takes each sheet's front and back; how it does is `TaskWayPicker`'s. Dimmed with its reason
+/// while the scanner set up has no feeder, as the two-sided task's tile was.
+struct BothSidesToggle: View {
+    @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var importer: IOSImportSession
+
+    var body: some View {
+        let on: Bool = state.activeTask == .twoSided
+        let availability: TaskAvailability = TaskCatalog.availability(of: .twoSided, capabilities: state.capabilities)
+        Toggle("Both sides", isOn: bothSides)
+            .disabled(state.isBusy || importer.isImporting || (!on && !availability.isAvailable))
+            .accessibilityHint(Text("Takes the front and back of each sheet"))
+            .accessibilityIdentifier("options.bothSides")
+        if !on, let reason = availability.reason {
+            OptionReason(text: reason)
+        }
+    }
+
+    private var bothSides: Binding<Bool> {
+        let appState: AppState = state
+        return Binding<Bool>(
+            get: { appState.activeTask == .twoSided },
+            set: { (on: Bool) in
+                // Off goes back to the flatbed, unless the scanner has none.
+                let s: ScanSettings = IOSShell.settingBothSides(on, in: appState.settings)
+                appState.settings = SettingsAdapter.adapt(s, to: appState.capabilities).settings
+            })
+    }
+}
+
+/// Options' Restore faded colours for Photos: Restore old photos under the hood (`IOSShell.settingRestore`).
+struct RestoreToggle: View {
+    @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var importer: IOSImportSession
+
+    var body: some View {
+        Toggle("Restore faded colours", isOn: restore)
+            .disabled(state.isBusy || importer.isImporting)
+            .accessibilityHint(Text("Brings back the colours of old prints"))
+            .accessibilityIdentifier("options.restore")
+    }
+
+    private var restore: Binding<Bool> {
+        let appState: AppState = state
+        return Binding<Bool>(
+            get: { appState.settings.adjustments.restoreFadedColors },
+            set: { (on: Bool) in
+                appState.settings = IOSShell.settingRestore(on, in: appState.settings)
+            })
+    }
+}
+
+/// Options' Export, while the scan screen collects pages: the format (a PDF, a JPEG a page, Word or text),
+/// for a document Separate documents (the Separate documents task, with its separator sheets; dimmed
+/// without a feeder as its tile was), One PDF per page for a PDF that is not split otherwise, and the PDF's
+/// choices while Save writes one.
+struct ExportOptions: View {
+    @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var importer: IOSImportSession
+
+    var body: some View {
+        let s: ScanSettings = state.settings
+        let busy: Bool = state.isBusy || importer.isImporting
+        let separates: Bool = IOSShell.separatesDocuments(s)
+        let availability: TaskAvailability = TaskCatalog.availability(of: .batch, capabilities: state.capabilities)
+        VStack(alignment: .leading, spacing: 12) {
+            Picker("Format", selection: format) {
+                ForEach(IOSShell.exportFormats) { (choice: OutputFormat) in
+                    Text(Self.label(choice)).tag(choice)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(busy)
+            .accessibilityIdentifier("options.format")
+            // A book stays a book: its spreads are split, not its stack.
+            if IOSShell.shownKind(s) == .document {
+                Toggle("Separate documents", isOn: separate)
+                    .disabled(busy || (!separates && !availability.isAvailable))
+                    .accessibilityHint(Text("Splits the pages into documents at separator sheets"))
+                    .accessibilityIdentifier("options.separate")
+                if !separates, let reason = availability.reason {
+                    OptionReason(text: reason)
+                }
+                SeparatorSheetRow()
+            }
+            if !separates && IOSShell.exportFormat(s) == .pdf {
+                // A sheet's front and back stay together.
+                Toggle(s.source == .documentFeeder && s.duplex != .off ? "One PDF per sheet" : "One PDF per page",
+                       isOn: eachPage)
+                    .disabled(busy)
+                    .accessibilityIdentifier("options.eachPage")
+            }
+            if IOSShell.offersPDFOptions(s) {
+                PDFOptionsSection()
+            }
+        }
+    }
+
+    /// The segment's short name: "PDF", "JPEG", "Word", "Text".
+    static func label(_ format: OutputFormat) -> String {
+        switch format {
+        case .word: return "Word"
+        case .text: return "Text"
+        default: return format.label
+        }
+    }
+
+    private var format: Binding<OutputFormat> {
+        let appState: AppState = state
+        return Binding<OutputFormat>(
+            get: { IOSShell.exportFormat(appState.settings) },
+            set: { (choice: OutputFormat) in
+                var s: ScanSettings = appState.settings
+                s.format = choice
+                appState.settings = IOSShell.keepingKind(s)
+            })
+    }
+
+    private var separate: Binding<Bool> {
+        let appState: AppState = state
+        return Binding<Bool>(
+            get: { IOSShell.separatesDocuments(appState.settings) },
+            set: { (on: Bool) in
+                let s: ScanSettings = IOSShell.settingSeparate(on, in: appState.settings)
+                appState.settings = SettingsAdapter.adapt(s, to: appState.capabilities).settings
+            })
+    }
+
+    private var eachPage: Binding<Bool> {
+        let appState: AppState = state
+        return Binding<Bool>(
+            get: { IOSShell.savesEachPage(appState.settings) },
+            set: { (on: Bool) in
+                appState.settings = IOSShell.settingEachPage(on, in: appState.settings)
+            })
+    }
+}
+
+/// Why an option is dimmed, in one short line under it.
+private struct OptionReason: View {
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: "info.circle")
+            .font(.caption)
+            .foregroundStyle(Color.secondary)
+    }
+}
+
 /// The PDF's choices while Save writes one: its size (Best, Standard, Compact, Smallest), then Archive
 /// (PDF/A) and Password, which exclude each other (`IOSPDFOptions`), and the pages' text in a .txt file
 /// beside the PDF (`OutputOptions.alsoSaveText`, as on the Mac). The password itself is asked for when
@@ -283,7 +433,9 @@ struct PDFOptionsSection: View {
         return Binding<Bool>(
             get: { IOSPDFOptions.archivalShown(appState.settings.output) },
             set: { (on: Bool) in
-                appState.settings.output = IOSPDFOptions.settingArchival(on, in: appState.settings.output)
+                var s: ScanSettings = appState.settings
+                s.output = IOSPDFOptions.settingArchival(on, in: s.output)
+                appState.settings = IOSShell.keepingKind(s)
             })
     }
 
@@ -301,7 +453,9 @@ struct PDFOptionsSection: View {
         return Binding<Bool>(
             get: { appState.settings.output.protect },
             set: { (on: Bool) in
-                appState.settings.output = IOSPDFOptions.settingProtect(on, in: appState.settings.output)
+                var s: ScanSettings = appState.settings
+                s.output = IOSPDFOptions.settingProtect(on, in: s.output)
+                appState.settings = IOSShell.keepingKind(s)
             })
     }
 }

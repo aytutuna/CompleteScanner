@@ -3,8 +3,9 @@ import XCTest
 // By identifier among every element: toolbar items and some rows are not buttons in the Simulator's tree.
 
 extension XCUIApplication {
-    /// Picks a task the way a person does on the iPhone: the scan screen's task chip opens the task sheet,
-    /// the task's tile sets it up and the sheet closes. `task` is the tile's name ("document").
+    /// Picks what is scanned the way a person does on the iPhone: the scan screen's task chip opens the task
+    /// sheet, the kind's tile sets its task up and the sheet closes. `task` is the tile's name ("document",
+    /// "photos", "receipts", "idCard", "book", "text").
     @MainActor
     func pickTask(_ task: String, file: StaticString = #filePath, line: UInt = #line) {
         let chip: XCUIElement = descendants(matching: .any)["task.chip"].firstMatch
@@ -16,8 +17,8 @@ extension XCUIApplication {
         waitUntilGone(tile, "The task sheet closed", file: file, line: line)
     }
 
-    /// Opens the scan screen's Options, where how the task is taken, Apple's scanner and the PDF's
-    /// choices are.
+    /// Opens the scan screen's Options, where the scanner's settings, Both sides, Apple's scanner, Restore
+    /// faded colours and Export (the format, Separate documents, the PDF's choices) are.
     @MainActor
     func openOptions(file: StaticString = #filePath, line: UInt = #line) {
         var group: XCUIElement = descendants(matching: .any)["options.group"].firstMatch
@@ -26,6 +27,28 @@ extension XCUIApplication {
         }
         XCTAssertTrue(group.waitForExistence(timeout: 5), "The scan screen's Options", file: file, line: line)
         group.tap()
+    }
+
+    /// Turns an Options switch on or off by its identifier and waits until it says so. A SwiftUI toggle's
+    /// row is not always what takes the tap, so its switch is tapped when the tree has one.
+    @MainActor
+    func turnSwitch(_ id: String, on: Bool, file: StaticString = #filePath, line: UInt = #line) {
+        let toggle: XCUIElement = switches[id].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 30), "The \(id) switch", file: file, line: line)
+        let wanted: String = on ? "1" : "0"
+        if (toggle.value as? String) != wanted {
+            let inner: XCUIElement = toggle.switches.firstMatch
+            (inner.exists ? inner : toggle).tap()
+        }
+        let turned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", wanted), object: toggle)
+        XCTAssertEqual(XCTWaiter.wait(for: [turned], timeout: 10), .completed, "\(id) turned \(on ? "on" : "off")",
+                       file: file, line: line)
+    }
+
+    /// The task chip's title: "Document" for the chip read as "Task: Document".
+    @MainActor
+    var chipTitle: String {
+        descendants(matching: .any)["task.chip"].firstMatch.label.replacingOccurrences(of: "Task: ", with: "")
     }
 
     /// Waits for the capture bar to count `count` pages, then opens the page strip's sheet and waits for

@@ -154,11 +154,24 @@ public enum IOSShell {
     }
 
     /// The task the iPhone opens on: the one set up last time (kept in the settings), else Document to PDF.
+    /// A photocopy or Email kept from before opens as Document: they are Save's Print… and Email… now.
     public static func launchTask(_ settings: ScanSettings) -> ScanTask {
-        if let task = settings.task, offers(task) {
+        if let task = savingActionsAsDocument(settings).task, offers(task) {
             return task
         }
         return .document
+    }
+
+    /// The settings with a photocopy or Email task (a preset's, or one kept from before) as Document, the
+    /// rest kept: on the iPhone they are Save's Print… and Email…, and the chip could not show them. Nothing
+    /// runs after saving, as Document starts: Email's share sheet would open on every Save with nothing on
+    /// the scan screen saying why. Its Compact size stays, which Options shows.
+    public static func savingActionsAsDocument(_ settings: ScanSettings) -> ScanSettings {
+        guard settings.task == .copy || settings.task == .email else { return settings }
+        var s: ScanSettings = settings
+        s.taskId = ScanTask.document.rawValue
+        s.output.afterSave = AfterSaveAction.none
+        return s
     }
 
     /// The user's defaults key: the card saying why the camera is asked for was shown (`cameraOnOpen`).
@@ -246,12 +259,13 @@ public enum IOSShell {
         return flow == .documentQueue && settings.documentMultiPage
     }
 
-    /// The formats the scan screen's Save offers: PDF or JPEG (a picture a page) while the queue would
-    /// be saved as a PDF; none to choose for Word and text, which are saved as chosen. A .txt beside the
-    /// PDF is one of the PDF's choices (`PDFOptionsSection`).
-    public static func saveFormats(_ settings: ScanSettings) -> [OutputFormat] {
-        if settings.format.isTextFormat { return [] }
-        return [.pdf, .jpeg]
+    /// The formats Options' Export offers for the collected pages: a PDF, a JPEG a page, a Word document or
+    /// a text file. A .txt beside the PDF is one of the PDF's choices (`PDFOptionsSection`).
+    public static let exportFormats: [OutputFormat] = [.pdf, .jpeg, .word, .text]
+
+    /// The Export format the settings save as: JPEG for any picture format (PNG and TIFF come from Settings).
+    public static func exportFormat(_ settings: ScanSettings) -> OutputFormat {
+        settings.format.isImageFormat ? .jpeg : settings.format
     }
 
     /// The collected pages are saved as pictures (`AppState.saveImages`), not as one file (`savePDF`).
@@ -414,6 +428,131 @@ public enum IOSShell {
         }
     }
 
+    /// The kind a task is shown as on the iPhone (the task chip, the task sheet's Current): the document
+    /// tasks are a Document with its options set (the feeder, both sides, separate documents, the format,
+    /// PDF/A, Email…, Print…), Restore old photos is Photos with faded colours restored, Quick scan is Text.
+    public static func kind(of task: ScanTask) -> IOSScanKind {
+        switch task {
+        case .document, .feeder, .twoSided, .batch, .email, .word, .archive, .copy:
+            return .document
+        case .photos, .photoRestore:
+            return .photos
+        case .receipt:
+            return .receipts
+        case .idCard:
+            return .idCard
+        case .book:
+            return .book
+        case .quickScan:
+            return .text
+        }
+    }
+
+    /// The kind the settings are shown as, settings left without a task included (`TaskCatalog.infer`).
+    public static func shownKind(_ settings: ScanSettings) -> IOSScanKind {
+        kind(of: TaskCatalog.infer(settings))
+    }
+
+    /// The task sheet's tiles and the iPad sidebar's rows: one per kind, in order, each as its task's card
+    /// can be picked.
+    public static func kindTiles(_ cards: [TaskCard], current: IOSScanKind) -> [IOSKindTile] {
+        var tiles: [IOSKindTile] = []
+        for kind in IOSScanKind.allCases {
+            guard let card = cards.first(where: { (candidate: TaskCard) -> Bool in
+                candidate.definition.task == kind.task
+            }) else { continue }
+            tiles.append(IOSKindTile(kind: kind, summary: card.summary, availability: availability(card),
+                                     isCurrent: kind == current))
+        }
+        return tiles
+    }
+
+    // The Options switches below set only what they are about, never through `TaskCatalog.apply`, which
+    // would reset the other choices; the task changes under the hood where its flow needs it.
+
+    /// Both sides on the camera: the two-sided task, whose camera steps (flip & capture, or fronts first)
+    /// need it, with the feeder and both sides it fits; off, Document again on the flatbed, as its tile was.
+    public static func settingBothSides(_ on: Bool, in settings: ScanSettings) -> ScanSettings {
+        var s: ScanSettings = settings
+        if on {
+            // One task at a time: separator sheets belong to Separate documents.
+            if separatesDocuments(s) { s = settingSeparate(false, in: s) }
+            s.source = .documentFeeder
+            s.duplex = .both
+        } else {
+            s.source = .flatbed
+            s.duplex = .off
+        }
+        s.document.removeBlankPages = on
+        s.document.autoStraighten = on
+        s.document.autoRotate = on
+        s.taskId = (on ? ScanTask.twoSided : ScanTask.document).rawValue
+        return s
+    }
+
+    /// Separate documents is on: the pages are split at patch code or QR sheets.
+    public static func separatesDocuments(_ settings: ScanSettings) -> Bool {
+        settings.document.splitMode == .separatorSheet || settings.document.splitMode == .barcode
+    }
+
+    /// Separate documents: the Separate documents task (its New document button and separator sheets),
+    /// split at patch code sheets unless QR codes were chosen, on the feeder it needs, each file named with
+    /// its document's name as the task names them; off, one document on the flatbed.
+    public static func settingSeparate(_ on: Bool, in settings: ScanSettings) -> ScanSettings {
+        var s: ScanSettings = settings
+        if on {
+            // One task at a time: Both sides ends, its sides and straightening with it.
+            if s.task == .twoSided { s = settingBothSides(false, in: s) }
+            if s.document.splitMode != .barcode { s.document.splitMode = .separatorSheet }
+            s.source = .documentFeeder
+            s.namingTemplate = separateNames
+        } else {
+            s.document.splitMode = SplitMode.none
+            s.source = .flatbed
+            if s.namingTemplate == separateNames { s.namingTemplate = "Scan {date} {counter}" }
+        }
+        s.document.removeBlankPages = on
+        s.taskId = (on ? ScanTask.batch : ScanTask.document).rawValue
+        return s
+    }
+
+    /// The Separate documents task's file names (`TaskCatalog.apply`), with each document's name.
+    static let separateNames = "Document {label} {date} {counter}"
+
+    /// One PDF per page: a new document every sheet (`SplitMode.sheetCount`, one sheet each).
+    public static func savesEachPage(_ settings: ScanSettings) -> Bool {
+        settings.document.splitMode == .sheetCount
+            && DocumentSplitter.clampSheetCount(settings.document.splitSheetCount) == 1
+    }
+
+    public static func settingEachPage(_ on: Bool, in settings: ScanSettings) -> ScanSettings {
+        var s: ScanSettings = settings
+        s.document.splitMode = on ? .sheetCount : SplitMode.none
+        if on { s.document.splitSheetCount = 1 }
+        return s
+    }
+
+    /// Restore faded colours for Photos: the Restore old photos task's adjustments and PNG files; off,
+    /// Photos as JPEGs again.
+    public static func settingRestore(_ on: Bool, in settings: ScanSettings) -> ScanSettings {
+        var s: ScanSettings = settings
+        s.adjustments.restoreFadedColors = on
+        s.adjustments.autoEnhance = on
+        s.format = on ? .png : .jpeg
+        s.taskId = (on ? ScanTask.photoRestore : ScanTask.photos).rawValue
+        return s
+    }
+
+    /// An option that leaves the task unfit (Word saved as a PDF, PDF/A turned off) keeps its kind: the
+    /// kind's own task when the settings fit it, else none, as a change by hand does.
+    public static func keepingKind(_ settings: ScanSettings) -> ScanSettings {
+        guard let task = settings.task, !TaskCatalog.fits(task, settings) else { return settings }
+        var s: ScanSettings = settings
+        let base: ScanTask = kind(of: task).task
+        s.taskId = TaskCatalog.fits(base, s) ? base.rawValue : nil
+        return s
+    }
+
     /// Whether a start-screen tile can be picked, and if not, why: a task this app does not offer
     /// yet says so; otherwise the card's own availability (a scanner without a feeder, say).
     public static func availability(_ card: TaskCard) -> TaskAvailability {
@@ -421,22 +560,6 @@ public enum IOSShell {
             return TaskAvailability(isAvailable: false, reason: notYetReason)
         }
         return card.availability
-    }
-
-    /// The start screen's groups (`TaskCatalog.sections`, in order) with a tile for each task card.
-    public static func groups(_ cards: [TaskCard]) -> [IOSTaskGroup] {
-        var result: [IOSTaskGroup] = []
-        for section in TaskCatalog.sections {
-            var tiles: [IOSTaskTile] = []
-            for definition in section.definitions {
-                guard let card = cards.first(where: { (candidate: TaskCard) -> Bool in
-                    candidate.definition.task == definition.task
-                }) else { continue }
-                tiles.append(IOSTaskTile(card: card))
-            }
-            result.append(IOSTaskGroup(group: section.group, tiles: tiles))
-        }
-        return result
     }
 
     /// The SF Symbol for a task's icon key (`TaskDefinition.iconKey`), as on the Mac.
@@ -461,53 +584,84 @@ public enum IOSShell {
     }
 }
 
+/// What the iPhone's task sheet asks: what is being scanned. The rest (the feeder, both sides, separate
+/// documents, the format, PDF/A, email and printing) is an option of the scan screen or an action of Save.
+public enum IOSScanKind: String, CaseIterable, Identifiable, Sendable {
+    case document
+    case photos
+    case receipts
+    case idCard
+    case book
+    case text
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .document: return "Document"
+        case .photos: return "Photos"
+        case .receipts: return "Receipts"
+        case .idCard: return "ID card"
+        case .book: return "Book"
+        case .text: return "Text"
+        }
+    }
+
+    public var subtitle: String {
+        switch self {
+        case .document: return "Pages into a PDF"
+        case .photos: return "Prints and pictures"
+        case .receipts: return "Named by their date"
+        case .idCard: return "Front and back on one page"
+        case .book: return "Pages or whole spreads"
+        case .text: return "One shot, copy the text"
+        }
+    }
+
+    public var symbol: String {
+        switch self {
+        case .document: return "doc.text"
+        case .photos: return "photo.on.rectangle.angled"
+        case .receipts: return "receipt"
+        case .idCard: return "person.text.rectangle"
+        case .book: return "book"
+        case .text: return "text.viewfinder"
+        }
+    }
+
+    /// The task picking the kind starts, as its tile did.
+    public var task: ScanTask {
+        switch self {
+        case .document: return .document
+        case .photos: return .photos
+        case .receipts: return .receipt
+        case .idCard: return .idCard
+        case .book: return .book
+        case .text: return .quickScan
+        }
+    }
+}
+
+/// A tile of the iPhone's task sheet: the kind, what its task sets, whether it can be picked, and whether
+/// it is the kind set up now.
+public struct IOSKindTile: Identifiable, Equatable {
+    public let kind: IOSScanKind
+    public let summary: String
+    public let availability: TaskAvailability
+    public let isCurrent: Bool
+
+    public var id: IOSScanKind { kind }
+
+    /// What VoiceOver reads after the title: "Current" for the kind set up now.
+    public var accessibilityValue: String { isCurrent ? "Current" : "" }
+}
+
 /// What the scan screen does with our camera when it opens (`IOSShell.cameraOnOpen`).
 public enum IOSCameraOnOpen: Equatable, Sendable {
     case open
     /// The card saying why the camera is asked for, then the camera.
     case introduce
     case stay
-}
-
-/// A start-screen tile: the task, its title and subtitle, its symbol, and whether it can be picked.
-public struct IOSTaskTile: Identifiable, Equatable {
-    public let task: ScanTask
-    public let title: String
-    public let subtitle: String
-    public let summary: String
-    public let symbol: String
-    public let availability: TaskAvailability
-    public let isCurrent: Bool
-
-    public var id: ScanTask { task }
-
-    /// What VoiceOver reads after the title: "Current" for the task set up now (the tile's badge),
-    /// nothing otherwise.
-    public var accessibilityValue: String { isCurrent ? "Current" : "" }
-
-    public init(card: TaskCard) {
-        self.task = card.definition.task
-        self.title = card.definition.title
-        self.subtitle = card.definition.subtitle
-        self.summary = card.summary
-        self.symbol = IOSShell.systemImage(card.definition.iconKey)
-        self.availability = IOSShell.availability(card)
-        self.isCurrent = card.isCurrent
-    }
-}
-
-/// A group of the start screen with its tiles.
-public struct IOSTaskGroup: Identifiable, Equatable {
-    public let group: TaskGroup
-    public let tiles: [IOSTaskTile]
-
-    public var id: TaskGroup { group }
-    public var title: String { group.title }
-
-    public init(group: TaskGroup, tiles: [IOSTaskTile]) {
-        self.group = group
-        self.tiles = tiles
-    }
 }
 
 extension AppState {

@@ -22,8 +22,8 @@ enum ScanCover: String, Identifiable {
 
 /// The scan screen: the task's step, the cameras and imports (`CaptureBar`), the scanner, the flatbed
 /// preview with the scan area (or the last scan), the page strip, the status line with a scan's progress,
-/// and Scan and Save (as a PDF or a JPEG a page, `IOSShell.saveFormats`); once saved, the saved file with
-/// Share and Show in Files. Camera opens our own camera (`CameraScreen`), the default; Use Apple's scanner
+/// and Scan and Save (as a PDF, a JPEG a page, Word or text, `IOSShell.exportFormats`); once saved, the
+/// saved file with Share and Show in Files. Camera opens our own camera (`CameraScreen`), the default; Use Apple's scanner
 /// opens Apple's document scanner. The scanner row opens the scanner picker as a sheet on iPhone; on iPad
 /// the picker is a sidebar beside the screen. The screen stays awake while a network scanner's job runs
 /// (`IOSRootView`, since resizing the window builds this screen anew).
@@ -46,9 +46,12 @@ enum ScanCover: String, Identifiable {
 /// chip at the top opens the task sheet (`onOpenTasks`), the library (`onOpenLibrary`) and Settings sit
 /// beside it, and the capture bar (`CaptureBar`) is right above Save; the step card shows only while a step
 /// needs it (`IOSShell.showsStepCard`), the scanner row while a scanner is listed, and the preview once
-/// there is one (else the camera's line, centred in its place). How the task is taken, the flatbed's
-/// Preview, Apple's scanner and the PDF's choices are in Options below it, collapsed. The capture bar's
-/// last page opens the page strip in a sheet.
+/// there is one (else the camera's line, centred in its place). Options below it, collapsed, holds what
+/// the task sheet no longer asks: the flatbed's Preview, then Scanner (Source, Sides, Resolution, Color),
+/// Camera (Both sides and how, Apple's scanner), Book, Photos (Restore faded colours) and Export (the
+/// format, Separate documents, One PDF per page, the PDF's choices), each where it applies. Save's menu
+/// adds the pages to a PDF, prints them as a copy (Print…) or saves and emails them (Email…). The capture
+/// bar's last page opens the page strip in a sheet.
 struct ScanScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -96,7 +99,7 @@ struct ScanScreen: View {
             }
         }
         .background(Color(uiColor: .systemGroupedBackground))
-        .navigationTitle(state.activeTaskDefinition?.title ?? "Scanner")
+        .navigationTitle(IOSShell.shownKind(state.settings).title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
@@ -111,7 +114,7 @@ struct ScanScreen: View {
             }
             ToolbarItem(placement: .principal) {
                 if let open = onOpenTasks {
-                    TaskChip(title: state.activeTaskDefinition?.title ?? "Pick a task", onTap: open)
+                    TaskChip(title: IOSShell.shownKind(state.settings).title, onTap: open)
                 }
             }
             ToolbarItem(placement: .primaryAction) {
@@ -191,18 +194,8 @@ struct ScanScreen: View {
                     previewOrHint
                     if hasOptions {
                         DisclosureGroup(isExpanded: $optionsShown) {
-                            VStack(alignment: .leading, spacing: 12) {
-                                previewControls
-                                SeparatorSheetRow()
-                                TaskWayPicker()
-                                if IOSShell.offersCamera(state.activeTask) {
-                                    AppleScannerRow(scanner: scanner, onScanner: openScanner)
-                                }
-                                if IOSShell.offersPDFOptions(state.settings) {
-                                    PDFOptionsSection()
-                                }
-                            }
-                            .padding(.top, 8)
+                            options
+                                .padding(.top, 8)
                         } label: {
                             Text("Options")
                                 .accessibilityIdentifier("options.group")
@@ -243,11 +236,62 @@ struct ScanScreen: View {
         }
     }
 
+    /// Options' sections, each only where it applies: the scanner's while one is selected, the camera's for a
+    /// document (the shutter takes pages whatever scanner is selected), the book's and the photos' for their
+    /// kinds, and Export while the pages are collected and saved here.
+    private var options: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            previewControls
+            if selectedDevice != nil {
+                optionsGroup("Scanner") {
+                    ScannerSettingsRows()
+                }
+            }
+            if showsCameraOptions {
+                optionsGroup("Camera") {
+                    BothSidesToggle()
+                    TaskWayPicker()
+                    if IOSShell.offersCamera(state.activeTask) {
+                        AppleScannerRow(scanner: scanner, onScanner: openScanner)
+                    }
+                }
+            }
+            if state.activeTask == .book {
+                optionsGroup("Book") {
+                    TaskWayPicker()
+                }
+            }
+            if IOSShell.shownKind(state.settings) == .photos {
+                optionsGroup("Photos") {
+                    RestoreToggle()
+                }
+            }
+            if IOSShell.collectsPages(state.settings) {
+                optionsGroup("Export") {
+                    ExportOptions()
+                }
+            }
+        }
+    }
+
+    private func optionsGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.secondary)
+                .accessibilityAddTraits(.isHeader)
+            content()
+        }
+    }
+
+    private var showsCameraOptions: Bool {
+        IOSShell.shownKind(state.settings) == .document
+    }
+
     /// Whether Options has anything in it for this task and scanner.
     private var hasOptions: Bool {
-        let task: ScanTask? = state.activeTask
-        return usesFlatbed || task == .batch || task == .twoSided || task == .book
-            || IOSShell.offersCamera(task) || IOSShell.offersPDFOptions(state.settings)
+        usesFlatbed || selectedDevice != nil || showsCameraOptions || state.activeTask == .book
+            || IOSShell.shownKind(state.settings) == .photos || IOSShell.collectsPages(state.settings)
     }
 
     // MARK: The page strip
@@ -499,22 +543,21 @@ struct ScanScreen: View {
         state.capabilities != nil && !state.isBusy
     }
 
-    /// PDF or JPEG, while the queue is saved as one of them.
-    private var formatChoice: Binding<OutputFormat> {
-        let appState: AppState = state
-        return Binding<OutputFormat>(
-            get: { appState.settings.format.isImageFormat ? OutputFormat.jpeg : OutputFormat.pdf },
-            set: { (format: OutputFormat) in
-                appState.settings.format = format
-            })
-    }
-
     private func save() {
-        if state.appendTarget == nil && IOSShell.savesImages(state.settings) {
+        if savesImages {
             state.saveImages()
         } else {
             state.savePDF()
         }
+    }
+
+    /// Email… in Save's menu: this save only is sent by email once written.
+    private func saveAndEmail() {
+        state.saveAndEmail(images: savesImages)
+    }
+
+    private var savesImages: Bool {
+        state.appendTarget == nil && IOSShell.savesImages(state.settings)
     }
 
     private func sharePackage() {
@@ -540,7 +583,6 @@ struct ScanScreen: View {
         let plan: SavePlan = SavePlan.make(state.scannedPages, options: options)
         let saveTitle: String = Self.saveTitle(state.settings, plan: plan, target: state.appendTarget)
         let saveCount: Int = plan.pageCount
-        let formats: [OutputFormat] = IOSShell.saveFormats(state.settings)
         let collects: Bool = IOSShell.collectsPages(state.settings)
         return VStack(alignment: .leading, spacing: 10) {
             if state.isBusy {
@@ -582,10 +624,8 @@ struct ScanScreen: View {
                     .disabled(state.isBusy || importer.isImporting || sharesPackage || sendsToComputer || saveCount == 0)
                     .keyboardShortcut(IOSShortcuts.save.keyboardShortcut)
                     .accessibilityIdentifier("save.button")
-                    if !formats.isEmpty || state.appendTarget != nil {
-                        saveMenu(canSave: saveCount > 0, formats: formats)
-                            .disabled(state.isBusy || importer.isImporting || sharesPackage || sendsToComputer)
-                    }
+                    saveMenu(canSave: saveCount > 0)
+                        .disabled(state.isBusy || importer.isImporting || sharesPackage || sendsToComputer)
                     Button {
                         sharePackage()
                     } label: {
@@ -634,22 +674,29 @@ struct ScanScreen: View {
         }
     }
 
-    /// The menu beside Save: PDF or JPEG (`IOSShell.saveFormats`), and while Save writes a PDF or a picked
-    /// PDF takes the pages, as on Windows, a new PDF even while a picked PDF takes them, the pages added to a
-    /// PDF picked now, and while one is picked, back to saving new files.
-    private func saveMenu(canSave: Bool, formats: [OutputFormat]) -> some View {
+    /// The menu beside Save: while Save writes a PDF or a picked PDF takes the pages, as on Windows, a new
+    /// PDF even while a picked PDF takes them, the pages added to a PDF picked now, and while one is picked,
+    /// back to saving new files; then Print… (the pages as a copy on the copy screen, the queue kept) and
+    /// Email… (saved as Save would, then sent by email). The format is Options' Export.
+    private func saveMenu(canSave: Bool) -> some View {
         Menu {
-            if !formats.isEmpty {
-                Picker("Save as", selection: formatChoice) {
-                    ForEach(formats) { (format: OutputFormat) in
-                        Text(format.label).tag(format)
-                    }
-                }
-                .accessibilityIdentifier("save.format")
-            }
             if IOSShell.offersPDFOptions(state.settings) || state.appendTarget != nil {
                 saveMenuItems(canSave: canSave)
             }
+            Button {
+                state.printQueueAsCopy()
+            } label: {
+                Label("Print\u{2026}", systemImage: "printer")
+            }
+            .disabled(!canSave)
+            .accessibilityIdentifier("save.print")
+            Button {
+                saveAndEmail()
+            } label: {
+                Label("Email\u{2026}", systemImage: "envelope")
+            }
+            .disabled(!canSave)
+            .accessibilityIdentifier("save.email")
         } label: {
             Label("More ways to save", systemImage: "chevron.down")
                 .labelStyle(.iconOnly)

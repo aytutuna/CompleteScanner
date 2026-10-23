@@ -168,9 +168,13 @@ public struct IOSRootView: View {
         }
     }
 
-    private func pickTask(_ task: ScanTask) {
+    private func pickTask(_ task: ScanTask, target: URL?) {
         if state.startTask(task) {
-            state.clearAppendTarget()
+            if let target {
+                state.setAppendTarget(target)
+            } else {
+                state.clearAppendTarget()
+            }
             openScanner()
         }
     }

@@ -5,14 +5,15 @@ import UniformTypeIdentifiers
 
 /// The task list: what are you scanning? On the iPhone the task sheet over the scan screen (`TaskSheet`), on
 /// the iPad the detail beside the sidebar. The user's presets first (when there are any, as on the
-/// Mac), then one tile per task (`TaskCatalog.sections`) in its group: an icon, the title and the
-/// one-line subtitle. A task that cannot be started (no feeder, or not in this version yet,
-/// `IOSShell.availability`) is dimmed with one short line saying why. Picking a tile sets the task (or
-/// the preset's settings) up and opens the scan screen (`onOpenScanner`); not while an import runs, whose
-/// pages belong to the task set up. With a side of an ID card held, either kind of tile asks to discard the
-/// card first (`IdCardDiscardQuestion`). After the tasks, "Add pages to a PDF" (`IOSAppendTile`) picks a
-/// PDF in Files first, then sets up Document to PDF with that file as the append target, so Save adds the
-/// pages to it.
+/// Mac), then one tile per kind (`IOSScanKind`: Document, Photos, Receipts, ID card, Book, Text): an icon,
+/// the title and the one-line subtitle; the feeder, both sides, the format and the rest are the scan
+/// screen's Options and Save's menu. A kind whose task cannot be started (no feeder or flatbed,
+/// `IOSShell.availability`) is dimmed with one short line saying why. Picking a tile starts the kind's
+/// task (or sets the preset's settings) up and opens the scan screen (`onOpenScanner`); not while an
+/// import runs, whose pages belong to the task set up. With a side of an ID card held, either kind of
+/// tile asks to discard the card first (`IdCardDiscardQuestion`). After the kinds, "Add pages to a PDF"
+/// (`IOSAppendTile`) picks a PDF in Files first, then sets up Document to PDF with that file as the append
+/// target, so Save adds the pages to it.
 struct TaskStartScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -28,7 +29,7 @@ struct TaskStartScreen: View {
     private let columns: [GridItem] = [GridItem(.adaptive(minimum: 150, maximum: 280), spacing: 12, alignment: .top)]
 
     var body: some View {
-        let groups: [IOSTaskGroup] = IOSShell.groups(state.taskCards)
+        let tiles: [IOSKindTile] = IOSShell.kindTiles(state.taskCards, current: IOSShell.shownKind(state.settings))
         let presets: [IOSPresetRow] = IOSPresetsModel.rows(state.presets)
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -43,20 +44,13 @@ struct TaskStartScreen: View {
                         }
                     }
                 }
-                ForEach(groups) { (group: IOSTaskGroup) in
-                    Text(group.title)
-                        .font(.headline)
-                        .padding(.top, 8)
-                        .accessibilityAddTraits(.isHeader)
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
-                        ForEach(group.tiles) { (tile: IOSTaskTile) in
-                            tileButton(tile)
-                        }
-                    }
-                }
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                    ForEach(tiles) { (tile: IOSKindTile) in
+                        tileButton(tile)
+                    }
                     appendButton(IOSAppendTile.availability(state.taskCards))
                 }
+                .padding(.top, presets.isEmpty ? 0 : 8)
             }
             .padding(16)
         }
@@ -91,22 +85,23 @@ struct TaskStartScreen: View {
         }
     }
 
-    private func tileButton(_ tile: IOSTaskTile) -> some View {
+    private func tileButton(_ tile: IOSKindTile) -> some View {
+        let kind: IOSScanKind = tile.kind
         let available: Bool = tile.availability.isAvailable
         let reason: String = tile.availability.reason ?? ""
-        let hint: String = available ? "\(tile.subtitle) \(tile.summary)." : "\(tile.subtitle) Not available: \(reason)"
+        let hint: String = available ? "\(kind.subtitle). \(tile.summary)." : "\(kind.subtitle). Not available: \(reason)"
         return Button {
-            pick(tile.task)
+            pick(kind.task)
         } label: {
-            TaskTileLabel(symbol: tile.symbol, title: tile.title, subtitle: tile.subtitle,
+            TaskTileLabel(symbol: kind.symbol, title: kind.title, subtitle: kind.subtitle,
                           availability: tile.availability, isCurrent: tile.isCurrent)
         }
         .buttonStyle(TaskTileButtonStyle())
         .disabled(!available || state.isBusy || importer.isImporting)
-        .accessibilityLabel(Text(tile.title))
+        .accessibilityLabel(Text(kind.title))
         .accessibilityValue(Text(tile.accessibilityValue))
         .accessibilityHint(Text(hint))
-        .accessibilityIdentifier("task.\(tile.task.rawValue)")
+        .accessibilityIdentifier("task.\(kind.rawValue)")
     }
 
     private func appendButton(_ availability: TaskAvailability) -> some View {
@@ -191,8 +186,8 @@ struct TaskSheet: View {
     }
 }
 
-/// The task set up, at the top of the iPhone's scan screen and of our camera (`onDark`): its title with a
-/// chevron; it opens the task sheet.
+/// The kind set up (`IOSShell.shownKind`), at the top of the iPhone's scan screen and of our camera
+/// (`onDark`): its title with a chevron; it opens the task sheet.
 struct TaskChip: View {
     let title: String
     var onDark: Bool = false

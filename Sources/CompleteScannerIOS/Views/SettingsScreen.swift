@@ -267,18 +267,22 @@ private struct TaskSettingsRows: View {
 
 /// The scanner's Source, Sides (with a feeder), Resolution and Color: for the scanner in use (a network
 /// scanner, the demo scanner); the camera measures its own pages. Source is locked while a side of an ID
-/// card is held, as on the Mac: another source would end the task and drop the card.
-private struct ScannerSettingsRows: View {
+/// card is held, as on the Mac: another source would end the task and drop the card. Also the scan
+/// screen's Options, outside a form, so each picker sits beside its name (`LabeledContent`).
+struct ScannerSettingsRows: View {
     @EnvironmentObject private var state: AppState
 
     var body: some View {
         let sources: [ScanSource] = state.capabilities?.sources ?? [ScanSource.flatbed]
         let feeder: Bool = state.settings.source == ScanSource.documentFeeder
         let cardHeld: Bool = state.hasIdCardCaptures
-        Picker("Source", selection: $state.settings.source) {
-            ForEach(sources) { (source: ScanSource) in
-                Text(source.label).tag(source)
+        LabeledContent("Source") {
+            Picker("Source", selection: source) {
+                ForEach(sources) { (source: ScanSource) in
+                    Text(source.label).tag(source)
+                }
             }
+            .labelsHidden()
         }
         .disabled(cardHeld)
         .accessibilityHint(Text(cardHeld ? IOSSettingsText.idCardHeldReason : state.settings.source.hint))
@@ -286,10 +290,13 @@ private struct ScannerSettingsRows: View {
             ReasonLine(text: IOSSettingsText.idCardHeldReason)
         }
         if sources.contains(ScanSource.documentFeeder) {
-            Picker("Sides", selection: $state.settings.duplex) {
-                ForEach(offeredSides) { (mode: DuplexMode) in
-                    Text(mode.label).tag(mode)
+            LabeledContent("Sides") {
+                Picker("Sides", selection: sides) {
+                    ForEach(offeredSides) { (mode: DuplexMode) in
+                        Text(mode.label).tag(mode)
+                    }
                 }
+                .labelsHidden()
             }
             .disabled(!feeder)
             .accessibilityHint(Text(state.settings.duplex.hint))
@@ -297,16 +304,46 @@ private struct ScannerSettingsRows: View {
                 ReasonLine(text: DocumentSides.needsFeederReason)
             }
         }
-        Picker("Resolution", selection: $state.settings.resolution) {
-            ForEach(resolutions, id: \.self) { (dpi: Int) in
-                Text("\(dpi) dpi").tag(dpi)
+        LabeledContent("Resolution") {
+            Picker("Resolution", selection: $state.settings.resolution) {
+                ForEach(resolutions, id: \.self) { (dpi: Int) in
+                    Text("\(dpi) dpi").tag(dpi)
+                }
             }
+            .labelsHidden()
         }
-        Picker("Color", selection: $state.settings.colorMode) {
-            ForEach(ColorMode.allCases) { (mode: ColorMode) in
-                Text(mode.label).tag(mode)
+        LabeledContent("Color") {
+            Picker("Color", selection: $state.settings.colorMode) {
+                ForEach(ColorMode.allCases) { (mode: ColorMode) in
+                    Text(mode.label).tag(mode)
+                }
             }
+            .labelsHidden()
         }
+    }
+
+    // A source or sides that end the task under an Options switch (Both sides, Separate documents) keep its
+    // kind, as that switch turned off would.
+    private var source: Binding<ScanSource> {
+        let appState: AppState = state
+        return Binding<ScanSource>(
+            get: { appState.settings.source },
+            set: { (source: ScanSource) in
+                var s: ScanSettings = appState.settings
+                s.source = source
+                appState.settings = IOSShell.keepingKind(s)
+            })
+    }
+
+    private var sides: Binding<DuplexMode> {
+        let appState: AppState = state
+        return Binding<DuplexMode>(
+            get: { appState.settings.duplex },
+            set: { (mode: DuplexMode) in
+                var s: ScanSettings = appState.settings
+                s.duplex = mode
+                appState.settings = IOSShell.keepingKind(s)
+            })
     }
 
     /// The scanner's resolutions, with the one chosen always listed.

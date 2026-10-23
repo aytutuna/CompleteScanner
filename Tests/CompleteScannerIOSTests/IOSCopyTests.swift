@@ -124,6 +124,45 @@ final class IOSCopyTests: XCTestCase {
     }
 
     @MainActor
+    func test_printFromSave_holdsTheQueuesPages_atFullSize_andClosingKeepsTheQueue() async throws {
+        let printer = CopyPrintService()
+        let state: AppState = makeState(printer)
+        XCTAssertTrue(state.startTask(.document))
+        XCTAssertTrue(state.ingest([page(inches: 20)], source: .photo))
+        try await idle(state)
+        XCTAssertEqual(state.scannedPages.count, 1)
+        XCTAssertTrue(state.copyPages.isEmpty)
+        let queued: ScannedPage = try XCTUnwrap(state.scannedPages.first)
+
+        state.printQueueAsCopy()
+        try await idle(state)
+        XCTAssertNil(state.errorMessage)
+        XCTAssertEqual(state.copyPages.count, 1)
+        XCTAssertTrue(state.copyIsOfQueue)
+        XCTAssertEqual(state.activeTask, .document)
+        XCTAssertEqual(state.scannedPages.count, 1)
+        // The full pixels, not the strip's preview of a spooled page.
+        let held: ScannedPage = try XCTUnwrap(state.copyPages.first)
+        let fullWidth: CGFloat = queued.fullPixelSize?.width ?? CGFloat(queued.image.width)
+        XCTAssertEqual(CGFloat(held.image.width), fullWidth)
+
+        // The copy screen's own choices change the settings; the copy stays held outside the copy task.
+        state.setCopyCount(2)
+        XCTAssertEqual(state.copyPages.count, 1)
+        state.printHeldCopy()
+        try await idle(state)
+        XCTAssertNil(state.errorMessage)
+        XCTAssertEqual(printer.jobs.count, 1)
+        XCTAssertEqual(printer.jobs.first?.copies, 2)
+
+        state.discardHeldCopy()
+        XCTAssertTrue(state.copyPages.isEmpty)
+        XCTAssertFalse(state.copyIsOfQueue)
+        XCTAssertEqual(state.scannedPages.count, 1)
+        XCTAssertEqual(state.statusMessage, "1 in queue.")
+    }
+
+    @MainActor
     func test_aCameraPageOfNoKnownSize_isFittedToThePage() async throws {
         let printer = CopyPrintService()
         let state: AppState = makeState(printer)

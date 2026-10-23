@@ -38,6 +38,38 @@ final class SmokeTests: XCTestCase {
     }
 
     @MainActor
+    func test_printFromSave_showsThePagesAsACopy_andCloseKeepsThem() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demoScanner"]
+        app.launch()
+
+        app.pickTask("document")
+        let scan: XCUIElement = app.buttons["scan.button"]
+        XCTAssertTrue(scan.waitForExistence(timeout: 30), "The scan screen's Scan button")
+        waitUntilEnabled(scan, timeout: 60)
+        scan.tap()
+        let pages: XCUIElement = app.descendants(matching: .any)["capture.pages"].firstMatch
+        let counted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "1 page"), object: pages)
+        XCTAssertEqual(XCTWaiter.wait(for: [counted], timeout: 240), .completed, "1 page in the capture bar")
+
+        let menu: XCUIElement = app.descendants(matching: .any)["save.menu"].firstMatch
+        waitUntilEnabled(menu, timeout: 60)
+        menu.tap()
+        XCTAssertTrue(app.buttons["save.email"].waitForExistence(timeout: 10), "Email\u{2026} in Save's menu")
+        let printItem: XCUIElement = app.buttons["save.print"]
+        XCTAssertTrue(printItem.waitForExistence(timeout: 10), "Print\u{2026} in Save's menu")
+        printItem.tap()
+
+        let close: XCUIElement = app.buttons["copy.discard"].firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 60), "The copy screen")
+        XCTAssertEqual(close.label, "Close")
+        waitUntilEnabled(close, timeout: 60)
+        close.tap()
+        XCTAssertTrue(app.buttons["save.button"].waitForExistence(timeout: 30), "Back on the scan screen")
+        XCTAssertEqual(pages.label, "1 page", "The page is still in the queue")
+    }
+
+    @MainActor
     func test_settings_presets_saveAPreset_andSeeItListed() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-demoScanner"]

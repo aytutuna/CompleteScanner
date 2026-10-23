@@ -16,6 +16,7 @@ public enum IOSCopyText {
     public static let againLabel = "Copy again"
     public static let discardLabel = "Discard"
     public static let discardHint = "Delete the page; can't be undone"
+    public static let closeLabel = "Close"
     public static let noPrinterYet = "You choose the printer when printing"
     /// Settings' Photocopy section: its choices are on the copy screen.
     public static let settingsNote = "Copies, Fit to page and the PDF are chosen on the copy screen."

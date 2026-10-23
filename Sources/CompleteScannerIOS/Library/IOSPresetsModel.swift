@@ -115,6 +115,7 @@ public final class IOSPresetsModel {
         let appState: AppState = state
         state.leaveIdCard {
             appState.applyPreset(preset)
+            appState.settings = IOSShell.savingActionsAsDocument(appState.settings)
             appState.clearAppendTarget()
             done()
         }

@@ -192,7 +192,7 @@ extension AppState {
                 return true
             }
             // A held copy stays on its screen, so it is not queued as well.
-            if holdsCopy(s) {
+            if holdsCopy(s) || copyIsOfQueue {
                 throw AppState.copyNotPrinted(printError, setup: setup, pdfNote: " \(PDFProtection.notSavedMessage)")
             }
             // Neither printed nor saved: the pages wait in the queue rather than being lost.
@@ -273,6 +273,36 @@ extension AppState {
         statusMessage = "Copy ready to print."
     }
 
+    /// Print… on the phone: the pages Save would write, at full resolution, held on the copy screen as a
+    /// copy's are, to print from there whatever the task. The queue keeps them; letting the copy go only
+    /// closes the screen.
+    public func printQueueAsCopy() {
+        guard !isBusy, !scannedPages.isEmpty else { return }
+        let s = settings
+        runExclusive { flag in
+            await self.pageEditChain?.value
+            let plan = SavePlan.make(self.scannedPages, options: s.document)
+            let pages: [ScannedPage] = plan.documents.flatMap { $0.pages }
+            guard !pages.isEmpty else {
+                self.errorMessage = PageFilter.nothingToSaveMessage
+                return
+            }
+            // A spooled page shows a preview; its print size comes from the full pixels at its dpi.
+            let full: [ScannedPage] = await Task.detached(priority: .userInitiated) { () -> [ScannedPage] in
+                pages.map { (page: ScannedPage) -> ScannedPage in
+                    guard page.fileURL != nil else { return page }
+                    var loaded = page.withImage(Self.fullImage(of: page))
+                    loaded.rotationQuarterTurns = 0
+                    return loaded
+                }
+            }.value
+            if flag.isCancelled { throw ScanError.cancelled }
+            self.refreshPrinters()
+            self.holdCopy(full, areaSelected: false)
+            self.copyIsOfQueue = true
+        }
+    }
+
     /// Some held page has no known real size (a camera page that matched no paper size), so the copy is
     /// fitted to the page whatever Fit to page says (`PrintLayout.copyFitsToPage`).
     public var copyNeedsFit: Bool { copyPages.contains { !$0.printsAtRealSize } }
@@ -304,8 +334,9 @@ extension AppState {
     /// Lets the held copy go.
     public func discardHeldCopy() {
         guard !isBusy, !copyPages.isEmpty else { return }
+        let ofQueue = copyIsOfQueue
         copyPages = []
-        statusMessage = "Copy discarded."
+        statusMessage = ofQueue ? "\(scannedPages.count) in queue." : "Copy discarded."
     }
 
     /// Prints the ID card's page: both sides at real size, laid out on the paper of the review (or the

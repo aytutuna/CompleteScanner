@@ -8,7 +8,8 @@ import UIKit
 /// large, with how many there are when several, then Copies, Fit to page (on and fixed, with why, when a
 /// page has no known size), Also save a PDF, the printer the copy goes to and the status while it prints;
 /// Print shows AirPrint's printer picker, Copy again prints on the printer picked last without it, and
-/// Discard lets the pages go and closes the screen. It stays open after printing, for another copy. It
+/// Discard lets the pages go and closes the screen (Close, for the queue's pages printed from Save's menu,
+/// which stay in the queue). It stays open after printing, for another copy. It
 /// shows the error alert itself, since the root's cannot show over it.
 struct CopyScreen: View {
     @ObservedObject var model: IOSCopyModel
@@ -35,12 +36,20 @@ struct CopyScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(IOSCopyText.discardLabel, role: .destructive) {
-                        model.discard()
+                    if state.copyIsOfQueue {
+                        Button(IOSCopyText.closeLabel) {
+                            model.discard()
+                        }
+                        .disabled(!model.canAct)
+                        .accessibilityIdentifier("copy.discard")
+                    } else {
+                        Button(IOSCopyText.discardLabel, role: .destructive) {
+                            model.discard()
+                        }
+                        .disabled(!model.canAct)
+                        .accessibilityHint(Text(IOSCopyText.discardHint))
+                        .accessibilityIdentifier("copy.discard")
                     }
-                    .disabled(!model.canAct)
-                    .accessibilityHint(Text(IOSCopyText.discardHint))
-                    .accessibilityIdentifier("copy.discard")
                 }
                 ToolbarItem(placement: .primaryAction) {
                     if state.isBusy {

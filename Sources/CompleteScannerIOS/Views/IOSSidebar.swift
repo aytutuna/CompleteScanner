@@ -1,6 +1,7 @@
 #if os(iOS)
 import CompleteScannerKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// What the iPad's detail column shows beside the sidebar when the scan screen is not up.
 enum IOSDetail: Hashable {
@@ -10,11 +11,12 @@ enum IOSDetail: Hashable {
     case saved
 }
 
-/// The iPad's sidebar (a regular width, `IOSLayout.usesSidebar`): the tasks in their groups (as the start
-/// screen's tiles: dimmed with the reason when one cannot be started, the one set up marked), the user's
-/// presets, the scanners to pick from (`ScannerPickerSections`, with Add by address and Troubleshoot), and
-/// the library: Presets, Scans, Saved files and Settings (Command-comma). A task or a preset picked while a
-/// side of an ID card is held asks to discard the card first (`IdCardDiscardQuestion`).
+/// The iPad's sidebar (a regular width, `IOSLayout.usesSidebar`): the user's presets, the kinds and "Add
+/// pages to a PDF" as the iPhone's task sheet has them (`IOSShell.kindTiles`: dimmed with the reason when
+/// one cannot be started, the kind set up marked), the scanners to pick from (`ScannerPickerSections`, with
+/// Add by address and Troubleshoot), and the library: Presets, Scans, Saved files and Settings
+/// (Command-comma). A kind or a preset picked while a side of an ID card is held asks to discard the card
+/// first (`IdCardDiscardQuestion`).
 struct IOSSidebar: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -22,31 +24,32 @@ struct IOSSidebar: View {
     /// The scan screen is the detail now.
     let scannerShown: Bool
     let detail: IOSDetail
-    let onTask: (ScanTask) -> Void
+    /// Starts a task, with the PDF its pages are added to when one was picked.
+    let onTask: (ScanTask, URL?) -> Void
     let onPresetApplied: @MainActor () -> Void
     let onDetail: (IOSDetail) -> Void
     let onSettings: () -> Void
     @State private var showsAdd: Bool = false
     @State private var showsTroubleshooter: Bool = false
     @State private var askedToDiscard: Bool = false
+    @State private var picksPDF: Bool = false
 
     var body: some View {
-        let groups: [IOSTaskGroup] = IOSShell.groups(state.taskCards)
+        let tiles: [IOSKindTile] = IOSShell.kindTiles(state.taskCards, current: IOSShell.shownKind(state.settings))
         let presets: [IOSPresetRow] = IOSPresetsModel.rows(state.presets)
         List {
-            ForEach(groups) { (group: IOSTaskGroup) in
-                Section(group.title) {
-                    ForEach(group.tiles) { (tile: IOSTaskTile) in
-                        taskRow(tile)
-                    }
-                }
-            }
             if !presets.isEmpty {
                 Section(IOSPresetText.groupTitle) {
                     ForEach(presets) { (row: IOSPresetRow) in
                         presetRow(row)
                     }
                 }
+            }
+            Section("Scan") {
+                ForEach(tiles) { (tile: IOSKindTile) in
+                    kindRow(tile)
+                }
+                appendRow(IOSAppendTile.availability(state.taskCards))
             }
             ScannerPickerSections(picker: picker, onAdd: openAdd, onTroubleshoot: openTroubleshooter,
                                   header: IOSNetworkText.pickerTitle)
@@ -70,17 +73,25 @@ struct IOSSidebar: View {
         .accessibilityIdentifier("scanners.sidebar")
         .modifier(ScannerPickerSheets(picker: picker, showsAdd: $showsAdd, showsTroubleshooter: $showsTroubleshooter))
         .modifier(IdCardDiscardQuestion(state: state, asked: $askedToDiscard))
+        .fileImporter(isPresented: $picksPDF, allowedContentTypes: [UTType.pdf]) { (result: Result<URL, Error>) in
+            switch result {
+            case .success(let url):
+                pick(.document, target: url)
+            case .failure(let error):
+                state.errorMessage = error.localizedDescription
+            }
+        }
     }
 
-    private func taskRow(_ tile: IOSTaskTile) -> some View {
+    private func kindRow(_ tile: IOSKindTile) -> some View {
+        let kind: IOSScanKind = tile.kind
         let available: Bool = tile.availability.isAvailable
         let current: Bool = tile.isCurrent && scannerShown
-        let task: ScanTask = tile.task
         return Button {
-            pick(task)
+            pick(kind.task)
         } label: {
             HStack(spacing: 10) {
-                Label(tile.title, systemImage: tile.symbol)
+                Label(kind.title, systemImage: kind.symbol)
                     .foregroundStyle(available ? Color.primary : Color.secondary)
                 Spacer(minLength: 4)
                 if current {
@@ -92,9 +103,22 @@ struct IOSSidebar: View {
         }
         .disabled(!available || state.isBusy || importer.isImporting)
         .accessibilityValue(Text(tile.accessibilityValue))
-        .accessibilityHint(Text(available ? tile.subtitle : "Not available: \(tile.availability.reason ?? "")"))
+        .accessibilityHint(Text(available ? kind.subtitle : "Not available: \(tile.availability.reason ?? "")"))
         .accessibilityAddTraits(current ? AccessibilityTraits.isSelected : [])
-        .accessibilityIdentifier("sidebar.task.\(task.rawValue)")
+        .accessibilityIdentifier("sidebar.task.\(kind.rawValue)")
+    }
+
+    private func appendRow(_ availability: TaskAvailability) -> some View {
+        let available: Bool = availability.isAvailable
+        return Button {
+            picksPDF = true
+        } label: {
+            Label(IOSAppendTile.title, systemImage: IOSAppendTile.symbol)
+                .foregroundStyle(available ? Color.primary : Color.secondary)
+        }
+        .disabled(!available || state.isBusy || importer.isImporting)
+        .accessibilityHint(Text(available ? IOSAppendTile.subtitle : "Not available: \(availability.reason ?? "")"))
+        .accessibilityIdentifier("sidebar.task.appendToPDF")
     }
 
     private func presetRow(_ row: IOSPresetRow) -> some View {
@@ -131,10 +155,10 @@ struct IOSSidebar: View {
     }
 
     /// Picking a task ends the ID card task, so with a side of the card held it asks first, as a preset does.
-    private func pick(_ task: ScanTask) {
-        let start: (ScanTask) -> Void = onTask
+    private func pick(_ task: ScanTask, target: URL? = nil) {
+        let start: (ScanTask, URL?) -> Void = onTask
         state.leaveIdCard {
-            start(task)
+            start(task, target)
         }
         if state.pendingIdCardLeave != nil {
             askedToDiscard = true

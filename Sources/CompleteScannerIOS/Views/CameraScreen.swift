@@ -119,7 +119,7 @@ struct CameraScreen: View {
             }
             VStack(spacing: 0) {
                 topBar
-                TaskChip(title: state.activeTaskDefinition?.title ?? "Pick a task", onDark: true, onTap: openTasks)
+                TaskChip(title: IOSShell.shownKind(state.settings).title, onDark: true, onTap: openTasks)
                     .padding(.top, 10)
                 if model.message == nil, cardPrompt == nil, let line = taskLine {
                     Text(line.prompt)

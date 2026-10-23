@@ -125,7 +125,7 @@ public final class AppState: ObservableObject {
             if let task = settings.task, !TaskCatalog.fits(task, settings) { settings.taskId = nil }
             syncTaskFlow()
             syncCameraSides()
-            if !copyPages.isEmpty && !isCopyFlow { copyPages = [] }
+            if !copyPages.isEmpty && !isCopyFlow && !copyIsOfQueue { copyPages = [] }
             // A named document whose first page the settings now leave out keeps its name.
             if settings.document != oldValue.document { carryDocumentLabels(settingsBefore: oldValue.document) }
             // Split at barcode or QR sheets just chosen (by hand or with a preset, or document pages
@@ -370,13 +370,21 @@ public final class AppState: ObservableObject {
     /// The Copy task on the iPhone and iPad: the pages brought in, held on the copy screen until they are
     /// printed (as often as asked) or discarded (AppState+Copy.swift); empty otherwise.
     @Published public internal(set) var copyPages: [ScannedPage] = [] {
-        didSet { copyPagesRecorded = false }
+        didSet {
+            copyPagesRecorded = false
+            if copyPages.isEmpty { copyIsOfQueue = false }
+        }
     }
+    /// The held copy is the queue's pages (Print… on the phone, `printQueueAsCopy`), held whatever the
+    /// task; letting it go leaves the queue as it is.
+    public internal(set) var copyIsOfQueue = false
     /// The held copy's pages are in the session history and the task's steps: they go in once, on the
     /// first print.
     var copyPagesRecorded = false
     /// The held copy is of an area selected on the preview, so it prints centred.
     var copyAreaSelected = false
+    /// The save under way sends its files by email once written (`saveAndEmail`).
+    var emailsAfterSave = false
     /// A `.csdoc` opened by hand, offered on a banner until its pages are added, opened as a new queue
     /// or dismissed (AppState+Package.swift); nil otherwise.
     @Published public internal(set) var pendingPackage: PendingPackage?
@@ -2013,8 +2021,29 @@ public final class AppState: ObservableObject {
     /// The after-save action of the settings the files were saved with, once a save has finished
     /// (never after a cancelled or failed one). A refusal is reported; the save stands.
     func runAfterSave(_ action: AfterSaveAction, saved: [URL]) {
+        if emailsAfterSave {
+            emailsAfterSave = false
+            runFileAction(.email, urls: saved)
+            return
+        }
         guard let step = SaveActions.plan(action, saved: saved) else { return }
         runFileAction(Self.afterSaveFileAction(step.fileAction, task: settings.task, platform: platform), urls: step.urls)
+    }
+
+    /// Saves the collected pages as Save does (`saveImages` for pictures, else `savePDF`), then sends the
+    /// saved files by email as the Email task does after its saves (`.email`: Mail's composer, else the
+    /// share sheet), whatever these settings do after a save. For this save only: the iPhone's Email… in
+    /// the Save menu.
+    public func saveAndEmail(images: Bool) {
+        guard !isBusy, !scannedPages.isEmpty else { return }
+        emailsAfterSave = true
+        if images {
+            saveImages()
+        } else {
+            savePDF()
+        }
+        // Nothing started (no save to run after): the next save must not email.
+        if !isBusy { emailsAfterSave = false }
     }
 
     /// The file action an after-save step runs: the iPhone's Email task sends what it shares by email (a
@@ -2376,8 +2405,9 @@ public final class AppState: ObservableObject {
                     self.recordFailure(deviceName: session.info.name, error: error)
                 }
             }
-            // The save's password is wiped however the operation ended.
+            // The save's password is wiped however the operation ended, and so is an Email… not used.
             forgetPDFPassword()
+            emailsAfterSave = false
             currentCancelFlag = nil
             progress = nil
             isBusy = false
