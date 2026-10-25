@@ -1,7 +1,8 @@
 import XCTest
 
 // The app as a person uses it, on the Simulator: launched on the demo scanner alone (`-demoScanner`, so
-// the camera does not open by itself), pick Document to PDF among the kinds, scan a page, see it in the page strip, save the PDF, and see the saved file
+// the camera does not open by itself), pick Document to PDF among the kinds and the demo scanner as the
+// source in the Scanner options, scan a page, see it in the page strip, save the PDF, and see the saved file
 // with its Share button; and open Settings, open Presets, save the settings as a preset and see it
 // listed (I15). The demo scanner draws made-up pages, so no scanner, camera or network is needed, and
 // the PDF goes to the app's own Documents folder in the Simulator.
@@ -18,6 +19,8 @@ final class SmokeTests: XCTestCase {
         app.launch()
 
         app.pickTask("document")
+        app.pickSource("scanner.row.mock:demo")
+        app.closeOptions()
 
         let scan: XCUIElement = app.buttons["scan.button"]
         XCTAssertTrue(scan.waitForExistence(timeout: 30), "The scan screen's Scan button")
@@ -44,6 +47,8 @@ final class SmokeTests: XCTestCase {
         app.launch()
 
         app.pickTask("document")
+        app.pickSource("scanner.row.mock:demo")
+        app.closeOptions()
         let scan: XCUIElement = app.buttons["scan.button"]
         XCTAssertTrue(scan.waitForExistence(timeout: 30), "The scan screen's Scan button")
         waitUntilEnabled(scan, timeout: 60)

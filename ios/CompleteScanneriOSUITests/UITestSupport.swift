@@ -60,9 +60,10 @@ extension XCUIApplication {
         return element
     }
 
-    /// Opens an option group of the scan screen as its sheet by the row's name: "Scanner" (the picker and
-    /// the scanner's settings), "Camera" (Both sides, Apple's scanner), "Book", "Photos" (Restore faded
-    /// colours) or "Export" (the format, Separate documents, the PDF's choices, After saving).
+    /// Opens an option group of the scan screen as its sheet by the row's name: "Scanner" (Camera or a
+    /// scanner as the source, then Both sides and Apple's scanner, or the scanner's settings), "Book",
+    /// "Photos" (Restore faded colours) or "Export" (the format, Separate documents, the PDF's choices,
+    /// After saving).
     @MainActor
     func openOptions(_ group: String, file: StaticString = #filePath, line: UInt = #line) {
         let row: XCUIElement = scrolledTo("options.row.\(group.lowercased())")
@@ -70,6 +71,23 @@ extension XCUIApplication {
         row.tap()
         let done: XCUIElement = descendants(matching: .any)["options.done"].firstMatch
         XCTAssertTrue(done.waitForExistence(timeout: 10), "The \(group) options' sheet", file: file, line: line)
+    }
+
+    /// Opens the Scanner options and picks the source there by its row: "source.camera" for our camera,
+    /// "scanner.row.mock:demo" for the demo scanner. The sheet stays open. The app keeps the source from run
+    /// to run, so a test that needs the shutter or Scan picks it first.
+    @MainActor
+    func pickSource(_ id: String, file: StaticString = #filePath, line: UInt = #line) {
+        openOptions("Scanner", file: file, line: line)
+        let row: XCUIElement = descendants(matching: .any)[id].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 30), "The \(id) row in the Scanner options", file: file, line: line)
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: row)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 60), .completed, "The \(id) row enabled",
+                       file: file, line: line)
+        row.tap()
+        let picked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: row)
+        XCTAssertEqual(XCTWaiter.wait(for: [picked], timeout: 30), .completed, "\(id) picked as the source",
+                       file: file, line: line)
     }
 
     /// Closes the option group's sheet with Done.

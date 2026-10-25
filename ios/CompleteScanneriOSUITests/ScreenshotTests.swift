@@ -14,6 +14,10 @@ final class ScreenshotTests: XCTestCase {
 
         let chips: XCUIElement = element(app, "task.chips")
         let launched: Bool = chips.waitForExistence(timeout: 60)
+        // The source is kept from run to run: the scan screen as it opens, with the camera.
+        if launched {
+            useSource(app, "source.camera")
+        }
         shot("01-scan")
         if launched {
             let receipts: XCUIElement = element(app, "task.receipts")
@@ -30,6 +34,7 @@ final class ScreenshotTests: XCTestCase {
             }
         }
 
+        useSource(app, "scanner.row.mock:demo")
         let scan: XCUIElement = element(app, "scan.button")
         let pages: XCUIElement = element(app, "capture.pages")
         if scan.waitForExistence(timeout: 5) && waitUntilEnabled(scan, timeout: 30) {
@@ -104,7 +109,7 @@ final class ScreenshotTests: XCTestCase {
         }
 
         if tapIfThere(app, "options.row.scanner", for: "10-options") {
-            if element(app, "scanner.menu").waitForExistence(timeout: 5) {
+            if element(app, "source.camera").waitForExistence(timeout: 5) {
                 Thread.sleep(forTimeInterval: 1)
                 shot("10-options")
             } else {
@@ -159,6 +164,17 @@ final class ScreenshotTests: XCTestCase {
             app.swipeDown()
             waitUntilGone(item)
         }
+    }
+
+    /// Picks the source by its row in the Scanner options, when they are there, and closes them.
+    @MainActor
+    private func useSource(_ app: XCUIApplication, _ id: String) {
+        guard tapIfThere(app, "options.row.scanner", for: "source") else { return }
+        let row: XCUIElement = element(app, id)
+        if row.waitForExistence(timeout: 5) {
+            row.tap()
+        }
+        closeOptions(app)
     }
 
     /// Closes an option group's sheet with Done.
