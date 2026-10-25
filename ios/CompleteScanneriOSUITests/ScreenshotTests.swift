@@ -12,18 +12,21 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments = ["-demoScanner"]
         app.launch()
 
-        let chip: XCUIElement = element(app, "task.chip")
-        let launched: Bool = chip.waitForExistence(timeout: 60)
+        let chips: XCUIElement = element(app, "task.chips")
+        let launched: Bool = chips.waitForExistence(timeout: 60)
         shot("01-scan")
         if launched {
-            chip.tap()
-            let tile: XCUIElement = element(app, "task.document")
-            if tile.waitForExistence(timeout: 5) {
-                shot("02-task-sheet")
-                tile.tap()
-                waitUntilGone(tile)
+            let receipts: XCUIElement = element(app, "task.receipts")
+            let document: XCUIElement = element(app, "task.document")
+            if receipts.waitForExistence(timeout: 5) && document.exists {
+                receipts.tap()
+                waitUntilSelected(receipts)
+                Thread.sleep(forTimeInterval: 1)
+                shot("02-kinds-receipts")
+                document.tap()
+                waitUntilSelected(document)
             } else {
-                shot("skipped-02-task-sheet")
+                shot("skipped-02-kinds-receipts")
             }
         }
 
@@ -100,21 +103,23 @@ final class ScreenshotTests: XCTestCase {
             back(app)
         }
 
-        if tapIfThere(app, "options.group", for: "10-options") {
-            Thread.sleep(forTimeInterval: 1)
-            shot("10-options")
-            let format: XCUIElement = element(app, "options.format")
-            if format.waitForExistence(timeout: 5) {
-                var swipes: Int = 0
-                while !format.isHittable && swipes < 4 {
-                    app.swipeUp()
-                    swipes += 1
-                }
+        if tapIfThere(app, "options.row.scanner", for: "10-options") {
+            if element(app, "scanner.menu").waitForExistence(timeout: 5) {
+                Thread.sleep(forTimeInterval: 1)
+                shot("10-options")
+            } else {
+                shot("skipped-10-options")
+            }
+            closeOptions(app)
+        }
+        if tapIfThere(app, "options.row.export", for: "11-export-options") {
+            if element(app, "options.format").waitForExistence(timeout: 5) {
                 Thread.sleep(forTimeInterval: 1)
                 shot("11-export-options")
             } else {
                 shot("skipped-11-export-options")
             }
+            closeOptions(app)
         }
     }
 
@@ -132,10 +137,12 @@ final class ScreenshotTests: XCTestCase {
         app.descendants(matching: .any)[id].firstMatch
     }
 
-    /// Taps the element if it comes, else keeps a "skipped-" screenshot of what is there instead.
+    /// Taps the element if it comes, else keeps a "skipped-" screenshot of what is there instead. The scan
+    /// screen's list rows (`options.row.*`, the library and Settings) are scrolled into view first.
     @MainActor
     private func tapIfThere(_ app: XCUIApplication, _ id: String, for screen: String) -> Bool {
-        let target: XCUIElement = element(app, id)
+        let inList: Bool = id.hasPrefix("options.row.") || id == "open.library" || id == "scan.settings"
+        let target: XCUIElement = inList ? app.scrolledTo(id) : element(app, id)
         guard target.waitForExistence(timeout: 5) else {
             shot("skipped-\(screen)")
             return false
@@ -144,19 +151,23 @@ final class ScreenshotTests: XCTestCase {
         return true
     }
 
-    /// Closes the open Save menu with a tap on the task chip, or a swipe down when that leaves it open;
-    /// the task sheet is closed again should the tap have reached the chip.
+    /// Closes the open Save menu with a tap on the viewfinder, or a swipe down when that leaves it open.
     @MainActor
     private func closeMenu(_ app: XCUIApplication, item: XCUIElement) {
-        element(app, "task.chip").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        element(app, "preview.area").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         if !waitUntilGone(item) {
             app.swipeDown()
             waitUntilGone(item)
         }
-        let tasksDone: XCUIElement = element(app, "tasks.done")
-        if tasksDone.waitForExistence(timeout: 2) {
-            tasksDone.tap()
-            waitUntilGone(tasksDone)
+    }
+
+    /// Closes an option group's sheet with Done.
+    @MainActor
+    private func closeOptions(_ app: XCUIApplication) {
+        let done: XCUIElement = element(app, "options.done")
+        if done.waitForExistence(timeout: 5) {
+            done.tap()
+            waitUntilGone(done)
         }
     }
 
@@ -172,6 +183,12 @@ final class ScreenshotTests: XCTestCase {
     private func waitUntilEnabled(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: element)
         return XCTWaiter.wait(for: [enabled], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func waitUntilSelected(_ element: XCUIElement) {
+        let selected = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: element)
+        _ = XCTWaiter.wait(for: [selected], timeout: 5)
     }
 
     @MainActor

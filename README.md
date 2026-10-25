@@ -274,8 +274,9 @@ xcodebuild test -scheme CompleteScanner-Package   -destination 'platform=iOS Sim
 
 The app itself (one universal app for iPhone and iPad; on the iPhone it opens straight on the scan screen
 with the camera, the last task used set up and what you scan (Document, Photos, Receipts, ID card, Book or Text)
-in a sheet under its name at the top, the feeder, both sides, separate documents, the format and PDF/A in
-the scan screen's Options, and Print… and Email… in Save's menu;
+as chips along the top, the feeder, both sides, separate documents, the format and PDF/A in the scan screen's
+option sheets, Print… and Email… in Save's menu, and what runs after each save (Email, Print, Send to PC)
+in the Export sheet;
 so far the Demo Scanner,
 our own camera as the default way to take pages, with the page's outline drawn live over the
 preview, the lens that focuses close, the torch, an automatic shutter that takes each page once it

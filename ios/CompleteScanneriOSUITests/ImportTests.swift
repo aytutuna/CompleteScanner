@@ -30,13 +30,14 @@ final class ImportTests: XCTestCase {
         app.openPages(1)
         app.closePages()
 
-        // The Simulator has no document scanner: Use Apple's scanner is in Options, dimmed, with why; our
-        // camera, the default, is there too (its own screen says there is no camera).
-        app.openOptions()
+        // The Simulator has no document scanner: Use Apple's scanner is in the Camera options, dimmed, with
+        // why; our camera, the default, is there too (its own screen says there is no camera).
+        app.openOptions("Camera")
         let scanner: XCUIElement = app.buttons["capture.scanner"]
         XCTAssertTrue(scanner.waitForExistence(timeout: 10), "The Use Apple's scanner button")
         XCTAssertFalse(scanner.isEnabled, "No document scanner in the Simulator")
         XCTAssertTrue(app.staticTexts["scanner.reason"].exists, "Why there is no document scanner")
+        app.closeOptions()
         XCTAssertTrue(app.buttons["capture.camera"].exists, "The Camera button")
 
         let save: XCUIElement = app.buttons["save.button"]

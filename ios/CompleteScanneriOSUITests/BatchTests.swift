@@ -6,7 +6,7 @@ import XCTest
 // `-importTask batch`, at launch since a UI test cannot drive Files): a page, the Patch T separator sheet,
 // and another page. The sheet is found on its page (its bars are measured at the page's real size), marked
 // as a separator and left out, so Save writes two PDFs, one page each. The second case picks Document in
-// the task sheet, turns Separate documents on, picks QR code sheets and turns it off again. The fixture (Fixtures/batch.pdf, drawn by scripts/make_ios_ui_fixture.py) holds
+// the scan screen's kinds, turns Separate documents on, picks QR code sheets and turns it off again. The fixture (Fixtures/batch.pdf, drawn by scripts/make_ios_ui_fixture.py) holds
 // grey lines and the sheet's bars on Letter pages, no real document.
 
 final class BatchTests: XCTestCase {
@@ -32,11 +32,12 @@ final class BatchTests: XCTestCase {
         app.closePages()
         XCTAssertTrue(app.buttons["task.newDocument"].exists, "New document")
         XCTAssertEqual(app.chipTitle, "Document")
-        app.openOptions()
+        app.openOptions("Export")
         let separate: XCUIElement = app.switches["options.separate"].firstMatch
-        XCTAssertTrue(separate.waitForExistence(timeout: 10), "Separate documents in Options")
+        XCTAssertTrue(separate.waitForExistence(timeout: 10), "Separate documents in Export")
         XCTAssertEqual(separate.value as? String, "1")
         XCTAssertTrue(app.buttons["separator.save"].waitForExistence(timeout: 10), "Separator sheet")
+        app.closeOptions()
 
         let save: XCUIElement = app.buttons["save.button"]
         waitUntilEnabled(save, timeout: 120)
@@ -58,14 +59,16 @@ final class BatchTests: XCTestCase {
         app.launch()
 
         app.pickTask("document")
-        app.openOptions()
+        app.openOptions("Export")
         let sheet: XCUIElement = app.buttons["separator.save"]
         XCTAssertFalse(sheet.exists, "One document until Separate documents is on")
         app.turnSwitch("options.separate", on: true)
         XCTAssertTrue(sheet.waitForExistence(timeout: 10), "Separator sheet")
+        app.closeOptions()
         XCTAssertTrue(app.buttons["task.newDocument"].exists, "New document")
         XCTAssertEqual(app.chipTitle, "Document")
 
+        app.openOptions("Export")
         let kind: XCUIElement = app.descendants(matching: .any)["separator.kind"].firstMatch
         XCTAssertTrue(kind.waitForExistence(timeout: 10), "Patch code or QR code")
         kind.buttons["QR code"].tap()

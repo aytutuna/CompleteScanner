@@ -1,8 +1,8 @@
 import XCTest
 
 // The scanner picker as a person uses it, on the Simulator and without any network: launched on the
-// demo scanner alone (`-demoScanner`: no network scanners, nothing is searched for), the scan screen's
-// scanner row opens the picker with the demo scanner listed; Add by address opens its sheet, which says
+// demo scanner alone (`-demoScanner`: no network scanners, nothing is searched for), the first row of the
+// scan screen's Scanner options opens the picker with the demo scanner listed; Add by address opens its sheet, which says
 // what is wrong with an address that cannot be one before anything is sent.
 
 final class ScannerPickerTests: XCTestCase {
@@ -17,10 +17,11 @@ final class ScannerPickerTests: XCTestCase {
         app.launch()
 
         app.pickTask("document")
+        app.openOptions("Scanner")
 
         // On iPhone the scanner row opens the picker as a sheet; on iPad the picker is the sidebar.
         let row: XCUIElement = app.buttons["scanner.menu"]
-        XCTAssertTrue(row.waitForExistence(timeout: 30), "The scan screen's scanner row")
+        XCTAssertTrue(row.waitForExistence(timeout: 30), "The Scanner options' scanner row")
         let sidebar: Bool = app.descendants(matching: .any)["scanners.sidebar"].exists
         if !sidebar {
             row.tap()
@@ -48,7 +49,7 @@ final class ScannerPickerTests: XCTestCase {
         XCTAssertTrue(demo.waitForExistence(timeout: 30), "Back in the picker")
         if !sidebar {
             app.buttons["scanners.done"].tap()
-            XCTAssertTrue(row.waitForExistence(timeout: 30), "Back on the scan screen")
+            XCTAssertTrue(row.waitForExistence(timeout: 30), "Back in the Scanner options")
         }
     }
 }
