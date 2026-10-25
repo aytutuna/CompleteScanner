@@ -510,6 +510,16 @@ final class EsclScannerBackendTests: XCTestCase {
         state.userSelectDevice("mock:demo")
         try await waitFor(10) { state.capabilities != nil }
         XCTAssertEqual(state.selectedDeviceID, "mock:demo")
+
+        // Waiting for a scanner picked as the source to be listed again keeps a hand-turned job's sides.
+        state.settings.duplex = .manual
+        state.userSelectNoDevice(resetsManualSides: false)
+        try await waitFor(10) { state.capabilities == nil }
+        XCTAssertNil(state.selectedDeviceID)
+        XCTAssertEqual(state.settings.duplex, .manual)
+        // With nothing selected, the user's Camera still turns them back to both.
+        state.userSelectNoDevice()
+        XCTAssertEqual(state.settings.duplex, .both)
     }
 
     /// Twin of the Windows `AppViewModel` handling of `EsclCertificateException` (spec N3): a scanner the

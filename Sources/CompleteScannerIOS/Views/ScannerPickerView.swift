@@ -181,19 +181,12 @@ private struct ScannerPickerContent: View {
     private func pickCamera() {
         guard !state.isBusy else { return }
         source = ""
-        if state.selectedDeviceID != nil {
-            state.userSelectNoDevice()
-        }
+        state.userSelectNoDevice()
     }
 
-    /// The source's own addresses gone: the camera is the source again.
+    /// Discovery may still list the scanner; the root view lets go of the source once it is gone.
     private func remove(_ row: IOSScannerRow) {
-        if row.id == source {
-            source = ""
-            if !state.isBusy && state.selectedDeviceID != nil {
-                state.userSelectNoDevice()
-            }
-        }
+        guard !state.isBusy else { return }
         picker.removeAddresses(row)
     }
 

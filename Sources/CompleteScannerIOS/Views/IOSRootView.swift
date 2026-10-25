@@ -272,7 +272,7 @@ public struct IOSRootView: View {
                 state.userSelectDevice(listed)
             }
         } else if state.selectedDeviceID != nil {
-            state.userSelectNoDevice()
+            state.userSelectNoDevice(resetsManualSides: false)
         }
     }
 

@@ -445,6 +445,9 @@ public final class AppState: ObservableObject {
     private var userPickedDevice = false
     /// The user chose no scanner (`userSelectNoDevice`): none is selected on its own until they pick one.
     private var keepsNoDevice = false
+    /// The user's no scanner also turns the sides turned over by hand back to both, once the session that
+    /// decided them has closed (`userSelectNoDevice(resetsManualSides:)`).
+    private var resetsManualSides = false
     /// Scanners whose changed certificate was not trusted this session (refused when the app opened one
     /// on its own, or declined by the user): never selected automatically again, so only the user
     /// choosing one asks about its certificate. Twin of the Windows `AppViewModel._certificateRefused`.
@@ -773,16 +776,33 @@ public final class AppState: ObservableObject {
     public func userSelectDevice(_ id: String?) {
         userPickedDevice = true
         keepsNoDevice = false
+        resetsManualSides = false
         selectDevice(id, interactive: true)
     }
 
     /// No scanner, on the user's word (the phone's camera picked as the source): the session closes and
-    /// no scanner is selected on its own, even one found later, until the user picks one. The Mac never
-    /// calls it.
-    public func userSelectNoDevice() {
+    /// no scanner is selected on its own, even one found later, until the user picks one. With
+    /// `resetsManualSides`, turning the stack over by hand (a one-sided feeder's) becomes both sides again,
+    /// which the camera takes itself; the phone passes false when it only waits for the scanner picked as
+    /// its source to be listed again, so a hand-turned job keeps its sides. The Mac never calls it.
+    public func userSelectNoDevice(resetsManualSides: Bool = true) {
         userPickedDevice = true
         keepsNoDevice = true
-        selectDevice(nil, interactive: true)
+        if resetsManualSides { self.resetsManualSides = true }
+        if selectedDeviceID == nil && session == nil && switchTask == nil {
+            // Nothing to close.
+            statusMessage = "Ready"
+            resetManualSidesIfAsked()
+        } else {
+            selectDevice(nil, interactive: true)
+        }
+    }
+
+    /// After the session closed: a feeder's capabilities would turn both sides back into by hand.
+    private func resetManualSidesIfAsked() {
+        guard resetsManualSides else { return }
+        resetsManualSides = false
+        if settings.duplex == .manual { settings.duplex = .both }
     }
 
     private func selectDevice(_ id: String?, interactive: Bool = false) {
@@ -830,9 +850,8 @@ public final class AppState: ObservableObject {
 
         guard let id else {
             if keepsNoDevice {
-                // Turning the stack over by hand is a one-sided feeder's; the camera takes both sides itself.
-                if settings.duplex == .manual { settings.duplex = .both }
                 statusMessage = "Ready"
+                resetManualSidesIfAsked()
             } else {
                 statusMessage = "No scanner selected."
             }
