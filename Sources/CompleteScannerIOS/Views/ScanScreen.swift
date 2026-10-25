@@ -25,7 +25,7 @@ enum ScanCover: String, Identifiable {
 /// and Scan and Save (as a PDF, a JPEG a page, Word or text, `IOSShell.exportFormats`); once saved, the
 /// saved file with Share and Show in Files. The pages come from one source at a time, picked in the Scanner
 /// options (`IOSShell.sourceScanner`): our own camera (`CameraScreen`), the default, whose shutter is on the
-/// capture bar, or a scanner, whose Scan button takes the shutter's place; Use Apple's scanner opens Apple's
+/// capture bar, or a scanner, with Scan beside Save and no shutter; Use Apple's scanner opens Apple's
 /// document scanner. On iPad the scanners are listed beside the screen. The screen stays awake while a
 /// network scanner's job runs (`IOSRootView`, since resizing the window builds this screen anew).
 /// Save is shown for the tasks that collect pages; photos and receipts open the photo review once found
@@ -54,8 +54,8 @@ enum ScanCover: String, Identifiable {
 /// and Export (the format, Separate documents, One PDF per page, the PDF's choices, After saving), and last
 /// the library (`onOpenLibrary`) and Settings (`onOpenSettings`). While a group's sheet is up, anything
 /// else the screen presents (a review, the library, the ID card's question) waits for it to close. The bar
-/// at the bottom has the capture bar (`CaptureBar`) over Scan (a scanner's, in the shutter's place) and
-/// Save. Save's menu adds the pages to a PDF, prints them as a copy (Print…), saves and emails them
+/// at the bottom has the capture bar (`CaptureBar`, its shutter only with the camera as the source) over
+/// Scan (only with a scanner as the source) and Save. Save's menu adds the pages to a PDF, prints them as a copy (Print…), saves and emails them
 /// (Email…), shares them as a CompleteScanner document or sends them to the computer; Save itself runs what After saving has checked (`IOSAfterSave`).
 /// The capture bar's last page opens the page strip in a sheet.
 struct ScanScreen: View {

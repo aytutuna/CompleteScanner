@@ -71,8 +71,9 @@ struct ScannerPickerSheets: ViewModifier {
 /// source checked (`IOSShell.sourceScanner`); "Looking for scanners…" while the search has just started,
 /// else "No scanner found" with Troubleshoot; the explanation card before the first search, the line about
 /// Local Network access being off, and the buttons to add a scanner by address and open the troubleshooter.
-/// Picking a scanner selects it and makes it the source; Camera leaves the scanner selected. The rows follow
-/// the app's state, and the network scanners' when there are any.
+/// Picking a scanner selects it and makes it the source; Camera selects none, so no scanner's limits apply
+/// to the camera (`AppState.userSelectNoDevice`). The rows follow the app's state, and the network
+/// scanners' when there are any.
 struct ScannerPickerSections: View {
     let picker: IOSScannerPickerModel
     let onAdd: () -> Void
@@ -106,7 +107,7 @@ private struct ScannerPickerContent: View {
             CameraSourceRow(checked: picked == nil, enabled: !state.isBusy, onPick: pickCamera)
             ForEach(picker.rows) { (row: IOSScannerRow) in
                 ScannerRowView(row: row, checked: row.id == picked, enabled: !state.isBusy, onPick: { pick(row) },
-                               onRemove: { picker.removeAddresses(row) })
+                               onRemove: { remove(row) })
             }
             if picker.showsSearching {
                 HStack(spacing: 8) {
@@ -180,6 +181,20 @@ private struct ScannerPickerContent: View {
     private func pickCamera() {
         guard !state.isBusy else { return }
         source = ""
+        if state.selectedDeviceID != nil {
+            state.userSelectNoDevice()
+        }
+    }
+
+    /// The source's own addresses gone: the camera is the source again.
+    private func remove(_ row: IOSScannerRow) {
+        if row.id == source {
+            source = ""
+            if !state.isBusy && state.selectedDeviceID != nil {
+                state.userSelectNoDevice()
+            }
+        }
+        picker.removeAddresses(row)
     }
 
     private func openSettings() {

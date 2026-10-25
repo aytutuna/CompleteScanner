@@ -154,6 +154,19 @@ final class IOSShellTests: XCTestCase {
         XCTAssertNil(IOSShell.sourceScanner("escl:x", selected: nil, devices: []))
     }
 
+    func test_listedSource_followsThePickedScanner_toAnotherConnection() {
+        let direct: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
+        let viaDesktop: ScannerInfo = ScannerInfo(id: "companion:x", name: "Office MFP", transport: "Companion", backend: "companion")
+        let demo: ScannerInfo = ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true, backend: "mock")
+        let groups: [DeviceGroup] = [DeviceGroup(key: "x", primary: direct, members: [direct, viaDesktop]),
+                                     DeviceGroup(key: "demo", primary: demo, members: [demo])]
+        XCTAssertEqual(IOSShell.listedSource("escl:x", devices: [demo, direct], groups: groups), "escl:x")
+        XCTAssertEqual(IOSShell.listedSource("companion:x", devices: [demo, direct], groups: groups), "escl:x")
+        XCTAssertEqual(IOSShell.listedSource("mock:demo", devices: [demo], groups: []), "mock:demo")
+        XCTAssertNil(IOSShell.listedSource("escl:x", devices: [demo], groups: [groups[1]]))
+        XCTAssertNil(IOSShell.listedSource("", devices: [demo, direct], groups: groups))
+    }
+
     func test_rightToLeft_isShownWhileTheSourceInUseCutsSpreads() {
         let network: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
         let demo: ScannerInfo = ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true, backend: "mock")

@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 /// (it opens the page strip in a sheet, `onPages`, and bumps with a tap felt as a page comes in), the
 /// shutter, which opens our own camera (`CameraScreen`, the default way to take pages on every task that
 /// takes photos; its screen says why when there is no camera or access is off) while the camera is the
-/// source (a scanner picked in the Scanner options has the scan screen's Scan button instead), and Photos
+/// source (with a scanner picked in the Scanner options, the scan screen's Scan beside Save instead), and Photos
 /// and Files (`ImportButtons`). Imported photos go to the corner editor one by one (`IOSImportSession`);
 /// the root view shows it. While an import runs, its progress shows with Stop. Apple's document scanner is
 /// in the Scanner options under Camera (`AppleScannerRow`).

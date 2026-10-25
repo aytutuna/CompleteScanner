@@ -485,6 +485,33 @@ final class EsclScannerBackendTests: XCTestCase {
         XCTAssertEqual(mac.rankPatterns, DeviceMerge.macRanking)
     }
 
+    /// The phone's camera picked as the source: no scanner, and none chosen again on its own when the list
+    /// changes, until the user picks one.
+    @MainActor
+    func test_noScannerPickedByTheUser_isKeptWhenTheListChanges() async throws {
+        let demo: MockScannerBackend = AppState.makeDemoBackend()
+        let state: AppState = AppState(backends: [demo], presetStore: PresetStore(directory: folder),
+                                       files: AppStateFiles.all(in: folder))
+        state.platform = .ios
+        state.start()
+        try await waitFor(10) { state.capabilities != nil }
+        state.settings.duplex = .manual
+
+        state.userSelectNoDevice()
+        try await waitFor(10) { state.capabilities == nil }
+        XCTAssertNil(state.selectedDeviceID)
+        XCTAssertEqual(state.statusMessage, "Ready")
+        XCTAssertEqual(state.settings.duplex, .both)
+        demo.onDevicesChanged?()
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertNil(state.selectedDeviceID)
+        XCTAssertNil(state.capabilities)
+
+        state.userSelectDevice("mock:demo")
+        try await waitFor(10) { state.capabilities != nil }
+        XCTAssertEqual(state.selectedDeviceID, "mock:demo")
+    }
+
     /// Twin of the Windows `AppViewModel` handling of `EsclCertificateException` (spec N3): a scanner the
     /// app chose on its own whose certificate changed is a warning with a hint, the app moves on to
     /// another scanner (here the demo scanner) and does not choose it again; only the user choosing it

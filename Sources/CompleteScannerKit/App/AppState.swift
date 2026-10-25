@@ -443,6 +443,8 @@ public final class AppState: ObservableObject {
     private var session: (any ScannerSession)?
     private var sessionDeviceID: String?
     private var userPickedDevice = false
+    /// The user chose no scanner (`userSelectNoDevice`): none is selected on its own until they pick one.
+    private var keepsNoDevice = false
     /// Scanners whose changed certificate was not trusted this session (refused when the app opened one
     /// on its own, or declined by the user): never selected automatically again, so only the user
     /// choosing one asks about its certificate. Twin of the Windows `AppViewModel._certificateRefused`.
@@ -607,7 +609,7 @@ public final class AppState: ObservableObject {
                 userPickedDevice = false
                 selectDevice(preferredDefaultDevice())
             }
-        } else if let def = preferredDefaultDevice() {
+        } else if !keepsNoDevice, let def = preferredDefaultDevice() {
             selectDevice(def)
         }
         refreshDeviceRows()
@@ -770,7 +772,17 @@ public final class AppState: ObservableObject {
     /// network scanner whose certificate changed asks the user (`ScannerBackend.openSession(deviceID:interactive:)`).
     public func userSelectDevice(_ id: String?) {
         userPickedDevice = true
+        keepsNoDevice = false
         selectDevice(id, interactive: true)
+    }
+
+    /// No scanner, on the user's word (the phone's camera picked as the source): the session closes and
+    /// no scanner is selected on its own, even one found later, until the user picks one. The Mac never
+    /// calls it.
+    public func userSelectNoDevice() {
+        userPickedDevice = true
+        keepsNoDevice = true
+        selectDevice(nil, interactive: true)
     }
 
     private func selectDevice(_ id: String?, interactive: Bool = false) {
@@ -817,7 +829,13 @@ public final class AppState: ObservableObject {
         photoSourceImages = [:]
 
         guard let id else {
-            statusMessage = "No scanner selected."
+            if keepsNoDevice {
+                // Turning the stack over by hand is a one-sided feeder's; the camera takes both sides itself.
+                if settings.duplex == .manual { settings.duplex = .both }
+                statusMessage = "Ready"
+            } else {
+                statusMessage = "No scanner selected."
+            }
             return
         }
         guard let backend = backends.first(where: { b in b.devices.contains { $0.id == id } }) else {

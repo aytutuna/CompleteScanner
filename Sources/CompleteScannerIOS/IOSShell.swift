@@ -124,8 +124,8 @@ public enum IOSShell {
         isBusy && usesNetworkScanner(device)
     }
 
-    /// Whether a network scanner (eSCL) is the one selected (`device`); otherwise the pages come from the
-    /// camera, Photos or Files (the demo scanner aside).
+    /// Whether `device` is a network scanner (eSCL), not the demo scanner; nil, with no scanner selected,
+    /// is not.
     public static func usesNetworkScanner(_ device: ScannerInfo?) -> Bool {
         device?.backend == "escl"
     }
@@ -191,8 +191,8 @@ public enum IOSShell {
     }
 
     /// Whether the book's Right to left switch is shown: while its spreads are cut at the spine for the
-    /// source in use, a network scanner's scans (`PageProcessor.forScan`) or the camera's whole spreads
-    /// (`PageProcessor.splitsCameraSpreads`).
+    /// source in use, a network scanner's scans (`PageProcessor.forScan`; `device` is the selected scanner,
+    /// none while the camera is the source) or the camera's whole spreads (`PageProcessor.splitsCameraSpreads`).
     public static func showsRightToLeft(_ settings: ScanSettings, device: ScannerInfo?) -> Bool {
         PageProcessor.splitsFacingPages(settings) && (settings.taskOptions.cameraSpreads || usesNetworkScanner(device))
     }
@@ -243,8 +243,9 @@ public enum IOSShell {
         return IOSDocumentCamera.tasks.contains(task)
     }
 
-    /// Whether the scan screen offers our own camera (`CameraScreen`), the default way to take pages:
-    /// wherever photos are taken (`takesPhotos`), as photos are imported, while no scanner is the source.
+    /// Whether the scan screen can offer our own camera (`CameraScreen`), the default way to take pages:
+    /// wherever photos are taken (`takesPhotos`), as photos are imported. Its shutter shows only while the
+    /// camera is the source (`sourceScanner`).
     public static func offersOwnCamera(_ settings: ScanSettings) -> Bool {
         takesPhotos(settings)
     }
@@ -260,6 +261,22 @@ public enum IOSShell {
         guard !source.isEmpty, source == selected else { return nil }
         for device in devices where device.id == source {
             return device
+        }
+        return nil
+    }
+
+    /// The listed row of the scanner picked as the source: its own, or the one of the connection the app
+    /// moved that scanner to (`groups`, `DeviceMerge`); nil when the scanner is not listed, or none is picked.
+    public static func listedSource(_ source: String, devices: [ScannerInfo], groups: [DeviceGroup]) -> String? {
+        guard !source.isEmpty else { return nil }
+        var connections: [String] = [source]
+        for group in groups where group.members.contains(where: { (member: ScannerInfo) -> Bool in member.id == source }) {
+            for member in group.members {
+                connections.append(member.id)
+            }
+        }
+        for device in devices where connections.contains(device.id) {
+            return device.id
         }
         return nil
     }

@@ -74,7 +74,7 @@ extension XCUIApplication {
     }
 
     /// Opens the Scanner options and picks the source there by its row: "source.camera" for our camera,
-    /// "scanner.row.mock:demo" for the demo scanner. The sheet stays open. The app keeps the source from run
+    /// "scanner.row.mock:demo" for the demo scanner. The sheet stays open, at full height. The app keeps the source from run
     /// to run, so a test that needs the shutter or Scan picks it first.
     @MainActor
     func pickSource(_ id: String, file: StaticString = #filePath, line: UInt = #line) {
@@ -88,6 +88,17 @@ extension XCUIApplication {
         let picked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: row)
         XCTAssertEqual(XCTWaiter.wait(for: [picked], timeout: 30), .completed, "\(id) picked as the source",
                        file: file, line: line)
+        growOptions()
+    }
+
+    /// Drags the Scanner options' sheet from half height to full: the chosen source's settings sit below
+    /// the list, and the list makes its rows only once they come on screen.
+    @MainActor
+    func growOptions() {
+        let bar: XCUIElement = navigationBars["Scanner"].firstMatch
+        guard bar.waitForExistence(timeout: 10) else { return }
+        bar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .press(forDuration: 0.1, thenDragTo: coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05)))
     }
 
     /// Closes the option group's sheet with Done.

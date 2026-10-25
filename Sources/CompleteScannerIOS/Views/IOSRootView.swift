@@ -17,10 +17,10 @@ import UIKit
 /// the corner editor of an imported photo, the troubleshooter,
 /// the question about a network scanner's changed certificate, and the error alert (with Troubleshoot
 /// when it is about a scanner; in the Settings sheet it opens Settings' own troubleshooter). It keeps the
-/// screen on while a network scanner's job runs, and selects the scanner picked as the source once it is
-/// listed again. Photos and PDFs opened in this app from another one ("Open in
-/// CompleteScanner") are imported: into the task set up when it takes photos (`IOSShell.takesPhotos`), else
-/// into Document to PDF; while an import runs they wait for it (`IOSImportSession`). A CompleteScanner
+/// screen on while a network scanner's job runs, and keeps the selected scanner on the source: the scanner
+/// picked as the source once it is listed, else none, so no scanner's limits apply to the camera. Photos
+/// and PDFs opened in this app from another one ("Open in CompleteScanner") are imported: into the task set
+/// up when it takes photos (`IOSShell.takesPhotos`), else into Document to PDF; while an import runs they wait for it (`IOSImportSession`). A CompleteScanner
 /// document (`.csdoc`, I18) is not imported: the scan screen offers it on its banner. Leaving the scan screen
 /// stops an import and closes the scan screen's covers. The scan screen opens the photo and ID card reviews.
 public struct IOSRootView: View {
@@ -84,7 +84,15 @@ public struct IOSRootView: View {
             keepAwake(busy)
         }
         .onChange(of: state.devices) { (_: [ScannerInfo], _: [ScannerInfo]) in
-            selectSourceScanner()
+            followSource()
+        }
+        .onChange(of: state.capabilities != nil) { (_: Bool, _: Bool) in
+            followSource()
+        }
+        .onChange(of: selectionCanMove) { (_: Bool, free: Bool) in
+            if free {
+                followSource()
+            }
         }
         .environmentObject(importer)
         .task {
@@ -251,14 +259,28 @@ public struct IOSRootView: View {
         UIApplication.shared.isIdleTimerDisabled = IOSShell.keepsScreenAwake(isBusy: busy, device: device)
     }
 
-    /// The scanner picked as the source is selected again once it is listed: on its own the app selects the
-    /// first scanner it finds. Not while a scan runs or a side of an ID card is held, which need the scanner
-    /// they started on.
-    private func selectSourceScanner() {
-        let picked: String = source
-        guard !picked.isEmpty, picked != state.selectedDeviceID, !state.isBusy, !state.hasIdCardCaptures,
-              state.devices.contains(where: { (info: ScannerInfo) -> Bool in info.id == picked }) else { return }
-        state.userSelectDevice(picked)
+    /// The selection follows the source: the scanner picked as the source once it is listed (on its own the
+    /// app selects the first scanner it finds; one the app moved to another connection stays the source),
+    /// else no scanner. Picked again while connected, so a scanner found later does not take its place.
+    private func followSource() {
+        guard selectionCanMove else { return }
+        if let listed = IOSShell.listedSource(source, devices: state.devices, groups: state.deviceGroups) {
+            if listed != source {
+                source = listed
+            }
+            if listed != state.selectedDeviceID || state.capabilities != nil {
+                state.userSelectDevice(listed)
+            }
+        } else if state.selectedDeviceID != nil {
+            state.userSelectNoDevice()
+        }
+    }
+
+    /// A switch of scanner would end a scan, close a review or a cover, or drop an ID card's side or an
+    /// import's pages, so the selection waits for them (as `AppState`'s own switches do).
+    private var selectionCanMove: Bool {
+        !state.isBusy && !state.showPhotoReview && !state.showIdCardReview && !state.hasIdCardCaptures
+            && !importer.isImporting && scanCover == nil
     }
 
     /// The corner editor waiting for an answer; closing it any other way skips the photo. While our
@@ -292,6 +314,9 @@ public struct IOSRootView: View {
         guard !started else { return }
         started = true
         state.start()
+        if source.isEmpty {
+            state.userSelectNoDevice()
+        }
         // Settings left without a task by hand are kept: only a first run or a task not offered here starts one.
         let task: ScanTask = IOSShell.launchTask(state.settings)
         if state.activeTask != task && (state.activeTask != nil || state.isFirstRun) {

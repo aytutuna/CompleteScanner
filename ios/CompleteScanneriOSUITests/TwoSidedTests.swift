@@ -66,6 +66,7 @@ final class TwoSidedTests: XCTestCase {
         app.closeOptions()
         XCTAssertEqual(app.chipTitle, "Document")
         app.openOptions("Scanner")
+        app.growOptions()
         app.turnSwitch("options.bothSides", on: false)
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: way)
         XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 10), .completed, "One side again")
