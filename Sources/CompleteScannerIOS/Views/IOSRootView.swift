@@ -7,8 +7,8 @@ import UIKit
 
 /// The app's window: on a compact width (iPhone, a narrow iPad window) the scan screen, set up at launch
 /// for the task used last (`IOSShell.launchTask`) with our camera opened at once where it can be used
-/// (`IOSShell.cameraOnOpen`; the first time, after a card saying why), the task list in a sheet over it and
-/// the library pushed; on a regular width (iPad, `IOSLayout.usesSidebar`) a sidebar with the tasks, the
+/// (`IOSShell.cameraOnOpen`; the first time, after a card saying why), the kinds in its top row and the
+/// library pushed; on a regular width (iPad, `IOSLayout.usesSidebar`) a sidebar with the tasks, the
 /// presets, the scanners and the library beside the scan screen (or the start screen, the presets, the
 /// scans or the saved files). Settings opens as a sheet (Command-comma). Also the share sheet, Mail's
 /// composer and the Quick Look preview the file actions ask for (`FileActionPresenters`, which the Settings
@@ -33,9 +33,6 @@ public struct IOSRootView: View {
     private let demoScanner: Bool
     /// On the iPad, whether the detail is the scan screen; on the iPhone it always is.
     @State private var showsScanner: Bool = false
-    @State private var showsTasks: Bool = false
-    /// A tile or a preset was picked in the task sheet: the camera opens once it has closed.
-    @State private var taskPicked: Bool = false
     @State private var showsLibrary: Bool = false
     @State private var showsCameraIntro: Bool = false
     @AppStorage(IOSShell.cameraIntroKey) private var cameraIntroShown: Bool = false
@@ -116,11 +113,11 @@ public struct IOSRootView: View {
         }
     }
 
-    /// iPhone: the scan screen, with the task sheet over it and the library pushed.
+    /// iPhone: the scan screen, with the library pushed.
     private var stackLayout: some View {
         NavigationStack {
             ScanScreen(picker: picker, cover: $scanCover, spreadEditor: $spreadEditor, onOpenSettings: openSettings,
-                       onOpenTasks: openTasks, onOpenLibrary: openLibrary)
+                       onOpenLibrary: openLibrary)
                 .navigationDestination(isPresented: $showsLibrary) {
                     LibraryScreen()
                 }
@@ -129,11 +126,6 @@ public struct IOSRootView: View {
             if showsCameraIntro {
                 CameraIntroCard(onContinue: continueToCamera)
             }
-        }
-        .sheet(isPresented: $showsTasks, onDismiss: tasksClosed) {
-            TaskSheet(onPicked: pickedInSheet, onClose: closeTasks)
-                .environmentObject(state)
-                .environmentObject(importer)
         }
     }
 
@@ -187,28 +179,6 @@ public struct IOSRootView: View {
     private func openSettings() {
         showsSettingsTroubleshooter = false
         showsSettings = true
-    }
-
-    private func openTasks() {
-        taskPicked = false
-        showsTasks = true
-    }
-
-    private func closeTasks() {
-        showsTasks = false
-    }
-
-    private func pickedInSheet() {
-        taskPicked = true
-        showsTasks = false
-    }
-
-    /// The camera opens only once the sheet has gone: a cover cannot be presented while it is still up.
-    private func tasksClosed() {
-        if taskPicked {
-            taskPicked = false
-            openCameraAtOnce()
-        }
     }
 
     private func openLibrary() {
@@ -294,11 +264,10 @@ public struct IOSRootView: View {
         importer.stop()
     }
 
-    /// The scan screen in front: the iPad's detail, and on the iPhone the library and the task sheet gone.
+    /// The scan screen in front: the iPad's detail, and on the iPhone the library gone.
     private func openScanner() {
         showsScanner = true
         showsLibrary = false
-        showsTasks = false
     }
 
     private func startOnce() {
@@ -364,7 +333,7 @@ public struct IOSRootView: View {
     /// `task` is set up when given; otherwise the task set up takes photos (not the photocopy, which holds
     /// one batch of pages; a copy still held keeps its task and the import is refused as a held Quick scan is), or
     /// Document to PDF is set up; the scan screen is shown. True when it was brought to the front now (shown
-    /// on the iPad, or the library or the task sheet closed on the iPhone).
+    /// on the iPad, or the library closed on the iPhone).
     private func prepareForImport(_ task: ScanTask?) -> Bool {
         if let wanted = task {
             if state.activeTask != wanted {
@@ -373,7 +342,7 @@ public struct IOSRootView: View {
         } else if state.activeTask == nil || !IOSShell.takesPhotos(state.settings) || (state.isCopyFlow && state.copyPages.isEmpty) {
             _ = state.startTask(.document)
         }
-        let pushed: Bool = !showsScanner || showsLibrary || showsTasks
+        let pushed: Bool = !showsScanner || showsLibrary
         openScanner()
         return pushed
     }

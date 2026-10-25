@@ -103,6 +103,14 @@ struct CameraTaskButtons: View {
     private var borderedTint: Color {
         onDark ? Color.white : Color.accentColor
     }
+
+    /// Whether any button shows, so the scan screen leaves out an empty row.
+    static func showsAny(_ state: AppState) -> Bool {
+        if let sides = state.cameraSides, sides.canSkipBack || sides.canStartBacks || sides.canPutInOrder {
+            return true
+        }
+        return state.offersNewDocument
+    }
 }
 
 /// How the camera takes the task set up: Flip & capture or Fronts, then backs for the two-sided task;
@@ -278,10 +286,10 @@ struct RestoreToggle: View {
     }
 }
 
-/// Options' Export, while the scan screen collects pages: the format (a PDF, a JPEG a page, Word or text),
-/// for a document Separate documents (the Separate documents task, with its separator sheets; dimmed
-/// without a feeder as its tile was), One PDF per page for a PDF that is not split otherwise, and the PDF's
-/// choices while Save writes one.
+/// The Export sheet's sections, while the scan screen collects pages: the format (a PDF, a JPEG a page, Word
+/// or text) on its own at the top; for a document Separate documents (the Separate documents task, with its
+/// separator sheets; dimmed without a feeder as its tile was), One PDF per page for a PDF that is not split
+/// otherwise, and the PDF's choices while Save writes one; then After saving (`IOSAfterSave`).
 struct ExportOptions: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -291,7 +299,7 @@ struct ExportOptions: View {
         let busy: Bool = state.isBusy || importer.isImporting
         let separates: Bool = IOSShell.separatesDocuments(s)
         let availability: TaskAvailability = TaskCatalog.availability(of: .batch, capabilities: state.capabilities)
-        VStack(alignment: .leading, spacing: 12) {
+        Section {
             Picker("Format", selection: format) {
                 ForEach(IOSShell.exportFormats) { (choice: OutputFormat) in
                     Text(Self.label(choice)).tag(choice)
@@ -300,6 +308,8 @@ struct ExportOptions: View {
             .pickerStyle(.segmented)
             .disabled(busy)
             .accessibilityIdentifier("options.format")
+        }
+        Section {
             // A book stays a book: its spreads are split, not its stack.
             if IOSShell.shownKind(s) == .document {
                 Toggle("Separate documents", isOn: separate)
@@ -321,6 +331,15 @@ struct ExportOptions: View {
             if IOSShell.offersPDFOptions(s) {
                 PDFOptionsSection()
             }
+        }
+        Section {
+            ForEach(IOSAfterSave.rows) { (action: IOSAfterSave) in
+                AfterSaveRow(action: action)
+            }
+        } header: {
+            Text(IOSAfterSave.title)
+        } footer: {
+            Text(IOSAfterSave.footer)
         }
     }
 
@@ -364,6 +383,38 @@ struct ExportOptions: View {
     }
 }
 
+/// A row of After saving: a check kept in the user's defaults under the action's key.
+private struct AfterSaveRow: View {
+    let action: IOSAfterSave
+    @AppStorage private var checked: Bool
+
+    init(action: IOSAfterSave) {
+        self.action = action
+        _checked = AppStorage(wrappedValue: false, action.key)
+    }
+
+    var body: some View {
+        Button {
+            checked.toggle()
+        } label: {
+            HStack(spacing: 8) {
+                Text(action.label)
+                    .foregroundStyle(Color.primary)
+                Spacer(minLength: 8)
+                if checked {
+                    Image(systemName: "checkmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .accessibilityAddTraits(checked ? AccessibilityTraits.isSelected : [])
+        .accessibilityIdentifier("options.afterSave.\(action.rawValue)")
+    }
+}
+
 /// Why an option is dimmed, in one short line under it.
 private struct OptionReason: View {
     let text: String
@@ -384,7 +435,7 @@ struct PDFOptionsSection: View {
 
     var body: some View {
         let output: OutputOptions = state.settings.output
-        VStack(alignment: .leading, spacing: 8) {
+        Group {
             Picker("PDF size", selection: pdfSize) {
                 ForEach(PDFSizePreset.displayOrder, id: \.self) { (size: PDFSizePreset) in
                     Text(size.label).tag(size)

@@ -6,14 +6,16 @@ import UIKit
 import UniformTypeIdentifiers
 
 /// The capture bar along the bottom of the scan screen: the last page taken with how many the queue holds
-/// (it opens the page strip in a sheet, `onPages`), the shutter, which opens our own camera (`CameraScreen`,
-/// the default way to take pages on every task that takes photos; its screen says why when there is no
-/// camera or access is off), and Photos and Files (`ImportButtons`). Imported photos go to the corner
-/// editor one by one (`IOSImportSession`); the root view shows it. While an import runs, its progress shows
-/// with Stop. Apple's document scanner is further up, in the scan screen's Options (`AppleScannerRow`).
+/// (it opens the page strip in a sheet, `onPages`, and bumps with a tap felt as a page comes in), the
+/// shutter, which opens our own camera (`CameraScreen`, the default way to take pages on every task that
+/// takes photos; its screen says why when there is no camera or access is off), and Photos and Files
+/// (`ImportButtons`). Imported photos go to the corner editor one by one (`IOSImportSession`); the root
+/// view shows it. While an import runs, its progress shows with Stop. Apple's document scanner is in the
+/// scan screen's Camera options (`AppleScannerRow`).
 struct CaptureBar: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion: Bool
 
     /// Whether our own camera is offered (the task takes photos).
     let offersCamera: Bool
@@ -24,6 +26,8 @@ struct CaptureBar: View {
 
     /// The most photos picked at once.
     static let maxPicked: Int = 50
+
+    @State private var bumped: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -71,21 +75,24 @@ struct CaptureBar: View {
             onPages()
         } label: {
             HStack(spacing: 8) {
-                if let image = last {
-                    Image(decorative: image, scale: 1)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 36, height: 46)
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color.secondary.opacity(0.3), lineWidth: 1))
-                } else {
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [3]))
-                        .frame(width: 36, height: 46)
+                Group {
+                    if let image = last {
+                        Image(decorative: image, scale: 1)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 40, height: 52)
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(Color(uiColor: .separator), lineWidth: 1))
+                    } else {
+                        RoundedRectangle(cornerRadius: 4)
+                            .strokeBorder(Color(uiColor: .tertiaryLabel), style: StrokeStyle(lineWidth: 1, dash: [3]))
+                            .frame(width: 40, height: 52)
+                    }
                 }
+                .scaleEffect(bumped ? 1.3 : 1)
                 Text(IOSCameraText.pageCount(count))
-                    .font(.footnote)
+                    .font(.caption)
                     .foregroundStyle(Color.secondary)
                     .lineLimit(1)
             }
@@ -93,6 +100,19 @@ struct CaptureBar: View {
         }
         .buttonStyle(.plain)
         .disabled(count == 0)
+        .onChange(of: count) { (old: Int, new: Int) in
+            guard new > old, !reduceMotion else { return }
+            withAnimation(.spring(duration: 0.15)) {
+                bumped = true
+            } completion: {
+                withAnimation(.spring(duration: 0.55, bounce: 0.25)) {
+                    bumped = false
+                }
+            }
+        }
+        .sensoryFeedback(SensoryFeedback.impact(weight: SensoryFeedback.Weight.medium), trigger: count) { (old: Int, new: Int) -> Bool in
+            new > old
+        }
         .accessibilityLabel(Text(IOSCameraText.pageCount(count)))
         .accessibilityHint(Text(IOSCameraText.pagesHint))
         .accessibilityIdentifier("capture.pages")
@@ -106,17 +126,16 @@ struct CaptureBar: View {
         } label: {
             ZStack {
                 Circle()
-                    .fill(Color.accentColor)
-                    .frame(width: 60, height: 60)
+                    .strokeBorder(Color.accentColor, lineWidth: 3)
+                // The ring, then a gap as wide, then the core.
                 Circle()
-                    .stroke(Color.accentColor.opacity(0.35), lineWidth: 4)
-                    .frame(width: 70, height: 70)
-                Image(systemName: "camera.fill")
-                    .font(.title2)
-                    .foregroundStyle(Color.white)
+                    .fill(Color.accentColor)
+                    .padding(6)
             }
+            .frame(width: 66, height: 66)
+            .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ShutterButtonStyle())
         .disabled(!importer.canImport)
         .opacity(importer.canImport ? 1 : 0.4)
         .accessibilityLabel(Text(IOSImportText.cameraLabel))
@@ -153,8 +172,8 @@ struct CaptureBar: View {
 }
 
 /// Photos (the system's photo picker, several in the order picked) and Files (photos and PDFs, and a
-/// CompleteScanner document, which goes to the scan screen's banner instead), on the capture bar and, white
-/// on black (`onDark`), on our camera's screen, which rests its camera while one is open (`onPresenting`)
+/// CompleteScanner document, which goes to the scan screen's banner instead), as icons on the capture bar
+/// and, white on black with their names (`onDark`), on our camera's screen, which rests its camera while one is open (`onPresenting`)
 /// and offers no CompleteScanner document, as its banner would be hidden under the camera.
 /// Each picked photo is loaded only when its turn comes.
 struct ImportButtons: View {
@@ -233,17 +252,31 @@ struct ImportButtons: View {
         VStack(spacing: 4) {
             Image(systemName: symbol)
                 .font(.title3)
-            Text(title)
-                .font(.caption2)
+            if onDark {
+                Text(title)
+                    .font(.caption2)
+            }
         }
         .foregroundStyle(onDark ? Color.white : Color.accentColor)
-        .frame(width: 56, height: 48)
+        .frame(minWidth: onDark ? 56 : 44, minHeight: onDark ? 48 : 44)
         .contentShape(Rectangle())
     }
 }
 
+/// The shutter shrinks while pressed; with Reduce Motion it only dims.
+private struct ShutterButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.9 : 1)
+            .opacity(configuration.isPressed && reduceMotion ? 0.7 : 1)
+            .animation(reduceMotion ? Animation.easeInOut(duration: 0.2) : Animation.spring(duration: 0.2), value: configuration.isPressed)
+    }
+}
+
 /// Apple's document scanner on the Document, Email and Word tasks: a secondary way in, in the scan
-/// screen's Options, dimmed with one short line where it cannot run (as in the Simulator).
+/// screen's Camera options, dimmed with one short line where it cannot run (as in the Simulator).
 struct AppleScannerRow: View {
     @EnvironmentObject private var importer: IOSImportSession
     /// Whether Apple's scanner can be opened here.

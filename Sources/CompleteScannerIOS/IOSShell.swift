@@ -177,11 +177,10 @@ public enum IOSShell {
     /// The user's defaults key: the card saying why the camera is asked for was shown (`cameraOnOpen`).
     public static let cameraIntroKey = "camera.introShown"
 
-    /// What the iPhone does with our camera when the scan screen opens (at launch, or a task picked in the
-    /// task sheet): opens it for a task that takes photos where it can be used, first with the card saying
-    /// why while iOS has not asked for the camera yet and the card was never shown; stays on the scan screen
-    /// without a camera (the Simulator), with access off or not allowed, and under `-demoScanner` (the UI
-    /// tests).
+    /// What the iPhone does with our camera when the scan screen opens at launch: opens it for a task that
+    /// takes photos where it can be used, first with the card saying why while iOS has not asked for the
+    /// camera yet and the card was never shown; stays on the scan screen without a camera (the Simulator),
+    /// with access off or not allowed, and under `-demoScanner` (the UI tests).
     public static func cameraOnOpen(offersCamera: Bool, camera: IOSCameraAvailability, authorization: AVAuthorizationStatus,
                                     introShown: Bool, demo: Bool) -> IOSCameraOnOpen {
         guard !demo, offersCamera, camera.isAvailable else { return .stay }
@@ -428,9 +427,10 @@ public enum IOSShell {
         }
     }
 
-    /// The kind a task is shown as on the iPhone (the task chip, the task sheet's Current): the document
-    /// tasks are a Document with its options set (the feeder, both sides, separate documents, the format,
-    /// PDF/A, Email…, Print…), Restore old photos is Photos with faded colours restored, Quick scan is Text.
+    /// The kind a task is shown as on the iPhone (the scan screen's chips, the camera's task chip): the
+    /// document tasks are a Document with its options set (the feeder, both sides, separate documents, the
+    /// format, PDF/A, Email…, Print…), Restore old photos is Photos with faded colours restored, Quick scan
+    /// is Text.
     public static func kind(of task: ScanTask) -> IOSScanKind {
         switch task {
         case .document, .feeder, .twoSided, .batch, .email, .word, .archive, .copy:
@@ -584,8 +584,9 @@ public enum IOSShell {
     }
 }
 
-/// What the iPhone's task sheet asks: what is being scanned. The rest (the feeder, both sides, separate
-/// documents, the format, PDF/A, email and printing) is an option of the scan screen or an action of Save.
+/// What the iPhone's scan screen asks first, as chips in its top row: what is being scanned. The rest (the
+/// feeder, both sides, separate documents, the format, PDF/A, email and printing) is an option of the scan
+/// screen or an action of Save.
 public enum IOSScanKind: String, CaseIterable, Identifiable, Sendable {
     case document
     case photos

@@ -3,8 +3,8 @@ import CompleteScannerKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The task list: what are you scanning? On the iPhone the task sheet over the scan screen (`TaskSheet`), on
-/// the iPad the detail beside the sidebar. The user's presets first (when there are any, as on the
+/// The task list: what are you scanning? On the iPhone the task sheet over our camera (`TaskSheet`; the scan
+/// screen has the kinds as chips in its top row), on the iPad the detail beside the sidebar. The user's presets first (when there are any, as on the
 /// Mac), then one tile per kind (`IOSScanKind`: Document, Photos, Receipts, ID card, Book, Text): an icon,
 /// the title and the one-line subtitle; the feeder, both sides, the format and the rest are the scan
 /// screen's Options and Save's menu. A kind whose task cannot be started (no feeder or flatbed,
@@ -168,8 +168,8 @@ struct TaskStartScreen: View {
     }
 }
 
-/// The task list in a sheet over the iPhone's scan screen or our camera, half height first: picking a
-/// tile or a preset sets it up and closes the sheet (`onPicked`); Done closes it as it was.
+/// The task list in a sheet over our camera on the iPhone, half height first: picking a tile or a preset
+/// sets it up and closes the sheet (`onPicked`); Done closes it as it was.
 struct TaskSheet: View {
     @EnvironmentObject private var state: AppState
     let onPicked: @MainActor () -> Void
@@ -186,11 +186,10 @@ struct TaskSheet: View {
     }
 }
 
-/// The kind set up (`IOSShell.shownKind`), at the top of the iPhone's scan screen and of our camera
-/// (`onDark`): its title with a chevron; it opens the task sheet.
+/// The kind set up (`IOSShell.shownKind`) under our camera's top bar, white on a dark capsule: its title
+/// with a chevron; it opens the task sheet.
 struct TaskChip: View {
     let title: String
-    var onDark: Bool = false
     let onTap: () -> Void
 
     var body: some View {
@@ -203,14 +202,10 @@ struct TaskChip: View {
                     .font(.caption.weight(.semibold))
                     .accessibilityHidden(true)
             }
-            .foregroundStyle(onDark ? Color.white : Color.primary)
-            .padding(.horizontal, onDark ? 14 : 0)
-            .padding(.vertical, onDark ? 8 : 0)
-            .background {
-                if onDark {
-                    Capsule().fill(Color.black.opacity(0.6))
-                }
-            }
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(Color.black.opacity(0.6)))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

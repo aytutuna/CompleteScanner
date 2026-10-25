@@ -24,7 +24,7 @@ enum ScanCover: String, Identifiable {
 /// preview with the scan area (or the last scan), the page strip, the status line with a scan's progress,
 /// and Scan and Save (as a PDF, a JPEG a page, Word or text, `IOSShell.exportFormats`); once saved, the
 /// saved file with Share and Show in Files. Camera opens our own camera (`CameraScreen`), the default; Use Apple's scanner
-/// opens Apple's document scanner. The scanner row opens the scanner picker as a sheet on iPhone; on iPad
+/// opens Apple's document scanner. The Scanner options open the scanner picker as a sheet on iPhone; on iPad
 /// the picker is a sidebar beside the screen. The screen stays awake while a network scanner's job runs
 /// (`IOSRootView`, since resizing the window builds this screen anew).
 /// Save is shown for the tasks that collect pages; photos and receipts open the photo review once found
@@ -33,7 +33,7 @@ enum ScanCover: String, Identifiable {
 /// a book are taken, Separate documents' separator sheets, the PDF's size, Archive and Password, a book
 /// page's spread split again (`SpreadSplitSheet`), and Quick scan's page full screen once taken. Since I15:
 /// PDFs and pictures dropped on the screen are imported as Files' are, Command-S saves, and Settings
-/// (Command-comma) is in the toolbar where the sidebar does not offer it. Since I16: the photocopy's pages
+/// (Command-comma) is a row under the options where the sidebar does not offer it. Since I16: the photocopy's pages
 /// full screen once taken, to print over AirPrint (`CopyScreen`). While Save writes a PDF, the menu beside
 /// it can also add the pages to the end of a PDF picked in Files (`AppState.appendToPDF(at:)`); with a PDF
 /// picked in the task list (`AppState.appendTarget`) Save adds them to that one. Since I18: a
@@ -42,30 +42,34 @@ enum ScanCover: String, Identifiable {
 /// paired, Send to computer sends the queue to it as a new document or into the one open there
 /// (`AppState.sendQueueToDesktop`), the status line saying how it went. Its covers and the
 /// spread's sheet are the root view's (`ScanCovers`), so resizing the window across the width classes,
-/// which builds this screen anew, leaves them open. On the iPhone it is the app's first screen: the task
-/// chip at the top opens the task sheet (`onOpenTasks`), the library (`onOpenLibrary`) and Settings sit
-/// beside it, and the capture bar (`CaptureBar`) is right above Save; the step card shows only while a step
-/// needs it (`IOSShell.showsStepCard`), the scanner row while a scanner is listed, and the preview once
-/// there is one (else the camera's line, centred in its place). Options below it, collapsed, holds what
-/// the task sheet no longer asks: the flatbed's Preview, then Scanner (Source, Sides, Resolution, Color),
-/// Camera (Both sides and how, Apple's scanner), Book, Photos (Restore faded colours) and Export (the
-/// format, Separate documents, One PDF per page, the PDF's choices), each where it applies. Save's menu
-/// adds the pages to a PDF, prints them as a copy (Print…) or saves and emails them (Email…). The capture
-/// bar's last page opens the page strip in a sheet.
+/// which builds this screen anew, leaves them open. On the iPhone it is the app's first screen, with no
+/// navigation bar: its top row has only the kinds as chips, each starting its task as the task list's tile
+/// does. Below, the step card shows only while
+/// a step needs it (`IOSShell.showsStepCard`), then the viewfinder card with the preview once there is one
+/// (else the camera's line, centred in its place), then a row for each option group that applies, which
+/// opens it as a sheet (`ScanOptionGroup`): Scanner (the picker, Source, Sides, Resolution, Color, the
+/// flatbed's Preview), Camera (Both sides and how, Apple's scanner), Book, Photos (Restore faded colours)
+/// and Export (the format, Separate documents, One PDF per page, the PDF's choices, After saving), and last
+/// the library (`onOpenLibrary`) and Settings (`onOpenSettings`). While a group's sheet is up, anything
+/// else the screen presents (a review, the library, the ID card's question) waits for it to close. The bar
+/// at the bottom has the capture bar (`CaptureBar`) over Scan and Save. Save's menu adds the pages to a
+/// PDF, prints them as a copy (Print…), saves and emails them (Email…), shares them as a CompleteScanner
+/// document or sends them to the computer; Save itself runs what After saving has checked (`IOSAfterSave`).
+/// The capture bar's last page opens the page strip in a sheet.
 struct ScanScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
     @Environment(\.horizontalSizeClass) private var sizeClass: UserInterfaceSizeClass?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion: Bool
     /// The scanners to pick from.
     let picker: IOSScannerPickerModel
     @Binding var cover: ScanCover?
     @Binding var spreadEditor: SpreadEditorSource?
-    /// The iPad's sidebar lists the scanners, so the scanner row only names the one in use.
+    /// The iPad's sidebar lists the scanners and the tasks, so the Scanner options only name the scanner in
+    /// use and the top row is left out.
     var pickerInSidebar: Bool = false
     /// Opens Settings; nil when the sidebar has it.
     var onOpenSettings: (() -> Void)?
-    /// Opens the task sheet (iPhone); nil when the sidebar lists the tasks.
-    var onOpenTasks: (() -> Void)?
     /// Opens the library (iPhone); nil when the sidebar has it.
     var onOpenLibrary: (() -> Void)?
     @State private var scanner: IOSCameraAvailability = .noCamera
@@ -73,8 +77,12 @@ struct ScanScreen: View {
     @State private var pagesShown: Bool = false
     /// A book page whose spread is split again once the page strip's sheet has closed.
     @State private var spreadAfterPages: UUID?
-    @State private var optionsShown: Bool = false
+    /// The option group open in a sheet.
+    @State private var openGroup: ScanOptionGroup?
+    /// What waits for the option group's sheet to close: nothing else can be presented while it is up.
+    @State private var afterOptionsClosed: (() -> Void)?
     @State private var showsPicker: Bool = false
+    @State private var askedToDiscard: Bool = false
     /// Files is open to pick the PDF the pages are added to.
     @State private var picksPDF: Bool = false
     /// The queue is being written to be shared as a CompleteScanner document.
@@ -83,6 +91,10 @@ struct ScanScreen: View {
     @State private var asksSendTarget: Bool = false
     /// The queue is being written and sent to the paired computer.
     @State private var sendsToComputer: Bool = false
+    /// Save waits for the copy screen After saving's Print opened, then emails when `emailsAfterPrint`.
+    @State private var savesAfterPrint: Bool = false
+    @State private var emailsAfterPrint: Bool = false
+    @Namespace private var kindSpace: Namespace.ID
 
     var body: some View {
         Group {
@@ -101,34 +113,7 @@ struct ScanScreen: View {
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle(IOSShell.shownKind(state.settings).title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                if let open = onOpenLibrary {
-                    Button {
-                        open()
-                    } label: {
-                        Label(IOSSettingsText.libraryLabel, systemImage: "books.vertical")
-                    }
-                    .accessibilityIdentifier("open.library")
-                }
-            }
-            ToolbarItem(placement: .principal) {
-                if let open = onOpenTasks {
-                    TaskChip(title: IOSShell.shownKind(state.settings).title, onTap: open)
-                }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                if let open = onOpenSettings {
-                    Button {
-                        open()
-                    } label: {
-                        Label(IOSSettingsText.title, systemImage: "gearshape")
-                    }
-                    .keyboardShortcut(IOSShortcuts.settings.keyboardShortcut)
-                    .accessibilityIdentifier("scan.settings")
-                }
-            }
-        }
+        .toolbar(pickerInSidebar ? Visibility.automatic : Visibility.hidden, for: .navigationBar)
         .dropDestination(for: IOSDroppedFile.self) { (items: [IOSDroppedFile], _: CGPoint) -> Bool in
             importDropped(items)
         }
@@ -155,15 +140,35 @@ struct ScanScreen: View {
         }
         .onChange(of: state.copyPages.isEmpty) { (_: Bool, empty: Bool) in
             showReview(!empty, as: .copy)
+            if empty && savesAfterPrint {
+                savesAfterPrint = false
+                saveNow(emails: emailsAfterPrint)
+            }
+        }
+        .onChange(of: state.isBusy) { (_: Bool, busy: Bool) in
+            // Print… held nothing (nothing to print, or cancelled), so no copy screen will close.
+            if !busy && savesAfterPrint && state.copyPages.isEmpty {
+                savesAfterPrint = false
+            }
         }
         .onChange(of: cover) { (_: ScanCover?, shown: ScanCover?) in
             if shown == nil {
                 scanner = IOSCameraAvailability.current
             }
         }
-        .sheet(isPresented: $showsPicker) {
-            ScannerPickerSheet(picker: picker, onClose: closePicker)
+        .onChange(of: IOSShell.shownKind(state.settings)) { (_: IOSScanKind, _: IOSScanKind) in
+            openGroup = nil
+        }
+        .onChange(of: importer.isImporting) { (_: Bool, importing: Bool) in
+            // The root's corner editor cannot show over the sheet (files opened in the app, the companion).
+            if importing {
+                openGroup = nil
+            }
+        }
+        .sheet(item: $openGroup, onDismiss: optionsClosed) { (group: ScanOptionGroup) in
+            optionsSheet(group)
                 .environmentObject(state)
+                .environmentObject(importer)
         }
         .sheet(isPresented: $pagesShown, onDismiss: pagesClosed) {
             PageStripSheet(onEditSpread: editSpreadFromPages, onClose: closePages)
@@ -174,113 +179,350 @@ struct ScanScreen: View {
                 pagesShown = false
             }
         }
+        .modifier(IdCardDiscardQuestion(state: state, asked: $askedToDiscard))
     }
 
     private var mainColumn: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+            if !pickerInSidebar {
+                topRow
+            }
+            List {
+                Section {
                     stepCard
-                    CameraTaskButtons()
+                    if CameraTaskButtons.showsAny(state) {
+                        CameraTaskButtons()
+                    }
                     if let mismatch = state.sidesMismatch, state.cameraSides != nil {
                         Label(mismatch, systemImage: "exclamationmark.triangle.fill")
                             .font(.footnote)
                             .foregroundStyle(Color.orange)
                             .accessibilityIdentifier("task.mismatch")
                     }
-                    if !state.devices.isEmpty {
-                        scannerRow
-                    }
-                    previewOrHint
-                    if hasOptions {
-                        DisclosureGroup(isExpanded: $optionsShown) {
-                            options
-                                .padding(.top, 8)
-                        } label: {
-                            Text("Options")
-                                .accessibilityIdentifier("options.group")
+                    viewfinder
+                }
+                .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                if !optionGroups.isEmpty {
+                    Section {
+                        ForEach(optionGroups) { (group: ScanOptionGroup) in
+                            optionRow(group)
                         }
                     }
                 }
-                .padding(16)
+                if onOpenLibrary != nil || onOpenSettings != nil {
+                    Section {
+                        appRows
+                    }
+                }
             }
+            .listStyle(.insetGrouped)
             Divider()
             bottomBar
         }
+        .background {
+            // The Settings row is built lazily, so the shortcut lives on a button that always exists.
+            if let open = onOpenSettings {
+                Button("") {
+                    afterOptions(open)
+                }
+                .keyboardShortcut(IOSShortcuts.settings.keyboardShortcut)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
+            }
+        }
     }
+
+    // MARK: The top row
+
+    /// The kinds, in place of the navigation bar.
+    private var topRow: some View {
+        kindChips
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+    }
+
+    /// The library and Settings, last in the list now that the top row holds only the kinds.
+    @ViewBuilder
+    private var appRows: some View {
+        if let open = onOpenLibrary {
+            Button {
+                afterOptions(open)
+            } label: {
+                Label(IOSSettingsText.libraryLabel, systemImage: "books.vertical")
+            }
+            .accessibilityIdentifier("open.library")
+        }
+        if let open = onOpenSettings {
+            Button {
+                afterOptions(open)
+            } label: {
+                Label(IOSSettingsText.title, systemImage: "gearshape")
+            }
+            .accessibilityIdentifier("scan.settings")
+        }
+    }
+
+    /// One chip per kind (`IOSShell.kindTiles`), the one set up filled; one capsule moves between them.
+    private var kindChips: some View {
+        let current: IOSScanKind = IOSShell.shownKind(state.settings)
+        let tiles: [IOSKindTile] = IOSShell.kindTiles(state.taskCards, current: current)
+        let busy: Bool = state.isBusy || importer.isImporting
+        return ScrollViewReader { (proxy: ScrollViewProxy) in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(tiles) { (tile: IOSKindTile) in
+                        kindChip(tile, busy: busy)
+                            .id(tile.kind)
+                    }
+                }
+                .padding(.horizontal, 4)
+                .animation(chipAnimation, value: current)
+            }
+            .accessibilityIdentifier("task.chips")
+            .onAppear {
+                proxy.scrollTo(current, anchor: .center)
+            }
+            .onChange(of: current) { (_: IOSScanKind, kind: IOSScanKind) in
+                withAnimation(chipAnimation) {
+                    proxy.scrollTo(kind, anchor: .center)
+                }
+            }
+        }
+        .sensoryFeedback(SensoryFeedback.selection, trigger: current)
+    }
+
+    private func kindChip(_ tile: IOSKindTile, busy: Bool) -> some View {
+        let kind: IOSScanKind = tile.kind
+        let available: Bool = tile.availability.isAvailable
+        let hint: String = available ? kind.subtitle : "\(kind.subtitle). Not available: \(tile.availability.reason ?? "")"
+        return Button {
+            pickKind(kind)
+        } label: {
+            Text(kind.title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(tile.isCurrent ? Color.white : Color.primary)
+                .lineLimit(1)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 34)
+                .background {
+                    Capsule()
+                        .fill(Color(uiColor: .tertiarySystemFill))
+                    if tile.isCurrent {
+                        Capsule()
+                            .fill(Color.accentColor)
+                            .matchedGeometryEffect(id: "kind", in: kindSpace)
+                    }
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!available || busy)
+        .opacity(available ? 1 : 0.5)
+        .accessibilityAddTraits(tile.isCurrent ? AccessibilityTraits.isSelected : [])
+        .accessibilityHint(Text(hint))
+        .accessibilityIdentifier("task.\(kind.rawValue)")
+    }
+
+    private var chipAnimation: Animation {
+        reduceMotion ? Animation.easeInOut(duration: 0.2) : Animation.spring(duration: 0.45, bounce: 0.25)
+    }
+
+    /// Picking a kind starts its task as the task list's tile does (its own choices back to their defaults,
+    /// and no PDF picked to add to); with a side of an ID card held it asks first. The chip already picked
+    /// changes nothing, so a stray tap keeps Both sides, the steps and the PDF picked.
+    private func pickKind(_ kind: IOSScanKind) {
+        guard kind != IOSShell.shownKind(state.settings) || state.activeTask == nil else { return }
+        let appState: AppState = state
+        afterOptions {
+            appState.leaveIdCard {
+                if appState.startTask(kind.task) {
+                    appState.clearAppendTarget()
+                }
+            }
+            if appState.pendingIdCardLeave != nil {
+                askedToDiscard = true
+            }
+        }
+    }
+
+    // MARK: The viewfinder
 
     /// The flatbed preview or the last scan; with neither, the camera's line centred where the preview
     /// would be, unless the step card already says what to do.
     @ViewBuilder
-    private var previewOrHint: some View {
+    private var viewfinder: some View {
         if state.canvasImage != nil {
             PreviewArea(image: state.canvasImage, overview: state.overviewImage, onChooseArea: openCrop)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("preview.area")
         } else if !showsStepCard, let camera = cameraLine {
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
+                Image(systemName: "viewfinder")
+                    .font(.largeTitle)
+                    .foregroundStyle(Color.secondary)
+                    .accessibilityHidden(true)
                 Text(camera.prompt)
+                    .font(.headline)
                 if let device = selectedDevice {
                     Text("Or scan from \(device.name).")
-                        .font(.footnote)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.secondary)
                 }
             }
-            .foregroundStyle(Color.secondary)
             .multilineTextAlignment(.center)
+            .padding(16)
             .frame(maxWidth: .infinity)
             .containerRelativeFrame(Axis.Set.vertical) { (length: CGFloat, _: Axis) -> CGFloat in
                 PreviewArea.height(for: length)
             }
+            .background(RoundedRectangle(cornerRadius: 10).fill(Color(uiColor: .secondarySystemGroupedBackground)))
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("preview.area")
         }
     }
 
-    /// Options' sections, each only where it applies: the scanner's while one is selected, the camera's for a
-    /// document (the shutter takes pages whatever scanner is selected), the book's and the photos' for their
-    /// kinds, and Export while the pages are collected and saved here.
-    private var options: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            previewControls
-            if selectedDevice != nil {
-                optionsGroup("Scanner") {
-                    ScannerSettingsRows()
-                }
+    // MARK: The options
+
+    /// The option groups that apply: the scanner's while one is listed, the camera's for a document (the
+    /// shutter takes pages whatever scanner is selected), the book's and the photos' for their kinds, and
+    /// Export while the pages are collected and saved here.
+    private var optionGroups: [ScanOptionGroup] {
+        var groups: [ScanOptionGroup] = []
+        if !state.devices.isEmpty {
+            groups.append(.scanner)
+        }
+        if showsCameraOptions {
+            groups.append(.camera)
+        }
+        if state.activeTask == .book {
+            groups.append(.book)
+        }
+        if IOSShell.shownKind(state.settings) == .photos {
+            groups.append(.photos)
+        }
+        if IOSShell.collectsPages(state.settings) {
+            groups.append(.export)
+        }
+        return groups
+    }
+
+    private func optionRow(_ group: ScanOptionGroup) -> some View {
+        Button {
+            openGroup = group
+        } label: {
+            HStack(spacing: 8) {
+                Text(group.title)
+                    .foregroundStyle(Color.primary)
+                Spacer(minLength: 8)
+                Text(optionValue(group))
+                    .foregroundStyle(Color.secondary)
+                    .lineLimit(1)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                    .accessibilityHidden(true)
             }
-            if showsCameraOptions {
-                optionsGroup("Camera") {
-                    BothSidesToggle()
-                    TaskWayPicker()
-                    if IOSShell.offersCamera(state.activeTask) {
-                        AppleScannerRow(scanner: scanner, onScanner: openScanner)
-                    }
-                }
-            }
-            if state.activeTask == .book {
-                optionsGroup("Book") {
-                    TaskWayPicker()
-                }
-            }
-            if IOSShell.shownKind(state.settings) == .photos {
-                optionsGroup("Photos") {
-                    RestoreToggle()
-                }
-            }
-            if IOSShell.collectsPages(state.settings) {
-                optionsGroup("Export") {
-                    ExportOptions()
-                }
-            }
+            .contentShape(Rectangle())
+        }
+        // An import's corner editor needs the screen; the sheet closes as one starts.
+        .disabled(importer.isImporting)
+        .accessibilityIdentifier("options.row.\(group.rawValue)")
+    }
+
+    /// What the row says the group is set to: the scanner and its source, the sides, the book's way,
+    /// whether old prints are restored, the format with the PDF's size.
+    private func optionValue(_ group: ScanOptionGroup) -> String {
+        let s: ScanSettings = state.settings
+        switch group {
+        case .scanner:
+            guard selectedDevice != nil else { return deviceName }
+            return "\(deviceName) \u{00B7} \(s.source.label)"
+        case .camera:
+            return state.activeTask == .twoSided ? "Both sides" : "One side"
+        case .book:
+            return s.taskOptions.cameraSpreads ? CameraTaskCatalog.wholeSpreadLabel : CameraTaskCatalog.pageByPageLabel
+        case .photos:
+            return s.adjustments.restoreFadedColors ? "Restored" : "As taken"
+        case .export:
+            let format: String = ExportOptions.label(IOSShell.exportFormat(s))
+            return IOSShell.offersPDFOptions(s) ? "\(format) \u{00B7} \(s.output.pdfSize.label)" : format
         }
     }
 
-    private func optionsGroup<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.secondary)
-                .accessibilityAddTraits(.isHeader)
-            content()
+    /// A group's sheet, half height first, with the screen still usable above it.
+    private func optionsSheet(_ group: ScanOptionGroup) -> some View {
+        NavigationStack {
+            Form {
+                optionsContent(group)
+            }
+            .navigationTitle(group.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(IOSSettingsText.doneLabel) {
+                        openGroup = nil
+                    }
+                    .accessibilityIdentifier("options.done")
+                }
+            }
+            .sheet(isPresented: $showsPicker) {
+                ScannerPickerSheet(picker: picker, onClose: closePicker)
+                    .environmentObject(state)
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        // The root's alert cannot show over a sheet, nor its troubleshooter until the sheet has closed.
+        .modifier(ErrorAlert(state: state, onTroubleshoot: openTroubleshooter))
+    }
+
+    private func openTroubleshooter() {
+        let appState: AppState = state
+        afterOptions {
+            appState.showTroubleshooter = true
+        }
+    }
+
+    @ViewBuilder
+    private func optionsContent(_ group: ScanOptionGroup) -> some View {
+        switch group {
+        case .scanner:
+            Section {
+                scannerPickerRow
+            }
+            if selectedDevice != nil {
+                Section {
+                    ScannerSettingsRows()
+                }
+            }
+            if usesFlatbed {
+                Section {
+                    previewControls
+                }
+            }
+        case .camera:
+            Section {
+                BothSidesToggle()
+                TaskWayPicker()
+                if IOSShell.offersCamera(state.activeTask) {
+                    AppleScannerRow(scanner: scanner, onScanner: openScanner)
+                }
+            }
+        case .book:
+            Section {
+                TaskWayPicker()
+            }
+        case .photos:
+            Section {
+                RestoreToggle()
+            }
+        case .export:
+            ExportOptions()
         }
     }
 
@@ -288,16 +530,28 @@ struct ScanScreen: View {
         IOSShell.shownKind(state.settings) == .document
     }
 
-    /// Whether Options has anything in it for this task and scanner.
-    private var hasOptions: Bool {
-        usesFlatbed || selectedDevice != nil || showsCameraOptions || state.activeTask == .book
-            || IOSShell.shownKind(state.settings) == .photos || IOSShell.collectsPages(state.settings)
+    /// Runs `action` at once, or once the option group's sheet has closed.
+    private func afterOptions(_ action: @escaping () -> Void) {
+        guard openGroup != nil else {
+            action()
+            return
+        }
+        afterOptionsClosed = action
+        openGroup = nil
+    }
+
+    private func optionsClosed() {
+        let action: (() -> Void)? = afterOptionsClosed
+        afterOptionsClosed = nil
+        action?()
     }
 
     // MARK: The page strip
 
     private func openPages() {
-        pagesShown = true
+        afterOptions {
+            pagesShown = true
+        }
     }
 
     private func closePages() {
@@ -331,13 +585,17 @@ struct ScanScreen: View {
     private func openScanner() {
         scanner = IOSCameraAvailability.current
         guard scanner.isAvailable, importer.canImport else { return }
-        cover = .scanner
+        afterOptions {
+            cover = .scanner
+        }
     }
 
     /// Our own camera; its screen checks for a camera and asks for access the first time.
     private func openOwnCamera() {
         guard importer.canImport else { return }
-        cover = .camera
+        afterOptions {
+            cover = .camera
+        }
     }
 
     // MARK: Dropped files
@@ -360,12 +618,27 @@ struct ScanScreen: View {
     // MARK: The reviews
 
     /// A review opened (in place of the camera or another cover) or closed (saved, discarded, or a side of
-    /// the ID card to take again).
+    /// the ID card to take again). One that opens while an option group's sheet is up waits for it to close.
     private func showReview(_ shown: Bool, as review: ScanCover) {
         if shown {
-            cover = review
+            afterOptions {
+                if wantsReview(review) {
+                    cover = review
+                }
+            }
         } else if cover == review {
             cover = nil
+        }
+    }
+
+    /// Whether the review is still due once the sheet it waited for has closed.
+    private func wantsReview(_ review: ScanCover) -> Bool {
+        switch review {
+        case .photoReview: return state.showPhotoReview
+        case .idCardReview: return state.showIdCardReview
+        case .quickScan: return state.quickScanPage != nil
+        case .copy: return !state.copyPages.isEmpty
+        case .scanner, .camera, .crop: return true
         }
     }
 
@@ -384,7 +657,9 @@ struct ScanScreen: View {
     /// The flatbed preview full screen, to choose the scan area on (`CropScreen`).
     private func openCrop() {
         guard state.overviewImage != nil, !state.isBusy else { return }
-        cover = .crop
+        afterOptions {
+            cover = .crop
+        }
     }
 
     /// The current step's one-line prompt, with its fuller help below (the camera's line in its place,
@@ -429,46 +704,35 @@ struct ScanScreen: View {
                             device: selectedDevice)
     }
 
-    /// The scanner in use, with how it is reached (on iPhone it opens the scanner picker), and Scan.
-    private var scannerRow: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "scanner")
-                .foregroundStyle(Color.accentColor)
-                .accessibilityHidden(true)
-            Button(action: openPicker) {
-                HStack(spacing: 6) {
-                    Text(deviceName)
-                        .lineLimit(1)
-                    if let note = deviceNote {
-                        Text(note)
-                            .font(.caption)
-                            .foregroundStyle(Color.orange)
-                            .accessibilityIdentifier("scanner.note")
-                    }
-                    if !pickerBeside {
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption)
-                            .accessibilityHidden(true)
-                    }
+    /// The scanner in use, with how it is reached; on iPhone it opens the scanner picker.
+    private var scannerPickerRow: some View {
+        Button(action: openPicker) {
+            HStack(spacing: 8) {
+                Image(systemName: "scanner")
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityHidden(true)
+                Text(deviceName)
+                    .foregroundStyle(Color.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if let note = deviceNote {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(Color.orange)
+                        .accessibilityIdentifier("scanner.note")
+                }
+                if !pickerBeside {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Color(uiColor: .tertiaryLabel))
+                        .accessibilityHidden(true)
                 }
             }
-            .disabled(pickerBeside)
-            .accessibilityLabel(Text("Scanner: \(deviceName)"))
-            .accessibilityIdentifier("scanner.menu")
-            Spacer(minLength: 0)
-            if state.isBusy {
-                ProgressView()
-                    .accessibilityIdentifier("busy")
-            }
-            Button {
-                state.performScan()
-            } label: {
-                Text(state.primaryActionLabel)
-            }
-            .buttonStyle(.bordered)
-            .disabled(!canScan)
-            .accessibilityIdentifier("scan.button")
+            .contentShape(Rectangle())
         }
+        .disabled(pickerBeside)
+        .accessibilityLabel(Text("Scanner: \(deviceName)"))
+        .accessibilityIdentifier("scanner.menu")
     }
 
     /// The scanners are listed beside the screen (the iPad's sidebar, or the column of a wide window).
@@ -516,6 +780,7 @@ struct ScanScreen: View {
                         Label("Clear selection", systemImage: "xmark.circle")
                             .labelStyle(.iconOnly)
                     }
+                    .buttonStyle(.borderless)
                     .disabled(state.isBusy)
                     .accessibilityLabel(Text("Clear selection"))
                     .accessibilityIdentifier("crop.clear")
@@ -541,6 +806,52 @@ struct ScanScreen: View {
     /// Scan once the scanner is connected and nothing else runs.
     private var canScan: Bool {
         state.capabilities != nil && !state.isBusy
+    }
+
+    // MARK: Saving
+
+    /// Save, then what After saving has checked, in its order (`IOSAfterSave.steps`). Send to PC and Print
+    /// take the queue, which the save empties, so they go first: the save waits for the copy screen Print
+    /// opens to close. Email goes out with the saved file.
+    private func saveWithActions() {
+        let paired: Bool = IOSShell.offersSendToComputer(state.settings, status: state.companionStatus)
+        let steps: [IOSAfterSave] = IOSAfterSave.steps(UserDefaults.standard, paired: paired)
+        guard !steps.isEmpty else {
+            save()
+            return
+        }
+        let emails: Bool = steps.contains(.email)
+        let appState: AppState = state
+        Task { @MainActor in
+            if steps.contains(.send) {
+                sendsToComputer = true
+                await appState.sendQueueToDesktop(target: .new)
+                sendsToComputer = false
+                // The send failed and its alert is up: the copy screen and Mail could not show over it.
+                if appState.errorMessage != nil {
+                    save()
+                    return
+                }
+            }
+            if steps.contains(.print) {
+                savesAfterPrint = true
+                emailsAfterPrint = emails
+                appState.printQueueAsCopy()
+                if !appState.isBusy {
+                    savesAfterPrint = false
+                }
+            } else {
+                saveNow(emails: emails)
+            }
+        }
+    }
+
+    private func saveNow(emails: Bool) {
+        if emails {
+            saveAndEmail()
+        } else {
+            save()
+        }
     }
 
     private func save() {
@@ -578,12 +889,17 @@ struct ScanScreen: View {
         }
     }
 
+    // MARK: The bottom bar
+
     private var bottomBar: some View {
         let options: DocumentOptions = state.settings.document
         let plan: SavePlan = SavePlan.make(state.scannedPages, options: options)
         let saveTitle: String = Self.saveTitle(state.settings, plan: plan, target: state.appendTarget)
         let saveCount: Int = plan.pageCount
         let collects: Bool = IOSShell.collectsPages(state.settings)
+        let scans: Bool = !state.devices.isEmpty
+        // Saving deletes the spooled pages a share or a send may still be writing.
+        let blocked: Bool = state.isBusy || importer.isImporting || sharesPackage || sendsToComputer
         return VStack(alignment: .leading, spacing: 10) {
             if state.isBusy {
                 HStack(spacing: 12) {
@@ -611,59 +927,58 @@ struct ScanScreen: View {
             }
             CaptureBar(offersCamera: IOSShell.offersOwnCamera(state.settings), onCamera: openOwnCamera,
                        onPages: openPages)
-            if collects {
+            if scans || collects {
                 HStack(spacing: 12) {
-                    Button {
-                        save()
-                    } label: {
-                        Text(saveTitle)
-                            .frame(maxWidth: .infinity)
+                    if scans {
+                        Button {
+                            state.performScan()
+                        } label: {
+                            Text(state.primaryActionLabel)
+                                .font(.headline)
+                                .lineLimit(1)
+                                .frame(maxWidth: collects ? nil : CGFloat.infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .buttonBorderShape(.roundedRectangle(radius: 12))
+                        .disabled(!canScan)
+                        .accessibilityIdentifier("scan.button")
                     }
-                    .buttonStyle(.borderedProminent)
-                    // Saving deletes the spooled pages a share may still be writing.
-                    .disabled(state.isBusy || importer.isImporting || sharesPackage || sendsToComputer || saveCount == 0)
-                    .keyboardShortcut(IOSShortcuts.save.keyboardShortcut)
-                    .accessibilityIdentifier("save.button")
-                    saveMenu(canSave: saveCount > 0)
-                        .disabled(state.isBusy || importer.isImporting || sharesPackage || sendsToComputer)
-                    Button {
-                        sharePackage()
-                    } label: {
-                        Label(IOSShell.sharePackageLabel, systemImage: "square.and.arrow.up")
-                            .labelStyle(.iconOnly)
+                    if collects {
+                        Button {
+                            saveWithActions()
+                        } label: {
+                            Text(saveTitle)
+                                .font(.headline)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .buttonBorderShape(.roundedRectangle(radius: 12))
+                        .disabled(blocked || saveCount == 0)
+                        .keyboardShortcut(IOSShortcuts.save.keyboardShortcut)
+                        .accessibilityIdentifier("save.button")
+                        saveMenu(canSave: saveCount > 0)
+                            .disabled(blocked)
                     }
-                    .buttonStyle(.bordered)
-                    .disabled(state.isBusy || importer.isImporting || sharesPackage || sendsToComputer
-                        || state.scannedPages.isEmpty)
-                    .accessibilityLabel(Text(IOSShell.sharePackageLabel))
-                    .accessibilityIdentifier("share.package")
-                }
-            }
-            if IOSShell.offersSendToComputer(state.settings, status: state.companionStatus) {
-                Button {
-                    asksSendTarget = true
-                } label: {
-                    Label(IOSCompanionText.sendButton, systemImage: "laptopcomputer")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .disabled(state.isBusy || importer.isImporting || sharesPackage || sendsToComputer
-                    || state.scannedPages.isEmpty)
-                .accessibilityIdentifier("send.computer")
-                .confirmationDialog(IOSCompanionText.sendQuestion, isPresented: $asksSendTarget,
-                                    titleVisibility: .visible) {
-                    Button(IOSCompanionText.newDocument) {
-                        sendToComputer(.new)
-                    }
-                    .accessibilityIdentifier("send.computer.new")
-                    Button(IOSCompanionText.intoOpenDocument) {
-                        sendToComputer(.current)
-                    }
-                    .accessibilityIdentifier("send.computer.current")
                 }
             }
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), ignoresSafeAreaEdges: .bottom)
+        .confirmationDialog(IOSCompanionText.sendQuestion, isPresented: $asksSendTarget, titleVisibility: .visible) {
+            Button(IOSCompanionText.newDocument) {
+                sendToComputer(.new)
+            }
+            .accessibilityIdentifier("send.computer.new")
+            Button(IOSCompanionText.intoOpenDocument) {
+                sendToComputer(.current)
+            }
+            .accessibilityIdentifier("send.computer.current")
+        }
         .fileImporter(isPresented: $picksPDF, allowedContentTypes: [UTType.pdf]) { (result: Result<URL, Error>) in
             switch result {
             case .success(let url):
@@ -676,8 +991,9 @@ struct ScanScreen: View {
 
     /// The menu beside Save: while Save writes a PDF or a picked PDF takes the pages, as on Windows, a new
     /// PDF even while a picked PDF takes them, the pages added to a PDF picked now, and while one is picked,
-    /// back to saving new files; then Print… (the pages as a copy on the copy screen, the queue kept) and
-    /// Email… (saved as Save would, then sent by email). The format is Options' Export.
+    /// back to saving new files; then Print… (the pages as a copy on the copy screen, the queue kept),
+    /// Email… (saved as Save would, then sent by email), the queue shared as a CompleteScanner document and,
+    /// with a computer paired, Send to computer. Each runs once, whatever After saving has checked.
     private func saveMenu(canSave: Bool) -> some View {
         Menu {
             if IOSShell.offersPDFOptions(state.settings) || state.appendTarget != nil {
@@ -697,12 +1013,31 @@ struct ScanScreen: View {
             }
             .disabled(!canSave)
             .accessibilityIdentifier("save.email")
+            Button {
+                sharePackage()
+            } label: {
+                Label(IOSShell.sharePackageLabel, systemImage: "square.and.arrow.up")
+            }
+            .disabled(state.scannedPages.isEmpty)
+            .accessibilityIdentifier("share.package")
+            if IOSShell.offersSendToComputer(state.settings, status: state.companionStatus) {
+                Button {
+                    asksSendTarget = true
+                } label: {
+                    Label(IOSCompanionText.sendButton, systemImage: "laptopcomputer")
+                }
+                .disabled(state.scannedPages.isEmpty)
+                .accessibilityIdentifier("send.computer")
+            }
         } label: {
-            Label("More ways to save", systemImage: "chevron.down")
+            Label("More ways to save", systemImage: "ellipsis")
                 .labelStyle(.iconOnly)
+                .font(.headline)
         }
         .menuStyle(.button)
         .buttonStyle(.bordered)
+        .controlSize(.large)
+        .buttonBorderShape(.roundedRectangle(radius: 12))
         .accessibilityLabel(Text("More ways to save"))
         .accessibilityIdentifier("save.menu")
     }
@@ -762,6 +1097,27 @@ struct ScanScreen: View {
     }
 }
 
+/// A group of the scan screen's options: a row on the screen that opens the group as a sheet.
+enum ScanOptionGroup: String, Identifiable {
+    case scanner
+    case camera
+    case book
+    case photos
+    case export
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .scanner: return "Scanner"
+        case .camera: return "Camera"
+        case .book: return "Book"
+        case .photos: return "Photos"
+        case .export: return "Export"
+        }
+    }
+}
+
 /// A scan's progress: the scanner's message ("Transferring page 3…", which counts a feeder's pages) with a
 /// bar, determinate when the scanner says how far it is.
 private struct ScanProgressRow: View {
@@ -797,7 +1153,7 @@ private struct PreviewArea: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 10)
                 .fill(Color(uiColor: .secondarySystemGroupedBackground))
             if let overview {
                 Button(action: onChooseArea) {
