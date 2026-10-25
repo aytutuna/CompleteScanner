@@ -2,40 +2,16 @@
 import CompleteScannerKit
 import SwiftUI
 
-/// The scanner picker as a sheet (iPhone): the list with its title, Done, and the sheets it opens.
-struct ScannerPickerSheet: View {
-    let picker: IOSScannerPickerModel
-    let onClose: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            ScannerPickerList(picker: picker, onPicked: onClose)
-                .navigationTitle(IOSNetworkText.pickerTitle)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") {
-                            onClose()
-                        }
-                        .accessibilityIdentifier("scanners.done")
-                    }
-                }
-        }
-    }
-}
-
-/// The scanners to pick from as a list of their own (the sheet's list on iPhone), with the sheets its
-/// buttons open: Add by address and the troubleshooter.
+/// The scanners to pick from as a list of their own (the column beside a wide scan screen), with the
+/// sheets its buttons open: Add by address and the troubleshooter.
 struct ScannerPickerList: View {
     let picker: IOSScannerPickerModel
-    /// Runs after the user picked a scanner (the sheet closes).
-    var onPicked: (() -> Void)?
     @State private var showsAdd: Bool = false
     @State private var showsTroubleshooter: Bool = false
 
     var body: some View {
         List {
-            ScannerPickerSections(picker: picker, onPicked: onPicked, onAdd: openAdd, onTroubleshoot: openTroubleshooter)
+            ScannerPickerSections(picker: picker, onAdd: openAdd, onTroubleshoot: openTroubleshooter)
         }
         .listStyle(.insetGrouped)
         .modifier(ScannerPickerSheets(picker: picker, showsAdd: $showsAdd, showsTroubleshooter: $showsTroubleshooter))
@@ -50,9 +26,11 @@ struct ScannerPickerList: View {
     }
 }
 
-/// Add by address and the troubleshooter, as sheets of the list (or the sidebar) the picker's sections are in.
+/// Add by address and the troubleshooter, as sheets of the list (or the sidebar) the picker's sections are
+/// in. A scanner added is selected and becomes the source.
 struct ScannerPickerSheets: ViewModifier {
     @EnvironmentObject private var state: AppState
+    @AppStorage(IOSShell.scanSourceKey) private var source: String = ""
     let picker: IOSScannerPickerModel
     @Binding var showsAdd: Bool
     @Binding var showsTroubleshooter: Bool
@@ -76,6 +54,7 @@ struct ScannerPickerSheets: ViewModifier {
     private func added(_ deviceID: String) {
         showsAdd = false
         state.userSelectDevice(deviceID)
+        source = deviceID
     }
 
     private func closeAdd() {
@@ -87,29 +66,27 @@ struct ScannerPickerSheets: ViewModifier {
     }
 }
 
-/// The scanners to pick from, as sections of a list (the sheet's list on iPhone, a part of the sidebar on
-/// iPad): the explanation card before the first search, the line about Local Network access being off, one
-/// row per scanner with how it is reached, "Looking for scanners…" while the search has just started, else
-/// "No scanner found" with Troubleshoot, and the buttons to add a scanner by address and open the
-/// troubleshooter. The rows follow the app's state, and the network scanners' when there are any.
+/// Where the pages come from, as sections of a list (the scan screen's Scanner options on iPhone, a part of
+/// the sidebar on iPad): Camera, then one row per scanner with how it is reached, the one that is the
+/// source checked (`IOSShell.sourceScanner`); "Looking for scanners…" while the search has just started,
+/// else "No scanner found" with Troubleshoot; the explanation card before the first search, the line about
+/// Local Network access being off, and the buttons to add a scanner by address and open the troubleshooter.
+/// Picking a scanner selects it and makes it the source; Camera leaves the scanner selected. The rows follow
+/// the app's state, and the network scanners' when there are any.
 struct ScannerPickerSections: View {
     let picker: IOSScannerPickerModel
-    /// Runs after the user picked a scanner (the sheet closes).
-    var onPicked: (() -> Void)?
     let onAdd: () -> Void
     let onTroubleshoot: () -> Void
-    /// The rows' section header (the sidebar's "Scanners"); none in the sheet, whose title says it.
+    /// The rows' section header (the sidebar's "Scanners"); none in the options, whose title says it.
     var header: String?
 
     var body: some View {
         if let network = picker.network {
             NetworkObserving(network: network) {
-                ScannerPickerContent(picker: picker, onPicked: onPicked, onAdd: onAdd, onTroubleshoot: onTroubleshoot,
-                                     header: header)
+                ScannerPickerContent(picker: picker, onAdd: onAdd, onTroubleshoot: onTroubleshoot, header: header)
             }
         } else {
-            ScannerPickerContent(picker: picker, onPicked: onPicked, onAdd: onAdd, onTroubleshoot: onTroubleshoot,
-                                 header: header)
+            ScannerPickerContent(picker: picker, onAdd: onAdd, onTroubleshoot: onTroubleshoot, header: header)
         }
     }
 }
@@ -117,26 +94,18 @@ struct ScannerPickerSections: View {
 /// The picker's sections themselves.
 private struct ScannerPickerContent: View {
     @EnvironmentObject private var state: AppState
+    @AppStorage(IOSShell.scanSourceKey) private var source: String = ""
     let picker: IOSScannerPickerModel
-    let onPicked: (() -> Void)?
     let onAdd: () -> Void
     let onTroubleshoot: () -> Void
     let header: String?
 
     var body: some View {
-        if picker.showsExplanation {
-            Section {
-                ExplanationCard(onContinue: continueAfterExplanation)
-            }
-        }
-        if picker.showsDenied {
-            Section {
-                DeniedRow(onSettings: openSettings)
-            }
-        }
+        let picked: String? = IOSShell.sourceScanner(source, selected: state.selectedDeviceID, devices: state.devices)?.id
         Section {
+            CameraSourceRow(checked: picked == nil, enabled: !state.isBusy, onPick: pickCamera)
             ForEach(picker.rows) { (row: IOSScannerRow) in
-                ScannerRowView(row: row, enabled: !state.isBusy, onPick: { pick(row) },
+                ScannerRowView(row: row, checked: row.id == picked, enabled: !state.isBusy, onPick: { pick(row) },
                                onRemove: { picker.removeAddresses(row) })
             }
             if picker.showsSearching {
@@ -166,6 +135,16 @@ private struct ScannerPickerContent: View {
                 Text(header)
             }
         }
+        if picker.showsExplanation {
+            Section {
+                ExplanationCard(onContinue: continueAfterExplanation)
+            }
+        }
+        if picker.showsDenied {
+            Section {
+                DeniedRow(onSettings: openSettings)
+            }
+        }
         if !picker.showsExplanation {
             Section {
                 if picker.offersAddByAddress {
@@ -193,8 +172,14 @@ private struct ScannerPickerContent: View {
     }
 
     private func pick(_ row: IOSScannerRow) {
+        guard !state.isBusy else { return }
         picker.select(row)
-        onPicked?()
+        source = row.id
+    }
+
+    private func pickCamera() {
+        guard !state.isBusy else { return }
+        source = ""
     }
 
     private func openSettings() {
@@ -214,10 +199,46 @@ struct NetworkObserving<Content: View>: View {
     }
 }
 
-/// One scanner: its name, how it is reached (and "Not encrypted" when so), a check mark when chosen, and
-/// Remove address for one reached through an address added by hand.
+/// Our own camera as the source, above the scanners, with a check mark when it is the source.
+private struct CameraSourceRow: View {
+    let checked: Bool
+    let enabled: Bool
+    let onPick: () -> Void
+
+    var body: some View {
+        Button(action: onPick) {
+            HStack(spacing: 12) {
+                Image(systemName: "camera")
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 28)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(IOSImportText.cameraLabel)
+                        .foregroundStyle(Color.primary)
+                    Text("Takes the pages as photos")
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary)
+                }
+                Spacer(minLength: 0)
+                if checked {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(Color.accentColor)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .disabled(!enabled)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(checked ? AccessibilityTraits.isSelected : [])
+        .accessibilityIdentifier("source.camera")
+    }
+}
+
+/// One scanner: its name, how it is reached (and "Not encrypted" when so), a check mark when it is the
+/// source, and Remove address for one reached through an address added by hand.
 private struct ScannerRowView: View {
     let row: IOSScannerRow
+    let checked: Bool
     let enabled: Bool
     let onPick: () -> Void
     let onRemove: () -> Void
@@ -238,7 +259,7 @@ private struct ScannerRowView: View {
                         .foregroundStyle(row.note == nil ? Color.secondary : Color.orange)
                 }
                 Spacer(minLength: 0)
-                if row.isSelected {
+                if checked {
                     Image(systemName: "checkmark")
                         .foregroundStyle(Color.accentColor)
                         .accessibilityHidden(true)
@@ -247,7 +268,7 @@ private struct ScannerRowView: View {
         }
         .disabled(!enabled)
         .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(row.isSelected ? AccessibilityTraits.isSelected : [])
+        .accessibilityAddTraits(checked ? AccessibilityTraits.isSelected : [])
         .accessibilityIdentifier("scanner.row.\(row.id)")
         .contextMenu {
             if row.canRemoveAddress {

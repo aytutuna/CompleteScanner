@@ -103,7 +103,7 @@ final class IOSShellTests: XCTestCase {
 
     // MARK: The step card
 
-    func test_stepCard_speaksOfTheCamera_unlessANetworkScannerIsInUse() {
+    func test_stepCard_speaksOfTheCamera_unlessAScannerIsTheSource() {
         let network: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
         let demo: ScannerInfo = ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true, backend: "mock")
         XCTAssertTrue(IOSShell.usesNetworkScanner(network))
@@ -113,12 +113,13 @@ final class IOSShellTests: XCTestCase {
         let tasks: [ScanTask] = [.document, .feeder, .quickScan, .email, .twoSided, .word, .batch, .book, .archive]
         for task in tasks {
             let camera: CameraStepText = CameraTaskCatalog.text(task, options: options)
-            for device in [nil, demo] as [ScannerInfo?] {
-                XCTAssertEqual(IOSShell.cameraLine(task, options: options, sides: nil, newDocument: false,
-                                                   turningOverByHand: false, device: device), camera, task.rawValue)
+            XCTAssertEqual(IOSShell.cameraLine(task, options: options, sides: nil, newDocument: false,
+                                               turningOverByHand: false, device: nil), camera, task.rawValue)
+            // Any scanner as the source, the demo scanner too: the step's own words.
+            for device in [network, demo] {
+                XCTAssertNil(IOSShell.cameraLine(task, options: options, sides: nil, newDocument: false,
+                                                 turningOverByHand: false, device: device), task.rawValue)
             }
-            XCTAssertNil(IOSShell.cameraLine(task, options: options, sides: nil, newDocument: false,
-                                             turningOverByHand: false, device: network), task.rawValue)
         }
         // The ID card's steps say which side is next; a stack turned over by hand has its own steps.
         XCTAssertNil(IOSShell.cameraLine(.idCard, options: options, sides: nil, newDocument: false,
@@ -136,6 +137,21 @@ final class IOSShellTests: XCTestCase {
         XCTAssertEqual(IOSShell.cameraLine(.batch, options: options, sides: nil, newDocument: true,
                                            turningOverByHand: false, device: network)?.prompt,
                        CameraTaskCatalog.newDocumentPrompt)
+    }
+
+    func test_sourceScanner_isThePickedScanner_whileListedAndSelected() {
+        let network: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
+        let demo: ScannerInfo = ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true, backend: "mock")
+        let devices: [ScannerInfo] = [demo, network]
+        XCTAssertEqual(IOSShell.scanSourceKey, "scan.source")
+        // The camera by default, whatever is listed and selected.
+        XCTAssertNil(IOSShell.sourceScanner("", selected: "escl:x", devices: devices))
+        XCTAssertEqual(IOSShell.sourceScanner("escl:x", selected: "escl:x", devices: devices), network)
+        XCTAssertEqual(IOSShell.sourceScanner("mock:demo", selected: "mock:demo", devices: devices), demo)
+        // Not found yet, or another scanner selected on its own: the camera until it is back.
+        XCTAssertNil(IOSShell.sourceScanner("escl:x", selected: "mock:demo", devices: devices))
+        XCTAssertNil(IOSShell.sourceScanner("escl:x", selected: "escl:x", devices: [demo]))
+        XCTAssertNil(IOSShell.sourceScanner("escl:x", selected: nil, devices: []))
     }
 
     func test_rightToLeft_isShownWhileTheSourceInUseCutsSpreads() {

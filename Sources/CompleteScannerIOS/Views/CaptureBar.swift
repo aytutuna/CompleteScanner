@@ -8,16 +8,17 @@ import UniformTypeIdentifiers
 /// The capture bar along the bottom of the scan screen: the last page taken with how many the queue holds
 /// (it opens the page strip in a sheet, `onPages`, and bumps with a tap felt as a page comes in), the
 /// shutter, which opens our own camera (`CameraScreen`, the default way to take pages on every task that
-/// takes photos; its screen says why when there is no camera or access is off), and Photos and Files
-/// (`ImportButtons`). Imported photos go to the corner editor one by one (`IOSImportSession`); the root
-/// view shows it. While an import runs, its progress shows with Stop. Apple's document scanner is in the
-/// scan screen's Camera options (`AppleScannerRow`).
+/// takes photos; its screen says why when there is no camera or access is off) while the camera is the
+/// source (a scanner picked in the Scanner options has the scan screen's Scan button instead), and Photos
+/// and Files (`ImportButtons`). Imported photos go to the corner editor one by one (`IOSImportSession`);
+/// the root view shows it. While an import runs, its progress shows with Stop. Apple's document scanner is
+/// in the Scanner options under Camera (`AppleScannerRow`).
 struct CaptureBar: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
     @Environment(\.accessibilityReduceMotion) private var reduceMotion: Bool
 
-    /// Whether our own camera is offered (the task takes photos).
+    /// Whether our own camera is offered (the task takes photos, and no scanner is the source).
     let offersCamera: Bool
     /// Opens our own camera.
     let onCamera: @MainActor () -> Void
@@ -276,7 +277,8 @@ private struct ShutterButtonStyle: ButtonStyle {
 }
 
 /// Apple's document scanner on the Document, Email and Word tasks: a secondary way in, in the scan
-/// screen's Camera options, dimmed with one short line where it cannot run (as in the Simulator).
+/// screen's Scanner options while the camera is the source, dimmed with one short line where it cannot run
+/// (as in the Simulator).
 struct AppleScannerRow: View {
     @EnvironmentObject private var importer: IOSImportSession
     /// Whether Apple's scanner can be opened here.

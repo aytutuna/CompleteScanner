@@ -7,7 +7,8 @@ import UIKit
 
 /// The app's window: on a compact width (iPhone, a narrow iPad window) the scan screen, set up at launch
 /// for the task used last (`IOSShell.launchTask`) with our camera opened at once where it can be used
-/// (`IOSShell.cameraOnOpen`; the first time, after a card saying why), the kinds in its top row and the
+/// (`IOSShell.cameraOnOpen`; the first time, after a card saying why) unless a scanner was picked as the
+/// source (`IOSShell.scanSourceKey`), the kinds in its top row and the
 /// library pushed; on a regular width (iPad, `IOSLayout.usesSidebar`) a sidebar with the tasks, the
 /// presets, the scanners and the library beside the scan screen (or the start screen, the presets, the
 /// scans or the saved files). Settings opens as a sheet (Command-comma). Also the share sheet, Mail's
@@ -16,7 +17,8 @@ import UIKit
 /// the corner editor of an imported photo, the troubleshooter,
 /// the question about a network scanner's changed certificate, and the error alert (with Troubleshoot
 /// when it is about a scanner; in the Settings sheet it opens Settings' own troubleshooter). It keeps the
-/// screen on while a network scanner's job runs. Photos and PDFs opened in this app from another one ("Open in
+/// screen on while a network scanner's job runs, and selects the scanner picked as the source once it is
+/// listed again. Photos and PDFs opened in this app from another one ("Open in
 /// CompleteScanner") are imported: into the task set up when it takes photos (`IOSShell.takesPhotos`), else
 /// into Document to PDF; while an import runs they wait for it (`IOSImportSession`). A CompleteScanner
 /// document (`.csdoc`, I18) is not imported: the scan screen offers it on its banner. Leaving the scan screen
@@ -36,6 +38,7 @@ public struct IOSRootView: View {
     @State private var showsLibrary: Bool = false
     @State private var showsCameraIntro: Bool = false
     @AppStorage(IOSShell.cameraIntroKey) private var cameraIntroShown: Bool = false
+    @AppStorage(IOSShell.scanSourceKey) private var source: String = ""
     @State private var detail: IOSDetail = IOSDetail.start
     @State private var showsSettings: Bool = false
     @State private var showsSettingsTroubleshooter: Bool = false
@@ -79,6 +82,9 @@ public struct IOSRootView: View {
         }
         .onChange(of: state.isBusy) { (_: Bool, busy: Bool) in
             keepAwake(busy)
+        }
+        .onChange(of: state.devices) { (_: [ScannerInfo], _: [ScannerInfo]) in
+            selectSourceScanner()
         }
         .environmentObject(importer)
         .task {
@@ -186,11 +192,13 @@ public struct IOSRootView: View {
     }
 
     /// Our camera at once on the iPhone, for a task that takes photos where the camera can be used; the
-    /// first time, the card saying why comes before iOS asks for it.
+    /// first time, the card saying why comes before iOS asks for it. Not with a scanner picked as the
+    /// source, even before that scanner is found again.
     private func openCameraAtOnce() {
         guard !IOSLayout.usesSidebar(sizeClass), scanCover == nil, importer.canImport else { return }
         let action: IOSCameraOnOpen = IOSShell.cameraOnOpen(
-            offersCamera: IOSShell.offersOwnCamera(state.settings), camera: IOSCameraAvailability.ownCamera,
+            offersCamera: source.isEmpty && IOSShell.offersOwnCamera(state.settings),
+            camera: IOSCameraAvailability.ownCamera,
             authorization: AVCaptureDevice.authorizationStatus(for: .video), introShown: cameraIntroShown,
             demo: demoScanner)
         switch action {
@@ -241,6 +249,16 @@ public struct IOSRootView: View {
         let selected: String? = state.selectedDeviceID
         let device: ScannerInfo? = state.devices.first(where: { (info: ScannerInfo) -> Bool in info.id == selected })
         UIApplication.shared.isIdleTimerDisabled = IOSShell.keepsScreenAwake(isBusy: busy, device: device)
+    }
+
+    /// The scanner picked as the source is selected again once it is listed: on its own the app selects the
+    /// first scanner it finds. Not while a scan runs or a side of an ID card is held, which need the scanner
+    /// they started on.
+    private func selectSourceScanner() {
+        let picked: String = source
+        guard !picked.isEmpty, picked != state.selectedDeviceID, !state.isBusy, !state.hasIdCardCaptures,
+              state.devices.contains(where: { (info: ScannerInfo) -> Bool in info.id == picked }) else { return }
+        state.userSelectDevice(picked)
     }
 
     /// The corner editor waiting for an answer; closing it any other way skips the photo. While our

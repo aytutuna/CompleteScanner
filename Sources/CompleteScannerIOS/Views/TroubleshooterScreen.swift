@@ -9,6 +9,7 @@ import SwiftUI
 /// scanners and the search's state appear as they change.
 struct TroubleshooterScreen: View {
     @EnvironmentObject private var state: AppState
+    @AppStorage(IOSShell.scanSourceKey) private var source: String = ""
     /// The add-by-address sheet's model; nil where it is not offered.
     let makeAddModel: (() -> IOSAddScannerModel)?
     let onClose: () -> Void
@@ -103,6 +104,7 @@ struct TroubleshooterScreen: View {
     private func added(_ deviceID: String) {
         showsAdd = false
         state.userSelectDevice(deviceID)
+        source = deviceID
         reload()
     }
 

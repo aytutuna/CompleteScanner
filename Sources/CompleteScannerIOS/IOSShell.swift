@@ -132,20 +132,20 @@ public enum IOSShell {
 
     /// The camera's line the scan screen's step card shows in place of the task's step, which speaks of the
     /// glass and the feeder (`CameraTaskCatalog.current`): for every task but the ID card, whose steps say
-    /// which side is next, while the pages come from the camera, Photos or Files. With a network scanner in
-    /// use, or a stack turned over by hand, only while a back is due in the camera's two-sided steps or the
-    /// next page starts a new document. Nil when the step's own words stay.
+    /// which side is next, while the pages come from the camera, Photos or Files. With a scanner as the
+    /// source (`device`, `sourceScanner`), or a stack turned over by hand, only while a back is due in the
+    /// camera's two-sided steps or the next page starts a new document. Nil when the step's own words stay.
     public static func cameraLine(_ task: ScanTask?, options: TaskOptions, sides: CameraSides?, newDocument: Bool,
                                   turningOverByHand: Bool, device: ScannerInfo?) -> CameraStepText? {
         guard task != .idCard else { return nil }
         let pending: Bool = sides?.next == .back || newDocument
-        guard pending || !(turningOverByHand || usesNetworkScanner(device)) else { return nil }
+        guard pending || !(turningOverByHand || device != nil) else { return nil }
         return CameraTaskCatalog.current(task, options: options, sides: sides, newDocument: newDocument)
     }
 
     /// Whether the scan screen shows the step card: while the step's own words stay (the ID card's sides, a
-    /// network scanner, a stack turned over by hand: `cameraLine` is nil), a back is due or the next page
-    /// starts a new document. Otherwise the camera's line is on our camera's screen only.
+    /// scanner as the source, a stack turned over by hand: `cameraLine` is nil), a back is due or the next
+    /// page starts a new document. Otherwise the camera's line is on our camera's screen only.
     public static func showsStepCard(_ task: ScanTask?, options: TaskOptions, sides: CameraSides?, newDocument: Bool,
                                      turningOverByHand: Bool, device: ScannerInfo?) -> Bool {
         if sides?.next == .back || newDocument { return true }
@@ -244,9 +244,24 @@ public enum IOSShell {
     }
 
     /// Whether the scan screen offers our own camera (`CameraScreen`), the default way to take pages:
-    /// wherever photos are taken (`takesPhotos`), as photos are imported.
+    /// wherever photos are taken (`takesPhotos`), as photos are imported, while no scanner is the source.
     public static func offersOwnCamera(_ settings: ScanSettings) -> Bool {
         takesPhotos(settings)
+    }
+
+    /// The user's defaults key of the scan screen's source: empty for our camera, the default, else the ID
+    /// of the scanner picked in the Scanner options (`sourceScanner`).
+    public static let scanSourceKey = "scan.source"
+
+    /// The scanner the pages come from: the one picked as the source (`source`, its ID) while it is listed
+    /// and selected; nil while our camera takes them, as it does until that scanner is found again. A
+    /// scanner found on its own never becomes the source.
+    public static func sourceScanner(_ source: String, selected: String?, devices: [ScannerInfo]) -> ScannerInfo? {
+        guard !source.isEmpty, source == selected else { return nil }
+        for device in devices where device.id == source {
+            return device
+        }
+        return nil
     }
 
     /// Whether our camera takes page after page (continuous capture): the task collects several pages in

@@ -96,6 +96,9 @@ final class IOSFlowTests: XCTestCase {
                                              turningOverByHand: false, device: nil))
         XCTAssertTrue(IOSShell.showsStepCard(.document, options: options, sides: nil, newDocument: false,
                                              turningOverByHand: false, device: network))
+        let demo: ScannerInfo = ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true, backend: "mock")
+        XCTAssertTrue(IOSShell.showsStepCard(.document, options: options, sides: nil, newDocument: false,
+                                             turningOverByHand: false, device: demo))
         XCTAssertTrue(IOSShell.showsStepCard(.twoSided, options: options, sides: nil, newDocument: false,
                                              turningOverByHand: true, device: nil))
     }

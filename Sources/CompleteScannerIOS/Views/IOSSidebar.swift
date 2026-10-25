@@ -13,8 +13,8 @@ enum IOSDetail: Hashable {
 
 /// The iPad's sidebar (a regular width, `IOSLayout.usesSidebar`): the user's presets, the kinds and "Add
 /// pages to a PDF" as the iPhone's task sheet has them (`IOSShell.kindTiles`: dimmed with the reason when
-/// one cannot be started, the kind set up marked), the scanners to pick from (`ScannerPickerSections`, with
-/// Add by address and Troubleshoot), and the library: Presets, Scans, Saved files and Settings
+/// one cannot be started, the kind set up marked), Camera and the scanners to pick the source from
+/// (`ScannerPickerSections`, with Add by address and Troubleshoot), and the library: Presets, Scans, Saved files and Settings
 /// (Command-comma). A kind or a preset picked while a side of an ID card is held asks to discard the card
 /// first (`IdCardDiscardQuestion`).
 struct IOSSidebar: View {
