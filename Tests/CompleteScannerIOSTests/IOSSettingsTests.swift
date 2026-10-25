@@ -136,6 +136,25 @@ final class IOSSettingsTests: XCTestCase {
         XCTAssertEqual(IOSSettingsText.version(nil), "Version ?")
     }
 
+    // MARK: After saving
+
+    func test_afterSave_runsTheCheckedActionsInOrder_sendingOnlyWhilePaired() throws {
+        let suite: String = "IOSSettingsTests.afterSave"
+        let defaults: UserDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertEqual(IOSAfterSave.steps(defaults, paired: true), [], "Nothing checked at first")
+        for action in IOSAfterSave.rows {
+            defaults.set(true, forKey: action.key)
+        }
+        XCTAssertEqual(IOSAfterSave.steps(defaults, paired: true), [.send, .print, .email])
+        XCTAssertEqual(IOSAfterSave.steps(defaults, paired: false), [.print, .email], "No computer: skipped")
+        defaults.set(false, forKey: IOSAfterSave.print.key)
+        XCTAssertEqual(IOSAfterSave.steps(defaults, paired: true), [.send, .email])
+        XCTAssertEqual(IOSAfterSave.rows.map { (action: IOSAfterSave) -> String in action.label },
+                       ["Email", "Print", "Send to PC"])
+    }
+
     // MARK: The file name
 
     @MainActor

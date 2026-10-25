@@ -195,4 +195,43 @@ public enum IOSAdjustment: String, CaseIterable, Identifiable {
         a.brightness == 0 && a.contrast == 1 && a.saturation == 1 && a.sharpness == 0
     }
 }
+
+/// Export's After saving on the iPhone: what runs each time Save writes a document, checked in any
+/// combination and kept in the user's defaults, not in the settings file. They run in the order of the
+/// cases: Send to PC and Print take the queue, which the save empties, so they come before the file is
+/// written (the save follows once the copy screen has closed); Email goes out with the saved file.
+public enum IOSAfterSave: String, CaseIterable, Identifiable {
+    case send
+    case print
+    case email
+
+    public var id: String { rawValue }
+
+    /// The rows' order under After saving.
+    public static let rows: [IOSAfterSave] = [.email, .print, .send]
+
+    public static let title = "After saving"
+    public static let footer = "Runs each time a document is saved. Change it any time."
+
+    public var label: String {
+        switch self {
+        case .send: return "Send to PC"
+        case .print: return "Print"
+        case .email: return "Email"
+        }
+    }
+
+    /// The user's defaults key the row's check is kept under.
+    public var key: String { "afterSave.\(rawValue)" }
+
+    /// The checked actions in the order they run; Send to PC only while a computer is paired.
+    public static func steps(_ defaults: UserDefaults, paired: Bool) -> [IOSAfterSave] {
+        var steps: [IOSAfterSave] = []
+        for action in allCases where defaults.bool(forKey: action.key) {
+            if action == .send && !paired { continue }
+            steps.append(action)
+        }
+        return steps
+    }
+}
 #endif
