@@ -596,6 +596,20 @@ public class ScanTaskTests
     }
 
     [Fact]
+    public void CarriesPages_OnlyIntoTasksThatCollectPages()
+    {
+        ScanTask[] carried =
+        [
+            ScanTask.Document, ScanTask.Feeder, ScanTask.Email, ScanTask.TwoSided, ScanTask.Word,
+            ScanTask.Batch, ScanTask.Book, ScanTask.Archive,
+        ];
+        foreach (var task in ScanTasks.All)
+        {
+            Assert.True(TaskCatalog.CarriesPages(task) == carried.Contains(task), task.ToString());
+        }
+    }
+
+    [Fact]
     public void Summary_OneLine()
     {
         Assert.Equal("300 dpi · Color · PDF", TaskCatalog.Summary(new ScanSettings()));

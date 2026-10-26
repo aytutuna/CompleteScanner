@@ -464,6 +464,14 @@ public enum TaskCatalog {
         return settings.intent == .photo ? .photoSplit : .documentQueue
     }
 
+    /// Whether pages queued under another task can still be saved once `task` is started: its pages go to
+    /// the queue and are saved together. Photos and receipts are saved from their review, the ID card as a
+    /// card, a copy is printed and Quick scan saves each scan at once (or holds it, on the iPhone), so none
+    /// of them has a Save for the queue.
+    public static func carriesPages(_ task: ScanTask) -> Bool {
+        definition(task).flow == .documentQueue && task != .quickScan
+    }
+
     /// One line describing the settings, e.g. "300 dpi · Color · PDF". A PDF size other than the
     /// default `.standard` is named ("300 dpi · Color · Compact PDF"), and so is two-sided feeder
     /// scanning ("… · Both sides", "… · Both sides, turned by hand"), splitting into documents

@@ -313,6 +313,10 @@ public enum TaskCatalog {
     public static func guidedSteps(_ settings: ScanSettings, capabilities: ScannerCapabilities?) -> [TaskStep]?
     /// The stored task's flow while it fits, otherwise by intent. The scan handler switches on it.
     public static func flow(of settings: ScanSettings) -> TaskFlowKind
+    /// Pages queued under another task can still be saved once `task` is started: the `.documentQueue`
+    /// tasks but `.quickScan` (Document, feeder, Email, two-sided, Word, Separate documents, Book, Archive).
+    /// The iPhone asks before it starts any other task over a queue (`AppState.pagesLeftBehind(by:)`).
+    public static func carriesPages(_ task: ScanTask) -> Bool
     /// "300 dpi · Color · PDF"; a PDF size other than `.standard` is named: "300 dpi · Color · Compact PDF";
     /// two-sided feeder scanning too: "… · Both sides", "… · Both sides, turned by hand"; a copy
     /// (flow `.copy`) says how it prints: "300 dpi · Color · Actual size", "… · Fit to page · 3 copies";

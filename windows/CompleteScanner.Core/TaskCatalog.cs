@@ -468,6 +468,15 @@ public static class TaskCatalog
             : settings.Intent == ScanIntent.Photo ? TaskFlowKind.PhotoSplit : TaskFlowKind.DocumentQueue;
 
     /// <summary>
+    /// Whether pages queued under another task can still be saved once <paramref name="task"/> is
+    /// started: its pages go to the queue and are saved together. Photos and receipts are saved from
+    /// their review, the ID card as a card, a copy is printed and Quick scan saves each scan at once,
+    /// so none of them has a Save for the queue.
+    /// </summary>
+    public static bool CarriesPages(ScanTask task) =>
+        Definition(task).Flow == TaskFlowKind.DocumentQueue && task != ScanTask.QuickScan;
+
+    /// <summary>
     /// One line describing the settings, e.g. "300 dpi · Color · PDF". A PDF size other than
     /// the default Standard is named ("300 dpi · Color · Compact PDF"), and so is two-sided
     /// feeder scanning ("… · Both sides", "… · Both sides, turned by hand"), splitting into

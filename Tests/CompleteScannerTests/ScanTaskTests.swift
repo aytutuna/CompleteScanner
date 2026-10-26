@@ -561,6 +561,13 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertEqual(TaskCatalog.flow(of: unknown), .photoSplit)
     }
 
+    func test_carriesPages_onlyIntoTasksThatCollectPages() {
+        let carried: Set<ScanTask> = [.document, .feeder, .email, .twoSided, .word, .batch, .book, .archive]
+        for task in ScanTask.allCases {
+            XCTAssertEqual(TaskCatalog.carriesPages(task), carried.contains(task), task.rawValue)
+        }
+    }
+
     func test_summary_oneLine() {
         XCTAssertEqual(TaskCatalog.summary(ScanSettings()), "300 dpi \u{00B7} Color \u{00B7} PDF")
         XCTAssertEqual(TaskCatalog.summary(TaskCatalog.apply(.photoRestore, to: ScanSettings())),
