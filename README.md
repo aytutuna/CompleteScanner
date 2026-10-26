@@ -285,10 +285,13 @@ our own camera as the default way to take pages, with the page's outline found b
 steady over the preview, the lens that focuses close, the torch, an automatic shutter that takes each page once it
 holds still on a sharp, lit frame (Auto, on unless turned off, with a ring that fills as it waits) and
 continuous capture, page after page, with the corner editor only for a page the photo leaves unsure;
-camera pages cleaned up with their lighting evened out, the paper white and the print black, in the
-task's color mode; Apple's document scanner kept as "Use Apple's scanner" on Document to PDF, Email a
+camera pages kept as the camera saw them (Original), each of which can take another filter in the
+page viewer (Enhanced: the lighting evened out, the paper white and the print black; Grayscale; B&W),
+cut again from the photo kept with it, and Crop to place its corners again on that photo; Apple's document scanner kept as "Use Apple's scanner" on Document to PDF, Email a
 document and Scan to Word; photos and PDFs imported from Photos, Files or other apps with a touch
-corner editor and magnifier, the page strip, Save as PDF or JPEG and the share sheet; several
+corner editor and magnifier, the pages as a grid of whole pages (two across on the iPhone) that opens
+each one full screen, with pinch and double-tap zoom and a swipe to the next, Save as PDF or JPEG and
+the share sheet; several
 receipts or photos in one shot for Receipts, Photos and Restore old photos, each found with Vision's
 rectangles, cut out at its real size and reviewed (keep, rotate, fix the crop with the corner editor,
 save; receipts named by their date), a shot in which none is outlined searched whole as the scanner's
@@ -320,7 +323,7 @@ presets (save the current settings under a name, rename, delete, apply; also in 
 this session's scans, the saved files with Share and Show in Files, and the file name with a button
 per part and the next file's name; on iPad a sidebar with the tasks, presets, scanners and library,
 Command-S, Command-N and Command-comma, Space for the shutter, pages reordered by dragging them in the
-strip and PDFs or pictures dropped on the scan screen, in any window size Stage Manager gives) is
+grid and PDFs or pictures dropped on the scan screen, in any window size Stage Manager gives) is
 an Xcode project that
 [XcodeGen](https://github.com/yonaskolb/XcodeGen) writes from `ios/project.yml`; CI pins XcodeGen's
 release and checks its SHA-256. To build it and run its UI smoke test on the Simulator:
