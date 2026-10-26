@@ -152,10 +152,18 @@ public enum IOSShell {
                           turningOverByHand: turningOverByHand, printer: printer) == nil
     }
 
-    /// Text's step as printer mode says it: the Mac's words speak of dragging over its preview and of a
-    /// scan saved at once, but here the preview is in the Scanner options, the area is chosen by tapping the
-    /// preview, and the page waits on the Quick scan screen. Other steps are the task's own.
-    public static func printerStep(_ step: TaskStep) -> TaskStep {
+    /// The step as printer mode says it. Document with the feeder as the source is Stack from feeder's step
+    /// ("Load the pages in the feeder and scan.", "Scan stack"): the phone folds that task into Document, and
+    /// a Source changed in the Scanner options keeps the kind. Text's words on the Mac speak of dragging over
+    /// its preview and of a scan saved at once, but here the preview is in the Scanner options, the area is
+    /// chosen by tapping the preview, and the page waits on the Quick scan screen. Other steps are the
+    /// task's own.
+    public static func printerStep(_ step: TaskStep, settings: ScanSettings) -> TaskStep {
+        let document: TaskStep? = TaskCatalog.definition(.document).steps.first
+        if step == document && settings.source == .documentFeeder,
+           let feeder = TaskCatalog.definition(.feeder).steps.first {
+            return feeder
+        }
         guard step == TaskCatalog.definition(.quickScan).steps.first else { return step }
         return TaskStep(id: step.id, title: step.title, prompt: printerTextPrompt,
                         primaryActionLabel: step.primaryActionLabel, skippable: step.skippable,

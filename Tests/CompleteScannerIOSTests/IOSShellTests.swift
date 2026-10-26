@@ -139,16 +139,39 @@ final class IOSShellTests: XCTestCase {
 
     func test_printerStep_saysHowTextIsScannedOnThePhone_andKeepsTheOtherSteps() throws {
         let quick: TaskStep = try XCTUnwrap(TaskCatalog.definition(.quickScan).steps.first)
-        let text: TaskStep = IOSShell.printerStep(quick)
+        let text: TaskStep = IOSShell.printerStep(quick, settings: TaskCatalog.apply(.quickScan, to: ScanSettings()))
         XCTAssertNotEqual(text.prompt, quick.prompt)
         XCTAssertFalse(text.prompt.contains("drag"))
         XCTAssertFalse(text.help.contains("saved right away"))
         XCTAssertEqual(text.primaryActionLabel, quick.primaryActionLabel)
         XCTAssertEqual(text.id, quick.id)
         for task in [ScanTask.document, .book, .idCard, .photos] {
+            let settings: ScanSettings = TaskCatalog.apply(task, to: ScanSettings())
             for step in TaskCatalog.definition(task).steps {
-                XCTAssertEqual(IOSShell.printerStep(step), step, task.rawValue)
+                XCTAssertEqual(IOSShell.printerStep(step, settings: settings), step, task.rawValue)
             }
+        }
+    }
+
+    func test_printerStep_speaksOfTheFeeder_whileDocumentScansIt() throws {
+        let document: TaskStep = try XCTUnwrap(TaskCatalog.definition(.document).steps.first)
+        let feeder: TaskStep = try XCTUnwrap(TaskCatalog.definition(.feeder).steps.first)
+        var s: ScanSettings = TaskCatalog.apply(.document, to: ScanSettings())
+        s.source = .documentFeeder
+        let step: TaskStep = IOSShell.printerStep(document, settings: s)
+        XCTAssertEqual(step, feeder)
+        XCTAssertEqual(step.primaryActionLabel, "Scan stack")
+        XCTAssertFalse(step.prompt.contains("face down"))
+        s.duplex = .both
+        XCTAssertEqual(IOSShell.printerStep(document, settings: s), feeder)
+        s.source = .flatbed
+        XCTAssertEqual(IOSShell.printerStep(document, settings: s), document)
+        // A stack turned over by hand keeps its own steps.
+        for manual in DocumentSides.manualSteps {
+            var hand: ScanSettings = s
+            hand.source = .documentFeeder
+            hand.duplex = .manual
+            XCTAssertEqual(IOSShell.printerStep(manual, settings: hand), manual)
         }
     }
 

@@ -869,7 +869,7 @@ struct ScanScreen: View {
     @ViewBuilder
     private var stepCard: some View {
         if let current = state.taskFlow?.current, showsStepCard {
-            let step: TaskStep = IOSShell.printerStep(current)
+            let step: TaskStep = IOSShell.printerStep(current, settings: state.settings)
             let camera: CameraStepText? = cameraLine
             VStack(alignment: .leading, spacing: 8) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -1143,12 +1143,13 @@ struct ScanScreen: View {
         }
     }
 
-    /// Scan, named for the step ("Scan page"), once the scanner is connected and nothing else runs.
+    /// Scan, named for the step as printer mode says it ("Scan page", "Scan stack"), once the scanner is
+    /// connected and nothing else runs.
     private var scanButton: some View {
         Button {
             scan()
         } label: {
-            Text(state.primaryActionLabel)
+            Text(scanLabel)
                 .font(.headline)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -1159,6 +1160,11 @@ struct ScanScreen: View {
         .buttonBorderShape(.roundedRectangle(radius: 12))
         .disabled(!canScan)
         .accessibilityIdentifier("scan.button")
+    }
+
+    private var scanLabel: String {
+        guard let step = state.taskFlow?.current else { return state.primaryActionLabel }
+        return IOSShell.printerStep(step, settings: state.settings).primaryActionLabel
     }
 
     private var saveButton: some View {
