@@ -393,7 +393,7 @@ final class IOSCameraTests: XCTestCase {
         for line in lines {
             XCTAssertLessThanOrEqual(words(line), 4, line)
         }
-        let buttons: [String] = [IOSCameraText.doneLabel, IOSCameraText.shutterLabel, IOSCameraText.torchLabel,
+        let buttons: [String] = [IOSCameraText.doneLabel, IOSCameraText.shutterLabel, IOSCameraText.flashLabel,
                                  IOSCameraText.settingsLabel, IOSImportText.cameraLabel, IOSCameraText.autoLabel,
                                  IOSCameraText.lastPageLabel]
         for button in buttons {

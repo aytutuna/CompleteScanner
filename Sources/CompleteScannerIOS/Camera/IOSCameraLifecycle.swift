@@ -199,7 +199,7 @@ public enum IOSCameraText {
     public static let cameraModeHint = "Takes the pages with the camera"
     /// The scan screen's Camera button, whether Auto is on or off.
     public static let cameraHint = "Opens the camera to take pages"
-    /// A toggle's spoken value (Auto, the torch).
+    /// A toggle's spoken value (Auto, the flash).
     public static let onValue = "On"
     public static let offValue = "Off"
     /// Why a page held still is not taken yet (`CaptureQuality`).
@@ -207,7 +207,8 @@ public enum IOSCameraText {
     public static let tooDark = "Too dark"
     /// The last page taken, beside the count.
     public static let lastPageLabel = "Last page"
-    public static let torchLabel = "Torch"
+    /// The camera's light, a torch, by the name people know it by (the drawer's group and its switch).
+    public static let flashLabel = "Flash"
     public static let settingsLabel = "Settings"
     /// The last page and the count: back to the page strip (camera) or the strip opened as a sheet (scan screen).
     public static let pagesHint = "Shows the pages taken"

@@ -273,18 +273,21 @@ final class IOSFlowTests: XCTestCase {
 
     func test_drawerGroups_followWhatIsSaved() {
         let document: ScanSettings = TaskCatalog.apply(.document, to: ScanSettings())
-        XCTAssertEqual(CameraDrawerGroup.shown(document, pageCount: 0), [.export, .colour, .quality, .flash, .camera])
+        XCTAssertEqual(CameraDrawerGroup.shown(document, pageCount: 0, torch: true), [.export, .colour, .quality, .flash, .camera])
         var jpeg: ScanSettings = document
         jpeg.format = .jpeg
-        XCTAssertEqual(CameraDrawerGroup.shown(jpeg, pageCount: 0), [.export, .colour, .flash, .camera])
+        XCTAssertEqual(CameraDrawerGroup.shown(jpeg, pageCount: 0, torch: true), [.export, .colour, .flash, .camera])
         // Photos are saved from their review: nothing to export here.
         let photos: ScanSettings = TaskCatalog.apply(.photos, to: ScanSettings())
-        XCTAssertEqual(CameraDrawerGroup.shown(photos, pageCount: 3), [.colour, .flash, .camera])
+        XCTAssertEqual(CameraDrawerGroup.shown(photos, pageCount: 3, torch: true), [.colour, .flash, .camera])
         // Pages queued before Collect pages before saving went off keep their Export.
         var single: ScanSettings = document
         single.documentMultiPage = false
-        XCTAssertEqual(CameraDrawerGroup.shown(single, pageCount: 0), [.colour, .flash, .camera])
-        XCTAssertEqual(CameraDrawerGroup.shown(single, pageCount: 2), [.export, .colour, .flash, .camera])
+        XCTAssertEqual(CameraDrawerGroup.shown(single, pageCount: 0, torch: true), [.colour, .flash, .camera])
+        XCTAssertEqual(CameraDrawerGroup.shown(single, pageCount: 2, torch: true), [.export, .colour, .flash, .camera])
+        // A camera without a light (some iPads, the Simulator) has no Flash.
+        XCTAssertEqual(CameraDrawerGroup.shown(document, pageCount: 0, torch: false), [.export, .colour, .quality, .camera])
+        XCTAssertEqual(CameraDrawerGroup.flash.title, "Flash")
         for group in CameraDrawerGroup.allCases {
             XCTAssertFalse(group.title.isEmpty, group.rawValue)
             XCTAssertFalse(group.symbol.isEmpty, group.rawValue)

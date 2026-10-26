@@ -145,7 +145,7 @@ enum CameraDrawerGroup: String, Identifiable, CaseIterable {
         case .export: return "Export"
         case .colour: return "Colour"
         case .quality: return "Quality"
-        case .flash: return "Flash"
+        case .flash: return IOSCameraText.flashLabel
         case .camera: return IOSImportText.cameraLabel
         }
     }
@@ -161,9 +161,9 @@ enum CameraDrawerGroup: String, Identifiable, CaseIterable {
     }
 
     /// The groups that apply to the settings and the `pageCount` pages queued: Export while the pages are
-    /// saved here (`IOSShell.offersSave`), Quality while Save writes a PDF (its size), Colour, Flash and
-    /// Camera always.
-    static func shown(_ settings: ScanSettings, pageCount: Int) -> [CameraDrawerGroup] {
+    /// saved here (`IOSShell.offersSave`), Quality while Save writes a PDF (its size), Flash where the camera
+    /// has a light (`torch`), Colour and Camera always.
+    static func shown(_ settings: ScanSettings, pageCount: Int, torch: Bool) -> [CameraDrawerGroup] {
         var groups: [CameraDrawerGroup] = []
         if IOSShell.offersSave(settings, pageCount: pageCount) {
             groups.append(.export)
@@ -172,7 +172,9 @@ enum CameraDrawerGroup: String, Identifiable, CaseIterable {
         if IOSShell.offersPDFOptions(settings) {
             groups.append(.quality)
         }
-        groups.append(.flash)
+        if torch {
+            groups.append(.flash)
+        }
         groups.append(.camera)
         return groups
     }
@@ -183,8 +185,8 @@ enum CameraDrawerGroup: String, Identifiable, CaseIterable {
 /// under it. Export: the format, then chips for Separate documents, One PDF per page, PDF/A, Password and
 /// Also .txt where they apply, and More… for the whole Export sheet (separator sheets, After saving).
 /// Colour: the colour mode (and Restore faded colours for Photos). Quality: the PDF's size. Flash: the
-/// torch. Camera: the automatic shutter, Both sides and how the sides or a book's pages are taken, and Use
-/// Apple's scanner where the task offers it.
+/// camera's light (its torch), where it has one. Camera: the automatic shutter, Both sides and how the
+/// sides or a book's pages are taken, and Use Apple's scanner where the task offers it.
 struct CameraDrawer: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -195,7 +197,8 @@ struct CameraDrawer: View {
     let onAppleScanner: () -> Void
 
     var body: some View {
-        let groups: [CameraDrawerGroup] = CameraDrawerGroup.shown(state.settings, pageCount: state.scannedPages.count)
+        let groups: [CameraDrawerGroup] = CameraDrawerGroup.shown(state.settings, pageCount: state.scannedPages.count,
+                                                                  torch: model.hasTorch)
         let shown: CameraDrawerGroup = groups.contains(group) ? group : (groups.first ?? CameraDrawerGroup.camera)
         VStack(spacing: 10) {
             HStack(spacing: 14) {
@@ -248,12 +251,12 @@ struct CameraDrawer: View {
             .pickerStyle(.segmented)
             .accessibilityIdentifier("drawer.pdfSize")
         case .flash:
-            Picker(IOSCameraText.torchLabel, selection: torch) {
+            Picker(IOSCameraText.flashLabel, selection: torch) {
                 Text(IOSCameraText.offValue).tag(false)
                 Text(IOSCameraText.onValue).tag(true)
             }
             .pickerStyle(.segmented)
-            .disabled(!model.hasTorch || !model.lifecycle.isLive)
+            .disabled(!model.lifecycle.isLive)
             .accessibilityIdentifier("camera.torch")
         case .camera:
             cameraControls
