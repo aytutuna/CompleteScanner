@@ -208,13 +208,18 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
             Spacer(minLength: 0)
             notices()
             if let mismatch = state.sidesMismatch, state.cameraSides != nil {
-                Label(mismatch, systemImage: "exclamationmark.triangle.fill")
-                    .font(.footnote)
-                    .foregroundStyle(Color.orange)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(Color.black.opacity(0.6)))
-                    .accessibilityIdentifier("task.mismatch")
+                Label {
+                    Text(mismatch)
+                        .foregroundStyle(Color.white)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Color.orange)
+                }
+                .font(.footnote)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color.black.opacity(0.75)))
+                .accessibilityIdentifier("task.mismatch")
             }
             CameraTaskButtons(onDark: true)
             if state.canSkipStep {
