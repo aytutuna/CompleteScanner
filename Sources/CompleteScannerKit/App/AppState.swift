@@ -378,8 +378,8 @@ public final class AppState: ObservableObject {
     @Published public internal(set) var cameraSides: CameraSides?
     /// Separate documents: the next page taken starts a new document (`startNewDocument`).
     @Published public internal(set) var newDocumentPending = false
-    /// Quick scan on the camera: the page taken, held until it is saved as a picture, its text copied, or
-    /// discarded (AppState+CameraTasks.swift); nil otherwise.
+    /// Quick scan on the camera, and a scanner's page on the phone: the page, held until it is saved as a
+    /// picture, its text copied, or discarded (AppState+CameraTasks.swift); nil otherwise.
     @Published public internal(set) var quickScanPage: ScannedPage?
     /// The Copy task on the iPhone and iPad: the pages brought in, held on the copy screen until they are
     /// printed (as often as asked) or discarded (AppState+Copy.swift); empty otherwise.
@@ -1241,7 +1241,7 @@ public final class AppState: ObservableObject {
                     self.afterCameraSide(side, ids: added)
                 }
                 self.applyNewDocument(to: added)
-            } else if Self.holdsQuickScan(s, source: source) {
+            } else if Self.holdsQuickScan(s, source: source, platform: self.platform) {
                 self.setLastScan(preview: rawPreview, pixelSize: rawPixelSize)
                 self.holdQuickScan(processed)
             } else {

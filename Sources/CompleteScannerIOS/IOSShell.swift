@@ -152,6 +152,19 @@ public enum IOSShell {
                           turningOverByHand: turningOverByHand, printer: printer) == nil
     }
 
+    /// Text's step as printer mode says it: the Mac's words speak of dragging over its preview and of a
+    /// scan saved at once, but here the preview is in the Scanner options, the area is chosen by tapping the
+    /// preview, and the page waits on the Quick scan screen. Other steps are the task's own.
+    public static func printerStep(_ step: TaskStep) -> TaskStep {
+        guard step == TaskCatalog.definition(.quickScan).steps.first else { return step }
+        return TaskStep(id: step.id, title: step.title, prompt: printerTextPrompt,
+                        primaryActionLabel: step.primaryActionLabel, skippable: step.skippable,
+                        repeats: step.repeats, requiresCapture: step.requiresCapture, help: printerTextHelp)
+    }
+
+    static let printerTextPrompt = "Preview under Scanner, tap it to choose the area, then scan."
+    static let printerTextHelp = "Then copy the text, or save the page as a picture."
+
     /// The task the iPhone opens on: the one set up last time (kept in the settings), else Document to PDF.
     /// A photocopy or Email kept from before opens as Document: they are Save's Print… and Email… now.
     public static func launchTask(_ settings: ScanSettings) -> ScanTask {

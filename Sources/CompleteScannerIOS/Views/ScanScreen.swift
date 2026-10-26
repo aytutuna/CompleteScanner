@@ -857,11 +857,13 @@ struct ScanScreen: View {
         }
     }
 
-    /// The current step's one-line prompt, with its fuller help below (the camera's line in its place,
-    /// `IOSShell.cameraLine`); the back of an ID card offers "No back side".
+    /// The current step's one-line prompt, with its fuller help below (as printer mode says it,
+    /// `IOSShell.printerStep`, or the camera's line in its place, `IOSShell.cameraLine`); the back of an ID
+    /// card offers "No back side".
     @ViewBuilder
     private var stepCard: some View {
-        if let step = state.taskFlow?.current, showsStepCard {
+        if let current = state.taskFlow?.current, showsStepCard {
+            let step: TaskStep = IOSShell.printerStep(current)
             let camera: CameraStepText? = cameraLine
             VStack(alignment: .leading, spacing: 8) {
                 VStack(alignment: .leading, spacing: 4) {

@@ -525,8 +525,9 @@ final class CameraTaskTests: XCTestCase {
     func test_quickScan_holdsTheShot_copiesItsText_thenSavesAJPEG() async throws {
         let actions = CameraTaskFileActions()
         let state: AppState = makeState(.quickScan, actions: actions)
-        XCTAssertTrue(AppState.holdsQuickScan(state.settings, source: .photo))
-        XCTAssertFalse(AppState.holdsQuickScan(state.settings, source: .scanner))
+        XCTAssertTrue(AppState.holdsQuickScan(state.settings, source: .photo, platform: .mac))
+        XCTAssertFalse(AppState.holdsQuickScan(state.settings, source: .scanner, platform: .mac))
+        XCTAssertTrue(AppState.holdsQuickScan(state.settings, source: .scanner, platform: .ios))
         let page: ScannedPage = try printedPage()
         try await bringIn(state, page)
         // Held for its screen: nothing saved, nothing queued, no other page taken meanwhile.

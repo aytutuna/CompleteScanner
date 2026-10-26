@@ -137,6 +137,21 @@ final class IOSShellTests: XCTestCase {
                        CameraTaskCatalog.newDocumentPrompt)
     }
 
+    func test_printerStep_saysHowTextIsScannedOnThePhone_andKeepsTheOtherSteps() throws {
+        let quick: TaskStep = try XCTUnwrap(TaskCatalog.definition(.quickScan).steps.first)
+        let text: TaskStep = IOSShell.printerStep(quick)
+        XCTAssertNotEqual(text.prompt, quick.prompt)
+        XCTAssertFalse(text.prompt.contains("drag"))
+        XCTAssertFalse(text.help.contains("saved right away"))
+        XCTAssertEqual(text.primaryActionLabel, quick.primaryActionLabel)
+        XCTAssertEqual(text.id, quick.id)
+        for task in [ScanTask.document, .book, .idCard, .photos] {
+            for step in TaskCatalog.definition(task).steps {
+                XCTAssertEqual(IOSShell.printerStep(step), step, task.rawValue)
+            }
+        }
+    }
+
     func test_printerScanner_isTheRememberedScanner_inPrinterModeWhileListedAndSelected() {
         let network: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
         let demo: ScannerInfo = ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true, backend: "mock")
@@ -324,6 +339,30 @@ final class IOSShellTests: XCTestCase {
         // No printer is passed yet: the Kit's stand-in has none.
         XCTAssertFalse(state.hasPrinter)
         state.clearPages()
+    }
+
+    @MainActor
+    func test_textKind_holdsAScannersPage_forTheQuickScanScreen() async throws {
+        let options = IOSLaunchOptions(arguments: ["CompleteScanner", IOSLaunchOptions.demoScannerArgument])
+        let state = AppState(backends: IOSShell.backends(options: options),
+                             presetStore: PresetStore(directory: folder),
+                             fileActions: IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in }),
+                             orientationScorer: ShellScorer(), barcodeReader: ShellBarcodes(),
+                             files: AppStateFiles.all(in: folder))
+        state.platform = .ios
+        state.start()
+        try await waitFor(timeout: 30) { state.capabilities != nil }
+        XCTAssertTrue(state.startTask(.quickScan))
+        state.settings.destinationPath = folder.appendingPathComponent("Saved", isDirectory: true).path
+        state.settings.resolution = 75
+
+        state.performScan()
+        try await waitFor(timeout: 120) { !state.isBusy }
+        XCTAssertNil(state.errorMessage)
+        XCTAssertEqual(state.quickScanPage?.source, .scanner)
+        XCTAssertTrue(state.lastSavedURLs.isEmpty)
+        XCTAssertTrue(state.scannedPages.isEmpty)
+        state.discardQuickScan()
     }
 
     @MainActor

@@ -150,9 +150,11 @@ extension AppState {
     // MARK: Quick scan
 
     /// Quick scan's pages from a photo are held for its screen (save as a picture or copy the text) rather
-    /// than saved at once, as a scan's are.
-    nonisolated static func holdsQuickScan(_ settings: ScanSettings, source: PageSource) -> Bool {
-        source == .photo && settings.task == .quickScan && !settings.documentMultiPage
+    /// than saved at once, as a scan's are on the Mac. The phone holds a scanner's page too: its Text kind
+    /// promises the text whatever the page came from.
+    nonisolated static func holdsQuickScan(_ settings: ScanSettings, source: PageSource,
+                                           platform: TroubleshootPlatform) -> Bool {
+        (source == .photo || platform == .ios) && settings.task == .quickScan && !settings.documentMultiPage
     }
 
     /// Holds the page a Quick scan shot gave, in memory only.
