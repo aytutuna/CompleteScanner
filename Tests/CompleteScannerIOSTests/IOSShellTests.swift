@@ -223,6 +223,25 @@ final class IOSShellTests: XCTestCase {
         XCTAssertNil(defaults.object(forKey: IOSShell.oldSourceKey))
     }
 
+    @MainActor
+    func test_adoptOriginalFilter_startsTheCameraAtOriginal_once() throws {
+        let name: String = "filter.\(UUID().uuidString)"
+        let defaults: UserDefaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let state = AppState(backends: [], presetStore: PresetStore(directory: folder),
+                             fileActions: IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in }),
+                             files: AppStateFiles.all(in: folder))
+        // Settings kept from a build before the filters read as Enhanced.
+        XCTAssertEqual(state.settings.taskOptions.cameraFilter, .enhanced)
+        IOSShell.adoptOriginalFilter(state, defaults: defaults)
+        XCTAssertEqual(state.settings.taskOptions.cameraFilter, .original)
+        XCTAssertNil(DocumentEnhancer.mode(for: state.settings))
+        // Enhanced chosen afterwards stays.
+        state.settings.taskOptions.cameraFilter = .enhanced
+        IOSShell.adoptOriginalFilter(state, defaults: defaults)
+        XCTAssertEqual(state.settings.taskOptions.cameraFilter, .enhanced)
+    }
+
     func test_listedScanner_followsTheRememberedScanner_toAnotherConnection() {
         let direct: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
         let viaDesktop: ScannerInfo = ScannerInfo(id: "companion:x", name: "Office MFP", transport: "Companion", backend: "companion")

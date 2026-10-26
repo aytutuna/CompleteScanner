@@ -296,6 +296,19 @@ public enum IOSShell {
     /// kept while the camera is in use, so switching back to printer mode finds it again.
     public static let scannerKey = "scan.scanner"
 
+    /// The user's defaults key: the camera's filter was set to Original once (`adoptOriginalFilter`).
+    static let originalFilterKey = "camera.originalFilter"
+
+    /// Once per install, on a first run and over settings kept from a build before the filters alike: the
+    /// camera's pages start at Original on the phone (the Mac keeps the shared default, Enhanced). A filter
+    /// chosen after that is kept.
+    @MainActor
+    static func adoptOriginalFilter(_ state: AppState, defaults: UserDefaults) {
+        guard !defaults.bool(forKey: originalFilterKey) else { return }
+        defaults.set(true, forKey: originalFilterKey)
+        state.settings.taskOptions.cameraFilter = .original
+    }
+
     /// The key builds before the two modes kept the source under: empty for the camera, else a scanner's ID.
     static let oldSourceKey = "scan.source"
 
@@ -887,6 +900,7 @@ extension AppState {
                                        printService: printService ?? IOSPrintService(), lifecycle: lifecycle,
                                        keepsQueue: !options.demoScannerOnly)
         state.platform = .ios
+        IOSShell.adoptOriginalFilter(state, defaults: UserDefaults.standard)
         if let prompt = passwordPrompt {
             state.askPDFPassword = { () async -> PDFProtection? in
                 await prompt.ask()
