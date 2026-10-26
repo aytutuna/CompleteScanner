@@ -299,8 +299,8 @@ real size over AirPrint (a ruler test page to check that is in Settings); two-si
 (each front, then its back, with No back for an empty one) or every front then every back, put in
 order; Separate documents with a New document button between shots and separator sheets (patch code,
 or QR read with Vision) found on the pages, the sheet saved as a PDF to print; a book page by page or
-as whole spreads cut at the spine, split again by hand; Quick scan with Live Text, Save JPEG and Copy
-text; the photocopy printed over AirPrint from the phone, at real size when the page matched a paper
+as whole spreads cut at the spine, split again by hand; Quick scan, from the camera or a scanner, with
+Live Text, Save JPEG and Copy text; the photocopy printed over AirPrint from the phone, at real size when the page matched a paper
 size and fitted to the page otherwise, with Copies, Also save a PDF and Copy again on the same
 printer; Email a document through Mail's composer (or the share sheet); Archive document and the PDF's
 size, Archive and Password choices, the password asked for in a sheet and never stored; the pages
