@@ -8,7 +8,9 @@ import XCTest
 // editor opens with its corners, Use corners puts the straightened page in the strip, and Save writes
 // a PDF in the app's own Documents folder in the Simulator, with Save floating on camera mode's
 // viewfinder. The Simulator has no document scanner, so Use Apple's scanner, in camera mode's drawer, is
-// dimmed with its reason. Stop in the corner editor ends the import: no page comes in.
+// dimmed with its reason. Stop in the corner editor ends the import: no page comes in. The page stays when
+// Book is picked, which collects pages too; Receipts and the ID card would leave it without a Save, so
+// picking either asks first, and Cancel keeps the kind and the page.
 
 final class ImportTests: XCTestCase {
     override func setUpWithError() throws {
@@ -69,14 +71,55 @@ final class ImportTests: XCTestCase {
         XCTAssertFalse(app.buttons["save.button"].isEnabled, "Save with nothing to save")
     }
 
-    /// The app on the demo scanner with the fixture photo to import at launch.
     @MainActor
-    private func launchWithFixture() throws -> XCUIApplication {
+    func test_book_keepsThePage_receiptsAndTheIdCardAskFirst() throws {
+        let app: XCUIApplication = try launchWithFixture(task: "document")
+        let use: XCUIElement = app.buttons["corners.use"]
+        XCTAssertTrue(use.waitForExistence(timeout: 120), "The corner editor's Use corners button")
+        waitUntilEnabled(use, timeout: 30)
+        use.tap()
+        app.openPages(1)
+        app.closePages()
+
+        app.switchToCamera()
+        XCTAssertEqual(app.chipTitle, "Document")
+        for kind in ["receipts", "idCard"] {
+            let item: XCUIElement = app.descendants(matching: .any)["kinds.\(kind)"].firstMatch
+            XCTAssertTrue(item.waitForExistence(timeout: 30), "The \(kind) kind")
+            app.waitUntilEnabled(item, "The \(kind) kind")
+            item.tap()
+            let question: XCUIElement = app.alerts["Keep the page?"]
+            XCTAssertTrue(question.waitForExistence(timeout: 10), "Asked before \(kind)")
+            XCTAssertTrue(question.buttons["Save PDF first"].exists, "Save PDF first")
+            XCTAssertTrue(question.buttons["Discard 1 page"].exists, "Discard 1 page")
+            question.buttons["Cancel"].tap()
+            waitUntilGone(question, timeout: 10)
+            XCTAssertEqual(app.chipTitle, "Document", "Cancel keeps the kind")
+            XCTAssertEqual(app.pagesButton.label, "1 page", "Cancel keeps the page")
+            XCTAssertEqual(app.buttons["save.button"].label, "Save PDF \u{00B7} 1")
+        }
+
+        // Book is two kinds away in camera mode's row, past the ID card: the printer screen's chip is one tap.
+        app.switchToPrinter()
+        app.pickTask("book")
+        XCTAssertEqual(app.chipTitle, "Book")
+        XCTAssertEqual(app.pagesButton.label, "1 page", "Book keeps the page")
+        XCTAssertTrue(app.buttons["save.button"].isEnabled, "Save still has the page")
+        XCTAssertFalse(app.alerts.firstMatch.exists, "Nothing asked for Book")
+    }
+
+    /// The app on the demo scanner with the fixture photo to import at launch, into `task` when one is given
+    /// (`ScanTask`'s raw value).
+    @MainActor
+    private func launchWithFixture(task: String? = nil) throws -> XCUIApplication {
         let fixture: URL = try XCTUnwrap(Bundle(for: ImportTests.self).url(forResource: "document-photo", withExtension: "png"),
                                          "The fixture photo in the test bundle")
         let bytes: Data = try Data(contentsOf: fixture)
         let app = XCUIApplication()
         app.launchArguments = ["-demoScanner", "-importFixture"]
+        if let task {
+            app.launchArguments += ["-importTask", task]
+        }
         app.launchEnvironment["COMPLETESCANNER_IMPORT_FIXTURE"] = bytes.base64EncodedString()
         app.launch()
         return app
