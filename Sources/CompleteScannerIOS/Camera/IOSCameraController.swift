@@ -106,7 +106,8 @@ final class IOSCaptureSession: @unchecked Sendable {
 
     /// Sets the session up once: the camera `IOSCameraLens` picks, photos of about 12 MP at most at the
     /// best quality, and BGRA video frames for the outline (the camera works without them when the
-    /// session cannot add them). False when there is no camera or it cannot be used.
+    /// session cannot add them), from a smaller video format where one takes photos of that size
+    /// (`outlineFormat`). False when there is no camera or it cannot be used.
     func configure() -> Bool {
         if configured { return device != nil }
         configured = true
@@ -143,6 +144,19 @@ final class IOSCaptureSession: @unchecked Sendable {
         // The photo size is one the format chosen for the preset offers.
         if let dimensions = IOSCameraLens.photoDimensions(camera) {
             session.beginConfiguration()
+            // The .photo preset streams video at the photo's own size (12 MP frames of about 48 MB) only for
+            // the outline, which heats the phone; a smaller format that takes the same photos does not.
+            if let small = IOSCaptureSession.outlineFormat(camera, photo: dimensions),
+               session.canSetSessionPreset(.inputPriority) {
+                do {
+                    try camera.lockForConfiguration()
+                    session.sessionPreset = .inputPriority
+                    camera.activeFormat = small
+                    camera.unlockForConfiguration()
+                } catch {
+                    // The preset's format stays.
+                }
+            }
             photoOutput.maxPhotoDimensions = dimensions
             session.commitConfiguration()
         }
@@ -150,6 +164,32 @@ final class IOSCaptureSession: @unchecked Sendable {
         IOSCaptureSession.zoomForPages(camera)
         device = camera
         return true
+    }
+
+    /// The smallest standard 4:3 video format (full-range 4:2:0, not binned, 30 fps, at least 1920 × 1440 so
+    /// the preview is not enlarged on a phone's screen) that takes photos of `photo`'s size at the best
+    /// quality; nil when the camera has none, and the preset's format stays.
+    static func outlineFormat(_ camera: AVCaptureDevice, photo: CMVideoDimensions) -> AVCaptureDevice.Format? {
+        var best: AVCaptureDevice.Format?
+        var bestWidth: Int32 = 0
+        for format in camera.formats {
+            let size: CMVideoDimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+            guard size.width * 3 == size.height * 4, size.width >= 1920, size.width < photo.width else { continue }
+            guard CMFormatDescriptionGetMediaSubType(format.formatDescription) == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+                  !format.isVideoBinned, format.isHighPhotoQualitySupported else { continue }
+            let thirty: Bool = format.videoSupportedFrameRateRanges.contains { (range: AVFrameRateRange) -> Bool in
+                range.minFrameRate <= 30 && range.maxFrameRate >= 30
+            }
+            let takesPhoto: Bool = format.supportedMaxPhotoDimensions.contains { (offered: CMVideoDimensions) -> Bool in
+                offered.width == photo.width && offered.height == photo.height
+            }
+            guard thirty, takesPhoto else { continue }
+            if best == nil || size.width < bestWidth {
+                best = format
+                bestWidth = size.width
+            }
+        }
+        return best
     }
 
     /// The wide lens's view on a virtual camera whose zoom 1 is the ultra wide lens (`IOSCameraLens.startZoom`);
