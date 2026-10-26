@@ -508,13 +508,13 @@ final class IOSScannerPickerTests: XCTestCase {
     // MARK: The shell
 
     @MainActor
-    func test_shell_offersNetworkScannersBesideTheDemoScanner_neverUnderDemoScanner() {
+    func test_shell_offersNetworkScannersWithoutTheDemoScanner_neverUnderDemoScanner() {
         prepare()
         defaults.set(true, forKey: IOSNetworkScanners.explainedKey)
         let network: IOSNetworkScanners = makeNetwork()
-        let both: [any ScannerBackend] = IOSShell.backends(options: IOSLaunchOptions(demoScannerOnly: false), networkScanners: network)
-        XCTAssertEqual(both.count, 2)
-        XCTAssertTrue(both[1] === network.backend)
+        let real: [any ScannerBackend] = IOSShell.backends(options: IOSLaunchOptions(demoScannerOnly: false), networkScanners: network)
+        XCTAssertEqual(real.count, 1)
+        XCTAssertTrue(real[0] === network.backend)
         let demo: [any ScannerBackend] = IOSShell.backends(options: IOSLaunchOptions(arguments: ["CompleteScanner", "-demoScanner"]),
                                                             networkScanners: network)
         XCTAssertEqual(demo.count, 1)

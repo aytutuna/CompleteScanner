@@ -357,7 +357,8 @@ since is asked about. When a scanner's HTTPS connection cannot be made (an old T
 app may use the scanner's own plain HTTP address and marks the connection "Not encrypted"; it never
 does so after a refused certificate. The addresses and the trusted certificates are kept in
 Application Support/CompleteScanner/Network, out of backups. Launched with `-demoScanner` (the UI
-tests), the app has the Demo Scanner alone and never searches the network; the search itself is
+tests), the app has the Demo Scanner alone and never searches the network; otherwise the Demo
+Scanner is not listed at all. The search itself is
 checked with stand-ins for the system's browsers, and the prompt, a denial, client-isolated Wi-Fi,
 IPv6 and a feeder batch while the app goes to the background need a real iPhone and scanner.
 

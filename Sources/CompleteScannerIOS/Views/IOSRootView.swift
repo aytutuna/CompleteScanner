@@ -313,6 +313,10 @@ public struct IOSRootView: View {
     private func startOnce() {
         guard !started else { return }
         started = true
+        // The demo scanner is only listed under -demoScanner: a source left on it is the camera again.
+        if !demoScanner && source.hasPrefix("mock:") {
+            source = ""
+        }
         state.start()
         if source.isEmpty {
             state.userSelectNoDevice()
