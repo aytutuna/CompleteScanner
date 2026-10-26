@@ -1,7 +1,7 @@
 import XCTest
 
-// Two-sided on the iPhone (I14), as a person does it on the Simulator: a Document with Both sides on under
-// Camera in the Scanner options, which is the two-sided task under the hood. The app is launched on the demo scanner with a PDF
+// Two-sided on the iPhone (I14), as a person does it on the Simulator: a Document with Both sides on in
+// camera mode's drawer (Camera), which is the two-sided task under the hood. The app is launched on the demo scanner with a PDF
 // of two pages to import into the two-sided task (`-importFixture` with `-importTask twoSided`; the
 // Simulator has no camera and a UI test cannot drive the system's pickers, so the file's bytes come in
 // the environment, as the Files app would hand them over, and only at launch). The pages come in as Flip
@@ -31,14 +31,15 @@ final class TwoSidedTests: XCTestCase {
         let front: XCUIElement = app.descendants(matching: .any)["page.1"]
         XCTAssertTrue(front.label.contains("Sheet 1, front"), front.label)
         app.closePages()
+        app.switchToCamera()
         XCTAssertEqual(app.chipTitle, "Document")
-        app.pickSource("source.camera")
+        app.openDrawer("camera")
         let bothSides: XCUIElement = app.switches["options.bothSides"].firstMatch
-        XCTAssertTrue(bothSides.waitForExistence(timeout: 10), "Both sides under Camera")
+        XCTAssertTrue(bothSides.waitForExistence(timeout: 10), "Both sides in the drawer")
         XCTAssertEqual(bothSides.value as? String, "1")
         XCTAssertTrue(app.descendants(matching: .any)["task.sidesWay"].waitForExistence(timeout: 10),
                       "Flip & capture or fronts first")
-        app.closeOptions()
+        app.closeDrawer()
 
         let save: XCUIElement = app.buttons["save.button"]
         waitUntilEnabled(save, timeout: 120)
@@ -57,16 +58,16 @@ final class TwoSidedTests: XCTestCase {
         app.launchArguments = ["-demoScanner"]
         app.launch()
 
+        app.switchToCamera()
         app.pickTask("document")
-        app.pickSource("source.camera")
+        app.openDrawer("camera")
         let way: XCUIElement = app.descendants(matching: .any)["task.sidesWay"]
         XCTAssertFalse(way.exists, "One side until Both sides is on")
         app.turnSwitch("options.bothSides", on: true)
         XCTAssertTrue(way.waitForExistence(timeout: 10), "Flip & capture or fronts first")
-        app.closeOptions()
+        app.closeDrawer()
         XCTAssertEqual(app.chipTitle, "Document")
-        app.openOptions("Scanner")
-        app.growOptions()
+        app.openDrawer("camera")
         app.turnSwitch("options.bothSides", on: false)
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: way)
         XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 10), .completed, "One side again")

@@ -1,10 +1,10 @@
 import XCTest
 
-// The app as a person uses it, on the Simulator: launched on the demo scanner alone (`-demoScanner`, so
-// the camera does not open by itself), pick Document to PDF among the kinds and the demo scanner as the
-// source in the Scanner options, scan a page, see it in the page strip, save the PDF, and see the saved file
-// with its Share button; and open Settings, open Presets, save the settings as a preset and see it
-// listed (I15). The demo scanner draws made-up pages, so no scanner, camera or network is needed, and
+// The app as a person uses it, on the Simulator: launched on the demo scanner alone (`-demoScanner`),
+// switch to printer mode, pick Document to PDF among the kinds and the demo scanner in the Scanner options,
+// scan a page, see it in the page strip, save the PDF, and see the saved file with its Share button; and
+// from camera mode open the library, Settings in its toolbar, Presets, save the settings as a preset and
+// see it listed (I15). The demo scanner draws made-up pages, so no scanner, camera or network is needed, and
 // the PDF goes to the app's own Documents folder in the Simulator.
 
 final class SmokeTests: XCTestCase {
@@ -18,8 +18,9 @@ final class SmokeTests: XCTestCase {
         app.launchArguments = ["-demoScanner"]
         app.launch()
 
+        app.switchToPrinter()
         app.pickTask("document")
-        app.pickSource("scanner.row.mock:demo")
+        app.pickScanner("scanner.row.mock:demo")
         app.closeOptions()
 
         let scan: XCUIElement = app.buttons["scan.button"]
@@ -46,8 +47,9 @@ final class SmokeTests: XCTestCase {
         app.launchArguments = ["-demoScanner"]
         app.launch()
 
+        app.switchToPrinter()
         app.pickTask("document")
-        app.pickSource("scanner.row.mock:demo")
+        app.pickScanner("scanner.row.mock:demo")
         app.closeOptions()
         let scan: XCUIElement = app.buttons["scan.button"]
         XCTAssertTrue(scan.waitForExistence(timeout: 30), "The scan screen's Scan button")
@@ -80,10 +82,12 @@ final class SmokeTests: XCTestCase {
         app.launchArguments = ["-demoScanner"]
         app.launch()
 
-        XCTAssertTrue(app.descendants(matching: .any)["task.chips"].firstMatch.waitForExistence(timeout: 60),
-                      "The scan screen")
-        let settings: XCUIElement = app.scrolledTo("scan.settings")
-        XCTAssertTrue(settings.exists, "The scan screen's Settings row")
+        app.switchToCamera()
+        let library: XCUIElement = app.buttons["open.library"].firstMatch
+        XCTAssertTrue(library.waitForExistence(timeout: 30), "Camera mode's Library button")
+        library.tap()
+        let settings: XCUIElement = app.descendants(matching: .any)["library.settings"].firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 30), "Settings in the library's toolbar")
         settings.tap()
 
         let presets: XCUIElement = app.buttons["settings.presets"]

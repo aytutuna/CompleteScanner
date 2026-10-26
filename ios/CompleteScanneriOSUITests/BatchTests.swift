@@ -6,7 +6,8 @@ import XCTest
 // `-importTask batch`, at launch since a UI test cannot drive Files): a page, the Patch T separator sheet,
 // and another page. The sheet is found on its page (its bars are measured at the page's real size), marked
 // as a separator and left out, so Save writes two PDFs, one page each. The second case picks Document in
-// the scan screen's kinds, turns Separate documents on, picks QR code sheets and turns it off again. The fixture (Fixtures/batch.pdf, drawn by scripts/make_ios_ui_fixture.py) holds
+// the printer screen's kinds, turns Separate documents on in its Export sheet, picks QR code sheets and
+// turns it off again. The fixture (Fixtures/batch.pdf, drawn by scripts/make_ios_ui_fixture.py) holds
 // grey lines and the sheet's bars on Letter pages, no real document.
 
 final class BatchTests: XCTestCase {
@@ -32,6 +33,7 @@ final class BatchTests: XCTestCase {
         app.closePages()
         XCTAssertTrue(app.buttons["task.newDocument"].exists, "New document")
         XCTAssertEqual(app.chipTitle, "Document")
+        app.switchToPrinter()
         app.openOptions("Export")
         let separate: XCUIElement = app.switches["options.separate"].firstMatch
         XCTAssertTrue(separate.waitForExistence(timeout: 10), "Separate documents in Export")
@@ -58,6 +60,7 @@ final class BatchTests: XCTestCase {
         app.launchArguments = ["-demoScanner"]
         app.launch()
 
+        app.switchToPrinter()
         app.pickTask("document")
         app.openOptions("Export")
         let sheet: XCUIElement = app.buttons["separator.save"]

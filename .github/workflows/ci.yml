@@ -315,7 +315,7 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/ios-app-tests.xcresult" \
             CODE_SIGNING_ALLOWED=NO
       # The screens ScreenshotTests keeps, renamed from the export's own file names to their attachment
-      # names (01-scan.png, ...) through the manifest the export writes.
+      # names (01-camera.png, ...) through the manifest the export writes.
       - name: Export the screenshots
         if: always()
         run: |
