@@ -5,75 +5,90 @@ import QuartzCore
 import SwiftUI
 import UIKit
 
-/// Our own camera, full screen: the live preview, the whole photo as it will be taken (black above and below
-/// it on a tall screen, where the bars sit), with the page's outline over it (yellow, green once the page
-/// holds still), Done, Auto (the automatic shutter), the torch, the shutter with a ring that fills
-/// while the page holds still, and the last page taken with how many pages the queue holds. With Auto on
-/// the photo is taken by itself once the page held still on a sharp, lit frame (`IOSCameraModel`,
-/// `LiveQuadUpdate.shouldCapture`), with a short tap felt; while it waits for a sharper or brighter frame,
-/// one line says so ("Hold still", "Too dark"), and VoiceOver says it once per wait (`IOSWaitAnnouncer`).
-/// Each photo goes through the photo import (`IOSImportSession.importShot`): the page is found again in
-/// the photo; in continuous capture (`IOSShell.capturesContinuously`) a page found clearly goes straight
-/// into the queue and the camera stays on for the next page, which is taken once the page in view changed;
-/// otherwise the corner editor opens here, in place of the preview (the camera stops meanwhile), and Use
-/// corners puts the page in the queue. Done goes back to the page strip. Where the camera cannot be used
-/// (no camera, as in the Simulator; access off, with Settings; not allowed) or waits (too warm,
-/// interrupted), one short line says why. For photos and receipts (I13) the objects of each shot go to the
-/// photo review, which takes the camera's place; for the ID card a guide frame of the card's shape asks for
-/// the front, then the back (with No back side), the glare hint follows a side taken with glare on it, and
-/// the card's review takes the camera's place once the sides are in. Since I14 the task's camera line
-/// (`CameraTaskCatalog`: what to point at, "Turn the sheet over and take its back." while a back is due,
-/// "The next page starts a new document." after New document) shows under the top bar, with the task's
-/// buttons between shots (No back, Now the backs, New document, `CameraTaskButtons`) over the shutter;
-/// Quick scan's page takes the camera's place once taken. With a keyboard (I15), Space takes a photo and
-/// Escape is Done. On the iPhone the camera is what the app opens on: the task chip under the top bar opens
-/// the task sheet here, the last page with the count opens the page strip in a sheet over the camera, and
-/// Photos and Files sit beside the shutter; the camera rests while a sheet, Photos or Files covers it, so
-/// Auto takes nothing meanwhile. Done is the only way back to the scan screen.
-struct CameraScreen: View {
+/// Camera mode, the iPhone's scan screen unless printer mode was picked (`IOSScanMode`): the viewfinder is
+/// the screen. Its top bar has the library (`onLibrary`; none where the sidebar has it), a small round
+/// chevron that swaps the kinds for the options drawer (`CameraDrawer`), and the printer, which switches
+/// to printer mode (`onPrinter`). The viewfinder shows the whole photo as it will be taken (black bands
+/// where the screen is taller or wider), the page's outline over it (yellow, green once the page holds
+/// still), one status line at its top (the glare hint, why the automatic shutter waits, "Page found · hold
+/// still", else the task's camera line, `CameraTaskCatalog`), the ID card's guide frame, and at its foot
+/// what the scan screen hands in (`notices`: the package banner, an import's progress with Stop, the files
+/// saved last), the task's buttons between shots (`CameraTaskButtons`, No back side for the ID card) and
+/// Save with its menu once there are pages (`saveControls`). Where the camera cannot be used (no camera,
+/// as in the Simulator; access off, with Settings; not allowed) or waits (too warm, interrupted), one short
+/// line says why in its place. Under it the kinds as a snapping row (`KindsRow`) or the drawer, then the
+/// bar: the pages as a stack with their count (`onPages`, the page strip's sheet), the shutter with a ring
+/// that fills while the page holds still, and Photos and Files. With Auto on the photo is taken by itself
+/// once the page held still on a sharp, lit frame (`IOSCameraModel`), with a short tap felt; VoiceOver
+/// says the wait once per wait (`IOSWaitAnnouncer`). Each photo goes through the photo import
+/// (`IOSImportSession.importShot`); in continuous capture (`IOSShell.capturesContinuously`) a page found
+/// clearly goes straight into the queue, otherwise the root view's corner editor opens. The camera rests
+/// while anything covers it (`resting`: a sheet, a cover, the corner editor; Photos or Files), so Auto
+/// takes nothing meanwhile, and waits for the card saying why it is asked for (`waitsForIntro`) before
+/// iOS asks. With a keyboard, Space takes a photo.
+struct CameraScreen<Notices: View, SaveControls: View>: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model: IOSCameraModel
     @State private var waitAnnouncer: IOSWaitAnnouncer = IOSWaitAnnouncer()
-    @State private var showsTasks: Bool = false
-    @State private var showsPages: Bool = false
-    let onClose: @MainActor () -> Void
+    @State private var showsDrawer: Bool = false
+    @State private var drawerGroup: CameraDrawerGroup = .export
+    /// Photos or Files is open over the camera.
+    @State private var picking: Bool = false
+    private let resting: Bool
+    private let waitsForIntro: Bool
+    private let scanner: IOSCameraAvailability
+    private let onLibrary: (() -> Void)?
+    private let onPrinter: () -> Void
+    private let onPages: () -> Void
+    private let onKind: (IOSScanKind) -> Void
+    private let onExportSheet: () -> Void
+    private let onAppleScanner: () -> Void
+    private let notices: () -> Notices
+    private let saveControls: () -> SaveControls
 
-    init(onClose: @escaping @MainActor () -> Void) {
+    /// `scanner` says whether Apple's scanner can run, for the drawer's Use Apple's scanner
+    /// (`onAppleScanner`); `onKind` picks a kind as the printer screen's chips do; `onExportSheet` opens
+    /// the Export options in full.
+    init(resting: Bool, waitsForIntro: Bool, scanner: IOSCameraAvailability, onLibrary: (() -> Void)?,
+         onPrinter: @escaping () -> Void, onPages: @escaping () -> Void, onKind: @escaping (IOSScanKind) -> Void,
+         onExportSheet: @escaping () -> Void, onAppleScanner: @escaping () -> Void,
+         @ViewBuilder notices: @escaping () -> Notices, @ViewBuilder saveControls: @escaping () -> SaveControls) {
         _model = StateObject(wrappedValue: IOSCameraModel.makeLive())
-        self.onClose = onClose
+        self.resting = resting
+        self.waitsForIntro = waitsForIntro
+        self.scanner = scanner
+        self.onLibrary = onLibrary
+        self.onPrinter = onPrinter
+        self.onPages = onPages
+        self.onKind = onKind
+        self.onExportSheet = onExportSheet
+        self.onAppleScanner = onAppleScanner
+        self.notices = notices
+        self.saveControls = saveControls
     }
 
     var body: some View {
-        ZStack {
-            // The preview stays under the editor (the camera is stopped meanwhile), so it comes back as it was.
-            camera
-                .accessibilityHidden(importer.cornerRequest != nil)
-            if let request = importer.cornerRequest {
-                CornerEditorView(request: request, onAnswer: answerCorners, onStop: stopImport)
-                    .id(request.id)
-            }
+        VStack(spacing: 0) {
+            topBar
+            viewfinder
+            lowerRow
+            bottomBar
         }
+        .background(Color(uiColor: .systemBackground))
         .onAppear {
-            importer.editorInCamera = true
-            let shown: IOSCameraModel = model
-            let session: IOSImportSession = importer
-            let appState: AppState = state
-            // Read at each shot: a task picked in the task sheet here changes it.
-            shown.onAutoShot = { (shot: IOSCameraShot) async -> Void in
-                _ = await session.importShot(shot, asksOnlyWhenUnsure: IOSShell.capturesContinuously(appState.settings))
-            }
-            shown.canTakePage = { () -> Bool in
-                !session.isImporting && session.canImport
-            }
-            Task { @MainActor in
-                await shown.appear()
+            if !waitsForIntro {
+                start()
             }
         }
         .onDisappear {
-            importer.editorInCamera = false
             model.disappear()
+        }
+        .onChange(of: waitsForIntro) { (_: Bool, waits: Bool) in
+            if !waits {
+                start()
+            }
         }
         .onChange(of: scenePhase) { (_: ScenePhase, phase: ScenePhase) in
             if phase == .background {
@@ -82,30 +97,8 @@ struct CameraScreen: View {
                 model.apply(IOSCameraEvent.foreground)
             }
         }
-        .onChange(of: importer.cornerRequest != nil) { (_: Bool, reviewing: Bool) in
-            model.apply(reviewing ? IOSCameraEvent.reviewStarted : IOSCameraEvent.reviewEnded)
-        }
-        .onChange(of: showsTasks) { (_: Bool, shown: Bool) in
-            rest(shown)
-        }
-        .sheet(isPresented: $showsTasks) {
-            TaskSheet(onPicked: closeTasks, onClose: closeTasks)
-                .environmentObject(state)
-                .environmentObject(importer)
-        }
-        .onChange(of: showsPages) { (_: Bool, shown: Bool) in
-            rest(shown)
-        }
-        // No Split spread again here: the root presents its editor, which it cannot over the camera.
-        .sheet(isPresented: $showsPages) {
-            PageStripSheet(onClose: closePages)
-                .environmentObject(state)
-                .environmentObject(importer)
-        }
-        .onChange(of: state.scannedPages.isEmpty) { (_: Bool, empty: Bool) in
-            if empty {
-                showsPages = false
-            }
+        .onChange(of: covered) { (_: Bool, rests: Bool) in
+            model.apply(rests ? IOSCameraEvent.reviewStarted : IOSCameraEvent.reviewEnded)
         }
         .onChange(of: waitCue) { (_: IOSWaitCue, cue: IOSWaitCue) in
             // Spoken once per wait, when the line is first shown, so a VoiceOver user knows why nothing is
@@ -115,165 +108,170 @@ struct CameraScreen: View {
             }
         }
         .sensoryFeedback(SensoryFeedback.impact(weight: SensoryFeedback.Weight.medium), trigger: model.shotCount)
-        .modifier(ErrorAlert(state: state))
     }
 
-    // MARK: The camera
+    // MARK: The top bar
 
-    private var camera: some View {
+    private var topBar: some View {
+        HStack(spacing: 0) {
+            libraryButton
+            Spacer(minLength: 0)
+            drawerToggle
+            Spacer(minLength: 0)
+            Button {
+                onPrinter()
+            } label: {
+                Image(systemName: "printer")
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .disabled(state.isBusy)
+            .accessibilityLabel(Text(IOSCameraText.printerLabel))
+            .accessibilityHint(Text(IOSCameraText.printerHint))
+            .accessibilityIdentifier("mode.printer")
+        }
+        .padding(.horizontal, 8)
+    }
+
+    @ViewBuilder
+    private var libraryButton: some View {
+        if let open = onLibrary {
+            Button {
+                open()
+            } label: {
+                Image(systemName: "books.vertical")
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel(Text(IOSSettingsText.libraryLabel))
+            .accessibilityIdentifier("open.library")
+        } else {
+            Color.clear
+                .frame(width: 44, height: 44)
+        }
+    }
+
+    private var drawerToggle: some View {
+        let open: Bool = showsDrawer
+        return Button {
+            withAnimation(Animation.snappy) {
+                showsDrawer.toggle()
+            }
+        } label: {
+            Image(systemName: open ? "chevron.down" : "chevron.up")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(open ? Color.white : Color.primary)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(open ? Color.accentColor : Color(uiColor: .tertiarySystemFill)))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(open ? IOSCameraText.hideOptions : IOSCameraText.showOptions))
+        .accessibilityIdentifier("drawer.toggle")
+    }
+
+    // MARK: The viewfinder
+
+    private var viewfinder: some View {
         ZStack {
             Color.black
-                .ignoresSafeArea()
             if model.showsPreview, let controller = model.driver as? IOSCameraController {
                 CameraPreview(controller: controller, outline: model.live?.outline,
                               steady: model.live?.isSteady ?? false)
-                    .ignoresSafeArea()
                     .accessibilityHidden(true)
             }
             if model.message == nil, let prompt = cardPrompt {
                 IdCardGuide(prompt: prompt)
             }
-            VStack(spacing: 0) {
-                topBar
-                TaskChip(title: IOSShell.shownKind(state.settings).title, onTap: openTasks)
-                    .padding(.top, 6)
-                if model.message == nil, cardPrompt == nil, let line = taskLine {
-                    Text(line.prompt)
-                        .font(.headline)
-                        .foregroundStyle(Color.white)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Capsule().fill(Color.black.opacity(0.6)))
-                        .padding(.top, 10)
-                        .accessibilityHint(Text(line.help))
-                        .accessibilityIdentifier("camera.prompt")
-                }
-                Spacer(minLength: 0)
-                notice
-                Spacer(minLength: 0)
-                CameraTaskButtons(onDark: true)
-                    .padding(.bottom, 12)
-                if state.canSkipStep {
-                    Button(IdCardSteps.skipBackLabel) {
-                        state.skipStep()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(state.isBusy || importer.isImporting)
-                    .padding(.bottom, 12)
-                    .accessibilityIdentifier("camera.skipBack")
-                }
-                bottomBar
+            if let line = model.message {
+                messageCard(line)
             }
+            overlays
+                .padding(12)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("camera.screen")
     }
 
-    private var topBar: some View {
-        HStack {
-            Button {
-                onClose()
-            } label: {
-                Text(IOSCameraText.doneLabel)
-                    .bold()
+    /// The status line at the top; at the foot the notices, the task's buttons and Save.
+    private var overlays: some View {
+        VStack(spacing: 8) {
+            if model.message == nil, let status = statusLine {
+                StatusPill(text: status.text, hint: status.hint)
+                    .accessibilityIdentifier(status.identifier)
             }
-            .buttonStyle(.bordered)
-            .tint(Color.white)
-            .keyboardShortcut(.cancelAction)
-            .accessibilityIdentifier("camera.done")
             Spacer(minLength: 0)
-            Button {
-                model.setAutoShutter(!model.autoShutter)
-            } label: {
-                Label(IOSCameraText.autoLabel, systemImage: model.autoShutter ? "a.circle.fill" : "a.circle")
-                    .font(.headline)
+            notices()
+            if let mismatch = state.sidesMismatch, state.cameraSides != nil {
+                Label(mismatch, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(Color.orange)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.black.opacity(0.6)))
+                    .accessibilityIdentifier("task.mismatch")
             }
-            .buttonStyle(.bordered)
-            .tint(model.autoShutter ? Color.yellow : Color.white)
-            .accessibilityLabel(Text(IOSCameraText.autoLabel))
-            .accessibilityValue(Text(model.autoShutter ? IOSCameraText.onValue : IOSCameraText.offValue))
-            .accessibilityHint(Text(IOSCameraText.autoHint))
-            .accessibilityAddTraits(AccessibilityTraits.isToggle)
-            .accessibilityIdentifier("camera.auto")
-            if model.hasTorch {
-                Button {
-                    let shown: IOSCameraModel = model
-                    Task { @MainActor in
-                        await shown.toggleTorch()
-                    }
-                } label: {
-                    // The button's own padding makes this a full tap target; any taller and the bar and the
-                    // chip spill out of the black band above the picture.
-                    Image(systemName: model.torchOn ? "flashlight.on.fill" : "flashlight.off.fill")
-                        .font(.title3)
-                        .frame(width: 44, height: 30)
+            CameraTaskButtons(onDark: true)
+            if state.canSkipStep {
+                Button(IdCardSteps.skipBackLabel) {
+                    state.skipStep()
                 }
-                .buttonStyle(.bordered)
-                .tint(Color.white)
-                .disabled(!model.lifecycle.isLive)
-                .accessibilityLabel(Text(IOSCameraText.torchLabel))
-                .accessibilityValue(Text(model.torchOn ? IOSCameraText.onValue : IOSCameraText.offValue))
-                .accessibilityIdentifier("camera.torch")
+                .buttonStyle(.borderedProminent)
+                .disabled(state.isBusy || importer.isImporting)
+                .accessibilityIdentifier("camera.skipBack")
+            }
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                saveControls()
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
     }
 
-    /// Why the camera cannot be used or waits, in one line (with Settings when access is off); the
-    /// import's progress while a photo is read.
-    @ViewBuilder
-    private var notice: some View {
-        if let line = model.message {
-            VStack(spacing: 10) {
-                Image(systemName: "camera.badge.ellipsis")
-                    .font(.largeTitle)
-                    .foregroundStyle(Color.white)
-                    .accessibilityHidden(true)
-                Text(line)
-                    .font(.headline)
-                    .foregroundStyle(Color.white)
-                    .multilineTextAlignment(.center)
-                    .accessibilityIdentifier("camera.message")
-                if model.opensSettings {
-                    Button(IOSCameraText.settingsLabel) {
-                        openSettings()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("camera.settings")
+    /// Why the camera cannot be used or waits, with Settings when access is off.
+    private func messageCard(_ line: String) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: "camera.badge.ellipsis")
+                .font(.largeTitle)
+                .foregroundStyle(Color.white)
+                .accessibilityHidden(true)
+            Text(line)
+                .font(.headline)
+                .foregroundStyle(Color.white)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("camera.message")
+            if model.opensSettings {
+                Button(IOSCameraText.settingsLabel) {
+                    openSettings()
                 }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("camera.settings")
             }
-            .padding(20)
-            .background(RoundedRectangle(cornerRadius: 14).fill(Color.black.opacity(0.6)))
-            .accessibilityElement(children: .contain)
-        } else if importer.isImporting, let progress = importer.progressText {
-            HStack(spacing: 8) {
-                ProgressView()
-                    .tint(Color.white)
-                Text(progress)
-                    .font(.footnote)
-                    .foregroundStyle(Color.white)
-            }
-            .padding(12)
-            .background(Capsule().fill(Color.black.opacity(0.6)))
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("camera.progress")
-        } else if let glare = glareLine {
-            Label(glare, systemImage: "exclamationmark.triangle.fill")
-                .font(.headline)
-                .foregroundStyle(Color.white)
-                .padding(12)
-                .background(Capsule().fill(Color.black.opacity(0.6)))
-                .accessibilityIdentifier("camera.glare")
-        } else if let reason = waitLine {
-            Text(reason)
-                .font(.headline)
-                .foregroundStyle(Color.white)
-                .padding(12)
-                .background(Capsule().fill(Color.black.opacity(0.6)))
-                .accessibilityIdentifier("camera.wait")
         }
+        .padding(20)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.12)))
+        .accessibilityElement(children: .contain)
+    }
+
+    /// The one line at the viewfinder's top: the glare hint for the ID card's back, why a page held still
+    /// is not taken yet, that it is about to be, else the task's camera line (none under the ID card's
+    /// guide, which says the side itself).
+    private var statusLine: CameraStatus? {
+        if let glare = glareLine {
+            return CameraStatus(text: glare, hint: nil, identifier: "camera.glare")
+        }
+        if let reason = waitLine {
+            return CameraStatus(text: reason, hint: nil, identifier: "camera.wait")
+        }
+        if model.autoShutter && model.live?.state == CaptureState.steadying {
+            return CameraStatus(text: IOSCameraText.pageFound, hint: nil, identifier: "camera.found")
+        }
+        guard cardPrompt == nil, let line = taskLine else { return nil }
+        return CameraStatus(text: line.prompt, hint: line.help, identifier: "camera.prompt")
     }
 
     /// The task's camera line now (`CameraTaskCatalog.current`); nil without a task.
@@ -300,12 +298,71 @@ struct CameraScreen: View {
         return IOSCameraText.waitReason(update.quality)
     }
 
-    /// Whether a page held still waits, and the wait line as `notice` shows it (nil while a message or the
-    /// import's progress is shown in its place), for VoiceOver (`IOSWaitAnnouncer`).
+    /// Whether a page held still waits, and the wait line as shown (nil while a message or the glare hint
+    /// is shown in its place), for VoiceOver (`IOSWaitAnnouncer`).
     private var waitCue: IOSWaitCue {
         let steadying: Bool = model.autoShutter && model.live?.state == CaptureState.steadying
-        let covered: Bool = model.message != nil || (importer.isImporting && importer.progressText != nil)
-        return IOSWaitCue(steadying: steadying, line: covered ? nil : waitLine)
+        let hidden: Bool = model.message != nil || glareLine != nil
+        return IOSWaitCue(steadying: steadying, line: hidden ? nil : waitLine)
+    }
+
+    // MARK: Under the viewfinder
+
+    @ViewBuilder
+    private var lowerRow: some View {
+        if showsDrawer {
+            CameraDrawer(model: model, group: $drawerGroup, scanner: scanner, onExportSheet: onExportSheet,
+                         onAppleScanner: onAppleScanner)
+                .transition(.opacity)
+        } else {
+            KindsRow(onKind: onKind)
+                .transition(.opacity)
+        }
+    }
+
+    private var bottomBar: some View {
+        HStack(alignment: .center, spacing: 12) {
+            PagesStack(onPages: onPages)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            shutter
+            ImportButtons(round: true, onPresenting: setPicking)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+    }
+
+    private var shutter: some View {
+        let ring: CGFloat = ringProgress
+        let enabled: Bool = canShoot
+        return Button {
+            shoot()
+        } label: {
+            ZStack {
+                Circle()
+                    .strokeBorder(Color.accentColor, lineWidth: 3)
+                Circle()
+                    .fill(Color.accentColor)
+                    .padding(7)
+                // The automatic shutter's countdown: full when the page held still long enough.
+                Circle()
+                    .trim(from: 0, to: ring)
+                    .stroke(Color.green, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .rotationEffect(Angle.degrees(-90))
+                    .padding(1.5)
+                    .animation(Animation.linear(duration: 0.1), value: ring)
+            }
+            .frame(width: 74, height: 74)
+            .contentShape(Circle())
+        }
+        .buttonStyle(ShutterButtonStyle())
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        .keyboardShortcut(IOSShortcuts.shutter.keyboardShortcut)
+        .accessibilityLabel(Text(IOSCameraText.shutterLabel))
+        .accessibilityHint(Text(IOSCameraText.shutterHint))
+        .accessibilityIdentifier("camera.shutter")
     }
 
     /// How far the page is through the steady time, for the ring around the shutter (Auto on only).
@@ -314,87 +371,34 @@ struct CameraScreen: View {
         return CGFloat(update.progress)
     }
 
-    private var bottomBar: some View {
-        let count: Int = state.scannedPages.count
-        let last: CGImage? = state.scannedPages.last?.image
-        let ring: CGFloat = ringProgress
-        return HStack(alignment: .center) {
-            Button {
-                showsPages = true
-            } label: {
-                HStack(spacing: 8) {
-                    if let image = last {
-                        Image(image, scale: 1, label: Text(IOSCameraText.lastPageLabel))
-                            .resizable()
-                            .interpolation(.high)
-                            .scaledToFit()
-                            .frame(width: 44, height: 56)
-                            .background(Color.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                            .accessibilityIdentifier("camera.lastPage")
-                    }
-                    Text(IOSCameraText.pageCount(count))
-                        .font(.footnote)
-                        .foregroundStyle(Color.white)
-                        .accessibilityIdentifier("camera.count")
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(count == 0)
-            .accessibilityHint(Text(IOSCameraText.pagesHint))
-            .accessibilityIdentifier("camera.pages")
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Button {
-                shoot()
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(Color.white)
-                        .frame(width: 64, height: 64)
-                    Circle()
-                        .stroke(Color.white, lineWidth: 4)
-                        .frame(width: 76, height: 76)
-                    // The automatic shutter's countdown: full when the page held still long enough.
-                    Circle()
-                        .trim(from: 0, to: ring)
-                        .stroke(Color.green, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                        .rotationEffect(Angle.degrees(-90))
-                        .frame(width: 76, height: 76)
-                        .animation(Animation.linear(duration: 0.1), value: ring)
-                }
-            }
-            .buttonStyle(.plain)
-            .disabled(!canShoot)
-            .keyboardShortcut(IOSShortcuts.shutter.keyboardShortcut)
-            .opacity(canShoot ? 1 : 0.4)
-            .accessibilityLabel(Text(IOSCameraText.shutterLabel))
-            .accessibilityHint(Text(IOSCameraText.shutterHint))
-            .accessibilityIdentifier("camera.shutter")
-            ImportButtons(onDark: true, onPresenting: rest)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+    // MARK: The camera's life
+
+    /// The automatic shutter's way into the import, then the camera, resting first when it is covered.
+    private func start() {
+        let shown: IOSCameraModel = model
+        let session: IOSImportSession = importer
+        let appState: AppState = state
+        // Read at each shot: a kind picked meanwhile changes it.
+        shown.onAutoShot = { (shot: IOSCameraShot) async -> Void in
+            _ = await session.importShot(shot, asksOnlyWhenUnsure: IOSShell.capturesContinuously(appState.settings))
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 12)
+        shown.canTakePage = { () -> Bool in
+            !session.isImporting && session.canImport
+        }
+        shown.apply(covered ? IOSCameraEvent.reviewStarted : IOSCameraEvent.reviewEnded)
+        Task { @MainActor in
+            await shown.appear()
+        }
     }
 
-    private func openTasks() {
-        showsTasks = true
+    /// The session stops while something covers the camera (the corner editor among them) and runs again
+    /// once nothing does.
+    private var covered: Bool {
+        resting || picking || importer.cornerRequest != nil
     }
 
-    private func closeTasks() {
-        showsTasks = false
-    }
-
-    private func closePages() {
-        showsPages = false
-    }
-
-    /// The session stops while something covers the camera (as for the corner editor) and runs again once
-    /// nothing does.
-    private func rest(_ covered: Bool) {
-        let reviewing: Bool = covered || importer.cornerRequest != nil
-        model.apply(reviewing ? IOSCameraEvent.reviewStarted : IOSCameraEvent.reviewEnded)
+    private func setPicking(_ shown: Bool) {
+        picking = shown
     }
 
     /// The camera is live, no photo is being taken or read, and the queue can take a page.
@@ -414,17 +418,111 @@ struct CameraScreen: View {
         }
     }
 
-    private func answerCorners(_ answer: PhotoCornersAnswer) {
-        importer.answer(answer)
-    }
-
-    private func stopImport() {
-        importer.stop()
-    }
-
     private func openSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url, options: [:], completionHandler: nil)
+    }
+}
+
+/// The viewfinder's status line: its words, what VoiceOver says after them, and its identifier.
+private struct CameraStatus {
+    let text: String
+    let hint: String?
+    let identifier: String
+}
+
+/// A line on a dark capsule over the viewfinder.
+private struct StatusPill: View {
+    let text: String
+    let hint: String?
+
+    var body: some View {
+        Text(text)
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(Color.white)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(Color.black.opacity(0.55)))
+            .accessibilityHint(Text(hint ?? ""))
+    }
+}
+
+/// The pages taken, as the last one on a stack with the count on a badge; it opens the page strip. It
+/// bumps and a tap is felt as a page comes in.
+private struct PagesStack: View {
+    @EnvironmentObject private var state: AppState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion: Bool
+    let onPages: () -> Void
+    @State private var bumped: Bool = false
+
+    var body: some View {
+        let count: Int = state.scannedPages.count
+        Button {
+            onPages()
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                stack(count: count)
+                    .scaleEffect(bumped ? 1.2 : 1)
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.caption.weight(.bold))
+                        .monospacedDigit()
+                        .foregroundStyle(Color.white)
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 20, minHeight: 20)
+                        .background(Capsule().fill(Color.accentColor))
+                        .offset(x: 8, y: -6)
+                }
+            }
+            .frame(width: 56, height: 64)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(count == 0)
+        .onChange(of: count) { (old: Int, new: Int) in
+            guard new > old, !reduceMotion else { return }
+            withAnimation(.spring(duration: 0.15)) {
+                bumped = true
+            } completion: {
+                withAnimation(.spring(duration: 0.55, bounce: 0.25)) {
+                    bumped = false
+                }
+            }
+        }
+        .sensoryFeedback(SensoryFeedback.impact(weight: SensoryFeedback.Weight.light), trigger: count) { (old: Int, new: Int) -> Bool in
+            new > old
+        }
+        .accessibilityLabel(Text(IOSCameraText.pageCount(count)))
+        .accessibilityHint(Text(IOSCameraText.pagesHint))
+        .accessibilityIdentifier("camera.pages")
+    }
+
+    @ViewBuilder
+    private func stack(count: Int) -> some View {
+        ZStack {
+            if count > 1 {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Color(uiColor: .systemGray5))
+                    .frame(width: 42, height: 54)
+                    .rotationEffect(Angle.degrees(5))
+                    .offset(x: 4, y: -4)
+            }
+            if let image = state.scannedPages.last?.image {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 42, height: 54)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .shadow(color: Color.black.opacity(0.3), radius: 2, y: 1)
+            } else {
+                RoundedRectangle(cornerRadius: 5)
+                    .strokeBorder(Color(uiColor: .tertiaryLabel), style: StrokeStyle(lineWidth: 1, dash: [3]))
+                    .frame(width: 42, height: 54)
+            }
+        }
     }
 }
 

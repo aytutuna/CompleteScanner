@@ -6,23 +6,24 @@ import SwiftUI
 import UIKit
 
 /// The app's window: on a compact width (iPhone, a narrow iPad window) the scan screen, set up at launch
-/// for the task used last (`IOSShell.launchTask`) with our camera opened at once where it can be used
-/// (`IOSShell.cameraOnOpen`; the first time, after a card saying why) unless the phone is in printer mode
-/// (`IOSShell.scanModeKey`), the kinds in its top row and the
-/// library pushed; on a regular width (iPad, `IOSLayout.usesSidebar`) a sidebar with the tasks, the
-/// presets, the scanners and the library beside the scan screen (or the start screen, the presets, the
-/// scans or the saved files). Settings opens as a sheet (Command-comma). Also the share sheet, Mail's
-/// composer and the Quick Look preview the file actions ask for (`FileActionPresenters`, which the Settings
-/// sheet has too), the scan screen's covers (`ScanCovers`, kept here so they outlive a change of layout),
-/// the corner editor of an imported photo, the troubleshooter,
-/// the question about a network scanner's changed certificate, and the error alert (with Troubleshoot
-/// when it is about a scanner; in the Settings sheet it opens Settings' own troubleshooter). It keeps the
-/// screen on while a network scanner's job runs, and keeps the selected scanner on the mode: in printer mode
-/// the remembered scanner once it is listed, else none, so no scanner's limits apply to the camera. Photos
-/// and PDFs opened in this app from another one ("Open in CompleteScanner") are imported: into the task set
-/// up when it takes photos (`IOSShell.takesPhotos`), else into Document to PDF; while an import runs they wait for it (`IOSImportSession`). A CompleteScanner
-/// document (`.csdoc`, I18) is not imported: the scan screen offers it on its banner. Leaving the scan screen
-/// stops an import and closes the scan screen's covers. The scan screen opens the photo and ID card reviews.
+/// for the task used last (`IOSShell.launchTask`), in the mode kept in the user's defaults
+/// (`IOSShell.scanModeKey`): camera mode, the viewfinder as the screen, where the first time a card says
+/// why the camera is asked for before iOS asks (`IOSShell.cameraOnOpen`), or printer mode; the library is
+/// pushed, with Settings in its toolbar. On a regular width (iPad, `IOSLayout.usesSidebar`) a sidebar with
+/// the tasks, the presets, the scanners and the library beside the scan screen (or the start screen, the
+/// presets, the scans or the saved files). Settings opens as a sheet (Command-comma). Also the share
+/// sheet, Mail's composer and the Quick Look preview the file actions ask for (`FileActionPresenters`,
+/// which the Settings sheet has too), the scan screen's covers (`ScanCovers`, kept here so they outlive a
+/// change of layout), the corner editor of an imported photo or a photo from the camera, the
+/// troubleshooter, the question about a network scanner's changed certificate, and the error alert (with
+/// Troubleshoot when it is about a scanner; in the Settings sheet it opens Settings' own troubleshooter).
+/// It keeps the screen on while a network scanner's job runs, and keeps the selected scanner on the mode:
+/// in printer mode the remembered scanner once it is listed, else none, so no scanner's limits apply to
+/// the camera. Photos and PDFs opened in this app from another one ("Open in CompleteScanner") are
+/// imported: into the task set up when it takes photos (`IOSShell.takesPhotos`), else into Document to
+/// PDF; while an import runs they wait for it (`IOSImportSession`). A CompleteScanner document (`.csdoc`,
+/// I18) is not imported: the scan screen offers it on its banner. Leaving the scan screen stops an import
+/// and closes the scan screen's covers. The scan screen opens the photo and ID card reviews.
 public struct IOSRootView: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.horizontalSizeClass) private var sizeClass: UserInterfaceSizeClass?
@@ -97,6 +98,7 @@ public struct IOSRootView: View {
         }
         .onChange(of: mode) { (_: IOSScanMode, _: IOSScanMode) in
             followMode()
+            introduceCamera()
         }
         .environmentObject(importer)
         .task {
@@ -107,6 +109,11 @@ public struct IOSRootView: View {
         }
         .modifier(FileActionPresenters(fileActions: fileActions, state: state))
         .modifier(ScanCovers(state: state, importer: importer, cover: $scanCover, spreadEditor: $spreadEditor))
+        .overlay {
+            if showsCameraIntro && showsScanner {
+                CameraIntroCard(onContinue: continueToCamera)
+            }
+        }
         .fullScreenCover(item: cornerRequest) { (request: PhotoCornersRequest) in
             CornerEditorView(request: request, onAnswer: answerCorners, onStop: stopImport)
         }
@@ -135,15 +142,10 @@ public struct IOSRootView: View {
     private var stackLayout: some View {
         NavigationStack {
             ScanScreen(picker: picker, cover: $scanCover, spreadEditor: $spreadEditor, onOpenSettings: openSettings,
-                       onOpenLibrary: openLibrary)
+                       onOpenLibrary: openLibrary, waitsForIntro: showsCameraIntro)
                 .navigationDestination(isPresented: $showsLibrary) {
-                    LibraryScreen()
+                    LibraryScreen(onOpenSettings: openSettings)
                 }
-        }
-        .overlay {
-            if showsCameraIntro {
-                CameraIntroCard(onContinue: continueToCamera)
-            }
         }
     }
 
@@ -163,7 +165,8 @@ public struct IOSRootView: View {
     @ViewBuilder
     private var splitDetail: some View {
         if showsScanner {
-            ScanScreen(picker: picker, cover: $scanCover, spreadEditor: $spreadEditor, pickerInSidebar: true)
+            ScanScreen(picker: picker, cover: $scanCover, spreadEditor: $spreadEditor, pickerInSidebar: true,
+                       waitsForIntro: showsCameraIntro)
         } else {
             switch detail {
             case .start:
@@ -203,32 +206,20 @@ public struct IOSRootView: View {
         showsLibrary = true
     }
 
-    /// Our camera at once on the iPhone, for a task that takes photos where the camera can be used; the
-    /// first time, the card saying why comes before iOS asks for it. Not in printer mode, even before its
-    /// scanner is found again.
-    private func openCameraAtOnce() {
-        guard !IOSLayout.usesSidebar(sizeClass, pad: isPad), scanCover == nil, importer.canImport else { return }
+    /// In camera mode, the first time, the card saying why the camera is asked for comes before iOS asks
+    /// for it; the viewfinder waits for it. Not under `-demoScanner`, nor where the camera cannot be used.
+    private func introduceCamera() {
         let action: IOSCameraOnOpen = IOSShell.cameraOnOpen(
             offersCamera: mode == .camera && IOSShell.offersOwnCamera(state.settings),
             camera: IOSCameraAvailability.ownCamera,
             authorization: AVCaptureDevice.authorizationStatus(for: .video), introShown: cameraIntroShown,
             demo: demoScanner)
-        switch action {
-        case .open:
-            scanCover = .camera
-        case .introduce:
-            showsCameraIntro = true
-        case .stay:
-            break
-        }
+        showsCameraIntro = action == .introduce
     }
 
     private func continueToCamera() {
         cameraIntroShown = true
         showsCameraIntro = false
-        if scanCover == nil && importer.canImport {
-            scanCover = .camera
-        }
     }
 
     private func closeSettings() {
@@ -289,12 +280,12 @@ public struct IOSRootView: View {
             && !importer.isImporting && scanCover == nil
     }
 
-    /// The corner editor waiting for an answer; closing it any other way skips the photo. While our
-    /// camera's screen is open it shows the editor itself (`editorInCamera`), so none is presented here.
+    /// The corner editor waiting for an answer, over camera mode too, whose camera rests meanwhile; closing
+    /// it any other way skips the photo.
     private var cornerRequest: Binding<PhotoCornersRequest?> {
         let session: IOSImportSession = importer
         return Binding<PhotoCornersRequest?>(
-            get: { session.editorInCamera ? nil : session.cornerRequest },
+            get: { session.cornerRequest },
             set: { (request: PhotoCornersRequest?) in
                 if request == nil {
                     session.answer(PhotoCornersAnswer.skip)
@@ -347,8 +338,8 @@ public struct IOSRootView: View {
             }
         } else if !IOSLayout.usesSidebar(sizeClass, pad: isPad) {
             showsScanner = true
-            openCameraAtOnce()
         }
+        introduceCamera()
     }
 
     /// Files opened in this app: a CompleteScanner document to the scan screen's banner, the others
@@ -373,15 +364,12 @@ public struct IOSRootView: View {
 
     /// A `.csdoc` opened in this app, offered on the scan screen's banner. Document to PDF is set up when no
     /// task is; a task set up is kept (an ID card half taken, say), and the banner says when it does not
-    /// collect pages. Our camera closes so the banner is seen.
+    /// collect pages.
     private func openPackage(_ url: URL) {
         if state.activeTask == nil {
             _ = state.startTask(.document)
         }
         openScanner()
-        if scanCover == .camera {
-            scanCover = nil
-        }
         let appState: AppState = state
         Task { @MainActor in
             await IOSShell.openPackage(url, in: appState)
@@ -413,7 +401,7 @@ public struct IOSRootView: View {
     }
 }
 
-/// The card over the scan screen before iOS first asks for the camera, so the question has a reason.
+/// The card over the viewfinder before iOS first asks for the camera, so the question has a reason.
 private struct CameraIntroCard: View {
     let onContinue: () -> Void
 
@@ -537,8 +525,8 @@ private struct CertificateQuestion: View {
 
 /// The error alert: `state.errorMessage` as its title and message (as on the Mac), cleared when it is
 /// dismissed; Troubleshoot opens the troubleshooter when the error is about a scanner that would not
-/// connect or scan. The root view has it, and so does our camera's screen, since the root's alert cannot
-/// show over the full-screen cover the camera is in.
+/// connect or scan. The root view has it, and so do the sheets that need it, since the root's alert cannot
+/// show over them.
 @MainActor
 struct ErrorAlert: ViewModifier {
     @ObservedObject var state: AppState

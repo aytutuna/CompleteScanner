@@ -213,9 +213,6 @@ public final class IOSImportSession: ObservableObject {
     @Published public private(set) var progressText: String?
     /// What the last import did.
     public private(set) var lastOutcome: IOSImportOutcome?
-    /// Our camera's screen is open and shows the corner editor itself, so the root view does not present
-    /// it over the camera (`CameraScreen` sets it while it is shown).
-    @Published public var editorInCamera: Bool = false
 
     private let state: AppState
     private let finder: @Sendable (RgbaImage) -> IOSFoundPage

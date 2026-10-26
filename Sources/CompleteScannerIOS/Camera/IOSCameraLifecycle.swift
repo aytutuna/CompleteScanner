@@ -185,6 +185,18 @@ public enum IOSCameraText {
     /// The automatic shutter's toggle.
     public static let autoLabel = "Auto"
     public static let autoHint = "Takes each page once it holds still"
+    /// The automatic shutter's switch in the options drawer.
+    public static let autoShutterLabel = "Auto shutter"
+    /// The status line while a page holds still for the automatic shutter.
+    public static let pageFound = "Page found \u{00B7} hold still"
+    /// The chevron that swaps the kinds for the options drawer.
+    public static let showOptions = "Show options"
+    public static let hideOptions = "Hide options"
+    /// Camera mode's button to printer mode, and its hint.
+    public static let printerLabel = "Scanner"
+    public static let printerHint = "Scans with a scanner instead of the camera"
+    /// Printer mode's button back to the camera.
+    public static let cameraModeHint = "Takes the pages with the camera"
     /// The scan screen's Camera button, whether Auto is on or off.
     public static let cameraHint = "Opens the camera to take pages"
     /// A toggle's spoken value (Auto, the torch).

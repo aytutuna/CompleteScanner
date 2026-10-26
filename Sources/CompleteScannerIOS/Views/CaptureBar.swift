@@ -5,28 +5,16 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// The capture bar along the bottom of the scan screen: the last page taken with how many the queue holds
-/// (it opens the page strip in a sheet, `onPages`, and bumps with a tap felt as a page comes in), the
-/// shutter, which opens our own camera (`CameraScreen`, the default way to take pages on every task that
-/// takes photos; its screen says why when there is no camera or access is off) while the camera is the
-/// source, or scans (`onScan`, the scanner's symbol on its core) while a scanner picked in the Scanner
-/// options is, and Photos and Files (`ImportButtons`). Imported photos go to the corner editor one by one
-/// (`IOSImportSession`); the root view shows it. While an import runs, its progress shows with Stop. Apple's document scanner is
-/// in the Scanner options under Camera (`AppleScannerRow`).
+/// The capture bar of the printer screen: the last page with how many the queue holds (it opens the page
+/// strip in a sheet, `onPages`, and bumps with a tap felt as a page comes in) and Photos and Files
+/// (`ImportButtons`), with an import's progress and Stop above them while one runs. Imported photos go to
+/// the corner editor one by one (`IOSImportSession`); the root view shows it. Scan is on the action row
+/// beside Save, and the camera's shutter is camera mode's (`CameraScreen`).
 struct CaptureBar: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
     @Environment(\.accessibilityReduceMotion) private var reduceMotion: Bool
 
-    /// Whether our own camera is offered (the task takes photos, and no scanner is the source).
-    let offersCamera: Bool
-    /// Opens our own camera.
-    let onCamera: @MainActor () -> Void
-    /// Scans, while a scanner is the source (the shutter then scans instead of opening the camera); nil
-    /// while the camera is.
-    let onScan: (@MainActor () -> Void)?
-    /// Whether the scanner can scan now: it is connected and nothing else runs.
-    let canScan: Bool
     /// Opens the page strip.
     let onPages: @MainActor () -> Void
 
@@ -37,40 +25,13 @@ struct CaptureBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let progress = importer.progressText {
-                HStack(spacing: 6) {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                        Text(progress)
-                            .font(.caption)
-                            .foregroundStyle(Color.secondary)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("import.progress")
-                    Spacer(minLength: 0)
-                    if importer.isImporting {
-                        Button(role: .cancel) {
-                            importer.stop()
-                        } label: {
-                            Text(IOSImportText.stopLabel)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .accessibilityHint(Text("Ends the import after this photo"))
-                        .accessibilityIdentifier("import.stop")
-                    }
-                }
+            if importer.progressText != nil {
+                ImportProgressRow()
             }
             HStack(alignment: .center, spacing: 12) {
                 pagesButton
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if onScan != nil {
-                    scanButton
-                } else if offersCamera {
-                    shutterButton
-                }
                 ImportButtons()
-                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
     }
@@ -127,55 +88,6 @@ struct CaptureBar: View {
         .accessibilityIdentifier("capture.pages")
     }
 
-    /// Our own camera, the default way to take pages; its screen says why when there is no camera or
-    /// access is off.
-    private var shutterButton: some View {
-        Button {
-            onCamera()
-        } label: {
-            shutter(symbol: nil)
-        }
-        .buttonStyle(ShutterButtonStyle())
-        .disabled(!importer.canImport)
-        .opacity(importer.canImport ? 1 : 0.4)
-        .accessibilityLabel(Text(IOSImportText.cameraLabel))
-        .accessibilityHint(Text(IOSCameraText.cameraHint))
-        .accessibilityIdentifier("capture.camera")
-    }
-
-    /// The same shutter while a scanner is the source: it scans, named for the step ("Scan page").
-    private var scanButton: some View {
-        Button {
-            onScan?()
-        } label: {
-            shutter(symbol: "scanner")
-        }
-        .buttonStyle(ShutterButtonStyle())
-        .disabled(!canScan)
-        .opacity(canScan ? 1 : 0.4)
-        .accessibilityLabel(Text(state.primaryActionLabel))
-        .accessibilityIdentifier("scan.button")
-    }
-
-    private func shutter(symbol: String?) -> some View {
-        ZStack {
-            Circle()
-                .strokeBorder(Color.accentColor, lineWidth: 3)
-            // The ring, then a gap as wide, then the core.
-            Circle()
-                .fill(Color.accentColor)
-                .padding(6)
-            if let name = symbol {
-                Image(systemName: name)
-                    .font(.title2)
-                    .foregroundStyle(Color.white)
-                    .accessibilityHidden(true)
-            }
-        }
-        .frame(width: 66, height: 66)
-        .contentShape(Circle())
-    }
-
     /// The picked photos in the order picked, each loaded only when its turn comes (`load`), so one
     /// photo's bytes are in memory at a time.
     static func sources(_ items: [PhotosPickerItem]) -> [IOSImportSource] {
@@ -204,15 +116,45 @@ struct CaptureBar: View {
     }
 }
 
+/// An import's progress ("Importing photo 2 of 5…") with Stop while it runs, on the capture bar and over
+/// camera mode's viewfinder.
+struct ImportProgressRow: View {
+    @EnvironmentObject private var importer: IOSImportSession
+
+    var body: some View {
+        HStack(spacing: 6) {
+            HStack(spacing: 6) {
+                ProgressView()
+                Text(importer.progressText ?? "")
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("import.progress")
+            Spacer(minLength: 0)
+            if importer.isImporting {
+                Button(role: .cancel) {
+                    importer.stop()
+                } label: {
+                    Text(IOSImportText.stopLabel)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityHint(Text("Ends the import after this photo"))
+                .accessibilityIdentifier("import.stop")
+            }
+        }
+    }
+}
+
 /// Photos (the system's photo picker, several in the order picked) and Files (photos and PDFs, and a
 /// CompleteScanner document, which goes to the scan screen's banner instead), as icons on the capture bar
-/// and, white on black with their names (`onDark`), on our camera's screen, which rests its camera while one is open (`onPresenting`)
-/// and offers no CompleteScanner document, as its banner would be hidden under the camera.
-/// Each picked photo is loaded only when its turn comes.
+/// and, in grey circles (`round`), on camera mode's bar, which rests its camera while one is open
+/// (`onPresenting`). Each picked photo is loaded only when its turn comes.
 struct ImportButtons: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
-    var onDark: Bool = false
+    var round: Bool = false
     /// Photos or Files opened (true) or closed.
     var onPresenting: (@MainActor (Bool) -> Void)?
 
@@ -243,7 +185,7 @@ struct ImportButtons: View {
         .photosPicker(isPresented: $showsPhotos, selection: $picked, maxSelectionCount: CaptureBar.maxPicked,
                       selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .current)
         .fileImporter(isPresented: $showsFiles,
-                      allowedContentTypes: onDark ? [UTType.image, UTType.pdf] : [UTType.image, UTType.pdf, IOSShell.packageType],
+                      allowedContentTypes: [UTType.image, UTType.pdf, IOSShell.packageType],
                       allowsMultipleSelection: true) { (result: Result<[URL], Error>) in
             switch result {
             case .success(let urls):
@@ -282,22 +224,22 @@ struct ImportButtons: View {
     }
 
     private func label(_ title: String, symbol: String) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: symbol)
-                .font(.title3)
-            if onDark {
-                Text(title)
-                    .font(.caption2)
+        Image(systemName: symbol)
+            .font(round ? Font.body : Font.title3)
+            .foregroundStyle(round ? Color.primary : Color.accentColor)
+            .frame(width: 44, height: 44)
+            .background {
+                if round {
+                    Circle()
+                        .fill(Color(uiColor: .tertiarySystemFill))
+                }
             }
-        }
-        .foregroundStyle(onDark ? Color.white : Color.accentColor)
-        .frame(minWidth: onDark ? 56 : 44, minHeight: onDark ? 48 : 44)
-        .contentShape(Rectangle())
+            .contentShape(Rectangle())
     }
 }
 
 /// The shutter shrinks while pressed; with Reduce Motion it only dims.
-private struct ShutterButtonStyle: ButtonStyle {
+struct ShutterButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion: Bool
 
     func makeBody(configuration: Configuration) -> some View {
@@ -308,9 +250,8 @@ private struct ShutterButtonStyle: ButtonStyle {
     }
 }
 
-/// Apple's document scanner on the Document, Email and Word tasks: a secondary way in, in the scan
-/// screen's Scanner options while the camera is the source, dimmed with one short line where it cannot run
-/// (as in the Simulator).
+/// Apple's document scanner on the Document, Email and Word tasks: a secondary way in, in camera mode's
+/// options drawer (Camera), dimmed with one short line where it cannot run (as in the Simulator).
 struct AppleScannerRow: View {
     @EnvironmentObject private var importer: IOSImportSession
     /// Whether Apple's scanner can be opened here.

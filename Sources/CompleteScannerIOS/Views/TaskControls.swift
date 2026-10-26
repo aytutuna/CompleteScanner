@@ -332,15 +332,7 @@ struct ExportOptions: View {
                 PDFOptionsSection()
             }
         }
-        Section {
-            ForEach(IOSAfterSave.rows) { (action: IOSAfterSave) in
-                AfterSaveRow(action: action)
-            }
-        } header: {
-            Text(IOSAfterSave.title)
-        } footer: {
-            Text(IOSAfterSave.footer)
-        }
+        AfterSaveSection()
     }
 
     /// The segment's short name: "PDF", "JPEG", "Word", "Text".
@@ -380,6 +372,22 @@ struct ExportOptions: View {
             set: { (on: Bool) in
                 appState.settings = IOSShell.settingEachPage(on, in: appState.settings)
             })
+    }
+}
+
+/// After saving (`IOSAfterSave`): what Save also does, each a check. In the Export sheet, and on its own
+/// from Save's menu.
+struct AfterSaveSection: View {
+    var body: some View {
+        Section {
+            ForEach(IOSAfterSave.rows) { (action: IOSAfterSave) in
+                AfterSaveRow(action: action)
+            }
+        } header: {
+            Text(IOSAfterSave.title)
+        } footer: {
+            Text(IOSAfterSave.footer)
+        }
     }
 }
 

@@ -31,7 +31,7 @@ public struct IOSShortcut: Equatable {
 
 /// The keyboard shortcuts, as the iPad's Command key overlay lists them: Command-S saves the pages,
 /// Command-N starts a new document (Separate documents), Command-comma opens Settings, Space takes a photo
-/// while the camera is up (Escape closes it).
+/// in camera mode.
 public enum IOSShortcuts {
     public static let save = IOSShortcut(key: "s", command: true, title: "Save")
     public static let newDocument = IOSShortcut(key: "n", command: true, title: "New document")

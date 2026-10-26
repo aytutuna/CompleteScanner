@@ -1,12 +1,22 @@
 #if os(iOS)
 import AVFoundation
+import CoreGraphics
 import XCTest
 @testable import CompleteScannerIOS
 @testable import CompleteScannerKit
 
-// How the iPhone opens: the task it starts on, whether our camera opens by itself (and when the card saying
-// why comes first), and when the scan screen keeps the step card; what the task sheet asks (the kinds) and
-// the scan screen's options that change the task under the hood.
+// How the iPhone opens: the task it starts on, whether the card saying why the camera is asked for comes
+// first, and when the scan screen keeps the step card; the kinds (the printer screen's chips and camera
+// mode's row), camera mode's options drawer and its floating Save, and the scan screen's options that change
+// the task under the hood.
+
+/// A white page of the test's own.
+private func flowPage() -> ScannedPage {
+    let context: CGContext = ImportTestSupport.context(width: 30, height: 40)
+    context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 30, height: 40))
+    return ScannedPage(image: context.makeImage()!, dpi: 60, colorMode: .color)
+}
 
 final class IOSFlowTests: XCTestCase {
     func test_launchTask_isTheOneSetUpLastTime_elseDocumentToPDF() {
@@ -238,6 +248,49 @@ final class IOSFlowTests: XCTestCase {
             s.format = format
             XCTAssertEqual(IOSShell.exportFormat(s), shown, format.rawValue)
         }
+    }
+
+    // MARK: Camera mode
+
+    func test_cameraKinds_putDocumentInTheMiddle_eachKindOnce() {
+        XCTAssertEqual(IOSShell.cameraKinds, [.photos, .receipts, .document, .idCard, .book, .text])
+        XCTAssertEqual(Set(IOSShell.cameraKinds), Set(IOSScanKind.allCases))
+        var cards: [TaskCard] = []
+        for definition in TaskCatalog.all {
+            cards.append(TaskCard(definition: definition, availability: .available, isCurrent: false, summary: ""))
+        }
+        let tiles: [IOSKindTile] = IOSShell.kindTiles(cards, current: .document, order: IOSShell.cameraKinds)
+        XCTAssertEqual(tiles.map(\.kind), IOSShell.cameraKinds)
+        XCTAssertEqual(tiles.filter(\.isCurrent).map(\.kind), [.document])
+    }
+
+    func test_drawerGroups_followWhatIsSaved() {
+        let document: ScanSettings = TaskCatalog.apply(.document, to: ScanSettings())
+        XCTAssertEqual(CameraDrawerGroup.shown(document), [.export, .colour, .quality, .flash, .camera])
+        var jpeg: ScanSettings = document
+        jpeg.format = .jpeg
+        XCTAssertEqual(CameraDrawerGroup.shown(jpeg), [.export, .colour, .flash, .camera])
+        // Photos are saved from their review: nothing to export here.
+        let photos: ScanSettings = TaskCatalog.apply(.photos, to: ScanSettings())
+        XCTAssertEqual(CameraDrawerGroup.shown(photos), [.colour, .flash, .camera])
+        for group in CameraDrawerGroup.allCases {
+            XCTAssertFalse(group.title.isEmpty, group.rawValue)
+            XCTAssertFalse(group.symbol.isEmpty, group.rawValue)
+        }
+    }
+
+    func test_floatingSave_saysTheFormatAndThePages() {
+        let document: ScanSettings = TaskCatalog.apply(.document, to: ScanSettings())
+        let plan: SavePlan = SavePlan.make([flowPage(), flowPage(), flowPage()], options: document.document)
+        XCTAssertEqual(IOSShell.floatingSaveTitle(document, plan: plan, target: nil), "Save PDF \u{00B7} 3")
+        var word: ScanSettings = document
+        word.format = .word
+        XCTAssertEqual(IOSShell.floatingSaveTitle(word, plan: plan, target: nil), "Save Word \u{00B7} 3")
+        var jpeg: ScanSettings = document
+        jpeg.format = .jpeg
+        XCTAssertEqual(IOSShell.floatingSaveTitle(jpeg, plan: plan, target: nil), "Save 3 JPEGs")
+        let target = URL(fileURLWithPath: "/tmp/Contract.pdf")
+        XCTAssertEqual(IOSShell.floatingSaveTitle(document, plan: plan, target: target), "Add to Contract.pdf")
     }
 }
 #endif

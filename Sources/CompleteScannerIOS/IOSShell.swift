@@ -176,10 +176,10 @@ public enum IOSShell {
     /// The user's defaults key: the card saying why the camera is asked for was shown (`cameraOnOpen`).
     public static let cameraIntroKey = "camera.introShown"
 
-    /// What the iPhone does with our camera when the scan screen opens at launch: opens it for a task that
-    /// takes photos where it can be used, first with the card saying why while iOS has not asked for the
-    /// camera yet and the card was never shown; stays on the scan screen without a camera (the Simulator),
-    /// with access off or not allowed, and under `-demoScanner` (the UI tests).
+    /// What camera mode does at launch or when it is switched to: the card saying why the camera is asked
+    /// for while iOS has not asked yet and the card was never shown (the viewfinder waits for it); otherwise
+    /// the camera at once where it can be used. Nothing without a camera (the Simulator), with access off or
+    /// not allowed, in printer mode and under `-demoScanner` (the UI tests): the viewfinder says why itself.
     public static func cameraOnOpen(offersCamera: Bool, camera: IOSCameraAvailability, authorization: AVAuthorizationStatus,
                                     introShown: Bool, demo: Bool) -> IOSCameraOnOpen {
         guard !demo, offersCamera, camera.isAvailable else { return .stay }
@@ -322,6 +322,23 @@ public enum IOSShell {
         }
         return plan.saveTitle(settings.format)
     }
+
+    /// The Save button floating on camera mode's viewfinder: the format's own words and the pages to save
+    /// ("Save PDF · 3"); a split queue's own title ("Save 2 PDFs (5 pages)"), "Add to Contract.pdf" while
+    /// the pages go into a PDF picked, and "Save 3 JPEGs" for pictures, as the printer screen's Save says.
+    public static func floatingSaveTitle(_ settings: ScanSettings, plan: SavePlan, target: URL?) -> String {
+        if let target {
+            return PDFAppender.saveTitle(target.lastPathComponent)
+        }
+        if savesImages(settings) || plan.isSplit {
+            return saveTitle(settings, plan: plan)
+        }
+        return "\(settings.format.saveTitle) \u{00B7} \(plan.pageCount)"
+    }
+
+    /// The kinds in camera mode's row under the viewfinder, Document in the middle as the Camera app has
+    /// Photo among its modes.
+    public static let cameraKinds: [IOSScanKind] = [.photos, .receipts, .document, .idCard, .book, .text]
 
     /// The `.csdoc` type the app declares (Info.plist's UTExportedTypeDeclarations), which Files offers
     /// beside photos and PDFs.
@@ -495,11 +512,12 @@ public enum IOSShell {
         kind(of: TaskCatalog.infer(settings))
     }
 
-    /// The task sheet's tiles and the iPad sidebar's rows: one per kind, in order, each as its task's card
-    /// can be picked.
-    public static func kindTiles(_ cards: [TaskCard], current: IOSScanKind) -> [IOSKindTile] {
+    /// The printer screen's chips, the iPad sidebar's rows and camera mode's kinds (`cameraKinds`): one per
+    /// kind, in `order`, each as its task's card can be picked.
+    public static func kindTiles(_ cards: [TaskCard], current: IOSScanKind,
+                                 order: [IOSScanKind] = IOSScanKind.allCases) -> [IOSKindTile] {
         var tiles: [IOSKindTile] = []
-        for kind in IOSScanKind.allCases {
+        for kind in order {
             guard let card = cards.first(where: { (candidate: TaskCard) -> Bool in
                 candidate.definition.task == kind.task
             }) else { continue }
@@ -706,7 +724,7 @@ public struct IOSKindTile: Identifiable, Equatable {
     public var accessibilityValue: String { isCurrent ? "Current" : "" }
 }
 
-/// What the scan screen does with our camera when it opens (`IOSShell.cameraOnOpen`).
+/// What camera mode does with our camera when it opens (`IOSShell.cameraOnOpen`).
 public enum IOSCameraOnOpen: Equatable, Sendable {
     case open
     /// The card saying why the camera is asked for, then the camera.
