@@ -142,6 +142,8 @@ struct PageViewer: View {
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
+        // The page being cropped stays on screen while its photo is read.
+        .allowsHitTesting(!preparesCrop)
         .accessibilityIdentifier("viewer.pages")
     }
 
@@ -323,7 +325,8 @@ struct PageViewer: View {
             let request: IOSCropRequest? = await cropRequest(id: id, name: name)
             preparesCrop = false
             if let request {
-                cropRotation = current?.rotationQuarterTurns ?? 0
+                let cropped: ScannedPage? = state.scannedPages.first(where: { (page: ScannedPage) -> Bool in page.id == id })
+                cropRotation = cropped?.rotationQuarterTurns ?? 0
                 crop = request
             } else {
                 state.errorMessage = PageRecut.failedMessage
