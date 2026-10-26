@@ -276,7 +276,8 @@ The app itself (one universal app for iPhone and iPad; on the iPhone it opens st
 whose viewfinder is the scan screen, with the last task used set up and what you scan (Photos, Receipts,
 Document, ID card, Book or Text) in a snapping row under it, a chevron that swaps that row for a drawer
 of options (export, colour, quality, flash, camera) and Save floating over the picture once there are
-pages; a printer button switches to printer mode, where one scanner is picked in the Scanner sheet and
+pages; the pages taken stay when you switch between Document and Book, and any other kind asks first
+whether to save them or discard them; a printer button switches to printer mode, where one scanner is picked in the Scanner sheet and
 Scan sits beside Save, and a camera button switches back, the scanner kept for next time; Print… and
 Email… in Save's menu, and what runs after each save (Email, Print, Send to PC) under After saving;
 so far the Demo Scanner,
