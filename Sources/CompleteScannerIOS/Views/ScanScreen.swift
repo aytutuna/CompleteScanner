@@ -103,7 +103,7 @@ struct ScanScreen: View {
 
     var body: some View {
         Group {
-            if sizeClass == .regular && !pickerInSidebar {
+            if IOSLayout.usesSidebar(sizeClass, pad: UIDevice.current.userInterfaceIdiom == .pad) && !pickerInSidebar {
                 HStack(spacing: 0) {
                     ScannerPickerList(picker: picker)
                         .frame(width: 320)
@@ -728,7 +728,7 @@ struct ScanScreen: View {
 
     /// The scanners are listed beside the screen (the iPad's sidebar, or the column of a wide window).
     private var pickerBeside: Bool {
-        pickerInSidebar || sizeClass == .regular
+        pickerInSidebar || IOSLayout.usesSidebar(sizeClass, pad: UIDevice.current.userInterfaceIdiom == .pad)
     }
 
     /// "Not encrypted" for a network scanner reached over plain HTTP after HTTPS could not be used.

@@ -195,10 +195,12 @@ final class IOSSettingsTests: XCTestCase {
 
     // MARK: The iPad
 
-    func test_layout_theSidebar_onlyOnARegularWidth() {
-        XCTAssertTrue(IOSLayout.usesSidebar(UserInterfaceSizeClass.regular))
-        XCTAssertFalse(IOSLayout.usesSidebar(UserInterfaceSizeClass.compact))
-        XCTAssertFalse(IOSLayout.usesSidebar(nil))
+    func test_layout_theSidebar_onlyOnARegularWidthOnAnIPad() {
+        XCTAssertTrue(IOSLayout.usesSidebar(UserInterfaceSizeClass.regular, pad: true))
+        XCTAssertFalse(IOSLayout.usesSidebar(UserInterfaceSizeClass.compact, pad: true))
+        XCTAssertFalse(IOSLayout.usesSidebar(nil, pad: true))
+        // A large iPhone turned sideways is regular too, and keeps the phone's layout.
+        XCTAssertFalse(IOSLayout.usesSidebar(UserInterfaceSizeClass.regular, pad: false))
     }
 
     @MainActor

@@ -66,7 +66,7 @@ public struct IOSRootView: View {
 
     public var body: some View {
         Group {
-            if IOSLayout.usesSidebar(sizeClass) {
+            if IOSLayout.usesSidebar(sizeClass, pad: isPad) {
                 sidebarLayout
             } else {
                 stackLayout
@@ -203,7 +203,7 @@ public struct IOSRootView: View {
     /// first time, the card saying why comes before iOS asks for it. Not with a scanner picked as the
     /// source, even before that scanner is found again.
     private func openCameraAtOnce() {
-        guard !IOSLayout.usesSidebar(sizeClass), scanCover == nil, importer.canImport else { return }
+        guard !IOSLayout.usesSidebar(sizeClass, pad: isPad), scanCover == nil, importer.canImport else { return }
         let action: IOSCameraOnOpen = IOSShell.cameraOnOpen(
             offersCamera: source.isEmpty && IOSShell.offersOwnCamera(state.settings),
             camera: IOSCameraAvailability.ownCamera,
@@ -310,6 +310,10 @@ public struct IOSRootView: View {
         showsLibrary = false
     }
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     private func startOnce() {
         guard !started else { return }
         started = true
@@ -334,7 +338,7 @@ public struct IOSRootView: View {
                 await IOSRootView.settle(pushed)
                 await session.importItems(items)
             }
-        } else if !IOSLayout.usesSidebar(sizeClass) {
+        } else if !IOSLayout.usesSidebar(sizeClass, pad: isPad) {
             showsScanner = true
             openCameraAtOnce()
         }
