@@ -102,7 +102,9 @@ public class PhotoImportTests
         var plan = PhotoImport.Plan(photo);
         Assert.Equal(PhotoImportAction.Correct, plan.Action);
         Assert.Equal(PhotoReviewReason.None, plan.Reason);
-        Assert.Equal(detection.Quad, plan.Corners);
+        // The page found, moved onto the photo's edges.
+        Assert.Equal(QuadRefiner.Refine(photo, detection.Quad!.Value).Quad, plan.Corners);
+        Assert.True(plan.Corners.MaxCornerDistance(detection.Quad!.Value) < 1, plan.Corners.ToString());
         Assert.Equal("", PhotoImport.ReasonText(plan.Reason));
     }
 

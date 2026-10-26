@@ -167,9 +167,16 @@ public static class PhotoImport
         return orientation.QuarterTurns % 4 == 0 ? image : image.RotatedQuarterTurns(orientation.QuarterTurns);
     }
 
-    /// <summary>What to do with <paramref name="photo"/> (upright): the page looked for, then <see cref="Plan(PhotoDocumentDetection, int, int)"/>.</summary>
-    public static PhotoImportPlan Plan(RgbaImage photo) =>
-        Plan(PhotoDocumentDetector.Detect(photo), photo.Width, photo.Height);
+    /// <summary>
+    /// What to do with <paramref name="photo"/> (upright): the page looked for, its corners moved onto the
+    /// photo's edges (<see cref="QuadRefiner"/>), then <see cref="Plan(PhotoDocumentDetection, int, int)"/>.
+    /// </summary>
+    public static PhotoImportPlan Plan(RgbaImage photo)
+    {
+        var detection = PhotoDocumentDetector.Detect(photo);
+        if (detection.Quad is { } quad) detection = detection with { Quad = QuadRefiner.Refine(photo, quad).Quad };
+        return Plan(detection, photo.Width, photo.Height);
+    }
 
     /// <summary>
     /// What to do with a photo of <paramref name="width"/> × <paramref name="height"/> where the page

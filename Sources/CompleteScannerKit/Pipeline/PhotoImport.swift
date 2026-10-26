@@ -174,9 +174,14 @@ public enum PhotoImport {
         return orientation.quarterTurns % 4 == 0 ? image : image.rotatedQuarterTurns(orientation.quarterTurns)
     }
 
-    /// What to do with `photo` (upright): the page looked for, then `plan(_:width:height:)`.
+    /// What to do with `photo` (upright): the page looked for, its corners moved onto the photo's edges
+    /// (`QuadRefiner`), then `plan(_:width:height:)`.
     public static func plan(_ photo: RgbaImage) -> PhotoImportPlan {
-        plan(PhotoDocumentDetector.detect(photo), width: photo.width, height: photo.height)
+        var detection = PhotoDocumentDetector.detect(photo)
+        if let quad = detection.quad {
+            detection.quad = QuadRefiner.refine(photo, quad).quad
+        }
+        return plan(detection, width: photo.width, height: photo.height)
     }
 
     /// What to do with a photo of `width` × `height` where the page search found `detection`: a page

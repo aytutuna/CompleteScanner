@@ -93,14 +93,17 @@ final class PhotoImportTests: XCTestCase {
         XCTAssertEqual(PhotoImport.oriented(stored, orientation: .upright), stored)
     }
 
-    func testAPageFoundClearlyIsCorrectedWithoutAsking() {
+    func testAPageFoundClearlyIsCorrectedWithoutAsking() throws {
         let photo = PhotoScenes.woodScene()
         let detection = PhotoDocumentDetector.detect(photo)
         XCTAssertGreaterThanOrEqual(detection.confidence, PhotoImport.sureConfidence)
         let plan = PhotoImport.plan(photo)
         XCTAssertEqual(plan.action, .correct)
         XCTAssertEqual(plan.reason, PhotoReviewReason.none)
-        XCTAssertEqual(plan.corners, detection.quad)
+        // The page found, moved onto the photo's edges.
+        let found = try XCTUnwrap(detection.quad)
+        XCTAssertEqual(plan.corners, QuadRefiner.refine(photo, found).quad)
+        XCTAssertLessThan(plan.corners.maxCornerDistance(found), 1)
         XCTAssertEqual(PhotoImport.reasonText(plan.reason), "")
     }
 
