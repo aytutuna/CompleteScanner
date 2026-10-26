@@ -105,6 +105,13 @@ struct ScanScreen: View {
     @State private var stepsAfterAlert: [IOSAfterSave]?
     /// What was asked for that would leave the pages without a Save, while the question about them is up.
     @State private var leavingPages: PagesLeave?
+    /// The status a busy spell left in camera mode ("Sent 3 pages to Office PC."), on a card for a few seconds.
+    @State private var statusAfterBusy: String?
+    /// The status and the files saved last as the busy spell began, to tell what it changed, and whether it
+    /// is a send, whose "Sent 3 pages to Office PC." is the same each time.
+    @State private var statusBeforeBusy: String = ""
+    @State private var savedBeforeBusy: [URL] = []
+    @State private var busySends: Bool = false
     @Namespace private var kindSpace: Namespace.ID
 
     var body: some View {
@@ -212,6 +219,9 @@ struct ScanScreen: View {
                 if closed {
                     alertClosed()
                 }
+            }
+            .onChange(of: working) { (_: Bool, busy: Bool) in
+                busyChanged(busy)
             }
             .onChange(of: cover) { (_: ScanCover?, shown: ScanCover?) in
                 if shown == nil {
@@ -338,8 +348,8 @@ struct ScanScreen: View {
     }
 
     /// The package banner, the app's progress with Cancel while it is busy (a save, an export, After saving's
-    /// steps), an import's progress with Stop, and the files saved last until the next page comes in, each
-    /// on a card over the viewfinder.
+    /// steps), an import's progress with Stop, the status a busy spell left (`busyChanged`), and the files
+    /// saved last until the next page comes in, each on a card over the viewfinder.
     @ViewBuilder
     private var cameraNotices: some View {
         if let offered = state.pendingPackage {
@@ -354,10 +364,50 @@ struct ScanScreen: View {
             ImportProgressRow()
                 .modifier(NoticeCard())
         }
+        if let message = statusAfterBusy, !state.isBusy {
+            statusCard(message)
+        }
         if !state.lastSavedURLs.isEmpty && state.scannedPages.isEmpty && !state.isBusy {
             SavedFilesRow()
                 .modifier(NoticeCard())
         }
+    }
+
+    /// The status a busy spell left, gone after about four seconds.
+    private func statusCard(_ message: String) -> some View {
+        Text(message)
+            .font(.footnote)
+            .lineLimit(3)
+            .modifier(NoticeCard())
+            .accessibilityIdentifier("camera.notice")
+            .task(id: message) {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                if statusAfterBusy == message {
+                    statusAfterBusy = nil
+                }
+            }
+    }
+
+    /// The app, or a share or a send of the pages, is busy.
+    private var working: Bool {
+        state.isBusy || sendsToComputer || sharesPackage
+    }
+
+    /// A busy spell began or ended. Camera mode has no status line, so once it ends the status it left is
+    /// shown on a card when it changed and nothing else says it: an alert, the import's card, or the card of
+    /// the files saved.
+    private func busyChanged(_ busy: Bool) {
+        if busy {
+            statusAfterBusy = nil
+            statusBeforeBusy = state.statusMessage
+            savedBeforeBusy = state.lastSavedURLs
+            busySends = sendsToComputer
+            return
+        }
+        let message: String = state.statusMessage
+        guard cameraMode, !message.isEmpty, message != statusBeforeBusy || busySends, state.errorMessage == nil,
+              !importer.isImporting, state.lastSavedURLs == savedBeforeBusy else { return }
+        statusAfterBusy = message
     }
 
     /// Printer mode's progress row with Cancel, and the status line under the bar when the progress has no
@@ -1073,11 +1123,11 @@ struct ScanScreen: View {
         Task { @MainActor in
             sendsToComputer = true
             await appState.sendQueueToDesktop(target: .new)
-            sendsToComputer = false
             if appState.errorMessage == nil {
                 appState.errorMessage = IOSAfterSave.notSentMessage(appState.companionStatus,
                                                                     waiting: appState.companionOutboxCount)
             }
+            sendsToComputer = false
             if appState.errorMessage != nil {
                 stepsAfterAlert = steps
                 return
