@@ -3,10 +3,11 @@ import XCTest
 // Walks the app's main screens on the demo scanner and keeps a screenshot of each, named by screen, so
 // CI's ios-screenshots artifact shows what the screens look like after a change: camera mode (the
 // Simulator's viewfinder says there is no camera), its kinds with Receipts picked and its drawer on
-// Export, then printer mode, its Scanner sheet, a scanned page in the strip, Save's menu and the Export
-// sheet, Settings with My computer and Presets, and the library from camera mode. A screen whose button is
-// not there is left out rather than failed, so the walk stays green while the screens change; a
-// "skipped-" screenshot shows what was on screen instead.
+// Export, then printer mode, its Scanner sheet, two scanned pages in the page grid, Save's menu and the
+// Export sheet, Settings with My computer and Presets, and the library from camera mode; and, on a run of
+// its own, a photo of a page in the page viewer with its filters. A screen whose button is not there is
+// left out rather than failed, so the walk stays green while the screens change; a "skipped-" screenshot
+// shows what was on screen instead.
 
 final class ScreenshotTests: XCTestCase {
     @MainActor
@@ -23,6 +24,38 @@ final class ScreenshotTests: XCTestCase {
         printerScreens(app)
         settingsScreens(app)
         libraryScreens(app)
+    }
+
+    /// A photo of a page brought in through the corner editor, opened from the page grid in the page viewer
+    /// with its filters shown: the page as the camera saw it (Original) and the other filters beside it.
+    @MainActor
+    func test_pageViewer() throws {
+        let fixture: URL = try XCTUnwrap(Bundle(for: ScreenshotTests.self).url(forResource: "document-photo", withExtension: "png"),
+                                         "The fixture photo in the test bundle")
+        let app = XCUIApplication()
+        app.launchArguments = ["-demoScanner", "-importFixture", "-importTask", "document"]
+        app.launchEnvironment["COMPLETESCANNER_IMPORT_FIXTURE"] = try Data(contentsOf: fixture).base64EncodedString()
+        app.launch()
+
+        let use: XCUIElement = app.buttons["corners.use"]
+        guard use.waitForExistence(timeout: 120), waitUntilEnabled(use, timeout: 30) else {
+            shot("skipped-06b-page-viewer")
+            return
+        }
+        use.tap()
+        app.openPages(1)
+        guard tapIfThere(app, "page.1", for: "06b-page-viewer"),
+              tapIfThere(app, "viewer.filters", for: "06b-page-viewer") else { return }
+        if element(app, "filter.original").waitForExistence(timeout: 10) {
+            // The small pictures of each filter are made off the main thread.
+            Thread.sleep(forTimeInterval: 3)
+            shot("06b-page-viewer")
+        } else {
+            shot("skipped-06b-page-viewer")
+        }
+        if tapIfThere(app, "viewer.done", for: "viewer-closed") {
+            waitUntilGone(element(app, "viewer.done"))
+        }
     }
 
     /// Camera mode's kinds with Receipts picked, and its drawer open on Export.
@@ -51,7 +84,7 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
-    /// Printer mode with the demo scanner picked in its Scanner sheet, a page scanned, Save's menu and the
+    /// Printer mode with the demo scanner picked in its Scanner sheet, two pages scanned, Save's menu and the
     /// Export sheet.
     @MainActor
     private func printerScreens(_ app: XCUIApplication) {
@@ -82,6 +115,12 @@ final class ScreenshotTests: XCTestCase {
         scan.tap()
         let counted = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "1 page"), object: pages)
         if XCTWaiter.wait(for: [counted], timeout: 60) == .completed {
+            // A second page, so the grid shows two across.
+            if waitUntilEnabled(scan, timeout: 30) {
+                scan.tap()
+                let second = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "2 pages"), object: pages)
+                _ = XCTWaiter.wait(for: [second], timeout: 60)
+            }
             pages.tap()
             let done: XCUIElement = element(app, "pages.done")
             if done.waitForExistence(timeout: 5) {
