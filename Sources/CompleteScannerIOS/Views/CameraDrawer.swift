@@ -3,7 +3,8 @@ import CompleteScannerKit
 import SwiftUI
 
 /// Camera mode's kinds as the Camera app has its modes: a row under the viewfinder (`IOSShell.cameraKinds`)
-/// that snaps one kind into its middle, the one there in the accent colour, the others grey. Swiping the
+/// that snaps one kind into its middle, the one there in the accent colour on a pill that stays in the
+/// middle while the kinds slide through it, the others grey. The camera screen puts it on glass. Swiping the
 /// row or tapping a kind picks it (`onKind`, as the printer screen's chips do); a pick that does not happen
 /// (the ID card's or the pages' question answered Cancel, a kind that cannot be started) brings the row back
 /// to the kind set up. Still while a scan or an import runs. The camera screen caps its text at the first
@@ -28,6 +29,12 @@ struct KindsRow: View {
         }
         .frame(height: 44)
         .modifier(EdgeFade(leading: 28, trailing: 28))
+        .background {
+            // The kind picked is always the one snapped into the middle, so its pill does not move.
+            Capsule()
+                .fill(Color.white.opacity(0.16))
+                .frame(width: itemWidth - 8, height: 34)
+        }
         .onAppear {
             centred = current
         }
@@ -180,13 +187,13 @@ enum CameraDrawerGroup: String, Identifiable, CaseIterable {
     }
 }
 
-/// Camera mode's options, in place of the kinds when the chevron is up, so they never cover the picture:
-/// a row of icons, one per group that applies (`CameraDrawerGroup.shown`), and the chosen group's controls
-/// under it. Export: the format, then chips for Separate documents, One PDF per page, PDF/A, Password and
-/// Also .txt where they apply, and More… for the whole Export sheet (separator sheets, After saving).
-/// Colour: the colour mode (and Restore faded colours for Photos). Quality: the PDF's size. Flash: the
-/// camera's light (its torch), where it has one. Camera: the automatic shutter, Both sides and how the
-/// sides or a book's pages are taken, and Use Apple's scanner where the task offers it.
+/// Camera mode's options, in place of the kinds when the chevron is up, on the glass panel the kinds'
+/// capsule turns into: a row of icons, one per group that applies (`CameraDrawerGroup.shown`), and the
+/// chosen group's controls under it. Export: the format, then chips for Separate documents, One PDF per
+/// page, PDF/A, Password and Also .txt where they apply, and More… for the whole Export sheet (separator
+/// sheets, After saving). Colour: the colour mode (and Restore faded colours for Photos). Quality: the
+/// PDF's size. Flash: the camera's light (its torch), where it has one. Camera: the automatic shutter, Both
+/// sides and how the sides or a book's pages are taken, and Use Apple's scanner where the task offers it.
 struct CameraDrawer: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
