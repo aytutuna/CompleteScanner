@@ -255,6 +255,18 @@ public enum IOSShell {
     /// kept while the camera is in use, so switching back to printer mode finds it again.
     public static let scannerKey = "scan.scanner"
 
+    /// The key builds before the two modes kept the source under: empty for the camera, else a scanner's ID.
+    static let oldSourceKey = "scan.source"
+
+    /// Once, from a build that kept the source under `oldSourceKey`: the scanner picked there, for printer
+    /// mode, when no mode was kept yet and it is not the demo scanner; the old key goes either way.
+    static func migratedScanner(_ defaults: UserDefaults) -> String? {
+        guard let old = defaults.string(forKey: oldSourceKey) else { return nil }
+        defaults.removeObject(forKey: oldSourceKey)
+        guard defaults.object(forKey: scanModeKey) == nil, !old.isEmpty, !old.hasPrefix("mock:") else { return nil }
+        return old
+    }
+
     /// The scanner the pages come from: in printer mode the remembered one (`scanner`, its ID) while it is
     /// listed and selected; nil in camera mode, and in printer mode until that scanner is found again. A
     /// scanner found on its own never takes its place.
@@ -486,7 +498,7 @@ public enum IOSShell {
         }
     }
 
-    /// The kind a task is shown as on the iPhone (the scan screen's chips, the camera's task chip): the
+    /// The kind a task is shown as on the iPhone (the printer screen's chips, camera mode's kinds): the
     /// document tasks are a Document with its options set (the feeder, both sides, separate documents, the
     /// format, PDF/A, Email…, Print…), Restore old photos is Photos with faded colours restored, Quick scan
     /// is Text.
@@ -710,8 +722,8 @@ public enum IOSScanKind: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// A tile of the iPhone's task sheet: the kind, what its task sets, whether it can be picked, and whether
-/// it is the kind set up now.
+/// A kind as the scan screen's chips and kinds row, the iPad's task list and its sidebar offer it: the kind,
+/// what its task sets, whether it can be picked, and whether it is the kind set up now.
 public struct IOSKindTile: Identifiable, Equatable {
     public let kind: IOSScanKind
     public let summary: String

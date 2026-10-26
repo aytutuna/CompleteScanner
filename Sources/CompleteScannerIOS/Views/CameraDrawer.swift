@@ -34,7 +34,9 @@ struct KindsRow: View {
                 centred = kind
             }
         }
-        .sensoryFeedback(SensoryFeedback.selection, trigger: centred)
+        .sensoryFeedback(SensoryFeedback.selection, trigger: centred) { (old: IOSScanKind?, new: IOSScanKind?) -> Bool in
+            old != nil && new != nil && old != new
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("kinds.row")
     }

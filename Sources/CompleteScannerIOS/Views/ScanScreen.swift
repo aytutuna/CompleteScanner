@@ -65,10 +65,15 @@ struct ScanScreen: View {
     var onOpenSettings: (() -> Void)?
     /// Opens the library (iPhone); nil when the sidebar has it.
     var onOpenLibrary: (() -> Void)?
-    /// The card saying why the camera is asked for is up: camera mode's camera waits for it.
+    /// The card saying why the camera is asked for is up, or the app has not started: camera mode's camera
+    /// waits for it.
     var waitsForIntro: Bool = false
+    /// The root presents something over the screen (Settings, the share sheet, Mail, Quick Look): camera
+    /// mode's camera rests.
+    var rests: Bool = false
     @State private var scanner: IOSCameraAvailability = .noCamera
-    /// The camera or printer mode, picked in the Scanner options.
+    /// The camera or printer mode, switched with the top row's printer and camera buttons; picking a
+    /// scanner also switches to printer mode.
     @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
     /// The scanner printer mode scans with, remembered while the camera is in use.
     @AppStorage(IOSShell.scannerKey) private var printerID: String = ""
@@ -141,7 +146,9 @@ struct ScanScreen: View {
             .background(cameraMode ? Color(uiColor: .systemBackground) : Color(uiColor: .systemGroupedBackground))
             .navigationTitle(IOSShell.shownKind(state.settings).title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar(pickerInSidebar && !cameraMode ? Visibility.automatic : Visibility.hidden, for: .navigationBar)
+            // The iPad keeps its bar in camera mode too, for the sidebar's button.
+            .toolbar(pickerInSidebar ? Visibility.automatic : Visibility.hidden, for: .navigationBar)
+            .toolbarBackground(cameraMode ? Visibility.hidden : Visibility.automatic, for: .navigationBar)
             .toolbar {
                 if pickerInSidebar && !cameraMode {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -283,9 +290,12 @@ struct ScanScreen: View {
         }
     }
 
-    /// Something this screen presents covers the camera: a cover, a sheet, Files to pick a PDF in.
+    /// Something covers the camera: what the root presents, a cover, a sheet, Files to pick a PDF in, a
+    /// question or the error alert.
     private var cameraCovered: Bool {
-        cover != nil || openGroup != nil || pagesShown || picksPDF || spreadEditor != nil || state.showTroubleshooter
+        let presented: Bool = cover != nil || openGroup != nil || pagesShown || picksPDF || spreadEditor != nil
+        let asked: Bool = askedToDiscard || asksSendTarget || state.errorMessage != nil || state.showTroubleshooter
+        return rests || presented || asked
     }
 
     /// The library, once the option group's sheet has closed; nil where the sidebar has it.

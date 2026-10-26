@@ -37,7 +37,6 @@ public struct IOSRootView: View {
     /// On the iPad, whether the detail is the scan screen; on the iPhone it always is.
     @State private var showsScanner: Bool = false
     @State private var showsLibrary: Bool = false
-    @State private var showsCameraIntro: Bool = false
     @AppStorage(IOSShell.cameraIntroKey) private var cameraIntroShown: Bool = false
     @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
     @AppStorage(IOSShell.scannerKey) private var scanner: String = ""
@@ -98,7 +97,6 @@ public struct IOSRootView: View {
         }
         .onChange(of: mode) { (_: IOSScanMode, _: IOSScanMode) in
             followMode()
-            introduceCamera()
         }
         .environmentObject(importer)
         .task {
@@ -110,7 +108,7 @@ public struct IOSRootView: View {
         .modifier(FileActionPresenters(fileActions: fileActions, state: state))
         .modifier(ScanCovers(state: state, importer: importer, cover: $scanCover, spreadEditor: $spreadEditor))
         .overlay {
-            if showsCameraIntro && showsScanner {
+            if cameraIntroDue && showsScanner {
                 CameraIntroCard(onContinue: continueToCamera)
             }
         }
@@ -142,7 +140,7 @@ public struct IOSRootView: View {
     private var stackLayout: some View {
         NavigationStack {
             ScanScreen(picker: picker, cover: $scanCover, spreadEditor: $spreadEditor, onOpenSettings: openSettings,
-                       onOpenLibrary: openLibrary, waitsForIntro: showsCameraIntro)
+                       onOpenLibrary: openLibrary, waitsForIntro: !started || cameraIntroDue, rests: cameraRests)
                 .navigationDestination(isPresented: $showsLibrary) {
                     LibraryScreen(onOpenSettings: openSettings)
                 }
@@ -166,7 +164,7 @@ public struct IOSRootView: View {
     private var splitDetail: some View {
         if showsScanner {
             ScanScreen(picker: picker, cover: $scanCover, spreadEditor: $spreadEditor, pickerInSidebar: true,
-                       waitsForIntro: showsCameraIntro)
+                       waitsForIntro: !started || cameraIntroDue, rests: cameraRests)
         } else {
             switch detail {
             case .start:
@@ -208,18 +206,26 @@ public struct IOSRootView: View {
 
     /// In camera mode, the first time, the card saying why the camera is asked for comes before iOS asks
     /// for it; the viewfinder waits for it. Not under `-demoScanner`, nor where the camera cannot be used.
-    private func introduceCamera() {
+    /// Decided as the screen is drawn, so the viewfinder never asks before the card is up.
+    private var cameraIntroDue: Bool {
+        guard started else { return false }
         let action: IOSCameraOnOpen = IOSShell.cameraOnOpen(
             offersCamera: mode == .camera && IOSShell.offersOwnCamera(state.settings),
             camera: IOSCameraAvailability.ownCamera,
             authorization: AVCaptureDevice.authorizationStatus(for: .video), introShown: cameraIntroShown,
             demo: demoScanner)
-        showsCameraIntro = action == .introduce
+        return action == .introduce
     }
 
     private func continueToCamera() {
         cameraIntroShown = true
-        showsCameraIntro = false
+    }
+
+    /// What the root presents over camera mode: Settings, the share sheet, Mail and Quick Look. The camera
+    /// rests under them, so Auto takes nothing meanwhile.
+    private var cameraRests: Bool {
+        showsSettings || fileActions.shareRequest != nil || fileActions.mailRequest != nil
+            || fileActions.previewURL != nil
     }
 
     private func closeSettings() {
@@ -314,6 +320,10 @@ public struct IOSRootView: View {
     private func startOnce() {
         guard !started else { return }
         started = true
+        if let old = IOSShell.migratedScanner(UserDefaults.standard) {
+            scanner = old
+            mode = .printer
+        }
         // The demo scanner is only listed under -demoScanner: printer mode left on it is the camera again.
         if !demoScanner && scanner.hasPrefix("mock:") {
             scanner = ""
@@ -339,7 +349,6 @@ public struct IOSRootView: View {
         } else if !IOSLayout.usesSidebar(sizeClass, pad: isPad) {
             showsScanner = true
         }
-        introduceCamera()
     }
 
     /// Files opened in this app: a CompleteScanner document to the scan screen's banner, the others

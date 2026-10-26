@@ -20,8 +20,6 @@ struct TaskStartScreen: View {
 
     /// Opens the scan screen (after a tile was set up, or for the Scanner button).
     let onOpenScanner: @MainActor () -> Void
-    /// Closes the task sheet (iPhone): Done in place of the Scanner button.
-    var onClose: (() -> Void)?
     @State private var askedToDiscard: Bool = false
     /// Files is open to pick the PDF for "Add pages to a PDF".
     @State private var picksPDF: Bool = false
@@ -68,19 +66,12 @@ struct TaskStartScreen: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                if let close = onClose {
-                    Button(IOSSettingsText.doneLabel) {
-                        close()
-                    }
-                    .accessibilityIdentifier("tasks.done")
-                } else {
-                    Button {
-                        onOpenScanner()
-                    } label: {
-                        Label("Scanner", systemImage: "scanner")
-                    }
-                    .accessibilityIdentifier("open.scanner")
+                Button {
+                    onOpenScanner()
+                } label: {
+                    Label("Scanner", systemImage: "scanner")
                 }
+                .accessibilityIdentifier("open.scanner")
             }
         }
     }

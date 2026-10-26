@@ -156,6 +156,27 @@ final class IOSShellTests: XCTestCase {
         XCTAssertNil(IOSShell.printerScanner(.printer, scanner: "escl:x", selected: nil, devices: []))
     }
 
+    func test_migratedScanner_takesTheOldSourcesScanner_once() throws {
+        let name: String = "migration.\(UUID().uuidString)"
+        let defaults: UserDefaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        XCTAssertNil(IOSShell.migratedScanner(defaults))
+        defaults.set("escl:x", forKey: IOSShell.oldSourceKey)
+        XCTAssertEqual(IOSShell.migratedScanner(defaults), "escl:x")
+        XCTAssertNil(defaults.object(forKey: IOSShell.oldSourceKey))
+        XCTAssertNil(IOSShell.migratedScanner(defaults))
+        // The camera, the demo scanner, or a mode kept already: nothing to take, the old key goes.
+        for old in ["", "mock:demo"] {
+            defaults.set(old, forKey: IOSShell.oldSourceKey)
+            XCTAssertNil(IOSShell.migratedScanner(defaults), old)
+            XCTAssertNil(defaults.object(forKey: IOSShell.oldSourceKey), old)
+        }
+        defaults.set(IOSScanMode.camera.rawValue, forKey: IOSShell.scanModeKey)
+        defaults.set("escl:x", forKey: IOSShell.oldSourceKey)
+        XCTAssertNil(IOSShell.migratedScanner(defaults))
+        XCTAssertNil(defaults.object(forKey: IOSShell.oldSourceKey))
+    }
+
     func test_listedScanner_followsTheRememberedScanner_toAnotherConnection() {
         let direct: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
         let viaDesktop: ScannerInfo = ScannerInfo(id: "companion:x", name: "Office MFP", transport: "Companion", backend: "companion")

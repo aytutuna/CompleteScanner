@@ -6,16 +6,18 @@ extension XCUIApplication {
     /// The kinds in camera mode's row, left to right (`IOSShell.cameraKinds`).
     static let cameraKinds: [String] = ["photos", "receipts", "document", "idCard", "book", "text"]
 
-    /// Waits for the scan screen in either mode and says which: true for camera mode (its kinds row), false
-    /// for printer mode (its chips). The app comes back in the mode the last run left.
+    /// Waits for the scan screen in either mode and says which: true for camera mode (its kinds row, or the
+    /// drawer in its place), false for printer mode (its chips). The app comes back in the mode the last run
+    /// left.
     @MainActor
     @discardableResult
     func waitForScanScreen(file: StaticString = #filePath, line: UInt = #line) -> Bool {
         let row: XCUIElement = descendants(matching: .any)["kinds.row"].firstMatch
+        let drawer: XCUIElement = descendants(matching: .any)["drawer"].firstMatch
         let chips: XCUIElement = descendants(matching: .any)["task.chips"].firstMatch
         let deadline: Date = Date().addingTimeInterval(60)
         while Date() < deadline {
-            if row.exists { return true }
+            if row.exists || drawer.exists { return true }
             if chips.exists { return false }
             _ = row.waitForExistence(timeout: 1)
         }

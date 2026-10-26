@@ -413,7 +413,7 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
         let continuous: Bool = IOSShell.capturesContinuously(state.settings)
         Task { @MainActor in
             if let shot = await shown.shoot() {
-                await session.importShot(shot, asksOnlyWhenUnsure: continuous)
+                _ = await session.importShot(shot, asksOnlyWhenUnsure: continuous)
             }
         }
     }
