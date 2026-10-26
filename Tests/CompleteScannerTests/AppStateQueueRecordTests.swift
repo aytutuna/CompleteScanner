@@ -50,6 +50,24 @@ private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool,
     }
 }
 
+/// Sends "the app may end now" by hand, as going to the background does on the iPhone.
+@MainActor
+private final class RecordLifecycle: PlatformLifecycle {
+    private var endHandlers: [@MainActor () -> Void] = []
+
+    func observeWillTerminate(_ handler: @escaping @MainActor () -> Void) {
+        endHandlers.append(handler)
+    }
+
+    func observeDidBecomeActive(_ handler: @escaping @MainActor () -> Void) {}
+
+    func sendWillTerminate() {
+        for handler in endHandlers {
+            handler()
+        }
+    }
+}
+
 final class AppStateQueueRecordTests: XCTestCase {
     private var folder: URL!
 
@@ -181,6 +199,21 @@ final class AppStateQueueRecordTests: XCTestCase {
         XCTAssertFalse(after.isBusy)
         XCTAssertTrue(after.scannedPages.isEmpty)
         XCTAssertEqual(spoolNames(), [])
+    }
+
+    @MainActor
+    func test_goingToTheBackground_writesTheRecordAtOnce() async throws {
+        let lifecycle = RecordLifecycle()
+        let state = AppState(presetStore: PresetStore(directory: folder), orientationScorer: RecordScorer(),
+                             barcodeReader: RecordBarcodes(), lifecycle: lifecycle, files: files(keepsQueue: true))
+        state.queueRecordDelay = 60_000_000_000
+        XCTAssertTrue(state.startTask(.document))
+        XCTAssertTrue(state.ingest([recordPage()], source: .photo))
+        try await waitUntil(timeout: 60) { !state.isBusy && state.scannedPages.count == 1 }
+        let record: URL = spool.appendingPathComponent(QueueRecord.fileName)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: record.path), "The record waits for its delay")
+        lifecycle.sendWillTerminate()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: record.path))
     }
 
     @MainActor
