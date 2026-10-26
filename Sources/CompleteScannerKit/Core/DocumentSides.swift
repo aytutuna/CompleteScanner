@@ -6,7 +6,7 @@ import Foundation
 // that scan both sides and for stacks turned over by hand.
 
 /// A side of a sheet.
-public enum PageSide: String, Sendable {
+public enum PageSide: String, Codable, Sendable {
     case front
     case back
 }

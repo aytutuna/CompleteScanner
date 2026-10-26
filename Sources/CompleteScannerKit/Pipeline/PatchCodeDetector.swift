@@ -7,7 +7,7 @@ import Foundation
 /// order that names the code. Separator sheets carry one (Patch T by convention). A sheet fed the
 /// other way round reads its code backwards (`reversed`), so every code counts as a separator; the
 /// code itself is only shown. Twin of C# `PatchCode` and `PatchCodes`.
-public enum PatchCode: String, CaseIterable, Sendable {
+public enum PatchCode: String, CaseIterable, Codable, Sendable {
     case patch1, patch2, patch3, patch4, patch6, patchT
 
     /// "Patch 1" … "Patch 6", "Patch T".

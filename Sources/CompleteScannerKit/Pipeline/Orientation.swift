@@ -242,9 +242,10 @@ public enum OrientationDecision {
     }
 }
 
-/// What turning pages upright did to a page (`ScannedPage.upright`; not persisted): the quarter
-/// turns clockwise it was turned (1 to 3), and whether the user turned it back. Twin of C# `UprightTurn`.
-public struct UprightTurn: Equatable, Sendable {
+/// What turning pages upright did to a page (`ScannedPage.upright`; kept only in the iPhone's queue record,
+/// `QueueRecord`): the quarter turns clockwise it was turned (1 to 3), and whether the user turned it back.
+/// Twin of C# `UprightTurn`.
+public struct UprightTurn: Equatable, Codable, Sendable {
     public var quarterTurns: Int
     public var undone: Bool
 

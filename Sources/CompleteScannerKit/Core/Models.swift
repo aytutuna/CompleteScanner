@@ -268,7 +268,7 @@ public enum BlankSensitivity: String, Codable, CaseIterable, Identifiable, Senda
 /// The user's say over whether a queued page is saved (`ScannedPage.inclusion`): `.automatic`
 /// follows the blank-page setting (`PageFilter.isExcluded`); `.keep` and `.skip` are one click on
 /// the page, whatever the setting. Not stored in settings files. Twin of C# `PageInclusion`.
-public enum PageInclusion: String, Sendable {
+public enum PageInclusion: String, Codable, Sendable {
     case automatic
     case keep
     case skip
@@ -277,7 +277,7 @@ public enum PageInclusion: String, Sendable {
 /// Where a queued page came from (`ScannedPage.source`): a scanner, a photo of a document imported
 /// from a file (`PhotoImport`), or a paired phone over the companion link (`CompanionProtocol`). Not
 /// stored in settings files. Twin of C# `PageSource`.
-public enum PageSource: String, Sendable {
+public enum PageSource: String, Codable, Sendable {
     case scanner
     case photo
     case phone
@@ -357,7 +357,7 @@ public enum SplitMode: String, Codable, CaseIterable, Identifiable, Sendable {
 /// The user's say over whether a new document starts at a queued page (`ScannedPage.documentBreak`):
 /// `.automatic` follows the split setting; `.split` and `.join` are one click on the gap before the
 /// page, whatever the setting. Not stored in settings files. Twin of C# `DocumentBreak`.
-public enum DocumentBreak: String, Sendable {
+public enum DocumentBreak: String, Codable, Sendable {
     case automatic
     case split
     case join

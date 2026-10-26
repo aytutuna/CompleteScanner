@@ -7,7 +7,7 @@ import Foundation
 /// What a camera shot shows: it decides the sizes a page can snap to (`CaptureScale.candidates`) and
 /// the shapes several objects in one shot are picked by (`MultiQuadPicker`). Stored by its raw value;
 /// the first is the default and the fallback for a value a newer version adds. Twin of C# `CaptureKind`.
-public enum CaptureKind: String, CaseIterable, Sendable {
+public enum CaptureKind: String, CaseIterable, Codable, Sendable {
     /// A page of a document: A4, Letter, Legal or an ID card.
     case document
     /// A till receipt: 80 or 57 mm wide, any length.
@@ -20,7 +20,7 @@ public enum CaptureKind: String, CaseIterable, Sendable {
 
 /// Where a captured page's real size comes from. Stored by its raw value; the first is the default
 /// and the fallback. Twin of C# `CaptureScaleBasis`.
-public enum CaptureScaleBasis: String, CaseIterable, Sendable {
+public enum CaptureScaleBasis: String, CaseIterable, Codable, Sendable {
     /// No known size matched: the page is taken at `CaptureScale.nominalDPI`, so its size is made up.
     case nominal
     /// A paper size (`PaperSize`), the ID-1 card included.
@@ -61,7 +61,7 @@ public struct CaptureSize: Equatable, Sendable {
 
 /// A captured page's real size (`CaptureScale.measure`): what it snapped to, the resolution, and the
 /// pixel size the page is made at. Twin of C# `CaptureScaleResult`.
-public struct CaptureScaleResult: Equatable, Sendable {
+public struct CaptureScaleResult: Equatable, Codable, Sendable {
     /// Where the size comes from.
     public var basis: CaptureScaleBasis
     /// The `CaptureSize.id` snapped to; nil for `.nominal`.
@@ -97,7 +97,7 @@ public struct CaptureScaleResult: Equatable, Sendable {
 /// it was taken (continuous pixels of `sourceWidth` × `sourceHeight`, before any turn), that photo's
 /// size, what the shot showed, the camera's focal length when known, and, once the page was cut out
 /// (`PerspectiveStep`), the real size it snapped to. Twin of C# `CaptureFacts`.
-public struct CaptureFacts: Equatable, Sendable {
+public struct CaptureFacts: Equatable, Codable, Sendable {
     public var quad: Quad
     public var sourceWidth: Int
     public var sourceHeight: Int

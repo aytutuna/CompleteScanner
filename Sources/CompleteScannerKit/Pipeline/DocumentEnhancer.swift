@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 /// How a page taken by a camera is cleaned up (`DocumentEnhancer`). Twin of C# `DocumentEnhanceMode`.
-public enum DocumentEnhanceMode: String, CaseIterable, Sendable {
+public enum DocumentEnhanceMode: String, CaseIterable, Codable, Sendable {
     /// As `.color`, then gray when the page has no color left (`ColorAnalysis.isEffectivelyGray`).
     case auto
     /// The lighting evened out, the paper made white and neutral, the print stretched to black, in color.

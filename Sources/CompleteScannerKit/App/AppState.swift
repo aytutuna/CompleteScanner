@@ -12,10 +12,14 @@ struct AppStateFiles {
     var settingsDirectory: URL
     /// Where document pages are spilled to disk while they wait in the queue, so a long high-dpi batch
     /// doesn't hold gigabytes of pixels in memory (and the spreads book pages were cut from,
-    /// AppState+Book.swift). Emptied when the `AppState` is made: what a previous run left goes.
+    /// AppState+Book.swift). Emptied when the `AppState` is made: what a previous run left goes, but for
+    /// a queue kept (`keepsQueue`).
     var spoolDirectory: URL
     /// The device diagnostics file, devices.txt (`AppState.writeDeviceDiagnostics`); nil: not written.
     var diagnosticsFile: URL?
+    /// The queue is recorded beside its spool files and brought back when the `AppState` is made
+    /// (`QueueRecord`): the iPhone's, which iOS ends in the background without asking.
+    var keepsQueue: Bool = false
 
     /// Application Support, CompleteScanner-pages in the temporary folder, and
     /// ~/Library/Logs/CompleteScanner/devices.txt.
@@ -27,6 +31,15 @@ struct AppStateFiles {
                              spoolDirectory: FileManager.default.temporaryDirectory
                                  .appendingPathComponent("CompleteScanner-pages", isDirectory: true),
                              diagnosticsFile: logs?.appendingPathComponent("devices.txt"))
+    }
+
+    /// The standard places with the queue kept, its spool in Application Support ("Pages"), where iOS does
+    /// not clear it as it clears the temporary folder.
+    static var keepingQueue: AppStateFiles {
+        var files = standard
+        files.spoolDirectory = StoreFiles.defaultDirectory.appendingPathComponent("Pages", isDirectory: true)
+        files.keepsQueue = true
+        return files
     }
 
     /// Everything in `folder`: its settings.json, a spool in its "pages" folder and its devices.txt.
@@ -162,11 +175,12 @@ public final class AppState: ObservableObject {
     @Published public var selectionRect: CGRect?
 
     /// The page queue. Spreads no page is cut from any more are dropped whenever it changes
-    /// (`pruneSpreads`, AppState+Book.swift).
+    /// (`pruneSpreads`, AppState+Book.swift), and a queue kept is recorded again (`QueueRecord`).
     @Published public internal(set) var scannedPages: [ScannedPage] = [] {
         didSet {
             pruneSpreads()
             companionService?.queuedPages = scannedPages.count
+            scheduleQueueRecord()
         }
     }
     /// The spreads the book pages in the queue were cut from, by spread id (AppState+Book.swift).
@@ -465,6 +479,12 @@ public final class AppState: ObservableObject {
     private var switchTask: Task<Void, Never>?
     var switchGeneration = 0
     private var settingsSaveTask: Task<Void, Never>?
+    /// The queue is recorded beside its spool files and brought back at launch (`AppStateFiles.keepsQueue`).
+    let keepsQueue: Bool
+    /// The queue's record written shortly after the queue last changed (`scheduleQueueRecord`).
+    var queueRecordTask: Task<Void, Never>?
+    /// The pages of the queue kept last time are being read back; the record waits for them.
+    var restoringQueue = false
     /// The current exclusive operation's cancel flag (nil when idle).
     private var currentCancelFlag: CancelFlag?
     /// The feeder check under way (`checkFeederDuplex`): scans and previews wait for it, since the
@@ -486,7 +506,8 @@ public final class AppState: ObservableObject {
     /// (`makeDemoBackend()`), no printer, and file and troubleshooter actions that are refused; text
     /// recognition, barcode reading and QR codes default to Vision and Core Image, which every
     /// platform has. The settings, the page spool and the diagnostics are in the app's own places
-    /// (`AppStateFiles.standard`).
+    /// (`AppStateFiles.standard`); with `keepsQueue` (the iPhone's), the queue survives the app being ended
+    /// (`AppStateFiles.keepingQueue`).
     public convenience init(backends: [any ScannerBackend]? = nil, presetStore: PresetStore = PresetStore(),
                             fileActions: (any FileActionService)? = nil,
                             troubleshooterService: (any TroubleshooterService)? = nil,
@@ -494,11 +515,11 @@ public final class AppState: ObservableObject {
                             orientationScorer: (any OrientationScorer)? = nil,
                             barcodeReader: (any BarcodeReader)? = nil,
                             qrEncoder: (any QrEncoder)? = nil,
-                            lifecycle: (any PlatformLifecycle)? = nil) {
+                            lifecycle: (any PlatformLifecycle)? = nil, keepsQueue: Bool = false) {
         self.init(backends: backends, presetStore: presetStore, fileActions: fileActions,
                   troubleshooterService: troubleshooterService, printService: printService,
                   orientationScorer: orientationScorer, barcodeReader: barcodeReader, qrEncoder: qrEncoder,
-                  lifecycle: lifecycle, files: AppStateFiles.standard)
+                  lifecycle: lifecycle, files: keepsQueue ? AppStateFiles.keepingQueue : AppStateFiles.standard)
     }
 
     /// The same, with the settings read from and written to, the page spool emptied and used, and the
@@ -515,6 +536,7 @@ public final class AppState: ObservableObject {
         self.settingsDirectory = files.settingsDirectory
         self.spoolDirectory = files.spoolDirectory
         self.diagnosticsFile = files.diagnosticsFile
+        self.keepsQueue = files.keepsQueue
         let saved = SettingsStore.load(directory: files.settingsDirectory)
         self.isFirstRun = saved == nil
         // A task saved last time is still active: its banner comes back with the settings.
@@ -533,15 +555,24 @@ public final class AppState: ObservableObject {
         self.presets = presetStore.load()
         syncTaskFlow()
         syncCameraSides()
-        // Clear page spill files left behind by a previous run.
-        try? FileManager.default.removeItem(at: files.spoolDirectory)
-        try? FileManager.default.createDirectory(at: files.spoolDirectory, withIntermediateDirectories: true)
+        // Clear page spill files left behind by a previous run, but for the queue kept last time.
+        let kept: QueueRecord? = files.keepsQueue ? QueueRecord.read(in: files.spoolDirectory, settings: initial) : nil
+        QueueRecord.clear(files.spoolDirectory, keeping: kept)
+        if files.keepsQueue {
+            QueueRecord.keepOutOfBackups(files.spoolDirectory)
+        }
         // Flush any debounced settings write on quit so a change made just
         // before Cmd-Q is not lost.
         lifecycle?.observeWillTerminate { [weak self] in
             guard let self else { return }
             self.settingsSaveTask?.cancel()
             SettingsStore.save(self.settings, directory: self.settingsDirectory)
+            if self.keepsQueue && !self.restoringQueue {
+                self.writeQueueRecord()
+            }
+        }
+        if let kept {
+            restoreQueue(kept)
         }
     }
 
@@ -1753,7 +1784,7 @@ public final class AppState: ObservableObject {
     }
 
     /// A preview of a spooled page version as the queue shows a page, turned by `quarterTurns`.
-    private nonisolated static func previewOfSpoolFile(_ url: URL, quarterTurns: Int) -> CGImage? {
+    nonisolated static func previewOfSpoolFile(_ url: URL, quarterTurns: Int) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let full = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
         let preview = makePreview(full, maxSide: 1600) ?? full

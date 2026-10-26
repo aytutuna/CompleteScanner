@@ -17,7 +17,7 @@ public struct BlankPageOptions: Equatable, Sendable {
 }
 
 /// What the blank-page check found on a page. Twin of C# `BlankPageResult`.
-public struct BlankPageResult: Equatable, Sendable {
+public struct BlankPageResult: Equatable, Codable, Sendable {
     /// Share of the area looked at covered by marks larger than dust (0...1).
     public let inkCoverage: Double
     /// Marks larger than dust.

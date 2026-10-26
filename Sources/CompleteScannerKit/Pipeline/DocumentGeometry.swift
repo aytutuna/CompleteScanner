@@ -43,7 +43,7 @@ public struct TextLayout: Equatable, Sendable {
 }
 
 /// What told the page's angle.
-public enum GeometryBasis: CaseIterable, Sendable {
+public enum GeometryBasis: CaseIterable, Codable, Sendable {
     /// The edges of the sheet against the scanner's background.
     case pageEdges
     /// The lines of text on the page.
@@ -65,7 +65,7 @@ public enum GeometryAction: Sendable {
 
 /// What crop and straighten did to a page, for the page strip and for undoing it. Not stored in
 /// settings files. Twin of C# `PageGeometry`.
-public struct PageGeometry: Equatable, Sendable {
+public struct PageGeometry: Equatable, Codable, Sendable {
     /// The page was cut out of the scanner's background.
     public let cropped: Bool
     /// The turn taken out, clockwise positive; 0 when the page was not turned.

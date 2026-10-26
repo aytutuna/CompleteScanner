@@ -826,7 +826,9 @@ extension AppState {
     /// (`IOSPDFAppend.access`), with the question before adding pages to a signed or PDF/A file asked by
     /// `confirmAppend` (none: such a file gets no pages); the companion (`IOSShell.setUpCompanion`) in the
     /// network folder with its secrets in the Keychain, the computers on the network browsed by
-    /// `companion` (none: not browsed), and its cloud folder opened through `IOSSyncFolder`.
+    /// `companion` (none: not browsed), and its cloud folder opened through `IOSSyncFolder`. The queue
+    /// survives iOS ending the app (`AppStateFiles.keepingQueue`), except under `-demoScanner`, whose UI
+    /// tests each start with an empty queue.
     @MainActor
     public static func makeForIOS(options: IOSLaunchOptions, fileActions: IOSFileActions,
                                   networkScanners: IOSNetworkScanners?,
@@ -838,7 +840,8 @@ extension AppState {
         let lifecycle: UIKitLifecycle = UIKitLifecycle()
         let state: AppState = AppState(backends: backends, fileActions: fileActions,
                                        troubleshooterService: IOSTroubleshooterService(),
-                                       printService: printService ?? IOSPrintService(), lifecycle: lifecycle)
+                                       printService: printService ?? IOSPrintService(), lifecycle: lifecycle,
+                                       keepsQueue: !options.demoScannerOnly)
         state.platform = .ios
         if let prompt = passwordPrompt {
             state.askPDFPassword = { () async -> PDFProtection? in

@@ -11,7 +11,7 @@ import Foundation
 /// the same outline, compare them from every starting corner (`CaptureStability.movement`), not corner
 /// by corner. Twin of C# `Quad` (windows/CompleteScanner.Core/Quad.cs): the same
 /// arithmetic in the same order.
-public struct Quad: Equatable, Sendable {
+public struct Quad: Equatable, Codable, Sendable {
     public var topLeft: CGPoint
     public var topRight: CGPoint
     public var bottomRight: CGPoint

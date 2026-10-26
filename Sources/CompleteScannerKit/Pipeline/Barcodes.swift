@@ -6,7 +6,7 @@ import Foundation
 /// The kinds of code read on scanned pages for splitting a stack at barcode or QR sheets
 /// (`SplitMode.barcode`). Other kinds are not looked for. Twin of C# `BarcodeSymbology`
 /// (`BarcodeSymbologies.All` / `Label`).
-public enum BarcodeSymbology: Int, CaseIterable, Sendable {
+public enum BarcodeSymbology: Int, CaseIterable, Codable, Sendable {
     case qrCode
     case code128
     case code39
@@ -29,7 +29,7 @@ public enum BarcodeSymbology: Int, CaseIterable, Sendable {
 /// A code read on a page: its kind, its text, and where it is (pixels, top-left origin; on the page as
 /// it was read when it comes from `BarcodeSeparators.read`, on the image read when it comes from a
 /// `BarcodeReader`). Twin of C# `BarcodeReading`.
-public struct BarcodeReading: Equatable, Sendable {
+public struct BarcodeReading: Equatable, Codable, Sendable {
     public var symbology: BarcodeSymbology
     public var text: String
     public var bounds: CGRect
