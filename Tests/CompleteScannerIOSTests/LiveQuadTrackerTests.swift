@@ -807,7 +807,6 @@ final class LiveQuadTrackerTests: XCTestCase {
         XCTAssertEqual(found?.quad, stubQuad)
         XCTAssertEqual(found?.confidence, 0.9)
         XCTAssertEqual(found?.rejection, PhotoDocumentRejection.none)
-        XCTAssertEqual(LiveQuadTracker.minVisionConfidence, 0.5)
     }
 
     func test_theFilter_dampsJitter() throws {

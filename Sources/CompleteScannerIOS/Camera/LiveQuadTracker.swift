@@ -67,8 +67,8 @@ public struct LiveQuadUpdate: Equatable, Sendable {
 
 /// Follows the page in the camera's live frames for the outline drawn over the preview. About ten
 /// frames a second are searched (`frameIntervalMs`; the others are passed over before any work): the
-/// page Vision found in the frame (`IOSCameraFrame.page`) when it is sure enough (`minVisionConfidence`)
-/// and a page's (`IOSPageFinder.accepted`), else the shared page search (`PhotoDocumentDetector`, the photo
+/// page Vision found in the frame (`IOSCameraFrame.page`) when it is sure enough and a page's
+/// (`IOSPageFinder.accepted`), else the shared page search (`PhotoDocumentDetector`, the photo
 /// import's) on the frame made small (at most `analysisLongSide` px), with the outline of the frame before
 /// as its hint. What is found is steadied (`LiveQuadFilter`): small jitter is smoothed, a jump is believed
 /// only once it is seen twice, a new page is drawn from its second sighting and a page missed for a moment
@@ -97,8 +97,6 @@ public final class LiveQuadTracker: @unchecked Sendable {
     public static let analysisLongSide: Int = 480
     /// A page missed for at most this long keeps its outline.
     public static let holdMs: Double = 300
-    /// Vision's page is taken from this confidence up; below it, the shared page search looks.
-    public static let minVisionConfidence: Double = 0.5
 
     /// The page search: a frame and the outline found in the frame before (its pixels), if any.
     public typealias Detector = @Sendable (RgbaImage, Quad?) -> PhotoDocumentDetection
@@ -162,10 +160,9 @@ public final class LiveQuadTracker: @unchecked Sendable {
     }
 
     /// Vision's `page` in a live frame of `width` x `height` as the page search's answer, when it is sure
-    /// enough and a page's; nil otherwise.
+    /// enough and a page's (`IOSPageFinder.accepted`, as for a photo); nil otherwise.
     public static func detection(_ page: QuadCandidate, width: Int, height: Int) -> PhotoDocumentDetection? {
-        guard page.confidence >= minVisionConfidence,
-              let quad = IOSPageFinder.accepted(page, width: width, height: height) else { return nil }
+        guard let quad = IOSPageFinder.accepted(page, width: width, height: height) else { return nil }
         var result: PhotoDocumentDetection = PhotoDocumentDetection.nothing
         result.quad = quad
         result.confidence = page.confidence
