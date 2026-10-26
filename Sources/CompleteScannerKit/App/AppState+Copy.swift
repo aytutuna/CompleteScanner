@@ -119,7 +119,8 @@ extension AppState {
     /// Prints the pages of a copy: each at real size (or fitted, when chosen) on the printer's paper,
     /// against the corner as it lay on the glass or centred when an area was selected, as many copies
     /// as asked; then saves them as a PDF too when asked, also when printing failed (the pages are kept
-    /// nowhere else; the print error is reported after), not when the print panel was cancelled. The
+    /// nowhere else; the print error is reported after), not when the print panel was cancelled, and never
+    /// for the queue's pages printed from Save's menu (`copyIsOfQueue`): the queue's own Save writes them. The
     /// status says where they went and what the printer's margins cut off. `reusePrinter` prints on the
     /// printer picked last without asking (`PrintService.printAgain`). False when the print panel was
     /// cancelled.
@@ -127,6 +128,7 @@ extension AppState {
     func printCopyPages(_ pages: [ScannedPage], settings s: ScanSettings, setup: PrinterSetup, areaSelected: Bool,
                         reusePrinter: Bool = false, flag: CancelFlag) async throws -> Bool {
         let options = s.taskOptions
+        let alsoPDF = options.copyAlsoSavePdf && !copyIsOfQueue
         let allRealSize = pages.allSatisfy { $0.printsAtRealSize }
         let fit = PrintLayout.copyFitsToPage(chosenFit: options.copyFitToPage, allPagesRealSize: allRealSize)
         let mode: PrintMode = fit ? .fitToPrintable : .actualSize
@@ -145,7 +147,7 @@ extension AppState {
         // A protected PDF's password is asked for before printing. No answer still prints the copy;
         // the PDF is then not written.
         var noPassword = false
-        if options.copyAlsoSavePdf {
+        if alsoPDF {
             do {
                 _ = try await protectionFor(s)
             } catch is PDFPasswordNotGiven {
@@ -169,7 +171,7 @@ extension AppState {
             }
         } catch {
             // The PDF asked for is still written: the pages are kept nowhere else.
-            guard options.copyAlsoSavePdf else { throw error }
+            guard alsoPDF else { throw error }
             printError = error
         }
         // A held copy goes into the history and the task's steps once, on its first print, whatever
@@ -182,7 +184,7 @@ extension AppState {
         let sent = PrintText.sent(pageCount: pages.count, copies: copies, printerName: printedOn(setup, s))
         let warning = printPages.lazy.compactMap { PrintLayout.clipWarning($0.placement, paper: paper) }.first
         let warningNote = warning.map { " \($0)" } ?? ""
-        guard options.copyAlsoSavePdf else {
+        guard alsoPDF else {
             statusMessage = sent + warningNote
             return true
         }
@@ -192,7 +194,7 @@ extension AppState {
                 return true
             }
             // A held copy stays on its screen, so it is not queued as well.
-            if holdsCopy(s) || copyIsOfQueue {
+            if holdsCopy(s) {
                 throw AppState.copyNotPrinted(printError, setup: setup, pdfNote: " \(PDFProtection.notSavedMessage)")
             }
             // Neither printed nor saved: the pages wait in the queue rather than being lost.

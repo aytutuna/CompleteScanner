@@ -148,12 +148,15 @@ final class IOSCopyTests: XCTestCase {
 
         // The copy screen's own choices change the settings; the copy stays held outside the copy task.
         state.setCopyCount(2)
+        // Also save a PDF is left to the queue's own Save: no second file of the same pages.
+        state.setCopyAlsoSavePdf(true)
         XCTAssertEqual(state.copyPages.count, 1)
         state.printHeldCopy()
         try await idle(state)
         XCTAssertNil(state.errorMessage)
         XCTAssertEqual(printer.jobs.count, 1)
         XCTAssertEqual(printer.jobs.first?.copies, 2)
+        XCTAssertTrue(state.lastSavedURLs.isEmpty)
 
         state.discardHeldCopy()
         XCTAssertTrue(state.copyPages.isEmpty)

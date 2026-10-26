@@ -85,10 +85,13 @@ struct CopyScreen: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("copy.fitReason")
             }
-            Toggle(IOSCopyText.pdfLabel, isOn: alsoPDF)
-                .disabled(state.isBusy)
-                .accessibilityHint(Text(IOSCopyText.pdfHint))
-                .accessibilityIdentifier("copy.pdf")
+            // The queue's pages are saved by its own Save (After saving's Print saves them once this closes).
+            if !state.copyIsOfQueue {
+                Toggle(IOSCopyText.pdfLabel, isOn: alsoPDF)
+                    .disabled(state.isBusy)
+                    .accessibilityHint(Text(IOSCopyText.pdfHint))
+                    .accessibilityIdentifier("copy.pdf")
+            }
             Label(model.printerLine, systemImage: "printer")
                 .font(.footnote)
                 .foregroundStyle(Color.secondary)
