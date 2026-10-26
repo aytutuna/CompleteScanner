@@ -161,11 +161,24 @@ final class AppStateQueueRecordTests: XCTestCase {
     }
 
     @MainActor
-    func test_aQueueMissingAFile_isEmptiedAtLaunch() async throws {
+    func test_aPageWhoseFileIsGone_isLeftOut_theOthersComeBack() async throws {
         let before = try await makeQueue()
+        let kept: ScannedPage = before.scannedPages[1]
         try FileManager.default.removeItem(at: before.scannedPages[0].fileURL!)
         let after = makeState()
-        try await Task.sleep(nanoseconds: 300_000_000)
+        try await waitUntil(timeout: 30) { !after.isBusy }
+        XCTAssertEqual(after.scannedPages.map(\.id), [kept.id])
+        XCTAssertTrue(spoolNames().contains(kept.fileURL!.lastPathComponent))
+    }
+
+    @MainActor
+    func test_aQueueWhoseFilesAreAllGone_isEmptiedAtLaunch() async throws {
+        let before = try await makeQueue()
+        for page in before.scannedPages {
+            try FileManager.default.removeItem(at: page.fileURL!)
+        }
+        let after = makeState()
+        XCTAssertFalse(after.isBusy)
         XCTAssertTrue(after.scannedPages.isEmpty)
         XCTAssertEqual(spoolNames(), [])
     }

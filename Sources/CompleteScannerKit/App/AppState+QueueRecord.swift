@@ -73,19 +73,20 @@ struct QueueRecord: Codable, Sendable {
         self.pages = records
     }
 
-    /// The record in `spool` when its pages can come back: it reads, every page's file is there, and the
-    /// settings the app starts with save a queue (`TaskFlowKind.documentQueue`). Otherwise nil, and the
+    /// The record in `spool` when its pages can come back: it reads and the settings the app starts with
+    /// save a queue (`TaskFlowKind.documentQueue`). A page whose file is gone is left out (the record is
+    /// written a moment after a page goes, and the app may end in between); nil when none is left, and the
     /// spool is emptied as it always was.
     static func read(in spool: URL, settings: ScanSettings) -> QueueRecord? {
         guard TaskCatalog.flow(of: settings) == .documentQueue,
               let data = try? Data(contentsOf: spool.appendingPathComponent(fileName)),
-              let record = try? JSONDecoder().decode(QueueRecord.self, from: data), !record.pages.isEmpty else {
+              var record = try? JSONDecoder().decode(QueueRecord.self, from: data) else {
             return nil
         }
-        let present: Bool = record.pages.allSatisfy { (page: Page) -> Bool in
+        record.pages = record.pages.filter { (page: Page) -> Bool in
             FileManager.default.fileExists(atPath: spool.appendingPathComponent(page.file).path)
         }
-        return present ? record : nil
+        return record.pages.isEmpty ? nil : record
     }
 
     /// Pages kept in Application Support are no use in a backup: they belong to this device's session.
