@@ -361,5 +361,24 @@ final class IOSFlowTests: XCTestCase {
         let target = URL(fileURLWithPath: "/tmp/Contract.pdf")
         XCTAssertEqual(IOSShell.saveFirstLabel(document, pageCount: 3, target: target), "Add to Contract.pdf first")
     }
+
+    func test_pageViewer_namesThePage_andItsFilters() {
+        XCTAssertEqual(PageViewerText.title(number: 3, count: 7), "3 of 7")
+        XCTAssertEqual(PageViewerText.pageName(2), "Page 2")
+        var names: [String] = []
+        for filter in CaptureFilter.displayOrder {
+            names.append(PageViewerText.filterName(filter))
+        }
+        XCTAssertEqual(names, ["Original", "Enhanced", "Grayscale", "Black and white"])
+    }
+
+    func test_deletingAPageInTheViewer_showsTheNextOne_orTheOneBeforeTheLast() {
+        let a = UUID(), b = UUID(), c = UUID()
+        XCTAssertEqual(PageViewer.pageAfterRemoving(a, from: [a, b, c]), b)
+        XCTAssertEqual(PageViewer.pageAfterRemoving(b, from: [a, b, c]), c)
+        XCTAssertEqual(PageViewer.pageAfterRemoving(c, from: [a, b, c]), b)
+        XCTAssertNil(PageViewer.pageAfterRemoving(a, from: [a]))
+        XCTAssertNil(PageViewer.pageAfterRemoving(UUID(), from: [a, b]))
+    }
 }
 #endif
