@@ -183,10 +183,17 @@ final class PageRecutTests: XCTestCase {
         XCTAssertEqual(state.statusMessage, "Page 1: Grayscale.")
         XCTAssertTrue(state.recuttingPages.isEmpty)
 
+        // Gray, then Enhanced and back to Gray before the first lands: the last tap wins.
+        state.setPageFilter(id: page.id, .enhanced)
+        state.setPageFilter(id: page.id, .grayscale)
+        try await waitUntil(timeout: 60) { state.pageEditChain == nil }
+        XCTAssertEqual(state.scannedPages.first?.capture?.filter, .grayscale)
+        XCTAssertEqual(state.scannedPages.first?.colorMode, .grayscale)
+
         let data = try Data(contentsOf: state.spoolDirectory.appendingPathComponent(QueueRecord.fileName))
         let record: QueueRecord = try JSONDecoder().decode(QueueRecord.self, from: data)
         XCTAssertEqual(record.pages.first?.capture?.filter, .grayscale)
-        XCTAssertEqual(record.pages.first?.file, gray.fileURL?.lastPathComponent)
+        XCTAssertEqual(record.pages.first?.file, state.scannedPages.first?.fileURL?.lastPathComponent)
 
         state.setPageFilter(id: page.id, .original)
         try await waitUntil(timeout: 60) { state.scannedPages.first?.capture?.filter == .original }

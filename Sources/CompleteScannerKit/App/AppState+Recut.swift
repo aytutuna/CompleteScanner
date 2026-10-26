@@ -85,10 +85,11 @@ public enum PageRecut {
 extension AppState {
     /// Gives the queued page `id` another filter: the page is cut out of its photo again with it, off the main
     /// actor, and its spool file replaced (`PageRecut`). It runs behind the page swaps and turns under way,
-    /// like them, and a save waits for it. Nothing happens to a page that cannot be cut again or has the filter.
+    /// like them, and a save waits for it, so the last filter tapped is the one the page ends with; a page that
+    /// has the filter by then is left as it is, and one that cannot be cut again is never touched.
     public func setPageFilter(id: UUID, _ filter: CaptureFilter) {
         guard !isBusy, let page = scannedPages.first(where: { (item: ScannedPage) -> Bool in item.id == id }),
-              PageRecut.canRecut(page), PageRecut.filter(of: page) != filter else { return }
+              PageRecut.canRecut(page) else { return }
         enqueuePageEdit { (state: AppState) async -> Void in
             await state.recut(id: id, filter: filter, corners: nil)
         }
@@ -149,7 +150,8 @@ extension AppState {
     /// as it was when the work started (not removed, turned or swapped meanwhile); the old file goes.
     func recut(id: UUID, filter: CaptureFilter, corners: Quad?) async {
         guard let page = scannedPages.first(where: { (item: ScannedPage) -> Bool in item.id == id }),
-              PageRecut.canRecut(page), let photoURL = page.alternate?.fileURL, let oldFile = page.fileURL else { return }
+              PageRecut.canRecut(page), corners != nil || PageRecut.filter(of: page) != filter,
+              let photoURL = page.alternate?.fileURL, let oldFile = page.fileURL else { return }
         let spool: URL = spoolDirectory
         recuttingPages.insert(id)
         let made: ScannedPage? = await Task.detached(priority: .userInitiated) { () -> ScannedPage? in

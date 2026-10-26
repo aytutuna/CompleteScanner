@@ -55,6 +55,8 @@ struct PageViewer: View {
     @State private var preparesCrop: Bool = false
     /// The page's rotation when the corner editor's picture was turned for it.
     @State private var cropRotation: Int = 0
+    /// The filter tapped last for each page, shown as chosen while the page is cut again.
+    @State private var requested: [UUID: CaptureFilter] = [:]
 
     init(startID: UUID, onClose: @escaping () -> Void) {
         self.onClose = onClose
@@ -245,7 +247,8 @@ struct PageViewer: View {
     // MARK: Filters
 
     private func filterRow(_ page: ScannedPage) -> some View {
-        let chosen: CaptureFilter? = PageRecut.filter(of: page)
+        let working: Bool = state.recuttingPages.contains(page.id)
+        let chosen: CaptureFilter? = (working ? requested[page.id] : nil) ?? PageRecut.filter(of: page)
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 14) {
                 ForEach(CaptureFilter.displayOrder, id: \.self) { (filter: CaptureFilter) in
@@ -263,6 +266,7 @@ struct PageViewer: View {
 
     private func filterButton(_ filter: CaptureFilter, page: UUID, chosen: Bool) -> some View {
         Button {
+            requested[page] = filter
             state.setPageFilter(id: page, filter)
         } label: {
             VStack(spacing: 4) {
@@ -345,6 +349,8 @@ struct PageViewer: View {
     /// Use corners cuts the page again along them, Use whole photo along the whole photo; Cancel changes nothing.
     private func finishCrop(_ request: IOSCropRequest, answer: PhotoCornersAnswer) {
         crop = nil
+        // The crop keeps the page's filter: an earlier tap is not the one to show while it runs.
+        requested[request.photoID] = nil
         switch answer.choice {
         case .useCorners:
             if let corners = answer.corners {
