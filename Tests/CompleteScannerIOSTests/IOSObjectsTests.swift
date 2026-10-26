@@ -470,6 +470,26 @@ final class IOSObjectsTests: XCTestCase {
     }
 
     @MainActor
+    func test_photosBeyondTheCardsTwoSides_areLeftOut_andSaidOnce() async throws {
+        let state: AppState = makeState(.idCard)
+        let importer = IOSImportSession(state: state, finder: noPage, objectFinder: fixedObjects([cardQuad], for: .idCard))
+        let shot = IOSCameraShot(data: png(cardOnTable()), liveOutline: nil)
+        var shots: [IOSImportSource] = []
+        for _ in 0..<4 {
+            shots.append(IOSImportSource.shot(shot, asksOnlyWhenUnsure: true))
+        }
+        let outcome: IOSImportOutcome = await importer.importSources(shots)
+        XCTAssertEqual(outcome.added, 2)
+        XCTAssertEqual(outcome.problems, [IOSImportText.cardFullMessage(2)])
+        XCTAssertEqual(state.errorMessage, "The card already has both sides; the other 2 were not added.")
+        XCTAssertNotNil(state.idCardFront)
+        XCTAssertNotNil(state.idCardBack)
+        XCTAssertTrue(state.showIdCardReview)
+        XCTAssertFalse(importer.isImporting)
+        state.discardIdCard()
+    }
+
+    @MainActor
     func test_aCardNotFound_opensTheCornerEditor_andGoesInAsACard() async throws {
         let state: AppState = makeState(.idCard)
         let found = IOSFoundPage(corners: cardQuad, reason: .unsure, byVision: false)
