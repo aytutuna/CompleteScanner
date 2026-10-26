@@ -83,8 +83,12 @@ extension AppState {
             }.value
             self.lastPDFByteCount = Int64(result.bytes)
             self.lastPDFProtected = false
-            // The URL picked, not the result's path: on the iPhone it carries the file's security scope.
+            // The URL picked, not the result's path: on the iPhone it carries the file's security scope,
+            // kept open for the file actions after the save (`scopedSavedURL`).
             self.lastSavedURLs = [url]
+            if self.scopedSavedURL == nil, url.startAccessingSecurityScopedResource() {
+                self.scopedSavedURL = url
+            }
             self.appendTarget = nil
             self.deleteSpoolFiles(of: queued)
             self.scannedPages = []

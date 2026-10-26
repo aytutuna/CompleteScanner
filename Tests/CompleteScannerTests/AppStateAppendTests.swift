@@ -161,6 +161,20 @@ final class AppStateAppendTests: XCTestCase {
     }
 
     @MainActor
+    func test_theAppendedFilesScope_staysOpen_untilAnotherFileIsSavedLast() async throws {
+        let state = try await makeState(pages: 1)
+        let url = try builtPDF("Contract.pdf")
+        try await append(state, to: url)
+        XCTAssertEqual(state.lastSavedURLs, [url])
+        // A file here has no security scope to open; one picked in Files on the iPhone has.
+        state.scopedSavedURL = url
+        state.lastSavedURLs = [url]
+        XCTAssertEqual(state.scopedSavedURL, url)
+        state.lastSavedURLs = [folder.appendingPathComponent("Scan 1.pdf")]
+        XCTAssertNil(state.scopedSavedURL)
+    }
+
+    @MainActor
     func test_save_withATarget_addsTheQueueToIt_andClearsTheTarget() async throws {
         let state = try await makeState(pages: 2)
         let url = try builtPDF("Contract.pdf")

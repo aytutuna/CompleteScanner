@@ -266,7 +266,17 @@ public final class AppState: ObservableObject {
     /// The name the next QR separator sheet carries (the inspector's field); empty for none. Not kept
     /// in settings (AppState+Split.swift).
     @Published public var qrSheetName = ""
-    @Published public internal(set) var lastSavedURLs: [URL] = []
+    @Published public internal(set) var lastSavedURLs: [URL] = [] {
+        didSet {
+            if let scoped = scopedSavedURL, lastSavedURLs != [scoped] {
+                scoped.stopAccessingSecurityScopedResource()
+                scopedSavedURL = nil
+            }
+        }
+    }
+    /// A PDF the pages were added to outside the app's folder (`appendToPDF`): its security scope stays
+    /// open while it is the file saved last, so Share, Email, Open and Show in Files still reach it.
+    var scopedSavedURL: URL?
     /// Size of the PDF saved last in this session, in bytes; nil before the first one. Shown
     /// under the PDF size choice.
     @Published public internal(set) var lastPDFByteCount: Int64?
