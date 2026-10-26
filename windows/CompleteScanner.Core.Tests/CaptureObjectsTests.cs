@@ -259,6 +259,9 @@ public class CaptureObjectsTests
                      CaptureObjects.CardNote(realSize: false, glare: true));
     }
 
+    private static IEnumerable<string> StepNames(PageProcessor processor) =>
+        processor.Prepare.Concat(processor.Steps).Select(step => step.Name);
+
     [Fact]
     public void ForCaptureReadsNothingOnObjectsOutsideTheQueue()
     {
@@ -267,20 +270,20 @@ public class CaptureObjectsTests
         var document = Task(ScanTask.Document);
         document.Document.AutoRotate = true;
         Assert.Equal(["perspective", "enhance", "blank", "separator", "orientation"],
-                     PageProcessor.ForCapture(document, scorer).Steps.Select(step => step.Name));
+                     StepNames(PageProcessor.ForCapture(document, scorer)));
         // Photos, receipts and the ID card: cut out and cleaned up, then only their adjustments.
         foreach (var task in new[] { ScanTask.Photos, ScanTask.IdCard })
         {
             var s = Task(task);
             s.Document.AutoRotate = true;
-            Assert.Equal(["perspective", "enhance"], PageProcessor.ForCapture(s, scorer).Steps.Select(step => step.Name));
+            Assert.Equal(["perspective", "enhance"], StepNames(PageProcessor.ForCapture(s, scorer)));
         }
         Assert.Equal(["perspective", "enhance", "adjust"],
-                     PageProcessor.ForCapture(Task(ScanTask.PhotoRestore), scorer).Steps.Select(step => step.Name));
+                     StepNames(PageProcessor.ForCapture(Task(ScanTask.PhotoRestore), scorer)));
         Assert.Equal(["perspective", "enhance", "adjust"],
-                     PageProcessor.ForCapture(Task(ScanTask.Receipt), scorer).Steps.Select(step => step.Name));
-        Assert.Equal(DocumentEnhanceMode.Photo, ((EnhanceStep)PageProcessor.ForCapture(Task(ScanTask.Photos)).Steps[1]).Mode);
-        Assert.Equal(DocumentEnhanceMode.Gray, ((EnhanceStep)PageProcessor.ForCapture(Task(ScanTask.Receipt)).Steps[1]).Mode);
+                     StepNames(PageProcessor.ForCapture(Task(ScanTask.Receipt), scorer)));
+        Assert.Equal(DocumentEnhanceMode.Photo, ((EnhanceStep)PageProcessor.ForCapture(Task(ScanTask.Photos)).Prepare[1]).Mode);
+        Assert.Equal(DocumentEnhanceMode.Gray, ((EnhanceStep)PageProcessor.ForCapture(Task(ScanTask.Receipt)).Prepare[1]).Mode);
     }
 
     [Fact]

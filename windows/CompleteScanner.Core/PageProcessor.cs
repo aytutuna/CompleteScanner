@@ -298,7 +298,7 @@ public enum ScanArrangement
 }
 
 /// <summary>The pages of one scan after processing.</summary>
-/// <param name="Arranged">The pages in reading order with their sides marked and the backs turned upright, otherwise as scanned (for the preview and the history).</param>
+/// <param name="Arranged">The pages in reading order with their sides marked and the backs turned upright, otherwise as scanned, or for a camera's page as cut out of its photo and cleaned up (<see cref="PageProcessor.Prepare"/>): for the preview and the history.</param>
 /// <param name="Pages">
 /// The same pages after every step, with the facts the steps found; with facing pages split, the pages
 /// cut from each spread (<see cref="ScannedPage.Spread"/>, whose id is the spread's in <see cref="Arranged"/>).
@@ -326,8 +326,8 @@ public sealed record ProcessedScan(IReadOnlyList<ScannedPage> Arranged, IReadOnl
 /// runs on every page in order. The order of the steps is fixed: <see cref="ForScan"/> builds them
 /// from the settings: blank check (document pages), crop and straighten, softening the spine's shadow,
 /// separator sheets, barcodes, turning pages upright, then adjustments. <paramref name="prepare"/> runs
-/// on each arranged page before it is cut: a camera's spread is cut out of its photo first
-/// (<see cref="ForCapture"/>).
+/// on each arranged page before the steps and before it is cut: a camera's page or spread is cut out of
+/// its photo first (<see cref="ForCapture"/>).
 /// </summary>
 public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
                                   ScanArrangement arrangement = ScanArrangement.AsScanned,
@@ -340,7 +340,11 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     public DuplexBinding Binding { get; } = binding;
     /// <summary>How the pages of each spread are turned and ordered; null when spreads are not split.</summary>
     public BookSplitOptions? Book { get; } = book;
-    /// <summary>The steps each arranged page goes through before a spread is cut; none for a scan.</summary>
+    /// <summary>
+    /// The steps each arranged page goes through before the others, and before a spread is cut: a camera's
+    /// page or spread is cut out of its photo here, so the preview and the history show it, not the
+    /// photo; none for a scan.
+    /// </summary>
     public IReadOnlyList<IPageStep> Prepare { get; } = prepare ?? [];
 
     /// <summary>
@@ -428,13 +432,13 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
     /// The steps for pages taken by a camera (<see cref="ScannedPage.Capture"/>), which go to the queue
     /// like imported photos: <see cref="PerspectiveStep"/> cuts each page out of its photo at its real
     /// size, <see cref="EnhanceStep"/> cleans it up in the task's mode (<see cref="DocumentEnhancer.ModeFor(ScanSettings)"/>),
-    /// then the steps of <see cref="ForPhotoImport"/> for pages that go to the queue. The objects of the
+    /// both in <see cref="Prepare"/>, then the steps of <see cref="ForPhotoImport"/> for pages that go to the queue. The objects of the
     /// other tasks (photos, receipts, an ID card: <see cref="CaptureObjects"/>) get only the adjustments
     /// after that, unless they change nothing, and not on the shot kept as their other version: no
     /// blank-page or separator check, no barcodes, and no text recognition to turn them upright, so an ID
     /// card is never read. A book's spread taken whole (<see cref="SplitsCameraSpreads"/>) is cut out of
     /// its photo at its own pixels (<see cref="PerspectiveStep.Spread"/>) and cleaned up before it is cut at
-    /// its spine (<see cref="Prepare"/>); its pages then get
+    /// its spine; its pages then get
     /// the spine's softening when asked for, between the blank-page and separator checks as on a scan.
     /// <paramref name="arrangement"/> marks the sides of the iPhone's two-sided pages
     /// (<see cref="ScanArrangement.CameraFront"/>, <see cref="ScanArrangement.CameraBack"/>).
@@ -443,28 +447,26 @@ public sealed class PageProcessor(IReadOnlyList<IPageStep> steps,
                                            IBarcodeReader? barcodes = null,
                                            ScanArrangement arrangement = ScanArrangement.AsScanned)
     {
-        var enhance = new EnhanceStep(DocumentEnhancer.ModeFor(settings));
-        var cut = new List<IPageStep> { new PerspectiveStep(), enhance };
+        var spreads = SplitsCameraSpreads(settings);
+        IPageStep[] cut = [new PerspectiveStep(spread: spreads), new EnhanceStep(DocumentEnhancer.ModeFor(settings))];
+        var steps = new List<IPageStep>();
         if (TaskCatalog.FlowOf(settings) == TaskFlowKind.DocumentQueue)
         {
-            var queue = ForPhotoImport(settings, scorer, barcodes).Steps.ToList();
-            if (SplitsCameraSpreads(settings))
+            steps = ForPhotoImport(settings, scorer, barcodes).Steps.ToList();
+            if (spreads)
             {
                 if (SoftensSpineShadow(settings))
                 {
-                    queue.Insert(1, new SpineShadowStep(BookSplitOptions.Of(settings).RotationQuarterTurns));
+                    steps.Insert(1, new SpineShadowStep(BookSplitOptions.Of(settings).RotationQuarterTurns));
                 }
-                return new PageProcessor(queue, arrangement, book: BookSplitOptions.Of(settings),
-                                         prepare: [new PerspectiveStep(spread: true), enhance]);
+                return new PageProcessor(steps, arrangement, book: BookSplitOptions.Of(settings), prepare: cut);
             }
-            return new PageProcessor([.. cut, .. queue], arrangement);
         }
-        var steps = cut;
-        if (!(settings.Adjustments.IsIdentity && settings.ColorMode == ColorMode.Color))
+        else if (!(settings.Adjustments.IsIdentity && settings.ColorMode == ColorMode.Color))
         {
             steps.Add(new AdjustmentStep(settings.Adjustments, settings.ColorMode, adjustsAlternate: false));
         }
-        return new PageProcessor(steps, arrangement);
+        return new PageProcessor(steps, arrangement, prepare: cut);
     }
 
     /// <summary>

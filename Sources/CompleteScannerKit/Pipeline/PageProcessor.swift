@@ -329,8 +329,8 @@ public struct ProcessedScan {
 /// cut into its two pages when facing pages are split (`book`), then every step runs on every page in
 /// order. The order of the steps is fixed: `forScan` builds them from the settings: blank check
 /// (document pages), crop and straighten, softening the spine's shadow, separator sheets, barcodes,
-/// turning pages upright, then adjustments. `prepare` runs on each arranged page before it is cut: a
-/// camera's spread is cut out of its photo first (`forCapture`).
+/// turning pages upright, then adjustments. `prepare` runs on each arranged page before the steps and
+/// before it is cut: a camera's page or spread is cut out of its photo first (`forCapture`).
 /// Twin of C# `PageProcessor`.
 public struct PageProcessor {
     public let steps: [any PageStep]
@@ -426,7 +426,7 @@ public struct PageProcessor {
     /// its pages then get the spine's softening when
     /// asked for, between the blank-page and separator checks as on a scan. `arrangement` marks the sides of
     /// the iPhone's two-sided pages (`ScanArrangement.cameraFront`, `.cameraBack`). Twin of C#
-    /// `PageProcessor.ForCapture`, which runs the cut and the clean-up as its first steps instead.
+    /// `PageProcessor.ForCapture`.
     public static func forCapture(_ settings: ScanSettings, scorer: (any OrientationScorer)? = nil,
                                   barcodes: (any BarcodeReader)? = nil,
                                   arrangement: ScanArrangement = .asScanned) -> PageProcessor {

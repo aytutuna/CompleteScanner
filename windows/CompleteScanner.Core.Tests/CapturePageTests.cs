@@ -185,12 +185,19 @@ public class CapturePageTests
     {
         var s = new ScanSettings();
         s.Document.AutoCrop = true;
-        Assert.Equal(["perspective", "enhance", "blank", "separator"], PageProcessor.ForCapture(s).Steps.Select(step => step.Name));
+        Assert.Equal(["perspective", "enhance"], PageProcessor.ForCapture(s).Prepare.Select(step => step.Name));
+        Assert.Equal(["blank", "separator"], PageProcessor.ForCapture(s).Steps.Select(step => step.Name));
         s.ColorMode = ColorMode.Grayscale;
         var processor = PageProcessor.ForCapture(s);
-        Assert.Equal(["perspective", "enhance", "blank", "separator", "adjust"], processor.Steps.Select(step => step.Name));
-        Assert.Equal(DocumentEnhanceMode.Gray, Assert.IsType<EnhanceStep>(processor.Steps[1]).Mode);
-        var processed = processor.Process([Captured(Photo(640, 480), Facts)]).Pages.Single();
+        Assert.Equal(["blank", "separator", "adjust"], processor.Steps.Select(step => step.Name));
+        Assert.Equal(DocumentEnhanceMode.Gray, Assert.IsType<EnhanceStep>(processor.Prepare[1]).Mode);
+        var result = processor.Process([Captured(Photo(640, 480), Facts)]);
+        var processed = result.Pages.Single();
+        // The preview and the history show the page cut out, not the photo around it.
+        var shown = result.Arranged.Single();
+        Assert.Equal(GeometryBasis.Perspective, shown.Geometry!.Basis);
+        Assert.Equal(processed.Image.Width, shown.Image.Width);
+        Assert.Equal(processed.Image.Height, shown.Image.Height);
         Assert.Equal(GeometryBasis.Perspective, processed.Geometry!.Basis);
         Assert.Equal(33, processed.Dpi);
         Assert.NotNull(processed.Blank);
@@ -242,15 +249,15 @@ public class CapturePageTests
         Assert.False(PageProcessor.SplitsCameraSpreads(s));
         var single = PageProcessor.ForCapture(s);
         Assert.Null(single.Book);
-        Assert.Empty(single.Prepare);
-        Assert.Equal(["perspective", "enhance", "blank", "separator"], single.Steps.Select(step => step.Name));
+        Assert.Equal(["perspective", "enhance"], single.Prepare.Select(step => step.Name));
+        Assert.Equal(["blank", "separator"], single.Steps.Select(step => step.Name));
 
         s.TaskOptions.CameraSpreads = true;
         Assert.True(PageProcessor.SplitsCameraSpreads(s));
         var processor = PageProcessor.ForCapture(s);
         Assert.Equal(["perspective", "enhance"], processor.Prepare.Select(step => step.Name));
         Assert.True(Assert.IsType<PerspectiveStep>(processor.Prepare[0]).Spread);
-        Assert.False(Assert.IsType<PerspectiveStep>(single.Steps[0]).Spread);
+        Assert.False(Assert.IsType<PerspectiveStep>(single.Prepare[0]).Spread);
         Assert.Equal(["blank", "spineShadow", "separator"], processor.Steps.Select(step => step.Name));
         Assert.Equal(BookSplitOptions.Of(s), processor.Book);
         // Not for another task, nor for a scan.
@@ -339,7 +346,7 @@ public class CapturePageTests
         var s = new ScanSettings();
         s.Adjustments.Brightness = 0.1;
         var processor = PageProcessor.ForCapture(s);
-        Assert.Equal(["perspective", "enhance", "blank", "separator", "adjust"], processor.Steps.Select(step => step.Name));
+        Assert.Equal(["blank", "separator", "adjust"], processor.Steps.Select(step => step.Name));
         static ScannedPage Shot(RgbaImage sheet)
         {
             var photo = EnhancerPages.OnATable(sheet);
