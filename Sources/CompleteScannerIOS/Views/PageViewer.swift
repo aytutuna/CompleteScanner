@@ -42,7 +42,7 @@ enum PageViewerText {
 /// of small pictures of this page with each, `AppState.filterPreviews`), turns it a quarter, opens the
 /// corner editor on its photo for Crop (`AppState.pageCropStart`, `recropPage`), and deletes it once asked.
 /// Filters and Crop are left out for pages that cannot be cut again (`PageRecut.canRecut`): scans, imported
-/// PDFs, a book's pages.
+/// PDFs, the pages of a book's spread taken whole.
 struct PageViewer: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
