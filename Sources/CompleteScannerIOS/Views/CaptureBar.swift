@@ -9,9 +9,9 @@ import UniformTypeIdentifiers
 /// (it opens the page strip in a sheet, `onPages`, and bumps with a tap felt as a page comes in), the
 /// shutter, which opens our own camera (`CameraScreen`, the default way to take pages on every task that
 /// takes photos; its screen says why when there is no camera or access is off) while the camera is the
-/// source (with a scanner picked in the Scanner options, the scan screen's Scan beside Save instead), and Photos
-/// and Files (`ImportButtons`). Imported photos go to the corner editor one by one (`IOSImportSession`);
-/// the root view shows it. While an import runs, its progress shows with Stop. Apple's document scanner is
+/// source, or scans (`onScan`, the scanner's symbol on its core) while a scanner picked in the Scanner
+/// options is, and Photos and Files (`ImportButtons`). Imported photos go to the corner editor one by one
+/// (`IOSImportSession`); the root view shows it. While an import runs, its progress shows with Stop. Apple's document scanner is
 /// in the Scanner options under Camera (`AppleScannerRow`).
 struct CaptureBar: View {
     @EnvironmentObject private var state: AppState
@@ -22,6 +22,11 @@ struct CaptureBar: View {
     let offersCamera: Bool
     /// Opens our own camera.
     let onCamera: @MainActor () -> Void
+    /// Scans, while a scanner is the source (the shutter then scans instead of opening the camera); nil
+    /// while the camera is.
+    let onScan: (@MainActor () -> Void)?
+    /// Whether the scanner can scan now: it is connected and nothing else runs.
+    let canScan: Bool
     /// Opens the page strip.
     let onPages: @MainActor () -> Void
 
@@ -59,7 +64,9 @@ struct CaptureBar: View {
             HStack(alignment: .center, spacing: 12) {
                 pagesButton
                     .frame(maxWidth: .infinity, alignment: .leading)
-                if offersCamera {
+                if onScan != nil {
+                    scanButton
+                } else if offersCamera {
                     shutterButton
                 }
                 ImportButtons()
@@ -125,16 +132,7 @@ struct CaptureBar: View {
         Button {
             onCamera()
         } label: {
-            ZStack {
-                Circle()
-                    .strokeBorder(Color.accentColor, lineWidth: 3)
-                // The ring, then a gap as wide, then the core.
-                Circle()
-                    .fill(Color.accentColor)
-                    .padding(6)
-            }
-            .frame(width: 66, height: 66)
-            .contentShape(Circle())
+            shutter(symbol: nil)
         }
         .buttonStyle(ShutterButtonStyle())
         .disabled(!importer.canImport)
@@ -142,6 +140,39 @@ struct CaptureBar: View {
         .accessibilityLabel(Text(IOSImportText.cameraLabel))
         .accessibilityHint(Text(IOSCameraText.cameraHint))
         .accessibilityIdentifier("capture.camera")
+    }
+
+    /// The same shutter while a scanner is the source: it scans, named for the step ("Scan page").
+    private var scanButton: some View {
+        Button {
+            onScan?()
+        } label: {
+            shutter(symbol: "scanner")
+        }
+        .buttonStyle(ShutterButtonStyle())
+        .disabled(!canScan)
+        .opacity(canScan ? 1 : 0.4)
+        .accessibilityLabel(Text(state.primaryActionLabel))
+        .accessibilityIdentifier("scan.button")
+    }
+
+    private func shutter(symbol: String?) -> some View {
+        ZStack {
+            Circle()
+                .strokeBorder(Color.accentColor, lineWidth: 3)
+            // The ring, then a gap as wide, then the core.
+            Circle()
+                .fill(Color.accentColor)
+                .padding(6)
+            if let name = symbol {
+                Image(systemName: name)
+                    .font(.title2)
+                    .foregroundStyle(Color.white)
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(width: 66, height: 66)
+        .contentShape(Circle())
     }
 
     /// The picked photos in the order picked, each loaded only when its turn comes (`load`), so one

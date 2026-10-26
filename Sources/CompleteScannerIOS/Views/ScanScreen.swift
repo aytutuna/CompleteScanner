@@ -54,8 +54,8 @@ enum ScanCover: String, Identifiable {
 /// and Export (the format, Separate documents, One PDF per page, the PDF's choices, After saving), and last
 /// the library (`onOpenLibrary`) and Settings (`onOpenSettings`). While a group's sheet is up, anything
 /// else the screen presents (a review, the library, the ID card's question) waits for it to close. The bar
-/// at the bottom has the capture bar (`CaptureBar`, its shutter only with the camera as the source) over
-/// Scan (only with a scanner as the source) and Save. Save's menu adds the pages to a PDF, prints them as a copy (Print…), saves and emails them
+/// at the bottom has the capture bar (`CaptureBar`, whose shutter opens the camera, or scans with a scanner as
+/// the source) over Save. Save's menu adds the pages to a PDF, prints them as a copy (Print…), saves and emails them
 /// (Email…), shares them as a CompleteScanner document or sends them to the computer; Save itself runs what After saving has checked (`IOSAfterSave`).
 /// The capture bar's last page opens the page strip in a sheet.
 struct ScanScreen: View {
@@ -795,6 +795,10 @@ struct ScanScreen: View {
         state.capabilities != nil && !state.isBusy
     }
 
+    private func scan() {
+        state.performScan()
+    }
+
     // MARK: Saving
 
     /// Save, then what After saving has checked, in its order (`IOSAfterSave.steps`). Send to PC and Print
@@ -913,43 +917,26 @@ struct ScanScreen: View {
                 SavedFilesRow()
             }
             CaptureBar(offersCamera: !scans && IOSShell.offersOwnCamera(state.settings), onCamera: openOwnCamera,
-                       onPages: openPages)
-            if scans || collects {
+                       onScan: scans ? scan : nil, canScan: canScan, onPages: openPages)
+            if collects {
                 HStack(spacing: 12) {
-                    if scans {
-                        Button {
-                            state.performScan()
-                        } label: {
-                            Text(state.primaryActionLabel)
-                                .font(.headline)
-                                .lineLimit(1)
-                                .frame(maxWidth: collects ? nil : CGFloat.infinity)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                        .buttonBorderShape(.roundedRectangle(radius: 12))
-                        .disabled(!canScan)
-                        .accessibilityIdentifier("scan.button")
+                    Button {
+                        saveWithActions()
+                    } label: {
+                        Text(saveTitle)
+                            .font(.headline)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .frame(maxWidth: .infinity)
                     }
-                    if collects {
-                        Button {
-                            saveWithActions()
-                        } label: {
-                            Text(saveTitle)
-                                .font(.headline)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.8)
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .buttonBorderShape(.roundedRectangle(radius: 12))
-                        .disabled(blocked || saveCount == 0)
-                        .keyboardShortcut(IOSShortcuts.save.keyboardShortcut)
-                        .accessibilityIdentifier("save.button")
-                        saveMenu(canSave: saveCount > 0)
-                            .disabled(blocked)
-                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .buttonBorderShape(.roundedRectangle(radius: 12))
+                    .disabled(blocked || saveCount == 0)
+                    .keyboardShortcut(IOSShortcuts.save.keyboardShortcut)
+                    .accessibilityIdentifier("save.button")
+                    saveMenu(canSave: saveCount > 0)
+                        .disabled(blocked)
                 }
             }
         }
