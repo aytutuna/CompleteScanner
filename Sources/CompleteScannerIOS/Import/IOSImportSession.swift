@@ -180,6 +180,11 @@ public enum IOSImportText {
     }
     /// A photo the Photos library could not hand over (not downloaded from iCloud, say).
     public static let photoNotLoadedMessage = "A photo could not be loaded."
+    /// What a Text import left out once its page was held: "Text takes one page; the other 2 were not added."
+    public static func textTakesOneMessage(_ count: Int) -> String {
+        if count == 1 { return "Text takes one page; the other one was not added." }
+        return "Text takes one page; the other \(count) were not added."
+    }
 }
 
 /// Brings photos and PDFs into the queue on the iPhone and iPad, one after another: a photo is read
@@ -195,7 +200,8 @@ public enum IOSImportText {
 /// decoded (a TIFF's and a PDF's while their pages come in), so only one item is in memory at a time;
 /// each page is added once the one before is in. What arrives while an import runs (another pick, a
 /// file opened in the app) waits and is imported after it; Stop drops what waits and ends the import
-/// after the item in hand. What could not be read is listed in one error at the end.
+/// after the item in hand. What could not be read is listed in one error at the end. Text takes one page: once
+/// it is held for its screen the rest of the import is left out, said in one line.
 ///
 /// For the tasks that photograph objects (I13, `CaptureObjects.kind(for:)`) a photo is searched for them
 /// instead (`IOSObjectFinder`: Vision's rectangles, `MultiQuadPicker`): the receipts or photos of a shot come
@@ -226,6 +232,8 @@ public final class IOSImportSession: ObservableObject {
     private var pending: [IOSImportSource] = []
     /// The photos taken so far in this import (for "Photo 2 of 5").
     private var photoNumber: Int = 0
+    /// The items and pages this import left out because the kind had taken all it takes (`isFull`).
+    private var leftOut: Int = 0
 
     /// `finder` nil: `IOSPageFinder.find`; `objectFinder` nil: `IOSObjectFinder.find` (tests pass their own).
     public init(state: AppState, finder: (@Sendable (RgbaImage) -> IOSFoundPage)? = nil,
@@ -273,6 +281,7 @@ public final class IOSImportSession: ObservableObject {
         isImporting = true
         stopRequested = false
         photoNumber = 0
+        leftOut = 0
         while !pending.isEmpty {
             if stopRequested {
                 // Stop dropped what waited: what is here came in after it, a new import.
@@ -284,6 +293,10 @@ public final class IOSImportSession: ObservableObject {
             outcome.merge(part)
         }
         stopRequested = false
+        if leftOut > 0 {
+            outcome.add(IOSImportText.textTakesOneMessage(leftOut))
+            leftOut = 0
+        }
         finish(outcome)
         return outcome
     }
@@ -395,6 +408,7 @@ public final class IOSImportSession: ObservableObject {
         // The objects of the shot before are in their review: the next shot is read once it is closed.
         await waitForReview()
         if stopRequested && state.showPhotoReview { return outcome }
+        if await isFull(leaving: 1) { return outcome }
         // Nothing is read while the state cannot take pages (a stack being turned over by hand, say).
         guard await canTakePages() else {
             outcome.add(IOSImportText.notAddedMessage(source.name))
@@ -458,6 +472,7 @@ public final class IOSImportSession: ObservableObject {
         var page: Int = 1
         while page <= pageCount {
             if page > 1 && stopRequested { break }
+            if page > 1, await isFull(leaving: pageCount - page + 1) { break }
             if page > 1 && CaptureObjects.findsSeveral(kind) {
                 // The objects of the page before are in their review: the next page is read once it is closed.
                 await waitForReview()
@@ -595,6 +610,7 @@ public final class IOSImportSession: ObservableObject {
         var index: Int = 0
         while index < pageCount {
             if stopRequested { break }
+            if index > 0, await isFull(leaving: pageCount - index) { break }
             if index > 0 && CaptureObjects.findsSeveral(kind) {
                 // The photos or receipts found on the page before are in their review: the next page is
                 // read once it is closed.
@@ -666,6 +682,17 @@ public final class IOSImportSession: ObservableObject {
             continuation = waiting
             cornerRequest = request
         }
+    }
+
+    /// Waits until nothing else runs; true when the kind has taken all it takes: Text's page is held for its
+    /// screen. The `left` pages of the item in hand and what waits are then left out (`leftOut`), said
+    /// once at the end rather than as pages that could not be added.
+    private func isFull(leaving left: Int) async -> Bool {
+        await waitUntilIdle()
+        guard state.quickScanPage != nil else { return false }
+        leftOut += left + pending.count
+        pending.removeAll()
+        return true
     }
 
     /// Waits until nothing else runs; true when the state can take pages then (`AppState.canIngest`).

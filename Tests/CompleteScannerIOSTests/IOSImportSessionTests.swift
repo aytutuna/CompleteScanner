@@ -277,6 +277,29 @@ final class IOSImportSessionTests: XCTestCase {
     }
 
     @MainActor
+    func test_text_takesTheFirstPhoto_andSaysTheOthersWereLeftOut() async throws {
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        XCTAssertTrue(state.startTask(.quickScan))
+        let importer = IOSImportSession(state: state, finder: fixedFinder(sheetQuad, reason: .none))
+        let data: Data = sheetPNG()
+        let items: [IOSImportItem] = [IOSImportItem(name: "a.png", data: data, kind: .image),
+                                      IOSImportItem(name: "b.png", data: data, kind: .image),
+                                      IOSImportItem(name: "c.png", data: data, kind: .image)]
+        let importing: Task<IOSImportOutcome, Never> = Task { @MainActor in
+            await importer.importItems(items)
+        }
+        try await ImportTestSupport.waitUntil(timeout: 60) { importer.cornerRequest != nil }
+        importer.answer(PhotoCornersAnswer(choice: .useCorners, corners: sheetQuad))
+        let outcome: IOSImportOutcome = await importing.value
+        XCTAssertEqual(outcome.added, 1)
+        XCTAssertNotNil(state.quickScanPage)
+        XCTAssertEqual(outcome.problems, [IOSImportText.textTakesOneMessage(2)])
+        XCTAssertEqual(state.errorMessage, "Text takes one page; the other 2 were not added.")
+        XCTAssertNil(importer.cornerRequest)
+        XCTAssertEqual(IOSImportText.textTakesOneMessage(1), "Text takes one page; the other one was not added.")
+    }
+
+    @MainActor
     func test_whatCannotBeRead_isListed_andTheOthersComeIn() async throws {
         let state: AppState = ImportTestSupport.makeState(in: folder)
         let importer = IOSImportSession(state: state, finder: fixedFinder(sheetQuad, reason: .none))
