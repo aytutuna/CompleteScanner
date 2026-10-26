@@ -215,9 +215,13 @@ struct ScanScreen: View {
                 openGroup = nil
             }
             .onChange(of: importer.isImporting) { (_: Bool, importing: Bool) in
-                // The root's corner editor cannot show over the sheet (files opened in the app, the companion).
+                // The root's corner editor cannot show over a sheet (files opened in the app, the companion);
+                // a spread's split can be started again from the page strip.
                 if importing {
                     openGroup = nil
+                    pagesShown = false
+                    picksPDF = false
+                    spreadEditor = nil
                 }
             }
     }
