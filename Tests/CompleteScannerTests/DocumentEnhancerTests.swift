@@ -470,7 +470,10 @@ final class DocumentEnhancerTests: XCTestCase {
         XCTAssertEqual(DocumentEnhancer.mode(for: settings), .gray)
         settings.colorMode = .color
         // Receipts, the ID card and copies are cleaned up whatever the filter.
-        XCTAssertEqual(DocumentEnhancer.mode(for: TaskCatalog.apply(.receipt, to: settings)), .auto)
+        // Receipts start in gray: in color they are still cleaned up.
+        var receipt: ScanSettings = TaskCatalog.apply(.receipt, to: settings)
+        receipt.colorMode = .color
+        XCTAssertEqual(DocumentEnhancer.mode(for: receipt), .auto)
         XCTAssertEqual(DocumentEnhancer.mode(for: TaskCatalog.apply(.idCard, to: settings)), .auto)
         XCTAssertEqual(DocumentEnhancer.mode(for: TaskCatalog.apply(.copy, to: settings)), .auto)
         XCTAssertNil(DocumentEnhancer.mode(for: TaskCatalog.apply(.book, to: settings)))
@@ -563,6 +566,8 @@ final class DocumentEnhancerTests: XCTestCase {
         let printCut: ScannedPage = PerspectiveStep().apply(printPage)
         XCTAssertEqual(EnhanceStep(mode: .gray).apply(printCut).capture?.enhancement, .photo)
         XCTAssertNil(EnhanceStep(mode: .gray).apply(printCut).capture?.filter)
+        XCTAssertEqual(EnhanceStep(mode: nil).apply(printCut).capture?.enhancement, .photo)
+        XCTAssertNil(EnhanceStep(mode: nil).apply(printCut).capture?.filter)
         // Not cut out yet, cut out whole (Apple's scanner) or a scanner's page: left alone.
         XCTAssertTrue(step.apply(page).image === page.image)
         XCTAssertNil(step.apply(page).capture?.enhancement)

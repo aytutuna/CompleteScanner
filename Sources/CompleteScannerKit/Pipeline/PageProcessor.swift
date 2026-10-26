@@ -102,7 +102,9 @@ public struct EnhanceStep: PageStep {
     public func apply(_ page: ScannedPage) -> ScannedPage {
         guard let capture = page.capture, capture.scale != nil, capture.enhancement == nil, capture.filter == nil,
               page.geometry?.basis == .perspective else { return page }
-        guard let mode else {
+        // A photo print or a card is cleaned up as a photo even under Original: it has no filter.
+        let asPhoto: DocumentEnhanceMode? = DocumentEnhancer.mode(.auto, kind: capture.kind) == .photo ? .photo : nil
+        guard let mode = mode ?? asPhoto else {
             var facts: CaptureFacts = capture
             facts.filter = .original
             return page.withCapture(facts)

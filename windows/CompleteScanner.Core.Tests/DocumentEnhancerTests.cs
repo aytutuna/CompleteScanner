@@ -464,7 +464,10 @@ public class DocumentEnhancerTests
         Assert.Equal(DocumentEnhanceMode.Gray, DocumentEnhancer.ModeFor(settings));
         settings.ColorMode = ColorMode.Color;
         // Receipts, the ID card and copies are cleaned up whatever the filter.
-        Assert.Equal(DocumentEnhanceMode.Auto, DocumentEnhancer.ModeFor(TaskCatalog.Apply(ScanTask.Receipt, settings)));
+        // Receipts start in gray: in color they are still cleaned up.
+        var receipt = TaskCatalog.Apply(ScanTask.Receipt, settings);
+        receipt.ColorMode = ColorMode.Color;
+        Assert.Equal(DocumentEnhanceMode.Auto, DocumentEnhancer.ModeFor(receipt));
         Assert.Equal(DocumentEnhanceMode.Auto, DocumentEnhancer.ModeFor(TaskCatalog.Apply(ScanTask.IdCard, settings)));
         Assert.Equal(DocumentEnhanceMode.Auto, DocumentEnhancer.ModeFor(TaskCatalog.Apply(ScanTask.Copy, settings)));
         Assert.Null(DocumentEnhancer.ModeFor(TaskCatalog.Apply(ScanTask.Book, settings)));
@@ -549,6 +552,8 @@ public class DocumentEnhancerTests
         var print = new PerspectiveStep().Apply(page.WithCapture(new CaptureFacts(quad, 440, 440) { Kind = CaptureKind.Photo }));
         Assert.Equal(DocumentEnhanceMode.Photo, new EnhanceStep(DocumentEnhanceMode.Gray).Apply(print).Capture!.Enhancement);
         Assert.Null(new EnhanceStep(DocumentEnhanceMode.Gray).Apply(print).Capture!.Filter);
+        Assert.Equal(DocumentEnhanceMode.Photo, new EnhanceStep(null).Apply(print).Capture!.Enhancement);
+        Assert.Null(new EnhanceStep(null).Apply(print).Capture!.Filter);
         // Not cut out yet, cut out whole (Apple's scanner) or a scanner's page: left alone.
         Assert.Same(page, step.Apply(page));
         var whole = new ScannedPage(sheet, 200, ColorMode.Color).WithCapture(new CaptureFacts(quad, 440, 440)

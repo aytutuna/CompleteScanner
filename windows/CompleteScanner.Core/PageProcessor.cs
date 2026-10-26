@@ -104,7 +104,11 @@ public sealed class EnhanceStep(DocumentEnhanceMode? mode) : IPageStep
     {
         if (page.Capture is not { Scale: not null, Enhancement: null, Filter: null } capture
             || page.Geometry?.Basis != GeometryBasis.Perspective) return page;
-        if (Mode is not { } mode) return page.WithCapture(capture with { Filter = CaptureFilter.Original });
+        // A photo print or a card is cleaned up as a photo even under Original: it has no filter.
+        DocumentEnhanceMode? asPhoto = DocumentEnhancer.ModeFor(DocumentEnhanceMode.Auto, capture.Kind) == DocumentEnhanceMode.Photo
+            ? DocumentEnhanceMode.Photo
+            : null;
+        if ((Mode ?? asPhoto) is not { } mode) return page.WithCapture(capture with { Filter = CaptureFilter.Original });
         var applied = DocumentEnhancer.ModeFor(mode, capture.Kind);
         var result = DocumentEnhancer.Enhance(page.Image, applied);
         var colorMode = result.Mode switch
