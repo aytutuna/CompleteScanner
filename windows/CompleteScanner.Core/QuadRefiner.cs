@@ -18,8 +18,9 @@ public readonly record struct QuadRefinement(Quad Quad, bool Refined, double Sup
 /// is the page's edge (a header bar or a ruled line just inside it scores as well). That line is then
 /// fitted to a fraction of a pixel at the points where its edge is clear. A side whose edge is clear at
 /// fewer than <see cref="MinSideSupport"/> of its points keeps its place. The corners are where the four
-/// lines cross; the refinement is taken only when at least one side moved, the outline stays convex and
-/// no corner moved more than twice the band. The photo is searched at most
+/// lines cross; the refinement is taken only when at least one side moved, the outline stays convex, no
+/// corner moved more than twice the band and its sides lie on stronger gradient, all told, than the
+/// outline given. The photo is searched at most
 /// <see cref="PhotoDocumentDetector.AnalysisLongSide"/> px long, as the page search sees it.
 /// </summary>
 public static class QuadRefiner
@@ -34,6 +35,11 @@ public static class QuadRefiner
     public const double SupportReach = 1.5;
     /// <summary>Of the lines scoring at least this share of the best, the outermost is the edge.</summary>
     public const double OuterShare = 0.7;
+    /// <summary>
+    /// How far outside the side as given, as a share of the band, a line may win for being outermost; one
+    /// further out wins only as the best line.
+    /// </summary>
+    public const double OuterReach = 1.0 / 3;
 
     /// <summary><paramref name="quad"/> (the photo's pixels) moved onto the edges of <paramref name="image"/>, with its support.</summary>
     public static QuadRefinement Refine(RgbaImage image, Quad quad)
@@ -61,18 +67,22 @@ public static class QuadRefiner
                 return new QuadRefinement(quad, false, 0);
             }
         }
+        var given = Backing(field, q);
         if (moved > 0 && Crossings(lines) is { } result && result.IsConvex && Within(result, q, 2 * reach))
         {
-            return new QuadRefinement(result.Scaled(toFullX, toFullY), true, Support(field, result));
+            // Only an outline lying on its edges better than the one given: a page already on its edges is not
+            // moved onto another edge near it.
+            var found = Backing(field, result);
+            if (found.Fit > given.Fit) return new QuadRefinement(result.Scaled(toFullX, toFullY), true, found.Shares.Min());
         }
-        return new QuadRefinement(quad, false, Support(field, q));
+        return new QuadRefinement(quad, false, given.Shares.Min());
     }
 
     /// <summary>The edge support of <paramref name="quad"/> (the photo's pixels) in <paramref name="image"/>, as <see cref="Refine"/> reports it.</summary>
     internal static double SupportOf(RgbaImage image, Quad quad)
     {
         var (field, toFullX, toFullY) = Analysis(image);
-        return field is null ? 0 : Support(field, quad.Scaled(1 / toFullX, 1 / toFullY));
+        return field is null ? 0 : Backing(field, quad.Scaled(1 / toFullX, 1 / toFullY)).Shares.Min();
     }
 
     private static (PhotoDocumentDetector.Field? Field, double ToFullX, double ToFullY) Analysis(RgbaImage image)
@@ -166,8 +176,9 @@ public static class QuadRefiner
                 }
             }
         }
-        var scores = new double[2 * span * span];
-        double best = 0;
+        var counts = new int[2 * span * span];
+        var strengths = new double[2 * span * span];
+        int bestCount = 0, bestIndex = -1, bestNear = int.MaxValue;
         for (int side = 0; side < 2; side++)
         {
             double sign = side == 0 ? -1 : 1;
@@ -185,29 +196,40 @@ public static class QuadRefiner
                         count++;
                         strength += Math.Min(sign * values[s * span + k], PhotoDocumentDetector.VoteCap);
                     }
-                    // The count first; how strong, below one point, between lines of the same count.
-                    double sum = count + strength / (PhotoDocumentDetector.VoteCap * n + 1);
-                    scores[(side * span + a) * span + b] = sum;
-                    best = Math.Max(best, sum);
+                    int index = (side * span + a) * span + b;
+                    counts[index] = count;
+                    strengths[index] = strength;
+                    // The best line: the most points, the nearer to the side as given on a tie.
+                    int near = Math.Abs(a - r) + Math.Abs(b - r);
+                    if (count > bestCount || (count == bestCount && near < bestNear))
+                    {
+                        bestCount = count;
+                        bestIndex = index;
+                        bestNear = near;
+                    }
                 }
             }
         }
-        if (best < Math.Max(6, MinSideSupport * used)) return null;
-        double bestSign = 1, bestOut = double.NegativeInfinity, bestScore = 0;
+        if (bestCount < Math.Max(6, MinSideSupport * used)) return null;
+        double bestSign = 1, bestOut = double.NegativeInfinity, bestScore = 0, bestStrength = 0;
         int bestStart = r, bestEnd = r;
+        double outReach = 2 * r * OuterReach;
         for (int side = 0; side < 2; side++)
         {
             for (int a = 0; a < span; a++)
             {
                 for (int b = 0; b < span; b++)
                 {
-                    double sum = scores[(side * span + a) * span + b];
-                    if (sum < OuterShare * best) continue;
+                    int index = (side * span + a) * span + b;
+                    int count = counts[index];
+                    if (count < OuterShare * bestCount) continue;
                     double outness = outward * (a + b - 2 * r);
-                    if (outness > bestOut || (outness == bestOut && sum > bestScore))
+                    if (outness > outReach && index != bestIndex) continue;
+                    if (outness > bestOut || (outness == bestOut && (count > bestScore || (count == bestScore && strengths[index] > bestStrength))))
                     {
                         bestOut = outness;
-                        bestScore = sum;
+                        bestScore = count;
+                        bestStrength = strengths[index];
                         bestSign = side == 0 ? -1 : 1;
                         bestStart = a;
                         bestEnd = b;
@@ -248,24 +270,28 @@ public static class QuadRefiner
     }
 
     /// <summary>
-    /// The share of the weakest side of <paramref name="q"/> (analysis pixels) backed by an edge: at each
-    /// of its points inside the frame, the gradient across it within <see cref="SupportReach"/> px, of the
-    /// sign that prevails along the side, at least <see cref="PhotoDocumentDetector.EdgeThreshold"/>. A side
-    /// with fewer than a quarter of its points inside the frame backs nothing.
+    /// How well edges back <paramref name="q"/> (analysis pixels). <c>Shares</c>: the share of each side
+    /// backed by an edge: at each of its points inside the frame, the gradient across it within
+    /// <see cref="SupportReach"/> px, of the sign that prevails along the side, at least
+    /// <see cref="PhotoDocumentDetector.EdgeThreshold"/>. <c>Fit</c>: the sides' sum of that gradient right on
+    /// the side (up to <see cref="PhotoDocumentDetector.VoteCap"/>, as a share of it, the mean over the
+    /// points). A side with fewer than a quarter of its points inside the frame backs nothing.
     /// </summary>
-    private static double Support(PhotoDocumentDetector.Field f, Quad q)
+    private static (double[] Shares, double Fit) Backing(PhotoDocumentDetector.Field f, Quad q)
     {
-        double weakest = 1;
+        var shares = new double[4];
+        double fit = 0;
         for (int i = 0; i < 4; i++)
         {
             var p = q[i];
             var e = q[i + 1];
             double dx = e.X - p.X, dy = e.Y - p.Y;
             double len = Math.Sqrt(dx * dx + dy * dy);
-            if (!(len >= 1)) return 0;
+            if (!(len >= 1)) continue;
             double nx = dy / len, ny = -dx / len;
             var pos = new double[Samples];
             var neg = new double[Samples];
+            var onSide = new double[Samples];
             int used = 0;
             double sumPos = 0, sumNeg = 0;
             for (int s = 0; s < Samples; s++)
@@ -284,20 +310,25 @@ public static class QuadRefiner
                     double v = g.Gx * nx + g.Gy * ny;
                     pos[s] = Math.Max(pos[s], v);
                     neg[s] = Math.Max(neg[s], -v);
+                    if (k == 0) onSide[s] = v;
                 }
                 sumPos += pos[s];
                 sumNeg += neg[s];
             }
-            if (used * 4 < Samples) return 0;
-            var side = sumPos >= sumNeg ? pos : neg;
+            if (used * 4 < Samples) continue;
+            double sign = sumPos >= sumNeg ? 1 : -1;
+            var side = sign > 0 ? pos : neg;
             int backed = 0;
+            double on = 0;
             for (int s = 0; s < Samples; s++)
             {
                 if (side[s] >= PhotoDocumentDetector.EdgeThreshold) backed++;
+                if (side[s] >= 0) on += Math.Clamp(sign * onSide[s], 0, PhotoDocumentDetector.VoteCap);
             }
-            weakest = Math.Min(weakest, (double)backed / used);
+            shares[i] = (double)backed / used;
+            fit += on / (PhotoDocumentDetector.VoteCap * used);
         }
-        return weakest;
+        return (shares, fit);
     }
 
     /// <summary>Whether (x, y) lies where the gradient is measured (not the outermost pixels).</summary>

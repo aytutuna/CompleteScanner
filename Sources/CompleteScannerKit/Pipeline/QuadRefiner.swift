@@ -24,8 +24,8 @@ public struct QuadRefinement: Equatable, Sendable {
 /// header bar or a ruled line just inside it scores as well). That line is then fitted to a fraction of
 /// a pixel at the points where its edge is clear. A side whose edge is clear at fewer than
 /// `minSideSupport` of its points keeps its place. The corners are where the four lines cross; the
-/// refinement is taken only when at least one side moved, the outline stays convex and no corner moved
-/// more than twice the band. The photo is searched at most `PhotoDocumentDetector.analysisLongSide` px
+/// refinement is taken only when at least one side moved, the outline stays convex, no corner moved more
+/// than twice the band and its sides lie on stronger gradient, all told, than the outline given. The photo is searched at most `PhotoDocumentDetector.analysisLongSide` px
 /// long, as the page search sees it. Twin of C# `QuadRefiner`.
 public enum QuadRefiner {
     /// How far either side of a side its edge is looked for: a share of the photo's diagonal.
@@ -38,6 +38,9 @@ public enum QuadRefiner {
     public static let supportReach = 1.5
     /// Of the lines scoring at least this share of the best, the outermost is the edge.
     public static let outerShare = 0.7
+    /// How far outside the side as given, as a share of the band, a line may win for being outermost; one
+    /// further out wins only as the best line.
+    public static let outerReach = 1.0 / 3
 
     typealias Field = PhotoDocumentDetector.Field
     typealias Line = PhotoDocumentDetector.Line
@@ -63,16 +66,22 @@ public enum QuadRefiner {
                 return QuadRefinement(quad: quad, refined: false, support: 0)
             }
         }
+        let given = backing(field, q)
         if moved > 0, let result = crossings(lines), result.isConvex, within(result, q, 2 * reach) {
-            return QuadRefinement(quad: result.scaled(toFullX, toFullY), refined: true, support: support(field, result))
+            // Only an outline lying on its edges better than the one given: a page already on its edges is not
+            // moved onto another edge near it.
+            let found = backing(field, result)
+            if found.fit > given.fit {
+                return QuadRefinement(quad: result.scaled(toFullX, toFullY), refined: true, support: found.shares.min() ?? 0)
+            }
         }
-        return QuadRefinement(quad: quad, refined: false, support: support(field, q))
+        return QuadRefinement(quad: quad, refined: false, support: given.shares.min() ?? 0)
     }
 
     /// The edge support of `quad` (the photo's pixels) in `image`, as `refine` reports it.
     static func supportOf(_ image: RgbaImage, _ quad: Quad) -> Double {
         guard let searched = analysis(image) else { return 0 }
-        return support(searched.0, quad.scaled(1 / searched.1, 1 / searched.2))
+        return backing(searched.0, quad.scaled(1 / searched.1, 1 / searched.2)).shares.min() ?? 0
     }
 
     private static func analysis(_ image: RgbaImage) -> (Field, Double, Double)? {
@@ -152,8 +161,9 @@ public enum QuadRefiner {
                 }
             }
         }
-        var scores = [Double](repeating: 0, count: 2 * span * span)
-        var best = 0.0
+        var counts = [Int](repeating: 0, count: 2 * span * span)
+        var strengths = [Double](repeating: 0, count: 2 * span * span)
+        var bestCount = 0, bestIndex = -1, bestNear = Int.max
         for side in 0..<2 {
             let sign: Double = side == 0 ? -1 : 1
             for a in 0..<span {
@@ -166,25 +176,36 @@ public enum QuadRefiner {
                         count += 1
                         strength += min(sign * values[s * span + k], PhotoDocumentDetector.voteCap)
                     }
-                    // The count first; how strong, below one point, between lines of the same count.
-                    let sum = Double(count) + strength / (PhotoDocumentDetector.voteCap * Double(n) + 1)
-                    scores[(side * span + a) * span + b] = sum
-                    best = max(best, sum)
+                    let index = (side * span + a) * span + b
+                    counts[index] = count
+                    strengths[index] = strength
+                    // The best line: the most points, the nearer to the side as given on a tie.
+                    let near = abs(a - r) + abs(b - r)
+                    if count > bestCount || (count == bestCount && near < bestNear) {
+                        bestCount = count
+                        bestIndex = index
+                        bestNear = near
+                    }
                 }
             }
         }
-        if best < max(6, minSideSupport * Double(used)) { return nil }
-        var bestSign = 1.0, bestOut = -Double.infinity, bestScore = 0.0
+        if Double(bestCount) < max(6, minSideSupport * Double(used)) { return nil }
+        var bestSign = 1.0, bestOut = -Double.infinity, bestScore = 0, bestStrength = 0.0
         var bestStart = r, bestEnd = r
+        let outReach = 2 * Double(r) * outerReach
         for side in 0..<2 {
             for a in 0..<span {
                 for b in 0..<span {
-                    let sum = scores[(side * span + a) * span + b]
-                    if sum < outerShare * best { continue }
+                    let index = (side * span + a) * span + b
+                    let count = counts[index]
+                    if Double(count) < outerShare * Double(bestCount) { continue }
                     let outness = outward * Double(a + b - 2 * r)
-                    if outness > bestOut || (outness == bestOut && sum > bestScore) {
+                    if outness > outReach && index != bestIndex { continue }
+                    if outness > bestOut
+                        || (outness == bestOut && (count > bestScore || (count == bestScore && strengths[index] > bestStrength))) {
                         bestOut = outness
-                        bestScore = sum
+                        bestScore = count
+                        bestStrength = strengths[index]
                         bestSign = side == 0 ? -1 : 1
                         bestStart = a
                         bestEnd = b
@@ -219,21 +240,24 @@ public enum QuadRefiner {
         return PhotoDocumentDetector.fitLine(points)
     }
 
-    /// The share of the weakest side of `q` (analysis pixels) backed by an edge: at each of its points
-    /// inside the frame, the gradient across it within `supportReach` px, of the sign that prevails along
-    /// the side, at least `PhotoDocumentDetector.edgeThreshold`. A side with fewer than a quarter of its
-    /// points inside the frame backs nothing.
-    private static func support(_ f: Field, _ q: Quad) -> Double {
-        var weakest = 1.0
+    /// How well edges back `q` (analysis pixels). `shares`: the share of each side backed by an edge: at each
+    /// of its points inside the frame, the gradient across it within `supportReach` px, of the sign that
+    /// prevails along the side, at least `PhotoDocumentDetector.edgeThreshold`. `fit`: the sides' sum of that
+    /// gradient right on the side (up to `PhotoDocumentDetector.voteCap`, as a share of it, the mean over the
+    /// points). A side with fewer than a quarter of its points inside the frame backs nothing.
+    private static func backing(_ f: Field, _ q: Quad) -> (shares: [Double], fit: Double) {
+        var shares = [Double](repeating: 0, count: 4)
+        var fit = 0.0
         for i in 0..<4 {
             let p = q[i], e = q[i + 1]
             let px = Double(p.x), py = Double(p.y)
             let dx = Double(e.x) - px, dy = Double(e.y) - py
             let len = (dx * dx + dy * dy).squareRoot()
-            if !(len >= 1) { return 0 }
+            if !(len >= 1) { continue }
             let nx = dy / len, ny = -dx / len
             var pos = [Double](repeating: 0, count: samples)
             var neg = [Double](repeating: 0, count: samples)
+            var onSide = [Double](repeating: 0, count: samples)
             var used = 0
             var sumPos = 0.0, sumNeg = 0.0
             for s in 0..<samples {
@@ -251,20 +275,25 @@ public enum QuadRefiner {
                     let v = g.gx * nx + g.gy * ny
                     pos[s] = max(pos[s], v)
                     neg[s] = max(neg[s], -v)
+                    if k == 0 { onSide[s] = v }
                     k += 0.5
                 }
                 sumPos += pos[s]
                 sumNeg += neg[s]
             }
-            if used * 4 < samples { return 0 }
-            let side = sumPos >= sumNeg ? pos : neg
+            if used * 4 < samples { continue }
+            let sign: Double = sumPos >= sumNeg ? 1 : -1
+            let side = sign > 0 ? pos : neg
             var backed = 0
-            for s in 0..<samples where side[s] >= PhotoDocumentDetector.edgeThreshold {
-                backed += 1
+            var on = 0.0
+            for s in 0..<samples {
+                if side[s] >= PhotoDocumentDetector.edgeThreshold { backed += 1 }
+                if side[s] >= 0 { on += min(max(sign * onSide[s], 0), PhotoDocumentDetector.voteCap) }
             }
-            weakest = min(weakest, Double(backed) / Double(used))
+            shares[i] = Double(backed) / Double(used)
+            fit += on / (PhotoDocumentDetector.voteCap * Double(used))
         }
-        return weakest
+        return (shares, fit)
     }
 
     /// Whether (x, y) lies where the gradient is measured (not the outermost pixels).
