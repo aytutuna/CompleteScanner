@@ -385,7 +385,8 @@ public final class IOSCameraController: IOSCameraDriving {
         }
         previewLayer = layer
         layer.session = capture.session
-        layer.videoGravity = .resizeAspectFill
+        // The whole 4:3 frame, as the photo will be, rather than a crop that looks zoomed in.
+        layer.videoGravity = .resizeAspect
         attachRotation()
     }
 

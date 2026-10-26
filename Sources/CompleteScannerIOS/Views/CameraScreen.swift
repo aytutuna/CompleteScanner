@@ -5,8 +5,9 @@ import QuartzCore
 import SwiftUI
 import UIKit
 
-/// Our own camera, full screen: the live preview with the page's outline over it (yellow, green once the
-/// page holds still), Done, Auto (the automatic shutter), the torch, the shutter with a ring that fills
+/// Our own camera, full screen: the live preview, the whole photo as it will be taken (black above and below
+/// it on a tall screen, where the bars sit), with the page's outline over it (yellow, green once the page
+/// holds still), Done, Auto (the automatic shutter), the torch, the shutter with a ring that fills
 /// while the page holds still, and the last page taken with how many pages the queue holds. With Auto on
 /// the photo is taken by itself once the page held still on a sharp, lit frame (`IOSCameraModel`,
 /// `LiveQuadUpdate.shouldCapture`), with a short tap felt; while it waits for a sharper or brighter frame,
@@ -120,7 +121,7 @@ struct CameraScreen: View {
             VStack(spacing: 0) {
                 topBar
                 TaskChip(title: IOSShell.shownKind(state.settings).title, onTap: openTasks)
-                    .padding(.top, 10)
+                    .padding(.top, 6)
                 if model.message == nil, cardPrompt == nil, let line = taskLine {
                     Text(line.prompt)
                         .font(.headline)
@@ -187,9 +188,11 @@ struct CameraScreen: View {
                         await shown.toggleTorch()
                     }
                 } label: {
+                    // The button's own padding makes this a full tap target; any taller and the bar and the
+                    // chip spill out of the black band above the picture.
                     Image(systemName: model.torchOn ? "flashlight.on.fill" : "flashlight.off.fill")
                         .font(.title3)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 44, height: 30)
                 }
                 .buttonStyle(.bordered)
                 .tint(Color.white)
@@ -355,7 +358,7 @@ struct CameraScreen: View {
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 24)
+        .padding(.bottom, 12)
     }
 
     private func openTasks() {
@@ -407,7 +410,7 @@ struct CameraScreen: View {
 /// The camera's live preview with the page's outline drawn over it. The outline comes as shares of the
 /// sensor's frame (as the live frames are searched) and is placed with the preview layer's own
 /// conversion (`layerPointConverted(fromCaptureDevicePoint:)`), which knows how the preview is turned
-/// and cropped to fill the screen.
+/// and where the whole frame sits in the view.
 struct CameraPreview: UIViewRepresentable {
     let controller: IOSCameraController
     let outline: Quad?
