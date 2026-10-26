@@ -1743,6 +1743,7 @@ struct ScanCovers: ViewModifier {
                 case .photoReview:
                     PhotoReviewScreen(model: IOSPhotoReviewModel(state: state))
                         .environmentObject(state)
+                        .environmentObject(importer)
                 case .idCardReview:
                     IdCardReviewScreen(model: IOSPhotoReviewModel(state: state))
                         .environmentObject(state)

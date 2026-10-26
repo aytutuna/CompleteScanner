@@ -6,11 +6,14 @@ import SwiftUI
 /// The photo and receipt review on the iPhone and iPad (I13), a port of the Mac's `PhotoReviewView` and
 /// the Windows review: titled "Found 3 photos" (or "Found 2 receipts"), a card per photo or receipt with
 /// Keep, Rotate and Fix crop (the touch corner editor on the picture it was cut from), the receipts' name by
-/// date, one PDF for all and PDF or JPEG, then Save ("Save 3 photos", "Save as One PDF") or Cancel. What it
-/// does is `IOSPhotoReviewModel`; this view draws it. It shows the error alert itself, since the root's
-/// cannot show over it.
+/// date, one PDF for all and PDF or JPEG, then Save ("Save 3 photos", "Save as One PDF") or Cancel. While an
+/// import of several photos or pages runs, the review opens for each in turn, so it shows the import's
+/// progress and Stop import, which ends the import and leaves this review open. What it does is
+/// `IOSPhotoReviewModel`; this view draws it. It shows the error alert itself, since the root's cannot show
+/// over it.
 struct PhotoReviewScreen: View {
     @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var importer: IOSImportSession
     let model: IOSPhotoReviewModel
     @State private var cropping: IOSCropRequest?
     @State private var preparing: Bool = false
@@ -46,6 +49,15 @@ struct PhotoReviewScreen: View {
                     .disabled(state.isBusy)
                     .accessibilityIdentifier("review.cancel")
                 }
+                if importer.isImporting {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(IOSImportText.stopImportLabel) {
+                            importer.stop()
+                        }
+                        .accessibilityHint(Text(IOSImportText.stopImportHint))
+                        .accessibilityIdentifier("review.stopImport")
+                    }
+                }
             }
         }
         .fullScreenCover(item: $cropping) { (crop: IOSCropRequest) in
@@ -67,9 +79,15 @@ struct PhotoReviewScreen: View {
         return list
     }
 
-    /// The receipts' choices, the progress of a save, and Save.
+    /// The import's progress, the receipts' choices, the progress of a save, and Save.
     private var footer: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let progress = importer.progressText {
+                Text(progress)
+                    .font(.footnote)
+                    .foregroundStyle(Color.secondary)
+                    .accessibilityIdentifier("review.importProgress")
+            }
             if model.isReceipts {
                 Toggle(IOSReviewText.nameByDateLabel, isOn: nameByDate)
                     .disabled(state.isBusy)

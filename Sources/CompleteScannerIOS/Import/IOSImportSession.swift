@@ -163,6 +163,9 @@ public enum IOSImportText {
     public static let filesLabel = "Files"
     /// Ends the import after the photo or page in hand.
     public static let stopLabel = "Stop"
+    /// The photo review's Stop: the review opens once for each photo or page an import brings in.
+    public static let stopImportLabel = "Stop import"
+    public static let stopImportHint = "Brings in no more photos or pages; this review stays open"
     /// While a PDF's pages come in: "Importing page 2 of 5…".
     public static func importingPage(_ number: Int, of count: Int) -> String {
         "Importing page \(number) of \(count)\u{2026}"
