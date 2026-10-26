@@ -515,6 +515,8 @@ public final class AppState: ObservableObject {
     /// does joining or splitting a spread (AppState+Book.swift).
     var pageEditChain: Task<Void, Never>?
     private var pageEditCount = 0
+    /// The pages being cut out of their photos again (AppState+Recut.swift), for a spinner on each.
+    @Published public internal(set) var recuttingPages: Set<UUID> = []
 
     /// Image shown in the preview canvas.
     public var canvasImage: CGImage? { overviewImage ?? lastScanImage }
@@ -1775,7 +1777,7 @@ public final class AppState: ObservableObject {
     }
 
     /// Runs `edit` after every page swap and turn queued before it (the Windows `_pageRotateChain`).
-    private func enqueuePageEdit(_ edit: @escaping @MainActor (AppState) async -> Void) {
+    func enqueuePageEdit(_ edit: @escaping @MainActor (AppState) async -> Void) {
         let previous = pageEditChain
         pageEditCount += 1
         let ticket = pageEditCount
