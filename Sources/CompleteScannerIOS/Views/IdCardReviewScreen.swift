@@ -132,6 +132,12 @@ struct IdCardReviewScreen: View {
             }
             Toggle(IOSReviewText.sidesAsImagesLabel, isOn: sidesAsImages)
                 .accessibilityIdentifier("idcard.sides")
+            if IOSShell.reviewOffersPassword(state.settings) {
+                Toggle(PDFProtection.optionLabel, isOn: protect)
+                    .disabled(IOSPDFOptions.archivalShown(state.settings.output))
+                    .accessibilityHint(Text(PDFProtection.optionHint))
+                    .accessibilityIdentifier("idcard.password")
+            }
             if state.isBusy {
                 HStack(spacing: 8) {
                     ProgressView()
@@ -187,6 +193,14 @@ struct IdCardReviewScreen: View {
         let appState: AppState = state
         return Binding<OutputFormat>(get: { appState.settings.format.pageFormat },
                                      set: { (choice: OutputFormat) in appState.settings.format = choice })
+    }
+
+    private var protect: Binding<Bool> {
+        let appState: AppState = state
+        return Binding<Bool>(get: { appState.settings.output.protect },
+                             set: { (on: Bool) in
+                                 appState.settings.output = IOSPDFOptions.settingProtect(on, in: appState.settings.output)
+                             })
     }
 
     private var sidesAsImages: Binding<Bool> {

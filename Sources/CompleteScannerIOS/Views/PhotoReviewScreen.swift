@@ -87,6 +87,12 @@ struct PhotoReviewScreen: View {
                 .pickerStyle(.segmented)
                 .disabled(state.isBusy)
                 .accessibilityIdentifier("review.format")
+                if IOSShell.reviewOffersPassword(state.settings) {
+                    Toggle(PDFProtection.optionLabel, isOn: protect)
+                        .disabled(state.isBusy || IOSPDFOptions.archivalShown(state.settings.output))
+                        .accessibilityHint(Text(PDFProtection.optionHint))
+                        .accessibilityIdentifier("review.password")
+                }
             }
             if state.isBusy {
                 HStack(spacing: 8) {
@@ -120,6 +126,14 @@ struct PhotoReviewScreen: View {
     private var combine: Binding<Bool> {
         let review: IOSPhotoReviewModel = model
         return Binding<Bool>(get: { review.combine }, set: { (on: Bool) in review.setCombine(on) })
+    }
+
+    private var protect: Binding<Bool> {
+        let appState: AppState = state
+        return Binding<Bool>(get: { appState.settings.output.protect },
+                             set: { (on: Bool) in
+                                 appState.settings.output = IOSPDFOptions.settingProtect(on, in: appState.settings.output)
+                             })
     }
 
     private var format: Binding<OutputFormat> {

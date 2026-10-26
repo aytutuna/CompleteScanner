@@ -267,6 +267,12 @@ public enum IOSShell {
         collectsPages(settings) && !savesImages(settings) && settings.format.savesPDF(collectsPages: true)
     }
 
+    /// Whether the ID card's and the receipts' reviews show Password: their Save writes a PDF, which takes the
+    /// password set in Settings (Archive & password) though these kinds have no Export of their own.
+    public static func reviewOffersPassword(_ settings: ScanSettings) -> Bool {
+        settings.format.pageFormat == .pdf
+    }
+
     /// Why a task is not offered yet: the tile's one visible line.
     public static let notYetReason = "Not in this version yet"
 
