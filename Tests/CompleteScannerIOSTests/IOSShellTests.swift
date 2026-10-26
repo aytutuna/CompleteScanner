@@ -152,6 +152,14 @@ final class IOSShellTests: XCTestCase {
         }
     }
 
+    func test_flatbedPreview_andItsArea_onlyWhileTheFlatbedIsTheSource() {
+        var s = ScanSettings()
+        s.source = .flatbed
+        XCTAssertTrue(IOSShell.showsFlatbedPreview(s))
+        s.source = .documentFeeder
+        XCTAssertFalse(IOSShell.showsFlatbedPreview(s))
+    }
+
     func test_printerScanner_isTheRememberedScanner_inPrinterModeWhileListedAndSelected() {
         let network: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
         let demo: ScannerInfo = ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true, backend: "mock")

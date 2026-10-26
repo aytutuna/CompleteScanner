@@ -165,6 +165,13 @@ public enum IOSShell {
     static let printerTextPrompt = "Preview under Scanner, tap it to choose the area, then scan."
     static let printerTextHelp = "Then copy the text, or save the page as a picture."
 
+    /// The flatbed's preview, with its area and Choose area, while the flatbed is the source. With the feeder
+    /// the printer screen shows the last scan instead: a feeder scan takes no area, and the one chosen waits
+    /// for the flatbed, as on the Mac.
+    public static func showsFlatbedPreview(_ settings: ScanSettings) -> Bool {
+        settings.source == .flatbed
+    }
+
     /// The task the iPhone opens on: the one set up last time (kept in the settings), else Document to PDF.
     /// A photocopy or Email kept from before opens as Document: they are Save's Print… and Email… now.
     public static func launchTask(_ settings: ScanSettings) -> ScanTask {

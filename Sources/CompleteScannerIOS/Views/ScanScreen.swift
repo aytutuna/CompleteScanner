@@ -574,12 +574,15 @@ struct ScanScreen: View {
 
     // MARK: The viewfinder
 
-    /// The flatbed preview or the last scan; with neither, the camera's line centred where the preview
-    /// would be, unless the step card already says what to do.
+    /// The flatbed preview (only while the flatbed is the source, `IOSShell.showsFlatbedPreview`) or the last
+    /// scan; with neither, the camera's line centred where the preview would be, unless the step card already
+    /// says what to do.
     @ViewBuilder
     private var viewfinder: some View {
-        if state.canvasImage != nil {
-            PreviewArea(image: state.canvasImage, overview: state.overviewImage, onChooseArea: openCrop)
+        let flatbed: Bool = IOSShell.showsFlatbedPreview(state.settings)
+        let shown: CGImage? = flatbed ? state.canvasImage : state.lastScanImage
+        if shown != nil {
+            PreviewArea(image: shown, overview: flatbed ? state.overviewImage : nil, onChooseArea: openCrop)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("preview.area")
         } else if !showsStepCard, let camera = cameraLine {
@@ -854,7 +857,7 @@ struct ScanScreen: View {
 
     /// The flatbed preview full screen, to choose the scan area on (`CropScreen`).
     private func openCrop() {
-        guard state.overviewImage != nil, !state.isBusy else { return }
+        guard state.overviewImage != nil, IOSShell.showsFlatbedPreview(state.settings), !state.isBusy else { return }
         afterOptions {
             cover = .crop
         }
