@@ -9,9 +9,10 @@ import UniformTypeIdentifiers
 /// the title and the one-line subtitle; the feeder, both sides, the format and the rest are the scan
 /// screen's Options and Save's menu. A kind whose task cannot be started (no feeder or flatbed,
 /// `IOSShell.availability`) is dimmed with one short line saying why. Picking a tile starts the kind's
-/// task (or sets the preset's settings) up and opens the scan screen (`onOpenScanner`); not while an
-/// import runs, whose pages belong to the task set up. With a side of an ID card held, either kind of
-/// tile asks to discard the card first (`IdCardDiscardQuestion`). After the kinds, "Add pages to a PDF"
+/// task through the root view (`onTask`, which asks about queued pages and an ID card held) or sets the
+/// preset's settings up, and opens the scan screen (`onOpenScanner`); not while an import runs, whose pages
+/// belong to the task set up. With a side of an ID card held, a preset asks to discard the card first
+/// (`IdCardDiscardQuestion`). After the kinds, "Add pages to a PDF"
 /// (`IOSAppendTile`) picks a PDF in Files first, then sets up Document to PDF with that file as the append
 /// target, so Save adds the pages to it.
 struct TaskStartScreen: View {
@@ -20,6 +21,8 @@ struct TaskStartScreen: View {
 
     /// Opens the scan screen (after a tile was set up, or for the Scanner button).
     let onOpenScanner: @MainActor () -> Void
+    /// Starts a task, with the PDF its pages are added to when one was picked.
+    let onTask: @MainActor (ScanTask, URL?) -> Void
     @State private var askedToDiscard: Bool = false
     /// Files is open to pick the PDF for "Add pages to a PDF".
     @State private var picksPDF: Bool = false
@@ -112,24 +115,8 @@ struct TaskStartScreen: View {
         .accessibilityIdentifier("task.appendToPDF")
     }
 
-    /// Picking a task ends the ID card task, so with a side of the card held it asks first, as a preset does.
-    /// Any other tile ends adding to a picked PDF.
     private func pick(_ task: ScanTask, target: URL? = nil) {
-        let appState: AppState = state
-        let open: @MainActor () -> Void = onOpenScanner
-        state.leaveIdCard {
-            if appState.startTask(task) {
-                if let target {
-                    appState.setAppendTarget(target)
-                } else {
-                    appState.clearAppendTarget()
-                }
-                open()
-            }
-        }
-        if state.pendingIdCardLeave != nil {
-            askedToDiscard = true
-        }
+        onTask(task, target)
     }
 
     /// A preset's tile: its task's icon and its name, the task and settings for VoiceOver.

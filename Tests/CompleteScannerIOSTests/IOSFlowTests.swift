@@ -305,10 +305,16 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertEqual(IOSShell.keepPagesTitle(1), "Keep the page?")
         XCTAssertEqual(IOSShell.discardPagesLabel(3), "Discard 3 pages")
         XCTAssertEqual(IOSShell.discardPagesLabel(1), "Discard 1 page")
-        XCTAssertEqual(IOSShell.keepPagesLine(.photos, count: 3),
+        XCTAssertEqual(IOSShell.keepPagesLine(IOSShell.keepPagesReason(.photos), count: 3, canSave: true),
                        "Photos does not collect pages. Save them first, or discard them.")
-        XCTAssertEqual(IOSShell.keepPagesLine(.idCard, count: 1),
+        XCTAssertEqual(IOSShell.keepPagesLine(IOSShell.keepPagesReason(.idCard), count: 1, canSave: true),
                        "ID card does not collect pages. Save it first, or discard it.")
+        XCTAssertEqual(IOSShell.keepPagesLine(IOSShell.keepPagesReason(preset: "Till slips"), count: 2, canSave: true),
+                       "The preset \u{201C}Till slips\u{201D} does not collect pages. Save them first, or discard them.")
+        XCTAssertEqual(IOSShell.keepPagesLine(IOSShell.keepPagesReason(package: "Trip.csdoc"), count: 2, canSave: false),
+                       "\u{201C}Trip.csdoc\u{201D} opens in their place. They cannot be saved now: discard them, or cancel to keep them.")
+        XCTAssertEqual(IOSShell.keepPagesLine(IOSShell.keepPagesReason(.photos), count: 1, canSave: false),
+                       "Photos does not collect pages. It cannot be saved now: discard it, or cancel to keep it.")
         let document: ScanSettings = TaskCatalog.apply(.document, to: ScanSettings())
         XCTAssertEqual(IOSShell.saveFirstLabel(document, pageCount: 3, target: nil), "Save PDF first")
         var jpeg: ScanSettings = document

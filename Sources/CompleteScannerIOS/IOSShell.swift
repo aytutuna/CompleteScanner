@@ -326,6 +326,17 @@ public enum IOSShell {
         settings.format.isImageFormat
     }
 
+    /// Saves the queue as Save does, without After saving's steps: into the PDF picked, as pictures, or as the
+    /// format's document.
+    @MainActor
+    public static func saveQueue(_ state: AppState) {
+        if state.appendTarget == nil && savesImages(state.settings) {
+            state.saveImages()
+        } else {
+            state.savePDF()
+        }
+    }
+
     /// The Save button's title: "Save 3 JPEGs" for pictures (`AppState.imagesSaveTitle`), else the
     /// queue's own ("Save PDF (3 pages)", "Save Word").
     public static func saveTitle(_ settings: ScanSettings, plan: SavePlan) -> String {
@@ -348,14 +359,35 @@ public enum IOSShell {
         return "\(settings.format.saveTitle) \u{00B7} \(plan.pageCount)"
     }
 
-    /// The question before a kind that would leave the queued pages without a Save
-    /// (`AppState.pagesLeftBehind(by:)`): "Keep the 3 pages?".
+    /// The question before something that would leave the queued pages without a Save (a kind,
+    /// `AppState.pagesLeftBehind(by:)`, a preset, a document opened as new): "Keep the 3 pages?".
     public static func keepPagesTitle(_ count: Int) -> String {
         count == 1 ? "Keep the page?" : "Keep the \(count) pages?"
     }
 
-    public static func keepPagesLine(_ kind: IOSScanKind, count: Int) -> String {
-        "\(kind.title) does not collect pages. Save \(count == 1 ? "it" : "them") first, or discard \(count == 1 ? "it" : "them")."
+    /// The question's line: why the pages would be left (`keepPagesReason`), then what can be done with them,
+    /// without saving when Save first is not offered.
+    public static func keepPagesLine(_ reason: String, count: Int, canSave: Bool) -> String {
+        let them: String = count == 1 ? "it" : "them"
+        if canSave {
+            return "\(reason) Save \(them) first, or discard \(them)."
+        }
+        return "\(reason) \(count == 1 ? "It" : "They") cannot be saved now: discard \(them), or cancel to keep \(them)."
+    }
+
+    /// "Photos does not collect pages."
+    public static func keepPagesReason(_ kind: IOSScanKind) -> String {
+        "\(kind.title) does not collect pages."
+    }
+
+    /// "The preset “Receipts” does not collect pages."
+    public static func keepPagesReason(preset name: String) -> String {
+        "The preset \u{201C}\(name)\u{201D} does not collect pages."
+    }
+
+    /// "“Trip.csdoc” opens in their place."
+    public static func keepPagesReason(package fileName: String) -> String {
+        "\u{201C}\(fileName)\u{201D} opens in their place."
     }
 
     public static func discardPagesLabel(_ count: Int) -> String {

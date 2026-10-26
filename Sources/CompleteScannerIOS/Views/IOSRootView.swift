@@ -47,6 +47,10 @@ public struct IOSRootView: View {
     @State private var spreadEditor: SpreadEditorSource?
     @State private var columns: NavigationSplitViewVisibility = NavigationSplitViewVisibility.all
     @State private var started: Bool = false
+    /// On the iPad, a task picked that would leave the pages without a Save, while the question about them
+    /// is up; then the ID card's question, when a side is held.
+    @State private var leavingPages: PagesLeave?
+    @State private var askedToDiscard: Bool = false
 
     /// `importer` brings photos and PDFs in for the state the view is given; `launchImports` are the files
     /// imported at launch (`IOSLaunchOptions`), in order, into `launchTask` when given; `picker` lists the
@@ -158,6 +162,8 @@ public struct IOSRootView: View {
                 splitDetail
             }
         }
+        .modifier(KeepPagesQuestion(state: state, leave: $leavingPages, blocked: importer.isImporting))
+        .modifier(IdCardDiscardQuestion(state: state, asked: $askedToDiscard))
     }
 
     @ViewBuilder
@@ -168,7 +174,7 @@ public struct IOSRootView: View {
         } else {
             switch detail {
             case .start:
-                TaskStartScreen(onOpenScanner: openScanner)
+                TaskStartScreen(onOpenScanner: openScanner, onTask: pickTask)
             case .presets:
                 PresetsScreen(onApplied: openScanner)
             case .history:
@@ -179,14 +185,39 @@ public struct IOSRootView: View {
         }
     }
 
+    /// The iPad's sidebar and task list pick a task here, as the iPhone's kinds do (`ScanScreen.pickKind`): the
+    /// kind already set up just shows the scan screen again, keeping its options, its steps and the PDF picked;
+    /// a task that would leave the queued pages without a Save asks about them first (`KeepPagesQuestion`),
+    /// then about a side of an ID card held.
     private func pickTask(_ task: ScanTask, target: URL?) {
-        if state.startTask(task) {
-            if let target {
-                state.setAppendTarget(target)
-            } else {
-                state.clearAppendTarget()
-            }
+        if target == nil && state.activeTask != nil && IOSShell.kind(of: task) == IOSShell.shownKind(state.settings) {
             openScanner()
+            return
+        }
+        if state.pagesLeftBehind(by: task) > 0 {
+            leavingPages = PagesLeave(reason: IOSShell.keepPagesReason(IOSShell.kind(of: task))) { (discarding: Bool) in
+                startTask(task, target: target, discardingPages: discarding)
+            }
+        } else {
+            startTask(task, target: target, discardingPages: false)
+        }
+    }
+
+    private func startTask(_ task: ScanTask, target: URL?, discardingPages: Bool) {
+        let appState: AppState = state
+        let open: @MainActor () -> Void = openScanner
+        appState.leaveIdCard {
+            let started: Bool = discardingPages ? appState.discardPages(andStart: task) : appState.startTask(task)
+            guard started else { return }
+            if let target {
+                appState.setAppendTarget(target)
+            } else {
+                appState.clearAppendTarget()
+            }
+            open()
+        }
+        if appState.pendingIdCardLeave != nil {
+            askedToDiscard = true
         }
     }
 

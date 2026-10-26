@@ -15,8 +15,9 @@ enum IOSDetail: Hashable {
 /// pages to a PDF" as the task list has them (`IOSShell.kindTiles`: dimmed with the reason when
 /// one cannot be started, the kind set up marked), the scanners, one of which picked is printer mode's
 /// (`ScannerPickerSections`, with Add by address and Troubleshoot), and the library: Presets, Scans, Saved files and Settings
-/// (Command-comma). A kind or a preset picked while a side of an ID card is held asks to discard the card
-/// first (`IdCardDiscardQuestion`).
+/// (Command-comma). A kind picked goes to the root view (`onTask`), which asks about the pages and an ID card
+/// held; a preset picked while a side of an ID card is held asks to discard the card first
+/// (`IdCardDiscardQuestion`).
 struct IOSSidebar: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -25,7 +26,7 @@ struct IOSSidebar: View {
     let scannerShown: Bool
     let detail: IOSDetail
     /// Starts a task, with the PDF its pages are added to when one was picked.
-    let onTask: (ScanTask, URL?) -> Void
+    let onTask: @MainActor (ScanTask, URL?) -> Void
     let onPresetApplied: @MainActor () -> Void
     let onDetail: (IOSDetail) -> Void
     let onSettings: () -> Void
@@ -154,15 +155,8 @@ struct IOSSidebar: View {
         .accessibilityIdentifier(identifier)
     }
 
-    /// Picking a task ends the ID card task, so with a side of the card held it asks first, as a preset does.
     private func pick(_ task: ScanTask, target: URL? = nil) {
-        let start: (ScanTask, URL?) -> Void = onTask
-        state.leaveIdCard {
-            start(task, target)
-        }
-        if state.pendingIdCardLeave != nil {
-            askedToDiscard = true
-        }
+        onTask(task, target)
     }
 
     private func apply(_ id: UUID) {
