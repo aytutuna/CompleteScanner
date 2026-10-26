@@ -266,14 +266,25 @@ private struct TaskSettingsRows: View {
 }
 
 /// The scanner's Source, Sides (with a feeder), Resolution and Color: for the scanner in use (a network
-/// scanner, the demo scanner); the camera measures its own pages. Source is locked while a side of an ID
-/// card is held, as on the Mac: another source would end the task and drop the card. Also the scan
-/// screen's Options, outside a form, so each picker sits beside its name (`LabeledContent`).
+/// scanner, the demo scanner); the camera measures its own pages, so with no scanner selected a line says
+/// where to pick one instead. Source is locked while a side of an ID card is held, as on the Mac: another
+/// source would end the task and drop the card. Also the scan screen's Options, outside a form, so each
+/// picker sits beside its name (`LabeledContent`).
 struct ScannerSettingsRows: View {
     @EnvironmentObject private var state: AppState
 
     var body: some View {
-        let sources: [ScanSource] = state.capabilities?.sources ?? [ScanSource.flatbed]
+        if let reason = IOSSettingsSections.scannerRowsReason(selected: state.selectedDeviceID) {
+            ReasonLine(text: reason)
+        } else {
+            rows
+        }
+    }
+
+    @ViewBuilder
+    private var rows: some View {
+        let sources: [ScanSource] = IOSSettingsSections.offeredSources(state.capabilities,
+                                                                         chosen: state.settings.source)
         let feeder: Bool = state.settings.source == ScanSource.documentFeeder
         let cardHeld: Bool = state.hasIdCardCaptures
         LabeledContent("Source") {

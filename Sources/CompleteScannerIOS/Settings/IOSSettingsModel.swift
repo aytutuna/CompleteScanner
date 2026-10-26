@@ -29,9 +29,11 @@ public enum IOSSettingsText {
     public static let docdateReason = "Needs {docdate} in File name"
     public static let onlyPDFReason = "Only for PDFs"
     public static let importingReason = "Can be changed once the import has finished"
-    /// The Mac's words for its Source and Mode while a side of an ID card is held.
+    /// Why Source is locked while a side of an ID card is held (from the camera or the scanner alike).
     public static let idCardHeldReason =
-        "The ID card task needs the flatbed in Document mode. Save or discard the card, or leave the task, to change this."
+        "Source is locked while a side of the ID card is held. Save or discard the card, or leave the task, to change it."
+    /// In place of the Scanner section's rows while no scanner is selected: the camera does not use them.
+    public static let noScannerReason = "Pick a scanner in printer mode to change these."
     /// The About screen: what the app is built with (Apple's frameworks only: no third-party code to
     /// acknowledge) and where scans stay.
     public static let aboutBuiltWith = "Built with Apple\u{2019}s frameworks only. No third-party code."
@@ -72,6 +74,22 @@ public enum IOSSettingsSections {
     /// Archive & password and Searchable PDF apply: a save of `s` writes a PDF here.
     public static func writesPDF(_ s: ScanSettings) -> Bool {
         InspectorSections.writesPDF(s) && !savesPictures(s)
+    }
+
+    /// The Scanner section's rows are a selected scanner's; with none (camera mode, or printer mode's scanner
+    /// not found yet) a line says where to pick one instead.
+    public static func scannerRowsReason(selected: String?) -> String? {
+        selected == nil ? IOSSettingsText.noScannerReason : nil
+    }
+
+    /// The sources the Source row offers: the scanner's (the flatbed until they are known), with the one
+    /// chosen always listed, so the row never shows a blank value.
+    public static func offeredSources(_ capabilities: ScannerCapabilities?, chosen: ScanSource) -> [ScanSource] {
+        var sources: [ScanSource] = capabilities?.sources ?? [ScanSource.flatbed]
+        if !sources.contains(chosen) {
+            sources.append(chosen)
+        }
+        return sources
     }
 
     /// Also save text applies here.

@@ -128,6 +128,18 @@ final class IOSSettingsTests: XCTestCase {
         XCTAssertTrue(reset.descreen, "Reset puts the sliders back, not the switches")
     }
 
+    func test_scannerRows_needASelectedScanner_andListTheSourceChosen() {
+        XCTAssertEqual(IOSSettingsSections.scannerRowsReason(selected: nil), IOSSettingsText.noScannerReason)
+        XCTAssertNil(IOSSettingsSections.scannerRowsReason(selected: "escl:office"))
+        // Both sides set up for the camera chose the feeder before the scanner's sources are known.
+        XCTAssertEqual(IOSSettingsSections.offeredSources(nil, chosen: .documentFeeder), [.flatbed, .documentFeeder])
+        XCTAssertEqual(IOSSettingsSections.offeredSources(nil, chosen: .flatbed), [.flatbed])
+        let both = ScannerCapabilities(sources: [.flatbed, .documentFeeder])
+        XCTAssertEqual(IOSSettingsSections.offeredSources(both, chosen: .documentFeeder), [.flatbed, .documentFeeder])
+        // The lock's reason speaks of the phone, which has no Document mode.
+        XCTAssertFalse(IOSSettingsText.idCardHeldReason.contains("Document mode"))
+    }
+
     func test_version_fromTheAppsInfo() {
         let info: [String: Any] = ["CFBundleShortVersionString": "0.1.0", "CFBundleVersion": "7"]
         XCTAssertEqual(IOSSettingsText.version(info), "Version 0.1.0 (7)")
