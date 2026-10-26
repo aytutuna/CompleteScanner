@@ -326,13 +326,18 @@ struct ScanScreen: View {
         openGroup = .export
     }
 
-    /// The package banner, an import's progress with Stop, and the files saved last until the next page
-    /// comes in, each on a card over the viewfinder.
+    /// The package banner, the app's progress with Cancel while it is busy (a save, an export, After saving's
+    /// steps), an import's progress with Stop, and the files saved last until the next page comes in, each
+    /// on a card over the viewfinder.
     @ViewBuilder
     private var cameraNotices: some View {
         if let offered = state.pendingPackage {
             PackageBanner(offered: offered, onOpenAsNew: openPackageAsNew)
                 .modifier(NoticeCard())
+        }
+        // An import has its own card, and the pages it brings in keep the app busy for a moment each.
+        if state.isBusy && !importer.isImporting {
+            busyCard
         }
         if importer.progressText != nil {
             ImportProgressRow()
@@ -342,6 +347,32 @@ struct ScanScreen: View {
             SavedFilesRow()
                 .modifier(NoticeCard())
         }
+    }
+
+    /// Printer mode's progress row with Cancel, and the status line under the bar when the progress has no
+    /// words of its own (a save's text reading, its PDF being written).
+    private var busyCard: some View {
+        let worded: Bool = !(state.progress?.message ?? "").isEmpty
+        let status: String = state.statusMessage
+        return HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                ScanProgressRow(progress: state.progress)
+                if !worded && !status.isEmpty {
+                    Text(status)
+                        .font(.footnote)
+                        .lineLimit(2)
+                        .accessibilityIdentifier("camera.status")
+                }
+            }
+            Button(role: .cancel) {
+                state.cancelScan()
+            } label: {
+                Text("Cancel")
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("cancel.button")
+        }
+        .modifier(NoticeCard())
     }
 
     /// Save on a capsule with the menu beside it, once there are pages to save.

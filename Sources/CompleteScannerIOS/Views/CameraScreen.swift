@@ -12,8 +12,8 @@ import UIKit
 /// where the screen is taller or wider), the page's outline over it (yellow, green once the page holds
 /// still), one status line at its top (the glare hint, why the automatic shutter waits, "Page found · hold
 /// still", else the task's camera line, `CameraTaskCatalog`), the ID card's guide frame, and at its foot
-/// what the scan screen hands in (`notices`: the package banner, an import's progress with Stop, the files
-/// saved last), the task's buttons between shots (`CameraTaskButtons`, No back side for the ID card) and
+/// what the scan screen hands in (`notices`: the package banner, the app's progress with Cancel while it is
+/// busy, an import's progress with Stop, the files saved last), the task's buttons between shots (`CameraTaskButtons`, No back side for the ID card) and
 /// Save with its menu once there are pages (`saveControls`). Where the camera cannot be used (no camera,
 /// as in the Simulator; access off, with Settings; not allowed) or waits (too warm, interrupted), one short
 /// line says why in its place. Under it the kinds as a snapping row (`KindsRow`) or the drawer, then the
