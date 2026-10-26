@@ -181,7 +181,6 @@ public enum IOSCameraText {
     public static let title = "Camera"
     public static let doneLabel = "Done"
     public static let shutterLabel = "Take photo"
-    public static let shutterHint = "The page is found again in the photo"
     /// The automatic shutter's toggle.
     public static let autoLabel = "Auto"
     public static let autoHint = "Takes each page once it holds still"
@@ -226,6 +225,20 @@ public enum IOSCameraText {
     /// The pages in the queue: "1 page", "3 pages".
     public static func pageCount(_ count: Int) -> String {
         count == 1 ? "1 page" : "\(count) pages"
+    }
+
+    /// What the shutter does with its photo for `kind`, for VoiceOver.
+    public static func shutterHint(_ kind: CaptureKind) -> String {
+        switch kind {
+        case .document:
+            return "The page is found again in the photo"
+        case .receipt:
+            return "The receipts are found in the photo"
+        case .photo:
+            return "The photos are found in the shot"
+        case .idCard:
+            return "Takes the side of the card in the frame"
+        }
     }
 
     /// The line under the outline while a page held still waits (`CaptureQuality`): "Hold still" or "Too

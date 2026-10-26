@@ -367,7 +367,7 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
         .opacity(enabled ? 1 : 0.4)
         .keyboardShortcut(IOSShortcuts.shutter.keyboardShortcut)
         .accessibilityLabel(Text(IOSCameraText.shutterLabel))
-        .accessibilityHint(Text(IOSCameraText.shutterHint))
+        .accessibilityHint(Text(IOSCameraText.shutterHint(CaptureObjects.kind(for: state.settings))))
         .accessibilityIdentifier("camera.shutter")
     }
 

@@ -401,7 +401,14 @@ final class IOSCameraTests: XCTestCase {
         }
         // The secondary way in names whose scanner it is.
         XCTAssertLessThanOrEqual(words(IOSImportText.scannerLabel), 3)
-        XCTAssertLessThanOrEqual(words(IOSCameraText.shutterHint), 15)
+        // The shutter's hint says what becomes of the photo for each kind.
+        var hints: Set<String> = []
+        for kind in CaptureKind.allCases {
+            let hint: String = IOSCameraText.shutterHint(kind)
+            XCTAssertLessThanOrEqual(words(hint), 15, hint)
+            hints.insert(hint)
+        }
+        XCTAssertEqual(hints.count, CaptureKind.allCases.count)
         XCTAssertLessThanOrEqual(words(IOSCameraText.autoHint), 15)
         // The scan screen's Camera button promises nothing about Auto, which may be off.
         XCTAssertLessThanOrEqual(words(IOSCameraText.cameraHint), 15)

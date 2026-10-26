@@ -3634,7 +3634,7 @@ public struct IOSCameraLifecycle: Equatable, Sendable {
     public mutating func handle(_ event: IOSCameraEvent) -> IOSCameraCommand
     public static func thermalAllows(_ state: ProcessInfo.ThermalState) -> Bool   // .nominal, .fair
 }
-public enum IOSCameraText { /* title "Camera", doneLabel "Done", shutterLabel "Take photo", shutterHint, flashLabel "Flash",
+public enum IOSCameraText { /* title "Camera", doneLabel "Done", shutterLabel "Take photo", shutterHint(_ kind: CaptureKind) (the page found again, the receipts or photos found, the card's side taken), flashLabel "Flash",
                               settingsLabel "Settings", notStarted "Camera did not start", tooWarm "Paused: too warm",
                               inUse "Camera in use", needsFullScreen "Needs full screen", paused "Camera paused",
                               photoFailed "Photo not taken", pageCount(_:) "1 page", "3 pages";
