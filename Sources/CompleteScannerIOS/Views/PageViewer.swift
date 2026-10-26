@@ -50,6 +50,8 @@ struct PageViewer: View {
     @State private var selection: UUID?
     @State private var showsFilters: Bool = false
     @State private var previews: [CaptureFilter: CGImage] = [:]
+    /// The previews are being made; once they are in, a filter without one shows a plain tile.
+    @State private var loadingPreviews: Bool = false
     @State private var asksDelete: Bool = false
     @State private var crop: IOSCropRequest?
     @State private var preparesCrop: Bool = false
@@ -302,7 +304,12 @@ struct PageViewer: View {
             RoundedRectangle(cornerRadius: 6)
                 .fill(Color(uiColor: .secondarySystemBackground))
                 .overlay {
-                    ProgressView()
+                    if loadingPreviews {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "photo")
+                            .foregroundStyle(Color.secondary)
+                    }
                 }
         }
     }
@@ -310,9 +317,11 @@ struct PageViewer: View {
     private func loadPreviews() async {
         guard let id = current?.id, !previewKey.isEmpty else { return }
         previews = [:]
+        loadingPreviews = true
         let made: [CaptureFilter: CGImage] = await state.filterPreviews(id: id, maxSide: 160)
         guard !Task.isCancelled else { return }
         previews = made
+        loadingPreviews = false
     }
 
     // MARK: Crop
