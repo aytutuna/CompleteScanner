@@ -19,7 +19,9 @@ final class ImportTests: XCTestCase {
 
     @MainActor
     func test_photoImport_goesThroughTheCornerEditor_andSavesAPDF() throws {
-        let app: XCUIApplication = try launchWithFixture()
+        // Into Document by name: without it the photo goes into the task kept from the test before (Book),
+        // which has no Use Apple's scanner.
+        let app: XCUIApplication = try launchWithFixture(task: "document")
 
         let use: XCUIElement = app.buttons["corners.use"]
         XCTAssertTrue(use.waitForExistence(timeout: 120), "The corner editor's Use corners button")
