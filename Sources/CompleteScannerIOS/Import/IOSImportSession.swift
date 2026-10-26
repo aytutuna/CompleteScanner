@@ -54,7 +54,7 @@ public struct IOSImportItem: Equatable, Sendable {
 /// in hand is in memory: a photo the Photos picker hands over when asked, a file read off the main
 /// actor (`file`), or bytes already in hand (`item`). A photo from our camera also carries the outline
 /// its live preview showed (`liveOutline`, shares of the upright photo), the corner editor's start
-/// when the page is not found clearly in the photo itself (`shot`), and, in continuous capture, that the
+/// when Vision found no page in the photo itself and the search found none clearly (`shot`), and, in continuous capture, that the
 /// corner editor opens only when the photo's own search is unsure (`asksOnlyWhenUnsure`).
 public struct IOSImportSource {
     public let name: String
@@ -804,7 +804,8 @@ struct IOSPreparedPhoto: Sendable {
     var objects: [Quad] = []
 
     /// Page `page` (from 1) of the photo file `data`, read and searched; `liveOutline` (shares of the
-    /// upright photo) is the start where the search finds no page clearly (`IOSImportSession.seeded`).
+    /// upright photo) is the start where Vision found no page in the photo and the search found none
+    /// clearly (`IOSImportSession.seeded`).
     /// For receipts and photos (`kind`) its objects are searched for (`objectFinder`) instead of a page; for
     /// an ID card the card first (sure only when its shape snaps to ID-1, `CaptureScale.measure`), then the
     /// page finder when no card was found.
