@@ -5,16 +5,20 @@ import SwiftUI
 /// The scanners to pick from as a list of their own (the column beside a wide scan screen), with the
 /// sheets its buttons open: Add by address and the troubleshooter.
 struct ScannerPickerList: View {
+    @EnvironmentObject private var state: AppState
     let picker: IOSScannerPickerModel
     @State private var showsAdd: Bool = false
     @State private var showsTroubleshooter: Bool = false
+    @State private var asksAboutCard: Bool = false
 
     var body: some View {
         List {
-            ScannerPickerSections(picker: picker, onAdd: openAdd, onTroubleshoot: openTroubleshooter)
+            ScannerPickerSections(picker: picker, onAdd: openAdd, onTroubleshoot: openTroubleshooter,
+                                  asksAboutCard: $asksAboutCard)
         }
         .listStyle(.insetGrouped)
         .modifier(ScannerPickerSheets(picker: picker, showsAdd: $showsAdd, showsTroubleshooter: $showsTroubleshooter))
+        .modifier(IdCardDiscardQuestion(state: state, asked: $asksAboutCard))
     }
 
     private func openAdd() {
@@ -74,21 +78,26 @@ struct ScannerPickerSheets: ViewModifier {
 /// found" with Troubleshoot; the explanation card before the first search, the line about Local Network
 /// access being off, and the buttons to add a scanner by address and open the troubleshooter. Picking a
 /// scanner selects it, remembers it and switches to printer mode; the camera is camera mode's, switched to
-/// on the scan screen. The rows follow the app's state, and the network scanners' when there are any.
+/// on the scan screen. Another scanner may not have the flatbed an ID card needs, so with a side of the card
+/// held a pick asks to discard it first (`asksAboutCard`, which the list's `IdCardDiscardQuestion` answers).
+/// The rows follow the app's state, and the network scanners' when there are any.
 struct ScannerPickerSections: View {
     let picker: IOSScannerPickerModel
     let onAdd: () -> Void
     let onTroubleshoot: () -> Void
+    @Binding var asksAboutCard: Bool
     /// The rows' section header (the sidebar's "Scanners"); none in the options, whose title says it.
     var header: String?
 
     var body: some View {
         if let network = picker.network {
             NetworkObserving(network: network) {
-                ScannerPickerContent(picker: picker, onAdd: onAdd, onTroubleshoot: onTroubleshoot, header: header)
+                ScannerPickerContent(picker: picker, onAdd: onAdd, onTroubleshoot: onTroubleshoot,
+                                     asksAboutCard: $asksAboutCard, header: header)
             }
         } else {
-            ScannerPickerContent(picker: picker, onAdd: onAdd, onTroubleshoot: onTroubleshoot, header: header)
+            ScannerPickerContent(picker: picker, onAdd: onAdd, onTroubleshoot: onTroubleshoot,
+                                     asksAboutCard: $asksAboutCard, header: header)
         }
     }
 }
@@ -101,6 +110,7 @@ private struct ScannerPickerContent: View {
     let picker: IOSScannerPickerModel
     let onAdd: () -> Void
     let onTroubleshoot: () -> Void
+    @Binding var asksAboutCard: Bool
     let header: String?
 
     var body: some View {
@@ -176,9 +186,15 @@ private struct ScannerPickerContent: View {
 
     private func pick(_ row: IOSScannerRow) {
         guard !state.isBusy else { return }
-        picker.select(row)
-        scanner = row.id
-        mode = .printer
+        let model: IOSScannerPickerModel = picker
+        state.leaveIdCard {
+            model.select(row)
+            scanner = row.id
+            mode = .printer
+        }
+        if state.pendingIdCardLeave != nil {
+            asksAboutCard = true
+        }
     }
 
     /// Discovery may still list the scanner; the root view lets go of it once it is gone.

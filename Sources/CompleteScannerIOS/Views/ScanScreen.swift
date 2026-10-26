@@ -88,6 +88,8 @@ struct ScanScreen: View {
     @State private var showsAdd: Bool = false
     @State private var showsTroubleshooter: Bool = false
     @State private var askedToDiscard: Bool = false
+    /// A scanner picked in the Scanner options asks there about a side of an ID card held.
+    @State private var cardAskedInOptions: Bool = false
     /// Files is open to pick the PDF the pages are added to.
     @State private var picksPDF: Bool = false
     /// The queue is being written to be shared as a CompleteScanner document.
@@ -676,6 +678,7 @@ struct ScanScreen: View {
                 }
             }
             .modifier(ScannerPickerSheets(picker: picker, showsAdd: $showsAdd, showsTroubleshooter: $showsTroubleshooter))
+            .modifier(IdCardDiscardQuestion(state: state, asked: $cardAskedInOptions))
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
@@ -700,7 +703,8 @@ struct ScanScreen: View {
                     sourceRow
                 }
             } else {
-                ScannerPickerSections(picker: picker, onAdd: openAdd, onTroubleshoot: openPickerTroubleshooter)
+                ScannerPickerSections(picker: picker, onAdd: openAdd, onTroubleshoot: openPickerTroubleshooter,
+                                      asksAboutCard: $cardAskedInOptions)
             }
             if let device = sourceDevice {
                 Section {

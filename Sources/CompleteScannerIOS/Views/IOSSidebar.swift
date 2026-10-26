@@ -56,7 +56,7 @@ struct IOSSidebar: View {
                 appendRow(IOSAppendTile.availability(state.taskCards))
             }
             ScannerPickerSections(picker: picker, onAdd: openAdd, onTroubleshoot: openTroubleshooter,
-                                  header: IOSNetworkText.pickerTitle)
+                                  asksAboutCard: $askedToDiscard, header: IOSNetworkText.pickerTitle)
             Section {
                 libraryRow(IOSSettingsText.presetsLabel, symbol: "slider.horizontal.3", target: IOSDetail.presets,
                            identifier: "sidebar.presets")
