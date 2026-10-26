@@ -309,7 +309,9 @@ the desktop (signed files and PDF/A files that may not stay PDF/A asked about fi
 beside Save or from the iPad's Add pages to a PDF, which picks the file first so that Save
 reads "Add to Contract.pdf"; the queue shared
 as a CompleteScanner document (`.csdoc`), and one opened from AirDrop, Files or Mail offered on a
-banner with Add to pages or Open as new; network
+banner with Add to pages or Open as new; the pages taken kept when iOS ends the app in the
+background, and asked about (save them first, discard them or cancel) before a kind, a preset or
+Open as new would leave them without a Save; network
 scanners (AirScan/eSCL) found on the Wi-Fi or added by address, picked from a sheet on iPhone or a
 sidebar on iPad, with a flatbed preview to choose the scan area on, a feeder's progress with Cancel,
 the screen kept on while a network scanner works, and the troubleshooter with its iPhone checks;
