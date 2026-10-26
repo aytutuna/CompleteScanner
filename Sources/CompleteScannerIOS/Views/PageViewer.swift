@@ -53,6 +53,8 @@ struct PageViewer: View {
     @State private var asksDelete: Bool = false
     @State private var crop: IOSCropRequest?
     @State private var preparesCrop: Bool = false
+    /// The page's rotation when the corner editor's picture was turned for it.
+    @State private var cropRotation: Int = 0
 
     init(startID: UUID, onClose: @escaping () -> Void) {
         self.onClose = onClose
@@ -195,6 +197,7 @@ struct PageViewer: View {
         Button(action: rotateCurrent) {
             Label(PageViewerText.rotateLabel, systemImage: "rotate.right")
         }
+        .disabled(preparesCrop)
         .accessibilityIdentifier("viewer.rotate")
         Spacer()
         if canRecut {
@@ -316,6 +319,7 @@ struct PageViewer: View {
             let request: IOSCropRequest? = await cropRequest(id: id, name: name)
             preparesCrop = false
             if let request {
+                cropRotation = current?.rotationQuarterTurns ?? 0
                 crop = request
             } else {
                 state.errorMessage = PageRecut.failedMessage
@@ -344,11 +348,12 @@ struct PageViewer: View {
         switch answer.choice {
         case .useCorners:
             if let corners = answer.corners {
-                state.recropPage(id: request.photoID, corners: corners)
+                state.recropPage(id: request.photoID, corners: corners, rotation: cropRotation)
             }
         case .wholePhoto:
             let photo: RgbaImage = request.request.photo
-            state.recropPage(id: request.photoID, corners: PhotoImport.wholePhoto(width: photo.width, height: photo.height))
+            state.recropPage(id: request.photoID, corners: PhotoImport.wholePhoto(width: photo.width, height: photo.height),
+                             rotation: cropRotation)
         case .skip:
             break
         }

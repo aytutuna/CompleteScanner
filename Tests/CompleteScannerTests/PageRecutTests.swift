@@ -202,7 +202,10 @@ final class PageRecutTests: XCTestCase {
         XCTAssertLessThan(start.corners.maxCornerDistance(try XCTUnwrap(taken.capture).quad), 1e-9)
         let inner = Quad(topLeft: CGPoint(x: 80, y: 80), topRight: CGPoint(x: 260, y: 80),
                          bottomRight: CGPoint(x: 260, y: 330), bottomLeft: CGPoint(x: 80, y: 330))
-        state.recropPage(id: page.id, corners: inner)
+        // Corners placed while the page had another turn are not used.
+        state.recropPage(id: page.id, corners: inner, rotation: 1)
+        XCTAssertNil(state.pageEditChain)
+        state.recropPage(id: page.id, corners: inner, rotation: 0)
         try await waitUntil(timeout: 60) { state.scannedPages.first?.geometry?.quad == inner }
         XCTAssertEqual(state.scannedPages[0].capture?.filter, .original)
         XCTAssertEqual(state.statusMessage, "Page 1 is cut out again.")

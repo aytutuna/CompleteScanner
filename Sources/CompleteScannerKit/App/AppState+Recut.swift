@@ -95,11 +95,12 @@ extension AppState {
     }
 
     /// Crop: the queued page `id` cut out of its photo again along `corners`, placed on the picture
-    /// `pageCropStart(id:)` gave (the photo turned as the page is shown), keeping its filter; as
-    /// `setPageFilter(id:_:)` does it.
-    public func recropPage(id: UUID, corners: Quad) {
+    /// `pageCropStart(id:)` gave (the photo turned as the page is shown, while its rotation was `rotation`),
+    /// keeping its filter; as `setPageFilter(id:_:)` does it. Nothing happens once the page was turned since.
+    public func recropPage(id: UUID, corners: Quad, rotation: Int) {
         guard !isBusy, let page = scannedPages.first(where: { (item: ScannedPage) -> Bool in item.id == id }),
-              PageRecut.canRecut(page), let filter = PageRecut.filter(of: page), let facts = page.capture else { return }
+              page.rotationQuarterTurns == rotation, PageRecut.canRecut(page), let filter = PageRecut.filter(of: page),
+              let facts = page.capture else { return }
         let turns: Int = PageRecut.fileTurns(page) + page.rotationQuarterTurns
         let taken: Quad = PageRecut.cornersAsTaken(corners, facts: facts, quarterTurns: turns)
         enqueuePageEdit { (state: AppState) async -> Void in
@@ -108,9 +109,10 @@ extension AppState {
     }
 
     /// Where Crop starts for the queued page `id`: its photo read off the main actor and turned as the page is
-    /// shown, with the corners the page was cut along there; nil when the page cannot be cut again or its photo
-    /// cannot be read.
+    /// shown, with the corners the page was cut along there, once the page edits under way have landed; nil when
+    /// the page cannot be cut again or its photo cannot be read.
     public func pageCropStart(id: UUID) async -> PhotoCropStart? {
+        await pageEditChain?.value
         guard let page = scannedPages.first(where: { (item: ScannedPage) -> Bool in item.id == id }),
               PageRecut.canRecut(page), let facts = page.capture, let url = page.alternate?.fileURL else { return nil }
         let rotation: Int = page.rotationQuarterTurns
@@ -167,7 +169,11 @@ extension AppState {
             errorMessage = PageRecut.failedMessage
             return
         }
-        scannedPages[index] = made
+        // What changed on the page meanwhile (kept or skipped, its document) stays.
+        var updated: ScannedPage = made.copyMeta(from: scannedPages[index])
+        updated.geometry = made.geometry
+        updated.capture = made.capture
+        scannedPages[index] = updated
         try? FileManager.default.removeItem(at: oldFile)
         statusMessage = corners == nil ? PageRecut.filterNote(filter, number: index + 1) : PageRecut.cropNote(number: index + 1)
         // The record names the new file at once: the old one is gone.
