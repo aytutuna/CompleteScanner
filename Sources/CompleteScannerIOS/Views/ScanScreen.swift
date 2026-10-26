@@ -251,7 +251,10 @@ struct ScanScreen: View {
                     if CameraTaskButtons.showsAny(state) {
                         CameraTaskButtons()
                     }
-                    if let mismatch = state.sidesMismatch, state.cameraSides != nil {
+                    if TurnedOverButtons.showsAny(state) {
+                        TurnedOverButtons()
+                    }
+                    if let mismatch = state.sidesMismatch, state.cameraSides != nil || state.isTurningOverByHand {
                         Label(mismatch, systemImage: "exclamationmark.triangle.fill")
                             .font(.footnote)
                             .foregroundStyle(Color.orange)
@@ -1475,6 +1478,65 @@ private struct ScanProgressRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("scan.progress")
+    }
+}
+
+/// A stack turned over by hand, as the Mac's banner offers it: on to the backs after a feeder stopped early,
+/// more fronts for a stack larger than the feeder, and once the backs did not pair up, combining the pages
+/// anyway or scanning the backs again; the fronts alone while the backs are due. The status line asks for
+/// these by name.
+struct TurnedOverButtons: View {
+    @EnvironmentObject private var state: AppState
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                if state.canFinishFronts {
+                    Button("Done with Fronts") {
+                        state.finishFronts()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityHint(Text("Turn the stack over and scan the back sides"))
+                    .accessibilityIdentifier("sides.doneWithFronts")
+                }
+                if state.awaitingBacks && state.sidesMismatch != nil {
+                    Button("Combine Anyway") {
+                        state.combineSidesAnyway()
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityHint(Text("Puts the pages in order as they are; the extra pages go at the end"))
+                    .accessibilityIdentifier("sides.combine")
+                    Button("Scan Back Sides Again") {
+                        state.scanBacksAgain()
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityHint(Text("Removes the back sides scanned so far"))
+                    .accessibilityIdentifier("sides.backsAgain")
+                }
+                if state.canScanMoreFronts {
+                    Button("Scan More Fronts") {
+                        state.scanMoreFronts()
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityHint(Text("For the sheets that did not fit in the feeder"))
+                    .accessibilityIdentifier("sides.moreFronts")
+                }
+                if state.awaitingBacks {
+                    Button("Keep Fronts Only") {
+                        state.keepFrontsOnly()
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityHint(Text("Leaves out the back sides"))
+                    .accessibilityIdentifier("sides.frontsOnly")
+                }
+            }
+        }
+        .disabled(state.isBusy)
+    }
+
+    /// Whether any button shows, so the scan screen leaves out an empty row.
+    static func showsAny(_ state: AppState) -> Bool {
+        state.canFinishFronts || state.awaitingBacks
     }
 }
 

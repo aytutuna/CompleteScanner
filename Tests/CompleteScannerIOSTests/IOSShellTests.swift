@@ -366,6 +366,39 @@ final class IOSShellTests: XCTestCase {
     }
 
     @MainActor
+    func test_aStackTurnedOverByHand_offersTheButtonsItsStepsName() async throws {
+        let demo: MockScannerBackend = AppState.makeDemoBackend()
+        demo.feederDuplex = false
+        let state = AppState(backends: [demo], presetStore: PresetStore(directory: folder),
+                             fileActions: IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in }),
+                             orientationScorer: ShellScorer(), barcodeReader: ShellBarcodes(),
+                             files: AppStateFiles.all(in: folder))
+        state.platform = .ios
+        state.start()
+        try await waitFor(timeout: 30) { state.capabilities != nil }
+        XCTAssertTrue(state.startTask(.document))
+        state.settings.resolution = 75
+        state.settings.pdfSearchable = false
+        state.settings.source = .documentFeeder
+        state.settings.duplex = .manual
+        XCTAssertTrue(state.isTurningOverByHand)
+        XCTAssertFalse(TurnedOverButtons.showsAny(state))
+
+        state.performScan()
+        try await waitFor(timeout: 120) { !state.isBusy }
+        XCTAssertNil(state.errorMessage)
+        // The backs are due: the fronts alone, or more fronts first.
+        XCTAssertTrue(state.awaitingBacks)
+        XCTAssertTrue(state.canScanMoreFronts)
+        XCTAssertTrue(TurnedOverButtons.showsAny(state))
+
+        state.keepFrontsOnly()
+        XCTAssertFalse(state.awaitingBacks)
+        XCTAssertFalse(TurnedOverButtons.showsAny(state))
+        state.clearPages()
+    }
+
+    @MainActor
     func test_emailFromSave_sendsThatSaveByEmail_andTheNextSaveAsTheSettingsSay() async throws {
         let actions = IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in },
                                      mailAvailable: { () -> Bool in true })
