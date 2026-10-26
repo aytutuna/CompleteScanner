@@ -159,11 +159,12 @@ enum CameraDrawerGroup: String, Identifiable, CaseIterable {
         }
     }
 
-    /// The groups that apply to the settings: Export while the pages are collected and saved here, Quality
-    /// while Save writes a PDF (its size), Colour, Flash and Camera always.
-    static func shown(_ settings: ScanSettings) -> [CameraDrawerGroup] {
+    /// The groups that apply to the settings and the `pageCount` pages queued: Export while the pages are
+    /// saved here (`IOSShell.offersSave`), Quality while Save writes a PDF (its size), Colour, Flash and
+    /// Camera always.
+    static func shown(_ settings: ScanSettings, pageCount: Int) -> [CameraDrawerGroup] {
         var groups: [CameraDrawerGroup] = []
-        if IOSShell.collectsPages(settings) {
+        if IOSShell.offersSave(settings, pageCount: pageCount) {
             groups.append(.export)
         }
         groups.append(.colour)
@@ -193,7 +194,7 @@ struct CameraDrawer: View {
     let onAppleScanner: () -> Void
 
     var body: some View {
-        let groups: [CameraDrawerGroup] = CameraDrawerGroup.shown(state.settings)
+        let groups: [CameraDrawerGroup] = CameraDrawerGroup.shown(state.settings, pageCount: state.scannedPages.count)
         let shown: CameraDrawerGroup = groups.contains(group) ? group : (groups.first ?? CameraDrawerGroup.camera)
         VStack(spacing: 10) {
             HStack(spacing: 14) {

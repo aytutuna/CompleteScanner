@@ -342,7 +342,7 @@ struct ScanScreen: View {
     /// Save on a capsule with the menu beside it, once there are pages to save.
     @ViewBuilder
     private var floatingSave: some View {
-        if IOSShell.collectsPages(state.settings) && !state.scannedPages.isEmpty {
+        if !state.scannedPages.isEmpty && IOSShell.offersSave(state.settings, pageCount: state.scannedPages.count) {
             HStack(spacing: 6) {
                 floatingSaveButton
                 floatingSaveMenu
@@ -587,7 +587,7 @@ struct ScanScreen: View {
     // MARK: The options
 
     /// The option groups that apply: Scanner always, the book's and the photos' for their kinds, and Export
-    /// while the pages are collected and saved here.
+    /// while the pages are saved here (`IOSShell.offersSave`).
     private var optionGroups: [ScanOptionGroup] {
         var groups: [ScanOptionGroup] = [.scanner]
         if state.activeTask == .book {
@@ -596,7 +596,7 @@ struct ScanScreen: View {
         if IOSShell.shownKind(state.settings) == .photos {
             groups.append(.photos)
         }
-        if IOSShell.collectsPages(state.settings) {
+        if IOSShell.offersSave(state.settings, pageCount: state.scannedPages.count) {
             groups.append(.export)
         }
         return groups
@@ -1105,11 +1105,11 @@ struct ScanScreen: View {
         }
     }
 
-    /// Scan beside Save, with Save's menu, while the pages are collected and saved here.
+    /// Scan beside Save, with Save's menu, while the pages are saved here (`IOSShell.offersSave`).
     private var actionRow: some View {
         HStack(spacing: 12) {
             scanButton
-            if IOSShell.collectsPages(state.settings) {
+            if IOSShell.offersSave(state.settings, pageCount: state.scannedPages.count) {
                 saveButton
                 saveMenu(canSave: savePlan.pageCount > 0)
                     .disabled(saveBlocked)

@@ -266,13 +266,18 @@ final class IOSFlowTests: XCTestCase {
 
     func test_drawerGroups_followWhatIsSaved() {
         let document: ScanSettings = TaskCatalog.apply(.document, to: ScanSettings())
-        XCTAssertEqual(CameraDrawerGroup.shown(document), [.export, .colour, .quality, .flash, .camera])
+        XCTAssertEqual(CameraDrawerGroup.shown(document, pageCount: 0), [.export, .colour, .quality, .flash, .camera])
         var jpeg: ScanSettings = document
         jpeg.format = .jpeg
-        XCTAssertEqual(CameraDrawerGroup.shown(jpeg), [.export, .colour, .flash, .camera])
+        XCTAssertEqual(CameraDrawerGroup.shown(jpeg, pageCount: 0), [.export, .colour, .flash, .camera])
         // Photos are saved from their review: nothing to export here.
         let photos: ScanSettings = TaskCatalog.apply(.photos, to: ScanSettings())
-        XCTAssertEqual(CameraDrawerGroup.shown(photos), [.colour, .flash, .camera])
+        XCTAssertEqual(CameraDrawerGroup.shown(photos, pageCount: 3), [.colour, .flash, .camera])
+        // Pages queued before Collect pages before saving went off keep their Export.
+        var single: ScanSettings = document
+        single.documentMultiPage = false
+        XCTAssertEqual(CameraDrawerGroup.shown(single, pageCount: 0), [.colour, .flash, .camera])
+        XCTAssertEqual(CameraDrawerGroup.shown(single, pageCount: 2), [.export, .colour, .flash, .camera])
         for group in CameraDrawerGroup.allCases {
             XCTAssertFalse(group.title.isEmpty, group.rawValue)
             XCTAssertFalse(group.symbol.isEmpty, group.rawValue)
@@ -291,6 +296,25 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertEqual(IOSShell.floatingSaveTitle(jpeg, plan: plan, target: nil), "Save 3 JPEGs")
         let target = URL(fileURLWithPath: "/tmp/Contract.pdf")
         XCTAssertEqual(IOSShell.floatingSaveTitle(document, plan: plan, target: target), "Add to Contract.pdf")
+    }
+
+    func test_offersSave_whileCollecting_orWhileADocumentTaskHoldsPages() {
+        let document: ScanSettings = TaskCatalog.apply(.document, to: ScanSettings())
+        XCTAssertTrue(IOSShell.offersSave(document, pageCount: 0))
+        XCTAssertTrue(IOSShell.offersSave(document, pageCount: 3))
+        var single: ScanSettings = document
+        single.documentMultiPage = false
+        XCTAssertFalse(IOSShell.collectsPages(single))
+        XCTAssertFalse(IOSShell.offersSave(single, pageCount: 0))
+        XCTAssertTrue(IOSShell.offersSave(single, pageCount: 1))
+        var word: ScanSettings = single
+        word.format = .word
+        XCTAssertTrue(IOSShell.offersSave(word, pageCount: 2), "Pages a failed Word save put back")
+        for task in [ScanTask.photos, .receipt, .idCard] {
+            let settings: ScanSettings = TaskCatalog.apply(task, to: ScanSettings())
+            XCTAssertFalse(IOSShell.offersSave(settings, pageCount: 0), task.rawValue)
+            XCTAssertFalse(IOSShell.offersSave(settings, pageCount: 2), task.rawValue)
+        }
     }
 
     func test_onlyDocumentAndBook_takeThePagesAlong() {
