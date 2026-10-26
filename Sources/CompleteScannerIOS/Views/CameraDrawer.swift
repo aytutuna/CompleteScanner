@@ -6,7 +6,8 @@ import SwiftUI
 /// that snaps one kind into its middle, the one there in the accent colour, the others grey. Swiping the
 /// row or tapping a kind picks it (`onKind`, as the printer screen's chips do); a pick that does not happen
 /// (the ID card's or the pages' question answered Cancel, a kind that cannot be started) brings the row back
-/// to the kind set up. Still while a scan or an import runs.
+/// to the kind set up. Still while a scan or an import runs. The camera screen caps its text at the first
+/// accessibility size, where the widest kind still fits and the row stays one line.
 struct KindsRow: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -15,15 +16,15 @@ struct KindsRow: View {
     /// The kind in the row's middle, while it scrolls too.
     @State private var centred: IOSScanKind?
 
-    /// Every kind is as wide, so the row can snap one into its middle.
-    static let itemWidth: CGFloat = 96
+    /// Every kind is as wide, so the row can snap one into its middle; it grows with the text.
+    @ScaledMetric(relativeTo: .footnote) private var itemWidth: CGFloat = 96
 
     var body: some View {
         let current: IOSScanKind = IOSShell.shownKind(state.settings)
         let busy: Bool = state.isBusy || importer.isImporting
         GeometryReader { (geometry: GeometryProxy) in
             row(busy: busy, current: current)
-                .safeAreaPadding(.horizontal, max(0, (geometry.size.width - KindsRow.itemWidth) / 2))
+                .safeAreaPadding(.horizontal, max(0, (geometry.size.width - itemWidth) / 2))
         }
         .frame(height: 44)
         .modifier(EdgeFade(leading: 28, trailing: 28))
@@ -77,7 +78,7 @@ struct KindsRow: View {
                 .foregroundStyle(highlighted ? Color.accentColor : Color.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .frame(width: KindsRow.itemWidth, height: 44)
+                .frame(width: itemWidth, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -203,6 +204,8 @@ struct CameraDrawer: View {
                 }
             }
             .frame(height: 56)
+            // The icons sit in fixed circles.
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
             controls(shown)
                 .padding(.horizontal, 16)
                 .disabled(state.isBusy || importer.isImporting)

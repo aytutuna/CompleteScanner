@@ -321,6 +321,7 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
                 .transition(.opacity)
         } else {
             KindsRow(onKind: onKind)
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                 .transition(.opacity)
         }
     }
