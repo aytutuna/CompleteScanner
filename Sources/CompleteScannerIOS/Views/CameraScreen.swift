@@ -379,8 +379,10 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
         let session: IOSImportSession = importer
         let appState: AppState = state
         // Read at each shot: a kind picked meanwhile changes it.
-        shown.onAutoShot = { (shot: IOSCameraShot) async -> Void in
-            _ = await session.importShot(shot, asksOnlyWhenUnsure: IOSShell.capturesContinuously(appState.settings))
+        shown.onAutoShot = { [weak shown] (shot: IOSCameraShot) async -> Void in
+            let continuous: Bool = IOSShell.capturesContinuously(appState.settings)
+            let outcome: IOSImportOutcome = await session.importShot(shot, asksOnlyWhenUnsure: continuous)
+            shown?.shotImported(outcome)
         }
         shown.canTakePage = { () -> Bool in
             !session.isImporting && session.canImport
@@ -413,7 +415,8 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
         let continuous: Bool = IOSShell.capturesContinuously(state.settings)
         Task { @MainActor in
             if let shot = await shown.shoot() {
-                _ = await session.importShot(shot, asksOnlyWhenUnsure: continuous)
+                let outcome: IOSImportOutcome = await session.importShot(shot, asksOnlyWhenUnsure: continuous)
+                shown.shotImported(outcome)
             }
         }
     }

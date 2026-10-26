@@ -798,6 +798,40 @@ final class IOSCameraTests: XCTestCase {
     }
 
     @MainActor
+    func test_aShotSkippedInTheEditor_hasThePageStillInViewTakenAgain() async throws {
+        let driver = FakeCameraDriver()
+        let source = ManualFrameSource()
+        driver.frameSource = source
+        driver.photo = IOSCameraPhoto(data: Data([4]), rotationDegrees: 0, mirrored: false)
+        let log = ShotLog()
+        let defaults: UserDefaults = try freshDefaults()
+        let model: IOSCameraModel = makeAutoModel(driver, defaults: defaults, log: log)
+        await model.appear()
+        source.push(LiveFrames.frame(), from: 0, through: 14)
+        try await ImportTestSupport.waitUntil(timeout: 30) { log.shots.count == 1 }
+        // Brought in: the same page is not taken again.
+        var added = IOSImportOutcome()
+        added.added = 1
+        model.shotImported(added)
+        source.push(LiveFrames.frame(), from: 15, through: 30)
+        try await settle()
+        XCTAssertEqual(log.shots.count, 1)
+        // Waiting behind another import (an empty outcome): nothing changes either.
+        model.shotImported(IOSImportOutcome())
+        source.push(LiveFrames.frame(), from: 31, through: 46)
+        try await settle()
+        XCTAssertEqual(log.shots.count, 1)
+        // Skipped (or stopped) in the corner editor: taken again once it holds still.
+        var skipped = IOSImportOutcome()
+        skipped.skipped = 1
+        model.shotImported(skipped)
+        source.push(LiveFrames.frame(), from: 47, through: 62)
+        try await ImportTestSupport.waitUntil(timeout: 30) { log.shots.count == 2 }
+        XCTAssertEqual(driver.photos, 2)
+        model.disappear()
+    }
+
+    @MainActor
     func test_withoutAPlaceForItsPhotos_theAutomaticShutterTakesNothing() async throws {
         let driver = FakeCameraDriver()
         let source = ManualFrameSource()

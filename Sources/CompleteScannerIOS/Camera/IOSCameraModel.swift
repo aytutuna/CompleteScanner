@@ -309,6 +309,15 @@ public final class IOSCameraModel: ObservableObject {
         return IOSCameraShot(data: taken.data, liveOutline: seed)
     }
 
+    /// What the import made of a photo the shutter took. Skipped in the corner editor (Skip, Stop), it
+    /// brought no page in: the page still in view is judged afresh, so Auto takes it again once it holds
+    /// still. A shot waiting behind another import comes back empty and changes nothing.
+    public func shotImported(_ outcome: IOSImportOutcome) {
+        if outcome.added == 0 && outcome.skipped > 0 {
+            tracker.reset()
+        }
+    }
+
     // MARK: The session
 
     private func start() {
