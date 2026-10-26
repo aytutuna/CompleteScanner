@@ -122,6 +122,26 @@ final class IOSLibraryTests: XCTestCase {
     }
 
     @MainActor
+    func test_aPresetTurnedOverByHand_takesBothSides_withNoScanner() throws {
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        let model: IOSPresetsModel = IOSPresetsModel(state: state, importer: IOSImportSession(state: state))
+        var feeder: ScanSettings = TaskCatalog.apply(.document, to: state.settings)
+        feeder.source = .documentFeeder
+        feeder.duplex = .manual
+        state.settings = feeder
+        XCTAssertTrue(model.save(named: "Stack by hand"))
+        let id: UUID = try XCTUnwrap(model.rows.first?.id)
+        state.settings = TaskCatalog.apply(.document, to: state.settings)
+        XCTAssertNil(state.selectedDeviceID)
+
+        XCTAssertEqual(model.apply(id) {}, IOSPresetApply.applied)
+        XCTAssertEqual(state.settings.source, .documentFeeder)
+        XCTAssertEqual(state.settings.duplex, .both)
+        XCTAssertFalse(state.isTurningOverByHand)
+        XCTAssertTrue(state.canIngest)
+    }
+
+    @MainActor
     func test_presets_notAppliedWhileAnImportRuns() async throws {
         let state: AppState = ImportTestSupport.makeState(in: folder)
         let importer: IOSImportSession = IOSImportSession(state: state, finder: unsureFinder())

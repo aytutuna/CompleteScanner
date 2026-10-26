@@ -109,7 +109,8 @@ public final class IOSPresetsModel {
     /// to add the pages to forgotten, then `done` runs; with an ID card side held, both wait until the user
     /// discards the card. Settings that do not collect pages (`IOSShell.collectsPages`: another kind, or
     /// Collect pages before saving off) are not applied over queued pages unless `discardingPages`, which
-    /// drops them with their spooled files first. Refused while an operation or an import runs.
+    /// drops them with their spooled files first. With no scanner selected (camera mode) a stack turned over
+    /// by hand is applied as both sides, as the camera takes them. Refused while an operation or an import runs.
     @discardableResult
     public func apply(_ id: UUID, discardingPages: Bool = false,
                       then done: @escaping @MainActor () -> Void) -> IOSPresetApply {
@@ -129,6 +130,11 @@ public final class IOSPresetsModel {
             }
             appState.applyPreset(preset)
             appState.settings = IOSShell.savingActionsAsDocument(appState.settings)
+            // With no scanner a stack turned over by hand would leave the camera nothing to take; a
+            // one-sided feeder turns both sides back into by hand once it is selected.
+            if appState.selectedDeviceID == nil && appState.settings.duplex == .manual {
+                appState.settings.duplex = .both
+            }
             appState.clearAppendTarget()
             done()
         }
