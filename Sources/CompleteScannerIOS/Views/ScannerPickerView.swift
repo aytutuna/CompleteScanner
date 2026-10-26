@@ -60,9 +60,9 @@ struct ScannerPickerSheets: ViewModifier {
 
     private func added(_ deviceID: String) {
         showsAdd = false
-        state.userSelectDevice(deviceID)
         scanner = deviceID
         mode = .printer
+        state.userSelectDevice(deviceID)
         onPicked?()
     }
 
@@ -195,9 +195,11 @@ private struct ScannerPickerContent: View {
         let model: IOSScannerPickerModel = picker
         let picked: (@MainActor () -> Void)? = onPicked
         state.leaveIdCard {
-            model.select(row)
+            // Remembered first: the root view's selection follows the mode and the remembered scanner, and
+            // would take back a pick it reads before them.
             scanner = row.id
             mode = .printer
+            model.select(row)
             picked?()
         }
         if state.pendingIdCardLeave != nil {

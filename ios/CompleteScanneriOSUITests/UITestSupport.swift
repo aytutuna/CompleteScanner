@@ -198,10 +198,22 @@ extension XCUIApplication {
         openOptions("Scanner", file: file, line: line)
         let row: XCUIElement = descendants(matching: .any)[id].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 30), "The \(id) row in the Scanner options", file: file, line: line)
-        waitUntilEnabled(row, "The \(id) row", file: file, line: line)
-        row.tap()
+        // Right after launch a pick may not take (the app busy for a moment, or the selection still following
+        // the mode as the scanners are listed), so the row is tapped again until it does, three times at most.
+        var taps: Int = 0
+        repeat {
+            waitUntilEnabled(row, "The \(id) row", file: file, line: line)
+            row.tap()
+            taps += 1
+        } while !becomesSelected(row, timeout: 10) && taps < 3
         waitUntilSelected(row, "\(id) picked", file: file, line: line)
         growOptions()
+    }
+
+    @MainActor
+    private func becomesSelected(_ element: XCUIElement, timeout: TimeInterval) -> Bool {
+        let picked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: element)
+        return XCTWaiter.wait(for: [picked], timeout: timeout) == .completed
     }
 
     /// Drags the Scanner options' sheet from half height to full: the scanner's settings sit below the
