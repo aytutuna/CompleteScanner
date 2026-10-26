@@ -73,8 +73,15 @@ public enum IOSPageFinder {
     /// The page outline Vision's document segmentation finds in `image` (upright), with its confidence;
     /// nil when it finds none or cannot run (the Simulator may not run it).
     static func visionCandidate(_ image: CGImage) -> QuadCandidate? {
-        let request = VNDetectDocumentSegmentationRequest()
         let handler = VNImageRequestHandler(cgImage: image, orientation: .up, options: [:])
+        return segmentation(handler, width: image.width, height: image.height)
+    }
+
+    /// The page outline Vision's document segmentation finds in the image `handler` holds, in the pixels of
+    /// that image drawn `width` x `height` (the photo's, or a live frame made small), with its confidence;
+    /// nil when it finds none or cannot run. The photo import and the live outline both search this way.
+    static func segmentation(_ handler: VNImageRequestHandler, width: Int, height: Int) -> QuadCandidate? {
+        let request = VNDetectDocumentSegmentationRequest()
         do {
             try handler.perform([request])
         } catch {
@@ -88,7 +95,7 @@ public enum IOSPageFinder {
         }
         guard let first = observations.first, let rectangle = first as? VNRectangleObservation else { return nil }
         let points: [CGPoint] = [rectangle.topLeft, rectangle.topRight, rectangle.bottomRight, rectangle.bottomLeft]
-        let outline: Quad = IOSPageFinder.quad(fromNormalized: points, width: image.width, height: image.height)
+        let outline: Quad = IOSPageFinder.quad(fromNormalized: points, width: width, height: height)
         return QuadCandidate(quad: outline, confidence: Double(rectangle.confidence))
     }
 }

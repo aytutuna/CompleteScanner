@@ -5,12 +5,15 @@ import CoreGraphics
 import CoreMedia
 import CoreVideo
 import Foundation
+import Vision
 
 /// The camera's live frames for the page outline: each BGRA frame of the video output made small
-/// (`IOSFrameScaler`, at most `LiveQuadTracker.analysisLongSide` px) and handed to the tracker on the
-/// frames' own queue. Frames that come sooner than `LiveQuadTracker.minFrameGapMs` after the last one
-/// handed over are passed over before any work, and the video output drops frames while one is being
-/// searched (`alwaysDiscardsLateVideoFrames`), so the work per second stays bounded.
+/// (`IOSFrameScaler`, at most `LiveQuadTracker.analysisLongSide` px), searched whole by Vision's document
+/// segmentation (`IOSPageFinder.segmentation`, the page in the small frame's pixels) and handed to the
+/// tracker on the frames' own queue. The frame is searched as the sensor gives it, not turned, since the
+/// tracker's outline is in the sensor's frame. Frames that come sooner than `LiveQuadTracker.minFrameGapMs`
+/// after the last one handed over are passed over before any work, and the video output drops frames while
+/// one is being searched (`alwaysDiscardsLateVideoFrames`), so the work per second stays bounded.
 final class IOSFrameFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, FrameSource, @unchecked Sendable {
     private let lock = NSLock()
     private var deliver: (@Sendable (IOSCameraFrame) -> Void)?
@@ -45,13 +48,15 @@ final class IOSFrameFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
             lastMs = ms
         }
         lock.unlock()
-        guard due, let send = handler, let image = IOSFrameFeed.image(sampleBuffer) else { return }
-        send(IOSCameraFrame(image: image, timestampMs: ms))
+        guard due, let send = handler, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
+              let image = IOSFrameFeed.image(pixelBuffer) else { return }
+        let vision = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
+        let page: QuadCandidate? = IOSPageFinder.segmentation(vision, width: image.width, height: image.height)
+        send(IOSCameraFrame(image: image, timestampMs: ms, page: page))
     }
 
     /// The frame's pixels made small; nil when it is not a BGRA frame.
-    static func image(_ sampleBuffer: CMSampleBuffer) -> RgbaImage? {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return nil }
+    static func image(_ pixelBuffer: CVPixelBuffer) -> RgbaImage? {
         guard CVPixelBufferGetPixelFormatType(pixelBuffer) == kCVPixelFormatType_32BGRA else { return nil }
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
         defer {

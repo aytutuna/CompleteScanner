@@ -10,8 +10,10 @@ import XCTest
 // still, then taken away; frames with no page; a page missed for a moment; frames too close together;
 // a clock that starts over; the shutter's decision only from a page held still on a sharp, lit frame
 // (blurred and dark frames scripted through a `FrameSource`), a photo taken counting the page as taken,
-// and a pause keeping that. The frames are drawn here, pixel by pixel (no real document). Also the
-// frames made small for the search (`IOSFrameScaler`) and a live outline turned into the photo's shares.
+// and a pause keeping that; Vision's page taken in place of the search when it is sure. The frames are
+// drawn here, pixel by pixel (no real document). Also the outline steadied (`LiveQuadFilter`, scripted
+// outlines), the frames made small for the search (`IOSFrameScaler`) and a live outline turned into the
+// photo's shares.
 
 /// A colour of a fixture frame.
 struct TrackerColor {
@@ -359,7 +361,10 @@ final class LiveQuadTrackerTests: XCTestCase {
         for update in updates {
             let t: Double = update.timestampMs
             let index: Int = Int((t * 3.0 / 100.0).rounded())
-            if index < 60 {
+            if index == 0 {
+                // Seen for the first time: drawn from the second sighting on.
+                XCTAssertNil(update.outline)
+            } else if index < 60 {
                 // The page is in view: its outline within 1 % of the frame's diagonal (shares of the frame).
                 guard let outline = update.outline else {
                     XCTFail("No outline at \(t) ms")
@@ -469,8 +474,9 @@ final class LiveQuadTrackerTests: XCTestCase {
             t += 100
         }
         let expected: Quad = LiveQuadTracker.normalized(stubQuad, width: 64, height: 48)
-        // Found at 0 and 100 ms; missed from 200 ms: kept until 300 ms after 100 ms, gone after.
-        XCTAssertEqual(shown[0], expected)
+        // Found at 0 and 100 ms (drawn from the second sighting); missed from 200 ms: kept until 300 ms
+        // after 100 ms, gone after.
+        XCTAssertNil(shown[0])
         XCTAssertEqual(shown[1], expected)
         XCTAssertEqual(shown[2], expected)
         XCTAssertEqual(shown[3], expected)
@@ -556,10 +562,11 @@ final class LiveQuadTrackerTests: XCTestCase {
         let tracker = LiveQuadTracker(detector: { (_: RgbaImage, _: Quad?) -> PhotoDocumentDetection in
             detection(stubQuad)
         })
-        XCTAssertNotNil(tracker.process(plainFrame(0))?.outline)
+        XCTAssertNil(tracker.process(plainFrame(0))?.outline)
+        XCTAssertNotNil(tracker.process(plainFrame(100))?.outline)
         tracker.reset()
         // Not passed over as too soon: the reset started over.
-        let after: LiveQuadUpdate? = tracker.process(plainFrame(10))
+        let after: LiveQuadUpdate? = tracker.process(plainFrame(110))
         XCTAssertNotNil(after)
         XCTAssertEqual(after?.state, CaptureState.moving)
     }
@@ -658,8 +665,9 @@ final class LiveQuadTrackerTests: XCTestCase {
             }
             index += 1
         }
-        // Never taken again until the next page came (steady from 41, taken at 47).
-        XCTAssertEqual(fired, [47])
+        // Never taken again until the next page came: its jump believed on its second sighting (41),
+        // steady from 42, taken at 48.
+        XCTAssertEqual(fired, [48])
     }
 
     func test_aPause_keepsThePageTaken_whileStoppingForgetsIt() {
@@ -772,6 +780,112 @@ final class LiveQuadTrackerTests: XCTestCase {
             index += 1
         }
         XCTAssertEqual(fired, [7, 17])
+    }
+
+    func test_visionsPage_isTakenWhenSure_elseTheSearchLooks() {
+        let count = SearchCount()
+        let tracker = LiveQuadTracker(detector: countingDetector(count), quality: goodReadings)
+        let sure = QuadCandidate(quad: stubQuad, confidence: 0.9)
+        func frame(_ t: Double, _ page: QuadCandidate?) -> IOSCameraFrame {
+            IOSCameraFrame(image: RgbaImage.filled(width: 64, height: 48, r: 90, g: 90, b: 90), timestampMs: t, page: page)
+        }
+        XCTAssertNil(tracker.process(frame(0, sure))?.outline)
+        let second: LiveQuadUpdate? = tracker.process(frame(100, sure))
+        XCTAssertEqual(second?.outline, LiveQuadTracker.normalized(stubQuad, width: 64, height: 48))
+        XCTAssertEqual(count.value, 0)
+        // Not sure enough, or not a page's shape (a sliver): the search looks (and finds nothing here).
+        _ = tracker.process(frame(200, QuadCandidate(quad: stubQuad, confidence: 0.3)))
+        XCTAssertEqual(count.value, 1)
+        let sliver = Quad(topLeft: CGPoint(x: 10, y: 20), topRight: CGPoint(x: 54, y: 20),
+                          bottomRight: CGPoint(x: 54, y: 24), bottomLeft: CGPoint(x: 10, y: 24))
+        _ = tracker.process(frame(300, QuadCandidate(quad: sliver, confidence: 0.9)))
+        XCTAssertEqual(count.value, 2)
+        // No page from Vision: the search.
+        _ = tracker.process(frame(400, nil))
+        XCTAssertEqual(count.value, 3)
+        let found: PhotoDocumentDetection? = LiveQuadTracker.detection(sure, width: 64, height: 48)
+        XCTAssertEqual(found?.quad, stubQuad)
+        XCTAssertEqual(found?.confidence, 0.9)
+        XCTAssertEqual(found?.rejection, PhotoDocumentRejection.none)
+        XCTAssertEqual(LiveQuadTracker.minVisionConfidence, 0.5)
+    }
+
+    func test_theFilter_dampsJitter() throws {
+        // 320 × 240 (diagonal 400 px): corners tremble ±2 px about the sheet (within the 4 px of jitter).
+        var filter = LiveQuadFilter()
+        var index: Int = 0
+        while index < 12 {
+            let dx: Double = index % 2 == 0 ? 2 : -2
+            let out: LiveQuadFilter.Output = filter.update(LiveFrames.sheetMoved(dx), atMs: Double(index) * 100, diagonal: 400)
+            if index == 0 {
+                XCTAssertNil(out.shown)
+                XCTAssertEqual(out.page, LiveFrames.sheetMoved(2))
+            } else {
+                let shown: Quad = try XCTUnwrap(out.shown)
+                XCTAssertEqual(out.page, shown)
+                if index >= 3 {
+                    // Halfway each time: the trembling settles to a third of what was found.
+                    XCTAssertLessThanOrEqual(shown.maxCornerDistance(LiveFrames.sheet), 1.0, "at \(index)")
+                }
+            }
+            index += 1
+        }
+        XCTAssertEqual(LiveQuadFilter.smoothing, 0.5)
+        XCTAssertEqual(LiveQuadFilter.jitterShare, 0.01)
+        XCTAssertEqual(LiveQuadFilter.jumpShare, 0.06)
+    }
+
+    func test_theFilter_followsARealMove_withinTwoFrames() {
+        var filter = LiveQuadFilter()
+        _ = filter.update(LiveFrames.sheet, atMs: 0, diagonal: 400)
+        _ = filter.update(LiveFrames.sheet, atMs: 100, diagonal: 400)
+        // Slid 10 px (more than jitter, less than a jump): followed at once.
+        let slid: LiveQuadFilter.Output = filter.update(LiveFrames.sheetMoved(10), atMs: 200, diagonal: 400)
+        XCTAssertEqual(slid.shown, LiveFrames.sheetMoved(10))
+        XCTAssertEqual(slid.page, LiveFrames.sheetMoved(10))
+        // Jumped 40 px (10 %): passed over once, then followed when found there again.
+        let jumped: LiveQuadFilter.Output = filter.update(LiveFrames.sheetMoved(50), atMs: 300, diagonal: 400)
+        XCTAssertNil(jumped.page)
+        XCTAssertEqual(jumped.shown, LiveFrames.sheetMoved(10))
+        let again: LiveQuadFilter.Output = filter.update(LiveFrames.sheetMoved(51), atMs: 400, diagonal: 400)
+        XCTAssertEqual(again.shown, LiveFrames.sheetMoved(51))
+        XCTAssertEqual(again.page, LiveFrames.sheetMoved(51))
+        // A jump seen once only (a stray outline) changes nothing.
+        let stray: LiveQuadFilter.Output = filter.update(LiveFrames.sheetMoved(-60), atMs: 500, diagonal: 400)
+        XCTAssertNil(stray.page)
+        XCTAssertEqual(stray.shown, LiveFrames.sheetMoved(51))
+        let back: LiveQuadFilter.Output = filter.update(LiveFrames.sheetMoved(51), atMs: 600, diagonal: 400)
+        XCTAssertEqual(back.shown, LiveFrames.sheetMoved(51))
+        // Corners named from another edge are the same page, not a jump.
+        let sheet: Quad = LiveFrames.sheetMoved(51)
+        let renamed = Quad(topLeft: sheet.bottomLeft, topRight: sheet.topLeft, bottomRight: sheet.topRight,
+                           bottomLeft: sheet.bottomRight)
+        let turned: LiveQuadFilter.Output = filter.update(renamed, atMs: 700, diagonal: 400)
+        XCTAssertEqual(turned.shown, sheet)
+    }
+
+    func test_theFilter_holdsALostPage_thenClearsIt() {
+        var filter = LiveQuadFilter()
+        _ = filter.update(LiveFrames.sheet, atMs: 0, diagonal: 400)
+        _ = filter.update(LiveFrames.sheet, atMs: 100, diagonal: 400)
+        // Missed: kept for 300 ms after it was last found, with no page for the shutter.
+        for t in [200.0, 300.0, 400.0] {
+            let missed: LiveQuadFilter.Output = filter.update(nil, atMs: t, diagonal: 400)
+            XCTAssertNil(missed.page)
+            XCTAssertEqual(missed.shown, LiveFrames.sheet, "at \(t)")
+        }
+        let gone: LiveQuadFilter.Output = filter.update(nil, atMs: 500, diagonal: 400)
+        XCTAssertNil(gone.shown)
+        // Found again after that: a new page, drawn from its second sighting.
+        let first: LiveQuadFilter.Output = filter.update(LiveFrames.sheet, atMs: 600, diagonal: 400)
+        XCTAssertNil(first.shown)
+        XCTAssertEqual(first.page, LiveFrames.sheet)
+        // A first sighting missing on the next frame is forgotten.
+        _ = filter.update(nil, atMs: 700, diagonal: 400)
+        let anew: LiveQuadFilter.Output = filter.update(LiveFrames.sheet, atMs: 800, diagonal: 400)
+        XCTAssertNil(anew.shown)
+        let seenTwice: LiveQuadFilter.Output = filter.update(LiveFrames.sheet, atMs: 900, diagonal: 400)
+        XCTAssertEqual(seenTwice.shown, LiveFrames.sheet)
     }
 
     func test_stopFollowing_stopsTheSource() {

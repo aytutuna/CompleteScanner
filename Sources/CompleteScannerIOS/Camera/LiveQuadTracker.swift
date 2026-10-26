@@ -4,14 +4,18 @@ import CoreGraphics
 import Foundation
 
 /// One live frame of the camera, made small for the page search: its pixels (upright as the sensor
-/// gives them, not turned for the screen) and when it was taken, in milliseconds of the capture clock.
+/// gives them, not turned for the screen), when it was taken, in milliseconds of the capture clock, and
+/// the page Vision found in it (`IOSPageFinder.segmentation`, in `image`'s pixels), nil when Vision found
+/// none or did not run (fixture frames).
 public struct IOSCameraFrame: Sendable {
     public let image: RgbaImage
     public let timestampMs: Double
+    public let page: QuadCandidate?
 
-    public init(image: RgbaImage, timestampMs: Double) {
+    public init(image: RgbaImage, timestampMs: Double, page: QuadCandidate? = nil) {
         self.image = image
         self.timestampMs = timestampMs
+        self.page = page
     }
 }
 
@@ -62,10 +66,14 @@ public struct LiveQuadUpdate: Equatable, Sendable {
 }
 
 /// Follows the page in the camera's live frames for the outline drawn over the preview. About ten
-/// frames a second are searched (`frameIntervalMs`; the others are passed over before any work), each
-/// small (at most `analysisLongSide` px) and by the shared page search (`PhotoDocumentDetector`, the
-/// photo import's), with the outline of the frame before as its hint. A page missed for a moment keeps
-/// its outline for `holdMs`, so it does not flicker; how steady it is comes from `CaptureStability`.
+/// frames a second are searched (`frameIntervalMs`; the others are passed over before any work): the
+/// page Vision found in the frame (`IOSCameraFrame.page`) when it is sure enough (`minVisionConfidence`)
+/// and a page's (`IOSPageFinder.accepted`), else the shared page search (`PhotoDocumentDetector`, the photo
+/// import's) on the frame made small (at most `analysisLongSide` px), with the outline of the frame before
+/// as its hint. What is found is steadied (`LiveQuadFilter`): small jitter is smoothed, a jump is believed
+/// only once it is seen twice, a new page is drawn from its second sighting and a page missed for a moment
+/// keeps its outline for `holdMs`, so it does not flicker; how steady the steadied page is comes from
+/// `CaptureStability`.
 /// Once `CaptureStability` has taken the page (`.captured`) it keeps that state until the page moves
 /// `newPageMovement` away, so whether the page holds still meanwhile is judged here, by the same rules:
 /// it does while no corner strays `stayMovement` from where it held still, and holds still again once no
@@ -89,6 +97,8 @@ public final class LiveQuadTracker: @unchecked Sendable {
     public static let analysisLongSide: Int = 480
     /// A page missed for at most this long keeps its outline.
     public static let holdMs: Double = 300
+    /// Vision's page is taken from this confidence up; below it, the shared page search looks.
+    public static let minVisionConfidence: Double = 0.5
 
     /// The page search: a frame and the outline found in the frame before (its pixels), if any.
     public typealias Detector = @Sendable (RgbaImage, Quad?) -> PhotoDocumentDetection
@@ -103,6 +113,7 @@ public final class LiveQuadTracker: @unchecked Sendable {
     private var lastSearchedMs: Double?
     private var lastQuad: Quad?
     private var lastSeenMs: Double = -Double.infinity
+    private var filter = LiveQuadFilter()
     /// The page found in the frame searched before (pixels); nil when none was.
     private var lastFound: Quad?
     /// Where the page held still while `.captured` (pixels); nil while it does not.
@@ -150,6 +161,18 @@ public final class LiveQuadTracker: @unchecked Sendable {
         PhotoDocumentDetector.detect(image, hint: hint, options: liveOptions)
     }
 
+    /// Vision's `page` in a live frame of `width` x `height` as the page search's answer, when it is sure
+    /// enough and a page's; nil otherwise.
+    public static func detection(_ page: QuadCandidate, width: Int, height: Int) -> PhotoDocumentDetection? {
+        guard page.confidence >= minVisionConfidence,
+              let quad = IOSPageFinder.accepted(page, width: width, height: height) else { return nil }
+        var result: PhotoDocumentDetection = PhotoDocumentDetection.nothing
+        result.quad = quad
+        result.confidence = page.confidence
+        result.rejection = PhotoDocumentRejection.none
+        return result
+    }
+
     /// Searches `frame` unless it comes too soon after the last one searched (nil then). A frame from
     /// an earlier time than the last one (the camera started again) or of another size starts over.
     public func process(_ frame: IOSCameraFrame) -> LiveQuadUpdate? {
@@ -178,7 +201,12 @@ public final class LiveQuadTracker: @unchecked Sendable {
         let started: Int = generation
         lock.unlock()
 
-        let detection: PhotoDocumentDetection = detector(frame.image, hint)
+        let detection: PhotoDocumentDetection
+        if let page = frame.page, let seen = LiveQuadTracker.detection(page, width: width, height: height) {
+            detection = seen
+        } else {
+            detection = detector(frame.image, hint)
+        }
         let reading: FrameQualityReading = measure(frame.image, detection.quad)
 
         lock.lock()
@@ -190,28 +218,25 @@ public final class LiveQuadTracker: @unchecked Sendable {
             resuming = false
             stability.resume(atMs: t)
         }
-        let observation = CaptureObservation(quad: detection.quad, confidence: detection.confidence, timestampMs: t,
+        let diagonal: Double = (Double(width) * Double(width) + Double(height) * Double(height)).squareRoot()
+        let steadied: LiveQuadFilter.Output = filter.update(detection.quad, atMs: t, diagonal: diagonal)
+        let observation = CaptureObservation(quad: steadied.page, confidence: detection.confidence, timestampMs: t,
                                              frameWidth: width, frameHeight: height,
                                              sharpness: reading.sharpness, brightness: reading.brightness)
         let decision: CaptureDecision = stability.update(observation)
         if decision.state != .captured {
             photographed = false
         }
-        let diagonal: Double = (Double(width) * Double(width) + Double(height) * Double(height)).squareRoot()
-        let steady: Bool = holdsStill(decision, quad: detection.quad, confidence: detection.confidence, diagonal: diagonal)
-        lastFound = detection.quad
-        var shown: Quad?
+        let steady: Bool = holdsStill(decision, quad: steadied.page, confidence: detection.confidence, diagonal: diagonal)
+        lastFound = steadied.page
         if let quad = detection.quad {
             lastQuad = quad
             lastSeenMs = t
-            shown = quad
-        } else if let held = lastQuad, t - lastSeenMs <= LiveQuadTracker.holdMs {
-            shown = held
-        } else {
+        } else if t - lastSeenMs > LiveQuadTracker.holdMs {
             lastQuad = nil
         }
         var outline: Quad?
-        if let quad = shown {
+        if let quad = steadied.shown {
             outline = LiveQuadTracker.normalized(quad, width: width, height: height)
         }
         return LiveQuadUpdate(outline: outline, state: decision.state, progress: decision.progress, timestampMs: t,
@@ -364,10 +389,137 @@ public final class LiveQuadTracker: @unchecked Sendable {
         lastSearchedMs = nil
         lastQuad = nil
         lastSeenMs = -Double.infinity
+        filter = LiveQuadFilter()
         lastFound = nil
         heldAt = nil
         resuming = false
         photographed = false
+    }
+}
+
+/// Steadies the page found in successive live frames (pixels of one frame size) before it is drawn and
+/// judged. A corner that moved at most `jitterShare` of the frame's diagonal since the outline before is
+/// moved only `smoothing` of the way (the outline stops trembling); one that moved further is followed
+/// at once, so a page slid across the table is not drawn behind it. A page that jumped more than
+/// `jumpShare` (a corner of it) is not believed on one frame: it is passed over (no page that frame)
+/// unless the next frame finds it there too, when it is the page from then on. A page seen for the first
+/// time is not drawn until it is found again on the next frame (one missing in between forgets it); a page
+/// drawn and then missed keeps its outline for `LiveQuadTracker.holdMs` after it was last found. Corners
+/// are paired with the outline before whichever corner the search named first, as `CaptureStability`
+/// compares them. Pure logic, one frame after another in time order.
+public struct LiveQuadFilter: Sendable {
+    /// How far a trembling corner moves toward where it was found.
+    public static let smoothing: Double = 0.5
+    /// A corner moving at most this share of the diagonal trembles; further, it moves.
+    public static let jitterShare: Double = 0.01
+    /// A page whose corner jumped more than this share of the diagonal is believed on its second sighting.
+    public static let jumpShare: Double = 0.06
+
+    /// What one frame gives: the steadied page for the shutter's judgement (nil when none was found, or a
+    /// jump was passed over), and the outline to draw (nil when there is none to draw).
+    public struct Output: Equatable, Sendable {
+        public let page: Quad?
+        public let shown: Quad?
+    }
+
+    private var current: Quad?
+    private var drawn: Bool = false
+    private var jumped: Quad?
+    private var seenMs: Double = -Double.infinity
+
+    public init() {}
+
+    /// The frame taken at `t` ms, where the page search found `found` (nil: no page), in a frame whose
+    /// diagonal is `diagonal` px.
+    public mutating func update(_ found: Quad?, atMs t: Double, diagonal: Double) -> Output {
+        if current != nil && t - seenMs > LiveQuadTracker.holdMs {
+            current = nil
+            drawn = false
+            jumped = nil
+        }
+        guard let quad = found else {
+            jumped = nil
+            if !drawn {
+                current = nil
+            }
+            return Output(page: nil, shown: drawn ? current : nil)
+        }
+        guard let before = current else {
+            current = quad
+            seenMs = t
+            return Output(page: quad, shown: nil)
+        }
+        let aligned: Quad = LiveQuadFilter.aligned(quad, to: before)
+        let limit: Double = LiveQuadFilter.jumpShare * diagonal
+        if aligned.maxCornerDistance(before) > limit {
+            if !drawn {
+                current = quad
+                seenMs = t
+                return Output(page: quad, shown: nil)
+            }
+            if let earlier = jumped, CaptureStability.movement(quad, earlier) <= limit {
+                current = quad
+                jumped = nil
+                seenMs = t
+                return Output(page: quad, shown: quad)
+            }
+            jumped = quad
+            return Output(page: nil, shown: before)
+        }
+        let steadied: Quad = LiveQuadFilter.blended(before, aligned, jitter: LiveQuadFilter.jitterShare * diagonal)
+        current = steadied
+        drawn = true
+        jumped = nil
+        seenMs = t
+        return Output(page: steadied, shown: steadied)
+    }
+
+    /// `quad`'s corners renamed to pair with `reference`'s: shifted round by whichever of the four ways
+    /// brings the farthest pair nearest.
+    static func aligned(_ quad: Quad, to reference: Quad) -> Quad {
+        var bestShift: Int = 0
+        var best: Double = Double.greatestFiniteMagnitude
+        var shift: Int = 0
+        while shift < 4 {
+            var worst: Double = 0
+            var index: Int = 0
+            while index < 4 {
+                let a: CGPoint = quad[index + shift]
+                let b: CGPoint = reference[index]
+                let dx: Double = Double(a.x) - Double(b.x)
+                let dy: Double = Double(a.y) - Double(b.y)
+                worst = max(worst, (dx * dx + dy * dy).squareRoot())
+                index += 1
+            }
+            if worst < best {
+                best = worst
+                bestShift = shift
+            }
+            shift += 1
+        }
+        return Quad(topLeft: quad[bestShift], topRight: quad[bestShift + 1], bottomRight: quad[bestShift + 2],
+                    bottomLeft: quad[bestShift + 3])
+    }
+
+    /// Each corner of `before` moved `smoothing` of the way to `found`'s when within `jitter` px of it,
+    /// else all the way.
+    static func blended(_ before: Quad, _ found: Quad, jitter: Double) -> Quad {
+        var corners: [CGPoint] = []
+        var index: Int = 0
+        while index < 4 {
+            let a: CGPoint = before[index]
+            let b: CGPoint = found[index]
+            let dx: Double = Double(b.x) - Double(a.x)
+            let dy: Double = Double(b.y) - Double(a.y)
+            if (dx * dx + dy * dy).squareRoot() <= jitter {
+                corners.append(CGPoint(x: Double(a.x) + LiveQuadFilter.smoothing * dx,
+                                       y: Double(a.y) + LiveQuadFilter.smoothing * dy))
+            } else {
+                corners.append(b)
+            }
+            index += 1
+        }
+        return Quad(topLeft: corners[0], topRight: corners[1], bottomRight: corners[2], bottomLeft: corners[3])
     }
 }
 
