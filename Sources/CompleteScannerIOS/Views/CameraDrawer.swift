@@ -26,6 +26,7 @@ struct KindsRow: View {
                 .safeAreaPadding(.horizontal, max(0, (geometry.size.width - KindsRow.itemWidth) / 2))
         }
         .frame(height: 44)
+        .modifier(EdgeFade(leading: 28, trailing: 28))
         .onAppear {
             centred = current
         }
@@ -106,6 +107,25 @@ struct KindsRow: View {
 
     private var animation: Animation {
         reduceMotion ? Animation.easeInOut(duration: 0.2) : Animation.spring(duration: 0.35, bounce: 0.15)
+    }
+}
+
+/// A scrolling row that fades out at its edges instead of cutting a word off there.
+struct EdgeFade: ViewModifier {
+    let leading: CGFloat
+    let trailing: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .mask {
+                HStack(spacing: 0) {
+                    LinearGradient(colors: [Color.clear, Color.black], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: leading)
+                    Color.black
+                    LinearGradient(colors: [Color.black, Color.clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: trailing)
+                }
+            }
     }
 }
 

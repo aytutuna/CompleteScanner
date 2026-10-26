@@ -462,6 +462,7 @@ struct ScanScreen: View {
                 .padding(.horizontal, 4)
                 .animation(chipAnimation, value: current)
             }
+            .modifier(EdgeFade(leading: 0, trailing: 28))
             .accessibilityIdentifier("task.chips")
             .onAppear {
                 proxy.scrollTo(current, anchor: .center)
