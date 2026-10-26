@@ -85,6 +85,13 @@ public struct IOSRootView: View {
                 spreadEditor = nil
             }
         }
+        .onChange(of: IOSLayout.usesSidebar(sizeClass, pad: isPad)) { (_: Bool, sidebar: Bool) in
+            // A narrow window is the scan screen alone, so whatever waits on it (the camera's intro card)
+            // must count it as shown.
+            if !sidebar {
+                showsScanner = true
+            }
+        }
         .onChange(of: state.isBusy) { (_: Bool, busy: Bool) in
             keepAwake(busy)
         }
