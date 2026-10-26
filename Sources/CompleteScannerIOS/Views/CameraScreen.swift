@@ -5,6 +5,30 @@ import QuartzCore
 import SwiftUI
 import UIKit
 
+/// Where camera mode's photo goes on the screen.
+enum CameraLayout {
+    /// The coordinate space the viewfinder and the controls are measured in.
+    static let space: String = "camera"
+    /// The photo's short side over its long side.
+    static let photoAspect: CGFloat = 3.0 / 4.0
+    /// How far the controls may reach over the photo's edge before it is fitted between them: the few points
+    /// of a capsule's rim on a 6.1-inch phone hide nothing.
+    static let allowedOverlap: CGFloat = 8
+
+    /// No insets when the photo, fitted to the `screen` and centred, lies between `freeTop` and `freeBottom`
+    /// within `allowedOverlap` (or they are not measured yet); else the insets that fit it into that band.
+    static func previewInsets(screen: CGSize, freeTop: CGFloat, freeBottom: CGFloat) -> EdgeInsets {
+        guard screen.width > 0, screen.height > 0, freeTop >= 0, freeBottom > freeTop, freeBottom <= screen.height else {
+            return EdgeInsets()
+        }
+        let widthOverHeight: CGFloat = screen.height >= screen.width ? photoAspect : 1 / photoAspect
+        let height: CGFloat = min(screen.height, screen.width / widthOverHeight)
+        let top: CGFloat = (screen.height - height) / 2
+        if top >= freeTop - allowedOverlap && top + height <= freeBottom + allowedOverlap { return EdgeInsets() }
+        return EdgeInsets(top: freeTop, leading: 0, bottom: screen.height - freeBottom, trailing: 0)
+    }
+}
+
 /// Camera mode, the iPhone's scan screen unless printer mode was picked (`IOSScanMode`): the viewfinder is
 /// the screen, edge to edge, and the controls float over it on glass (`CameraGlass`). Its top bar has the
 /// library (`onLibrary`; none where the sidebar has it), a round chevron that swaps the kinds for the
@@ -36,6 +60,10 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
     @State private var waitAnnouncer: IOSWaitAnnouncer = IOSWaitAnnouncer()
     @State private var showsDrawer: Bool = false
     @State private var drawerGroup: CameraDrawerGroup = .export
+    /// The foot of the top bar and the top of the kinds row in `CameraLayout.space` (0 until measured), between
+    /// which the whole photo should be seen.
+    @State private var chromeTop: CGFloat = 0
+    @State private var chromeBottom: CGFloat = 0
     /// Photos or Files is open over the camera.
     @State private var picking: Bool = false
     @Namespace private var glassSpace: Namespace.ID
@@ -83,6 +111,7 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
                 bottomBar
             }
         }
+        .coordinateSpace(.named(CameraLayout.space))
         .background(Color.black)
         .onAppear {
             if !waitsForIntro {
@@ -132,6 +161,11 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 4)
+        .onGeometryChange(for: CGFloat.self) { (proxy: GeometryProxy) -> CGFloat in
+            proxy.frame(in: .named(CameraLayout.space)).maxY
+        } action: { (bottom: CGFloat) in
+            chromeTop = bottom
+        }
     }
 
     @ViewBuilder
@@ -182,10 +216,31 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
     // MARK: The viewfinder
 
     /// Edge to edge behind the controls, the whole photo centred in it: the bands above and below it are
-    /// where the glass floats.
+    /// where the glass floats. Where they are too short for the controls (an iPhone SE or mini), the photo is
+    /// fitted between the top bar and the kinds row instead (`CameraLayout.previewInsets`), so none of it is
+    /// hidden; the outline follows the preview layer.
     private var viewfinder: some View {
+        GeometryReader { (proxy: GeometryProxy) in
+            ZStack {
+                Color.black
+                framed
+                    .padding(previewInsets(proxy))
+            }
+        }
+        .ignoresSafeArea()
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("camera.screen")
+    }
+
+    private func previewInsets(_ proxy: GeometryProxy) -> EdgeInsets {
+        let origin: CGFloat = proxy.frame(in: .named(CameraLayout.space)).minY
+        return CameraLayout.previewInsets(screen: proxy.size, freeTop: chromeTop - origin,
+                                          freeBottom: chromeBottom - origin)
+    }
+
+    /// The preview with the outline, the ID card's guide and the line saying why the camera waits.
+    private var framed: some View {
         ZStack {
-            Color.black
             if model.showsPreview, let controller = model.driver as? IOSCameraController {
                 CameraPreview(controller: controller, outline: model.live?.outline,
                               steady: model.live?.isSteady ?? false)
@@ -199,9 +254,6 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("camera.screen")
     }
 
     /// The status line at the top; at the foot the notices, the task's buttons and Save.
@@ -340,6 +392,14 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
             }
         }
         .padding(.horizontal, 12)
+        .onGeometryChange(for: CGFloat.self) { (proxy: GeometryProxy) -> CGFloat in
+            proxy.frame(in: .named(CameraLayout.space)).minY
+        } action: { (top: CGFloat) in
+            // The open drawer is a panel over the photo's foot: the photo keeps the room the kinds row leaves.
+            if !showsDrawer {
+                chromeBottom = top
+            }
+        }
     }
 
     private var bottomBar: some View {

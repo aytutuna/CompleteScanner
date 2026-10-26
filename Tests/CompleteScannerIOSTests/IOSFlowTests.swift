@@ -1,6 +1,7 @@
 #if os(iOS)
 import AVFoundation
 import CoreGraphics
+import SwiftUI
 import XCTest
 @testable import CompleteScannerIOS
 @testable import CompleteScannerKit
@@ -389,6 +390,19 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertEqual(enhanced.taskOptions.cameraFilter, .enhanced)
         XCTAssertEqual(DocumentEnhancer.mode(for: enhanced), .auto)
         XCTAssertEqual(enhanced.task, .document)
+    }
+
+    func test_cameraPhoto_isFittedBetweenTheControls_onlyWhereTheBandsAreTooShort() {
+        // An iPhone SE: the 375 × 500 photo centred from 83.5 to 583.5, the kinds row from 533.
+        let small = CGSize(width: 375, height: 667)
+        let fitted: EdgeInsets = CameraLayout.previewInsets(screen: small, freeTop: 52, freeBottom: 533)
+        XCTAssertEqual(fitted.top, 52)
+        XCTAssertEqual(fitted.bottom, 134)
+        // A 6.1-inch phone: the photo from 164 to 688, the row from 684: a few points of rim, kept centred.
+        let regular = CGSize(width: 393, height: 852)
+        XCTAssertEqual(CameraLayout.previewInsets(screen: regular, freeTop: 107, freeBottom: 684), EdgeInsets())
+        // Not measured yet: centred.
+        XCTAssertEqual(CameraLayout.previewInsets(screen: small, freeTop: 0, freeBottom: 0), EdgeInsets())
     }
 
     func test_pageViewer_namesThePage_andItsFilters() {
