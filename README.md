@@ -281,8 +281,8 @@ whether to save them or discard them; a printer button switches to printer mode,
 Scan sits beside Save, and a camera button switches back, the scanner kept for next time; Print… and
 Email… in Save's menu, and what runs after each save (Email, Print, Send to PC) under After saving;
 so far the Demo Scanner,
-our own camera as the default way to take pages, with the page's outline drawn live over the
-preview, the lens that focuses close, the torch, an automatic shutter that takes each page once it
+our own camera as the default way to take pages, with the page's outline found by Vision and held
+steady over the preview, the lens that focuses close, the torch, an automatic shutter that takes each page once it
 holds still on a sharp, lit frame (Auto, on unless turned off, with a ring that fills as it waits) and
 continuous capture, page after page, with the corner editor only for a page the photo leaves unsure;
 camera pages cleaned up with their lighting evened out, the paper white and the print black, in the

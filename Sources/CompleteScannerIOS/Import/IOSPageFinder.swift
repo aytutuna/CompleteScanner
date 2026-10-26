@@ -22,21 +22,36 @@ public struct IOSFoundPage: Equatable, Sendable {
 
 /// Finds the page in an upright photo: Vision's document segmentation (`VNDetectDocumentSegmentationRequest`,
 /// the page's four corners) first, its outline kept when it is a document page's (`MultiQuadPicker`,
-/// `.document`: at least a tenth of the photo, a page's shape) and usable (`PhotoImport.canUseCorners`);
-/// otherwise the shared detector (`PhotoImport.plan`, the Mac's and Windows' photo import), whose
-/// corners and reason the editor shows. The corners always go to the corner editor.
+/// `.document`: at least a tenth of the photo, a page's shape) and usable (`PhotoImport.canUseCorners`)
+/// and moved onto the photo's edges (`QuadRefiner`); otherwise the shared detector (`PhotoImport.plan`, the
+/// Mac's and Windows' photo import, which refines its page the same way), whose corners and reason the
+/// editor shows. Vision's page counts as found clearly only when Vision was at least `sureVisionConfidence`
+/// sure and the photo's edges back every side of it (`minSureSupport`, `QuadRefinement.support`); else it is
+/// `.unsure` and the editor opens on the refined corners. The corners always go to the corner editor.
 public enum IOSPageFinder {
     /// Vision's outline is taken from this confidence up.
     public static let minVisionConfidence: Double = 0.5
+    /// Vision's outline is found clearly from this confidence up (with its edges backing it).
+    public static let sureVisionConfidence: Double = 0.7
+    /// Vision's outline is found clearly when at least this share of its weakest side lies on an edge.
+    public static let minSureSupport: Double = 0.7
 
     /// The page in `photo`, Vision first.
     public static func find(_ photo: RgbaImage) -> IOSFoundPage {
-        if let image = photo.makeCGImage(), let candidate = visionCandidate(image) {
-            if let corners = accepted(candidate, width: photo.width, height: photo.height) {
-                return IOSFoundPage(corners: corners, reason: .none, byVision: true)
-            }
+        if let image = photo.makeCGImage(), let candidate = visionCandidate(image),
+           let corners = accepted(candidate, width: photo.width, height: photo.height) {
+            return refined(corners, confidence: candidate.confidence, in: photo)
         }
         return fallback(photo)
+    }
+
+    /// Vision's `corners` (accepted, `photo`'s pixels) moved onto the photo's edges and kept within it, found
+    /// clearly when Vision's `confidence` and the edges' support both reach theirs.
+    public static func refined(_ corners: Quad, confidence: Double, in photo: RgbaImage) -> IOSFoundPage {
+        let refinement: QuadRefinement = QuadRefiner.refine(photo, corners)
+        let kept: Quad = PhotoImport.clampedToPhoto(refinement.quad, width: photo.width, height: photo.height)
+        let sure: Bool = confidence >= sureVisionConfidence && refinement.support >= minSureSupport
+        return IOSFoundPage(corners: kept, reason: sure ? .none : .unsure, byVision: true)
     }
 
     /// The shared detector's corners and reason: the page found clearly (`.none`), else the outline seen

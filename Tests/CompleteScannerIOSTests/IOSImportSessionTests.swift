@@ -364,6 +364,29 @@ final class IOSImportSessionTests: XCTestCase {
         XCTAssertNil(IOSPageFinder.accepted(QuadCandidate(quad: speck, confidence: 0.9), width: 600, height: 450))
     }
 
+    func test_visionsOutline_isMovedOntoThePhotosEdges_andSureOnlyWhenTheyBackIt() throws {
+        let photo: RgbaImage = try XCTUnwrap(RgbaImage(cgImage: ImportTestSupport.sheetPhoto(width: 600, height: 450,
+                                                                                            corners: sheetCorners)))
+        // Vision's outline about 1 % of the diagonal off the sheet.
+        let rough = Quad(topLeft: CGPoint(x: 156, y: 74), topRight: CGPoint(x: 345, y: 86),
+                         bottomRight: CGPoint(x: 356, y: 358), bottomLeft: CGPoint(x: 144, y: 368))
+        let sure: IOSFoundPage = IOSPageFinder.refined(rough, confidence: 0.9, in: photo)
+        XCTAssertTrue(sure.byVision)
+        XCTAssertEqual(sure.reason, PhotoReviewReason.none)
+        XCTAssertLessThan(sure.corners.maxCornerDistance(sheetQuad), 1.5)
+        // Vision less sure: the same corners, for the editor to start from.
+        let doubtful: IOSFoundPage = IOSPageFinder.refined(rough, confidence: 0.6, in: photo)
+        XCTAssertEqual(doubtful.reason, PhotoReviewReason.unsure)
+        XCTAssertEqual(doubtful.corners, sure.corners)
+        // No edge in the photo backs the outline: unsure however sure Vision was, its corners as they were.
+        let plain: RgbaImage = RgbaImage.filled(width: 600, height: 450, r: 128, g: 128, b: 128)
+        let unbacked: IOSFoundPage = IOSPageFinder.refined(rough, confidence: 0.95, in: plain)
+        XCTAssertEqual(unbacked.reason, PhotoReviewReason.unsure)
+        XCTAssertEqual(unbacked.corners, rough)
+        XCTAssertEqual(IOSPageFinder.sureVisionConfidence, 0.7)
+        XCTAssertEqual(IOSPageFinder.minSureSupport, 0.7)
+    }
+
     func test_thePageIsFound_inASimplePhoto() throws {
         let photo: RgbaImage = try XCTUnwrap(RgbaImage(cgImage: ImportTestSupport.sheetPhoto(width: 600, height: 450,
                                                                                             corners: sheetCorners)))

@@ -909,6 +909,9 @@ final class IOSCameraTests: XCTestCase {
         XCTAssertEqual(IOSImportSession.seeded(clear, liveOutline: live, width: 600, height: 450), clear)
         // No live outline: the search's start.
         XCTAssertEqual(IOSImportSession.seeded(unsure, liveOutline: nil, width: 600, height: 450), unsure)
+        // Vision found the page in the photo, unsure of it: its own corners, refined on the photo.
+        let doubtful = IOSFoundPage(corners: sheetQuad, reason: PhotoReviewReason.unsure, byVision: true)
+        XCTAssertEqual(IOSImportSession.seeded(doubtful, liveOutline: live, width: 600, height: 450), doubtful)
         // The live outline, in the photo's pixels.
         let seeded: IOSFoundPage = IOSImportSession.seeded(unsure, liveOutline: live, width: 600, height: 450)
         XCTAssertEqual(seeded.reason, PhotoReviewReason.none)

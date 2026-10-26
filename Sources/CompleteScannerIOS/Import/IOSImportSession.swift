@@ -710,11 +710,13 @@ public final class IOSImportSession: ObservableObject {
     }
 
     /// Where the corner editor starts on a photo from our camera: the page as found in the photo when it
-    /// was found clearly (`found.reason` `.none`); else the outline the live preview showed (`liveOutline`,
-    /// shares of the upright photo of `width` x `height`), in the photo's pixels, kept within the photo and
-    /// named again, when the page can be cut out along it; else what the search gave.
+    /// was found clearly (`found.reason` `.none`) or Vision found it there (`found.byVision`: its corners,
+    /// refined on the photo itself, beat the preview's); else the outline the live preview showed
+    /// (`liveOutline`, shares of the upright photo of `width` x `height`), in the photo's pixels, kept within
+    /// the photo and named again, when the page can be cut out along it; else what the search gave.
     nonisolated static func seeded(_ found: IOSFoundPage, liveOutline: Quad?, width: Int, height: Int) -> IOSFoundPage {
-        guard found.reason != PhotoReviewReason.none, let outline = liveOutline, width > 0, height > 0 else { return found }
+        guard found.reason != PhotoReviewReason.none, !found.byVision, let outline = liveOutline, width > 0,
+              height > 0 else { return found }
         let w: Double = Double(width)
         let h: Double = Double(height)
         var points: [CGPoint] = []
