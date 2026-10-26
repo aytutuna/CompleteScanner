@@ -326,7 +326,7 @@ struct ScanScreen: View {
     @ViewBuilder
     private var cameraNotices: some View {
         if let offered = state.pendingPackage {
-            PackageBanner(offered: offered)
+            PackageBanner(offered: offered, onOpenAsNew: openPackageAsNew)
                 .modifier(NoticeCard())
         }
         if importer.progressText != nil {
@@ -550,6 +550,20 @@ struct ScanScreen: View {
         }
         if appState.pendingIdCardLeave != nil {
             askedToDiscard = true
+        }
+    }
+
+    /// Open as new replaces the queued pages, so with pages queued it asks about them first. Not while a
+    /// share or a send reads them.
+    private func openPackageAsNew() {
+        guard !saveBlocked else { return }
+        let appState: AppState = state
+        guard !state.scannedPages.isEmpty, let offered = state.pendingPackage else {
+            appState.openPendingPackageAsNew()
+            return
+        }
+        leavingPages = PagesLeave(reason: IOSShell.keepPagesReason(package: offered.fileName)) { (_: Bool) in
+            appState.openPendingPackageAsNew()
         }
     }
 
@@ -1092,7 +1106,7 @@ struct ScanScreen: View {
             }
         }
         if let offered = state.pendingPackage {
-            PackageBanner(offered: offered)
+            PackageBanner(offered: offered, onOpenAsNew: openPackageAsNew)
         }
         Text(statusText)
             .font(.footnote)
@@ -1548,10 +1562,11 @@ private struct SavedFilesRow: View {
 
 /// A CompleteScanner document opened in the app or picked in Files, offered until it is taken or closed:
 /// "Opened Receipt.csdoc: 3 pages", with Add to pages (after the queued pages) and Open as new (in place
-/// of them).
+/// of them, `onOpenAsNew`).
 private struct PackageBanner: View {
     @EnvironmentObject private var state: AppState
     let offered: PendingPackage
+    let onOpenAsNew: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1579,7 +1594,7 @@ private struct PackageBanner: View {
                 }
                 .accessibilityIdentifier("package.add")
                 Button(PackageText.openAsNew) {
-                    _ = state.openPendingPackageAsNew()
+                    onOpenAsNew()
                 }
                 .accessibilityIdentifier("package.new")
             }
