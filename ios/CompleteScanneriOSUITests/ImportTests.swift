@@ -88,11 +88,12 @@ final class ImportTests: XCTestCase {
             XCTAssertTrue(item.waitForExistence(timeout: 30), "The \(kind) kind")
             app.waitUntilEnabled(item, "The \(kind) kind")
             item.tap()
-            let question: XCUIElement = app.alerts["Keep the page?"]
+            let question: XCUIElement = app.alerts["Keep the page?"].firstMatch
             XCTAssertTrue(question.waitForExistence(timeout: 10), "Asked before \(kind)")
-            XCTAssertTrue(question.buttons["Save PDF first"].exists, "Save PDF first")
-            XCTAssertTrue(question.buttons["Discard 1 page"].exists, "Discard 1 page")
-            question.buttons["Cancel"].tap()
+            // First match: the Simulator lists an alert's button twice.
+            XCTAssertTrue(question.buttons["Save PDF first"].firstMatch.exists, "Save PDF first")
+            XCTAssertTrue(question.buttons["Discard 1 page"].firstMatch.exists, "Discard 1 page")
+            question.buttons["Cancel"].firstMatch.tap()
             waitUntilGone(question, timeout: 10)
             XCTAssertEqual(app.chipTitle, "Document", "Cancel keeps the kind")
             XCTAssertEqual(app.pagesButton.label, "1 page", "Cancel keeps the page")
