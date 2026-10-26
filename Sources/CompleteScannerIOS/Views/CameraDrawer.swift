@@ -311,7 +311,7 @@ private struct ExportDrawer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Picker("Format", selection: format) {
-                ForEach(IOSShell.exportFormats) { (choice: OutputFormat) in
+                ForEach(IOSShell.exportFormats(state.settings)) { (choice: OutputFormat) in
                     Text(ExportOptions.label(choice)).tag(choice)
                 }
             }

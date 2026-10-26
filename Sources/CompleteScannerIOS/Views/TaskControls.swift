@@ -301,7 +301,7 @@ struct ExportOptions: View {
         let availability: TaskAvailability = TaskCatalog.availability(of: .batch, capabilities: state.capabilities)
         Section {
             Picker("Format", selection: format) {
-                ForEach(IOSShell.exportFormats) { (choice: OutputFormat) in
+                ForEach(IOSShell.exportFormats(s)) { (choice: OutputFormat) in
                     Text(Self.label(choice)).tag(choice)
                 }
             }

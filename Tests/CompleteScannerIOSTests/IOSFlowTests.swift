@@ -239,15 +239,22 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertEqual(IOSShell.keepingKind(twoSided), twoSided)
     }
 
-    func test_exportFormat_namesPicturesAsJPEG() {
-        XCTAssertEqual(IOSShell.exportFormats, [.pdf, .jpeg, .word, .text])
-        let shownAs: [(OutputFormat, OutputFormat)] = [(.pdf, .pdf), (.jpeg, .jpeg), (.png, .jpeg), (.tiff, .jpeg),
-                                                       (.word, .word), (.text, .text)]
+    func test_exportFormat_namesThePictureFormatSaved() {
         var s = ScanSettings()
-        for (format, shown) in shownAs {
+        for format in OutputFormat.allCases {
             s.format = format
-            XCTAssertEqual(IOSShell.exportFormat(s), shown, format.rawValue)
+            let offered: [OutputFormat] = IOSShell.exportFormats(s)
+            XCTAssertEqual(IOSShell.exportFormat(s), format, format.rawValue)
+            XCTAssertTrue(offered.contains(format), format.rawValue)
+            XCTAssertEqual(offered.count, 4, format.rawValue)
         }
+        s.format = .pdf
+        XCTAssertEqual(IOSShell.exportFormats(s), [.pdf, .jpeg, .word, .text])
+        // PNG or TIFF chosen in Settings is what the segment names, not JPEG.
+        s.format = .png
+        XCTAssertEqual(IOSShell.exportFormats(s), [.pdf, .png, .word, .text])
+        s.format = .tiff
+        XCTAssertEqual(IOSShell.exportFormats(s), [.pdf, .tiff, .word, .text])
     }
 
     // MARK: Camera mode

@@ -353,13 +353,16 @@ public enum IOSShell {
         return flow == .documentQueue && settings.documentMultiPage
     }
 
-    /// The formats Options' Export offers for the collected pages: a PDF, a JPEG a page, a Word document or
-    /// a text file. A .txt beside the PDF is one of the PDF's choices (`PDFOptionsSection`).
-    public static let exportFormats: [OutputFormat] = [.pdf, .jpeg, .word, .text]
+    /// The formats Options' Export offers for the collected pages: a PDF, a picture a page (JPEG, or the PNG
+    /// or TIFF chosen in Settings, so the segment names what is saved), a Word document or a text file. A
+    /// .txt beside the PDF is one of the PDF's choices (`PDFOptionsSection`).
+    public static func exportFormats(_ settings: ScanSettings) -> [OutputFormat] {
+        [.pdf, settings.format.imageFormatOrJPEG, .word, .text]
+    }
 
-    /// The Export format the settings save as: JPEG for any picture format (PNG and TIFF come from Settings).
+    /// The Export format the settings save as, one of `exportFormats`.
     public static func exportFormat(_ settings: ScanSettings) -> OutputFormat {
-        settings.format.isImageFormat ? .jpeg : settings.format
+        settings.format
     }
 
     /// The collected pages are saved as pictures (`AppState.saveImages`), not as one file (`savePDF`).
