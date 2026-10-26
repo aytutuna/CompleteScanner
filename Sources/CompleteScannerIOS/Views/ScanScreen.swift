@@ -436,7 +436,7 @@ struct ScanScreen: View {
         .modifier(NoticeCard())
     }
 
-    /// Save on a capsule with the menu beside it, once there are pages to save.
+    /// Save on the accent colour's glass with the menu on a round one beside it, once there are pages to save.
     @ViewBuilder
     private var floatingSave: some View {
         if !state.scannedPages.isEmpty && IOSShell.offersSave(state.settings, pageCount: state.scannedPages.count) {
@@ -457,16 +457,11 @@ struct ScanScreen: View {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
-                .foregroundStyle(Color.white)
-                .padding(.horizontal, 16)
-                .frame(minHeight: 40)
-                .background(Capsule().fill(Color.accentColor))
-                .shadow(color: Color.black.opacity(0.25), radius: 7, y: 4)
-                .contentShape(Capsule())
+                .padding(.horizontal, 4)
+                .frame(minHeight: 30)
         }
-        .buttonStyle(.plain)
+        .modifier(CameraProminentButton())
         .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.5)
         .keyboardShortcut(IOSShortcuts.save.keyboardShortcut)
         .accessibilityIdentifier("save.button")
     }
@@ -479,8 +474,8 @@ struct ScanScreen: View {
             Image(systemName: "ellipsis")
                 .font(.body.weight(.semibold))
                 .foregroundStyle(Color.white)
-                .frame(width: 40, height: 40)
-                .background(Circle().fill(Color.black.opacity(0.55)))
+                .frame(width: 44, height: 44)
+                .cameraGlass(in: Circle(), interactive: true, tint: Color.cameraShade)
                 .contentShape(Circle())
         }
         .disabled(saveBlocked)
