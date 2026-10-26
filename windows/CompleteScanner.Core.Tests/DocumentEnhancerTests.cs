@@ -451,7 +451,7 @@ public class DocumentEnhancerTests
     public void TheCameraFilterDecidesTheModeOfAColorQueue()
     {
         var settings = new ScanSettings();
-        Assert.Equal(CaptureFilter.Enhanced, settings.TaskOptions.CameraFilter);
+        Assert.Null(settings.TaskOptions.CameraFilter);
         settings.TaskOptions.CameraFilter = CaptureFilter.Original;
         Assert.Null(DocumentEnhancer.ModeFor(settings));
         settings.TaskOptions.CameraFilter = CaptureFilter.Grayscale;

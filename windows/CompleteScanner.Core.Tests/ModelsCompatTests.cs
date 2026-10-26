@@ -1243,7 +1243,7 @@ public class ModelsCompatTests
                 // No printer chosen: the key is left out, as Swift leaves out a nil.
                 Assert.Equal(["idCardPaper", "idCardSaveSidesAsImages", "copyCount", "copyFitToPage", "copyAlsoSavePdf",
                               "receiptNameByDate", "receiptCombine", "bookRightToLeft", "bookRotationQuarterTurns",
-                              "cameraFrontsFirst", "cameraSpreads", "cameraFilter"],
+                              "cameraFrontsFirst", "cameraSpreads"],
                              written.RootElement.GetProperty("taskOptions").EnumerateObject().Select(p => p.Name));
                 Assert.Equal(settings.TaskOptions, Decode<ScanSettings>(json).TaskOptions);
             }
@@ -1409,14 +1409,20 @@ public class ModelsCompatTests
     }
 
     [Fact]
-    public void CameraFilter_IsEnhancedByDefault_ReadLeniently_AndRoundTrips()
+    public void CameraFilter_IsUnsetByDefault_ReadLeniently_AndRoundTrips()
     {
-        Assert.Equal(CaptureFilter.Enhanced, new ScanSettings().TaskOptions.CameraFilter);
-        Assert.Equal(CaptureFilter.Enhanced, Decode<ScanSettings>("""{"taskOptions": {"copyCount": 2}}""").TaskOptions.CameraFilter);
+        // Unset is Enhanced, as before the filters, and is left out of the file.
+        Assert.Null(new ScanSettings().TaskOptions.CameraFilter);
+        Assert.Equal(DocumentEnhanceMode.Auto, DocumentEnhancer.ModeFor(new ScanSettings()));
+        using (var unset = JsonDocument.Parse(CompatFixtures.Encode(new ScanSettings())))
+        {
+            Assert.False(unset.RootElement.GetProperty("taskOptions").TryGetProperty("cameraFilter", out _));
+        }
+        Assert.Null(Decode<ScanSettings>("""{"taskOptions": {"copyCount": 2}}""").TaskOptions.CameraFilter);
         foreach (string value in new[] { "\"sepia\"", "\"Original\"", "1", "null" })
         {
             var settings = Decode<ScanSettings>("{\"resolution\": 150, \"taskOptions\": {\"cameraFilter\": " + value + ", \"copyCount\": 4}}");
-            Assert.Equal((150, 4, CaptureFilter.Enhanced), (settings.Resolution, settings.TaskOptions.CopyCount, settings.TaskOptions.CameraFilter));
+            Assert.Equal((150, 4, (CaptureFilter?)null), (settings.Resolution, settings.TaskOptions.CopyCount, settings.TaskOptions.CameraFilter));
         }
         foreach (var filter in Enum.GetValues<CaptureFilter>())
         {
@@ -1430,6 +1436,23 @@ public class ModelsCompatTests
         }
         // Picking a task keeps it.
         Assert.Equal(CaptureFilter.Original, TaskCatalog.Apply(ScanTask.Book, CompatFixtures.NonDefaultSettings()).TaskOptions.CameraFilter);
+    }
+
+    [Fact]
+    public void APresetWithoutTheCameraFilter_KeepsTheOneInUse()
+    {
+        var current = new ScanSettings();
+        current.TaskOptions.CameraFilter = CaptureFilter.Original;
+        var older = Decode<List<Preset>>(CompatFixtures.CurrentFormatPresetsJson.Replace(
+            ",\n        \"cameraFilter\": \"original\"", ""))[0];
+        Assert.Null(older.Settings.TaskOptions.CameraFilter);
+        Assert.Equal(CaptureFilter.Original, older.SettingsOver(current).TaskOptions.CameraFilter);
+        Assert.Equal(older.Settings.Resolution, older.SettingsOver(current).Resolution);
+        Assert.Null(older.Settings.TaskOptions.CameraFilter);
+        Assert.Null(older.SettingsOver(new ScanSettings()).TaskOptions.CameraFilter);
+        var enhanced = new ScanSettings();
+        enhanced.TaskOptions.CameraFilter = CaptureFilter.Enhanced;
+        Assert.Equal(CaptureFilter.Enhanced, new Preset("Enhanced", enhanced).SettingsOver(current).TaskOptions.CameraFilter);
     }
 
     // MARK: - Softening the spine's shadow (CONTRACTS.md, rule 6)

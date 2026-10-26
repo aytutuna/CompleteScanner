@@ -160,7 +160,7 @@ public enum DocumentEnhancer {
             return .blackAndWhite
         case .color:
             guard TaskCatalog.flow(of: settings) == .documentQueue else { return .auto }
-            return settings.taskOptions.cameraFilter.mode
+            return (settings.taskOptions.cameraFilter ?? .enhanced).mode
         }
     }
 

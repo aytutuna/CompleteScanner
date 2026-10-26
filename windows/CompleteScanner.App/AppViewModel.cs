@@ -2237,11 +2237,12 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// Replaces the settings with the preset's, fitted to the connected scanner. A preset saved
-    /// while a task was active brings that task (and its banner) back.
+    /// while a task was active brings that task (and its banner) back; one saved before the camera's filter
+    /// existed keeps the filter in use (<see cref="Preset.SettingsOver"/>).
     /// </summary>
     public void ApplyPreset(Preset preset)
     {
-        var adapted = SettingsAdapter.Adapt(preset.Settings, Capabilities);
+        var adapted = SettingsAdapter.Adapt(preset.SettingsOver(Settings), Capabilities);
         Settings = adapted.Settings;
         bool wasBusy = IsBusy;
         SettingsEdited();

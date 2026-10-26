@@ -457,7 +457,7 @@ final class DocumentEnhancerTests: XCTestCase {
 
     func testTheCameraFilterDecidesTheModeOfAColorQueue() {
         var settings = ScanSettings()
-        XCTAssertEqual(settings.taskOptions.cameraFilter, .enhanced)
+        XCTAssertNil(settings.taskOptions.cameraFilter)
         settings.taskOptions.cameraFilter = .original
         XCTAssertNil(DocumentEnhancer.mode(for: settings))
         settings.taskOptions.cameraFilter = .grayscale

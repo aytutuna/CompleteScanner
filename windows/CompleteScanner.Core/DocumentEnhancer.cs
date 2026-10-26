@@ -152,7 +152,7 @@ public static class DocumentEnhancer
             ColorMode.Grayscale => DocumentEnhanceMode.Gray,
             ColorMode.BlackWhite => DocumentEnhanceMode.BlackAndWhite,
             _ => TaskCatalog.FlowOf(settings) == TaskFlowKind.DocumentQueue
-                ? settings.TaskOptions.CameraFilter.Mode()
+                ? (settings.TaskOptions.CameraFilter ?? CaptureFilter.Enhanced).Mode()
                 : DocumentEnhanceMode.Auto,
         };
     }

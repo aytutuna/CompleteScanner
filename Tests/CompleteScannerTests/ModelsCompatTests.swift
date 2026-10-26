@@ -1135,7 +1135,7 @@ final class ModelsCompatTests: XCTestCase {
                 XCTAssertEqual(Set(written.keys), ["idCardPaper", "idCardSaveSidesAsImages", "copyCount", "copyFitToPage",
                                                    "copyAlsoSavePdf", "receiptNameByDate", "receiptCombine",
                                                    "bookRightToLeft", "bookRotationQuarterTurns", "cameraFrontsFirst",
-                                                   "cameraSpreads", "cameraFilter"])
+                                                   "cameraSpreads"])
                 XCTAssertEqual(written["idCardPaper"] as? String, paper.rawValue)
                 XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: data).taskOptions, settings.taskOptions)
             }
@@ -1315,15 +1315,19 @@ final class ModelsCompatTests: XCTestCase {
         XCTAssertNotEqual(kept.taskOptions, copy.taskOptions)
     }
 
-    /// Twin of `CameraFilter_IsEnhancedByDefault_ReadLeniently_AndRoundTrips`.
-    func test_cameraFilter_isEnhancedByDefault_readLeniently_andRoundTrips() throws {
-        XCTAssertEqual(ScanSettings().taskOptions.cameraFilter, .enhanced)
-        XCTAssertEqual(try decode(ScanSettings.self, #"{"taskOptions": {"copyCount": 2}}"#).taskOptions.cameraFilter, .enhanced)
+    /// Twin of `CameraFilter_IsUnsetByDefault_ReadLeniently_AndRoundTrips`.
+    func test_cameraFilter_isUnsetByDefault_readLeniently_andRoundTrips() throws {
+        // Unset is Enhanced, as before the filters, and is left out of the file.
+        XCTAssertNil(ScanSettings().taskOptions.cameraFilter)
+        XCTAssertEqual(DocumentEnhancer.mode(for: ScanSettings()), .auto)
+        let unset = try XCTUnwrap(try jsonObject(encode(ScanSettings()))["taskOptions"] as? [String: Any])
+        XCTAssertNil(unset["cameraFilter"])
+        XCTAssertNil(try decode(ScanSettings.self, #"{"taskOptions": {"copyCount": 2}}"#).taskOptions.cameraFilter)
         for value in [#""sepia""#, #""Original""#, "1", "null"] {
             let settings = try decode(ScanSettings.self, #"{"resolution": 150, "taskOptions": {"cameraFilter": "# + value + #", "copyCount": 4}}"#)
             XCTAssertEqual(settings.resolution, 150, value)
             XCTAssertEqual(settings.taskOptions.copyCount, 4, value)
-            XCTAssertEqual(settings.taskOptions.cameraFilter, .enhanced, value)
+            XCTAssertNil(settings.taskOptions.cameraFilter, value)
         }
         for filter in CaptureFilter.allCases {
             var chosen = ScanSettings()
@@ -1335,6 +1339,21 @@ final class ModelsCompatTests: XCTestCase {
         }
         // Picking a task keeps it.
         XCTAssertEqual(TaskCatalog.apply(.book, to: nonDefaultSettings()).taskOptions.cameraFilter, .original)
+    }
+
+    /// Twin of `APresetWithoutTheCameraFilter_KeepsTheOneInUse`.
+    func test_aPresetWithoutTheCameraFilter_keepsTheOneInUse() throws {
+        var current = ScanSettings()
+        current.taskOptions.cameraFilter = .original
+        let older: Preset = try decode([Preset].self, currentFormatPresetsJSON.replacingOccurrences(
+            of: "        \"cameraFilter\" : \"original\",\n", with: ""))[0]
+        XCTAssertNil(older.settings.taskOptions.cameraFilter)
+        XCTAssertEqual(older.settings(over: current).taskOptions.cameraFilter, .original)
+        XCTAssertEqual(older.settings(over: current).resolution, older.settings.resolution)
+        XCTAssertNil(older.settings(over: ScanSettings()).taskOptions.cameraFilter)
+        var enhanced = ScanSettings()
+        enhanced.taskOptions.cameraFilter = .enhanced
+        XCTAssertEqual(Preset(name: "Enhanced", settings: enhanced).settings(over: current).taskOptions.cameraFilter, .enhanced)
     }
 
     // MARK: Softening the spine's shadow (CONTRACTS.md, rule 6)

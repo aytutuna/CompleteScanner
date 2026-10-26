@@ -583,9 +583,9 @@ public struct TaskOptions: Codable, Equatable, Sendable {
     /// (`PageProcessor.splitsCameraSpreads`). Off: page by page, one page a shot.
     public var cameraSpreads: Bool = false
     /// The filter the camera's document pages get as they are taken (`DocumentEnhancer.mode(for:)`); each page
-    /// can be given another afterwards. Enhanced unless chosen, as before the filters; the iPhone starts at
-    /// Original.
-    public var cameraFilter: CaptureFilter = .enhanced
+    /// can be given another afterwards. Nil: never chosen, which is Enhanced, as before the filters; left out
+    /// of the file then. The iPhone starts at Original.
+    public var cameraFilter: CaptureFilter?
 
     public init() {}
 
@@ -1296,6 +1296,16 @@ public struct Preset: Codable, Identifiable, Equatable {
 
     /// Name given to a stored preset whose name is missing or unreadable.
     static let fallbackName = "Untitled preset"
+
+    /// The preset's settings put in use over `current`: a preset saved before the camera's filter existed
+    /// (none in its file) keeps the filter in use; one that has it brings it. Twin of C# `Preset.SettingsOver`.
+    public func settings(over current: ScanSettings) -> ScanSettings {
+        var chosen: ScanSettings = settings
+        if chosen.taskOptions.cameraFilter == nil {
+            chosen.taskOptions.cameraFilter = current.taskOptions.cameraFilter
+        }
+        return chosen
+    }
 
     /// Same keys the synthesized implementation used; `encode(to:)` stays synthesized.
     private enum CodingKeys: String, CodingKey {

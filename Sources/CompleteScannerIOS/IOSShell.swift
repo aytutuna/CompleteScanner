@@ -750,7 +750,7 @@ public enum IOSShell {
         switch settings.colorMode {
         case .grayscale: return .grayscale
         case .blackWhite: return .blackAndWhite
-        case .color: return settings.taskOptions.cameraFilter
+        case .color: return settings.taskOptions.cameraFilter ?? .enhanced
         }
     }
 

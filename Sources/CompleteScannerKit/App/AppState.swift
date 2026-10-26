@@ -2029,9 +2029,10 @@ public final class AppState: ObservableObject {
     // MARK: Presets
 
     /// Replaces the settings with the preset's, fitted to the connected scanner. A preset saved
-    /// while a task was active brings that task (and its banner) back.
+    /// while a task was active brings that task (and its banner) back; one saved before the camera's filter
+    /// existed keeps the filter in use (`Preset.settings(over:)`).
     public func applyPreset(_ preset: Preset) {
-        let adapted = SettingsAdapter.adapt(preset.settings, to: sidesCapabilities)
+        let adapted = SettingsAdapter.adapt(preset.settings(over: settings), to: sidesCapabilities)
         settings = adapted.settings
         openBookmarkedFolder()
         statusMessage = Self.withNotes("Applied preset “\(preset.name)”.", adapted.notes)

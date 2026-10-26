@@ -232,7 +232,7 @@ final class IOSShellTests: XCTestCase {
                              fileActions: IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in }),
                              files: AppStateFiles.all(in: folder))
         // Settings kept from a build before the filters read as Enhanced.
-        XCTAssertEqual(state.settings.taskOptions.cameraFilter, .enhanced)
+        XCTAssertNil(state.settings.taskOptions.cameraFilter)
         IOSShell.adoptOriginalFilter(state, defaults: defaults)
         XCTAssertEqual(state.settings.taskOptions.cameraFilter, .original)
         XCTAssertNil(DocumentEnhancer.mode(for: state.settings))

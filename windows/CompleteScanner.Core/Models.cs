@@ -685,10 +685,11 @@ public sealed class TaskOptions : IEquatable<TaskOptions>
     /// <summary>
     /// The filter the iPhone camera's document pages get as they are taken
     /// (<see cref="DocumentEnhancer.ModeFor(ScanSettings)"/>); each page can be given another afterwards.
-    /// Enhanced unless chosen, as before the filters; the iPhone starts at Original. The Windows app keeps it
-    /// as it is.
+    /// Null: never chosen, which is Enhanced, as before the filters; left out of the file then. The iPhone
+    /// starts at Original; the Windows app keeps it as it is.
     /// </summary>
-    public CaptureFilter CameraFilter { get; set; } = CaptureFilter.Enhanced;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CaptureFilter? CameraFilter { get; set; }
 
     public TaskOptions Clone() => (TaskOptions)MemberwiseClone();
 
@@ -1673,6 +1674,17 @@ public sealed class Preset
     {
         Name = name;
         Settings = settings;
+    }
+
+    /// <summary>
+    /// The preset's settings put in use over <paramref name="current"/>: a preset saved before the camera's
+    /// filter existed (none in its file) keeps the filter in use; one that has it brings it.
+    /// </summary>
+    public ScanSettings SettingsOver(ScanSettings current)
+    {
+        var chosen = Settings.Clone();
+        chosen.TaskOptions.CameraFilter ??= current.TaskOptions.CameraFilter;
+        return chosen;
     }
 }
 
