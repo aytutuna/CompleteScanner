@@ -465,27 +465,39 @@ public final class IOSImportSession: ObservableObject {
             }
             let count: Int = max(number, photoNumber + waitingPhotos)
             progressText = PhotoImport.progressMessage(number, of: count, page: page, pageCount: pageCount)
-            let prepared: IOSPreparedPhoto
-            if page == 1, let first = file.takeFirst() {
-                prepared = first
-            } else {
-                guard let data = file.rest else { break }
-                if page == pageCount {
-                    file.dropRest()
-                }
-                let pageNumber: Int = page
-                prepared = await Task.detached(priority: .userInitiated) { () -> IOSPreparedPhoto in
-                    IOSPreparedPhoto.make(data, fileName: name, page: pageNumber, finder: finder, kind: kind,
-                                          objectFinder: objectFinder)
-                }.value
-            }
             let shownName: String = PhotoImport.pageName(name, page: page, pageCount: pageCount)
-            let part: IOSImportOutcome
-            if CaptureObjects.findsSeveral(kind) {
-                part = await importObjects(prepared, shownName: shownName, kind: kind)
-            } else {
-                part = await importPage(prepared, shownName: shownName, number: number, count: count,
-                                        asksOnlyWhenUnsure: file.asksOnlyWhenUnsure, kind: kind)
+            var part = IOSImportOutcome()
+            var made: ScannedPage?
+            // The photo's pixels live only in this block, so they are gone before its page is brought in,
+            // which copies the page again.
+            do {
+                let prepared: IOSPreparedPhoto
+                if page == 1, let first = file.takeFirst() {
+                    prepared = first
+                } else {
+                    guard let data = file.rest else { break }
+                    if page == pageCount {
+                        file.dropRest()
+                    }
+                    let pageNumber: Int = page
+                    prepared = await Task.detached(priority: .userInitiated) { () -> IOSPreparedPhoto in
+                        IOSPreparedPhoto.make(data, fileName: name, page: pageNumber, finder: finder, kind: kind,
+                                              objectFinder: objectFinder)
+                    }.value
+                }
+                if CaptureObjects.findsSeveral(kind) {
+                    part = await importObjects(prepared, shownName: shownName, kind: kind)
+                } else {
+                    made = await makePage(prepared, shownName: shownName, number: number, count: count,
+                                          asksOnlyWhenUnsure: file.asksOnlyWhenUnsure, kind: kind, outcome: &part)
+                }
+            }
+            if let newPage = made {
+                if await bringIn([newPage]) {
+                    part.added += 1
+                } else {
+                    part.add(IOSImportText.notAddedMessage(shownName))
+                }
             }
             outcome.merge(part)
             page += 1
@@ -496,22 +508,22 @@ public final class IOSImportSession: ObservableObject {
     }
 
     /// One photo read and searched: the corner editor (not for a page found clearly when
-    /// `asksOnlyWhenUnsure`), then the page made and brought in.
-    private func importPage(_ prepared: IOSPreparedPhoto, shownName: String, number: Int, count: Int,
-                            asksOnlyWhenUnsure: Bool, kind: CaptureKind) async -> IOSImportOutcome {
-        var outcome = IOSImportOutcome()
+    /// `asksOnlyWhenUnsure`), then the page made, for the caller to bring in; nil, with why in `outcome`
+    /// (or counted as skipped), when there is none.
+    private func makePage(_ prepared: IOSPreparedPhoto, shownName: String, number: Int, count: Int,
+                          asksOnlyWhenUnsure: Bool, kind: CaptureKind, outcome: inout IOSImportOutcome) async -> ScannedPage? {
         if let problem = prepared.problem {
             outcome.add(problem)
-            return outcome
+            return nil
         }
         guard let decoded = prepared.decoded, let found = prepared.found else {
             outcome.add(PhotoImport.unreadableMessage(shownName, detail: PhotoImport.unreadableDetail))
-            return outcome
+            return nil
         }
         // No editor for a page the state could not take now.
         guard await canTakePages() else {
             outcome.add(IOSImportText.notAddedMessage(shownName))
-            return outcome
+            return nil
         }
         let photo: RgbaImage = decoded.photo
         let plan = PhotoImportPlan(action: .review, corners: found.corners, reason: found.reason,
@@ -551,16 +563,10 @@ public final class IOSImportSession: ObservableObject {
         case .skip:
             page = nil
         }
-        guard let made = page else {
+        if page == nil {
             outcome.skipped += 1
-            return outcome
         }
-        if await bringIn([made]) {
-            outcome.added += 1
-        } else {
-            outcome.add(IOSImportText.notAddedMessage(shownName))
-        }
-        return outcome
+        return page
     }
 
     private func importPDF(_ item: IOSImportItem) async -> IOSImportOutcome {
