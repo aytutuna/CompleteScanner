@@ -454,7 +454,7 @@ struct ScanScreen: View {
     private var kindChips: some View {
         let current: IOSScanKind = IOSShell.shownKind(state.settings)
         let tiles: [IOSKindTile] = IOSShell.kindTiles(state.taskCards, current: current)
-        let busy: Bool = state.isBusy || importer.isImporting
+        let busy: Bool = saveBlocked
         return ScrollViewReader { (proxy: ScrollViewProxy) in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -521,8 +521,10 @@ struct ScanScreen: View {
     /// and no PDF picked to add to). The pages taken stay when the kind collects pages too (Document, Book);
     /// any other kind would leave them without a Save, so it asks first (`KeepPagesQuestion`). With a side of
     /// an ID card held it asks about the card too. The chip already picked changes nothing, so a stray tap
-    /// keeps Both sides, the steps and the PDF picked.
+    /// keeps Both sides, the steps and the PDF picked. Nothing changes while a share or a send reads the
+    /// spooled pages, which Discard would delete.
     private func pickKind(_ kind: IOSScanKind) {
+        guard !saveBlocked else { return }
         guard kind != IOSShell.shownKind(state.settings) || state.activeTask == nil else { return }
         let appState: AppState = state
         afterOptions {
