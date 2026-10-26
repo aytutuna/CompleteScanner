@@ -19,44 +19,36 @@ enum ScanCover: String, Identifiable {
     var id: String { rawValue }
 }
 
-/// The scan screen: the task's step, the cameras and imports (`CaptureBar`), the scanner, the flatbed
-/// preview with the scan area (or the last scan), the page strip, the status line with a scan's progress,
-/// and Scan and Save (as a PDF, a JPEG a page, Word or text, `IOSShell.exportFormats`); once saved, the
-/// saved file with Share and Show in Files. The pages come from one source at a time, the mode picked in the
-/// Scanner options (`IOSScanMode`): our own camera (`CameraScreen`), the default, whose shutter is on the
-/// capture bar, or a scanner, with Scan beside Save and no shutter; Use Apple's scanner opens Apple's
-/// document scanner. On iPad the scanners are listed beside the screen. The screen stays awake while a
-/// network scanner's job runs (`IOSRootView`, since resizing the window builds this screen anew).
-/// Save is shown for the tasks that collect pages; photos and receipts open the photo review once found
-/// and the ID card its review once its sides are in, each full screen (in place of the camera). Since I14:
-/// the camera's buttons between shots (No back, Now the backs, New document), how the two-sided task and
-/// a book are taken, Separate documents' separator sheets, the PDF's size, Archive and Password, a book
-/// page's spread split again (`SpreadSplitSheet`), and Quick scan's page full screen once taken. Since I15:
-/// PDFs and pictures dropped on the screen are imported as Files' are, Command-S saves, and Settings
-/// (Command-comma) is a row under the options where the sidebar does not offer it. Since I16: the photocopy's pages
-/// full screen once taken, to print over AirPrint (`CopyScreen`). While Save writes a PDF, the menu beside
-/// it can also add the pages to the end of a PDF picked in Files (`AppState.appendToPDF(at:)`); with a PDF
-/// picked in the task list (`AppState.appendTarget`) Save adds them to that one. Since I18: a
-/// CompleteScanner document opened in the app or picked in Files is offered on a banner (Add to pages,
-/// Open as new), and the queue can be shared as one (`IOSShell.sharePackage`). Since I20: with a computer
-/// paired, Send to computer sends the queue to it as a new document or into the one open there
-/// (`AppState.sendQueueToDesktop`), the status line saying how it went. Its covers and the
-/// spread's sheet are the root view's (`ScanCovers`), so resizing the window across the width classes,
-/// which builds this screen anew, leaves them open. On the iPhone it is the app's first screen, with no
-/// navigation bar: its top row has only the kinds as chips, each starting its task as the task list's tile
-/// does. Below, the step card shows only while
-/// a step needs it (`IOSShell.showsStepCard`), then the viewfinder card with the preview once there is one
-/// (else the camera's line, centred in its place), then a row for each option group that applies, which
-/// opens it as a sheet (`ScanOptionGroup`): Scanner (Camera or a scanner, then the chosen one's settings:
-/// Both sides and how and Apple's scanner for the camera; Source, Sides, Resolution, Color and the
-/// flatbed's Preview for a scanner), Book, Photos (Restore faded colours)
-/// and Export (the format, Separate documents, One PDF per page, the PDF's choices, After saving), and last
-/// the library (`onOpenLibrary`) and Settings (`onOpenSettings`). While a group's sheet is up, anything
-/// else the screen presents (a review, the library, the ID card's question) waits for it to close. The bar
-/// at the bottom has the capture bar (`CaptureBar`, whose shutter opens the camera, or scans with a scanner as
-/// the source) over Save. Save's menu adds the pages to a PDF, prints them as a copy (Print…), saves and emails them
-/// (Email…), shares them as a CompleteScanner document or sends them to the computer; Save itself runs what After saving has checked (`IOSAfterSave`).
-/// The capture bar's last page opens the page strip in a sheet.
+/// The scan screen, in the phone's mode (`IOSScanMode`), which is also where the pages come from. Camera
+/// mode, the default, is the viewfinder as the screen (`CameraScreen`): this screen hands it the notices
+/// (the package banner, an import's progress, the files saved last), Save floating on the viewfinder once
+/// there are pages ("Save PDF · 3", `IOSShell.floatingSaveTitle`) with the menu beside it, the kinds it
+/// picks, the page strip, the Export sheet behind the drawer's More… and Apple's scanner. Printer mode is
+/// the printer screen: the kinds as chips in its top row with the camera at their end (`mode.camera`,
+/// back to camera mode, which selects no scanner so none of its limits apply to the camera), the step
+/// card only while a step needs it (`IOSShell.showsStepCard`, in the step's own words, which speak of the
+/// scanner), the flatbed preview or the last scan, then a row for each option group that applies, which
+/// opens it as a sheet (`ScanOptionGroup`): Scanner (the scanners, "No scanner found", Add by address and
+/// Troubleshoot, then the scanner's Source, Sides, Resolution, Color and the flatbed's Preview; the row
+/// reads the scanner and its source, or "No scanner"), Book, Photos (Restore faded colours) and Export (the
+/// format, Separate documents, One PDF per page, the PDF's choices, After saving), and last the library
+/// (`onOpenLibrary`) and Settings (`onOpenSettings`, Command-comma). While a group's sheet is up, anything
+/// else the screen presents (a review, the library, the ID card's question) waits for it to close. At the
+/// bottom the status line with a scan's progress, the capture bar (`CaptureBar`: the pages, Photos and
+/// Files) and Scan (named for the step, `primaryActionLabel`) beside Save (as a PDF, a JPEG a page, Word or
+/// text, `IOSShell.exportFormats`) and its menu; once saved, the saved file with Share and Show in Files.
+/// Save's menu, in both modes, saves as a new PDF or adds the pages to the end of a PDF picked in Files
+/// (`AppState.appendToPDF(at:)`; with a PDF picked in the task list, `AppState.appendTarget`, Save adds
+/// them to that one), opens After saving, prints them as a copy (Print…), saves and emails them (Email…),
+/// shares them as a CompleteScanner document (`IOSShell.sharePackage`) or, with a computer paired, sends
+/// them to it (`AppState.sendQueueToDesktop`); Save itself runs what After saving has checked
+/// (`IOSAfterSave`). Photos and receipts open the photo review once found, the ID card its review once its
+/// sides are in, Quick scan its page and the photocopy its copy screen, each full screen; a book page's
+/// spread can be split again (`SpreadSplitSheet`). PDFs and pictures dropped on the screen are imported as
+/// Files' are, and Command-S saves. Its covers and the spread's sheet are the root view's (`ScanCovers`),
+/// so resizing the window across the width classes, which builds this screen anew, leaves them open. On
+/// the iPad's sidebar layout (`pickerInSidebar`) the sidebar has the kinds and the scanners, and printer
+/// mode's navigation bar has the camera.
 struct ScanScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -150,6 +142,13 @@ struct ScanScreen: View {
             .navigationTitle(IOSShell.shownKind(state.settings).title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(pickerInSidebar && !cameraMode ? Visibility.automatic : Visibility.hidden, for: .navigationBar)
+            .toolbar {
+                if pickerInSidebar && !cameraMode {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        cameraModeButton
+                    }
+                }
+            }
             .dropDestination(for: IOSDroppedFile.self) { (items: [IOSDroppedFile], _: CGPoint) -> Bool in
                 importDropped(items)
             }
@@ -380,11 +379,40 @@ struct ScanScreen: View {
 
     // MARK: The top row
 
-    /// The kinds, in place of the navigation bar.
+    /// The kinds, in place of the navigation bar, and the camera at their end.
     private var topRow: some View {
-        kindChips
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+        HStack(spacing: 4) {
+            kindChips
+            cameraModeButton
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+    }
+
+    /// Back to camera mode.
+    private var cameraModeButton: some View {
+        Button {
+            switchToCamera()
+        } label: {
+            Image(systemName: "camera")
+                .font(.title3)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .disabled(state.isBusy)
+        .accessibilityLabel(Text(IOSImportText.cameraLabel))
+        .accessibilityHint(Text(IOSCameraText.cameraModeHint))
+        .accessibilityIdentifier("mode.camera")
+    }
+
+    /// Camera mode, with no scanner selected, so none of its limits apply to the camera (the sides turned
+    /// over by hand back to both, `AppState.userSelectNoDevice`).
+    private func switchToCamera() {
+        let appState: AppState = state
+        afterOptions {
+            mode = .camera
+            appState.userSelectNoDevice()
+        }
     }
 
     /// The library and Settings, last in the list now that the top row holds only the kinds.
@@ -525,14 +553,10 @@ struct ScanScreen: View {
 
     // MARK: The options
 
-    /// The option groups that apply: Scanner (where the pages come from) while the camera or a scanner can
-    /// take them, the book's and the photos' for their kinds, and Export while the pages are collected and
-    /// saved here.
+    /// The option groups that apply: Scanner always, the book's and the photos' for their kinds, and Export
+    /// while the pages are collected and saved here.
     private var optionGroups: [ScanOptionGroup] {
-        var groups: [ScanOptionGroup] = []
-        if IOSShell.offersOwnCamera(state.settings) || !state.devices.isEmpty {
-            groups.append(.scanner)
-        }
+        var groups: [ScanOptionGroup] = [.scanner]
         if state.activeTask == .book {
             groups.append(.book)
         }
@@ -568,14 +592,12 @@ struct ScanScreen: View {
         .accessibilityIdentifier("options.row.\(group.rawValue)")
     }
 
-    /// What the row says the group is set to: Camera, or the scanner and its source ("No scanner" until
-    /// one is picked or found); the book's way, whether old prints are restored, the format with the PDF's
-    /// size.
+    /// What the row says the group is set to: the scanner and its source ("No scanner" until one is picked
+    /// or found); the book's way, whether old prints are restored, the format with the PDF's size.
     private func optionValue(_ group: ScanOptionGroup) -> String {
         let s: ScanSettings = state.settings
         switch group {
         case .scanner:
-            guard mode == .printer else { return IOSImportText.cameraLabel }
             guard let device = sourceDevice else { return IOSNetworkText.noScannerPicked }
             return "\(device.name) \u{00B7} \(s.source.label)"
         case .book:
@@ -644,16 +666,6 @@ struct ScanScreen: View {
                         previewControls
                     }
                 }
-            } else if mode == .camera && showsCameraOptions {
-                Section {
-                    BothSidesToggle()
-                    TaskWayPicker()
-                    if IOSShell.offersCamera(state.activeTask) {
-                        AppleScannerRow(scanner: scanner, onScanner: openScanner)
-                    }
-                } header: {
-                    Text(IOSImportText.cameraLabel)
-                }
             }
         case .book:
             Section {
@@ -668,10 +680,6 @@ struct ScanScreen: View {
         case .afterSave:
             AfterSaveSection()
         }
-    }
-
-    private var showsCameraOptions: Bool {
-        IOSShell.shownKind(state.settings) == .document
     }
 
     /// Runs `action` at once, or once the option group's sheet has closed.
@@ -840,11 +848,11 @@ struct ScanScreen: View {
                             printer: mode == .printer)
     }
 
-    /// The source named, with how a scanner is reached, where the list beside the screen picks it.
+    /// The scanner named, with how it is reached, where the list beside the screen picks it.
     private var sourceRow: some View {
-        let name: String = sourceDevice?.name ?? IOSImportText.cameraLabel
+        let name: String = sourceDevice?.name ?? IOSNetworkText.noScannerPicked
         return HStack(spacing: 8) {
-            Image(systemName: sourceDevice == nil ? "camera" : "scanner")
+            Image(systemName: "scanner")
                 .foregroundStyle(Color.accentColor)
                 .accessibilityHidden(true)
             Text(name)
@@ -921,7 +929,7 @@ struct ScanScreen: View {
         state.capabilities?.sources.contains(.flatbed) == true && state.settings.source == .flatbed
     }
 
-    /// The scanner the pages come from; nil with the camera, or until printer mode's scanner is found.
+    /// The scanner the pages come from; nil in camera mode, or until printer mode's scanner is found.
     private var sourceDevice: ScannerInfo? {
         IOSShell.printerScanner(mode, scanner: scanner, selected: state.selectedDeviceID, devices: state.devices)
     }

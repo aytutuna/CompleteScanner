@@ -68,14 +68,13 @@ struct ScannerPickerSheets: ViewModifier {
     }
 }
 
-/// Where the pages come from, as sections of a list (the scan screen's Scanner options on iPhone, a part of
-/// the sidebar on iPad): Camera, then one row per scanner with how it is reached, the one scanned with
-/// checked (`IOSShell.printerScanner`); "Looking for scanners…" while the search has just started, else "No
-/// scanner found" with Troubleshoot; the explanation card before the first search, the line about Local
-/// Network access being off, and the buttons to add a scanner by address and open the troubleshooter.
-/// Picking a scanner selects it and remembers it, in printer mode; Camera is camera mode and selects none,
-/// so no scanner's limits apply to the camera (`AppState.userSelectNoDevice`). The rows follow the app's
-/// state, and the network scanners' when there are any.
+/// The scanners, as sections of a list (printer mode's Scanner options on iPhone, a part of the sidebar on
+/// iPad): one row per scanner with how it is reached, the one scanned with checked
+/// (`IOSShell.printerScanner`); "Looking for scanners…" while the search has just started, else "No scanner
+/// found" with Troubleshoot; the explanation card before the first search, the line about Local Network
+/// access being off, and the buttons to add a scanner by address and open the troubleshooter. Picking a
+/// scanner selects it, remembers it and switches to printer mode; the camera is camera mode's, switched to
+/// on the scan screen. The rows follow the app's state, and the network scanners' when there are any.
 struct ScannerPickerSections: View {
     let picker: IOSScannerPickerModel
     let onAdd: () -> Void
@@ -108,7 +107,6 @@ private struct ScannerPickerContent: View {
         let picked: String? = IOSShell.printerScanner(mode, scanner: scanner, selected: state.selectedDeviceID,
                                                       devices: state.devices)?.id
         Section {
-            CameraSourceRow(checked: mode == .camera, enabled: !state.isBusy, onPick: pickCamera)
             ForEach(picker.rows) { (row: IOSScannerRow) in
                 ScannerRowView(row: row, checked: row.id == picked, enabled: !state.isBusy, onPick: { pick(row) },
                                onRemove: { remove(row) })
@@ -183,12 +181,6 @@ private struct ScannerPickerContent: View {
         mode = .printer
     }
 
-    private func pickCamera() {
-        guard !state.isBusy else { return }
-        mode = .camera
-        state.userSelectNoDevice()
-    }
-
     /// Discovery may still list the scanner; the root view lets go of it once it is gone.
     private func remove(_ row: IOSScannerRow) {
         guard !state.isBusy else { return }
@@ -212,43 +204,8 @@ struct NetworkObserving<Content: View>: View {
     }
 }
 
-/// Our own camera as the source, above the scanners, with a check mark when it is the source.
-private struct CameraSourceRow: View {
-    let checked: Bool
-    let enabled: Bool
-    let onPick: () -> Void
-
-    var body: some View {
-        Button(action: onPick) {
-            HStack(spacing: 12) {
-                Image(systemName: "camera")
-                    .foregroundStyle(Color.accentColor)
-                    .frame(width: 28)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(IOSImportText.cameraLabel)
-                        .foregroundStyle(Color.primary)
-                    Text("Takes the pages as photos")
-                        .font(.caption)
-                        .foregroundStyle(Color.secondary)
-                }
-                Spacer(minLength: 0)
-                if checked {
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(Color.accentColor)
-                        .accessibilityHidden(true)
-                }
-            }
-        }
-        .disabled(!enabled)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(checked ? AccessibilityTraits.isSelected : [])
-        .accessibilityIdentifier("source.camera")
-    }
-}
-
 /// One scanner: its name, how it is reached (and "Not encrypted" when so), a check mark when it is the
-/// source, and Remove address for one reached through an address added by hand.
+/// one scanned with, and Remove address for one reached through an address added by hand.
 private struct ScannerRowView: View {
     let row: IOSScannerRow
     let checked: Bool
