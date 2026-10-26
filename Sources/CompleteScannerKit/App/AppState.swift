@@ -780,11 +780,11 @@ public final class AppState: ObservableObject {
         selectDevice(id, interactive: true)
     }
 
-    /// No scanner, on the user's word (the phone's camera picked as the source): the session closes and
+    /// No scanner, on the user's word (the phone switched to camera mode): the session closes and
     /// no scanner is selected on its own, even one found later, until the user picks one. With
     /// `resetsManualSides`, turning the stack over by hand (a one-sided feeder's) becomes both sides again,
-    /// which the camera takes itself; the phone passes false when it only waits for the scanner picked as
-    /// its source to be listed again, so a hand-turned job keeps its sides. The Mac never calls it.
+    /// which the camera takes itself; the phone passes false when it only waits for printer mode's scanner
+    /// to be listed again, so a hand-turned job keeps its sides. The Mac never calls it.
     public func userSelectNoDevice(resetsManualSides: Bool = true) {
         userPickedDevice = true
         keepsNoDevice = true

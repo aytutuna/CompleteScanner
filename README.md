@@ -272,12 +272,13 @@ tests run on the iOS Simulator with Xcode 26 or later, as CI's `ios` job runs th
 xcodebuild test -scheme CompleteScanner-Package   -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5'
 ```
 
-The app itself (one universal app for iPhone and iPad; on the iPhone it opens straight on the scan screen
-with the camera, the last task used set up and what you scan (Document, Photos, Receipts, ID card, Book or Text)
-as chips along the top, the camera or one scanner picked as the source in the Scanner sheet (the one round
-shutter takes the photo or scans), the feeder, both sides, separate documents, the format and PDF/A in the scan screen's
-option sheets, Print… and Email… in Save's menu, and what runs after each save (Email, Print, Send to PC)
-in the Export sheet;
+The app itself (one universal app for iPhone and iPad; on the iPhone it opens straight on the camera,
+whose viewfinder is the scan screen, with the last task used set up and what you scan (Photos, Receipts,
+Document, ID card, Book or Text) in a snapping row under it, a chevron that swaps that row for a drawer
+of options (export, colour, quality, flash, camera) and Save floating over the picture once there are
+pages; a printer button switches to printer mode, where one scanner is picked in the Scanner sheet and
+Scan sits beside Save, and a camera button switches back, the scanner kept for next time; Print… and
+Email… in Save's menu, and what runs after each save (Email, Print, Send to PC) under After saving;
 so far the Demo Scanner,
 our own camera as the default way to take pages, with the page's outline drawn live over the
 preview, the lens that focuses close, the torch, an automatic shutter that takes each page once it
@@ -304,7 +305,7 @@ printer; Email a document through Mail's composer (or the share sheet); Archive 
 size, Archive and Password choices, the password asked for in a sheet and never stored; the pages
 added to the end of a PDF picked in Files or in the saved files, as the same incremental update as on
 the desktop (signed files and PDF/A files that may not stay PDF/A asked about first), from the menu
-beside Save or from the task list's Add pages to a PDF, which picks the file first so that Save
+beside Save or from the iPad's Add pages to a PDF, which picks the file first so that Save
 reads "Add to Contract.pdf"; the queue shared
 as a CompleteScanner document (`.csdoc`), and one opened from AirDrop, Files or Mail offered on a
 banner with Add to pages or Open as new; network
