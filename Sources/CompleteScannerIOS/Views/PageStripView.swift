@@ -51,72 +51,63 @@ struct PageStripCell: Identifiable {
     }
 }
 
-/// The collected pages, left to right, with the queue's summary: each page with its side or book badge
-/// and the title of the document it starts; a page's menu removes it, and for a book's page splits its
-/// spread again (`onEditSpread`) or joins its two pages. A page dragged onto another takes its place
-/// (`IOSPageDrop`); VoiceOver has Move left and Move right for the same.
+/// The collected pages as a grid of whole pages, two across on an iPhone held upright and more on a wider
+/// screen, with the queue's summary: each page with its number, its side or book badge, the title of the
+/// document it starts and its note (blank, separator) on a badge over it. A tap opens the page (`onOpen`);
+/// its menu turns it, removes it, and for a book's page splits its spread again (`onEditSpread`) or joins its
+/// two pages. A page dragged onto another takes its place (`IOSPageDrop`); VoiceOver has Move left and Move
+/// right for the same.
 struct PageStripView: View {
     @EnvironmentObject private var state: AppState
     /// Opens the split sheet for the spread the page with this id was cut from.
     var onEditSpread: (@MainActor (UUID) -> Void)?
+    let onOpen: @MainActor (UUID) -> Void
+
+    /// At least 150 pt a page: two across the narrowest iPhone, more on an iPad or turned sideways.
+    static let columns: [GridItem] = [GridItem(.adaptive(minimum: 150, maximum: 280), spacing: 14, alignment: .top)]
 
     var body: some View {
         let cells: [PageStripCell] = PageStripCell.cells(state.scannedPages, options: state.settings.document)
         let summary: String = DocumentSplitter.queueSummary(state.scannedPages, options: state.settings.document)
-        VStack(alignment: .leading, spacing: 6) {
-            // The sheet's title already gives the count; the line stays for what it adds (documents, separators).
-            if cells.isEmpty || summary != IOSCameraText.pageCount(state.scannedPages.count) {
-                Text(cells.isEmpty ? "No pages yet" : summary)
-                    .font(.caption)
-                    .foregroundStyle(Color.secondary)
-                    .accessibilityIdentifier("pages.summary")
-            }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .bottom, spacing: 10) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                // The sheet's title already gives the count; the line stays for what it adds (documents, separators).
+                if cells.isEmpty || summary != IOSCameraText.pageCount(state.scannedPages.count) {
+                    Text(cells.isEmpty ? "No pages yet" : summary)
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary)
+                        .accessibilityIdentifier("pages.summary")
+                }
+                LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 18) {
                     ForEach(cells) { (cell: PageStripCell) in
-                        if let divider = cell.divider {
-                            Text(divider)
-                                .font(.caption2)
-                                .foregroundStyle(Color.accentColor)
-                                .lineLimit(1)
-                                .frame(maxWidth: 90)
-                                .accessibilityHidden(true)
-                        }
-                        thumbnail(cell)
+                        tile(cell)
                     }
                 }
-                .padding(.vertical, 2)
             }
-            .frame(height: 112)
+            .padding(16)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("pages.strip")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("pages.strip")
     }
 
-    private func thumbnail(_ cell: PageStripCell) -> some View {
+    private func tile(_ cell: PageStripCell) -> some View {
         let pageID: UUID = cell.id
         let page: ScannedPage? = state.scannedPages.first(where: { (item: ScannedPage) -> Bool in item.id == pageID })
         let splitLabel: String? = page.flatMap { (item: ScannedPage) -> String? in BookPages.splitActionLabel(item) }
         let joinLabel: String? = page.flatMap { (item: ScannedPage) -> String? in BookPages.joinActionLabel(item) }
         let canEdit: Bool = state.canEditSpread(id: pageID)
-        return VStack(spacing: 2) {
-            // The previews are about 1600 px tall; drawn this small they alias without a better filter.
-            Image(decorative: cell.image, scale: 1)
-                .resizable()
-                .interpolation(.high)
-                .scaledToFit()
-                .frame(height: 92)
-                .background(Color.white)
-                .opacity(cell.note == nil ? 1 : 0.5)
-                .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Color.secondary.opacity(0.3), lineWidth: 1))
-            Text(cell.badge ?? cell.note ?? " ")
-                .font(.caption2)
-                .foregroundStyle(Color.secondary)
-                .lineLimit(1)
+        return Button {
+            onOpen(pageID)
+        } label: {
+            PageTile(cell: cell, working: state.recuttingPages.contains(pageID))
         }
+        .buttonStyle(.plain)
         .contextMenu {
+            Button {
+                state.rotatePage(id: pageID)
+            } label: {
+                Label(PageViewerText.rotateLabel, systemImage: "rotate.right")
+            }
             if let splitLabel, canEdit, let edit = onEditSpread {
                 Button {
                     edit(pageID)
@@ -141,8 +132,8 @@ struct PageStripView: View {
         .dropDestination(for: String.self) { (items: [String], _: CGPoint) -> Bool in
             dropPage(items, onto: pageID)
         }
-        .accessibilityElement()
         .accessibilityLabel(Text(cell.accessibilityLabel))
+        .accessibilityHint(Text(PageViewerText.openHint))
         .accessibilityAction(named: Text("Move left")) {
             state.movePage(id: pageID, by: -1)
         }
@@ -152,40 +143,117 @@ struct PageStripView: View {
         .accessibilityIdentifier("page.\(cell.number)")
     }
 
-    /// A page of the strip dropped here: it takes this page's place.
+    /// A page of the grid dropped here: it takes this page's place.
     private func dropPage(_ items: [String], onto target: UUID) -> Bool {
         guard let text = items.first, let moving = IOSPageDrop.pageID(text) else { return false }
         return IOSPageDrop.move(moving, onto: target, in: state)
     }
 }
 
-/// The page strip in a sheet at half height that can grow, opened from the scan screen's capture bar
-/// (`capture.pages`), with Done.
+/// One page of the grid: the whole page fitted in a card of a sheet's shape, nothing of it cut off, its note
+/// on a badge over its corner, a spinner while it is cut out again, and its number and badge under it.
+private struct PageTile: View {
+    let cell: PageStripCell
+    let working: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let divider = cell.divider {
+                Text(divider)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .lineLimit(1)
+            }
+            card
+            HStack(spacing: 6) {
+                Text("\(cell.number)")
+                    .font(.footnote.weight(.semibold))
+                if let badge = cell.badge {
+                    Text(badge)
+                        .font(.caption)
+                        .foregroundStyle(Color.secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var card: some View {
+        RoundedRectangle(cornerRadius: 10)
+            .fill(Color(uiColor: .secondarySystemBackground))
+            .aspectRatio(PageViewerText.cardAspect, contentMode: .fit)
+            .overlay {
+                page
+                    .padding(8)
+            }
+    }
+
+    private var page: some View {
+        // The previews are about 1600 px tall; drawn this small they alias without a better filter.
+        Image(decorative: cell.image, scale: 1)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .background(Color.white)
+            .shadow(color: Color.black.opacity(0.2), radius: 2, y: 1)
+            .overlay(alignment: .topLeading) {
+                if let note = cell.note {
+                    Text(note)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Color.black.opacity(0.65)))
+                        .padding(4)
+                }
+            }
+            .overlay {
+                if working {
+                    ProgressView()
+                }
+            }
+    }
+}
+
+/// The page grid in a sheet that opens at full height and can be pulled down to half, opened from the scan
+/// screen's pages button (`capture.pages`), with Done; a page tapped opens in the page viewer over it.
 struct PageStripSheet: View {
     @EnvironmentObject private var state: AppState
     var onEditSpread: (@MainActor (UUID) -> Void)?
     let onClose: () -> Void
+    @State private var detent: PresentationDetent = .large
+    @State private var viewing: PageViewerStart?
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                PageStripView(onEditSpread: onEditSpread)
-                Spacer(minLength: 0)
-            }
-            .navigationTitle(IOSCameraText.pageCount(state.scannedPages.count))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        onClose()
+            PageStripView(onEditSpread: onEditSpread, onOpen: openPage)
+                .navigationTitle(IOSCameraText.pageCount(state.scannedPages.count))
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            onClose()
+                        }
+                        .accessibilityIdentifier("pages.done")
                     }
-                    .accessibilityIdentifier("pages.done")
                 }
-            }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.medium, .large], selection: $detent)
+        .fullScreenCover(item: $viewing) { (start: PageViewerStart) in
+            PageViewer(startID: start.id, onClose: closeViewer)
+                .environmentObject(state)
+        }
         // The root's alert cannot show over a sheet.
         .modifier(ErrorAlert(state: state))
+    }
+
+    private func openPage(_ id: UUID) {
+        viewing = PageViewerStart(id: id)
+    }
+
+    private func closeViewer() {
+        viewing = nil
     }
 }
 #endif
