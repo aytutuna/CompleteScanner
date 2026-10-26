@@ -101,6 +101,8 @@ struct ScanScreen: View {
     /// Save waits for the copy screen After saving's Print opened, then emails when `emailsAfterPrint`.
     @State private var savesAfterPrint: Bool = false
     @State private var emailsAfterPrint: Bool = false
+    /// After saving's steps left once Send to PC's alert closes: the copy screen and Mail cannot show over it.
+    @State private var stepsAfterAlert: [IOSAfterSave]?
     /// What was asked for that would leave the pages without a Save, while the question about them is up.
     @State private var leavingPages: PagesLeave?
     @Namespace private var kindSpace: Namespace.ID
@@ -204,6 +206,11 @@ struct ScanScreen: View {
                 // Print… held nothing (nothing to print, or cancelled), so no copy screen will close.
                 if !busy && savesAfterPrint && state.copyPages.isEmpty {
                     savesAfterPrint = false
+                }
+            }
+            .onChange(of: state.errorMessage == nil) { (_: Bool, closed: Bool) in
+                if closed {
+                    alertClosed()
                 }
             }
             .onChange(of: cover) { (_: ScanCover?, shown: ScanCover?) in
@@ -1041,37 +1048,54 @@ struct ScanScreen: View {
 
     /// Save, then what After saving has checked, in its order (`IOSAfterSave.steps`). Send to PC and Print
     /// take the queue, which the save empties, so they go first: the save waits for the copy screen Print
-    /// opens to close. Email goes out with the saved file.
+    /// opens to close. Email goes out with the saved file. A send that failed, or whose pages wait for a
+    /// computer that did not answer, says so in an alert, and the other steps run once it is closed.
     private func saveWithActions() {
         let paired: Bool = IOSShell.offersSendToComputer(state.settings, status: state.companionStatus)
         let steps: [IOSAfterSave] = IOSAfterSave.steps(UserDefaults.standard, paired: paired)
-        guard !steps.isEmpty else {
-            save()
+        guard steps.contains(.send) else {
+            printThenSave(steps)
             return
         }
-        let emails: Bool = steps.contains(.email)
         let appState: AppState = state
         Task { @MainActor in
-            if steps.contains(.send) {
-                sendsToComputer = true
-                await appState.sendQueueToDesktop(target: .new)
-                sendsToComputer = false
-                // The send failed and its alert is up: the copy screen and Mail could not show over it.
-                if appState.errorMessage != nil {
-                    save()
-                    return
-                }
+            sendsToComputer = true
+            await appState.sendQueueToDesktop(target: .new)
+            sendsToComputer = false
+            if appState.errorMessage == nil {
+                appState.errorMessage = IOSAfterSave.notSentMessage(appState.companionStatus,
+                                                                    waiting: appState.companionOutboxCount)
             }
-            if steps.contains(.print) {
-                savesAfterPrint = true
-                emailsAfterPrint = emails
-                appState.printQueueAsCopy()
-                if !appState.isBusy {
-                    savesAfterPrint = false
-                }
-            } else {
-                saveNow(emails: emails)
+            if appState.errorMessage != nil {
+                stepsAfterAlert = steps
+                return
             }
+            printThenSave(steps)
+        }
+    }
+
+    /// After saving's Print, whose copy screen the save waits for, then the save, emailing when checked.
+    private func printThenSave(_ steps: [IOSAfterSave]) {
+        let emails: Bool = steps.contains(.email)
+        guard steps.contains(.print) else {
+            saveNow(emails: emails)
+            return
+        }
+        savesAfterPrint = true
+        emailsAfterPrint = emails
+        state.printQueueAsCopy()
+        if !state.isBusy {
+            savesAfterPrint = false
+        }
+    }
+
+    /// Send to PC's alert has closed: the steps after it run once it has gone.
+    private func alertClosed() {
+        guard let steps = stepsAfterAlert else { return }
+        stepsAfterAlert = nil
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            printThenSave(steps)
         }
     }
 

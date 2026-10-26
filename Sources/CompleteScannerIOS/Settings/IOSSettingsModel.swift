@@ -251,5 +251,20 @@ public enum IOSAfterSave: String, CaseIterable, Identifiable {
         }
         return steps
     }
+
+    /// Why Send to PC's pages have not gone when the send raised no alert of its own: the computer did not
+    /// answer, or no longer knows this phone, and the document waits in the outbox (`waiting`). Nil when
+    /// nothing waits or the computer answered.
+    public static func notSentMessage(_ status: CompanionStatus, waiting: Int) -> String? {
+        guard waiting > 0 else { return nil }
+        switch status {
+        case .unreachable(let reason):
+            return reason + " The pages wait on this phone and are sent once it answers."
+        case .unpaired(let name):
+            return CompanionText.unpairedMessage(name) + " The pages were not sent."
+        case .notPaired, .checking, .reachable:
+            return nil
+        }
+    }
 }
 #endif
