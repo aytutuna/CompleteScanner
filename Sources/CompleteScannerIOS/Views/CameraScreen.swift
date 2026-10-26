@@ -491,35 +491,29 @@ private struct RoundGlassLabel: View {
     }
 }
 
-/// The pages taken, as the last one on a stack with the count on a badge; it opens the page strip. It
-/// bumps and a tap is felt as a page comes in.
+/// The pages taken, as the last one whole on a glass-framed card shaped as the page is, a second card behind
+/// it once there are two, and the count on a badge inside the card; it opens the page strip. It springs and
+/// a tap is felt as a page comes in.
 private struct PagesStack: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion: Bool
     let onPages: () -> Void
     @State private var bumped: Bool = false
 
+    /// The page's long side on the card, inside its glass rim.
+    private static let longSide: CGFloat = 62
+    private static let rim: CGFloat = 3
+
     var body: some View {
         let count: Int = state.scannedPages.count
         Button {
             onPages()
         } label: {
-            ZStack(alignment: .topTrailing) {
-                stack(count: count)
-                    .scaleEffect(bumped ? 1.2 : 1)
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.caption.weight(.bold))
-                        .monospacedDigit()
-                        .foregroundStyle(Color.white)
-                        .padding(.horizontal, 5)
-                        .frame(minWidth: 20, minHeight: 20)
-                        .background(Capsule().fill(Color.accentColor))
-                        .offset(x: 8, y: -6)
-                }
-            }
-            .frame(width: 56, height: 64)
-            .contentShape(Rectangle())
+            stack(count: count)
+                .scaleEffect(bumped ? 1.1 : 1)
+                .animation(reduceMotion ? nil : Animation.spring(duration: 0.4, bounce: 0.3), value: count)
+                .frame(width: 76, height: 76)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(count == 0)
@@ -528,7 +522,7 @@ private struct PagesStack: View {
             withAnimation(.spring(duration: 0.15)) {
                 bumped = true
             } completion: {
-                withAnimation(.spring(duration: 0.55, bounce: 0.25)) {
+                withAnimation(.spring(duration: 0.45, bounce: 0.35)) {
                     bumped = false
                 }
             }
@@ -543,29 +537,57 @@ private struct PagesStack: View {
 
     @ViewBuilder
     private func stack(count: Int) -> some View {
-        ZStack {
-            if count > 1 {
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color(uiColor: .systemGray5))
-                    .frame(width: 42, height: 54)
-                    .rotationEffect(Angle.degrees(5))
-                    .offset(x: 4, y: -4)
+        if let image = state.scannedPages.last?.image {
+            let page: CGSize = Self.pageSize(image)
+            let card: CGSize = CGSize(width: page.width + Self.rim * 2, height: page.height + Self.rim * 2)
+            ZStack {
+                if count > 1 {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.white.opacity(0.5))
+                        .frame(width: card.width, height: card.height)
+                        .rotationEffect(Angle.degrees(6))
+                        .offset(x: 3, y: -2)
+                }
+                front(image, page: page, count: count)
             }
-            if let image = state.scannedPages.last?.image {
-                Image(decorative: image, scale: 1)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .frame(width: 42, height: 54)
-                    .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .shadow(color: Color.black.opacity(0.3), radius: 2, y: 1)
-            } else {
-                RoundedRectangle(cornerRadius: 5)
-                    .strokeBorder(Color(uiColor: .tertiaryLabel), style: StrokeStyle(lineWidth: 1, dash: [3]))
-                    .frame(width: 42, height: 54)
-            }
+        } else {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [3]))
+                .frame(width: 48, height: 64)
         }
+    }
+
+    private func front(_ image: CGImage, page: CGSize, count: Int) -> some View {
+        Image(decorative: image, scale: 1)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFill()
+            .frame(width: page.width, height: page.height)
+            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .padding(Self.rim)
+            .cameraGlass(in: RoundedRectangle(cornerRadius: 8, style: .continuous), interactive: true)
+            .overlay(alignment: .topTrailing) {
+                Text("\(count)")
+                    .font(.caption2.weight(.bold))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.white)
+                    .padding(.horizontal, 4)
+                    .frame(minWidth: 18, minHeight: 18)
+                    .background(Capsule().fill(Color.accentColor))
+                    .padding(Self.rim + 1)
+                    .dynamicTypeSize(...DynamicTypeSize.xxLarge)
+            }
+    }
+
+    /// The page in the card's box, its own shape kept: a landscape page lies on its side. Only a page
+    /// narrower than a long receipt has its ends cut a little, so the card never gets thinner than its badge.
+    static func pageSize(_ image: CGImage) -> CGSize {
+        let width: CGFloat = CGFloat(max(image.width, 1))
+        let height: CGFloat = CGFloat(max(image.height, 1))
+        if height >= width {
+            return CGSize(width: max(20, longSide * width / height), height: longSide)
+        }
+        return CGSize(width: longSide, height: max(20, longSide * height / width))
     }
 }
 
