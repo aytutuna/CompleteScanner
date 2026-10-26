@@ -197,7 +197,8 @@ final class PageRecutTests: XCTestCase {
         let previews: [CaptureFilter: CGImage] = await state.filterPreviews(id: page.id, maxSide: 80)
         XCTAssertEqual(Set(previews.keys), Set(CaptureFilter.allCases))
 
-        let start: PhotoCropStart = try XCTUnwrap(await state.pageCropStart(id: page.id))
+        let cropStart: PhotoCropStart? = await state.pageCropStart(id: page.id)
+        let start: PhotoCropStart = try XCTUnwrap(cropStart)
         XCTAssertEqual(start.source.width, photo.width)
         XCTAssertLessThan(start.corners.maxCornerDistance(try XCTUnwrap(taken.capture).quad), 1e-9)
         let inner = Quad(topLeft: CGPoint(x: 80, y: 80), topRight: CGPoint(x: 260, y: 80),
