@@ -103,7 +103,7 @@ final class IOSShellTests: XCTestCase {
 
     // MARK: The step card
 
-    func test_stepCard_speaksOfTheCamera_unlessAScannerIsTheSource() {
+    func test_stepCard_speaksOfTheCamera_outsidePrinterMode() {
         let network: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
         let demo: ScannerInfo = ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true, backend: "mock")
         XCTAssertTrue(IOSShell.usesNetworkScanner(network))
@@ -114,57 +114,69 @@ final class IOSShellTests: XCTestCase {
         for task in tasks {
             let camera: CameraStepText = CameraTaskCatalog.text(task, options: options)
             XCTAssertEqual(IOSShell.cameraLine(task, options: options, sides: nil, newDocument: false,
-                                               turningOverByHand: false, device: nil), camera, task.rawValue)
-            // Any scanner as the source, the demo scanner too: the step's own words.
-            for device in [network, demo] {
-                XCTAssertNil(IOSShell.cameraLine(task, options: options, sides: nil, newDocument: false,
-                                                 turningOverByHand: false, device: device), task.rawValue)
-            }
+                                               turningOverByHand: false, printer: false), camera, task.rawValue)
+            // Printer mode, its scanner found or not: the step's own words.
+            XCTAssertNil(IOSShell.cameraLine(task, options: options, sides: nil, newDocument: false,
+                                             turningOverByHand: false, printer: true), task.rawValue)
         }
         // The ID card's steps say which side is next; a stack turned over by hand has its own steps.
         XCTAssertNil(IOSShell.cameraLine(.idCard, options: options, sides: nil, newDocument: false,
-                                         turningOverByHand: false, device: nil))
+                                         turningOverByHand: false, printer: false))
         XCTAssertNil(IOSShell.cameraLine(.twoSided, options: options, sides: nil, newDocument: false,
-                                         turningOverByHand: true, device: nil))
+                                         turningOverByHand: true, printer: false))
         XCTAssertNil(IOSShell.cameraLine(nil, options: options, sides: nil, newDocument: false,
-                                         turningOverByHand: false, device: nil))
-        // With a network scanner, a back due or a new document pending is still said.
+                                         turningOverByHand: false, printer: false))
+        // In printer mode, a back due or a new document pending is still said.
         var flip = CameraSides(mode: .flip)
         flip.took([UUID()])
         XCTAssertEqual(IOSShell.cameraLine(.twoSided, options: options, sides: flip, newDocument: false,
-                                           turningOverByHand: false, device: network)?.prompt,
+                                           turningOverByHand: false, printer: true)?.prompt,
                        CameraTaskCatalog.turnOverPrompt)
         XCTAssertEqual(IOSShell.cameraLine(.batch, options: options, sides: nil, newDocument: true,
-                                           turningOverByHand: false, device: network)?.prompt,
+                                           turningOverByHand: false, printer: true)?.prompt,
                        CameraTaskCatalog.newDocumentPrompt)
     }
 
-    func test_sourceScanner_isThePickedScanner_whileListedAndSelected() {
+    func test_printerScanner_isTheRememberedScanner_inPrinterModeWhileListedAndSelected() {
         let network: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
         let demo: ScannerInfo = ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true, backend: "mock")
         let devices: [ScannerInfo] = [demo, network]
-        XCTAssertEqual(IOSShell.scanSourceKey, "scan.source")
-        // The camera by default, whatever is listed and selected.
-        XCTAssertNil(IOSShell.sourceScanner("", selected: "escl:x", devices: devices))
-        XCTAssertEqual(IOSShell.sourceScanner("escl:x", selected: "escl:x", devices: devices), network)
-        XCTAssertEqual(IOSShell.sourceScanner("mock:demo", selected: "mock:demo", devices: devices), demo)
-        // Not found yet, or another scanner selected on its own: the camera until it is back.
-        XCTAssertNil(IOSShell.sourceScanner("escl:x", selected: "mock:demo", devices: devices))
-        XCTAssertNil(IOSShell.sourceScanner("escl:x", selected: "escl:x", devices: [demo]))
-        XCTAssertNil(IOSShell.sourceScanner("escl:x", selected: nil, devices: []))
+        XCTAssertEqual(IOSShell.scanModeKey, "scan.mode")
+        XCTAssertEqual(IOSShell.scannerKey, "scan.scanner")
+        XCTAssertEqual(IOSScanMode(rawValue: "camera"), .camera)
+        XCTAssertEqual(IOSScanMode(rawValue: "printer"), .printer)
+        XCTAssertEqual(IOSShell.printerScanner(.printer, scanner: "escl:x", selected: "escl:x", devices: devices), network)
+        XCTAssertEqual(IOSShell.printerScanner(.printer, scanner: "mock:demo", selected: "mock:demo", devices: devices), demo)
+        // The camera keeps the scanner remembered but scans with none, whatever is selected.
+        XCTAssertNil(IOSShell.printerScanner(.camera, scanner: "escl:x", selected: "escl:x", devices: devices))
+        // None picked yet, not found yet, or another scanner selected on its own: none until it is back.
+        XCTAssertNil(IOSShell.printerScanner(.printer, scanner: "", selected: "escl:x", devices: devices))
+        XCTAssertNil(IOSShell.printerScanner(.printer, scanner: "escl:x", selected: "mock:demo", devices: devices))
+        XCTAssertNil(IOSShell.printerScanner(.printer, scanner: "escl:x", selected: "escl:x", devices: [demo]))
+        XCTAssertNil(IOSShell.printerScanner(.printer, scanner: "escl:x", selected: nil, devices: []))
     }
 
-    func test_listedSource_followsThePickedScanner_toAnotherConnection() {
+    func test_listedScanner_followsTheRememberedScanner_toAnotherConnection() {
         let direct: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
         let viaDesktop: ScannerInfo = ScannerInfo(id: "companion:x", name: "Office MFP", transport: "Companion", backend: "companion")
         let demo: ScannerInfo = ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true, backend: "mock")
         let groups: [DeviceGroup] = [DeviceGroup(key: "x", primary: direct, members: [direct, viaDesktop]),
                                      DeviceGroup(key: "demo", primary: demo, members: [demo])]
-        XCTAssertEqual(IOSShell.listedSource("escl:x", devices: [demo, direct], groups: groups), "escl:x")
-        XCTAssertEqual(IOSShell.listedSource("companion:x", devices: [demo, direct], groups: groups), "escl:x")
-        XCTAssertEqual(IOSShell.listedSource("mock:demo", devices: [demo], groups: []), "mock:demo")
-        XCTAssertNil(IOSShell.listedSource("escl:x", devices: [demo], groups: [groups[1]]))
-        XCTAssertNil(IOSShell.listedSource("", devices: [demo, direct], groups: groups))
+        XCTAssertEqual(IOSShell.listedScanner("escl:x", devices: [demo, direct], groups: groups), "escl:x")
+        XCTAssertEqual(IOSShell.listedScanner("companion:x", devices: [demo, direct], groups: groups), "escl:x")
+        XCTAssertEqual(IOSShell.listedScanner("mock:demo", devices: [demo], groups: []), "mock:demo")
+        XCTAssertNil(IOSShell.listedScanner("escl:x", devices: [demo], groups: [groups[1]]))
+        XCTAssertNil(IOSShell.listedScanner("", devices: [demo, direct], groups: groups))
+    }
+
+    func test_followedScanner_isNoneWithTheCamera_andTheListedScannerInPrinterMode() {
+        let direct: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
+        let viaDesktop: ScannerInfo = ScannerInfo(id: "companion:x", name: "Office MFP", transport: "Companion", backend: "companion")
+        let groups: [DeviceGroup] = [DeviceGroup(key: "x", primary: direct, members: [direct, viaDesktop])]
+        XCTAssertEqual(IOSShell.followedScanner(.printer, scanner: "companion:x", devices: [direct], groups: groups), "escl:x")
+        XCTAssertNil(IOSShell.followedScanner(.camera, scanner: "escl:x", devices: [direct], groups: groups))
+        XCTAssertNil(IOSShell.followedScanner(.printer, scanner: "", devices: [direct], groups: groups))
+        XCTAssertNil(IOSShell.followedScanner(.printer, scanner: "escl:y", devices: [direct], groups: groups))
     }
 
     func test_rightToLeft_isShownWhileTheSourceInUseCutsSpreads() {

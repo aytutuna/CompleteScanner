@@ -81,26 +81,22 @@ final class IOSFlowTests: XCTestCase {
 
     func test_stepCard_onlyWhileAStepNeedsIt() {
         let options = TaskOptions()
-        let network: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
         XCTAssertFalse(IOSShell.showsStepCard(.document, options: options, sides: nil, newDocument: false,
-                                              turningOverByHand: false, device: nil))
+                                              turningOverByHand: false, printer: false))
         XCTAssertFalse(IOSShell.showsStepCard(.twoSided, options: options, sides: CameraSides(mode: .flip),
-                                              newDocument: false, turningOverByHand: false, device: nil))
+                                              newDocument: false, turningOverByHand: false, printer: false))
         XCTAssertTrue(IOSShell.showsStepCard(.idCard, options: options, sides: nil, newDocument: false,
-                                             turningOverByHand: false, device: nil))
+                                             turningOverByHand: false, printer: false))
         XCTAssertTrue(IOSShell.showsStepCard(.batch, options: options, sides: nil, newDocument: true,
-                                             turningOverByHand: false, device: nil))
+                                             turningOverByHand: false, printer: false))
         var flip = CameraSides(mode: .flip)
         flip.took([UUID()])
         XCTAssertTrue(IOSShell.showsStepCard(.twoSided, options: options, sides: flip, newDocument: false,
-                                             turningOverByHand: false, device: nil))
+                                             turningOverByHand: false, printer: false))
         XCTAssertTrue(IOSShell.showsStepCard(.document, options: options, sides: nil, newDocument: false,
-                                             turningOverByHand: false, device: network))
-        let demo: ScannerInfo = ScannerInfo(id: "mock:demo", name: "Demo Scanner", transport: "Demo", isDemo: true, backend: "mock")
-        XCTAssertTrue(IOSShell.showsStepCard(.document, options: options, sides: nil, newDocument: false,
-                                             turningOverByHand: false, device: demo))
+                                             turningOverByHand: false, printer: true))
         XCTAssertTrue(IOSShell.showsStepCard(.twoSided, options: options, sides: nil, newDocument: false,
-                                             turningOverByHand: true, device: nil))
+                                             turningOverByHand: true, printer: false))
     }
 
     // MARK: Kinds and options

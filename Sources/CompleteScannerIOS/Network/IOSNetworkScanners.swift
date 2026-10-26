@@ -16,6 +16,8 @@ public enum IOSNetworkText {
     /// The scanner picker.
     public static let pickerTitle = "Scanners"
     public static let noScanner = "No scanner found"
+    /// The Scanner row in printer mode before its scanner is picked or found.
+    public static let noScannerPicked = "No scanner"
     public static let troubleshoot = "Troubleshoot"
     public static let addButton = "Add by address"
     public static let removeAddress = "Remove address"

@@ -131,25 +131,25 @@ public enum IOSShell {
 
     /// The camera's line the scan screen's step card shows in place of the task's step, which speaks of the
     /// glass and the feeder (`CameraTaskCatalog.current`): for every task but the ID card, whose steps say
-    /// which side is next, while the pages come from the camera, Photos or Files. With a scanner as the
-    /// source (`device`, `sourceScanner`), or a stack turned over by hand, only while a back is due in the
-    /// camera's two-sided steps or the next page starts a new document. Nil when the step's own words stay.
+    /// which side is next, while the pages come from the camera, Photos or Files. In printer mode
+    /// (`printer`), or with a stack turned over by hand, only while a back is due in the camera's two-sided
+    /// steps or the next page starts a new document. Nil when the step's own words stay.
     public static func cameraLine(_ task: ScanTask?, options: TaskOptions, sides: CameraSides?, newDocument: Bool,
-                                  turningOverByHand: Bool, device: ScannerInfo?) -> CameraStepText? {
+                                  turningOverByHand: Bool, printer: Bool) -> CameraStepText? {
         guard task != .idCard else { return nil }
         let pending: Bool = sides?.next == .back || newDocument
-        guard pending || !(turningOverByHand || device != nil) else { return nil }
+        guard pending || !(turningOverByHand || printer) else { return nil }
         return CameraTaskCatalog.current(task, options: options, sides: sides, newDocument: newDocument)
     }
 
-    /// Whether the scan screen shows the step card: while the step's own words stay (the ID card's sides, a
-    /// scanner as the source, a stack turned over by hand: `cameraLine` is nil), a back is due or the next
-    /// page starts a new document. Otherwise the camera's line is on our camera's screen only.
+    /// Whether the scan screen shows the step card: while the step's own words stay (the ID card's sides,
+    /// printer mode, a stack turned over by hand: `cameraLine` is nil), a back is due or the next page starts
+    /// a new document. Otherwise the camera's line is on our camera's screen only.
     public static func showsStepCard(_ task: ScanTask?, options: TaskOptions, sides: CameraSides?, newDocument: Bool,
-                                     turningOverByHand: Bool, device: ScannerInfo?) -> Bool {
+                                     turningOverByHand: Bool, printer: Bool) -> Bool {
         if sides?.next == .back || newDocument { return true }
         return cameraLine(task, options: options, sides: sides, newDocument: newDocument,
-                          turningOverByHand: turningOverByHand, device: device) == nil
+                          turningOverByHand: turningOverByHand, printer: printer) == nil
     }
 
     /// The task the iPhone opens on: the one set up last time (kept in the settings), else Document to PDF.
@@ -243,33 +243,36 @@ public enum IOSShell {
     }
 
     /// Whether the scan screen can offer our own camera (`CameraScreen`), the default way to take pages:
-    /// wherever photos are taken (`takesPhotos`), as photos are imported. Its shutter shows only while the
-    /// camera is the source (`sourceScanner`).
+    /// wherever photos are taken (`takesPhotos`), as photos are imported.
     public static func offersOwnCamera(_ settings: ScanSettings) -> Bool {
         takesPhotos(settings)
     }
 
-    /// The user's defaults key of the scan screen's source: empty for our camera, the default, else the ID
-    /// of the scanner picked in the Scanner options (`sourceScanner`).
-    public static let scanSourceKey = "scan.source"
+    /// The user's defaults key of the phone's mode (`IOSScanMode`): the camera, the default, or printer mode.
+    public static let scanModeKey = "scan.mode"
 
-    /// The scanner the pages come from: the one picked as the source (`source`, its ID) while it is listed
-    /// and selected; nil while our camera takes them, as it does until that scanner is found again. A
-    /// scanner found on its own never becomes the source.
-    public static func sourceScanner(_ source: String, selected: String?, devices: [ScannerInfo]) -> ScannerInfo? {
-        guard !source.isEmpty, source == selected else { return nil }
-        for device in devices where device.id == source {
+    /// The user's defaults key of the scanner printer mode scans with: the ID of the one picked last. It is
+    /// kept while the camera is in use, so switching back to printer mode finds it again.
+    public static let scannerKey = "scan.scanner"
+
+    /// The scanner the pages come from: in printer mode the remembered one (`scanner`, its ID) while it is
+    /// listed and selected; nil in camera mode, and in printer mode until that scanner is found again. A
+    /// scanner found on its own never takes its place.
+    public static func printerScanner(_ mode: IOSScanMode, scanner: String, selected: String?,
+                                      devices: [ScannerInfo]) -> ScannerInfo? {
+        guard mode == .printer, !scanner.isEmpty, scanner == selected else { return nil }
+        for device in devices where device.id == scanner {
             return device
         }
         return nil
     }
 
-    /// The listed row of the scanner picked as the source: its own, or the one of the connection the app
-    /// moved that scanner to (`groups`, `DeviceMerge`); nil when the scanner is not listed, or none is picked.
-    public static func listedSource(_ source: String, devices: [ScannerInfo], groups: [DeviceGroup]) -> String? {
-        guard !source.isEmpty else { return nil }
-        var connections: [String] = [source]
-        for group in groups where group.members.contains(where: { (member: ScannerInfo) -> Bool in member.id == source }) {
+    /// The listed row of the remembered scanner: its own, or the one of the connection the app moved that
+    /// scanner to (`groups`, `DeviceMerge`); nil when the scanner is not listed, or none was picked.
+    public static func listedScanner(_ scanner: String, devices: [ScannerInfo], groups: [DeviceGroup]) -> String? {
+        guard !scanner.isEmpty else { return nil }
+        var connections: [String] = [scanner]
+        for group in groups where group.members.contains(where: { (member: ScannerInfo) -> Bool in member.id == scanner }) {
             for member in group.members {
                 connections.append(member.id)
             }
@@ -278,6 +281,14 @@ public enum IOSShell {
             return device.id
         }
         return nil
+    }
+
+    /// The scanner the selection follows in `mode`: the remembered one's listed row in printer mode
+    /// (`listedScanner`); none with the camera, or while that scanner is not listed.
+    public static func followedScanner(_ mode: IOSScanMode, scanner: String, devices: [ScannerInfo],
+                                       groups: [DeviceGroup]) -> String? {
+        guard mode == .printer else { return nil }
+        return listedScanner(scanner, devices: devices, groups: groups)
     }
 
     /// Whether our camera takes page after page (continuous capture): the task collects several pages in
@@ -613,6 +624,13 @@ public enum IOSShell {
         default: return "scanner"
         }
     }
+}
+
+/// The phone's two modes, which are also where the pages come from: the camera, the default, or a scanner
+/// (printer mode). Kept in the user's defaults under `IOSShell.scanModeKey`.
+public enum IOSScanMode: String, Sendable {
+    case camera
+    case printer
 }
 
 /// What the iPhone's scan screen asks first, as chips in its top row: what is being scanned. The rest (the

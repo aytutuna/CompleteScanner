@@ -7,8 +7,8 @@ import UIKit
 
 /// The app's window: on a compact width (iPhone, a narrow iPad window) the scan screen, set up at launch
 /// for the task used last (`IOSShell.launchTask`) with our camera opened at once where it can be used
-/// (`IOSShell.cameraOnOpen`; the first time, after a card saying why) unless a scanner was picked as the
-/// source (`IOSShell.scanSourceKey`), the kinds in its top row and the
+/// (`IOSShell.cameraOnOpen`; the first time, after a card saying why) unless the phone is in printer mode
+/// (`IOSShell.scanModeKey`), the kinds in its top row and the
 /// library pushed; on a regular width (iPad, `IOSLayout.usesSidebar`) a sidebar with the tasks, the
 /// presets, the scanners and the library beside the scan screen (or the start screen, the presets, the
 /// scans or the saved files). Settings opens as a sheet (Command-comma). Also the share sheet, Mail's
@@ -17,8 +17,8 @@ import UIKit
 /// the corner editor of an imported photo, the troubleshooter,
 /// the question about a network scanner's changed certificate, and the error alert (with Troubleshoot
 /// when it is about a scanner; in the Settings sheet it opens Settings' own troubleshooter). It keeps the
-/// screen on while a network scanner's job runs, and keeps the selected scanner on the source: the scanner
-/// picked as the source once it is listed, else none, so no scanner's limits apply to the camera. Photos
+/// screen on while a network scanner's job runs, and keeps the selected scanner on the mode: in printer mode
+/// the remembered scanner once it is listed, else none, so no scanner's limits apply to the camera. Photos
 /// and PDFs opened in this app from another one ("Open in CompleteScanner") are imported: into the task set
 /// up when it takes photos (`IOSShell.takesPhotos`), else into Document to PDF; while an import runs they wait for it (`IOSImportSession`). A CompleteScanner
 /// document (`.csdoc`, I18) is not imported: the scan screen offers it on its banner. Leaving the scan screen
@@ -38,7 +38,8 @@ public struct IOSRootView: View {
     @State private var showsLibrary: Bool = false
     @State private var showsCameraIntro: Bool = false
     @AppStorage(IOSShell.cameraIntroKey) private var cameraIntroShown: Bool = false
-    @AppStorage(IOSShell.scanSourceKey) private var source: String = ""
+    @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
+    @AppStorage(IOSShell.scannerKey) private var scanner: String = ""
     @State private var detail: IOSDetail = IOSDetail.start
     @State private var showsSettings: Bool = false
     @State private var showsSettingsTroubleshooter: Bool = false
@@ -84,15 +85,18 @@ public struct IOSRootView: View {
             keepAwake(busy)
         }
         .onChange(of: state.devices) { (_: [ScannerInfo], _: [ScannerInfo]) in
-            followSource()
+            followMode()
         }
         .onChange(of: state.capabilities != nil) { (_: Bool, _: Bool) in
-            followSource()
+            followMode()
         }
         .onChange(of: selectionCanMove) { (_: Bool, free: Bool) in
             if free {
-                followSource()
+                followMode()
             }
+        }
+        .onChange(of: mode) { (_: IOSScanMode, _: IOSScanMode) in
+            followMode()
         }
         .environmentObject(importer)
         .task {
@@ -200,12 +204,12 @@ public struct IOSRootView: View {
     }
 
     /// Our camera at once on the iPhone, for a task that takes photos where the camera can be used; the
-    /// first time, the card saying why comes before iOS asks for it. Not with a scanner picked as the
-    /// source, even before that scanner is found again.
+    /// first time, the card saying why comes before iOS asks for it. Not in printer mode, even before its
+    /// scanner is found again.
     private func openCameraAtOnce() {
         guard !IOSLayout.usesSidebar(sizeClass, pad: isPad), scanCover == nil, importer.canImport else { return }
         let action: IOSCameraOnOpen = IOSShell.cameraOnOpen(
-            offersCamera: source.isEmpty && IOSShell.offersOwnCamera(state.settings),
+            offersCamera: mode == .camera && IOSShell.offersOwnCamera(state.settings),
             camera: IOSCameraAvailability.ownCamera,
             authorization: AVCaptureDevice.authorizationStatus(for: .video), introShown: cameraIntroShown,
             demo: demoScanner)
@@ -259,14 +263,16 @@ public struct IOSRootView: View {
         UIApplication.shared.isIdleTimerDisabled = IOSShell.keepsScreenAwake(isBusy: busy, device: device)
     }
 
-    /// The selection follows the source: the scanner picked as the source once it is listed (on its own the
-    /// app selects the first scanner it finds; one the app moved to another connection stays the source),
-    /// else no scanner. Picked again while connected, so a scanner found later does not take its place.
-    private func followSource() {
+    /// The selection follows the mode: in printer mode the remembered scanner once it is listed (on its own
+    /// the app selects the first scanner it finds; one the app moved to another connection stays the one
+    /// remembered), else no scanner. Picked again while connected, so a scanner found later does not take
+    /// its place.
+    private func followMode() {
         guard selectionCanMove else { return }
-        if let listed = IOSShell.listedSource(source, devices: state.devices, groups: state.deviceGroups) {
-            if listed != source {
-                source = listed
+        if let listed = IOSShell.followedScanner(mode, scanner: scanner, devices: state.devices,
+                                                 groups: state.deviceGroups) {
+            if listed != scanner {
+                scanner = listed
             }
             if listed != state.selectedDeviceID || state.capabilities != nil {
                 state.userSelectDevice(listed)
@@ -317,12 +323,13 @@ public struct IOSRootView: View {
     private func startOnce() {
         guard !started else { return }
         started = true
-        // The demo scanner is only listed under -demoScanner: a source left on it is the camera again.
-        if !demoScanner && source.hasPrefix("mock:") {
-            source = ""
+        // The demo scanner is only listed under -demoScanner: printer mode left on it is the camera again.
+        if !demoScanner && scanner.hasPrefix("mock:") {
+            scanner = ""
+            mode = .camera
         }
         state.start()
-        if source.isEmpty {
+        if mode == .camera || scanner.isEmpty {
             state.userSelectNoDevice()
         }
         // Settings left without a task by hand are kept: only a first run or a task not offered here starts one.

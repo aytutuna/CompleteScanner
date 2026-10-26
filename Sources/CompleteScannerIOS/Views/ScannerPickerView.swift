@@ -27,10 +27,11 @@ struct ScannerPickerList: View {
 }
 
 /// Add by address and the troubleshooter, as sheets of the list (or the sidebar) the picker's sections are
-/// in. A scanner added is selected and becomes the source.
+/// in. A scanner added is selected and scanned with, in printer mode.
 struct ScannerPickerSheets: ViewModifier {
     @EnvironmentObject private var state: AppState
-    @AppStorage(IOSShell.scanSourceKey) private var source: String = ""
+    @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
+    @AppStorage(IOSShell.scannerKey) private var scanner: String = ""
     let picker: IOSScannerPickerModel
     @Binding var showsAdd: Bool
     @Binding var showsTroubleshooter: Bool
@@ -54,7 +55,8 @@ struct ScannerPickerSheets: ViewModifier {
     private func added(_ deviceID: String) {
         showsAdd = false
         state.userSelectDevice(deviceID)
-        source = deviceID
+        scanner = deviceID
+        mode = .printer
     }
 
     private func closeAdd() {
@@ -67,13 +69,13 @@ struct ScannerPickerSheets: ViewModifier {
 }
 
 /// Where the pages come from, as sections of a list (the scan screen's Scanner options on iPhone, a part of
-/// the sidebar on iPad): Camera, then one row per scanner with how it is reached, the one that is the
-/// source checked (`IOSShell.sourceScanner`); "Looking for scanners…" while the search has just started,
-/// else "No scanner found" with Troubleshoot; the explanation card before the first search, the line about
-/// Local Network access being off, and the buttons to add a scanner by address and open the troubleshooter.
-/// Picking a scanner selects it and makes it the source; Camera selects none, so no scanner's limits apply
-/// to the camera (`AppState.userSelectNoDevice`). The rows follow the app's state, and the network
-/// scanners' when there are any.
+/// the sidebar on iPad): Camera, then one row per scanner with how it is reached, the one scanned with
+/// checked (`IOSShell.printerScanner`); "Looking for scanners…" while the search has just started, else "No
+/// scanner found" with Troubleshoot; the explanation card before the first search, the line about Local
+/// Network access being off, and the buttons to add a scanner by address and open the troubleshooter.
+/// Picking a scanner selects it and remembers it, in printer mode; Camera is camera mode and selects none,
+/// so no scanner's limits apply to the camera (`AppState.userSelectNoDevice`). The rows follow the app's
+/// state, and the network scanners' when there are any.
 struct ScannerPickerSections: View {
     let picker: IOSScannerPickerModel
     let onAdd: () -> Void
@@ -95,16 +97,18 @@ struct ScannerPickerSections: View {
 /// The picker's sections themselves.
 private struct ScannerPickerContent: View {
     @EnvironmentObject private var state: AppState
-    @AppStorage(IOSShell.scanSourceKey) private var source: String = ""
+    @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
+    @AppStorage(IOSShell.scannerKey) private var scanner: String = ""
     let picker: IOSScannerPickerModel
     let onAdd: () -> Void
     let onTroubleshoot: () -> Void
     let header: String?
 
     var body: some View {
-        let picked: String? = IOSShell.sourceScanner(source, selected: state.selectedDeviceID, devices: state.devices)?.id
+        let picked: String? = IOSShell.printerScanner(mode, scanner: scanner, selected: state.selectedDeviceID,
+                                                      devices: state.devices)?.id
         Section {
-            CameraSourceRow(checked: picked == nil, enabled: !state.isBusy, onPick: pickCamera)
+            CameraSourceRow(checked: mode == .camera, enabled: !state.isBusy, onPick: pickCamera)
             ForEach(picker.rows) { (row: IOSScannerRow) in
                 ScannerRowView(row: row, checked: row.id == picked, enabled: !state.isBusy, onPick: { pick(row) },
                                onRemove: { remove(row) })
@@ -175,16 +179,17 @@ private struct ScannerPickerContent: View {
     private func pick(_ row: IOSScannerRow) {
         guard !state.isBusy else { return }
         picker.select(row)
-        source = row.id
+        scanner = row.id
+        mode = .printer
     }
 
     private func pickCamera() {
         guard !state.isBusy else { return }
-        source = ""
+        mode = .camera
         state.userSelectNoDevice()
     }
 
-    /// Discovery may still list the scanner; the root view lets go of the source once it is gone.
+    /// Discovery may still list the scanner; the root view lets go of it once it is gone.
     private func remove(_ row: IOSScannerRow) {
         guard !state.isBusy else { return }
         picker.removeAddresses(row)

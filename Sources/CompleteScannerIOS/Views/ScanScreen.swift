@@ -23,8 +23,8 @@ enum ScanCover: String, Identifiable {
 /// The scan screen: the task's step, the cameras and imports (`CaptureBar`), the scanner, the flatbed
 /// preview with the scan area (or the last scan), the page strip, the status line with a scan's progress,
 /// and Scan and Save (as a PDF, a JPEG a page, Word or text, `IOSShell.exportFormats`); once saved, the
-/// saved file with Share and Show in Files. The pages come from one source at a time, picked in the Scanner
-/// options (`IOSShell.sourceScanner`): our own camera (`CameraScreen`), the default, whose shutter is on the
+/// saved file with Share and Show in Files. The pages come from one source at a time, the mode picked in the
+/// Scanner options (`IOSScanMode`): our own camera (`CameraScreen`), the default, whose shutter is on the
 /// capture bar, or a scanner, with Scan beside Save and no shutter; Use Apple's scanner opens Apple's
 /// document scanner. On iPad the scanners are listed beside the screen. The screen stays awake while a
 /// network scanner's job runs (`IOSRootView`, since resizing the window builds this screen anew).
@@ -75,8 +75,10 @@ struct ScanScreen: View {
     /// Opens the library (iPhone); nil when the sidebar has it.
     var onOpenLibrary: (() -> Void)?
     @State private var scanner: IOSCameraAvailability = .noCamera
-    /// The source picked in the Scanner options: empty for our camera, else the scanner's ID.
-    @AppStorage(IOSShell.scanSourceKey) private var source: String = ""
+    /// The camera or printer mode, picked in the Scanner options.
+    @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
+    /// The scanner printer mode scans with, remembered while the camera is in use.
+    @AppStorage(IOSShell.scannerKey) private var scanner: String = ""
     /// The page strip's sheet, opened from the capture bar's last page.
     @State private var pagesShown: Bool = false
     /// A book page whose spread is split again once the page strip's sheet has closed.
@@ -430,13 +432,15 @@ struct ScanScreen: View {
         .accessibilityIdentifier("options.row.\(group.rawValue)")
     }
 
-    /// What the row says the group is set to: Camera, or the scanner and its source; the book's way,
-    /// whether old prints are restored, the format with the PDF's size.
+    /// What the row says the group is set to: Camera, or the scanner and its source ("No scanner" until
+    /// one is picked or found); the book's way, whether old prints are restored, the format with the PDF's
+    /// size.
     private func optionValue(_ group: ScanOptionGroup) -> String {
         let s: ScanSettings = state.settings
         switch group {
         case .scanner:
-            guard let device = sourceDevice else { return IOSImportText.cameraLabel }
+            guard mode == .printer else { return IOSImportText.cameraLabel }
+            guard let device = sourceDevice else { return IOSNetworkText.noScannerPicked }
             return "\(device.name) \u{00B7} \(s.source.label)"
         case .book:
             return s.taskOptions.cameraSpreads ? CameraTaskCatalog.wholeSpreadLabel : CameraTaskCatalog.pageByPageLabel
@@ -502,7 +506,7 @@ struct ScanScreen: View {
                         previewControls
                     }
                 }
-            } else if showsCameraOptions {
+            } else if mode == .camera && showsCameraOptions {
                 Section {
                     BothSidesToggle()
                     TaskWayPicker()
@@ -695,13 +699,13 @@ struct ScanScreen: View {
     private var showsStepCard: Bool {
         IOSShell.showsStepCard(state.activeTask, options: state.settings.taskOptions, sides: state.cameraSides,
                                newDocument: state.newDocumentPending, turningOverByHand: state.isTurningOverByHand,
-                               device: sourceDevice)
+                               printer: mode == .printer)
     }
 
     private var cameraLine: CameraStepText? {
         IOSShell.cameraLine(state.activeTask, options: state.settings.taskOptions, sides: state.cameraSides,
                             newDocument: state.newDocumentPending, turningOverByHand: state.isTurningOverByHand,
-                            device: sourceDevice)
+                            printer: mode == .printer)
     }
 
     /// The source named, with how a scanner is reached, where the list beside the screen picks it.
@@ -785,9 +789,9 @@ struct ScanScreen: View {
         state.capabilities?.sources.contains(.flatbed) == true && state.settings.source == .flatbed
     }
 
-    /// The scanner the pages come from; nil while our camera takes them.
+    /// The scanner the pages come from; nil with the camera, or until printer mode's scanner is found.
     private var sourceDevice: ScannerInfo? {
-        IOSShell.sourceScanner(source, selected: state.selectedDeviceID, devices: state.devices)
+        IOSShell.printerScanner(mode, scanner: scanner, selected: state.selectedDeviceID, devices: state.devices)
     }
 
     /// Scan once the scanner is connected and nothing else runs.
@@ -888,7 +892,7 @@ struct ScanScreen: View {
         let saveTitle: String = Self.saveTitle(state.settings, plan: plan, target: state.appendTarget)
         let saveCount: Int = plan.pageCount
         let collects: Bool = IOSShell.collectsPages(state.settings)
-        let scans: Bool = sourceDevice != nil
+        let scans: Bool = mode == .printer
         // Saving deletes the spooled pages a share or a send may still be writing.
         let blocked: Bool = state.isBusy || importer.isImporting || sharesPackage || sendsToComputer
         return VStack(alignment: .leading, spacing: 10) {
