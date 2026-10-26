@@ -341,7 +341,7 @@ private struct ExportDrawer: View {
                     .accessibilityIdentifier("chip.separate")
             }
             if !separates && IOSShell.exportFormat(s) == .pdf {
-                DrawerChip(title: "One PDF per page", isOn: IOSShell.savesEachPage(s), action: toggleEachPage)
+                DrawerChip(title: IOSShell.eachPageTitle(s), isOn: IOSShell.savesEachPage(s), action: toggleEachPage)
                     .accessibilityIdentifier("chip.eachPage")
             }
             if IOSShell.offersPDFOptions(s) {

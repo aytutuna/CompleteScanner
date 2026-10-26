@@ -335,9 +335,7 @@ struct ExportOptions: View {
                 SeparatorSheetRow()
             }
             if !separates && IOSShell.exportFormat(s) == .pdf {
-                // A sheet's front and back stay together.
-                Toggle(s.source == .documentFeeder && s.duplex != .off ? "One PDF per sheet" : "One PDF per page",
-                       isOn: eachPage)
+                Toggle(IOSShell.eachPageTitle(s), isOn: eachPage)
                     .disabled(busy)
                     .accessibilityIdentifier("options.eachPage")
             }

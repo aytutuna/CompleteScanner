@@ -226,6 +226,10 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertEqual(on.document.splitMode, .sheetCount)
         XCTAssertEqual(on.task, .document)
         XCTAssertFalse(IOSShell.savesEachPage(IOSShell.settingEachPage(false, in: on)))
+        // With both sides a sheet's front and back stay together, and the switch (the drawer's chip and the
+        // Export sheet's toggle alike) says so.
+        XCTAssertEqual(IOSShell.eachPageTitle(on), "One PDF per page")
+        XCTAssertEqual(IOSShell.eachPageTitle(IOSShell.settingBothSides(true, in: on)), "One PDF per sheet")
     }
 
     func test_anOptionThatEndsTheTask_keepsItsKind() {

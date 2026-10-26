@@ -699,6 +699,11 @@ public enum IOSShell {
             && DocumentSplitter.clampSheetCount(settings.document.splitSheetCount) == 1
     }
 
+    /// That switch's name: a sheet's front and back stay together, so with both sides it is per sheet.
+    public static func eachPageTitle(_ settings: ScanSettings) -> String {
+        settings.source == .documentFeeder && settings.duplex != .off ? "One PDF per sheet" : "One PDF per page"
+    }
+
     public static func settingEachPage(_ on: Bool, in settings: ScanSettings) -> ScanSettings {
         var s: ScanSettings = settings
         s.document.splitMode = on ? .sheetCount : SplitMode.none
