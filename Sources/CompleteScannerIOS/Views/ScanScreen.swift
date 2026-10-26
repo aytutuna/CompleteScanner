@@ -99,6 +99,10 @@ struct ScanScreen: View {
     /// Save waits for the copy screen After saving's Print opened, then emails when `emailsAfterPrint`.
     @State private var savesAfterPrint: Bool = false
     @State private var emailsAfterPrint: Bool = false
+    /// The kind picked that would leave the pages without a Save, while the question about them is up.
+    @State private var leavingPages: IOSScanKind?
+    /// The kind picked once the save its question asked for has emptied the queue.
+    @State private var kindAfterSave: IOSScanKind?
     @Namespace private var kindSpace: Namespace.ID
 
     var body: some View {
@@ -118,6 +122,10 @@ struct ScanScreen: View {
                 }
             }
             .modifier(IdCardDiscardQuestion(state: state, asked: $askedToDiscard))
+            .modifier(KeepPagesQuestion(state: state, kind: $leavingPages,
+                                        saveFirst: IOSShell.saveFirstLabel(state.settings, pageCount: savePlan.pageCount,
+                                                                           target: state.appendTarget),
+                                        onSave: saveThenSwitch, onDiscard: discardThenSwitch))
             .modifier(SaveDialogs(state: state, asksSendTarget: $asksSendTarget, picksPDF: $picksPDF,
                                   onSend: sendToComputer))
     }
@@ -199,6 +207,13 @@ struct ScanScreen: View {
                 // Print… held nothing (nothing to print, or cancelled), so no copy screen will close.
                 if !busy && savesAfterPrint && state.copyPages.isEmpty {
                     savesAfterPrint = false
+                }
+                if !busy, let kind = kindAfterSave {
+                    kindAfterSave = nil
+                    // A save that failed or was cancelled keeps the pages, and the kind they were taken in.
+                    if state.scannedPages.isEmpty {
+                        switchKind(kind)
+                    }
                 }
             }
             .onChange(of: cover) { (_: ScanCover?, shown: ScanCover?) in
@@ -294,7 +309,8 @@ struct ScanScreen: View {
     /// question or the error alert.
     private var cameraCovered: Bool {
         let presented: Bool = cover != nil || openGroup != nil || pagesShown || picksPDF || spreadEditor != nil
-        let asked: Bool = askedToDiscard || asksSendTarget || state.errorMessage != nil || state.showTroubleshooter
+        let asked: Bool = askedToDiscard || leavingPages != nil || asksSendTarget || state.errorMessage != nil
+            || state.showTroubleshooter
         return rests || presented || asked
     }
 
@@ -514,21 +530,49 @@ struct ScanScreen: View {
     }
 
     /// Picking a kind starts its task as the task list's tile does (its own choices back to their defaults,
-    /// and no PDF picked to add to); with a side of an ID card held it asks first. The chip already picked
-    /// changes nothing, so a stray tap keeps Both sides, the steps and the PDF picked.
+    /// and no PDF picked to add to). The pages taken stay when the kind collects pages too (Document, Book);
+    /// any other kind would leave them without a Save, so it asks first (`KeepPagesQuestion`). With a side of
+    /// an ID card held it asks about the card too. The chip already picked changes nothing, so a stray tap
+    /// keeps Both sides, the steps and the PDF picked.
     private func pickKind(_ kind: IOSScanKind) {
         guard kind != IOSShell.shownKind(state.settings) || state.activeTask == nil else { return }
         let appState: AppState = state
         afterOptions {
-            appState.leaveIdCard {
-                if appState.startTask(kind.task) {
-                    appState.clearAppendTarget()
-                }
-            }
-            if appState.pendingIdCardLeave != nil {
-                askedToDiscard = true
+            if appState.pagesLeftBehind(by: kind.task) > 0 {
+                leavingPages = kind
+            } else {
+                switchKind(kind)
             }
         }
+    }
+
+    /// Starts the kind's task, dropping the pages first when asked to, once the ID card's question (when a
+    /// side is held) is answered.
+    private func switchKind(_ kind: IOSScanKind, discardingPages: Bool = false) {
+        let appState: AppState = state
+        appState.leaveIdCard {
+            let started: Bool = discardingPages ? appState.discardPages(andStart: kind.task) : appState.startTask(kind.task)
+            if started {
+                appState.clearAppendTarget()
+            }
+        }
+        if appState.pendingIdCardLeave != nil {
+            askedToDiscard = true
+        }
+    }
+
+    /// The pages' question answered Save first: the save runs as Save's would without After saving's steps,
+    /// and the kind changes once it has emptied the queue.
+    private func saveThenSwitch(_ kind: IOSScanKind) {
+        kindAfterSave = kind
+        save()
+        if !state.isBusy {
+            kindAfterSave = nil
+        }
+    }
+
+    private func discardThenSwitch(_ kind: IOSScanKind) {
+        switchKind(kind, discardingPages: true)
     }
 
     // MARK: The viewfinder
@@ -1313,6 +1357,50 @@ private struct SaveDialogs: ViewModifier {
         case .failure(let error):
             state.errorMessage = error.localizedDescription
         }
+    }
+}
+
+/// Keep the 3 pages? Asked before a kind that would leave the queued pages without a Save
+/// (`AppState.pagesLeftBehind(by:)`): Save first (`IOSShell.saveFirstLabel`) saves them and then switches,
+/// Discard starts the kind and drops them (`AppState.discardPages(andStart:)`), Cancel keeps the kind and the
+/// pages, and camera mode's row goes back. The kind is taken when the alert opens, as the ID card's question
+/// takes what was asked for: the alert's dismissal clears it, and SwiftUI may run that before the button.
+@MainActor
+private struct KeepPagesQuestion: ViewModifier {
+    @ObservedObject var state: AppState
+    @Binding var kind: IOSScanKind?
+    let saveFirst: String
+    let onSave: (IOSScanKind) -> Void
+    let onDiscard: (IOSScanKind) -> Void
+
+    func body(content: Content) -> some View {
+        let count: Int = state.scannedPages.count
+        content
+            .alert(IOSShell.keepPagesTitle(count), isPresented: shown, presenting: kind) { (asked: IOSScanKind) in
+                Button(saveFirst) {
+                    onSave(asked)
+                }
+                .accessibilityIdentifier("keepPages.save")
+                Button(IOSShell.discardPagesLabel(count), role: .destructive) {
+                    onDiscard(asked)
+                }
+                .accessibilityIdentifier("keepPages.discard")
+                Button("Cancel", role: .cancel) {}
+                    .accessibilityIdentifier("keepPages.cancel")
+            } message: { (asked: IOSScanKind) in
+                Text(IOSShell.keepPagesLine(asked, count: count))
+            }
+    }
+
+    private var shown: Binding<Bool> {
+        let question: Binding<IOSScanKind?> = $kind
+        return Binding<Bool>(
+            get: { question.wrappedValue != nil },
+            set: { (isShown: Bool) in
+                if !isShown {
+                    question.wrappedValue = nil
+                }
+            })
     }
 }
 

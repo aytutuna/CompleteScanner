@@ -348,6 +348,32 @@ public enum IOSShell {
         return "\(settings.format.saveTitle) \u{00B7} \(plan.pageCount)"
     }
 
+    /// The question before a kind that would leave the queued pages without a Save
+    /// (`AppState.pagesLeftBehind(by:)`): "Keep the 3 pages?".
+    public static func keepPagesTitle(_ count: Int) -> String {
+        count == 1 ? "Keep the page?" : "Keep the \(count) pages?"
+    }
+
+    public static func keepPagesLine(_ kind: IOSScanKind, count: Int) -> String {
+        "\(kind.title) does not collect pages. Save \(count == 1 ? "it" : "them") first, or discard \(count == 1 ? "it" : "them")."
+    }
+
+    public static func discardPagesLabel(_ count: Int) -> String {
+        "Discard \(count) page\(count == 1 ? "" : "s")"
+    }
+
+    /// The question's button that saves the pages as Save would before the kind changes: "Save PDF first",
+    /// "Save 3 JPEGs first", "Add to Contract.pdf first".
+    public static func saveFirstLabel(_ settings: ScanSettings, pageCount: Int, target: URL?) -> String {
+        if let target {
+            return "\(PDFAppender.saveTitle(target.lastPathComponent)) first"
+        }
+        if savesImages(settings) {
+            return "\(AppState.imagesSaveTitle(settings.format, pageCount: pageCount)) first"
+        }
+        return "\(settings.format.saveTitle) first"
+    }
+
     /// The kinds in camera mode's row under the viewfinder, Document in the middle as the Camera app has
     /// Photo among its modes.
     public static let cameraKinds: [IOSScanKind] = [.photos, .receipts, .document, .idCard, .book, .text]

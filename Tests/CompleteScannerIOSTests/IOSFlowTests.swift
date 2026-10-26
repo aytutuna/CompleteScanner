@@ -292,5 +292,30 @@ final class IOSFlowTests: XCTestCase {
         let target = URL(fileURLWithPath: "/tmp/Contract.pdf")
         XCTAssertEqual(IOSShell.floatingSaveTitle(document, plan: plan, target: target), "Add to Contract.pdf")
     }
+
+    func test_onlyDocumentAndBook_takeThePagesAlong() {
+        let carried: [IOSScanKind] = IOSScanKind.allCases.filter { (kind: IOSScanKind) -> Bool in
+            TaskCatalog.carriesPages(kind.task)
+        }
+        XCTAssertEqual(carried, [.document, .book])
+    }
+
+    func test_keepPagesQuestion_countsThePages_andSavesAsSaveWould() {
+        XCTAssertEqual(IOSShell.keepPagesTitle(3), "Keep the 3 pages?")
+        XCTAssertEqual(IOSShell.keepPagesTitle(1), "Keep the page?")
+        XCTAssertEqual(IOSShell.discardPagesLabel(3), "Discard 3 pages")
+        XCTAssertEqual(IOSShell.discardPagesLabel(1), "Discard 1 page")
+        XCTAssertEqual(IOSShell.keepPagesLine(.photos, count: 3),
+                       "Photos does not collect pages. Save them first, or discard them.")
+        XCTAssertEqual(IOSShell.keepPagesLine(.idCard, count: 1),
+                       "ID card does not collect pages. Save it first, or discard it.")
+        let document: ScanSettings = TaskCatalog.apply(.document, to: ScanSettings())
+        XCTAssertEqual(IOSShell.saveFirstLabel(document, pageCount: 3, target: nil), "Save PDF first")
+        var jpeg: ScanSettings = document
+        jpeg.format = .jpeg
+        XCTAssertEqual(IOSShell.saveFirstLabel(jpeg, pageCount: 3, target: nil), "Save 3 JPEGs first")
+        let target = URL(fileURLWithPath: "/tmp/Contract.pdf")
+        XCTAssertEqual(IOSShell.saveFirstLabel(document, pageCount: 3, target: target), "Add to Contract.pdf first")
+    }
 }
 #endif

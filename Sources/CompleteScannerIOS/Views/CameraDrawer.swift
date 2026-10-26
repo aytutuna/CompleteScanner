@@ -5,8 +5,8 @@ import SwiftUI
 /// Camera mode's kinds as the Camera app has its modes: a row under the viewfinder (`IOSShell.cameraKinds`)
 /// that snaps one kind into its middle, the one there in the accent colour, the others grey. Swiping the
 /// row or tapping a kind picks it (`onKind`, as the printer screen's chips do); a pick that does not happen
-/// (the ID card's question answered Cancel, a kind that cannot be started) brings the row back to the kind
-/// set up. Still while a scan or an import runs.
+/// (the ID card's or the pages' question answered Cancel, a kind that cannot be started) brings the row back
+/// to the kind set up. Still while a scan or an import runs.
 struct KindsRow: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
