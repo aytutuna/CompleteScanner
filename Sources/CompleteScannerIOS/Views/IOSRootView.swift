@@ -291,10 +291,10 @@ public struct IOSRootView: View {
         UIApplication.shared.isIdleTimerDisabled = IOSShell.keepsScreenAwake(isBusy: busy, device: device)
     }
 
-    /// The selection follows the mode: in printer mode the remembered scanner once it is listed (on its own
-    /// the app selects the first scanner it finds; one the app moved to another connection stays the one
-    /// remembered), else no scanner. Picked again while connected, so a scanner found later does not take
-    /// its place.
+    /// The selection follows the mode: in printer mode the remembered scanner once it is listed (at launch
+    /// the state waits for it too, `AppState.start(onlySelecting:)`; one the app moved to another connection
+    /// stays the one remembered), else no scanner. Picked again while connected, so a scanner found later
+    /// does not take its place.
     private func followMode() {
         guard selectionCanMove else { return }
         if let listed = IOSShell.followedScanner(mode, scanner: scanner, devices: state.devices,
@@ -360,8 +360,9 @@ public struct IOSRootView: View {
             scanner = ""
             mode = .camera
         }
-        state.start()
-        if mode == .camera || scanner.isEmpty {
+        let remembered: String? = mode == .printer && !scanner.isEmpty ? scanner : nil
+        state.start(onlySelecting: remembered)
+        if remembered == nil {
             state.userSelectNoDevice()
         }
         // Settings left without a task by hand are kept: only a first run or a task not offered here starts one.

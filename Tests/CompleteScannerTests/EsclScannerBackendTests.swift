@@ -522,6 +522,42 @@ final class EsclScannerBackendTests: XCTestCase {
         XCTAssertEqual(state.settings.duplex, .both)
     }
 
+    /// The phone's printer mode at launch: the scanner picked last time once it is listed, opened as the
+    /// user's pick; a scanner listed first is never opened meanwhile, and with nothing remembered none is.
+    @MainActor
+    func test_startOnlySelectingTheRememberedScanner_opensNoOtherFirst() async throws {
+        let network: ChangedCertificateBackend = ChangedCertificateBackend()
+        let state: AppState = AppState(backends: [network, AppState.makeDemoBackend()],
+                                       presetStore: PresetStore(directory: folder), files: AppStateFiles.all(in: folder))
+        state.platform = .ios
+        state.start(onlySelecting: "mock:demo")
+        try await waitFor(10) { state.capabilities != nil }
+        XCTAssertEqual(state.selectedDeviceID, "mock:demo")
+        XCTAssertEqual(network.opened, [])
+        XCTAssertNil(state.errorMessage)
+
+        let elsewhere: ChangedCertificateBackend = ChangedCertificateBackend()
+        let waiting: AppState = AppState(backends: [elsewhere, AppState.makeDemoBackend()],
+                                         presetStore: PresetStore(directory: folder),
+                                         files: AppStateFiles.all(in: folder))
+        waiting.platform = .ios
+        waiting.start(onlySelecting: "escl:notListedYet")
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertNil(waiting.selectedDeviceID)
+        XCTAssertEqual(elsewhere.opened, [])
+        XCTAssertEqual(waiting.statusMessage, "Looking for scanners…")
+
+        // The remembered scanner is opened as the user's pick, so its changed certificate is asked about.
+        let remembered: ChangedCertificateBackend = ChangedCertificateBackend()
+        let asking: AppState = AppState(backends: [AppState.makeDemoBackend(), remembered],
+                                        presetStore: PresetStore(directory: folder),
+                                        files: AppStateFiles.all(in: folder))
+        asking.platform = .ios
+        asking.start(onlySelecting: ChangedCertificateBackend.deviceID)
+        try await waitFor(10) { !remembered.opened.isEmpty }
+        XCTAssertEqual(remembered.opened, [true])
+    }
+
     /// Twin of the Windows `AppViewModel` handling of `EsclCertificateException` (spec N3): a scanner the
     /// app chose on its own whose certificate changed is a warning with a hint, the app moves on to
     /// another scanner (here the demo scanner) and does not choose it again; only the user choosing it

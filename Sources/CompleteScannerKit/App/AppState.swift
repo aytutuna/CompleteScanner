@@ -459,6 +459,9 @@ public final class AppState: ObservableObject {
     private var userPickedDevice = false
     /// The user chose no scanner (`userSelectNoDevice`): none is selected on its own until they pick one.
     private var keepsNoDevice = false
+    /// The phone's printer mode at launch: the scanner picked last time, selected once it is listed
+    /// (`start(onlySelecting:)`).
+    private var awaitedDeviceID: String?
     /// The user's no scanner also turns the sides turned over by hand back to both, once the session that
     /// decided them has closed (`userSelectNoDevice(resetsManualSides:)`).
     private var resetsManualSides = false
@@ -585,6 +588,16 @@ public final class AppState: ObservableObject {
 
     // MARK: Devices
 
+    /// The phone's start: no scanner is selected on its own, only `remembered` (printer mode's scanner from
+    /// last time; nil in camera mode) once it is listed, as if the user picked it again. A first scanner
+    /// found meanwhile is never opened. The Mac calls `start()`.
+    public func start(onlySelecting remembered: String?) {
+        userPickedDevice = true
+        keepsNoDevice = true
+        awaitedDeviceID = remembered
+        start()
+    }
+
     public func start() {
         for backend in backends {
             backend.onDevicesChanged = { [weak self] in self?.mergeDevices() }
@@ -642,6 +655,12 @@ public final class AppState: ObservableObject {
             } else {
                 userPickedDevice = false
                 selectDevice(preferredDefaultDevice())
+            }
+        } else if let awaited = awaitedDeviceID {
+            if deviceGroups.contains(where: { group in group.members.contains(where: { $0.id == awaited }) }) {
+                awaitedDeviceID = nil
+                keepsNoDevice = false
+                selectDevice(awaited, interactive: true)
             }
         } else if !keepsNoDevice, let def = preferredDefaultDevice() {
             selectDevice(def)
@@ -807,6 +826,7 @@ public final class AppState: ObservableObject {
     public func userSelectDevice(_ id: String?) {
         userPickedDevice = true
         keepsNoDevice = false
+        awaitedDeviceID = nil
         resetsManualSides = false
         selectDevice(id, interactive: true)
     }
@@ -819,6 +839,7 @@ public final class AppState: ObservableObject {
     public func userSelectNoDevice(resetsManualSides: Bool = true) {
         userPickedDevice = true
         keepsNoDevice = true
+        awaitedDeviceID = nil
         if resetsManualSides { self.resetsManualSides = true }
         if selectedDeviceID == nil && session == nil && switchTask == nil {
             // Nothing to close.
