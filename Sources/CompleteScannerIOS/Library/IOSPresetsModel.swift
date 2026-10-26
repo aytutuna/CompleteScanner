@@ -52,6 +52,9 @@ public enum IOSPresetApply: Equatable, Sendable {
     /// An ID card side is held and not saved: the preset waits until the user discards it
     /// (`AppState.pendingIdCardLeave`).
     case waitsForDiscard
+    /// Pages are queued and the preset's settings would leave them without a Save: nothing is applied until
+    /// the user saves or discards them. The preset's name, for the question.
+    case waitsForPages(String)
     /// Nothing happened: an operation or an import runs, or the preset is gone.
     case refused
 }
@@ -103,17 +106,27 @@ public final class IOSPresetsModel {
     }
 
     /// The preset's settings put in use, fitted to the scanner (`AppState.applyPreset`), and a PDF picked
-    /// to add the pages to forgotten, then `done` runs; with an ID card side held, both wait until the user discards the card. Refused while an
-    /// operation or an import runs.
+    /// to add the pages to forgotten, then `done` runs; with an ID card side held, both wait until the user
+    /// discards the card. Settings that do not collect pages (`IOSShell.collectsPages`: another kind, or
+    /// Collect pages before saving off) are not applied over queued pages unless `discardingPages`, which
+    /// drops them with their spooled files first. Refused while an operation or an import runs.
     @discardableResult
-    public func apply(_ id: UUID, then done: @escaping @MainActor () -> Void) -> IOSPresetApply {
+    public func apply(_ id: UUID, discardingPages: Bool = false,
+                      then done: @escaping @MainActor () -> Void) -> IOSPresetApply {
         guard !state.isBusy, !importer.isImporting else { return .refused }
         guard let preset = state.presets.first(where: { (item: Preset) -> Bool in item.id == id }) else {
             return .refused
         }
+        let collects: Bool = IOSShell.collectsPages(IOSShell.savingActionsAsDocument(preset.settings))
+        if !discardingPages && !collects && !state.scannedPages.isEmpty {
+            return .waitsForPages(preset.name)
+        }
         let held: Bool = state.hasIdCardCaptures
         let appState: AppState = state
         state.leaveIdCard {
+            if discardingPages {
+                appState.clearPages()
+            }
             appState.applyPreset(preset)
             appState.settings = IOSShell.savingActionsAsDocument(appState.settings)
             appState.clearAppendTarget()

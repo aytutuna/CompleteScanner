@@ -5,8 +5,9 @@ import SwiftUI
 /// The presets: each with its task's icon, its name and its settings in one line; tapping one puts its
 /// settings in use and opens the scan screen (`onApplied`), whose title then names the preset's task as the
 /// desktop's task banner does. Save preset saves the current settings under a name; a preset's menu (or a
-/// swipe) renames or deletes it. With an ID card side held, applying asks to discard the card first; while
-/// an import runs, none is applied.
+/// swipe) renames or deletes it. With an ID card side held, applying asks to discard the card first, and a
+/// preset that would leave the queued pages without a Save asks about them (`KeepPagesQuestion`); while an
+/// import runs, none is applied.
 struct PresetsScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -16,6 +17,8 @@ struct PresetsScreen: View {
     @State private var showsNaming: Bool = false
     @State private var name: String = ""
     @State private var askedToDiscard: Bool = false
+    /// A preset that would leave the queued pages without a Save, while the question about them is up.
+    @State private var leavingPages: PagesLeave?
 
     var body: some View {
         let model: IOSPresetsModel = IOSPresetsModel(state: state, importer: importer)
@@ -65,6 +68,7 @@ struct PresetsScreen: View {
             }
         }
         .modifier(IdCardDiscardQuestion(state: state, asked: $askedToDiscard))
+        .modifier(KeepPagesQuestion(state: state, leave: $leavingPages, blocked: importer.isImporting))
     }
 
     private func presetRow(_ row: IOSPresetRow, model: IOSPresetsModel) -> some View {
@@ -132,11 +136,17 @@ struct PresetsScreen: View {
         }
     }
 
-    private func apply(_ id: UUID, model: IOSPresetsModel) {
+    private func apply(_ id: UUID, model: IOSPresetsModel, discardingPages: Bool = false) {
         let done: @MainActor () -> Void = onApplied
-        let outcome: IOSPresetApply = model.apply(id, then: done)
-        if outcome == .waitsForDiscard {
+        switch model.apply(id, discardingPages: discardingPages, then: done) {
+        case .waitsForDiscard:
             askedToDiscard = true
+        case .waitsForPages(let name):
+            leavingPages = PagesLeave(reason: IOSShell.keepPagesReason(preset: name)) { (discarding: Bool) in
+                apply(id, model: model, discardingPages: discarding)
+            }
+        case .applied, .refused:
+            break
         }
     }
 }

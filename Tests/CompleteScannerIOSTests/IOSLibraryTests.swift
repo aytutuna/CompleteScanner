@@ -160,6 +160,64 @@ final class IOSLibraryTests: XCTestCase {
         XCTAssertEqual(state.settings.resolution, 600)
     }
 
+    @MainActor
+    func test_presets_thatDoNotCollectPages_waitForTheQueuedPages() async throws {
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        let model: IOSPresetsModel = IOSPresetsModel(state: state, importer: IOSImportSession(state: state))
+        let document: ScanSettings = state.settings
+        state.settings = TaskCatalog.apply(.photos, to: document)
+        XCTAssertTrue(model.save(named: "Holiday"))
+        var single: ScanSettings = TaskCatalog.apply(.document, to: document)
+        single.documentMultiPage = false
+        state.settings = single
+        XCTAssertTrue(model.save(named: "One by one"))
+        state.settings = TaskCatalog.apply(.book, to: document)
+        XCTAssertTrue(model.save(named: "Book"))
+        let rows: [IOSPresetRow] = model.rows
+        XCTAssertEqual(rows.map(\.name), ["Holiday", "One by one", "Book"])
+        let holiday: UUID = rows[0].id
+        state.settings = document
+
+        let pages: [ScannedPage] = [0, 1].map { (_: Int) -> ScannedPage in
+            ScannedPage(image: libraryPicture(width: 120, height: 160), dpi: 60, colorMode: .color)
+        }
+        XCTAssertTrue(state.ingest(pages, source: .photo))
+        try await ImportTestSupport.waitUntil(timeout: 60) { !state.isBusy && state.scannedPages.count == 2 }
+        let files: [URL] = state.scannedPages.compactMap(\.fileURL)
+        XCTAssertEqual(files.count, 2)
+
+        let applied: LibraryFlag = LibraryFlag()
+        let photos: IOSPresetApply = model.apply(holiday) {
+            applied.value = true
+        }
+        XCTAssertEqual(photos, IOSPresetApply.waitsForPages("Holiday"))
+        // Document with Collect pages before saving off has no Save for a queue either.
+        let oneByOne: IOSPresetApply = model.apply(rows[1].id) {
+            applied.value = true
+        }
+        XCTAssertEqual(oneByOne, IOSPresetApply.waitsForPages("One by one"))
+        XCTAssertFalse(applied.value)
+        XCTAssertEqual(IOSShell.shownKind(state.settings), IOSScanKind.document)
+        XCTAssertTrue(state.settings.documentMultiPage)
+        XCTAssertEqual(state.scannedPages.count, 2)
+
+        let book: IOSPresetApply = model.apply(rows[2].id) {}
+        XCTAssertEqual(book, IOSPresetApply.applied)
+        XCTAssertEqual(state.activeTask, ScanTask.book)
+        XCTAssertEqual(state.scannedPages.count, 2)
+
+        let discarded: IOSPresetApply = model.apply(holiday, discardingPages: true) {
+            applied.value = true
+        }
+        XCTAssertEqual(discarded, IOSPresetApply.applied)
+        XCTAssertTrue(applied.value)
+        XCTAssertEqual(state.activeTask, ScanTask.photos)
+        XCTAssertTrue(state.scannedPages.isEmpty)
+        for file in files {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), file.lastPathComponent)
+        }
+    }
+
     // MARK: Scans of this session
 
     func test_history_rows_sayModeResolutionAndTime() throws {

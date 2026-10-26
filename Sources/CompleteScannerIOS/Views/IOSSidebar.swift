@@ -17,7 +17,8 @@ enum IOSDetail: Hashable {
 /// (`ScannerPickerSections`, with Add by address and Troubleshoot), and the library: Presets, Scans, Saved files and Settings
 /// (Command-comma). A kind picked goes to the root view (`onTask`), which asks about the pages and an ID card
 /// held; a preset picked while a side of an ID card is held asks to discard the card first
-/// (`IdCardDiscardQuestion`).
+/// (`IdCardDiscardQuestion`), and one that would leave the queued pages without a Save asks about them
+/// (`KeepPagesQuestion`).
 struct IOSSidebar: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -33,6 +34,8 @@ struct IOSSidebar: View {
     @State private var showsAdd: Bool = false
     @State private var showsTroubleshooter: Bool = false
     @State private var askedToDiscard: Bool = false
+    /// A preset that would leave the queued pages without a Save, while the question about them is up.
+    @State private var leavingPages: PagesLeave?
     @State private var picksPDF: Bool = false
 
     var body: some View {
@@ -74,6 +77,7 @@ struct IOSSidebar: View {
         .accessibilityIdentifier("scanners.sidebar")
         .modifier(ScannerPickerSheets(picker: picker, showsAdd: $showsAdd, showsTroubleshooter: $showsTroubleshooter))
         .modifier(IdCardDiscardQuestion(state: state, asked: $askedToDiscard))
+        .modifier(KeepPagesQuestion(state: state, leave: $leavingPages, blocked: importer.isImporting))
         .fileImporter(isPresented: $picksPDF, allowedContentTypes: [UTType.pdf]) { (result: Result<URL, Error>) in
             switch result {
             case .success(let url):
@@ -159,10 +163,17 @@ struct IOSSidebar: View {
         onTask(task, target)
     }
 
-    private func apply(_ id: UUID) {
+    private func apply(_ id: UUID, discardingPages: Bool = false) {
         let model: IOSPresetsModel = IOSPresetsModel(state: state, importer: importer)
-        if model.apply(id, then: onPresetApplied) == IOSPresetApply.waitsForDiscard {
+        switch model.apply(id, discardingPages: discardingPages, then: onPresetApplied) {
+        case .waitsForDiscard:
             askedToDiscard = true
+        case .waitsForPages(let name):
+            leavingPages = PagesLeave(reason: IOSShell.keepPagesReason(preset: name)) { (discarding: Bool) in
+                apply(id, discardingPages: discarding)
+            }
+        case .applied, .refused:
+            break
         }
     }
 

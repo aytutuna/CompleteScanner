@@ -12,7 +12,8 @@ import UniformTypeIdentifiers
 /// task through the root view (`onTask`, which asks about queued pages and an ID card held) or sets the
 /// preset's settings up, and opens the scan screen (`onOpenScanner`); not while an import runs, whose pages
 /// belong to the task set up. With a side of an ID card held, a preset asks to discard the card first
-/// (`IdCardDiscardQuestion`). After the kinds, "Add pages to a PDF"
+/// (`IdCardDiscardQuestion`), and one that would leave the queued pages without a Save asks about them
+/// (`KeepPagesQuestion`). After the kinds, "Add pages to a PDF"
 /// (`IOSAppendTile`) picks a PDF in Files first, then sets up Document to PDF with that file as the append
 /// target, so Save adds the pages to it.
 struct TaskStartScreen: View {
@@ -24,6 +25,8 @@ struct TaskStartScreen: View {
     /// Starts a task, with the PDF its pages are added to when one was picked.
     let onTask: @MainActor (ScanTask, URL?) -> Void
     @State private var askedToDiscard: Bool = false
+    /// A preset that would leave the queued pages without a Save, while the question about them is up.
+    @State private var leavingPages: PagesLeave?
     /// Files is open to pick the PDF for "Add pages to a PDF".
     @State private var picksPDF: Bool = false
 
@@ -58,6 +61,7 @@ struct TaskStartScreen: View {
         .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("What are you scanning?")
         .modifier(IdCardDiscardQuestion(state: state, asked: $askedToDiscard))
+        .modifier(KeepPagesQuestion(state: state, leave: $leavingPages, blocked: importer.isImporting))
         .fileImporter(isPresented: $picksPDF, allowedContentTypes: [UTType.pdf]) { (result: Result<URL, Error>) in
             switch result {
             case .success(let url):
@@ -134,14 +138,17 @@ struct TaskStartScreen: View {
         .accessibilityIdentifier("start.preset.\(row.name)")
     }
 
-    private func applyPreset(_ id: UUID) {
+    private func applyPreset(_ id: UUID, discardingPages: Bool = false) {
         let model: IOSPresetsModel = IOSPresetsModel(state: state, importer: importer)
-        let open: @MainActor () -> Void = onOpenScanner
-        let applied: IOSPresetApply = model.apply(id) {
-            open()
-        }
-        if applied == IOSPresetApply.waitsForDiscard {
+        switch model.apply(id, discardingPages: discardingPages, then: onOpenScanner) {
+        case .waitsForDiscard:
             askedToDiscard = true
+        case .waitsForPages(let name):
+            leavingPages = PagesLeave(reason: IOSShell.keepPagesReason(preset: name)) { (discarding: Bool) in
+                applyPreset(id, discardingPages: discarding)
+            }
+        case .applied, .refused:
+            break
         }
     }
 }
