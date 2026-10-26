@@ -27,9 +27,9 @@ import UIKit
 /// buttons between shots (No back, Now the backs, New document, `CameraTaskButtons`) over the shutter;
 /// Quick scan's page takes the camera's place once taken. With a keyboard (I15), Space takes a photo and
 /// Escape is Done. On the iPhone the camera is what the app opens on: the task chip under the top bar opens
-/// the task sheet here, the last page with the count goes back to the page strip as Done does, and Photos
-/// and Files sit beside the shutter; the camera rests while the sheet, Photos or Files covers it, so Auto
-/// takes nothing meanwhile.
+/// the task sheet here, the last page with the count opens the page strip in a sheet over the camera, and
+/// Photos and Files sit beside the shutter; the camera rests while a sheet, Photos or Files covers it, so
+/// Auto takes nothing meanwhile. Done is the only way back to the scan screen.
 struct CameraScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -37,6 +37,7 @@ struct CameraScreen: View {
     @StateObject private var model: IOSCameraModel
     @State private var waitAnnouncer: IOSWaitAnnouncer = IOSWaitAnnouncer()
     @State private var showsTasks: Bool = false
+    @State private var showsPages: Bool = false
     let onClose: @MainActor () -> Void
 
     init(onClose: @escaping @MainActor () -> Void) {
@@ -91,6 +92,20 @@ struct CameraScreen: View {
             TaskSheet(onPicked: closeTasks, onClose: closeTasks)
                 .environmentObject(state)
                 .environmentObject(importer)
+        }
+        .onChange(of: showsPages) { (_: Bool, shown: Bool) in
+            rest(shown)
+        }
+        // No Split spread again here: the root presents its editor, which it cannot over the camera.
+        .sheet(isPresented: $showsPages) {
+            PageStripSheet(onClose: closePages)
+                .environmentObject(state)
+                .environmentObject(importer)
+        }
+        .onChange(of: state.scannedPages.isEmpty) { (_: Bool, empty: Bool) in
+            if empty {
+                showsPages = false
+            }
         }
         .onChange(of: waitCue) { (_: IOSWaitCue, cue: IOSWaitCue) in
             // Spoken once per wait, when the line is first shown, so a VoiceOver user knows why nothing is
@@ -305,7 +320,7 @@ struct CameraScreen: View {
         let ring: CGFloat = ringProgress
         return HStack(alignment: .center) {
             Button {
-                onClose()
+                showsPages = true
             } label: {
                 HStack(spacing: 8) {
                     if let image = last {
@@ -326,6 +341,7 @@ struct CameraScreen: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(count == 0)
             .accessibilityHint(Text(IOSCameraText.pagesHint))
             .accessibilityIdentifier("camera.pages")
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -368,6 +384,10 @@ struct CameraScreen: View {
 
     private func closeTasks() {
         showsTasks = false
+    }
+
+    private func closePages() {
+        showsPages = false
     }
 
     /// The session stops while something covers the camera (as for the corner editor) and runs again once
