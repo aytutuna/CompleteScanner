@@ -47,8 +47,8 @@ enum IOSPDFOptions {
 /// The camera's buttons between shots for the task set up: No back (flip & capture, while a back is
 /// due), Now the backs and Put in order or Combine anyway (fronts first), and New document (Separate
 /// documents, the main button there; Command-N). Nothing for the other tasks. `onDark` draws them over the
-/// camera's live preview, which is mostly the white page or a dark desk: the secondary ones white on shaded
-/// glass, as the status line is, the prominent ones on the accent color's glass (`CameraProminentButton`).
+/// camera's live preview, which is mostly the white page or a dark desk: the secondary ones white on a dark
+/// capsule, as the status line is, the prominent ones in the accent color.
 struct CameraTaskButtons: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -70,7 +70,7 @@ struct CameraTaskButtons: View {
                     Button(CameraTaskCatalog.startBacksLabel) {
                         state.startCameraBacks()
                     }
-                    .modifier(PrimaryTaskButton(onDark: onDark))
+                    .buttonStyle(.borderedProminent)
                     .disabled(busy)
                     .accessibilityIdentifier("task.startBacks")
                 }
@@ -89,7 +89,7 @@ struct CameraTaskButtons: View {
                 } label: {
                     Label(CameraTaskCatalog.newDocumentLabel, systemImage: "doc.badge.plus")
                 }
-                .modifier(PrimaryTaskButton(onDark: onDark))
+                .buttonStyle(.borderedProminent)
                 .disabled(busy || !state.canStartNewDocument)
                 .keyboardShortcut(IOSShortcuts.newDocument.keyboardShortcut)
                 .accessibilityHint(Text(CameraTaskCatalog.newDocumentPrompt))
@@ -107,23 +107,7 @@ struct CameraTaskButtons: View {
     }
 }
 
-/// A task's main button: filled in the accent color on the list, its glass over the camera's preview.
-private struct PrimaryTaskButton: ViewModifier {
-    let onDark: Bool
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if onDark {
-            content
-                .modifier(CameraProminentButton())
-        } else {
-            content
-                .buttonStyle(.borderedProminent)
-        }
-    }
-}
-
-/// A secondary task button: bordered in the accent color on the list, white on shaded glass over the
+/// A secondary task button: bordered in the accent color on the list, white on a dark capsule over the
 /// camera's preview.
 private struct SecondaryTaskButton: ViewModifier {
     let onDark: Bool
@@ -132,7 +116,8 @@ private struct SecondaryTaskButton: ViewModifier {
     func body(content: Content) -> some View {
         if onDark {
             content
-                .buttonStyle(CameraGlassButtonStyle())
+                .buttonStyle(.borderedProminent)
+                .tint(Color.black.opacity(0.55))
         } else {
             content
                 .buttonStyle(.bordered)
