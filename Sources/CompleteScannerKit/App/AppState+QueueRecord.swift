@@ -36,6 +36,20 @@ struct QueueRecord: Codable, Sendable {
 
     static let fileName = "queue.json"
 
+    /// "Bringing back 3 pages…"
+    static func restoringMessage(_ count: Int) -> String {
+        count == 1 ? "Bringing back 1 page\u{2026}" : "Bringing back \(count) pages\u{2026}"
+    }
+
+    /// "3 pages are back from last time."; when none could be read, says so.
+    static func restoredMessage(_ count: Int) -> String {
+        switch count {
+        case 0: return "The pages kept from last time could not be read."
+        case 1: return "1 page is back from last time."
+        default: return "\(count) pages are back from last time."
+        }
+    }
+
     /// The record of `pages`; nil when one of them has no file in `spool` (kept in memory because its spill
     /// failed), which the record could not bring back. A version not shown that is in memory only is left out.
     init?(_ pages: [ScannedPage], spool: URL) {
@@ -146,30 +160,33 @@ extension AppState {
         try? data.write(to: url, options: .atomic)
     }
 
-    /// Records a queue kept half a second after it last changed, so a batch of changes writes once.
+    /// Records a queue kept a moment after it last changed (`queueRecordDelay`), so a batch of changes
+    /// writes once.
     func scheduleQueueRecord() {
         guard keepsQueue, !restoringQueue else { return }
         queueRecordTask?.cancel()
+        let delay = queueRecordDelay
         queueRecordTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 500_000_000)
+            try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled, let self else { return }
             self.writeQueueRecord()
         }
     }
 
-    /// Brings back the queue kept last time: its previews are read off the main actor, then its pages go
-    /// before any added meanwhile, as they would have been. A page whose file cannot be read is left out.
+    /// Brings back the queue kept last time as an operation of its own (`isBusy`), so no kind is picked,
+    /// nothing saved and no page taken until the pages are back: their previews are read off the main
+    /// actor, and a page whose file cannot be read is left out. Cancel does not stop it.
     func restoreQueue(_ record: QueueRecord) {
         restoringQueue = true
         let spool = spoolDirectory
-        Task { @MainActor [weak self] in
+        statusMessage = QueueRecord.restoringMessage(record.pages.count)
+        runExclusive { _ in
             let previews: [CGImage?] = await Task.detached(priority: .userInitiated) {
                 record.pages.map { (page: QueueRecord.Page) -> CGImage? in
                     AppState.previewOfSpoolFile(spool.appendingPathComponent(page.file),
                                                 quarterTurns: page.rotationQuarterTurns)
                 }
             }.value
-            guard let self else { return }
             var pages: [ScannedPage] = []
             for (page, preview) in zip(record.pages, previews) {
                 if let preview {
@@ -178,6 +195,7 @@ extension AppState {
             }
             self.restoringQueue = false
             self.scannedPages = pages + self.scannedPages
+            self.statusMessage = QueueRecord.restoredMessage(pages.count)
         }
     }
 }

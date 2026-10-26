@@ -498,6 +498,8 @@ public final class AppState: ObservableObject {
     var queueRecordTask: Task<Void, Never>?
     /// The pages of the queue kept last time are being read back; the record waits for them.
     var restoringQueue = false
+    /// How long the queue's record waits after a change (nanoseconds; shorter in tests).
+    var queueRecordDelay: UInt64 = 500_000_000
     /// The current exclusive operation's cancel flag (nil when idle).
     private var currentCancelFlag: CancelFlag?
     /// The feeder check under way (`checkFeederDuplex`): scans and previews wait for it, since the

@@ -108,7 +108,15 @@ final class AppStateQueueRecordTests: XCTestCase {
         let pages: [ScannedPage] = before.scannedPages
 
         let after = makeState()
-        try await waitUntil(timeout: 30) { after.scannedPages.count == 2 }
+        after.queueRecordDelay = 20_000_000
+        // Until the pages are back nothing can switch the kind past them, save or take a page.
+        XCTAssertTrue(after.isBusy)
+        XCTAssertEqual(after.statusMessage, "Bringing back 2 pages\u{2026}")
+        XCTAssertFalse(after.startTask(.photos))
+        XCTAssertFalse(after.canIngest)
+        try await waitUntil(timeout: 30) { !after.isBusy }
+        XCTAssertEqual(after.activeTask, .document)
+        XCTAssertEqual(after.statusMessage, "2 pages are back from last time.")
         XCTAssertEqual(after.scannedPages.map(\.id), pages.map(\.id))
         XCTAssertEqual(after.scannedPages.map(\.fileURL), pages.map(\.fileURL))
         XCTAssertEqual(after.scannedPages.map(\.inclusion), pages.map(\.inclusion))
