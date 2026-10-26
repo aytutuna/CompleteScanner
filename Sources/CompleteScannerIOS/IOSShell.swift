@@ -460,6 +460,8 @@ public enum IOSShell {
 
     /// The Save row's button that shares the queue as one `.csdoc` (`sharePackage`).
     public static let sharePackageLabel = "Share as CompleteScanner document"
+    /// The package banner's Open as new in a kind that keeps no pages: it switches to Document first.
+    public static let openPackageInDocumentLabel = "Open in Document"
 
     /// Whether a file opened in this app (AirDrop, Files, Mail) or picked in Files is a CompleteScanner
     /// document: it goes to the scan screen's banner (`openPackage`), never into a task's import.

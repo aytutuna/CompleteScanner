@@ -586,13 +586,14 @@ struct ScanScreen: View {
     }
 
     /// Starts the kind's task, dropping the pages first when asked to, once the ID card's question (when a
-    /// side is held) is answered.
-    private func switchKind(_ kind: IOSScanKind, discardingPages: Bool = false) {
+    /// side is held) is answered; then `next`, once it has started.
+    private func switchKind(_ kind: IOSScanKind, discardingPages: Bool = false, then next: (@MainActor () -> Void)? = nil) {
         let appState: AppState = state
         appState.leaveIdCard {
             let started: Bool = discardingPages ? appState.discardPages(andStart: kind.task) : appState.startTask(kind.task)
             if started {
                 appState.clearAppendTarget()
+                next?()
             }
         }
         if appState.pendingIdCardLeave != nil {
@@ -600,10 +601,21 @@ struct ScanScreen: View {
         }
     }
 
-    /// Open as new replaces the queued pages, so with pages queued it asks about them first. Not while a
+    /// Open as new replaces the queued pages, so with pages queued it asks about them first. A kind that keeps
+    /// no pages switches to Document first, as a document opened with no task set up opens there. Not while a
     /// share or a send reads them.
     private func openPackageAsNew() {
         guard !saveBlocked else { return }
+        guard IOSShell.collectsPages(state.settings) else {
+            switchKind(.document) {
+                openPackageReplacingPages()
+            }
+            return
+        }
+        openPackageReplacingPages()
+    }
+
+    private func openPackageReplacingPages() {
         let appState: AppState = state
         guard !state.scannedPages.isEmpty, let offered = state.pendingPackage else {
             appState.openPendingPackageAsNew()
@@ -1698,7 +1710,7 @@ private struct SavedFilesRow: View {
 
 /// A CompleteScanner document opened in the app or picked in Files, offered until it is taken or closed:
 /// "Opened Receipt.csdoc: 3 pages", with Add to pages (after the queued pages) and Open as new (in place
-/// of them, `onOpenAsNew`).
+/// of them, `onOpenAsNew`). A kind that keeps no pages offers only Open in Document.
 private struct PackageBanner: View {
     @EnvironmentObject private var state: AppState
     let offered: PendingPackage
@@ -1725,14 +1737,21 @@ private struct PackageBanner: View {
                 .accessibilityIdentifier("package.close")
             }
             HStack(spacing: 12) {
-                Button(PackageText.addToPages) {
-                    _ = state.addPendingPackageToPages()
+                if IOSShell.collectsPages(state.settings) {
+                    Button(PackageText.addToPages) {
+                        _ = state.addPendingPackageToPages()
+                    }
+                    .accessibilityIdentifier("package.add")
+                    Button(PackageText.openAsNew) {
+                        onOpenAsNew()
+                    }
+                    .accessibilityIdentifier("package.new")
+                } else {
+                    Button(IOSShell.openPackageInDocumentLabel) {
+                        onOpenAsNew()
+                    }
+                    .accessibilityIdentifier("package.new")
                 }
-                .accessibilityIdentifier("package.add")
-                Button(PackageText.openAsNew) {
-                    onOpenAsNew()
-                }
-                .accessibilityIdentifier("package.new")
             }
             .buttonStyle(.bordered)
             .disabled(!state.canIngest)

@@ -411,8 +411,8 @@ public struct IOSRootView: View {
     }
 
     /// A `.csdoc` opened in this app, offered on the scan screen's banner. Document to PDF is set up when no
-    /// task is; a task set up is kept (an ID card half taken, say), and the banner says when it does not
-    /// collect pages.
+    /// task is; a task set up is kept (an ID card half taken, say), and in one that does not collect pages
+    /// the banner offers to open it in Document.
     private func openPackage(_ url: URL) {
         if state.activeTask == nil {
             _ = state.startTask(.document)
