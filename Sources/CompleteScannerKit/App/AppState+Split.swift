@@ -278,8 +278,7 @@ extension AppState {
         lastSavedURLs = saved
         // The last PDF's size, as after any save (the Windows inspector shows the same).
         if format == .pdf, let last = saved.last { notePDFSize(of: last, protected: protectedPDFs) }
-        deleteSpoolFiles(of: queued)
-        scannedPages = []
+        dropSaved(queued)
         resetFlow()
         if let textProblem { errorMessage = TextExport.sidecarFailed(textProblem) }
         // The PDFs' size together, and "password-protected" when they are, in the brackets after the page count.

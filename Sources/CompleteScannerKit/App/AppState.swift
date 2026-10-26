@@ -1479,8 +1479,7 @@ public final class AppState: ObservableObject {
                     }
                 }.value
                 self.lastSavedURLs = [url]
-                self.deleteSpoolFiles(of: queued)
-                self.scannedPages = []
+                self.dropSaved(queued)
                 self.resetFlow()
                 self.statusMessage = TextExport.savedMessage(format: format, pageCount: pages.count,
                                                              fileName: url.lastPathComponent, hasText: hasText) + left
@@ -1505,8 +1504,7 @@ public final class AppState: ObservableObject {
             }.value
             self.lastSavedURLs = [url]
             self.notePDFSize(of: url, protected: options.isProtected)
-            self.deleteSpoolFiles(of: queued)
-            self.scannedPages = []
+            self.dropSaved(queued)
             self.resetFlow()
             if let problem = textResult?.problem { self.errorMessage = TextExport.sidecarFailed(problem) }
             let textNote = textResult?.url.map { TextExport.sidecarSuffix($0.lastPathComponent) } ?? ""
@@ -2413,6 +2411,15 @@ public final class AppState: ObservableObject {
     /// Puts `text` on the pasteboard through the app shell's file actions (Quick scan's Copy text).
     func copyTextToPasteboard(_ text: String) throws {
         try fileActions.copyText(text)
+    }
+
+    /// A save's end: the pages it saved (`queued`, the queue as the save found it) leave the queue with their
+    /// spooled files. Nothing can join the queue while a save runs, so this empties it; a page that got in
+    /// all the same stays.
+    func dropSaved(_ queued: [ScannedPage]) {
+        deleteSpoolFiles(of: queued)
+        let saved: Set<UUID> = Set(queued.map(\.id))
+        scannedPages.removeAll { saved.contains($0.id) }
     }
 
     func deleteSpoolFiles(of pages: [ScannedPage]) {

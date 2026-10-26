@@ -90,8 +90,7 @@ extension AppState {
                 self.scopedSavedURL = url
             }
             self.appendTarget = nil
-            self.deleteSpoolFiles(of: queued)
-            self.scannedPages = []
+            self.dropSaved(queued)
             self.resetFlow()
             let size: String = ByteCountFormatter.string(fromByteCount: Int64(result.bytes), countStyle: .file)
             var message: String = PDFAppender.addedMessage(count, fileName: name, pageCount: result.pageCount, size: size)

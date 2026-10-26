@@ -139,6 +139,17 @@ final class AppStateQueueRecordTests: XCTestCase {
     }
 
     @MainActor
+    func test_aSavesEnd_dropsOnlyThePagesItSaved() async throws {
+        let state = try await makeQueue()
+        let saved: ScannedPage = state.scannedPages[0]
+        let other: ScannedPage = state.scannedPages[1]
+        state.dropSaved([saved])
+        XCTAssertEqual(state.scannedPages.map(\.id), [other.id])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: saved.fileURL!.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: other.fileURL!.path))
+    }
+
+    @MainActor
     func test_aQueueTheSettingsCannotSave_isEmptiedAtLaunch() async throws {
         _ = try await makeQueue { (settings: ScanSettings) -> ScanSettings in
             TaskCatalog.apply(.photos, to: settings)

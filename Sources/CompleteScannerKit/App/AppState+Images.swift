@@ -72,8 +72,7 @@ extension AppState {
                 throw error
             }
             self.lastSavedURLs = saved
-            self.deleteSpoolFiles(of: queued)
-            self.scannedPages = []
+            self.dropSaved(queued)
             self.resetFlow()
             self.statusMessage = Self.imagesSavedMessage(saved, format: format) + left
             self.runAfterSave(s.output.afterSave, saved: saved)
