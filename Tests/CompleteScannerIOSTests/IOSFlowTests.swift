@@ -362,6 +362,35 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertEqual(IOSShell.saveFirstLabel(document, pageCount: 3, target: target), "Add to Contract.pdf first")
     }
 
+    func test_colourGroup_picksTheFilterForNewPages_grayAndBWByTheColourMode() {
+        let document: ScanSettings = TaskCatalog.apply(.document, to: ScanSettings())
+        XCTAssertTrue(IOSShell.offersFilters(document))
+        XCTAssertTrue(IOSShell.offersFilters(TaskCatalog.apply(.book, to: ScanSettings())))
+        XCTAssertFalse(IOSShell.offersFilters(TaskCatalog.apply(.photos, to: ScanSettings())))
+        XCTAssertFalse(IOSShell.offersFilters(TaskCatalog.apply(.receipt, to: ScanSettings())))
+        XCTAssertEqual(IOSShell.drawerFilter(document), .enhanced)
+
+        let original: ScanSettings = IOSShell.settingDrawerFilter(.original, in: document)
+        XCTAssertEqual(original.colorMode, .color)
+        XCTAssertEqual(original.taskOptions.cameraFilter, .original)
+        XCTAssertEqual(IOSShell.drawerFilter(original), .original)
+        XCTAssertNil(DocumentEnhancer.mode(for: original))
+
+        let gray: ScanSettings = IOSShell.settingDrawerFilter(.grayscale, in: original)
+        XCTAssertEqual(gray.colorMode, .grayscale)
+        XCTAssertEqual(IOSShell.drawerFilter(gray), .grayscale)
+        XCTAssertEqual(DocumentEnhancer.mode(for: gray), .gray)
+        let bw: ScanSettings = IOSShell.settingDrawerFilter(.blackAndWhite, in: gray)
+        XCTAssertEqual(bw.colorMode, .blackWhite)
+        XCTAssertEqual(IOSShell.drawerFilter(bw), .blackAndWhite)
+        // Back to colour: Enhanced is picked and stays.
+        let enhanced: ScanSettings = IOSShell.settingDrawerFilter(.enhanced, in: bw)
+        XCTAssertEqual(enhanced.colorMode, .color)
+        XCTAssertEqual(enhanced.taskOptions.cameraFilter, .enhanced)
+        XCTAssertEqual(DocumentEnhancer.mode(for: enhanced), .auto)
+        XCTAssertEqual(enhanced.task, .document)
+    }
+
     func test_pageViewer_namesThePage_andItsFilters() {
         XCTAssertEqual(PageViewerText.title(number: 3, count: 7), "3 of 7")
         XCTAssertEqual(PageViewerText.pageName(2), "Page 2")

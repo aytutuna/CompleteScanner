@@ -191,7 +191,8 @@ enum CameraDrawerGroup: String, Identifiable, CaseIterable {
 /// capsule turns into: a row of icons, one per group that applies (`CameraDrawerGroup.shown`), and the
 /// chosen group's controls under it. Export: the format, then chips for Separate documents, One PDF per
 /// page, PDF/A, Password and Also .txt where they apply, and More… for the whole Export sheet (separator
-/// sheets, After saving). Colour: the colour mode (and Restore faded colours for Photos). Quality: the
+/// sheets, After saving). Colour: the filter new pages get, or the colour mode for the kinds that collect
+/// no pages (and Restore faded colours for Photos). Quality: the
 /// PDF's size. Flash: the camera's light (its torch), where it has one. Camera: the automatic shutter, Both
 /// sides and how the sides or a book's pages are taken, and Use Apple's scanner where the task offers it.
 struct CameraDrawer: View {
@@ -408,7 +409,8 @@ private struct ExportDrawer: View {
     }
 }
 
-/// The drawer's Colour group: the colour mode, and for Photos whether faded colours are restored.
+/// The drawer's Colour group: the filter new pages get (Original, Enhanced, Grayscale, B&W) for the kinds that
+/// collect pages, else the colour mode, and for Photos whether faded colours are restored.
 private struct ColourDrawer: View {
     @EnvironmentObject private var state: AppState
 
@@ -422,14 +424,34 @@ private struct ColourDrawer: View {
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("drawer.restore")
             }
-            Picker("Colour", selection: $state.settings.colorMode) {
-                ForEach(ColorMode.allCases) { (mode: ColorMode) in
-                    Text(mode.label).tag(mode)
+            if IOSShell.offersFilters(state.settings) {
+                Picker("Colour", selection: filter) {
+                    ForEach(CaptureFilter.displayOrder, id: \.self) { (choice: CaptureFilter) in
+                        Text(choice.label).tag(choice)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("drawer.colourMode")
+            } else {
+                Picker("Colour", selection: $state.settings.colorMode) {
+                    ForEach(ColorMode.allCases) { (mode: ColorMode) in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("drawer.colourMode")
             }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("drawer.colourMode")
         }
+    }
+
+    /// The filter new pages get (`IOSShell.drawerFilter`, `settingDrawerFilter`).
+    private var filter: Binding<CaptureFilter> {
+        let appState: AppState = state
+        return Binding<CaptureFilter>(
+            get: { IOSShell.drawerFilter(appState.settings) },
+            set: { (choice: CaptureFilter) in
+                appState.settings = IOSShell.settingDrawerFilter(choice, in: appState.settings)
+            })
     }
 
     private var restore: Binding<Bool> {

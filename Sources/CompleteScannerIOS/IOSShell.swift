@@ -737,6 +737,39 @@ public enum IOSShell {
         return s
     }
 
+    /// Whether the drawer's Colour group offers the camera's filters (Original, Enhanced, Grayscale, B&W): for
+    /// the kinds that collect pages, whose colour pages take the filter (`DocumentEnhancer.mode(for:)`); the
+    /// others keep the colour modes.
+    public static func offersFilters(_ settings: ScanSettings) -> Bool {
+        TaskCatalog.flow(of: settings) == .documentQueue
+    }
+
+    /// The filter the Colour group shows: the colour mode for gray and black and white, which the scanner and
+    /// the saved files follow too, else the camera's filter.
+    public static func drawerFilter(_ settings: ScanSettings) -> CaptureFilter {
+        switch settings.colorMode {
+        case .grayscale: return .grayscale
+        case .blackWhite: return .blackAndWhite
+        case .color: return settings.taskOptions.cameraFilter
+        }
+    }
+
+    /// `filter` picked in the Colour group: Grayscale and B&W set the colour mode (the camera's filter kept for
+    /// when colour comes back), Original and Enhanced set colour and the camera's filter.
+    public static func settingDrawerFilter(_ filter: CaptureFilter, in settings: ScanSettings) -> ScanSettings {
+        var s: ScanSettings = settings
+        switch filter {
+        case .grayscale:
+            s.colorMode = .grayscale
+        case .blackAndWhite:
+            s.colorMode = .blackWhite
+        case .original, .enhanced:
+            s.colorMode = .color
+            s.taskOptions.cameraFilter = filter
+        }
+        return s
+    }
+
     /// An option that leaves the task unfit (Word saved as a PDF, PDF/A turned off) keeps its kind: the
     /// kind's own task when the settings fit it, else none, as a change by hand does.
     public static func keepingKind(_ settings: ScanSettings) -> ScanSettings {
