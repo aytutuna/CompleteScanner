@@ -15,6 +15,49 @@ public enum DocumentEnhanceMode: String, CaseIterable, Codable, Sendable {
     case photo
 }
 
+/// The look of a document page taken by a camera, chosen page by page: cleaned up (`DocumentEnhancer` in
+/// `.auto`), as the camera saw it (cut out, nothing else), or cleaned up in gray or in black and white. Stored
+/// by its raw value; the first is the default and the fallback. Twin of C# `CaptureFilter`.
+public enum CaptureFilter: String, CaseIterable, Codable, Sendable {
+    case enhanced
+    case original
+    case grayscale
+    case blackAndWhite
+
+    /// The order the filters are offered in.
+    public static let displayOrder: [CaptureFilter] = [.original, .enhanced, .grayscale, .blackAndWhite]
+
+    public var label: String {
+        switch self {
+        case .enhanced: return "Enhanced"
+        case .original: return "Original"
+        case .grayscale: return "Grayscale"
+        case .blackAndWhite: return "B&W"
+        }
+    }
+
+    /// The clean-up this filter runs; nil for `.original`. Twin of C# `CaptureFilters.Mode`.
+    public var mode: DocumentEnhanceMode? {
+        switch self {
+        case .enhanced: return .auto
+        case .original: return nil
+        case .grayscale: return .gray
+        case .blackAndWhite: return .blackAndWhite
+        }
+    }
+
+    /// The filter of a page cleaned up in `mode` as asked for (before `.auto` is resolved); nil for a photo,
+    /// which has no filter. Twin of C# `CaptureFilters.Of`.
+    public init?(mode: DocumentEnhanceMode) {
+        switch mode {
+        case .auto, .color: self = .enhanced
+        case .gray: self = .grayscale
+        case .blackAndWhite: self = .blackAndWhite
+        case .photo: return nil
+        }
+    }
+}
+
 /// A page cleaned up: its pixels and the mode applied (`.auto` resolved to color or gray). Twin of C#
 /// `DocumentEnhancement`.
 public struct DocumentEnhancement: Sendable {
@@ -104,9 +147,11 @@ public enum DocumentEnhancer {
     public static let minLightShare: Double = 0.005
 
     /// The mode for the pages of a task with `settings`: `.photo` for photo tasks; else by the color mode:
-    /// gray, black and white, or `.auto` for color (color where the page has color). Twin of C#
+    /// gray, black and white, or `.auto` for color (color where the page has color). A color task that
+    /// collects pages in the queue takes the camera's filter instead (`TaskOptions.cameraFilter`): nil for
+    /// Original, no clean-up; receipts, cards and copies are always cleaned up. Twin of C#
     /// `DocumentEnhancer.ModeFor(ScanSettings)`.
-    public static func mode(for settings: ScanSettings) -> DocumentEnhanceMode {
+    public static func mode(for settings: ScanSettings) -> DocumentEnhanceMode? {
         if settings.intent == .photo { return .photo }
         switch settings.colorMode {
         case .grayscale:
@@ -114,7 +159,8 @@ public enum DocumentEnhancer {
         case .blackWhite:
             return .blackAndWhite
         case .color:
-            return .auto
+            guard TaskCatalog.flow(of: settings) == .documentQueue else { return .auto }
+            return settings.taskOptions.cameraFilter.mode
         }
     }
 

@@ -582,6 +582,10 @@ public struct TaskOptions: Codable, Equatable, Sendable {
     /// The iPhone's camera takes a book as whole spreads, each cut at its spine
     /// (`PageProcessor.splitsCameraSpreads`). Off: page by page, one page a shot.
     public var cameraSpreads: Bool = false
+    /// The filter the camera's document pages get as they are taken (`DocumentEnhancer.mode(for:)`); each page
+    /// can be given another afterwards. Enhanced unless chosen, as before the filters; the iPhone starts at
+    /// Original.
+    public var cameraFilter: CaptureFilter = .enhanced
 
     public init() {}
 
@@ -599,6 +603,7 @@ public struct TaskOptions: Codable, Equatable, Sendable {
         case bookRotationQuarterTurns
         case cameraFrontsFirst
         case cameraSpreads
+        case cameraFilter
     }
 }
 
@@ -619,6 +624,7 @@ extension TaskOptions {
         bookRotationQuarterTurns = container.decodeLenient(forKey: .bookRotationQuarterTurns, default: bookRotationQuarterTurns)
         cameraFrontsFirst = container.decodeLenient(forKey: .cameraFrontsFirst, default: cameraFrontsFirst)
         cameraSpreads = container.decodeLenient(forKey: .cameraSpreads, default: cameraSpreads)
+        cameraFilter = container.decodeLenient(forKey: .cameraFilter, default: cameraFilter)
     }
 }
 

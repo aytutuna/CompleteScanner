@@ -455,6 +455,59 @@ final class DocumentEnhancerTests: XCTestCase {
         XCTAssertEqual(DocumentEnhancer.tileSize(width: 40, height: 30), DocumentEnhancer.minTileSize)
     }
 
+    func testTheCameraFilterDecidesTheModeOfAColorQueue() {
+        var settings = ScanSettings()
+        XCTAssertEqual(settings.taskOptions.cameraFilter, .enhanced)
+        settings.taskOptions.cameraFilter = .original
+        XCTAssertNil(DocumentEnhancer.mode(for: settings))
+        settings.taskOptions.cameraFilter = .grayscale
+        XCTAssertEqual(DocumentEnhancer.mode(for: settings), .gray)
+        settings.taskOptions.cameraFilter = .blackAndWhite
+        XCTAssertEqual(DocumentEnhancer.mode(for: settings), .blackAndWhite)
+        // The task's color mode comes first.
+        settings.taskOptions.cameraFilter = .original
+        settings.colorMode = .grayscale
+        XCTAssertEqual(DocumentEnhancer.mode(for: settings), .gray)
+        settings.colorMode = .color
+        // Receipts, the ID card and copies are cleaned up whatever the filter.
+        XCTAssertEqual(DocumentEnhancer.mode(for: TaskCatalog.apply(.receipt, to: settings)), .auto)
+        XCTAssertEqual(DocumentEnhancer.mode(for: TaskCatalog.apply(.idCard, to: settings)), .auto)
+        XCTAssertEqual(DocumentEnhancer.mode(for: TaskCatalog.apply(.copy, to: settings)), .auto)
+        XCTAssertNil(DocumentEnhancer.mode(for: TaskCatalog.apply(.book, to: settings)))
+        XCTAssertEqual(CaptureFilter.displayOrder, [.original, .enhanced, .grayscale, .blackAndWhite])
+        XCTAssertEqual(CaptureFilter.displayOrder.map(\.label), ["Original", "Enhanced", "Grayscale", "B&W"])
+        XCTAssertEqual(CaptureFilter.displayOrder.map(\.mode), [nil, .auto, .gray, .blackAndWhite])
+        XCTAssertEqual(CaptureFilter(mode: .auto), .enhanced)
+        XCTAssertEqual(CaptureFilter(mode: .color), .enhanced)
+        XCTAssertEqual(CaptureFilter(mode: .gray), .grayscale)
+        XCTAssertEqual(CaptureFilter(mode: .blackAndWhite), .blackAndWhite)
+        XCTAssertNil(CaptureFilter(mode: .photo))
+    }
+
+    func testTheOriginalFilterKeepsTheCutsPixels() throws {
+        let sheet: RgbaImage = EnhancerPages.shadowed()
+        let photo: TablePhoto = CameraSheets.squareOnATable(sheet)
+        var page = ScannedPage(image: try XCTUnwrap(photo.photo.makeCGImage()), dpi: CaptureScale.nominalDPI, colorMode: .color)
+            .withCapture(CaptureFacts(quad: photo.quad, sourceWidth: photo.photo.width, sourceHeight: photo.photo.height))
+        page.source = .photo
+        let cut: ScannedPage = PerspectiveStep().apply(page)
+        let kept: ScannedPage = EnhanceStep(mode: nil).apply(cut)
+        XCTAssertTrue(kept.image === cut.image)
+        XCTAssertEqual(kept.colorMode, .color)
+        XCTAssertEqual(kept.capture?.filter, .original)
+        XCTAssertNil(kept.capture?.enhancement)
+        // Once only: a page with its filter is not cleaned up afterwards.
+        XCTAssertTrue(EnhanceStep(mode: .auto).apply(kept).image === cut.image)
+        XCTAssertEqual(EnhanceStep(mode: .gray).apply(cut).capture?.filter, .grayscale)
+        XCTAssertEqual(EnhanceStep(mode: .blackAndWhite).apply(cut).capture?.filter, .blackAndWhite)
+        // A whole camera page with the Original filter goes into the queue as cut.
+        var settings = ScanSettings()
+        settings.taskOptions.cameraFilter = .original
+        let processed: ScannedPage = try XCTUnwrap(PageProcessor.forCapture(settings).process([page]).pages.first)
+        XCTAssertEqual(try XCTUnwrap(RgbaImage(cgImage: processed.image)).pixels, try XCTUnwrap(RgbaImage(cgImage: cut.image)).pixels)
+        XCTAssertEqual(processed.capture?.filter, .original)
+    }
+
     func testTheEnhanceStepCleansACutPageUpOnce() throws {
         let quad = Quad(topLeft: CGPoint(x: 100, y: 60), topRight: CGPoint(x: 340, y: 60),
                         bottomRight: CGPoint(x: 340, y: 380), bottomLeft: CGPoint(x: 100, y: 380))
@@ -489,6 +542,7 @@ final class DocumentEnhancerTests: XCTestCase {
         XCTAssertEqual(cleaned.capture?.enhancement, .color)
         var expectedFacts: CaptureFacts = try XCTUnwrap(cut.capture)
         expectedFacts.enhancement = .color
+        expectedFacts.filter = .enhanced
         XCTAssertEqual(cleaned.capture, expectedFacts)
         let cutPixels: RgbaImage = try XCTUnwrap(RgbaImage(cgImage: cut.image))
         let cleanedPixels: RgbaImage = try XCTUnwrap(RgbaImage(cgImage: cleaned.image))
@@ -508,6 +562,7 @@ final class DocumentEnhancerTests: XCTestCase {
         let printPage: ScannedPage = page.withCapture(CaptureFacts(quad: quad, sourceWidth: 440, sourceHeight: 440, kind: .photo))
         let printCut: ScannedPage = PerspectiveStep().apply(printPage)
         XCTAssertEqual(EnhanceStep(mode: .gray).apply(printCut).capture?.enhancement, .photo)
+        XCTAssertNil(EnhanceStep(mode: .gray).apply(printCut).capture?.filter)
         // Not cut out yet, cut out whole (Apple's scanner) or a scanner's page: left alone.
         XCTAssertTrue(step.apply(page).image === page.image)
         XCTAssertNil(step.apply(page).capture?.enhancement)

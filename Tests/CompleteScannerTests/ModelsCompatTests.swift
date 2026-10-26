@@ -80,6 +80,7 @@ private func nonDefaultSettings() -> ScanSettings {
     settings.taskOptions.bookRotationQuarterTurns = 1
     settings.taskOptions.cameraFrontsFirst = true
     settings.taskOptions.cameraSpreads = true
+    settings.taskOptions.cameraFilter = .original
     return settings
 }
 
@@ -151,6 +152,7 @@ private let currentFormatPresetsJSON = presetsJSONBeforePDFSize
     .replacingOccurrences(of: "\"source\" : \"documentFeeder\"",
                           with: "\"source\" : \"documentFeeder\",\n      \"taskOptions\" : {\n"
                               + "        \"bookRightToLeft\" : true,\n        \"bookRotationQuarterTurns\" : 1,\n"
+                              + "        \"cameraFilter\" : \"original\",\n"
                               + "        \"cameraFrontsFirst\" : true,\n        \"cameraSpreads\" : true,\n"
                               + "        \"copyAlsoSavePdf\" : true,\n        \"copyCount\" : 3,\n        \"copyFitToPage\" : true,\n"
                               + "        \"copyPrinterName\" : \"Office printer\",\n        \"idCardPaper\" : \"letter\",\n"
@@ -1133,7 +1135,7 @@ final class ModelsCompatTests: XCTestCase {
                 XCTAssertEqual(Set(written.keys), ["idCardPaper", "idCardSaveSidesAsImages", "copyCount", "copyFitToPage",
                                                    "copyAlsoSavePdf", "receiptNameByDate", "receiptCombine",
                                                    "bookRightToLeft", "bookRotationQuarterTurns", "cameraFrontsFirst",
-                                                   "cameraSpreads"])
+                                                   "cameraSpreads", "cameraFilter"])
                 XCTAssertEqual(written["idCardPaper"] as? String, paper.rawValue)
                 XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: data).taskOptions, settings.taskOptions)
             }
@@ -1311,6 +1313,28 @@ final class ModelsCompatTests: XCTestCase {
         copy.taskOptions.cameraSpreads = false
         XCTAssertTrue(kept.taskOptions.cameraSpreads)
         XCTAssertNotEqual(kept.taskOptions, copy.taskOptions)
+    }
+
+    /// Twin of `CameraFilter_IsEnhancedByDefault_ReadLeniently_AndRoundTrips`.
+    func test_cameraFilter_isEnhancedByDefault_readLeniently_andRoundTrips() throws {
+        XCTAssertEqual(ScanSettings().taskOptions.cameraFilter, .enhanced)
+        XCTAssertEqual(try decode(ScanSettings.self, #"{"taskOptions": {"copyCount": 2}}"#).taskOptions.cameraFilter, .enhanced)
+        for value in [#""sepia""#, #""Original""#, "1", "null"] {
+            let settings = try decode(ScanSettings.self, #"{"resolution": 150, "taskOptions": {"cameraFilter": "# + value + #", "copyCount": 4}}"#)
+            XCTAssertEqual(settings.resolution, 150, value)
+            XCTAssertEqual(settings.taskOptions.copyCount, 4, value)
+            XCTAssertEqual(settings.taskOptions.cameraFilter, .enhanced, value)
+        }
+        for filter in CaptureFilter.allCases {
+            var chosen = ScanSettings()
+            chosen.taskOptions.cameraFilter = filter
+            let data = try encode(chosen)
+            let written = try XCTUnwrap(try jsonObject(data)["taskOptions"] as? [String: Any])
+            XCTAssertEqual(written["cameraFilter"] as? String, filter.rawValue)
+            XCTAssertEqual(try JSONDecoder().decode(ScanSettings.self, from: data).taskOptions, chosen.taskOptions)
+        }
+        // Picking a task keeps it.
+        XCTAssertEqual(TaskCatalog.apply(.book, to: nonDefaultSettings()).taskOptions.cameraFilter, .original)
     }
 
     // MARK: Softening the spine's shadow (CONTRACTS.md, rule 6)

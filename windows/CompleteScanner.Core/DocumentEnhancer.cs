@@ -18,6 +18,52 @@ public enum DocumentEnhanceMode
     Photo,
 }
 
+/// <summary>
+/// The look of a document page taken by a camera, chosen page by page: cleaned up (<see cref="DocumentEnhancer"/>
+/// in <see cref="DocumentEnhanceMode.Auto"/>), as the camera saw it (cut out, nothing else), or cleaned up in
+/// gray or in black and white. Stored by its camelCase name; the first is the default and the fallback.
+/// </summary>
+public enum CaptureFilter
+{
+    Enhanced,
+    Original,
+    Grayscale,
+    BlackAndWhite,
+}
+
+public static class CaptureFilters
+{
+    /// <summary>The order the filters are offered in.</summary>
+    public static IReadOnlyList<CaptureFilter> DisplayOrder { get; } =
+        [CaptureFilter.Original, CaptureFilter.Enhanced, CaptureFilter.Grayscale, CaptureFilter.BlackAndWhite];
+
+    public static string Label(this CaptureFilter filter) => filter switch
+    {
+        CaptureFilter.Original => "Original",
+        CaptureFilter.Grayscale => "Grayscale",
+        CaptureFilter.BlackAndWhite => "B&W",
+        _ => "Enhanced",
+    };
+
+    /// <summary>The clean-up this filter runs; null for <see cref="CaptureFilter.Original"/>.</summary>
+    public static DocumentEnhanceMode? Mode(this CaptureFilter filter) => filter switch
+    {
+        CaptureFilter.Original => null,
+        CaptureFilter.Grayscale => DocumentEnhanceMode.Gray,
+        CaptureFilter.BlackAndWhite => DocumentEnhanceMode.BlackAndWhite,
+        _ => DocumentEnhanceMode.Auto,
+    };
+
+    /// <summary>The filter of a page cleaned up in <paramref name="mode"/> as asked for (before <see cref="DocumentEnhanceMode.Auto"/> is resolved); null for a photo, which has no filter.</summary>
+    public static CaptureFilter? Of(DocumentEnhanceMode mode) => mode switch
+    {
+        DocumentEnhanceMode.Auto or DocumentEnhanceMode.Color => CaptureFilter.Enhanced,
+        DocumentEnhanceMode.Gray => CaptureFilter.Grayscale,
+        DocumentEnhanceMode.BlackAndWhite => CaptureFilter.BlackAndWhite,
+        _ => null,
+    };
+}
+
 /// <summary>A page cleaned up: its pixels and the mode applied (<see cref="DocumentEnhanceMode.Auto"/> resolved to color or gray).</summary>
 public sealed record DocumentEnhancement(RgbaImage Image, DocumentEnhanceMode Mode);
 
@@ -94,16 +140,20 @@ public static class DocumentEnhancer
     /// <summary>
     /// The mode for the pages of a task with <paramref name="settings"/>: <see cref="DocumentEnhanceMode.Photo"/>
     /// for photo tasks; else by the color mode: gray, black and white, or <see cref="DocumentEnhanceMode.Auto"/>
-    /// for color (color where the page has color).
+    /// for color (color where the page has color). A color task that collects pages in the queue takes the
+    /// camera's filter instead (<see cref="TaskOptions.CameraFilter"/>): null for Original, no clean-up;
+    /// receipts, cards and copies are always cleaned up.
     /// </summary>
-    public static DocumentEnhanceMode ModeFor(ScanSettings settings)
+    public static DocumentEnhanceMode? ModeFor(ScanSettings settings)
     {
         if (settings.Intent == ScanIntent.Photo) return DocumentEnhanceMode.Photo;
         return settings.ColorMode switch
         {
             ColorMode.Grayscale => DocumentEnhanceMode.Gray,
             ColorMode.BlackWhite => DocumentEnhanceMode.BlackAndWhite,
-            _ => DocumentEnhanceMode.Auto,
+            _ => TaskCatalog.FlowOf(settings) == TaskFlowKind.DocumentQueue
+                ? settings.TaskOptions.CameraFilter.Mode()
+                : DocumentEnhanceMode.Auto,
         };
     }
 

@@ -92,6 +92,9 @@ public sealed record CaptureFacts(Quad Quad, int SourceWidth, int SourceHeight)
     /// <summary>How the page was cleaned up once cut out (<see cref="EnhanceStep"/>, <see cref="DocumentEnhancer"/>; auto resolved); null until then. Kept in memory only.</summary>
     public DocumentEnhanceMode? Enhancement { get; init; }
 
+    /// <summary>The filter the page was given once cut out (<see cref="EnhanceStep"/>); null until then, and for a photo or a card. Kept in memory only.</summary>
+    public CaptureFilter? Filter { get; init; }
+
     /// <summary>
     /// These facts for the photo mirrored and turned as <paramref name="orientation"/> says (mirrored left
     /// to right first, then turned clockwise, as <see cref="PhotoImport.Oriented"/> turns its pixels): each

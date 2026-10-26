@@ -110,6 +110,9 @@ public struct CaptureFacts: Equatable, Codable, Sendable {
     /// How the page was cleaned up once cut out (`EnhanceStep`, `DocumentEnhancer`; auto resolved); nil until
     /// then. Kept in memory only.
     public var enhancement: DocumentEnhanceMode? = nil
+    /// The filter the page was given once cut out (`EnhanceStep`); nil until then, and for a photo or a card.
+    /// Kept with the queue the iPhone records, not in companion packages.
+    public var filter: CaptureFilter? = nil
 
     public init(quad: Quad, sourceWidth: Int, sourceHeight: Int, kind: CaptureKind = .document,
                 focalLength: Double? = nil, scale: CaptureScaleResult? = nil) {

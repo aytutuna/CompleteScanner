@@ -682,6 +682,14 @@ public sealed class TaskOptions : IEquatable<TaskOptions>
     /// </summary>
     public bool CameraSpreads { get; set; } = false;
 
+    /// <summary>
+    /// The filter the iPhone camera's document pages get as they are taken
+    /// (<see cref="DocumentEnhancer.ModeFor(ScanSettings)"/>); each page can be given another afterwards.
+    /// Enhanced unless chosen, as before the filters; the iPhone starts at Original. The Windows app keeps it
+    /// as it is.
+    /// </summary>
+    public CaptureFilter CameraFilter { get; set; } = CaptureFilter.Enhanced;
+
     public TaskOptions Clone() => (TaskOptions)MemberwiseClone();
 
     public bool Equals(TaskOptions? other) =>
@@ -690,7 +698,8 @@ public sealed class TaskOptions : IEquatable<TaskOptions>
         && CopyPrinterName == other.CopyPrinterName && CopyAlsoSavePdf == other.CopyAlsoSavePdf
         && ReceiptNameByDate == other.ReceiptNameByDate && ReceiptCombine == other.ReceiptCombine
         && BookRightToLeft == other.BookRightToLeft && BookRotationQuarterTurns == other.BookRotationQuarterTurns
-        && CameraFrontsFirst == other.CameraFrontsFirst && CameraSpreads == other.CameraSpreads;
+        && CameraFrontsFirst == other.CameraFrontsFirst && CameraSpreads == other.CameraSpreads
+        && CameraFilter == other.CameraFilter;
     public override bool Equals(object? obj) => Equals(obj as TaskOptions);
     public override int GetHashCode()
     {
@@ -707,6 +716,7 @@ public sealed class TaskOptions : IEquatable<TaskOptions>
         hash.Add(BookRotationQuarterTurns);
         hash.Add(CameraFrontsFirst);
         hash.Add(CameraSpreads);
+        hash.Add(CameraFilter);
         return hash.ToHashCode();
     }
 }

@@ -448,6 +448,63 @@ public class DocumentEnhancerTests
     }
 
     [Fact]
+    public void TheCameraFilterDecidesTheModeOfAColorQueue()
+    {
+        var settings = new ScanSettings();
+        Assert.Equal(CaptureFilter.Enhanced, settings.TaskOptions.CameraFilter);
+        settings.TaskOptions.CameraFilter = CaptureFilter.Original;
+        Assert.Null(DocumentEnhancer.ModeFor(settings));
+        settings.TaskOptions.CameraFilter = CaptureFilter.Grayscale;
+        Assert.Equal(DocumentEnhanceMode.Gray, DocumentEnhancer.ModeFor(settings));
+        settings.TaskOptions.CameraFilter = CaptureFilter.BlackAndWhite;
+        Assert.Equal(DocumentEnhanceMode.BlackAndWhite, DocumentEnhancer.ModeFor(settings));
+        // The task's color mode comes first.
+        settings.TaskOptions.CameraFilter = CaptureFilter.Original;
+        settings.ColorMode = ColorMode.Grayscale;
+        Assert.Equal(DocumentEnhanceMode.Gray, DocumentEnhancer.ModeFor(settings));
+        settings.ColorMode = ColorMode.Color;
+        // Receipts, the ID card and copies are cleaned up whatever the filter.
+        Assert.Equal(DocumentEnhanceMode.Auto, DocumentEnhancer.ModeFor(TaskCatalog.Apply(ScanTask.Receipt, settings)));
+        Assert.Equal(DocumentEnhanceMode.Auto, DocumentEnhancer.ModeFor(TaskCatalog.Apply(ScanTask.IdCard, settings)));
+        Assert.Equal(DocumentEnhanceMode.Auto, DocumentEnhancer.ModeFor(TaskCatalog.Apply(ScanTask.Copy, settings)));
+        Assert.Null(DocumentEnhancer.ModeFor(TaskCatalog.Apply(ScanTask.Book, settings)));
+        Assert.Equal([CaptureFilter.Original, CaptureFilter.Enhanced, CaptureFilter.Grayscale, CaptureFilter.BlackAndWhite],
+                     CaptureFilters.DisplayOrder);
+        Assert.Equal(["Original", "Enhanced", "Grayscale", "B&W"], CaptureFilters.DisplayOrder.Select(f => f.Label()));
+        Assert.Equal(new DocumentEnhanceMode?[] { null, DocumentEnhanceMode.Auto, DocumentEnhanceMode.Gray, DocumentEnhanceMode.BlackAndWhite },
+                     CaptureFilters.DisplayOrder.Select(f => f.Mode()));
+        Assert.Equal(CaptureFilter.Enhanced, CaptureFilters.Of(DocumentEnhanceMode.Auto));
+        Assert.Equal(CaptureFilter.Enhanced, CaptureFilters.Of(DocumentEnhanceMode.Color));
+        Assert.Equal(CaptureFilter.Grayscale, CaptureFilters.Of(DocumentEnhanceMode.Gray));
+        Assert.Equal(CaptureFilter.BlackAndWhite, CaptureFilters.Of(DocumentEnhanceMode.BlackAndWhite));
+        Assert.Null(CaptureFilters.Of(DocumentEnhanceMode.Photo));
+    }
+
+    [Fact]
+    public void TheOriginalFilterKeepsTheCutsPixels()
+    {
+        var (photo, quad) = CapturePageTests.SquareOnATable(EnhancerPages.Shadowed());
+        var page = new ScannedPage(photo, CaptureScale.NominalDpi, ColorMode.Color) { Source = PageSource.Photo }
+            .WithCapture(new CaptureFacts(quad, photo.Width, photo.Height));
+        var cut = new PerspectiveStep().Apply(page);
+        var kept = new EnhanceStep(null).Apply(cut);
+        Assert.Same(cut.Image, kept.Image);
+        Assert.Equal(ColorMode.Color, kept.ColorMode);
+        Assert.Equal(CaptureFilter.Original, kept.Capture!.Filter);
+        Assert.Null(kept.Capture.Enhancement);
+        // Once only: a page with its filter is not cleaned up afterwards.
+        Assert.Same(cut.Image, new EnhanceStep(DocumentEnhanceMode.Auto).Apply(kept).Image);
+        Assert.Equal(CaptureFilter.Grayscale, new EnhanceStep(DocumentEnhanceMode.Gray).Apply(cut).Capture!.Filter);
+        Assert.Equal(CaptureFilter.BlackAndWhite, new EnhanceStep(DocumentEnhanceMode.BlackAndWhite).Apply(cut).Capture!.Filter);
+        // A whole camera page with the Original filter goes into the queue as cut.
+        var settings = new ScanSettings();
+        settings.TaskOptions.CameraFilter = CaptureFilter.Original;
+        var processed = PageProcessor.ForCapture(settings).Process([page]).Pages.Single();
+        Assert.Equal(cut.Image.Pixels, processed.Image.Pixels);
+        Assert.Equal(CaptureFilter.Original, processed.Capture!.Filter);
+    }
+
+    [Fact]
     public void TheEnhanceStepCleansACutPageUpOnce()
     {
         var quad = new Quad(new PointD(100, 60), new PointD(340, 60), new PointD(340, 380), new PointD(100, 380));
@@ -474,7 +531,7 @@ public class DocumentEnhancerTests
         var step = new EnhanceStep(DocumentEnhanceMode.Auto);
         var cleaned = step.Apply(cut);
         Assert.Equal(DocumentEnhanceMode.Color, cleaned.Capture!.Enhancement);
-        Assert.Equal(cut.Capture! with { Enhancement = DocumentEnhanceMode.Color }, cleaned.Capture);
+        Assert.Equal(cut.Capture! with { Enhancement = DocumentEnhanceMode.Color, Filter = CaptureFilter.Enhanced }, cleaned.Capture);
         Assert.Equal(DocumentEnhancer.Enhance(cut.Image, DocumentEnhanceMode.Auto).Image.Pixels, cleaned.Image.Pixels);
         Assert.Same(photo, cleaned.Alternate!.Image);
         Assert.Equal(cut.Geometry, cleaned.Geometry);
@@ -491,6 +548,7 @@ public class DocumentEnhancerTests
         // A photo print is a photo, whatever the task says.
         var print = new PerspectiveStep().Apply(page.WithCapture(new CaptureFacts(quad, 440, 440) { Kind = CaptureKind.Photo }));
         Assert.Equal(DocumentEnhanceMode.Photo, new EnhanceStep(DocumentEnhanceMode.Gray).Apply(print).Capture!.Enhancement);
+        Assert.Null(new EnhanceStep(DocumentEnhanceMode.Gray).Apply(print).Capture!.Filter);
         // Not cut out yet, cut out whole (Apple's scanner) or a scanner's page: left alone.
         Assert.Same(page, step.Apply(page));
         var whole = new ScannedPage(sheet, 200, ColorMode.Color).WithCapture(new CaptureFacts(quad, 440, 440)

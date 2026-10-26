@@ -85,22 +85,29 @@ public struct PerspectiveStep: PageStep {
 /// Cleans up a page `PerspectiveStep` cut out of a camera's photo (`DocumentEnhancer`: the lighting evened
 /// out, the paper white, the print black) in `mode`, or as a photo when the shot was of a photo print or an ID
 /// card (`DocumentEnhancer.mode(_:kind:)`), and records the mode applied on its capture
-/// (`CaptureFacts.enhancement`); a gray or black and white result sets the page's color mode. Once only:
-/// pages cleaned up already, pages not cut out along their corners (Apple's document scanner hands its pages
-/// over cleaned up and whole) and pages from scanners stay as they are; the photo kept as the other version
-/// is not changed. Runs right after `PerspectiveStep`. Twin of C# `EnhanceStep`.
+/// (`CaptureFacts.enhancement`) with the filter it stands for (`CaptureFacts.filter`); a gray or black and
+/// white result sets the page's color mode. No mode (the Original filter) keeps the cut's pixels and records
+/// only the filter. Once only: pages cleaned up or filtered already, pages not cut out along their corners
+/// (Apple's document scanner hands its pages over cleaned up and whole) and pages from scanners stay as they
+/// are; the photo kept as the other version is not changed. Runs right after `PerspectiveStep`. Twin of C#
+/// `EnhanceStep`.
 public struct EnhanceStep: PageStep {
-    public let mode: DocumentEnhanceMode
+    public let mode: DocumentEnhanceMode?
     public var name: String { "enhance" }
 
-    public init(mode: DocumentEnhanceMode) {
+    public init(mode: DocumentEnhanceMode?) {
         self.mode = mode
     }
 
     public func apply(_ page: ScannedPage) -> ScannedPage {
-        guard let capture = page.capture, capture.scale != nil, capture.enhancement == nil,
-              page.geometry?.basis == .perspective,
-              let photo = RgbaImage(cgImage: page.image) else { return page }
+        guard let capture = page.capture, capture.scale != nil, capture.enhancement == nil, capture.filter == nil,
+              page.geometry?.basis == .perspective else { return page }
+        guard let mode else {
+            var facts: CaptureFacts = capture
+            facts.filter = .original
+            return page.withCapture(facts)
+        }
+        guard let photo = RgbaImage(cgImage: page.image) else { return page }
         let applied: DocumentEnhanceMode = DocumentEnhancer.mode(mode, kind: capture.kind)
         let result: DocumentEnhancement = DocumentEnhancer.enhance(photo, mode: applied)
         guard let image = result.image.makeCGImage() else { return page }
@@ -112,6 +119,7 @@ public struct EnhanceStep: PageStep {
         }
         var facts: CaptureFacts = capture
         facts.enhancement = result.mode
+        facts.filter = CaptureFilter(mode: applied)
         return page.withImage(image, colorMode: colorMode).withCapture(facts)
     }
 }

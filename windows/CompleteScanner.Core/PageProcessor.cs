@@ -88,29 +88,33 @@ public sealed class PerspectiveStep(bool spread = false) : IPageStep
 /// Cleans up a page <see cref="PerspectiveStep"/> cut out of a camera's photo (<see cref="DocumentEnhancer"/>:
 /// the lighting evened out, the paper white, the print black) in <see cref="Mode"/>, or as a photo when the
 /// shot was of a photo print or an ID card (<see cref="DocumentEnhancer.ModeFor(DocumentEnhanceMode, CaptureKind)"/>),
-/// and records the mode applied on its capture (<see cref="CaptureFacts.Enhancement"/>); a gray or black and
-/// white result sets the page's color mode. Once only: pages cleaned up already, pages not cut out along
-/// their corners (Apple's document scanner hands its pages over cleaned up and whole) and pages from
-/// scanners stay as they are; the photo kept as the other version is not changed. Runs right after
-/// <see cref="PerspectiveStep"/>.
+/// and records the mode applied on its capture (<see cref="CaptureFacts.Enhancement"/>) with the filter it
+/// stands for (<see cref="CaptureFacts.Filter"/>); a gray or black and white result sets the page's color
+/// mode. No mode (the Original filter) keeps the cut's pixels and records only the filter. Once only: pages
+/// cleaned up or filtered already, pages not cut out along their corners (Apple's document scanner hands its
+/// pages over cleaned up and whole) and pages from scanners stay as they are; the photo kept as the other
+/// version is not changed. Runs right after <see cref="PerspectiveStep"/>.
 /// </summary>
-public sealed class EnhanceStep(DocumentEnhanceMode mode) : IPageStep
+public sealed class EnhanceStep(DocumentEnhanceMode? mode) : IPageStep
 {
-    public DocumentEnhanceMode Mode { get; } = mode;
+    public DocumentEnhanceMode? Mode { get; } = mode;
     public string Name => "enhance";
 
     public ScannedPage Apply(ScannedPage page)
     {
-        if (page.Capture is not { Scale: not null, Enhancement: null } capture
+        if (page.Capture is not { Scale: not null, Enhancement: null, Filter: null } capture
             || page.Geometry?.Basis != GeometryBasis.Perspective) return page;
-        var result = DocumentEnhancer.Enhance(page.Image, DocumentEnhancer.ModeFor(Mode, capture.Kind));
+        if (Mode is not { } mode) return page.WithCapture(capture with { Filter = CaptureFilter.Original });
+        var applied = DocumentEnhancer.ModeFor(mode, capture.Kind);
+        var result = DocumentEnhancer.Enhance(page.Image, applied);
         var colorMode = result.Mode switch
         {
             DocumentEnhanceMode.Gray => ColorMode.Grayscale,
             DocumentEnhanceMode.BlackAndWhite => ColorMode.BlackWhite,
             _ => page.ColorMode,
         };
-        return page.WithImage(result.Image, colorMode).WithCapture(capture with { Enhancement = result.Mode });
+        return page.WithImage(result.Image, colorMode)
+            .WithCapture(capture with { Enhancement = result.Mode, Filter = CaptureFilters.Of(applied) });
     }
 }
 
