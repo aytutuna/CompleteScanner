@@ -71,7 +71,7 @@ struct ScanScreen: View {
     /// The camera or printer mode, picked in the Scanner options.
     @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
     /// The scanner printer mode scans with, remembered while the camera is in use.
-    @AppStorage(IOSShell.scannerKey) private var scanner: String = ""
+    @AppStorage(IOSShell.scannerKey) private var printerID: String = ""
     /// The page strip's sheet, opened from the capture bar's last page.
     @State private var pagesShown: Bool = false
     /// A book page whose spread is split again once the page strip's sheet has closed.
@@ -931,7 +931,7 @@ struct ScanScreen: View {
 
     /// The scanner the pages come from; nil in camera mode, or until printer mode's scanner is found.
     private var sourceDevice: ScannerInfo? {
-        IOSShell.printerScanner(mode, scanner: scanner, selected: state.selectedDeviceID, devices: state.devices)
+        IOSShell.printerScanner(mode, scanner: printerID, selected: state.selectedDeviceID, devices: state.devices)
     }
 
     /// Scan once the scanner is connected and nothing else runs.
