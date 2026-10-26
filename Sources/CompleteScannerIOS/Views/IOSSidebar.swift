@@ -28,6 +28,7 @@ struct IOSSidebar: View {
     let detail: IOSDetail
     /// Starts a task, with the PDF its pages are added to when one was picked.
     let onTask: @MainActor (ScanTask, URL?) -> Void
+    /// Brings the scan screen back: a preset applied, or a scanner picked or added.
     let onPresetApplied: @MainActor () -> Void
     let onDetail: (IOSDetail) -> Void
     let onSettings: () -> Void
@@ -56,7 +57,8 @@ struct IOSSidebar: View {
                 appendRow(IOSAppendTile.availability(state.taskCards))
             }
             ScannerPickerSections(picker: picker, onAdd: openAdd, onTroubleshoot: openTroubleshooter,
-                                  asksAboutCard: $askedToDiscard, header: IOSNetworkText.pickerTitle)
+                                  asksAboutCard: $askedToDiscard, header: IOSNetworkText.pickerTitle,
+                                  onPicked: onPresetApplied)
             Section {
                 libraryRow(IOSSettingsText.presetsLabel, symbol: "slider.horizontal.3", target: IOSDetail.presets,
                            identifier: "sidebar.presets")
@@ -75,7 +77,8 @@ struct IOSSidebar: View {
         }
         .listStyle(.sidebar)
         .accessibilityIdentifier("scanners.sidebar")
-        .modifier(ScannerPickerSheets(picker: picker, showsAdd: $showsAdd, showsTroubleshooter: $showsTroubleshooter))
+        .modifier(ScannerPickerSheets(picker: picker, showsAdd: $showsAdd, showsTroubleshooter: $showsTroubleshooter,
+                                      onPicked: onPresetApplied))
         .modifier(IdCardDiscardQuestion(state: state, asked: $askedToDiscard))
         .modifier(KeepPagesQuestion(state: state, leave: $leavingPages, blocked: importer.isImporting))
         .fileImporter(isPresented: $picksPDF, allowedContentTypes: [UTType.pdf]) { (result: Result<URL, Error>) in

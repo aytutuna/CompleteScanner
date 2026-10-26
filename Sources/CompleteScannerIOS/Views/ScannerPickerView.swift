@@ -39,6 +39,8 @@ struct ScannerPickerSheets: ViewModifier {
     let picker: IOSScannerPickerModel
     @Binding var showsAdd: Bool
     @Binding var showsTroubleshooter: Bool
+    /// Runs once a scanner added is in use (the iPad's sidebar brings the scan screen back).
+    var onPicked: (@MainActor () -> Void)? = nil
 
     func body(content: Content) -> some View {
         content
@@ -61,6 +63,7 @@ struct ScannerPickerSheets: ViewModifier {
         state.userSelectDevice(deviceID)
         scanner = deviceID
         mode = .printer
+        onPicked?()
     }
 
     private func closeAdd() {
@@ -88,16 +91,18 @@ struct ScannerPickerSections: View {
     @Binding var asksAboutCard: Bool
     /// The rows' section header (the sidebar's "Scanners"); none in the options, whose title says it.
     var header: String?
+    /// Runs once a scanner picked is in use (the iPad's sidebar brings the scan screen back).
+    var onPicked: (@MainActor () -> Void)? = nil
 
     var body: some View {
         if let network = picker.network {
             NetworkObserving(network: network) {
                 ScannerPickerContent(picker: picker, onAdd: onAdd, onTroubleshoot: onTroubleshoot,
-                                     asksAboutCard: $asksAboutCard, header: header)
+                                     asksAboutCard: $asksAboutCard, header: header, onPicked: onPicked)
             }
         } else {
             ScannerPickerContent(picker: picker, onAdd: onAdd, onTroubleshoot: onTroubleshoot,
-                                     asksAboutCard: $asksAboutCard, header: header)
+                                     asksAboutCard: $asksAboutCard, header: header, onPicked: onPicked)
         }
     }
 }
@@ -112,6 +117,7 @@ private struct ScannerPickerContent: View {
     let onTroubleshoot: () -> Void
     @Binding var asksAboutCard: Bool
     let header: String?
+    let onPicked: (@MainActor () -> Void)?
 
     var body: some View {
         let picked: String? = IOSShell.printerScanner(mode, scanner: scanner, selected: state.selectedDeviceID,
@@ -187,10 +193,12 @@ private struct ScannerPickerContent: View {
     private func pick(_ row: IOSScannerRow) {
         guard !state.isBusy else { return }
         let model: IOSScannerPickerModel = picker
+        let picked: (@MainActor () -> Void)? = onPicked
         state.leaveIdCard {
             model.select(row)
             scanner = row.id
             mode = .printer
+            picked?()
         }
         if state.pendingIdCardLeave != nil {
             asksAboutCard = true
