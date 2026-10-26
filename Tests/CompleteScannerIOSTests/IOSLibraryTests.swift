@@ -226,6 +226,15 @@ final class IOSLibraryTests: XCTestCase {
         XCTAssertEqual(state.activeTask, ScanTask.book)
         XCTAssertEqual(state.scannedPages.count, 2)
 
+        // No preset while a share or a send reads the pages.
+        state.queueReaders = 1
+        let reading: IOSPresetApply = model.apply(holiday, discardingPages: true) {
+            applied.value = true
+        }
+        XCTAssertEqual(reading, IOSPresetApply.refused)
+        XCTAssertEqual(state.scannedPages.count, 2)
+        state.queueReaders = 0
+
         let discarded: IOSPresetApply = model.apply(holiday, discardingPages: true) {
             applied.value = true
         }

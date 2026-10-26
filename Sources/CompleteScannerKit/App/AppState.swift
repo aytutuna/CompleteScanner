@@ -260,6 +260,11 @@ public final class AppState: ObservableObject {
     private var observesActivation = false
 
     @Published public private(set) var isBusy = false
+    /// The packages being written from the queue's spooled pages (`exportPackage`), which no other
+    /// operation knows of: the queue must not be dropped meanwhile.
+    @Published var queueReaders = 0
+    /// A share or a send of the queue is reading its spooled pages (`queueReaders`). Swift only.
+    public var readsQueue: Bool { queueReaders > 0 }
     @Published public private(set) var progress: ScanProgress?
     @Published public internal(set) var statusMessage = "Looking for scanners…"
     @Published public var errorMessage: String?

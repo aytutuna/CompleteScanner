@@ -55,7 +55,8 @@ public enum IOSPresetApply: Equatable, Sendable {
     /// Pages are queued and the preset's settings would leave them without a Save: nothing is applied until
     /// the user saves or discards them. The preset's name, for the question.
     case waitsForPages(String)
-    /// Nothing happened: an operation or an import runs, or the preset is gone.
+    /// Nothing happened: an operation, an import, or a share or a send of the queue runs, or the preset is
+    /// gone.
     case refused
 }
 
@@ -110,11 +111,11 @@ public final class IOSPresetsModel {
     /// discards the card. Settings that do not collect pages (`IOSShell.collectsPages`: another kind, or
     /// Collect pages before saving off) are not applied over queued pages unless `discardingPages`, which
     /// drops them with their spooled files first. With no scanner selected (camera mode) a stack turned over
-    /// by hand is applied as both sides, as the camera takes them. Refused while an operation or an import runs.
+    /// by hand is applied as both sides, as the camera takes them. Refused while an operation, an import, or a share or a send of the queue runs.
     @discardableResult
     public func apply(_ id: UUID, discardingPages: Bool = false,
                       then done: @escaping @MainActor () -> Void) -> IOSPresetApply {
-        guard !state.isBusy, !importer.isImporting else { return .refused }
+        guard !state.isBusy, !importer.isImporting, !state.readsQueue else { return .refused }
         guard let preset = state.presets.first(where: { (item: Preset) -> Bool in item.id == id }) else {
             return .refused
         }

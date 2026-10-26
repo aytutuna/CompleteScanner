@@ -124,6 +124,13 @@ final class AppStateTaskSwitchTests: XCTestCase {
             XCTAssertEqual(state.pagesLeftBehind(by: task), 2, task.rawValue)
         }
 
+        // A share or a send reading the spooled pages: nothing is dropped, nothing started.
+        state.queueReaders = 1
+        XCTAssertFalse(state.discardPages(andStart: .photos))
+        XCTAssertEqual(state.activeTask, .document)
+        XCTAssertEqual(state.scannedPages.count, 2)
+        state.queueReaders = 0
+
         XCTAssertTrue(state.discardPages(andStart: .photos))
         XCTAssertEqual(state.activeTask, .photos)
         XCTAssertTrue(state.scannedPages.isEmpty)

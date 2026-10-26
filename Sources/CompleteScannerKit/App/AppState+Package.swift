@@ -168,6 +168,8 @@ extension AppState {
     /// others as a JPEG at the settings' quality, with its side, sheet and capture facts; the
     /// document breaks and the recognized text are not carried.
     public func exportPackage(to folder: URL) async throws -> URL {
+        queueReaders += 1
+        defer { queueReaders -= 1 }
         let pages = scannedPages
         guard !pages.isEmpty else { throw CompanionPackageError(.noPages, CompanionPackage.noPagesMessage) }
         let s = settings

@@ -1209,7 +1209,7 @@ struct ScanScreen: View {
 
     /// Saving deletes the spooled pages a share or a send may still be writing.
     private var saveBlocked: Bool {
-        state.isBusy || importer.isImporting || sharesPackage || sendsToComputer
+        state.isBusy || importer.isImporting || state.readsQueue || sharesPackage || sendsToComputer
     }
 
     private var bottomBar: some View {
@@ -1500,7 +1500,7 @@ struct PagesLeave {
 /// opened as new. Save first (`IOSShell.saveFirstLabel`) saves them as Save would, without After saving's
 /// steps, and goes on once the save has emptied the queue; a save that fails or is cancelled keeps the pages
 /// and changes nothing. It is left out when the save could write nothing (every page skipped) or cannot run
-/// now (`blocked`). Discard goes on and drops the pages, Cancel keeps both, and camera mode's row goes back.
+/// now (`blocked`, or a share or a send reading the pages, `AppState.readsQueue`). Discard goes on and drops the pages, Cancel keeps both, and camera mode's row goes back.
 /// What was asked for is taken when the alert opens, as the ID card's question takes it: the alert's
 /// dismissal clears it, and SwiftUI may run that before the button.
 @MainActor
@@ -1542,7 +1542,7 @@ struct KeepPagesQuestion: ViewModifier {
     }
 
     private var canSave: Bool {
-        !blocked && !state.isBusy && plan.pageCount > 0
+        !blocked && !state.isBusy && !state.readsQueue && plan.pageCount > 0
     }
 
     private var saveFirstLabel: String {

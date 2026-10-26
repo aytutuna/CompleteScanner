@@ -100,9 +100,11 @@ extension AppState {
 
     /// Starts `task` as `startTask(_:)` does, then lets the queued pages go with their spooled files: the
     /// iPhone's Discard when the task would leave them behind. The session's scans stay in the history.
-    /// Nothing is dropped when the task is refused. Swift only: Windows keeps the queue whatever the task.
+    /// Nothing is dropped when the task is refused, nor while a share or a send reads the pages
+    /// (`readsQueue`). Swift only: Windows keeps the queue whatever the task.
     @discardableResult
     public func discardPages(andStart task: ScanTask) -> Bool {
+        guard !readsQueue else { return false }
         let queued: [ScannedPage] = scannedPages
         guard startTask(task) else { return false }
         if !queued.isEmpty {

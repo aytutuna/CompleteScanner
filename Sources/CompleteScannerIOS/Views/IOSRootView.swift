@@ -201,6 +201,8 @@ public struct IOSRootView: View {
             openScanner()
             return
         }
+        // A share or a send reads the spooled pages that starting over them could drop.
+        guard !state.readsQueue else { return }
         if state.pagesLeftBehind(by: task) > 0 {
             leavingPages = PagesLeave(reason: IOSShell.keepPagesReason(IOSShell.kind(of: task))) { (discarding: Bool) in
                 startTask(task, target: target, discardingPages: discarding)
