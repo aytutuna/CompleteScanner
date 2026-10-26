@@ -91,6 +91,27 @@ extension AppState {
         return true
     }
 
+    /// The queued pages starting `task` would leave without a Save (`TaskCatalog.carriesPages`): all of
+    /// them for a task that does not collect pages, none for one that does, which keeps them. The iPhone
+    /// asks before it starts a task that leaves pages behind.
+    public func pagesLeftBehind(by task: ScanTask) -> Int {
+        TaskCatalog.carriesPages(task) ? 0 : scannedPages.count
+    }
+
+    /// Starts `task` as `startTask(_:)` does, then lets the queued pages go with their spooled files: the
+    /// iPhone's Discard when the task would leave them behind. The session's scans stay in the history.
+    /// Nothing is dropped when the task is refused. Swift only: Windows keeps the queue whatever the task.
+    @discardableResult
+    public func discardPages(andStart task: ScanTask) -> Bool {
+        let queued: [ScannedPage] = scannedPages
+        guard startTask(task) else { return false }
+        if !queued.isEmpty {
+            deleteSpoolFiles(of: queued)
+            scannedPages = []
+        }
+        return true
+    }
+
     /// Leaves the active task: the settings stay as they are, without the task's banner, so the
     /// scan screen is back to plain settings. Refused while an operation runs: a scan under way
     /// belongs to the task's steps.
