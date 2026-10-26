@@ -149,7 +149,7 @@ struct ImportProgressRow: View {
 
 /// Photos (the system's photo picker, several in the order picked) and Files (photos and PDFs, and a
 /// CompleteScanner document, which goes to the scan screen's banner instead), as icons on the capture bar
-/// and, as round glass buttons (`round`), on camera mode's bar, which rests its camera while one is open
+/// and, in grey circles (`round`), on camera mode's bar, which rests its camera while one is open
 /// (`onPresenting`). Each picked photo is loaded only when its turn comes.
 struct ImportButtons: View {
     @EnvironmentObject private var state: AppState
@@ -223,22 +223,18 @@ struct ImportButtons: View {
         }
     }
 
-    @ViewBuilder
     private func label(_ title: String, symbol: String) -> some View {
-        if round {
-            Image(systemName: symbol)
-                .font(.body.weight(.medium))
-                .foregroundStyle(Color.white)
-                .frame(width: 44, height: 44)
-                .cameraGlass(in: Circle(), interactive: true)
-                .contentShape(Circle())
-        } else {
-            Image(systemName: symbol)
-                .font(.title3)
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
+        Image(systemName: symbol)
+            .font(round ? Font.body : Font.title3)
+            .foregroundStyle(round ? Color.primary : Color.accentColor)
+            .frame(width: 44, height: 44)
+            .background {
+                if round {
+                    Circle()
+                        .fill(Color(uiColor: .tertiarySystemFill))
+                }
+            }
+            .contentShape(Rectangle())
     }
 }
 

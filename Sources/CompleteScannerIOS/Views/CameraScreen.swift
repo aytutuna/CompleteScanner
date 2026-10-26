@@ -6,21 +6,19 @@ import SwiftUI
 import UIKit
 
 /// Camera mode, the iPhone's scan screen unless printer mode was picked (`IOSScanMode`): the viewfinder is
-/// the screen, edge to edge, and the controls float over it on glass (`CameraGlass`). Its top bar has the
-/// library (`onLibrary`; none where the sidebar has it), a round chevron that swaps the kinds for the
-/// options drawer (`CameraDrawer`), and the printer, which switches to printer mode (`onPrinter`). The
-/// viewfinder shows the whole photo as it will be taken (black bands where the screen is taller or wider,
-/// which the top bar and the bottom bar mostly sit in), the page's outline over it (yellow, green once the page holds
+/// the screen. Its top bar has the library (`onLibrary`; none where the sidebar has it), a small round
+/// chevron that swaps the kinds for the options drawer (`CameraDrawer`), and the printer, which switches
+/// to printer mode (`onPrinter`). The viewfinder shows the whole photo as it will be taken (black bands
+/// where the screen is taller or wider), the page's outline over it (yellow, green once the page holds
 /// still), one status line at its top (the glare hint, why the automatic shutter waits, "Page found · hold
 /// still", else the task's camera line, `CameraTaskCatalog`), the ID card's guide frame, and at its foot
 /// what the scan screen hands in (`notices`: the package banner, the app's progress with Cancel while it is
 /// busy, an import's progress with Stop, the files saved last), the task's buttons between shots (`CameraTaskButtons`, No back side for the ID card) and
 /// Save with its menu once there are pages (`saveControls`). Where the camera cannot be used (no camera,
 /// as in the Simulator; access off, with Settings; not allowed) or waits (too warm, interrupted), one short
-/// line says why in its place. Under it the kinds as a snapping row on a glass capsule (`KindsRow`) or the
-/// drawer on a glass panel, the one glass morphing into the other, then the bar: the pages as a stack with
-/// their count (`onPages`, the page strip's sheet), the shutter with a ring that fills while the page holds
-/// still, and Photos and Files. With Auto on the photo is taken by itself
+/// line says why in its place. Under it the kinds as a snapping row (`KindsRow`) or the drawer, then the
+/// bar: the pages as a stack with their count (`onPages`, the page strip's sheet), the shutter with a ring
+/// that fills while the page holds still, and Photos and Files. With Auto on the photo is taken by itself
 /// once the page held still on a sharp, lit frame (`IOSCameraModel`), with a short tap felt; VoiceOver
 /// says the wait once per wait (`IOSWaitAnnouncer`). Each photo goes through the photo import
 /// (`IOSImportSession.importShot`); in continuous capture (`IOSShell.capturesContinuously`) a page found
@@ -38,7 +36,6 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
     @State private var drawerGroup: CameraDrawerGroup = .export
     /// Photos or Files is open over the camera.
     @State private var picking: Bool = false
-    @Namespace private var glassSpace: Namespace.ID
     private let resting: Bool
     private let waitsForIntro: Bool
     private let scanner: IOSCameraAvailability
@@ -73,17 +70,13 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
     }
 
     var body: some View {
-        ZStack {
+        VStack(spacing: 0) {
+            topBar
             viewfinder
-            VStack(spacing: 0) {
-                topBar
-                overlays
-                    .padding(12)
-                lowerRow
-                bottomBar
-            }
+            lowerRow
+            bottomBar
         }
-        .background(Color.black)
+        .background(Color(uiColor: .systemBackground))
         .onAppear {
             if !waitsForIntro {
                 start()
@@ -119,19 +112,26 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
 
     // MARK: The top bar
 
-    /// Round glass buttons over the top band.
     private var topBar: some View {
-        CameraGlassGroup {
-            HStack(spacing: 0) {
-                libraryButton
-                Spacer(minLength: 0)
-                drawerToggle
-                Spacer(minLength: 0)
-                printerButton
+        HStack(spacing: 0) {
+            libraryButton
+            Spacer(minLength: 0)
+            drawerToggle
+            Spacer(minLength: 0)
+            Button {
+                onPrinter()
+            } label: {
+                Image(systemName: "printer")
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
+            .disabled(state.isBusy)
+            .accessibilityLabel(Text(IOSCameraText.printerLabel))
+            .accessibilityHint(Text(IOSCameraText.printerHint))
+            .accessibilityIdentifier("mode.printer")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 4)
+        .padding(.horizontal, 8)
     }
 
     @ViewBuilder
@@ -140,29 +140,17 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
             Button {
                 open()
             } label: {
-                RoundGlassLabel(symbol: "books.vertical")
+                Image(systemName: "books.vertical")
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
             .accessibilityLabel(Text(IOSSettingsText.libraryLabel))
             .accessibilityIdentifier("open.library")
         } else {
             Color.clear
                 .frame(width: 44, height: 44)
         }
-    }
-
-    private var printerButton: some View {
-        Button {
-            onPrinter()
-        } label: {
-            RoundGlassLabel(symbol: "printer")
-        }
-        .buttonStyle(.plain)
-        .disabled(state.isBusy)
-        .opacity(state.isBusy ? 0.4 : 1)
-        .accessibilityLabel(Text(IOSCameraText.printerLabel))
-        .accessibilityHint(Text(IOSCameraText.printerHint))
-        .accessibilityIdentifier("mode.printer")
     }
 
     private var drawerToggle: some View {
@@ -172,7 +160,13 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
                 showsDrawer.toggle()
             }
         } label: {
-            RoundGlassLabel(symbol: open ? "chevron.down" : "chevron.up", tint: open ? Color.accentColor : nil)
+            Image(systemName: open ? "chevron.down" : "chevron.up")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(open ? Color.white : Color.primary)
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(open ? Color.accentColor : Color(uiColor: .tertiarySystemFill)))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(open ? IOSCameraText.hideOptions : IOSCameraText.showOptions))
@@ -181,8 +175,6 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
 
     // MARK: The viewfinder
 
-    /// Edge to edge behind the controls, the whole photo centred in it: the bands above and below it are
-    /// where the glass floats.
     private var viewfinder: some View {
         ZStack {
             Color.black
@@ -197,9 +189,11 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
             if let line = model.message {
                 messageCard(line)
             }
+            overlays
+                .padding(12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .ignoresSafeArea()
+        .clipped()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("camera.screen")
     }
@@ -224,7 +218,7 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
                 .font(.footnote)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .cameraGlass(in: Capsule(), tint: Color.cameraShade)
+                .background(Capsule().fill(Color.black.opacity(0.75)))
                 .accessibilityIdentifier("task.mismatch")
             }
             CameraTaskButtons(onDark: true)
@@ -232,15 +226,13 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
                 Button(IdCardSteps.skipBackLabel) {
                     state.skipStep()
                 }
-                .modifier(CameraProminentButton())
+                .buttonStyle(.borderedProminent)
                 .disabled(state.isBusy || importer.isImporting)
                 .accessibilityIdentifier("camera.skipBack")
             }
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
-                CameraGlassGroup {
-                    saveControls()
-                }
+                saveControls()
             }
         }
     }
@@ -266,7 +258,7 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
             }
         }
         .padding(20)
-        .cameraGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.12)))
         .accessibilityElement(children: .contain)
     }
 
@@ -321,43 +313,32 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
 
     // MARK: Under the viewfinder
 
-    /// The kinds' capsule or the drawer's panel, one glass that morphs into the other as the chevron turns.
+    @ViewBuilder
     private var lowerRow: some View {
-        CameraGlassGroup {
-            if showsDrawer {
-                CameraDrawer(model: model, group: $drawerGroup, scanner: scanner, onExportSheet: onExportSheet,
-                             onAppleScanner: onAppleScanner)
-                    .padding(.top, 4)
-                    .cameraGlass(in: RoundedRectangle(cornerRadius: 28, style: .continuous), tint: Color.cameraShade)
-                    .cameraGlassID("lower", in: glassSpace)
-                    .transition(.opacity)
-            } else {
-                KindsRow(onKind: onKind)
-                    .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-                    .cameraGlass(in: Capsule(), tint: Color.cameraShade)
-                    .cameraGlassID("lower", in: glassSpace)
-                    .transition(.opacity)
-            }
+        if showsDrawer {
+            CameraDrawer(model: model, group: $drawerGroup, scanner: scanner, onExportSheet: onExportSheet,
+                         onAppleScanner: onAppleScanner)
+                .transition(.opacity)
+        } else {
+            KindsRow(onKind: onKind)
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                .transition(.opacity)
         }
-        .padding(.horizontal, 12)
     }
 
     private var bottomBar: some View {
-        CameraGlassGroup {
-            HStack(alignment: .center, spacing: 12) {
-                PagesStack(onPages: onPages)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                shutter
-                ImportButtons(round: true, onPresenting: setPicking)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
+        HStack(alignment: .center, spacing: 12) {
+            PagesStack(onPages: onPages)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            shutter
+            ImportButtons(round: true, onPresenting: setPicking)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
+        .padding(.horizontal, 24)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
     }
 
-    /// The Camera app's shutter: a white ring round the accent colour.
     private var shutter: some View {
         let ring: CGFloat = ringProgress
         let enabled: Bool = canShoot
@@ -366,16 +347,16 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
         } label: {
             ZStack {
                 Circle()
-                    .strokeBorder(Color.white, lineWidth: 4)
+                    .strokeBorder(Color.accentColor, lineWidth: 3)
                 Circle()
                     .fill(Color.accentColor)
-                    .padding(8)
+                    .padding(7)
                 // The automatic shutter's countdown: full when the page held still long enough.
                 Circle()
                     .trim(from: 0, to: ring)
-                    .stroke(Color.green, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .stroke(Color.green, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                     .rotationEffect(Angle.degrees(-90))
-                    .padding(2)
+                    .padding(1.5)
                     .animation(Animation.linear(duration: 0.1), value: ring)
             }
             .frame(width: 74, height: 74)
@@ -459,7 +440,7 @@ private struct CameraStatus {
     let identifier: String
 }
 
-/// A line on shaded glass over the viewfinder.
+/// A line on a dark capsule over the viewfinder.
 private struct StatusPill: View {
     let text: String
     let hint: String?
@@ -471,36 +452,21 @@ private struct StatusPill: View {
             .multilineTextAlignment(.center)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .cameraGlass(in: Capsule(), tint: Color.cameraShade)
+            .background(Capsule().fill(Color.black.opacity(0.55)))
             .accessibilityHint(Text(hint ?? ""))
     }
 }
 
-/// A round glass button's face in the top bar: the symbol in white, the glass tinted while it is on.
-private struct RoundGlassLabel: View {
-    let symbol: String
-    var tint: Color?
-
-    var body: some View {
-        Image(systemName: symbol)
-            .font(.body.weight(.semibold))
-            .foregroundStyle(Color.white)
-            .frame(width: 44, height: 44)
-            .cameraGlass(in: Circle(), interactive: true, tint: tint)
-            .contentShape(Circle())
-    }
-}
-
-/// The pages taken, as the last one whole on a glass-framed card shaped as the page is, a second card behind
-/// it once there are two, and the count on a badge inside the card; it opens the page strip. It springs and
-/// a tap is felt as a page comes in.
+/// The pages taken, as the last one whole on a white card shaped as the page is, a second card behind it
+/// once there are two, and the count on a badge inside the card; it opens the page strip. It springs and a
+/// tap is felt as a page comes in.
 private struct PagesStack: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion: Bool
     let onPages: () -> Void
     @State private var bumped: Bool = false
 
-    /// The page's long side on the card, inside its glass rim.
+    /// The page's long side on the card, inside its white rim.
     private static let longSide: CGFloat = 62
     private static let rim: CGFloat = 3
 
@@ -542,8 +508,8 @@ private struct PagesStack: View {
             let card: CGSize = CGSize(width: page.width + Self.rim * 2, height: page.height + Self.rim * 2)
             ZStack {
                 if count > 1 {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(Color.white.opacity(0.5))
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(Color(uiColor: .systemGray5))
                         .frame(width: card.width, height: card.height)
                         .rotationEffect(Angle.degrees(6))
                         .offset(x: 3, y: -2)
@@ -551,8 +517,8 @@ private struct PagesStack: View {
                 front(image, page: page, count: count)
             }
         } else {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [3]))
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(Color(uiColor: .tertiaryLabel), style: StrokeStyle(lineWidth: 1, dash: [3]))
                 .frame(width: 48, height: 64)
         }
     }
@@ -563,9 +529,11 @@ private struct PagesStack: View {
             .interpolation(.high)
             .scaledToFill()
             .frame(width: page.width, height: page.height)
-            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
             .padding(Self.rim)
-            .cameraGlass(in: RoundedRectangle(cornerRadius: 8, style: .continuous), interactive: true)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Color(uiColor: .separator), lineWidth: 0.5))
+            .shadow(color: Color.black.opacity(0.3), radius: 2, y: 1)
             .overlay(alignment: .topTrailing) {
                 Text("\(count)")
                     .font(.caption2.weight(.bold))
