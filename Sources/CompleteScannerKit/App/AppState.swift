@@ -1144,7 +1144,9 @@ public final class AppState: ObservableObject {
 
         // The canvas shows the RAW scan: PreviewCanvasView applies the current
         // adjustment settings to it live, so slider changes are visible
-        // immediately without rescanning. Only a downsampled preview is retained —
+        // immediately without rescanning. A camera's page is already cut out of its
+        // photo and cleaned up here (`PageProcessor.prepare`), so the page shows, not
+        // the scene around it. Only a downsampled preview is retained —
         // a full-resolution raw at high dpi would pin hundreds of MB in memory.
         let rawLast = raw.last?.image
         let rawPreview: CGImage? = await Task.detached(priority: .userInitiated) {

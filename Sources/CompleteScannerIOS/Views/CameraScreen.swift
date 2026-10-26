@@ -311,6 +311,7 @@ struct CameraScreen: View {
                     if let image = last {
                         Image(image, scale: 1, label: Text(IOSCameraText.lastPageLabel))
                             .resizable()
+                            .interpolation(.high)
                             .scaledToFit()
                             .frame(width: 44, height: 56)
                             .background(Color.white)

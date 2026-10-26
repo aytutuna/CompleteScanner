@@ -307,7 +307,8 @@ public enum ScanArrangement: Sendable {
 /// The pages of one scan after processing. Twin of C# `ProcessedScan`.
 public struct ProcessedScan {
     /// The pages in reading order with their sides marked and the backs turned upright, otherwise
-    /// as scanned (for the preview and the history).
+    /// as scanned, or for a camera's page as cut out of its photo and cleaned up (`prepare`): for the
+    /// preview and the history.
     public let arranged: [ScannedPage]
     /// The same pages after every step, with the facts the steps found; with facing pages split, the
     /// pages cut from each spread (`ScannedPage.spread`, whose id is the spread's in `arranged`).
@@ -337,7 +338,9 @@ public struct PageProcessor {
     public let binding: DuplexBinding
     /// How the pages of each spread are turned and ordered; nil when spreads are not split.
     public let book: BookSplitOptions?
-    /// The steps each arranged page goes through before a spread is cut; none for a scan.
+    /// The steps each arranged page goes through before the others, and before a spread is cut: a camera's
+    /// page or spread is cut out of its photo here, so the preview and the history show it, not the
+    /// photo; none for a scan.
     public let prepare: [any PageStep]
 
     public init(steps: [any PageStep], arrangement: ScanArrangement = .asScanned, binding: DuplexBinding = .longEdge,
@@ -414,39 +417,38 @@ public struct PageProcessor {
 
     /// The steps for pages taken by a camera (`ScannedPage.capture`), which go to the queue like imported
     /// photos: `PerspectiveStep` cuts each page out of its photo at its real size, `EnhanceStep` cleans it up
-    /// in the task's mode (`DocumentEnhancer.mode(for:)`), then the steps of `forPhotoImport` for pages that
-    /// go to the queue. The objects of the other tasks (photos, receipts, an ID card: `CaptureObjects`) get
-    /// only the adjustments after that, unless they change nothing, and not on the shot kept as their other
+    /// in the task's mode (`DocumentEnhancer.mode(for:)`), both in `prepare`, then the steps of
+    /// `forPhotoImport` for pages that go to the queue. The objects of the other tasks (photos, receipts, an
+    /// ID card: `CaptureObjects`) get only the adjustments after that, unless they change nothing, and not on the shot kept as their other
     /// version: no blank-page or separator check, no barcodes, and no text recognition to turn them upright,
     /// so an ID card is never read. A book's spread taken whole (`splitsCameraSpreads`) is cut out of its photo
-    /// at its own pixels (`PerspectiveStep.spread`) and cleaned up before it is cut at its spine (`prepare`);
+    /// at its own pixels (`PerspectiveStep.spread`) and cleaned up before it is cut at its spine;
     /// its pages then get the spine's softening when
     /// asked for, between the blank-page and separator checks as on a scan. `arrangement` marks the sides of
     /// the iPhone's two-sided pages (`ScanArrangement.cameraFront`, `.cameraBack`). Twin of C#
-    /// `PageProcessor.ForCapture`.
+    /// `PageProcessor.ForCapture`, which runs the cut and the clean-up as its first steps instead.
     public static func forCapture(_ settings: ScanSettings, scorer: (any OrientationScorer)? = nil,
                                   barcodes: (any BarcodeReader)? = nil,
                                   arrangement: ScanArrangement = .asScanned) -> PageProcessor {
-        let enhance = EnhanceStep(mode: DocumentEnhancer.mode(for: settings))
-        let cut: [any PageStep] = [PerspectiveStep(), enhance]
-        var steps: [any PageStep] = cut
+        let spreads: Bool = splitsCameraSpreads(settings)
+        let cut: [any PageStep] = [PerspectiveStep(spread: spreads),
+                                   EnhanceStep(mode: DocumentEnhancer.mode(for: settings))]
+        var steps: [any PageStep] = []
         if TaskCatalog.flow(of: settings) == .documentQueue {
-            var queue: [any PageStep] = forPhotoImport(settings, scorer: scorer, barcodes: barcodes).steps
-            if splitsCameraSpreads(settings) {
+            steps = forPhotoImport(settings, scorer: scorer, barcodes: barcodes).steps
+            if spreads {
                 if softensSpineShadow(settings) {
                     let turns: Int = BookSplitOptions.of(settings).rotationQuarterTurns
-                    queue.insert(SpineShadowStep(rotationQuarterTurns: turns), at: 1)
+                    steps.insert(SpineShadowStep(rotationQuarterTurns: turns), at: 1)
                 }
-                let spreadCut: [any PageStep] = [PerspectiveStep(spread: true), enhance]
-                return PageProcessor(steps: queue, arrangement: arrangement, book: BookSplitOptions.of(settings),
-                                     prepare: spreadCut)
+                return PageProcessor(steps: steps, arrangement: arrangement, book: BookSplitOptions.of(settings),
+                                     prepare: cut)
             }
-            for step in queue { steps.append(step) }
         } else if !(settings.adjustments.isIdentity && settings.colorMode == .color) {
             steps.append(AdjustmentStep(adjustments: settings.adjustments, colorMode: settings.colorMode,
                                         adjustsAlternate: false))
         }
-        return PageProcessor(steps: steps, arrangement: arrangement)
+        return PageProcessor(steps: steps, arrangement: arrangement, prepare: cut)
     }
 
     /// Whether a camera's shot of a book is a whole spread, cut at its spine (the iPhone's "Whole spread"):

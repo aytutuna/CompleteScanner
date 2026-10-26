@@ -102,8 +102,10 @@ struct PageStripView: View {
         let joinLabel: String? = page.flatMap { (item: ScannedPage) -> String? in BookPages.joinActionLabel(item) }
         let canEdit: Bool = state.canEditSpread(id: pageID)
         return VStack(spacing: 2) {
+            // The previews are about 1600 px tall; drawn this small they alias without a better filter.
             Image(decorative: cell.image, scale: 1)
                 .resizable()
+                .interpolation(.high)
                 .scaledToFit()
                 .frame(height: 92)
                 .background(Color.white)

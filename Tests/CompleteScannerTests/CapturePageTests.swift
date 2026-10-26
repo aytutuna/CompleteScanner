@@ -267,14 +267,21 @@ final class CapturePageTests: XCTestCase {
     func testForCaptureCutsThePageOutFirst() throws {
         var s = ScanSettings()
         s.document.autoCrop = true
-        XCTAssertEqual(PageProcessor.forCapture(s).steps.map(\.name), ["perspective", "enhance", "blank", "separator"])
+        XCTAssertEqual(PageProcessor.forCapture(s).prepare.map(\.name), ["perspective", "enhance"])
+        XCTAssertEqual(PageProcessor.forCapture(s).steps.map(\.name), ["blank", "separator"])
         s.colorMode = .grayscale
         let processor = PageProcessor.forCapture(s)
-        XCTAssertEqual(processor.steps.map(\.name), ["perspective", "enhance", "blank", "separator", "adjust"])
-        let enhance: EnhanceStep = try XCTUnwrap(processor.steps[1] as? EnhanceStep)
+        XCTAssertEqual(processor.steps.map(\.name), ["blank", "separator", "adjust"])
+        let enhance: EnhanceStep = try XCTUnwrap(processor.prepare[1] as? EnhanceStep)
         XCTAssertEqual(enhance.mode, .gray)
         let photo = image(WarpFixtures.photo(640, 480))
-        let processed = try XCTUnwrap(try processor.process([captured(photo, facts())]).pages.first)
+        let result = try processor.process([captured(photo, facts())])
+        let processed = try XCTUnwrap(result.pages.first)
+        // The preview and the history show the page cut out, not the photo around it.
+        let shown = try XCTUnwrap(result.arranged.first)
+        XCTAssertEqual(shown.geometry?.basis, .perspective)
+        XCTAssertEqual(shown.image.width, processed.image.width)
+        XCTAssertEqual(shown.image.height, processed.image.height)
         XCTAssertEqual(processed.geometry?.basis, .perspective)
         XCTAssertEqual(processed.dpi, 33)
         XCTAssertNotNil(processed.blank)
@@ -289,15 +296,15 @@ final class CapturePageTests: XCTestCase {
         XCTAssertFalse(PageProcessor.splitsCameraSpreads(s))
         let single = PageProcessor.forCapture(s)
         XCTAssertNil(single.book)
-        XCTAssertTrue(single.prepare.isEmpty)
-        XCTAssertEqual(single.steps.map(\.name), ["perspective", "enhance", "blank", "separator"])
+        XCTAssertEqual(single.prepare.map(\.name), ["perspective", "enhance"])
+        XCTAssertEqual(single.steps.map(\.name), ["blank", "separator"])
 
         s.taskOptions.cameraSpreads = true
         XCTAssertTrue(PageProcessor.splitsCameraSpreads(s))
         let processor = PageProcessor.forCapture(s)
         XCTAssertEqual(processor.prepare.map(\.name), ["perspective", "enhance"])
         XCTAssertEqual((processor.prepare.first as? PerspectiveStep)?.spread, true)
-        XCTAssertEqual((single.steps.first as? PerspectiveStep)?.spread, false)
+        XCTAssertEqual((single.prepare.first as? PerspectiveStep)?.spread, false)
         XCTAssertEqual(processor.steps.map(\.name), ["blank", "spineShadow", "separator"])
         XCTAssertEqual(processor.book, BookSplitOptions.of(s))
         // Not for another task, nor for a scan.
@@ -393,7 +400,7 @@ final class CapturePageTests: XCTestCase {
         var s = ScanSettings()
         s.adjustments.brightness = 0.1
         let processor = PageProcessor.forCapture(s)
-        XCTAssertEqual(processor.steps.map(\.name), ["perspective", "enhance", "blank", "separator", "adjust"])
+        XCTAssertEqual(processor.steps.map(\.name), ["blank", "separator", "adjust"])
         func shot(_ sheet: RgbaImage) -> ScannedPage {
             let photo: RgbaImage = EnhancerPages.onATable(sheet)
             var page: ScannedPage = ScannedPage(image: image(photo), dpi: CaptureScale.nominalDPI, colorMode: .color)

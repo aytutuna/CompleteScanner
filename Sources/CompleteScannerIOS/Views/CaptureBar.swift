@@ -87,6 +87,7 @@ struct CaptureBar: View {
                     if let image = last {
                         Image(decorative: image, scale: 1)
                             .resizable()
+                            .interpolation(.high)
                             .scaledToFit()
                             .frame(width: 40, height: 52)
                             .background(Color.white)

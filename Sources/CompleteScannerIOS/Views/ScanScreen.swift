@@ -1142,6 +1142,7 @@ private struct PreviewArea: View {
             } else if let image {
                 Image(decorative: image, scale: 1)
                     .resizable()
+                    .interpolation(.high)
                     .scaledToFit()
                     .padding(8)
                     .accessibilityLabel(Text("Last scan"))

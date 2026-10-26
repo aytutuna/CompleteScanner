@@ -202,7 +202,7 @@ private func taskSettings(_ task: ScanTask) -> ScanSettings {
 
 private func stepNames(_ processor: PageProcessor) -> [String] {
     var names: [String] = []
-    for step in processor.steps {
+    for step in processor.prepare + processor.steps {
         names.append(step.name)
     }
     return names
@@ -310,9 +310,9 @@ final class CaptureObjectsTests: XCTestCase {
                        ["perspective", "enhance", "adjust"])
         XCTAssertEqual(stepNames(PageProcessor.forCapture(taskSettings(.receipt), scorer: scorer)),
                        ["perspective", "enhance", "adjust"])
-        let photos: EnhanceStep = try XCTUnwrap(PageProcessor.forCapture(taskSettings(.photos)).steps[1] as? EnhanceStep)
+        let photos: EnhanceStep = try XCTUnwrap(PageProcessor.forCapture(taskSettings(.photos)).prepare[1] as? EnhanceStep)
         XCTAssertEqual(photos.mode, .photo)
-        let receipts: EnhanceStep = try XCTUnwrap(PageProcessor.forCapture(taskSettings(.receipt)).steps[1] as? EnhanceStep)
+        let receipts: EnhanceStep = try XCTUnwrap(PageProcessor.forCapture(taskSettings(.receipt)).prepare[1] as? EnhanceStep)
         XCTAssertEqual(receipts.mode, .gray)
     }
 

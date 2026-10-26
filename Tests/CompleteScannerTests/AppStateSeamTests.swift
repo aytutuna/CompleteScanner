@@ -299,7 +299,7 @@ final class AppStateSeamTests: XCTestCase {
         // A camera's or a photo's: a page with capture facts is cut out of its photo first.
         XCTAssertEqual(photo.steps.map(\.name),
                        PageProcessor.forCapture(settings, scorer: scorer, barcodes: barcodes).steps.map(\.name))
-        XCTAssertEqual(photo.steps.first?.name, "perspective")
+        XCTAssertEqual(photo.prepare.first?.name, "perspective")
         // A phone's pages were cleaned up on the phone.
         let phone = AppState.cleanUpStage(for: .phone, settings: settings, arrangement: .asScanned,
                                           scorer: scorer, barcodes: barcodes)
