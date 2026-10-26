@@ -106,6 +106,11 @@ public final class IOSCameraModel: ObservableObject {
     /// The session is set up (the preview can show it).
     @Published private var prepared: Bool = false
     private var thermalObserver: NSObjectProtocol?
+    /// Takes "Photo not taken" away again (`failedNoticeNanoseconds` after the photo failed).
+    private var failedNoticeClear: Task<Void, Never>?
+
+    /// How long "Photo not taken" stays over the viewfinder.
+    public static let failedNoticeNanoseconds: UInt64 = 2_500_000_000
 
     /// `driver` runs the session. The others default to the device's own: its cameras
     /// (`IOSCameraLens.hasCamera`), the camera permission and its prompt, the thermal state with its
@@ -271,16 +276,26 @@ public final class IOSCameraModel: ObservableObject {
     }
 
     /// Takes a photo: the shot with the live outline turned into the upright photo's shares (none for a
-    /// mirrored photo, or with no outline shown); nil when the camera does not run or the photo failed.
+    /// mirrored photo, or with no outline shown); nil when the camera does not run or the photo failed. A
+    /// failed photo says so for a few seconds and leaves the page in view to be taken again
+    /// (`LiveQuadTracker.rearm`).
     public func shoot() async -> IOSCameraShot? {
         guard canShoot else { return nil }
         isTakingPhoto = true
         photoFailed = false
+        failedNoticeClear?.cancel()
         let outline: Quad? = live?.outline
         let photo: IOSCameraPhoto? = await driver.takePhoto()
         isTakingPhoto = false
         guard let taken = photo else {
             photoFailed = true
+            // No photo of the page: Auto takes it once it holds still again.
+            tracker.rearm()
+            failedNoticeClear = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: IOSCameraModel.failedNoticeNanoseconds)
+                guard !Task.isCancelled, let model = self else { return }
+                model.photoFailed = false
+            }
             return nil
         }
         shotCount += 1

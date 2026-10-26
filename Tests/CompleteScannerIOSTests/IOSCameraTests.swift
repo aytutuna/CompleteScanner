@@ -15,7 +15,8 @@ import XCTest
 // interruptions and the corner editor, the torch, and the shutter with the live outline turned into the
 // photo; the automatic shutter (frames pushed one by one: a page held still on sharp, lit frames is
 // taken once and handed over; blurred or dark frames, Auto turned off, or a photo that cannot be taken
-// yet take nothing; the setting is remembered; the wait line said to VoiceOver once per wait,
+// yet take nothing; a failed photo is said for a while and the page taken again; the setting is
+// remembered; the wait line said to VoiceOver once per wait,
 // `IOSWaitAnnouncer`); then the shutter's photo from a fixture still through
 // the corner editor into the queue with its focal length (`IOSImportSession.importShot`), the live
 // outline as the editor's start, and continuous capture, where a page found clearly skips the editor.
@@ -769,6 +770,30 @@ final class IOSCameraTests: XCTestCase {
         source.push(LiveFrames.frame(), from: 15, through: 30)
         try await ImportTestSupport.waitUntil(timeout: 30) { log.shots.count == 1 }
         XCTAssertEqual(driver.photos, 1)
+        model.disappear()
+    }
+
+    @MainActor
+    func test_aFailedPhoto_isSaidForAWhile_andThePageIsTakenOnceItHoldsStillAgain() async throws {
+        let driver = FakeCameraDriver()
+        let source = ManualFrameSource()
+        driver.frameSource = source
+        let log = ShotLog()
+        let defaults: UserDefaults = try freshDefaults()
+        let model: IOSCameraModel = makeAutoModel(driver, defaults: defaults, log: log)
+        await model.appear()
+        source.push(LiveFrames.frame(), from: 0, through: 14)
+        try await ImportTestSupport.waitUntil(timeout: 30) { driver.photos == 1 }
+        XCTAssertEqual(model.message, "Photo not taken")
+        XCTAssertEqual(log.shots.count, 0)
+        // The notice goes by itself, with no other photo taken meanwhile.
+        try await ImportTestSupport.waitUntil(timeout: 10) { model.message == nil }
+        XCTAssertEqual(driver.photos, 1)
+        // The same page held still again is taken.
+        driver.photo = IOSCameraPhoto(data: Data([3]), rotationDegrees: 0, mirrored: false)
+        source.push(LiveFrames.frame(), from: 15, through: 30)
+        try await ImportTestSupport.waitUntil(timeout: 30) { log.shots.count == 1 }
+        XCTAssertEqual(driver.photos, 2)
         model.disappear()
     }
 
