@@ -45,6 +45,11 @@ jobs:
             Set-Service stisvc -StartupType Manual
             "stisvc: start type set to $((Get-Service stisvc).StartType)"
           }
+      # DocAligner's FastViT-T8, the page corner model of every platform (pinned release, SHA-256 checked
+      # by the script), into Sources/CompleteScannerModel/Models before anything builds.
+      - name: Fetch the corner model
+        shell: bash
+        run: bash scripts/fetch_docaligner.sh
       # Built first, so the tests do not share the runner's cores with the compiler.
       - name: Build
         run: dotnet build windows/CompleteScanner.sln -c Release
@@ -133,6 +138,10 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode_16.4.app
       - name: Toolchain
         run: swift --version
+      # The page corner model, as in the Windows job, so the model's tests run here
+      # (CompleteScannerModelTests, on the photos in Tests/Fixtures/Pages).
+      - name: Fetch the corner model
+        run: bash scripts/fetch_docaligner.sh
       # The app as developers build it (debug).
       - name: Build
         run: swift build
@@ -220,10 +229,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Select Xcode 26.6
         run: sudo xcode-select -s /Applications/Xcode_26.6.app
-      # DocAligner's corner models for the iPhone's page detector test, into the package's Models
-      # folder before anything builds it (pinned release, SHA-256 checked by the script). The macOS job
-      # builds without them.
-      - name: Fetch DocAligner's models
+      # The page corner model, as in the other jobs, before anything builds the package.
+      - name: Fetch the corner model
         run: bash scripts/fetch_docaligner.sh
       - name: Toolchain
         run: |

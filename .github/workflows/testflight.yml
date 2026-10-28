@@ -38,8 +38,8 @@ jobs:
       - uses: actions/checkout@v7
       - name: Select Xcode 26.6
         run: sudo xcode-select -s /Applications/Xcode_26.6.app
-      # The page detector test's models go into the app, as in the ios job in ci.yml.
-      - name: Fetch DocAligner's models
+      # The page corner model goes into the app, as in the ios job in ci.yml.
+      - name: Fetch the corner model
         run: bash scripts/fetch_docaligner.sh
       # Same pinned XcodeGen as the ios job in ci.yml.
       - name: Install XcodeGen
