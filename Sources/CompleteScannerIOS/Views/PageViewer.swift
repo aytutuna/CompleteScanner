@@ -85,17 +85,66 @@ struct PageViewer: View {
     @State private var cropRotation: Int = 0
     /// The filter tapped last for each page, shown as chosen while the page is cut again.
     @State private var requested: [UUID: CaptureFilter] = [:]
-    /// The page shown read from its spool file, sharper than the queue's preview, and what it was read for.
-    @State private var sharp: CGImage?
-    @State private var sharpFor: SharpRead?
+    /// The page shown and the ones either side of it read from their spool files, sharper than the queue's previews.
+    @State private var sharpCache: SharpCache = SharpCache()
     /// The pager's longest side so far, in points: it only grows, so turning the phone reads nothing again.
     @State private var viewSide: CGFloat = 0
 
-    /// What the page shown is read from: its spool file, at `side` pixels on its longer side, turned `turns`.
-    private struct SharpRead: Equatable {
+    /// What a page is read from: its spool file, at `side` pixels on its longer side (`pixels` in all), turned
+    /// `turns`. `preview` is the queue's preview the page has: turned, cut again, swapped or replaced, a page
+    /// gets a new one, so a picture read before is never shown for it.
+    struct SharpRead: Equatable {
+        let page: UUID
+        let preview: ObjectIdentifier
         let url: URL
         let side: Int
         let turns: Int
+        let pixels: Int
+    }
+
+    /// The pages read sharper that the viewer holds: at most `limit`, and a big one alone.
+    struct SharpCache {
+        struct Entry {
+            let read: SharpRead
+            /// Kept alive with the picture, so `read.preview` cannot come back as another preview's identifier.
+            let preview: CGImage
+            let image: CGImage
+        }
+
+        static let limit: Int = 3
+        /// A page read over this many pixels is held alone: three of them would take a few hundred MB.
+        static let bigPixels: Int = 20_000_000
+
+        private(set) var entries: [Entry] = []
+
+        /// The pages to hold read with the page shown `current`: it and the ones either side of it, or only it
+        /// when it is big; a big page either side is left out.
+        static func kept(current: SharpRead?, neighbours: [SharpRead]) -> [SharpRead] {
+            if let current, current.pixels > Self.bigPixels { return [current] }
+            let small: [SharpRead] = neighbours.filter { (read: SharpRead) -> Bool in read.pixels <= Self.bigPixels }
+            guard let current else { return small }
+            return [current] + small
+        }
+
+        func image(for read: SharpRead) -> CGImage? {
+            entries.first(where: { (entry: Entry) -> Bool in entry.read == read })?.image
+        }
+
+        /// Lets go of every picture not read for one of `reads`.
+        mutating func keep(_ reads: [SharpRead]) {
+            entries.removeAll { (entry: Entry) -> Bool in !reads.contains(entry.read) }
+        }
+
+        /// Holds `image`, read for `read` from the page whose preview is `preview`, in place of what was read
+        /// for that page before; the oldest go past `limit`, and all the others with a big one.
+        mutating func add(_ image: CGImage, read: SharpRead, preview: CGImage) {
+            let big: Bool = read.pixels > Self.bigPixels
+            entries.removeAll { (entry: Entry) -> Bool in big || entry.read.page == read.page }
+            entries.append(Entry(read: read, preview: preview, image: image))
+            if entries.count > Self.limit {
+                entries.removeFirst(entries.count - Self.limit)
+            }
+        }
     }
 
     init(startID: UUID, onClose: @escaping () -> Void) {
@@ -115,6 +164,13 @@ struct PageViewer: View {
     nonisolated static func sharpSide(view: Int, page: Int, preview: Int) -> Int {
         let side: Int = min(view * 3, page)
         return side > preview ? side : 0
+    }
+
+    /// The pixels of a page `page` pixels large read at `side` pixels on its longer side.
+    nonisolated static func readPixels(side: Int, page: CGSize) -> Int {
+        let long: Double = Double(max(page.width, page.height, 1))
+        let short: Double = Double(min(page.width, page.height))
+        return Int(Double(side) * Double(side) * short / long)
     }
 
     /// The picture in the spool file `url`, at most `maxSide` pixels on its longer side and turned as
@@ -148,14 +204,28 @@ struct PageViewer: View {
         current.map { (page: ScannedPage) -> Bool in PageRecut.canRecut(page) } ?? false
     }
 
-    /// What the page shown is read from for a sharper picture; nil for a page without a spool file, or one whose
-    /// preview is as sharp as the view needs.
-    private var sharpRead: SharpRead? {
-        guard let page = current, let url = page.fileURL, let size = page.fullPixelSize else { return nil }
+    /// What `page` is read from for a sharper picture; nil for a page without a spool file, or one whose preview
+    /// is as sharp as the view needs.
+    private func sharpRead(of page: ScannedPage) -> SharpRead? {
+        guard let url = page.fileURL, let size = page.fullPixelSize else { return nil }
         let side: Int = Self.sharpSide(view: Int(viewSide * displayScale), page: Int(max(size.width, size.height)),
                                        preview: max(page.image.width, page.image.height))
         guard side > 0 else { return nil }
-        return SharpRead(url: url, side: side, turns: page.rotationQuarterTurns)
+        return SharpRead(page: page.id, preview: ObjectIdentifier(page.image), url: url, side: side,
+                         turns: page.rotationQuarterTurns, pixels: Self.readPixels(side: side, page: size))
+    }
+
+    /// What the viewer holds read sharper: the page shown, then the next and the one before (`SharpCache.kept`).
+    private var sharpPlan: [SharpRead] {
+        let pages: [ScannedPage] = state.scannedPages
+        guard let index = pages.firstIndex(where: { (page: ScannedPage) -> Bool in page.id == selection }) else { return [] }
+        var neighbours: [SharpRead] = []
+        for other in [index + 1, index - 1] where other >= 0 && other < pages.count {
+            if let read = sharpRead(of: pages[other]) {
+                neighbours.append(read)
+            }
+        }
+        return SharpCache.kept(current: sharpRead(of: pages[index]), neighbours: neighbours)
     }
 
     /// What the filter previews are made from: the page, its turn and its corners (not its filter).
@@ -204,7 +274,7 @@ struct PageViewer: View {
         .task(id: previewKey) {
             await loadPreviews()
         }
-        .task(id: sharpRead) {
+        .task(id: sharpPlan) {
             await loadSharp()
         }
         .modifier(ErrorAlert(state: state))
@@ -254,26 +324,34 @@ struct PageViewer: View {
             .accessibilityIdentifier("viewer.page.\(index + 1)")
     }
 
-    /// The page's preview, or for the page shown its sharper picture once it is read.
+    /// The page's preview, or its sharper picture once it is read as the page is now.
     private func shownImage(_ page: ScannedPage) -> CGImage {
-        guard page.id == selection, let sharp, sharpFor == sharpRead else { return page.image }
+        guard let read = sharpRead(of: page), let sharp = sharpCache.image(for: read) else { return page.image }
         return sharp
     }
 
-    /// Reads the page shown from its spool file off the main actor, to show in place of its preview. The
-    /// picture read for the page shown before is let go first, so only one is held at a time.
+    /// Reads the page shown, then the ones either side of it, from their spool files off the main actor, to show
+    /// in place of their previews; a swipe then lands on a page read already. What was read for pages no longer
+    /// near, or for a page as it was before a change, is let go first.
     private func loadSharp() async {
-        sharp = nil
-        sharpFor = nil
-        // Turns and filters clicked earlier land first, so the file read is the one the page ends up with.
+        sharpCache.keep(sharpPlan)
+        // Turns and filters clicked earlier land first, so the files read are the ones the pages end up with.
         await state.pageEditChain?.value
-        guard !Task.isCancelled, let read = sharpRead else { return }
-        let image: CGImage? = await Task.detached(priority: .userInitiated) { () -> CGImage? in
-            PageViewer.readPage(read.url, maxSide: read.side, quarterTurns: read.turns)
-        }.value
-        guard !Task.isCancelled, let image, read == sharpRead else { return }
-        sharp = image
-        sharpFor = read
+        for read in sharpPlan where sharpCache.image(for: read) == nil {
+            guard !Task.isCancelled else { return }
+            guard let preview = state.scannedPages.first(where: { (page: ScannedPage) -> Bool in page.id == read.page })?.image,
+                  ObjectIdentifier(preview) == read.preview else { continue }
+            let priority: TaskPriority = read.page == selection ? .userInitiated : .utility
+            let image: CGImage? = await Task.detached(priority: priority) { () -> CGImage? in
+                PageViewer.readPage(read.url, maxSide: read.side, quarterTurns: read.turns)
+            }.value
+            // The read can land after a swipe or edit but before SwiftUI cancels this task; one no longer planned
+            // would only push out entries that are.
+            guard !Task.isCancelled, sharpPlan.contains(read) else { return }
+            if let image {
+                sharpCache.add(image, read: read, preview: preview)
+            }
+        }
     }
 
     private func step(by offset: Int) {

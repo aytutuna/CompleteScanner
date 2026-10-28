@@ -460,5 +460,62 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertNil(PageViewer.readPage(url.deletingLastPathComponent().appendingPathComponent("gone.tiff"),
                                          maxSide: 300, quarterTurns: 0))
     }
+
+    func test_theViewer_holdsThePageShownAndTheOnesBesideIt_butABigPageAlone() {
+        // A 12 MP shot read whole is under the limit; a 24 MP one is over it.
+        XCTAssertEqual(PageViewer.readPixels(side: 4032, page: CGSize(width: 4032, height: 3024)), 12_192_768)
+        XCTAssertEqual(PageViewer.readPixels(side: 5712, page: CGSize(width: 4284, height: 5712)), 24_470_208)
+        let preview: CGImage = flowPage().image
+        let shown: PageViewer.SharpRead = sharpRead(UUID(), preview: preview)
+        let next: PageViewer.SharpRead = sharpRead(UUID(), preview: preview)
+        let before: PageViewer.SharpRead = sharpRead(UUID(), preview: preview)
+        let big: PageViewer.SharpRead = sharpRead(UUID(), preview: preview, pixels: 24_470_208)
+        XCTAssertEqual(PageViewer.SharpCache.kept(current: shown, neighbours: [next, before]), [shown, next, before])
+        XCTAssertEqual(PageViewer.SharpCache.kept(current: big, neighbours: [next, before]), [big])
+        XCTAssertEqual(PageViewer.SharpCache.kept(current: shown, neighbours: [big, before]), [shown, before])
+        XCTAssertEqual(PageViewer.SharpCache.kept(current: nil, neighbours: [next, big]), [next])
+    }
+
+    func test_theViewerCache_keepsThreeAtMost_andNeverShowsAPageAsItWasBeforeAChange() {
+        let preview: CGImage = flowPage().image
+        let picture: CGImage = flowPage().image
+        let a: PageViewer.SharpRead = sharpRead(UUID(), preview: preview)
+        let b: PageViewer.SharpRead = sharpRead(UUID(), preview: preview)
+        let c: PageViewer.SharpRead = sharpRead(UUID(), preview: preview)
+        let d: PageViewer.SharpRead = sharpRead(UUID(), preview: preview)
+        var cache = PageViewer.SharpCache()
+        for read in [a, b, c, d] {
+            cache.add(picture, read: read, preview: preview)
+        }
+        XCTAssertEqual(cache.entries.count, 3)
+        XCTAssertNil(cache.image(for: a))
+        XCTAssertTrue(cache.image(for: d) === picture)
+
+        // Turned or cut again, the page has a new preview: what was read for it before is not shown.
+        let turnedPreview: CGImage = flowPage().image
+        let turned: PageViewer.SharpRead = sharpRead(d.page, preview: turnedPreview, turns: 1)
+        XCTAssertNil(cache.image(for: turned))
+        let cut: PageViewer.SharpRead = sharpRead(d.page, preview: turnedPreview)
+        XCTAssertNil(cache.image(for: cut))
+        cache.add(picture, read: turned, preview: turnedPreview)
+        XCTAssertEqual(cache.entries.count, 3)
+        XCTAssertNil(cache.image(for: d))
+        XCTAssertNotNil(cache.image(for: turned))
+
+        // Pages no longer near the one shown (or deleted) go; a big page read is held alone.
+        cache.keep([c, turned])
+        XCTAssertEqual(cache.entries.map { (entry: PageViewer.SharpCache.Entry) -> UUID in entry.read.page }, [c.page, d.page])
+        let big: PageViewer.SharpRead = sharpRead(UUID(), preview: preview, pixels: 24_470_208)
+        cache.add(picture, read: big, preview: preview)
+        XCTAssertEqual(cache.entries.count, 1)
+        XCTAssertNotNil(cache.image(for: big))
+    }
+}
+
+/// What the viewer reads for page `page` with the preview `preview`: a 12 MP shot read whole unless said.
+private func sharpRead(_ page: UUID, preview: CGImage, pixels: Int = 12_192_768, turns: Int = 0) -> PageViewer.SharpRead {
+    PageViewer.SharpRead(page: page, preview: ObjectIdentifier(preview),
+                         url: FileManager.default.temporaryDirectory.appendingPathComponent("\(page.uuidString).tiff"),
+                         side: 4032, turns: turns, pixels: pixels)
 }
 #endif
