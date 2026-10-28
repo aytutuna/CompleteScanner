@@ -60,6 +60,15 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
+# The page corner model and its licence, where FastViTCornerModel looks in a packaged app. Without it
+# (scripts/fetch_docaligner.sh not run) the app finds pages with its own search.
+MODELS=Sources/CompleteScannerModel/Models
+if [ -f "$MODELS/fastvit_t8_h_e_bifpn_256_fp32.onnx" ]; then
+  cp "$MODELS/fastvit_t8_h_e_bifpn_256_fp32.onnx" "$MODELS/DocAligner-LICENSE.txt" "$APP/Contents/Resources/"
+else
+  echo "    No corner model fetched; the app will use its own page search."
+fi
+
 # App icon (optional — skipped if generation fails)
 if [ ! -f dist/icon_1024.png ]; then
   mkdir -p dist

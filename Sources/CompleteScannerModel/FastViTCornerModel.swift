@@ -35,10 +35,21 @@ public final class FastViTCornerModel: CornerModel, @unchecked Sendable {
     public static let shared = FastViTCornerModel()
     static let fileName: String = "fastvit_t8_h_e_bifpn_256_fp32"
 
-    /// The model's file; nil when it was not fetched.
-    public static var url: URL? {
-        Bundle.module.url(forResource: fileName, withExtension: "onnx", subdirectory: "Models")
-    }
+    /// The model's file; nil when it was not fetched. The Mac app made by scripts/make_app.sh carries it in its
+    /// own Resources; elsewhere it is in this target's bundle.
+    public static let url: URL? = {
+        if let packaged = Bundle.main.url(forResource: fileName, withExtension: "onnx") {
+            return packaged
+        }
+        #if os(macOS)
+        // SwiftPM's Bundle.module looks for its bundle at the app's top level, where code signing allows no
+        // files, and stops the app when it is not there.
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            return nil
+        }
+        #endif
+        return Bundle.module.url(forResource: fileName, withExtension: "onnx", subdirectory: "Models")
+    }()
 
     public static var isAvailable: Bool { url != nil }
 
