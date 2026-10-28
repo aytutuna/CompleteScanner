@@ -100,9 +100,10 @@ UI per platform** architecture:
   sidebar/inspector/preview-canvas/page-strip/photo-review, a view-model porting the shared Swift
   `AppState` orchestration, and Windows service implementations (WIA, Windows Scan, eSCL and TWAIN
   scanning, Windows.Media.Ocr, WPF imaging codecs). Its package dependencies, each pinned to an
-  exact version, are [NTwain](https://github.com/soukoku/ntwain) 3.7.6 (MIT) for TWAIN and
+  exact version, are [NTwain](https://github.com/soukoku/ntwain) 3.7.6 (MIT) for TWAIN,
   [ZXing.Net](https://github.com/micjahn/ZXing.Net) 0.16.11 (Apache-2.0) for barcode and QR
-  separator sheets (see [Third-party notices](#third-party-notices)).
+  separator sheets, and [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.24.2 (MIT)
+  for the page corner model (see [Third-party notices](#third-party-notices)).
 
 The macOS app is unchanged and remains the reference implementation.
 
@@ -394,7 +395,8 @@ a stack is turned over by hand.
 Each photo is read once into memory and never changed, moved or locked: the spool gets the page and
 the photo as the app made them, never the file itself. The photo is turned upright by its
 orientation tag (EXIF 274: all eight values, mirrored ones included), the page's corners are found
-(`PhotoDocumentDetector`) and the page is cut out along them with its perspective corrected
+(DocAligner's FastViT-T8 on ONNX Runtime's CPU, `Services/OnnxCornerModel.cs`, as on the Mac and the
+iPhone; `PhotoDocumentDetector` when the model was not fetched or finds no page) and the page is cut out along them with its perspective corrected
 (`PerspectiveCorrector`). When the page is not found clearly (confidence under 0.7, cut off by the
 photo's edge, two pages, or nothing found) the **corner editor** opens with the best guess and says
 why: drag each corner onto a corner of the page (a magnifier shows the photo around the corner
@@ -1887,6 +1889,12 @@ each under its own license (the helper uses NTwain only):
   <https://github.com/micjahn/ZXing.Net>
 - **NTwain** 3.7.6 — by Eugene Wang. Licensed under the MIT License.
   <https://github.com/soukoku/ntwain>
+- **ONNX Runtime** 1.24.2 (`Microsoft.ML.OnnxRuntime`, the page corner model) — by Microsoft.
+  Licensed under the MIT License. <https://github.com/microsoft/onnxruntime>
+- **DocAligner FastViT-T8** (`Models\fastvit_t8_h_e_bifpn_256_fp32.onnx` next to the app, fetched by
+  `scripts/fetch_docaligner.sh`) — by DocsaidLab, release 1.1.1. Licensed under the Apache License,
+  Version 2.0; its license text is copied next to it (`Models\DocAligner-LICENSE.txt`).
+  <https://github.com/DocsaidLab/DocAligner>
 
 The tests also use PdfPig 0.1.16 (Apache-2.0), which is never shipped.
 
