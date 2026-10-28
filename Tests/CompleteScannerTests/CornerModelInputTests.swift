@@ -22,7 +22,7 @@ private func photo(_ width: Int, _ height: Int, _ color: (Int, Int) -> (Int, Int
 private let plane = CornerModelInput.side * CornerModelInput.side
 
 /// The input's value in `channel` (0 blue, 1 green, 2 red) at (x, y).
-private func value(_ input: [Float], _ channel: Int, _ x: Int, _ y: Int) -> Float {
+private func inputValue(_ input: [Float], _ channel: Int, _ x: Int, _ y: Int) -> Float {
     input[channel * plane + y * CornerModelInput.side + x]
 }
 
@@ -31,33 +31,33 @@ final class CornerModelInputTests: XCTestCase {
         let input = CornerModelInput.make(RgbaImage.filled(width: 300, height: 200, r: 255, g: 128, b: 0))
         XCTAssertEqual(input.count, 3 * 256 * 256)
         for (x, y) in [(0, 0), (255, 0), (17, 93), (255, 255)] {
-            XCTAssertEqual(value(input, 0, x, y), 0)
-            XCTAssertEqual(value(input, 1, x, y), Float(128.0 / 255))
-            XCTAssertEqual(value(input, 2, x, y), 1)
+            XCTAssertEqual(inputValue(input, 0, x, y), 0)
+            XCTAssertEqual(inputValue(input, 1, x, y), Float(128.0 / 255))
+            XCTAssertEqual(inputValue(input, 2, x, y), 1)
         }
     }
 
     func testHalvingTakesTheMeanOfEachPairOfPixels() {
         // 512 wide: input column x reads photo columns 2x and 2x + 1 half and half; 256 high: rows 1 to 1.
         let input = CornerModelInput.make(photo(512, 256) { x, y in (x & 255, y, 0) })
-        XCTAssertEqual(value(input, 2, 10, 7), Float(20.5 / 255))
-        XCTAssertEqual(value(input, 2, 127, 7), Float(254.5 / 255))
-        XCTAssertEqual(value(input, 2, 128, 7), Float(0.5 / 255))
-        XCTAssertEqual(value(input, 2, 200, 7), Float(144.5 / 255))
-        XCTAssertEqual(value(input, 1, 10, 7), Float(7.0 / 255))
-        XCTAssertEqual(value(input, 1, 10, 255), 1)
+        XCTAssertEqual(inputValue(input, 2, 10, 7), Float(20.5 / 255))
+        XCTAssertEqual(inputValue(input, 2, 127, 7), Float(254.5 / 255))
+        XCTAssertEqual(inputValue(input, 2, 128, 7), Float(0.5 / 255))
+        XCTAssertEqual(inputValue(input, 2, 200, 7), Float(144.5 / 255))
+        XCTAssertEqual(inputValue(input, 1, 10, 7), Float(7.0 / 255))
+        XCTAssertEqual(inputValue(input, 1, 10, 255), 1)
     }
 
     func testEnlargingBlendsTheNearestPixelsAndClampsAtTheEdges() {
         // 2 × 2: red 0 on the left and 255 on the right, green 0 at the top and 255 at the bottom.
         let input = CornerModelInput.make(photo(2, 2) { x, y in (255 * x, 255 * y, 0) })
-        XCTAssertEqual(value(input, 2, 0, 0), 0)
-        XCTAssertEqual(value(input, 2, 63, 0), 0)
-        XCTAssertEqual(value(input, 2, 64, 0), Float(0.99609375 / 255))
-        XCTAssertEqual(value(input, 2, 128, 0), Float(128.49609375 / 255))
-        XCTAssertEqual(value(input, 2, 255, 0), 1)
-        XCTAssertEqual(value(input, 1, 0, 128), Float(128.49609375 / 255))
-        XCTAssertEqual(value(input, 1, 0, 255), 1)
+        XCTAssertEqual(inputValue(input, 2, 0, 0), 0)
+        XCTAssertEqual(inputValue(input, 2, 63, 0), 0)
+        XCTAssertEqual(inputValue(input, 2, 64, 0), Float(0.99609375 / 255))
+        XCTAssertEqual(inputValue(input, 2, 128, 0), Float(128.49609375 / 255))
+        XCTAssertEqual(inputValue(input, 2, 255, 0), 1)
+        XCTAssertEqual(inputValue(input, 1, 0, 128), Float(128.49609375 / 255))
+        XCTAssertEqual(inputValue(input, 1, 0, 255), 1)
     }
 
     func testAnOddSizedPhotoGivesTheSameNumbersOnBothPlatforms() {
