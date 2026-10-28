@@ -1,10 +1,11 @@
-#if os(iOS)
-import CompleteScannerKit
 import CoreGraphics
 import Foundation
 
-/// The page's corners from DocAligner's heatmaps (`DocAligner`): four channels of `width` × `height` values
-/// from 0 to 1, one per corner, top left, top right, bottom right and bottom left. In each channel the values
+// Twin of windows/CompleteScanner.Core/CornerHeatmap.cs: the same search, sums and divisions in the same
+// order, so both platforms read the same corners from the same heatmaps.
+
+/// The page's corners from the heatmaps of DocAligner's corner models: four channels of `width` × `height`
+/// values from 0 to 1, one per corner, top left, top right, bottom right and bottom left. In each channel the values
 /// from `threshold` up are the corner's; of their 8-connected blobs the largest (most values) is taken, and
 /// the corner is its centre weighted by the heat, as shares of the image (x right, y down; value (x, y)
 /// stands for the point (x + 0.5) / width, (y + 0.5) / height). The confidence is the lowest of the four
@@ -93,4 +94,3 @@ public enum CornerHeatmap {
         return (CGPoint(x: bestX / Double(width), y: bestY / Double(height)), Double(peak))
     }
 }
-#endif

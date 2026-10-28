@@ -1,12 +1,11 @@
-#if os(iOS)
 import CoreGraphics
 import Foundation
 import XCTest
-@testable import CompleteScannerIOS
 @testable import CompleteScannerKit
 
-// DocAligner's heatmaps read back into corners (`CornerHeatmap`), on heatmaps drawn here: a Gaussian spot
-// per channel where the corner is, as the model draws them.
+// Twin of windows/CompleteScanner.Core.Tests/CornerHeatmapTests.cs: DocAligner's heatmaps read back into
+// corners (`CornerHeatmap`), on heatmaps drawn here: a Gaussian spot per channel where the corner is, as the
+// model draws them.
 
 /// Four channels of `size` × `size` values, all 0 until spots are added.
 struct DrawnHeatmap {
@@ -144,4 +143,3 @@ final class CornerHeatmapTests: XCTestCase {
         XCTAssertNil(CornerHeatmap.decode(Array(values.prefix(10)), width: width, height: height))
     }
 }
-#endif
