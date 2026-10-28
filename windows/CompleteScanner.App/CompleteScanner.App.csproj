@@ -56,6 +56,17 @@
          Apache-2.0, no dependencies; the core package only, fed the page's gray pixels, so no
          image-binding package is needed. Pinned to an exact version. -->
     <PackageReference Include="ZXing.Net" Version="[0.16.11]" />
+    <!-- The page corner model (Services/OnnxCornerModel.cs), on the CPU. MIT licensed; the same
+         ONNX Runtime release as the Mac and the iPhone. Pinned to an exact version. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="[1.24.2]" />
+  </ItemGroup>
+
+  <!-- DocAligner's FastViT-T8 and its licence, into Models next to the app, from the folder
+       scripts/fetch_docaligner.sh fetches the model into. Builds without it go on, and the photo import
+       then uses its own page search. -->
+  <ItemGroup Condition="Exists('..\..\Sources\CompleteScannerModel\Models\fastvit_t8_h_e_bifpn_256_fp32.onnx')">
+    <None Include="..\..\Sources\CompleteScannerModel\Models\fastvit_t8_h_e_bifpn_256_fp32.onnx;..\..\Sources\CompleteScannerModel\Models\DocAligner-LICENSE.txt"
+          Link="Models\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
 
 </Project>
