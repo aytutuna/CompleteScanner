@@ -394,6 +394,8 @@ final class IOSFlowTests: XCTestCase {
     func test_pageViewer_namesThePage_andItsFilters() {
         XCTAssertEqual(PageViewerText.title(number: 3, count: 7), "3 of 7")
         XCTAssertEqual(PageViewerText.pageName(2), "Page 2")
+        XCTAssertEqual(PageViewerText.selectedTitle(0), "Select Pages")
+        XCTAssertEqual(PageViewerText.selectedTitle(2), "2 Selected")
         var names: [String] = []
         for filter in CaptureFilter.displayOrder {
             names.append(PageViewerText.filterName(filter))
