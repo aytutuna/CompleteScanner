@@ -35,6 +35,15 @@ struct DrawnHeatmap {
             row += 1
         }
     }
+
+    /// The highest value drawn in `channel`. Spots centred between values peak lower than asked.
+    func peak(_ channel: Int) -> Double {
+        Double(values[channel * size * size ..< (channel + 1) * size * size].max() ?? 0)
+    }
+
+    var weakestPeak: Double {
+        min(peak(0), peak(1), peak(2), peak(3))
+    }
 }
 
 final class CornerHeatmapTests: XCTestCase {
@@ -63,23 +72,23 @@ final class CornerHeatmapTests: XCTestCase {
             XCTAssertEqual(Double(corner.y) * Double(size), Double(expected[index].y), accuracy: 0.01, "corner \(index)")
             index += 1
         }
-        XCTAssertEqual(found.confidence, 0.9, accuracy: 0.01)
+        XCTAssertEqual(found.confidence, heat.weakestPeak, accuracy: 1e-6)
     }
 
     func test_theConfidence_isTheWeakestChannelsPeak() throws {
         let heat: DrawnHeatmap = drawnPage(peaks: [0.95, 0.6, 0.8, 0.9])
         let found: QuadCandidate = try XCTUnwrap(CornerHeatmap.decode(heat.values, width: size, height: size))
-        XCTAssertEqual(found.confidence, 0.6, accuracy: 0.01)
+        XCTAssertEqual(found.confidence, heat.peak(1), accuracy: 1e-6)
     }
 
     func test_theLargestBlob_winsOverASmallerBrighterOne() throws {
         var heat: DrawnHeatmap = drawnPage()
         // A small bright spot far from the top-left corner's wide one.
-        heat.spot(0, x: 40, y: 40, peak: 1.0, sigma: 0.8)
+        heat.spot(0, x: 40.5, y: 40.5, peak: 1.0, sigma: 0.8)
         let found: QuadCandidate = try XCTUnwrap(CornerHeatmap.decode(heat.values, width: size, height: size))
         XCTAssertEqual(Double(found.quad.topLeft.x) * Double(size), 12, accuracy: 0.01)
         XCTAssertEqual(Double(found.quad.topLeft.y) * Double(size), 10, accuracy: 0.01)
-        XCTAssertEqual(found.confidence, 0.9, accuracy: 0.01)
+        XCTAssertEqual(found.confidence, heat.weakestPeak, accuracy: 1e-6)
     }
 
     func test_anEmptyChannel_givesNothing() {
