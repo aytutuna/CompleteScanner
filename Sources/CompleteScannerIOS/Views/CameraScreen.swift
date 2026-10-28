@@ -7,9 +7,10 @@ import UIKit
 
 /// Camera mode, the iPhone's scan screen unless printer mode was picked (`IOSScanMode`): the viewfinder is
 /// the screen. Its top bar has the library (`onLibrary`; none where the sidebar has it), a small round
-/// chevron that swaps the kinds for the options drawer (`CameraDrawer`), and the printer, which switches
-/// to printer mode (`onPrinter`). The viewfinder shows the whole photo as it will be taken (black bands
-/// where the screen is taller or wider), the page's outline over it (yellow, green once the page holds
+/// chevron that swaps the kinds for the options drawer (`CameraDrawer`), the photo size ("24 MP", where
+/// the camera offers more than one: a tap steps to the next, the first pick of a size that may not fit in
+/// the phone's memory says so once), and the printer, which switches to printer mode (`onPrinter`). The
+/// viewfinder shows the whole photo as it will be taken (black bands where the screen is taller or wider), the page's outline over it (yellow, green once the page holds
 /// still), one status line at its top (the glare hint, why the automatic shutter waits, "Page found · hold
 /// still", else the task's camera line, `CameraTaskCatalog`), the ID card's guide frame, and at its foot
 /// what the scan screen hands in (`notices`: the package banner, the app's progress with Cancel while it is
@@ -36,6 +37,10 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
     @State private var drawerGroup: CameraDrawerGroup = .export
     /// Photos or Files is open over the camera.
     @State private var picking: Bool = false
+    /// The photo size picked, as Settings keeps it; 0 until one is.
+    @AppStorage(IOSCameraLens.megapixelsKey) private var chosenMegapixels: Int = 0
+    /// The size just picked here that may not fit in this phone's memory, for its alert.
+    @State private var memoryWarned: IOSPhotoSize?
     private let resting: Bool
     private let waitsForIntro: Bool
     private let scanner: IOSCameraAvailability
@@ -107,6 +112,23 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
                 AccessibilityNotification.Announcement(reason).post()
             }
         }
+        .onChange(of: chosenMegapixels) { (_: Int, megapixels: Int) in
+            if let controller = model.driver as? IOSCameraController {
+                controller.usePhotoSize(megapixels: megapixels)
+            }
+        }
+        .alert(IOSCameraText.memoryTitle, isPresented: memoryAlertShown, presenting: memoryWarned) { (size: IOSPhotoSize) in
+            Button(IOSCameraText.useLabel(size)) {}
+            if let safer = IOSCameraLens.saferSize(among: IOSCameraLens.choices(IOSCameraLens.offered),
+                                                   physicalMemory: ProcessInfo.processInfo.physicalMemory) {
+                Button(IOSCameraText.useLabel(safer)) {
+                    chosenMegapixels = IOSCameraLens.megapixels(safer)
+                }
+            }
+        } message: { (size: IOSPhotoSize) in
+            Text(IOSCameraText.memoryWarning(size, among: IOSCameraLens.choices(IOSCameraLens.offered),
+                                             physicalMemory: ProcessInfo.processInfo.physicalMemory) ?? "")
+        }
         .sensoryFeedback(SensoryFeedback.impact(weight: SensoryFeedback.Weight.medium), trigger: model.shotCount)
     }
 
@@ -115,23 +137,55 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
     private var topBar: some View {
         HStack(spacing: 0) {
             libraryButton
-            Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
             drawerToggle
-            Spacer(minLength: 0)
-            Button {
-                onPrinter()
-            } label: {
-                Image(systemName: "printer")
-                    .font(.title3)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            HStack(spacing: 0) {
+                resolutionButton
+                printerButton
             }
-            .disabled(state.isBusy)
-            .accessibilityLabel(Text(IOSCameraText.printerLabel))
-            .accessibilityHint(Text(IOSCameraText.printerHint))
-            .accessibilityIdentifier("mode.printer")
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, 8)
+    }
+
+    private var printerButton: some View {
+        Button {
+            onPrinter()
+        } label: {
+            Image(systemName: "printer")
+                .font(.title3)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .disabled(state.isBusy)
+        .accessibilityLabel(Text(IOSCameraText.printerLabel))
+        .accessibilityHint(Text(IOSCameraText.printerHint))
+        .accessibilityIdentifier("mode.printer")
+    }
+
+    /// The size the next photo is taken at, while the camera is live and offers more than one (never in
+    /// the Simulator, which has no camera).
+    @ViewBuilder
+    private var resolutionButton: some View {
+        let choices: [IOSPhotoSize] = IOSCameraLens.choices(IOSCameraLens.offered)
+        if model.showsPreview, choices.count > 1,
+           let current = IOSCameraLens.photoSize(IOSCameraLens.offered, megapixels: chosenMegapixels) {
+            let label: String = IOSCameraText.sizeLabel(current)
+            Button {
+                stepPhotoSize(from: current, in: choices)
+            } label: {
+                Text(label)
+                    .font(.subheadline.weight(.semibold))
+                    .monospacedDigit()
+                    .padding(.horizontal, 4)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .disabled(model.isTakingPhoto)
+            .accessibilityLabel(Text(IOSCameraText.resolutionLabel))
+            .accessibilityValue(Text(label))
+            .accessibilityIdentifier("camera.resolution")
+        }
     }
 
     @ViewBuilder
@@ -402,7 +456,7 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
     /// The session stops while something covers the camera (the corner editor among them) and runs again
     /// once nothing does.
     private var covered: Bool {
-        resting || picking || importer.cornerRequest != nil
+        resting || picking || memoryWarned != nil || importer.cornerRequest != nil
     }
 
     private func setPicking(_ shown: Bool) {
@@ -425,6 +479,30 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
                 shown.shotImported(outcome)
             }
         }
+    }
+
+    /// Picks the size after `current`; the first time a size that may not fit in this phone's memory is
+    /// picked here (remembered for each size), the alert says so and offers the largest that does.
+    private func stepPhotoSize(from current: IOSPhotoSize, in choices: [IOSPhotoSize]) {
+        guard let next = IOSCameraLens.nextChoice(after: current, in: choices) else { return }
+        let megapixels: Int = IOSCameraLens.megapixels(next)
+        chosenMegapixels = megapixels
+        let key: String = "camera.memoryWarned.\(megapixels)"
+        let defaults: UserDefaults = UserDefaults.standard
+        guard IOSCameraLens.warns(next, physicalMemory: ProcessInfo.processInfo.physicalMemory),
+              !defaults.bool(forKey: key) else { return }
+        defaults.set(true, forKey: key)
+        memoryWarned = next
+    }
+
+    private var memoryAlertShown: Binding<Bool> {
+        Binding<Bool>(
+            get: { memoryWarned != nil },
+            set: { (shown: Bool) in
+                if !shown {
+                    memoryWarned = nil
+                }
+            })
     }
 
     private func openSettings() {

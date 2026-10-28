@@ -272,27 +272,121 @@ final class IOSCameraTests: XCTestCase {
         XCTAssertEqual(IOSCameraLens.startZoom(kind: .wide, switchOverFactors: [], minZoom: 0.5, maxZoom: 0.5), 1)
     }
 
-    func test_photos_areTheLargestOfAbout24MPAtMost() {
+    func test_photos_are24MPOnNewerPhones_and12MPOnOlderOnes() {
         let twelve = IOSPhotoSize(width: 4032, height: 3024)
         let twentyFour = IOSPhotoSize(width: 5712, height: 4284)
         let fortyEight = IOSPhotoSize(width: 8064, height: 6048)
         let small = IOSPhotoSize(width: 1920, height: 1440)
-        // A 48 MP camera that offers 24 MP takes 24 MP; one that does not, 12 MP.
+        // A 48 MP camera that offers 24 MP (iPhone 15 and later) takes 24 MP; one that does not (iPhone 14
+        // Pro), 12 MP.
         XCTAssertEqual(IOSCameraLens.photoSize([small, twelve, twentyFour, fortyEight]), twentyFour)
         XCTAssertEqual(IOSCameraLens.photoSize([fortyEight, twentyFour, twelve]), twentyFour)
         XCTAssertEqual(IOSCameraLens.photoSize([small, twelve, fortyEight]), twelve)
         // A 12 MP camera takes 12 MP.
         XCTAssertEqual(IOSCameraLens.photoSize([small, twelve]), twelve)
-        // 26.5 MP is over the cap.
+        // 26.5 MP is not 24 MP.
         XCTAssertEqual(IOSCameraLens.photoSize([IOSPhotoSize(width: 5944, height: 4458), twelve]), twelve)
-        // Nothing small enough: the smallest offered.
+        // Nothing of about 12 MP or less: the smallest offered.
         XCTAssertEqual(IOSCameraLens.photoSize([IOSPhotoSize(width: 9248, height: 6936), fortyEight]), fortyEight)
         XCTAssertNil(IOSCameraLens.photoSize([]))
         XCTAssertNil(IOSCameraLens.photoSize([IOSPhotoSize(width: 0, height: 0)]))
-        XCTAssertEqual(IOSCameraLens.maxPhotoPixels, 25_000_000)
+        XCTAssertEqual(IOSCameraLens.defaultMegapixels, 24)
         XCTAssertEqual(twelve.pixels, 12_192_768)
         XCTAssertEqual(twentyFour.pixels, 24_470_208)
         XCTAssertEqual(fortyEight.pixels, 48_771_072)
+    }
+
+    func test_theSizesToPickFrom_areThoseTheCameraOffers() {
+        let twelve = IOSPhotoSize(width: 4032, height: 3024)
+        let twentyFour = IOSPhotoSize(width: 5712, height: 4284)
+        let fortyEight = IOSPhotoSize(width: 8064, height: 6048)
+        let small = IOSPhotoSize(width: 1920, height: 1440)
+        // Smallest first, nothing under 12 MP, each once.
+        XCTAssertEqual(IOSCameraLens.choices([fortyEight, small, twelve, twentyFour, twelve]), [twelve, twentyFour, fortyEight])
+        XCTAssertEqual(IOSCameraLens.choices([small, twelve, fortyEight]), [twelve, fortyEight])
+        // One size: nothing to pick (the option is not shown).
+        XCTAssertEqual(IOSCameraLens.choices([small, twelve]), [twelve])
+        XCTAssertEqual(IOSCameraLens.choices([]), [])
+        XCTAssertEqual(IOSCameraLens.choices([IOSPhotoSize(width: 0, height: 0)]), [])
+        // Two sizes of the same whole megapixels: the larger.
+        let almostTwelve = IOSPhotoSize(width: 4000, height: 3000)
+        XCTAssertEqual(IOSCameraLens.choices([almostTwelve, twelve, fortyEight]), [twelve, fortyEight])
+        // Named as Apple names them.
+        XCTAssertEqual(IOSCameraLens.megapixels(twelve), 12)
+        XCTAssertEqual(IOSCameraLens.megapixels(twentyFour), 24)
+        XCTAssertEqual(IOSCameraLens.megapixels(fortyEight), 48)
+        XCTAssertEqual(IOSCameraText.sizeLabel(fortyEight), "48 MP")
+        XCTAssertEqual(IOSCameraText.useLabel(twentyFour), "Use 24 MP")
+        XCTAssertEqual(IOSSettingsText.resolutionChoice(twentyFour, isDefault: true), "24 MP (default)")
+        XCTAssertEqual(IOSSettingsText.resolutionChoice(fortyEight, isDefault: false), "48 MP")
+        // The camera's button steps up through them and back to the smallest.
+        let offered: [IOSPhotoSize] = [twelve, twentyFour, fortyEight]
+        XCTAssertEqual(IOSCameraLens.nextChoice(after: twelve, in: offered), twentyFour)
+        XCTAssertEqual(IOSCameraLens.nextChoice(after: twentyFour, in: offered), fortyEight)
+        XCTAssertEqual(IOSCameraLens.nextChoice(after: fortyEight, in: offered), twelve)
+        XCTAssertEqual(IOSCameraLens.nextChoice(after: small, in: offered), twelve)
+        XCTAssertNil(IOSCameraLens.nextChoice(after: twelve, in: []))
+        XCTAssertEqual(IOSCameraLens.megapixelsKey, "camera.megapixels")
+    }
+
+    func test_aSizePicked_isTaken_andTheDefaultWhereThisPhoneDoesNotOfferIt() {
+        let twelve = IOSPhotoSize(width: 4032, height: 3024)
+        let twentyFour = IOSPhotoSize(width: 5712, height: 4284)
+        let fortyEight = IOSPhotoSize(width: 8064, height: 6048)
+        let fifteen: [IOSPhotoSize] = [twelve, twentyFour, fortyEight]
+        let fourteenPro: [IOSPhotoSize] = [twelve, fortyEight]
+        XCTAssertEqual(IOSCameraLens.photoSize(fifteen, megapixels: 48), fortyEight)
+        XCTAssertEqual(IOSCameraLens.photoSize(fifteen, megapixels: 12), twelve)
+        XCTAssertEqual(IOSCameraLens.photoSize(fourteenPro, megapixels: 48), fortyEight)
+        // None picked (0) or one this phone does not offer, restored from another phone's backup: the default.
+        XCTAssertEqual(IOSCameraLens.photoSize(fifteen, megapixels: 0), twentyFour)
+        XCTAssertEqual(IOSCameraLens.photoSize(fourteenPro, megapixels: 24), twelve)
+        XCTAssertEqual(IOSCameraLens.photoSize(fifteen, megapixels: 64), twentyFour)
+        XCTAssertEqual(IOSCameraLens.photoSize([twelve], megapixels: 48), twelve)
+    }
+
+    func test_aSizeWhosePagesMayNotFitInMemory_isWarnedAbout() {
+        let twelve = IOSPhotoSize(width: 4032, height: 3024)
+        let twentyFour = IOSPhotoSize(width: 5712, height: 4284)
+        let fortyEight = IOSPhotoSize(width: 8064, height: 6048)
+        let offered: [IOSPhotoSize] = [twelve, twentyFour, fortyEight]
+        let four: UInt64 = 4_000_000_000
+        let six: UInt64 = 6_000_000_000
+        let eight: UInt64 = 8_000_000_000
+        // About four RGBA copies of the photo at once.
+        XCTAssertEqual(IOSCameraLens.processingBytes(twelve), 195_084_288)
+        XCTAssertEqual(IOSCameraLens.processingBytes(twentyFour), 391_523_328)
+        XCTAssertEqual(IOSCameraLens.processingBytes(fortyEight), 780_337_152)
+        // More than an eighth of the memory: 48 MP on 6 GB and less, never on 8 GB; 24 MP and 12 MP never.
+        XCTAssertTrue(IOSCameraLens.warns(fortyEight, physicalMemory: four))
+        XCTAssertTrue(IOSCameraLens.warns(fortyEight, physicalMemory: six))
+        XCTAssertFalse(IOSCameraLens.warns(fortyEight, physicalMemory: eight))
+        XCTAssertFalse(IOSCameraLens.warns(twentyFour, physicalMemory: four))
+        XCTAssertFalse(IOSCameraLens.warns(twentyFour, physicalMemory: six))
+        XCTAssertFalse(IOSCameraLens.warns(twelve, physicalMemory: four))
+        // iOS reports a little less than the phone has: counted in whole gigabytes.
+        XCTAssertEqual(IOSCameraLens.gigabytes(5_800_000_000), 6)
+        XCTAssertEqual(IOSCameraLens.gigabytes(7_700_000_000), 8)
+        XCTAssertTrue(IOSCameraLens.warns(fortyEight, physicalMemory: 6_400_000_000))
+        XCTAssertFalse(IOSCameraLens.warns(fortyEight, physicalMemory: 7_700_000_000))
+        // The safer size is the largest that does not warn.
+        XCTAssertEqual(IOSCameraLens.saferSize(among: offered, physicalMemory: six), twentyFour)
+        XCTAssertEqual(IOSCameraLens.saferSize(among: [twelve, fortyEight], physicalMemory: six), twelve)
+        XCTAssertEqual(IOSCameraLens.saferSize(among: offered, physicalMemory: eight), fortyEight)
+        XCTAssertNil(IOSCameraLens.saferSize(among: offered, physicalMemory: 1_000_000_000))
+        // The words.
+        XCTAssertEqual(IOSCameraText.memoryWarning(fortyEight, among: offered, physicalMemory: six),
+                       "This iPhone has 6 GB of memory. 48 MP pages need about 800 MB each while they are processed, "
+                       + "so the app may close. 24 MP is safer.")
+        XCTAssertEqual(IOSCameraText.memoryWarning(fortyEight, among: [twelve, fortyEight], physicalMemory: four),
+                       "This iPhone has 4 GB of memory. 48 MP pages need about 800 MB each while they are processed, "
+                       + "so the app may close. 12 MP is safer.")
+        XCTAssertNil(IOSCameraText.memoryWarning(fortyEight, among: offered, physicalMemory: eight))
+        XCTAssertNil(IOSCameraText.memoryWarning(twentyFour, among: offered, physicalMemory: six))
+        // Nothing safer to offer: no last sentence.
+        XCTAssertEqual(IOSCameraText.memoryWarning(twelve, among: [twelve], physicalMemory: 1_000_000_000),
+                       "This iPhone has 1 GB of memory. 12 MP pages need about 200 MB each while they are processed, "
+                       + "so the app may close.")
     }
 
     // MARK: When the camera runs

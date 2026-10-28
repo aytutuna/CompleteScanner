@@ -227,6 +227,36 @@ public enum IOSCameraText {
         count == 1 ? "1 page" : "\(count) pages"
     }
 
+    /// The top bar's button that steps through the photo sizes, for VoiceOver; its value is the size.
+    public static let resolutionLabel = "Camera resolution"
+    /// The alert over the camera when a size picked there `warns`.
+    public static let memoryTitle = "Not much memory for this size"
+
+    /// A photo size as the camera's button and Settings show it: "24 MP".
+    public static func sizeLabel(_ size: IOSPhotoSize) -> String {
+        "\(IOSCameraLens.megapixels(size)) MP"
+    }
+
+    /// "Use 24 MP", the memory alert's buttons.
+    public static func useLabel(_ size: IOSPhotoSize) -> String {
+        "Use \(sizeLabel(size))"
+    }
+
+    /// Why a page from a photo of `size` may not fit in this phone's memory (`IOSCameraLens.warns`), with
+    /// the largest of `choices` that would (`saferSize`); nil when it fits. The memory in whole gigabytes,
+    /// the page's in hundreds of megabytes.
+    public static func memoryWarning(_ size: IOSPhotoSize, among choices: [IOSPhotoSize], physicalMemory: UInt64) -> String? {
+        guard IOSCameraLens.warns(size, physicalMemory: physicalMemory) else { return nil }
+        let gigabytes: Int = IOSCameraLens.gigabytes(physicalMemory)
+        let megabytes: Int = Int((Double(IOSCameraLens.processingBytes(size)) / 100_000_000).rounded()) * 100
+        var text: String = "This iPhone has \(gigabytes) GB of memory. \(sizeLabel(size)) pages need about \(megabytes) MB "
+            + "each while they are processed, so the app may close."
+        if let safer = IOSCameraLens.saferSize(among: choices, physicalMemory: physicalMemory) {
+            text += " \(sizeLabel(safer)) is safer."
+        }
+        return text
+    }
+
     /// What the shutter does with its photo for `kind`, for VoiceOver.
     public static func shutterHint(_ kind: CaptureKind) -> String {
         switch kind {

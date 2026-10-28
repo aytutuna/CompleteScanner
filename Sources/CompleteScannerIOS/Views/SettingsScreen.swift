@@ -6,7 +6,8 @@ import UniformTypeIdentifiers
 /// Settings: the presets, this session's scans and the saved files first, then the settings in the shared
 /// sections (`IOSSettingsSections`, built on `InspectorSections`: which are shown, in which order, their
 /// titles and the summaries their collapsed headers show; the task's own, Scanner and Output start open),
-/// then Troubleshoot and About. My computer (since I20) pairs the phone with a computer and sends to it
+/// then the camera's photo size where the camera offers more than one (`CameraSettingsRows`, this device's
+/// own), then Troubleshoot and About. My computer (since I20) pairs the phone with a computer and sends to it
 /// (`CompanionScreen`). Which sections are open is kept for the user, not in presets; a task
 /// started opens the section it needs (`AppState.sectionsOpenedByTask`) until it is closed. While an import
 /// runs the settings cannot be changed: its pages belong to the task and format it started with.
@@ -68,6 +69,13 @@ struct SettingsScreen: View {
                         SettingsSectionHeader(section: section, collapsed: !isOpen(section.id))
                     }
                     .accessibilityIdentifier("settings.section.\(section.id)")
+                }
+            }
+            if IOSCameraLens.choices(IOSCameraLens.offered).count > 1 {
+                Section {
+                    CameraSettingsRows(offered: IOSCameraLens.offered)
+                } header: {
+                    Text(IOSSettingsText.cameraTitle)
                 }
             }
             Section {
@@ -762,6 +770,43 @@ private struct MoreSettingsRows: View {
             }
         }
         .accessibilityIdentifier("settings.fileName")
+    }
+}
+
+/// The size the camera's photos are taken at, among those this phone's camera offers (`IOSCameraLens.choices`),
+/// the default marked; kept on this device (`IOSCameraLens.megapixelsKey`), not in presets, as the camera's
+/// own button keeps it. A size whose pages may not fit in this phone's memory says so under it.
+private struct CameraSettingsRows: View {
+    let offered: [IOSPhotoSize]
+    @AppStorage(IOSCameraLens.megapixelsKey) private var chosenMegapixels: Int = 0
+
+    var body: some View {
+        let choices: [IOSPhotoSize] = IOSCameraLens.choices(offered)
+        let fallback: IOSPhotoSize? = IOSCameraLens.photoSize(offered)
+        Picker(IOSSettingsText.cameraResolutionLabel, selection: megapixels) {
+            ForEach(choices, id: \.pixels) { (size: IOSPhotoSize) in
+                Text(IOSSettingsText.resolutionChoice(size, isDefault: size == fallback)).tag(IOSCameraLens.megapixels(size))
+            }
+        }
+        .accessibilityIdentifier("settings.cameraResolution")
+        if let size = IOSCameraLens.photoSize(offered, megapixels: chosenMegapixels),
+           let warning = IOSCameraText.memoryWarning(size, among: choices, physicalMemory: ProcessInfo.processInfo.physicalMemory) {
+            ReasonLine(text: warning, systemImage: "exclamationmark.triangle")
+        }
+    }
+
+    /// The size taken now: the one picked, or the default while none is or this phone does not offer it.
+    private var megapixels: Binding<Int> {
+        let stored: Binding<Int> = $chosenMegapixels
+        let sizes: [IOSPhotoSize] = offered
+        return Binding<Int>(
+            get: {
+                guard let size = IOSCameraLens.photoSize(sizes, megapixels: stored.wrappedValue) else { return 0 }
+                return IOSCameraLens.megapixels(size)
+            },
+            set: { (picked: Int) in
+                stored.wrappedValue = picked
+            })
     }
 }
 

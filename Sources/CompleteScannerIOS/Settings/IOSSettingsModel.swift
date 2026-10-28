@@ -34,10 +34,19 @@ public enum IOSSettingsText {
         "Source is locked while a side of the ID card is held. Save or discard the card, or leave the task, to change it."
     /// In place of the Scanner section's rows while no scanner is selected: the camera does not use them.
     public static let noScannerReason = "Pick a scanner in printer mode to change these."
-    /// The About screen: what the app is built with (Apple's frameworks only: no third-party code to
-    /// acknowledge) and where scans stay.
-    public static let aboutBuiltWith = "Built with Apple\u{2019}s frameworks only. No third-party code."
+    /// The About screen: what the app is built with (Apple's frameworks, and the page corner model with
+    /// what runs it, whose licenses go with the app) and where scans stay.
+    public static let aboutBuiltWith = "Built with Apple\u{2019}s frameworks. Pages are found with DocAligner by DocsaidLab "
+        + "(Apache License 2.0) on ONNX Runtime by Microsoft (MIT License)."
     public static let aboutPrivacy = "Your scans stay on this device unless you share them."
+    /// The camera's group, on this device only: the size its photos are taken at.
+    public static let cameraTitle = "Camera"
+    public static let cameraResolutionLabel = "Resolution"
+
+    /// A photo size in the Resolution picker, "24 MP (default)" for the one taken until another is picked.
+    public static func resolutionChoice(_ size: IOSPhotoSize, isDefault: Bool) -> String {
+        isDefault ? "\(IOSCameraText.sizeLabel(size)) (default)" : IOSCameraText.sizeLabel(size)
+    }
 
     /// "Version 0.1.0 (1)" from the app's Info.plist; "Version 0.1.0" without a build number.
     public static func version(_ info: [String: Any]?) -> String {

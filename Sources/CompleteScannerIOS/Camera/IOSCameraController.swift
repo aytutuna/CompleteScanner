@@ -135,11 +135,10 @@ final class IOSCaptureSession: @unchecked Sendable {
     private var configured: Bool = false
     private var pending: [Int64: IOSPhotoDelegate] = [:]
 
-    /// Sets the session up once: the camera `IOSCameraLens` picks, photos of about 24 MP at most at the
-    /// best quality, and BGRA video frames for the outline (the camera works without them when the
-    /// session cannot add them), from a smaller video format where one takes photos of that size
-    /// (`outlineFormat`). False when there is no camera or it cannot be used.
-    func configure() -> Bool {
+    /// Sets the session up once: the camera `IOSCameraLens` picks, photos of `megapixels` (`usePhotoSize`)
+    /// at the best quality, and BGRA video frames for the outline (the camera works without them when the
+    /// session cannot add them). False when there is no camera or it cannot be used.
+    func configure(megapixels: Int) -> Bool {
         if configured { return device != nil }
         configured = true
         guard let camera = IOSCameraLens.bestDevice() else { return false }
@@ -172,29 +171,64 @@ final class IOSCaptureSession: @unchecked Sendable {
             session.addOutput(videoOutput)
         }
         session.commitConfiguration()
-        // The photo size is one the format chosen for the preset offers.
-        if let dimensions = IOSCameraLens.photoDimensions(camera) {
-            session.beginConfiguration()
+        device = camera
+        IOSCaptureSession.focusForPages(camera)
+        usePhotoSize(megapixels)
+        return true
+    }
+
+    /// Photos of `megapixels` from the next one on, or of the default size where the camera does not offer
+    /// it (`IOSCameraLens.photoSize` among `offeredSizes`), from the smallest video format that takes them
+    /// (`outlineFormat`), else from the format in use or one that takes them (`photoFormat`). Set within one
+    /// configuration, so it also changes the size of a running session.
+    func usePhotoSize(_ megapixels: Int) {
+        guard let camera = device else { return }
+        let wanted: IOSPhotoSize? = IOSCameraLens.photoSize(IOSCameraLens.offeredSizes(camera), megapixels: megapixels)
+        session.beginConfiguration()
+        if let size = wanted {
+            let photo = CMVideoDimensions(width: Int32(size.width), height: Int32(size.height))
             // The .photo preset streams 12 MP video frames (about 48 MB each) only for the outline, which
             // heats the phone; a smaller format that takes the same photos does not.
-            if let small = IOSCaptureSession.outlineFormat(camera, photo: dimensions),
-               session.canSetSessionPreset(.inputPriority) {
+            var format: AVCaptureDevice.Format? = IOSCaptureSession.outlineFormat(camera, photo: photo)
+            if format == nil && IOSCameraLens.listed(size, in: camera.activeFormat) == nil {
+                format = IOSCaptureSession.photoFormat(camera, photo: photo)
+            }
+            if let chosen = format, chosen != camera.activeFormat, session.canSetSessionPreset(.inputPriority) {
                 do {
                     try camera.lockForConfiguration()
                     session.sessionPreset = .inputPriority
-                    camera.activeFormat = small
+                    camera.activeFormat = chosen
                     camera.unlockForConfiguration()
                 } catch {
-                    // The preset's format stays.
+                    // The format in use stays.
                 }
             }
-            photoOutput.maxPhotoDimensions = dimensions
-            session.commitConfiguration()
         }
-        IOSCaptureSession.focusForPages(camera)
+        // Only a size the format in use lists: any other throws.
+        if let size = wanted, let dimensions = IOSCameraLens.listed(size, in: camera.activeFormat) {
+            photoOutput.maxPhotoDimensions = dimensions
+        } else if let dimensions = IOSCameraLens.photoDimensions(camera, megapixels: megapixels) {
+            photoOutput.maxPhotoDimensions = dimensions
+        }
+        session.commitConfiguration()
+        // A format of its own may have taken the zoom back to 1.
         IOSCaptureSession.zoomForPages(camera)
-        device = camera
-        return true
+    }
+
+    /// The format with the largest frames that takes photos of `photo`'s size as ours are taken
+    /// (`IOSCameraLens.takesPhotos`); nil when none does.
+    static func photoFormat(_ camera: AVCaptureDevice, photo: CMVideoDimensions) -> AVCaptureDevice.Format? {
+        let size = IOSPhotoSize(width: Int(photo.width), height: Int(photo.height))
+        var best: AVCaptureDevice.Format?
+        var bestWidth: Int32 = 0
+        for format in camera.formats where IOSCameraLens.takesPhotos(format) && IOSCameraLens.listed(size, in: format) != nil {
+            let frames: CMVideoDimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+            if best == nil || frames.width > bestWidth {
+                best = format
+                bestWidth = frames.width
+            }
+        }
+        return best
     }
 
     /// The smallest standard 4:3 video format (full-range 4:2:0, not binned, 30 fps, at least 1920 × 1440 so
@@ -382,9 +416,10 @@ public final class IOSCameraController: IOSCameraDriving {
 
     public func prepare() async -> Bool {
         let box: IOSCaptureSession = capture
+        let megapixels: Int = UserDefaults.standard.integer(forKey: IOSCameraLens.megapixelsKey)
         let ready: Bool = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) -> Void in
             box.queue.async {
-                continuation.resume(returning: box.configure())
+                continuation.resume(returning: box.configure(megapixels: megapixels))
             }
         }
         if ready && !prepared {
@@ -412,6 +447,15 @@ public final class IOSCameraController: IOSCameraDriving {
         let box: IOSCaptureSession = capture
         box.queue.async {
             box.stop()
+        }
+    }
+
+    /// Photos of `megapixels` (as kept under `IOSCameraLens.megapixelsKey`) from the next one on; nothing
+    /// before the session is set up, which reads the size kept itself.
+    public func usePhotoSize(megapixels: Int) {
+        let box: IOSCaptureSession = capture
+        box.queue.async {
+            box.usePhotoSize(megapixels)
         }
     }
 
