@@ -32,7 +32,10 @@ let package = Package(
         .target(
             name: "CompleteScannerIOS",
             dependencies: ["CompleteScannerKit"],
-            path: "Sources/CompleteScannerIOS"
+            path: "Sources/CompleteScannerIOS",
+            // DocAligner's models for the page detector test (scripts/fetch_docaligner.sh); the folder
+            // holds only their licence until they are fetched.
+            resources: [.copy("Models")]
         ),
         .executableTarget(
             name: "CompleteScanner",

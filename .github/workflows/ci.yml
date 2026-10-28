@@ -220,6 +220,11 @@ jobs:
       - uses: actions/checkout@v7
       - name: Select Xcode 26.6
         run: sudo xcode-select -s /Applications/Xcode_26.6.app
+      # DocAligner's corner models for the iPhone's page detector test, into the package's Models
+      # folder before anything builds it (pinned release, SHA-256 checked by the script). The macOS job
+      # builds without them.
+      - name: Fetch DocAligner's models
+        run: bash scripts/fetch_docaligner.sh
       - name: Toolchain
         run: |
           xcodebuild -version
