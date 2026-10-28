@@ -22,6 +22,10 @@ enum PageViewerText {
     static let selectAllLabel = "Select All"
     static let deselectAllLabel = "Deselect All"
     static let cancelLabel = "Cancel"
+    static let shareLabel = "Share"
+    static let moveLabel = "Move"
+    static let moveToStartLabel = "Move to Beginning"
+    static let moveToEndLabel = "Move to End"
     /// The cards of the grid have a sheet's shape (between A4 and Letter); every page is fitted whole in one.
     static let cardAspect: CGFloat = 0.75
 
@@ -43,6 +47,11 @@ enum PageViewerText {
     /// The page grid's title while pages are picked: "Select Pages", "2 Selected".
     static func selectedTitle(_ count: Int) -> String {
         count == 0 ? "Select Pages" : "\(count) Selected"
+    }
+
+    /// "Delete 3 pages?" for the pages picked in the grid.
+    static func deletePagesQuestion(_ count: Int) -> String {
+        count == 1 ? "Delete 1 page?" : "Delete \(count) pages?"
     }
 }
 

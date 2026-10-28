@@ -1,7 +1,9 @@
 #if os(iOS)
 import CompleteScannerKit
+import CoreGraphics
 import CoreTransferable
 import Foundation
+import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -74,6 +76,80 @@ public enum IOSPageDrop {
             moved += 1
         }
         return true
+    }
+}
+
+/// What the page grid does to the pages picked in it, through the queue's one-page edits (`AppState.movePage`,
+/// `rotatePage`, `removePage`) and always by id, since each edit shifts the places of the pages after it.
+public enum IOSPageSelection {
+    /// The folder the shared pages are written in, emptied before each share.
+    static var shareFolder: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("Shared pages", isDirectory: true)
+    }
+
+    /// The ids of `selected` in the order of `pages`.
+    public static func ordered(_ selected: Set<UUID>, in pages: [ScannedPage]) -> [UUID] {
+        var ids: [UUID] = []
+        for page in pages where selected.contains(page.id) {
+            ids.append(page.id)
+        }
+        return ids
+    }
+
+    /// Moves the pages `selected` to the start of the queue (or its end), in the order they had among
+    /// themselves; nothing while an operation runs.
+    @MainActor
+    public static func move(_ selected: Set<UUID>, toStart: Bool, in state: AppState) {
+        guard !state.isBusy else { return }
+        var ids: [UUID] = ordered(selected, in: state.scannedPages)
+        if !toStart {
+            ids.reverse()
+        }
+        var placed: Int = 0
+        for id in ids {
+            guard let index = state.scannedPages.firstIndex(where: { (page: ScannedPage) -> Bool in page.id == id }) else { continue }
+            let target: Int = toStart ? placed : state.scannedPages.count - 1 - placed
+            let step: Int = toStart ? -1 : 1
+            var moved: Int = 0
+            while moved < abs(target - index) {
+                state.movePage(id: id, by: step)
+                moved += 1
+            }
+            placed += 1
+        }
+    }
+
+    /// Writes the pages `selected` as pictures in `format`, one file a page in the queue's order named by its
+    /// number ("Page 3.jpg"), at full resolution and turned as shown, for the share sheet.
+    public static func writeImages(_ selected: Set<UUID>, of pages: [ScannedPage], format: OutputFormat,
+                                   jpegQuality: Double) async throws -> [URL] {
+        let folder: URL = shareFolder
+        return try await Task.detached(priority: .userInitiated) { () -> [URL] in
+            try? FileManager.default.removeItem(at: folder)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            var urls: [URL] = []
+            var number: Int = 1
+            for page in pages {
+                if selected.contains(page.id) {
+                    let url: URL = folder.appendingPathComponent("Page \(number).\(format.fileExtension)")
+                    try ImageExporter.write(IOSPageSelection.fullImage(of: page), to: url, format: format, dpi: page.dpi,
+                                            jpegQuality: jpegQuality, colorMode: page.colorMode)
+                    urls.append(url)
+                }
+                number += 1
+            }
+            return urls
+        }.value
+    }
+
+    /// The page's full pixels from its spool file, turned by its rotation as `AppState.saveImages` does; the
+    /// preview in memory when it has no file.
+    static func fullImage(of page: ScannedPage) -> CGImage {
+        guard let url = page.fileURL, let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let spooled = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return page.image }
+        let turns: Int = ((page.rotationQuarterTurns % 4) + 4) % 4
+        if turns == 0 { return spooled }
+        return ImagePipeline.rotate(spooled, quarterTurns: turns)
     }
 }
 

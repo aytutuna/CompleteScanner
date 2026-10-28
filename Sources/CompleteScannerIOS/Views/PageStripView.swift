@@ -261,7 +261,8 @@ private struct PageTile: View {
 /// The page grid in a sheet that opens at full height and can be pulled down to half, opened from the scan
 /// screen's pages button (`capture.pages`), with Done; a page tapped opens in the page viewer over it. Select
 /// picks pages as the Photos app does: "2 Selected" as the title, Select All or Deselect All, and Cancel in
-/// place of Done.
+/// place of Done, with a bottom bar that turns the pages picked, shares them as pictures, moves them to the
+/// start or the end, and deletes them once asked.
 struct PageStripSheet: View {
     @EnvironmentObject private var state: AppState
     var onEditSpread: (@MainActor (UUID) -> Void)?
@@ -270,6 +271,9 @@ struct PageStripSheet: View {
     @State private var viewing: PageViewerStart?
     @State private var selecting: Bool = false
     @State private var selected: Set<UUID> = []
+    @State private var asksDelete: Bool = false
+    @State private var sharing: Bool = false
+    @State private var share: ShareRequest?
 
     var body: some View {
         NavigationStack {
@@ -287,6 +291,9 @@ struct PageStripSheet: View {
                             Button(PageViewerText.cancelLabel, action: stopSelecting)
                                 .accessibilityIdentifier("pages.cancel")
                         }
+                        ToolbarItemGroup(placement: .bottomBar) {
+                            selectionActions
+                        }
                     } else {
                         ToolbarItem(placement: .topBarLeading) {
                             Button(PageViewerText.selectLabel, action: startSelecting)
@@ -302,6 +309,16 @@ struct PageStripSheet: View {
                 }
         }
         .presentationDetents([.medium, .large], selection: $detent)
+        .confirmationDialog(PageViewerText.deletePagesQuestion(selected.count), isPresented: $asksDelete,
+                            titleVisibility: .visible) {
+            Button(PageViewerText.deleteLabel, role: .destructive) {
+                deleteSelected()
+            }
+            .accessibilityIdentifier("pages.confirmDelete")
+        }
+        .sheet(item: $share) { (request: ShareRequest) in
+            ActivityView(items: request.urls, onDone: closeShare)
+        }
         .fullScreenCover(item: $viewing) { (start: PageViewerStart) in
             PageViewer(startID: start.id, onClose: closeViewer)
                 .environmentObject(state)
@@ -335,6 +352,84 @@ struct PageStripSheet: View {
         } else {
             selected = Set(state.scannedPages.map { (page: ScannedPage) -> UUID in page.id })
         }
+    }
+
+    @ViewBuilder
+    private var selectionActions: some View {
+        let none: Bool = selected.isEmpty
+        Button(action: rotateSelected) {
+            Label(PageViewerText.rotateLabel, systemImage: "rotate.right")
+        }
+        .disabled(none)
+        .accessibilityIdentifier("pages.rotateSelected")
+        Spacer()
+        Button(action: shareSelected) {
+            Label(PageViewerText.shareLabel, systemImage: "square.and.arrow.up")
+        }
+        .disabled(none || sharing)
+        .accessibilityIdentifier("pages.shareSelected")
+        Spacer()
+        Menu {
+            Button {
+                IOSPageSelection.move(selected, toStart: true, in: state)
+            } label: {
+                Label(PageViewerText.moveToStartLabel, systemImage: "arrow.up.to.line")
+            }
+            Button {
+                IOSPageSelection.move(selected, toStart: false, in: state)
+            } label: {
+                Label(PageViewerText.moveToEndLabel, systemImage: "arrow.down.to.line")
+            }
+        } label: {
+            Label(PageViewerText.moveLabel, systemImage: "arrow.up.arrow.down")
+        }
+        .disabled(none)
+        .accessibilityIdentifier("pages.moveSelected")
+        Spacer()
+        Button(role: .destructive, action: askDelete) {
+            Label(PageViewerText.deleteLabel, systemImage: "trash")
+        }
+        .disabled(none)
+        .accessibilityIdentifier("pages.deleteSelected")
+    }
+
+    private func rotateSelected() {
+        for id in IOSPageSelection.ordered(selected, in: state.scannedPages) {
+            state.rotatePage(id: id)
+        }
+    }
+
+    private func shareSelected() {
+        let ids: Set<UUID> = selected
+        let pages: [ScannedPage] = state.scannedPages
+        let format: OutputFormat = state.settings.format.imageFormatOrJPEG
+        let quality: Double = state.settings.jpegQuality
+        let appState: AppState = state
+        sharing = true
+        Task { @MainActor in
+            do {
+                let urls: [URL] = try await IOSPageSelection.writeImages(ids, of: pages, format: format, jpegQuality: quality)
+                share = ShareRequest(urls: urls, title: SaveActions.shareTitle(urls))
+            } catch {
+                appState.errorMessage = error.localizedDescription
+            }
+            sharing = false
+        }
+    }
+
+    private func closeShare() {
+        share = nil
+    }
+
+    private func askDelete() {
+        asksDelete = true
+    }
+
+    private func deleteSelected() {
+        for id in IOSPageSelection.ordered(selected, in: state.scannedPages) {
+            state.removePage(id: id)
+        }
+        stopSelecting()
     }
 
     private func openPage(_ id: UUID) {

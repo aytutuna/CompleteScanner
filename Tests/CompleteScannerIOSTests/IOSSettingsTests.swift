@@ -271,6 +271,36 @@ final class IOSSettingsTests: XCTestCase {
         XCTAssertEqual(order(state), [d, b, c, a])
     }
 
+    @MainActor
+    func test_pageSelection_movesThePagesPicked_keepingTheirOrder() {
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        let pages: [ScannedPage] = [settingsPage(), settingsPage(), settingsPage(), settingsPage(), settingsPage()]
+        let a: UUID = pages[0].id
+        let b: UUID = pages[1].id
+        let c: UUID = pages[2].id
+        let d: UUID = pages[3].id
+        let e: UUID = pages[4].id
+        XCTAssertEqual(IOSPageSelection.ordered([e, b, d], in: pages), [b, d, e])
+
+        state.scannedPages = pages
+        IOSPageSelection.move([d, b], toStart: true, in: state)
+        XCTAssertEqual(order(state), [b, d, a, c, e])
+        IOSPageSelection.move([b, a], toStart: false, in: state)
+        XCTAssertEqual(order(state), [d, c, e, b, a])
+        IOSPageSelection.move([d, c], toStart: true, in: state)
+        XCTAssertEqual(order(state), [d, c, e, b, a])
+    }
+
+    func test_pageSelection_writesThePagesPicked_namedByTheirNumber() async throws {
+        let pages: [ScannedPage] = [settingsPage(), settingsPage(), settingsPage()]
+        let urls: [URL] = try await IOSPageSelection.writeImages([pages[2].id, pages[0].id], of: pages, format: .jpeg,
+                                                                 jpegQuality: 0.9)
+        XCTAssertEqual(urls.map(\.lastPathComponent), ["Page 1.jpg", "Page 3.jpg"])
+        for url in urls {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), url.lastPathComponent)
+        }
+    }
+
     func test_droppedFiles_comeInByTheirKind() {
         let pdf: IOSImportItem = IOSDroppedFile(data: Data("%PDF-1.4".utf8), kind: .pdf).item
         XCTAssertEqual(pdf.kind, IOSImportItem.Kind.pdf)

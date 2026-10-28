@@ -3,11 +3,11 @@ import XCTest
 // Walks the app's main screens on the demo scanner and keeps a screenshot of each, named by screen, so
 // CI's ios-screenshots artifact shows what the screens look like after a change: camera mode (the
 // Simulator's viewfinder says there is no camera), its kinds with Receipts picked and its drawer on
-// Export, then printer mode, its Scanner sheet, two scanned pages in the page grid, Save's menu and the
-// Export sheet, Settings with My computer and Presets, and the library from camera mode; and, on a run of
-// its own, a photo of a page in the page viewer with its filters. A screen whose button is not there is
-// left out rather than failed, so the walk stays green while the screens change; a "skipped-" screenshot
-// shows what was on screen instead.
+// Export, then printer mode, its Scanner sheet, two scanned pages in the page grid (and selecting, one
+// ticked), Save's menu and the Export sheet, Settings with My computer and Presets, and the library from
+// camera mode; and, on a run of its own, a photo of a page in the page viewer with its filters. A screen
+// whose button is not there is left out rather than failed, so the walk stays green while the screens
+// change; a "skipped-" screenshot shows what was on screen instead.
 
 final class ScreenshotTests: XCTestCase {
     @MainActor
@@ -126,6 +126,7 @@ final class ScreenshotTests: XCTestCase {
             if done.waitForExistence(timeout: 5) {
                 Thread.sleep(forTimeInterval: 1)
                 shot("06-pages")
+                selectionScreen(app)
                 done.tap()
                 waitUntilGone(done)
             } else {
@@ -147,6 +148,20 @@ final class ScreenshotTests: XCTestCase {
                 shot("skipped-08-export-options")
             }
             closeOptions(app)
+        }
+    }
+
+    /// The page grid selecting, its first page ticked, then Cancel back to Done.
+    @MainActor
+    private func selectionScreen(_ app: XCUIApplication) {
+        guard tapIfThere(app, "pages.select", for: "06b-pages-select") else { return }
+        if tapIfThere(app, "page.1", for: "06b-pages-select") {
+            waitUntilSelected(element(app, "page.1"))
+            Thread.sleep(forTimeInterval: 1)
+            shot("06b-pages-select")
+        }
+        if tapIfThere(app, "pages.cancel", for: "pages-select-closed") {
+            _ = element(app, "pages.done").waitForExistence(timeout: 5)
         }
     }
 
