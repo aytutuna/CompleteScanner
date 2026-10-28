@@ -3,6 +3,7 @@ import CompleteScannerKit
 import CoreGraphics
 import Foundation
 import SwiftUI
+import UIKit
 
 /// One page of the strip: its number and its picture; the side of a two-sided sheet ("1 · back") or the
 /// page of a book's spread ("2 · left") it is; the title over it when it starts a document of a queue
@@ -71,6 +72,8 @@ struct PageStripView: View {
     @AppStorage(PageStripView.columnsKey) private var chosenColumns: Int = 0
     /// The pinch under way has taken its step.
     @State private var pinched: Bool = false
+    /// A pinch is under way; back to false when it ends or the system cancels it.
+    @GestureState private var pinching: Bool = false
 
     static let columnsKey = "pages.columns"
 
@@ -80,15 +83,16 @@ struct PageStripView: View {
         max(1, Int((width - 32 + 14) / 164))
     }
 
-    /// The most pages across a pinch gives: six on an iPhone, up to ten on a wide iPad.
-    nonisolated static func maxColumns(width: CGFloat) -> Int {
-        min(10, max(6, Int(width / 100)))
+    /// The most pages across a pinch gives: six on an iPhone, turned sideways too, up to ten on a wide iPad.
+    nonisolated static func maxColumns(width: CGFloat, pad: Bool) -> Int {
+        guard pad else { return 6 }
+        return min(10, max(6, Int(width / 100)))
     }
 
     /// The pages across at `width`: the number chosen, as far as the width allows, or the default.
-    nonisolated static func columnCount(chosen: Int, width: CGFloat) -> Int {
+    nonisolated static func columnCount(chosen: Int, width: CGFloat, pad: Bool) -> Int {
         guard chosen > 0 else { return defaultColumns(width: width) }
-        return min(chosen, maxColumns(width: width))
+        return min(chosen, maxColumns(width: width, pad: pad))
     }
 
     /// The gap between pages, tighter as they get smaller: 14 pt up to two across, 6 pt from five.
@@ -105,7 +109,8 @@ struct PageStripView: View {
     private func grid(width: CGFloat) -> some View {
         let cells: [PageStripCell] = PageStripCell.cells(state.scannedPages, options: state.settings.document)
         let summary: String = DocumentSplitter.queueSummary(state.scannedPages, options: state.settings.document)
-        let count: Int = Self.columnCount(chosen: chosenColumns, width: width)
+        let pad: Bool = UIDevice.current.userInterfaceIdiom == .pad
+        let count: Int = Self.columnCount(chosen: chosenColumns, width: width, pad: pad)
         let spacing: CGFloat = Self.spacing(columns: count)
         let columns: [GridItem] = Array(repeating: GridItem(.flexible(), spacing: spacing, alignment: .top), count: count)
         let compact: Bool = count >= 4
@@ -132,12 +137,20 @@ struct PageStripView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("pages.strip")
         }
-        .simultaneousGesture(pinch(columns: count, most: Self.maxColumns(width: width)))
+        .simultaneousGesture(pinch(columns: count, most: Self.maxColumns(width: width, pad: pad)))
+        .onChange(of: pinching) { (_: Bool, now: Bool) in
+            if !now {
+                pinched = false
+            }
+        }
     }
 
     /// Pinching out shows fewer, larger pages and pinching in more, smaller ones, a step a pinch.
     private func pinch(columns: Int, most: Int) -> some Gesture {
         MagnifyGesture()
+            .updating($pinching) { (_: MagnifyGesture.Value, active: inout Bool, _: inout Transaction) in
+                active = true
+            }
             .onChanged { (value: MagnifyGesture.Value) in
                 guard !pinched else { return }
                 if value.magnification > 1.15 && columns > 1 {
@@ -147,9 +160,6 @@ struct PageStripView: View {
                     pinched = true
                     show(columns: columns + 1)
                 }
-            }
-            .onEnded { (_: MagnifyGesture.Value) in
-                pinched = false
             }
     }
 
