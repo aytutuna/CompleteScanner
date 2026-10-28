@@ -1,6 +1,7 @@
 #if os(iOS)
 import CompleteScannerKit
 import CoreGraphics
+import ImageIO
 import SwiftUI
 import UIKit
 
@@ -64,6 +65,7 @@ enum PageViewerText {
 struct PageViewer: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     let onClose: () -> Void
     @State private var selection: UUID?
     @State private var showsFilters: Bool = false
@@ -77,6 +79,18 @@ struct PageViewer: View {
     @State private var cropRotation: Int = 0
     /// The filter tapped last for each page, shown as chosen while the page is cut again.
     @State private var requested: [UUID: CaptureFilter] = [:]
+    /// The page shown read from its spool file, sharper than the queue's preview, and what it was read for.
+    @State private var sharp: CGImage?
+    @State private var sharpFor: SharpRead?
+    /// The pager's longest side so far, in points: it only grows, so turning the phone reads nothing again.
+    @State private var viewSide: CGFloat = 0
+
+    /// What the page shown is read from: its spool file, at `side` pixels on its longer side, turned `turns`.
+    private struct SharpRead: Equatable {
+        let url: URL
+        let side: Int
+        let turns: Int
+    }
 
     init(startID: UUID, onClose: @escaping () -> Void) {
         self.onClose = onClose
@@ -90,6 +104,31 @@ struct PageViewer: View {
         return index > 0 ? ids[index - 1] : nil
     }
 
+    /// The longer side, in pixels, the page shown is read at from its spool file: three times the view's, so
+    /// a zoom stays sharp, but no more than the page has; 0 when the queue's preview has as many already.
+    nonisolated static func sharpSide(view: Int, page: Int, preview: Int) -> Int {
+        let side: Int = min(view * 3, page)
+        return side > preview ? side : 0
+    }
+
+    /// The picture in the spool file `url`, at most `maxSide` pixels on its longer side and turned as
+    /// `AppState.fullImage(of:)` turns the file; nil when it cannot be read.
+    nonisolated static func readPage(_ url: URL, maxSide: Int, quarterTurns: Int) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxSide,
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return ImagePipeline.rotate(image, quarterTurns: quarterTurns)
+    }
+
+    /// Whether two pictures have the same proportions, but for the rounding of a smaller copy's sides.
+    nonisolated static func sameShape(_ a: CGSize, _ b: CGSize) -> Bool {
+        abs(a.width * b.height - b.width * a.height) <= max(a.width, a.height, b.width, b.height)
+    }
+
     private var current: ScannedPage? {
         state.scannedPages.first(where: { (page: ScannedPage) -> Bool in page.id == selection })
     }
@@ -101,6 +140,16 @@ struct PageViewer: View {
 
     private var canRecut: Bool {
         current.map { (page: ScannedPage) -> Bool in PageRecut.canRecut(page) } ?? false
+    }
+
+    /// What the page shown is read from for a sharper picture; nil for a page without a spool file, or one whose
+    /// preview is as sharp as the view needs.
+    private var sharpRead: SharpRead? {
+        guard let page = current, let url = page.fileURL, let size = page.fullPixelSize else { return nil }
+        let side: Int = Self.sharpSide(view: Int(viewSide * displayScale), page: Int(max(size.width, size.height)),
+                                       preview: max(page.image.width, page.image.height))
+        guard side > 0 else { return nil }
+        return SharpRead(url: url, side: side, turns: page.rotationQuarterTurns)
     }
 
     /// What the filter previews are made from: the page, its turn and its corners (not its filter).
@@ -149,6 +198,9 @@ struct PageViewer: View {
         .task(id: previewKey) {
             await loadPreviews()
         }
+        .task(id: sharpRead) {
+            await loadSharp()
+        }
         .modifier(ErrorAlert(state: state))
     }
 
@@ -165,12 +217,19 @@ struct PageViewer: View {
         // The page being cropped stays on screen while its photo is read.
         .allowsHitTesting(!preparesCrop)
         .accessibilityIdentifier("viewer.pages")
+        .onGeometryChange(for: CGFloat.self) { (proxy: GeometryProxy) -> CGFloat in
+            max(proxy.size.width, proxy.size.height)
+        } action: { (side: CGFloat) in
+            if side > viewSide {
+                viewSide = side
+            }
+        }
     }
 
     private func pageView(_ page: ScannedPage) -> some View {
         let index: Int = state.scannedPages.firstIndex(where: { (item: ScannedPage) -> Bool in item.id == page.id }) ?? 0
         let label: String = PageViewerText.title(number: index + 1, count: state.scannedPages.count)
-        return ZoomablePage(image: page.image)
+        return ZoomablePage(image: shownImage(page))
             .overlay {
                 if state.recuttingPages.contains(page.id) {
                     ProgressView()
@@ -187,6 +246,28 @@ struct PageViewer: View {
                 step(by: -1)
             }
             .accessibilityIdentifier("viewer.page.\(index + 1)")
+    }
+
+    /// The page's preview, or for the page shown its sharper picture once it is read.
+    private func shownImage(_ page: ScannedPage) -> CGImage {
+        guard page.id == selection, let sharp, sharpFor == sharpRead else { return page.image }
+        return sharp
+    }
+
+    /// Reads the page shown from its spool file off the main actor, to show in place of its preview. The
+    /// picture read for the page shown before is let go first, so only one is held at a time.
+    private func loadSharp() async {
+        sharp = nil
+        sharpFor = nil
+        // Turns and filters clicked earlier land first, so the file read is the one the page ends up with.
+        await state.pageEditChain?.value
+        guard !Task.isCancelled, let read = sharpRead else { return }
+        let image: CGImage? = await Task.detached(priority: .userInitiated) { () -> CGImage? in
+            PageViewer.readPage(read.url, maxSide: read.side, quarterTurns: read.turns)
+        }.value
+        guard !Task.isCancelled, let image, read == sharpRead else { return }
+        sharp = image
+        sharpFor = read
     }
 
     private func step(by offset: Int) {
@@ -434,6 +515,8 @@ private final class ZoomingImageView: UIScrollView, UIScrollViewDelegate {
         imageView.layer.shadowOpacity = 0.2
         imageView.layer.shadowRadius = 4
         imageView.layer.shadowOffset = CGSize(width: 0, height: 1)
+        // The page read from its file is several times the screen; without mipmaps its print aliases until zoomed.
+        imageView.layer.minificationFilter = .trilinear
         addSubview(imageView)
         let doubleTap = UITapGestureRecognizer(target: self, action: #selector(doubleTapped(_:)))
         doubleTap.numberOfTapsRequired = 2
@@ -446,8 +529,13 @@ private final class ZoomingImageView: UIScrollView, UIScrollViewDelegate {
 
     func show(_ image: CGImage) {
         guard image !== shown else { return }
+        // The page read sharper, or cut again with another filter, keeps its zoom; a page turned or cropped is fitted again.
+        let kept: Bool = shown.map { (old: CGImage) -> Bool in
+            PageViewer.sameShape(CGSize(width: old.width, height: old.height), CGSize(width: image.width, height: image.height))
+        } ?? false
         shown = image
         imageView.image = UIImage(cgImage: image)
+        guard !kept else { return }
         fittedSize = .zero
         setNeedsLayout()
     }

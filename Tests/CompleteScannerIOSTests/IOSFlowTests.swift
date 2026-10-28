@@ -423,5 +423,40 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertNil(PageViewer.pageAfterRemoving(a, from: [a]))
         XCTAssertNil(PageViewer.pageAfterRemoving(UUID(), from: [a, b]))
     }
+
+    func test_theViewer_readsThePageShownAtThreeTimesTheView_butNoMoreThanThePageHas() {
+        // A 12 MP shot on an iPhone 17 is read whole; a 600 dpi A4 scan on a 1334 px screen at three times it.
+        XCTAssertEqual(PageViewer.sharpSide(view: 2622, page: 4032, preview: 1600), 4032)
+        XCTAssertEqual(PageViewer.sharpSide(view: 1334, page: 7016, preview: 1600), 4002)
+        // Nothing to read when the preview has as many pixels.
+        XCTAssertEqual(PageViewer.sharpSide(view: 500, page: 4032, preview: 1600), 0)
+        XCTAssertEqual(PageViewer.sharpSide(view: 2622, page: 1200, preview: 1200), 0)
+        // The preview and the page read sharper keep the zoom; the page turned or cropped does not.
+        XCTAssertTrue(PageViewer.sameShape(CGSize(width: 1131, height: 1600), CGSize(width: 2481, height: 3508)))
+        XCTAssertTrue(PageViewer.sameShape(CGSize(width: 1600, height: 1200), CGSize(width: 4032, height: 3024)))
+        XCTAssertFalse(PageViewer.sameShape(CGSize(width: 1131, height: 1600), CGSize(width: 1600, height: 1131)))
+        XCTAssertFalse(PageViewer.sameShape(CGSize(width: 1600, height: 1200), CGSize(width: 1600, height: 1000)))
+    }
+
+    func test_theViewer_readsThePageFile_turnedAsThePageIsShown() throws {
+        let context: CGContext = try XCTUnwrap(CGContext(data: nil, width: 300, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
+                                                         space: CGColorSpaceCreateDeviceRGB(),
+                                                         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 300, height: 200))
+        let image: CGImage = try XCTUnwrap(context.makeImage())
+        let url: URL = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).tiff")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try ImageExporter.write(image, to: url, format: .tiff, dpi: 300, jpegQuality: 1.0)
+
+        let whole: CGImage = try XCTUnwrap(PageViewer.readPage(url, maxSide: 300, quarterTurns: 0))
+        XCTAssertEqual(whole.width, 300)
+        XCTAssertEqual(whole.height, 200)
+        let turned: CGImage = try XCTUnwrap(PageViewer.readPage(url, maxSide: 150, quarterTurns: 1))
+        XCTAssertEqual(turned.width, 100)
+        XCTAssertEqual(turned.height, 150)
+        XCTAssertNil(PageViewer.readPage(url.deletingLastPathComponent().appendingPathComponent("gone.tiff"),
+                                         maxSide: 300, quarterTurns: 0))
+    }
 }
 #endif
