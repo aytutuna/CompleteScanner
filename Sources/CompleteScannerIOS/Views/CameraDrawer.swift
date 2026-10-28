@@ -21,6 +21,8 @@ struct KindsRow: View {
     @State private var swiping: Bool = false
     /// Each kind's width as laid out, for snapping its middle to the row's.
     @State private var widths: [IOSScanKind: CGFloat] = [:]
+    /// Half the row's width.
+    @State private var inset: CGFloat = 0
 
     /// Half the gap between two kinds.
     @ScaledMetric(relativeTo: .footnote) private var gap: CGFloat = 12
@@ -28,18 +30,31 @@ struct KindsRow: View {
     var body: some View {
         let current: IOSScanKind = IOSShell.shownKind(state.settings)
         let busy: Bool = state.isBusy || importer.isImporting
-        GeometryReader { (geometry: GeometryProxy) in
-            row(busy: busy, current: current, inset: geometry.size.width / 2)
-        }
-        .frame(height: 44)
-        .modifier(EdgeFade(leading: 28, trailing: 28))
-        .onAppear {
-            middle = current
-            position.scrollTo(id: current, anchor: .center)
-        }
-        .onChange(of: current) { (_: IOSScanKind, kind: IOSScanKind) in
-            centre(kind)
-        }
+        let tiles: [IOSKindTile] = IOSShell.kindTiles(state.taskCards, current: current, order: IOSShell.cameraKinds)
+        let middles: [CGFloat] = centres(tiles)
+        row(tiles, middles: middles, busy: busy, current: current)
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
+            .onGeometryChange(for: CGFloat.self) { (proxy: GeometryProxy) -> CGFloat in
+                proxy.size.width / 2
+            } action: { (half: CGFloat) in
+                inset = half
+            }
+            .modifier(EdgeFade(leading: 28, trailing: 28))
+            .onAppear {
+                middle = current
+                scroll(to: current, in: tiles, middles: middles)
+            }
+            .onChange(of: current) { (_: IOSScanKind, kind: IOSScanKind) in
+                centre(kind)
+            }
+            // The kinds are measured after the row first appears, and again when the text size or the row's
+            // width changes: the row is put back on its kind then, as it cannot be before.
+            .onChange(of: middles) { (_: [CGFloat], new: [CGFloat]) in
+                if !swiping {
+                    scroll(to: middle ?? current, in: tiles, middles: new)
+                }
+            }
         .sensoryFeedback(SensoryFeedback.selection, trigger: middle) { (old: IOSScanKind?, new: IOSScanKind?) -> Bool in
             old != nil && new != nil && old != new
         }
@@ -47,10 +62,8 @@ struct KindsRow: View {
         .accessibilityIdentifier("kinds.row")
     }
 
-    private func row(busy: Bool, current: IOSScanKind, inset: CGFloat) -> some View {
-        let tiles: [IOSKindTile] = IOSShell.kindTiles(state.taskCards, current: current, order: IOSShell.cameraKinds)
+    private func row(_ tiles: [IOSKindTile], middles: [CGFloat], busy: Bool, current: IOSScanKind) -> some View {
         let shown: IOSScanKind = middle ?? current
-        let middles: [CGFloat] = centres(tiles, inset: inset)
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
                 ForEach(tiles) { (tile: IOSKindTile) in
@@ -82,8 +95,9 @@ struct KindsRow: View {
         }
     }
 
-    /// The kinds' middles in the row's content, in its order; empty until every kind is laid out.
-    private func centres(_ tiles: [IOSKindTile], inset: CGFloat) -> [CGFloat] {
+    /// The kinds' middles in the row's content, in its order; empty until the row and every kind are laid out.
+    private func centres(_ tiles: [IOSKindTile]) -> [CGFloat] {
+        guard inset > 0 else { return [] }
         var leading: CGFloat = inset
         var middles: [CGFloat] = []
         for tile in tiles {
@@ -140,10 +154,19 @@ struct KindsRow: View {
 
     /// Moves the row so `kind` is in its middle.
     private func centre(_ kind: IOSScanKind) {
+        let tiles: [IOSKindTile] = IOSShell.kindTiles(state.taskCards, current: kind, order: IOSShell.cameraKinds)
         withAnimation(animation) {
             middle = kind
-            position.scrollTo(id: kind, anchor: .center)
+            scroll(to: kind, in: tiles, middles: centres(tiles))
         }
+    }
+
+    /// Scrolls so `kind`'s middle is the row's, by offset: the kinds' own ids would centre them by SwiftUI's
+    /// reckoning, which the snap does not share. Nothing to do until the kinds are measured.
+    private func scroll(to kind: IOSScanKind, in tiles: [IOSKindTile], middles: [CGFloat]) {
+        guard let index = tiles.firstIndex(where: { (tile: IOSKindTile) -> Bool in tile.kind == kind }),
+              index < middles.count else { return }
+        position.scrollTo(x: middles[index] - inset)
     }
 
     private var animation: Animation {

@@ -67,6 +67,11 @@ final class CameraTests: XCTestCase {
         let row: XCUIElement = app.descendants(matching: .any)["kinds.row"].firstMatch
         let receipts: XCUIElement = app.descendants(matching: .any)["kinds.receipts"].firstMatch
         XCTAssertTrue(receipts.waitForExistence(timeout: 10), "The receipts kind")
+        let photos: XCUIElement = app.descendants(matching: .any)["kinds.photos"].firstMatch
+        let centred = XCTNSPredicateExpectation(predicate: NSPredicate { (_: Any?, _: [String: Any]?) -> Bool in
+            abs(photos.frame.midX - row.frame.midX) < 2
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [centred], timeout: 10), .completed, "Photos in the row's middle once picked")
         let from: XCUICoordinate = receipts.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let to: XCUICoordinate = row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
