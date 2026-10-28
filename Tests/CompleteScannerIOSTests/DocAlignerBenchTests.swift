@@ -8,7 +8,7 @@ import XCTest
 @testable import CompleteScannerKit
 
 // The page detectors side by side on the SmartDoc 2015 Challenge 1 frames (jchazalon/smartdoc15-ch1-dataset
-// v2.0.0, CC BY 4.0): DocAligner's two models on the CPU, our own detector as the photo import calls it
+// v2.0.0, CC BY 4.0): DocAligner's FastViT-T8 on the CPU, our own detector as the photo import calls it
 // (`IOSPageFinder.fallback`) and Apple's Vision document segmentation. Runs only where SMARTDOC_FRAMES names
 // the extracted frames with their metadata.csv (gunzipped); every SMARTDOC_STEP-th frame (25 unless set).
 // The table goes to BENCH_OUT/bench.md (the temporary folder unless set) and to the log. Low scores never
@@ -69,7 +69,6 @@ struct BenchTally {
 
 final class DocAlignerBenchTests: XCTestCase {
     private enum Detector: String, CaseIterable {
-        case lc100 = "LC100 (CPU)"
         case fastvitT8 = "FastViT-T8 (CPU)"
         case builtIn = "Built-in"
         case vision = "Apple Vision (Simulator)"
@@ -111,10 +110,9 @@ final class DocAlignerBenchTests: XCTestCase {
                     let started: UInt64 = DispatchTime.now().uptimeNanoseconds
                     var found: Quad?
                     switch detector {
-                    case .lc100, .fastvitT8:
-                        let model: DocAlignerModel = detector == .lc100 ? .lc100 : .fastvitT8
-                        guard model.isAvailable else { continue }
-                        found = try runner.run(image, model: model, neuralEngine: false).page?.quad.scaled(width, height)
+                    case .fastvitT8:
+                        guard DocAlignerModel.fastvitT8.isAvailable else { continue }
+                        found = try runner.run(image, model: .fastvitT8, neuralEngine: false).page?.quad.scaled(width, height)
                     case .builtIn:
                         let page: IOSFoundPage = IOSPageFinder.fallback(photo)
                         found = page.reason == PhotoReviewReason.nothingFound ? nil : page.corners
@@ -151,7 +149,7 @@ final class DocAlignerBenchTests: XCTestCase {
             + "DocAligner may have been trained on SmartDoc, so its scores here are likely optimistic. The Simulator's "
             + "Vision results are not trustworthy; the Apple Vision (macOS) rows are Apple's real score.")
         lines.append("")
-        for model in DocAlignerModel.allCases where !model.isAvailable {
+        for model in [DocAlignerModel.fastvitT8] where !model.isAvailable {
             lines.append("\(model.title) was not fetched (scripts/fetch_docaligner.sh) and is left out.")
             lines.append("")
         }

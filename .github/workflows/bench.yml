@@ -1,9 +1,10 @@
 name: Page detector bench
 
 # The iPhone's page detectors side by side on the SmartDoc 2015 Challenge 1 frames
-# (jchazalon/smartdoc15-ch1-dataset v2.0.0, CC BY 4.0): DocAlignerBenchTests on the iOS Simulator, with
-# DocAligner's smoke test. Run it by hand from the Actions tab, or push to ci/bench. The table is the
-# docaligner-bench artifact and the run's summary.
+# (jchazalon/smartdoc15-ch1-dataset v2.0.0, CC BY 4.0): DocAlignerBenchTests on the iOS Simulator
+# (FastViT-T8, Built-in and the Simulator's Vision), with DocAligner's smoke test, then Vision on the Mac
+# itself. Run it by hand from the Actions tab, or push to ci/bench. The table is the docaligner-bench
+# artifact and the run's summary.
 on:
   workflow_dispatch:
   push:
@@ -21,7 +22,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Select Xcode 26.6
         run: sudo xcode-select -s /Applications/Xcode_26.6.app
-      - name: Fetch DocAligner's models
+      - name: Fetch the corner model
         run: bash scripts/fetch_docaligner.sh
       - name: Pick the simulator
         id: simulator
