@@ -64,6 +64,8 @@ jobs:
           COMPLETESCANNER_CERT_STORE_TESTS: '1'
           # WIA's tests must ask the real WIA here, never be skipped.
           COMPLETESCANNER_REQUIRE_WIA: '1'
+          # The corner model was fetched above; its test must find it, never be skipped.
+          COMPLETESCANNER_REQUIRE_CORNER_MODEL: '1'
       - name: Show the WIA service after the tests
         if: always()
         shell: pwsh
@@ -154,6 +156,8 @@ jobs:
           # PDFATests.test_archival_validationSamples keeps the PDF/A files the Swift writer makes here,
           # for veraPDF below.
           COMPLETESCANNER_PDFA_SAMPLES: ${{ runner.temp }}/pdfa-samples
+          # The corner model was fetched above; its test must find it, never be skipped.
+          COMPLETESCANNER_REQUIRE_CORNER_MODEL: '1'
       # The same pinned veraPDF as the Windows job checks the Swift writer's PDF/A files. It is
       # downloaded here only, pinned to one release and its SHA-256, and never shipped; installed from
       # its release installer the way the official Docker image's Dockerfile does it.
@@ -276,6 +280,9 @@ jobs:
       # The shared suite includes the protected PDFs' round trip through PDFKit (PDFEncryptionTests:
       # PDFDocument.unlock with the user's and the owner password), so it runs here as on the Mac.
       - name: Test on the iOS Simulator
+        env:
+          # As in the macOS job; TEST_RUNNER_ variables reach the tests without the prefix.
+          TEST_RUNNER_COMPLETESCANNER_REQUIRE_CORNER_MODEL: '1'
         run: |
           set -o pipefail
           xcodebuild test             -scheme CompleteScanner-Package             -configuration Release             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}"             -resultBundlePath "$RUNNER_TEMP/ios-tests.xcresult"             ENABLE_TESTABILITY=YES             CODE_SIGNING_ALLOWED=NO

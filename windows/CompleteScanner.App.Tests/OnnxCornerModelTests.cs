@@ -5,12 +5,15 @@ using Xunit;
 
 namespace CompleteScanner.App.Tests;
 
-/// <summary>A test that runs the corner model, skipped when scripts/fetch_docaligner.sh has not fetched it (CI does).</summary>
+/// <summary>
+/// A test that runs the corner model, skipped when scripts/fetch_docaligner.sh has not fetched it, unless
+/// COMPLETESCANNER_REQUIRE_CORNER_MODEL=1 (CI fetches it), where it runs anyway and fails.
+/// </summary>
 public sealed class CornerModelFactAttribute : FactAttribute
 {
     public CornerModelFactAttribute()
     {
-        if (OnnxCornerModel.Load() is null)
+        if (Environment.GetEnvironmentVariable("COMPLETESCANNER_REQUIRE_CORNER_MODEL") != "1" && OnnxCornerModel.Load() is null)
         {
             Skip = "The corner model is not fetched (scripts/fetch_docaligner.sh).";
         }
@@ -28,7 +31,7 @@ public class OnnxCornerModelTests
     [CornerModelFact]
     public void FastViTFindsEveryPageWithinOnePointFivePercentOfTheDiagonal()
     {
-        var model = OnnxCornerModel.Load()!;
+        var model = OnnxCornerModel.Load() ?? throw new FileNotFoundException("The corner model is not next to the tests.", OnnxCornerModel.DefaultPath);
         foreach (var photo in PageFixtures.All())
         {
             var image = PageFixtures.Read(photo);
