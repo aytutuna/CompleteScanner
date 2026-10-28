@@ -593,6 +593,11 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     private readonly IBarcodeReader _barcodes;
     /// <summary>Makes the QR code of a QR separator sheet.</summary>
     private readonly IQrEncoder _qrEncoder;
+    /// <summary>
+    /// Finds the page in an imported photo before the page search does (<see cref="PhotoImport.Plan(RgbaImage, ICornerModel?)"/>);
+    /// null without the model, the page search alone. Twin of the Mac's <c>AppState.cornerModel</c>.
+    /// </summary>
+    private readonly ICornerModel? _cornerModel;
     /// <summary>Opens, shows, shares and copies saved files through Windows (a stand-in in tests).</summary>
     private readonly IFileActions _fileActions;
     private readonly Dispatcher _dispatcher;
@@ -688,7 +693,8 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
                         IPrintService? printService = null,
                         IOrientationScorer? orientationScorer = null,
                         IBarcodeReader? barcodeReader = null,
-                        IQrEncoder? qrEncoder = null)
+                        IQrEncoder? qrEncoder = null,
+                        ICornerModel? cornerModel = null)
     {
         _dispatcher = Dispatcher.CurrentDispatcher;
         var saved = SettingsStore.Load();
@@ -715,6 +721,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         _orientation = orientationScorer ?? new WindowsOrientationScorer();
         _barcodes = barcodeReader ?? new ZXingBarcodeReader();
         _qrEncoder = qrEncoder ?? new ZXingQrEncoder();
+        _cornerModel = cornerModel ?? OnnxCornerModel.Load();
         foreach (var preset in _presetStore.Load()) Presets.Add(preset);
         _renderTimer = new DispatcherTimer(DispatcherPriority.Normal, _dispatcher) { Interval = CanvasRenderDebounce };
         _renderTimer.Tick += (_, _) =>

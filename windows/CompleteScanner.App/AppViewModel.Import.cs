@@ -138,7 +138,7 @@ public sealed partial class AppViewModel
                 var (photo, plan) = await Task.Run(() =>
                 {
                     var upright = PhotoImport.Oriented(file.Stored, file.Orientation);
-                    return (upright, PhotoImport.Plan(upright));
+                    return (upright, PhotoImport.Plan(upright, _cornerModel));
                 }, token);
                 ScannedPage? page = plan.Action == PhotoImportAction.Correct
                     ? await Task.Run(() => PhotoImport.CorrectedPage(photo, plan.Corners), token)
