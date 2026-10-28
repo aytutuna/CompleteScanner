@@ -23,7 +23,7 @@ final class IOSFrameFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     /// A phone held upright shows the back camera's frames turned a quarter clockwise.
     private var uprightTurn: Int = 90
     private var lastImage: RgbaImage?
-    private var lastModelMs: Double?
+    private var lastModelMs: (model: DocAlignerModel, ms: Double)?
 
     func startFrames(_ deliver: @escaping @Sendable (IOSCameraFrame) -> Void) {
         lock.lock()
@@ -84,11 +84,11 @@ final class IOSFrameFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         lock.unlock()
     }
 
-    /// How long DocAligner's model ran on the last frame, in ms; nil when it did not run.
-    var modelMs: Double? {
+    /// How long `model` ran on the last frame it saw, in ms; nil when another model ran since, or none did.
+    func modelMs(_ model: DocAlignerModel) -> Double? {
         lock.lock()
         defer { lock.unlock() }
-        return lastModelMs
+        return lastModelMs?.model == model ? lastModelMs?.ms : nil
     }
 
     /// The last frame handed over (small), turned upright as the preview shows it; nil before the first.
@@ -107,7 +107,7 @@ final class IOSFrameFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         guard let upright = image.rotatedQuarterTurns(turn / 90).makeCGImage() else { return nil }
         let run: DocAlignerRun? = PageDetector.run(model, on: upright)
         lock.lock()
-        lastModelMs = run?.ms
+        lastModelMs = run.map { (model: model, ms: $0.ms) }
         lock.unlock()
         guard let found = run?.page,
               let back = LiveQuadTracker.photoOutline(found.quad, rotationDegrees: (360 - turn) % 360) else { return nil }

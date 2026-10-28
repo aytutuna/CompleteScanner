@@ -147,14 +147,14 @@ struct DetectorSpeedTest: View {
 }
 
 /// The viewfinder's caption while one of DocAligner's models finds the page: its name and how long it ran
-/// on the last frame (`IOSFrameFeed.modelMs`), read twice a second.
+/// on the last frame (`IOSFrameFeed.modelMs(_:)`), read twice a second.
 struct DetectorCaption: View {
     let model: DocAlignerModel
     let feed: IOSFrameFeed
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-            Text(IOSCameraText.detectorCaption(model, ms: feed.modelMs))
+            Text(IOSCameraText.detectorCaption(model, ms: feed.modelMs(model)))
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(Color.white)
                 .padding(.horizontal, 8)
