@@ -383,6 +383,10 @@ struct PageStripSheet: View {
                 }
         }
         .presentationDetents([.medium, .large], selection: $detent)
+        // A save or a send that ends while picking takes its pages out of the queue, and out of the pick.
+        .onChange(of: state.scannedPages.map { (page: ScannedPage) -> UUID in page.id }) { (_: [UUID], ids: [UUID]) in
+            selected.formIntersection(ids)
+        }
         .confirmationDialog(PageViewerText.deletePagesQuestion(selected.count), isPresented: $asksDelete,
                             titleVisibility: .visible) {
             Button(PageViewerText.deleteLabel, role: .destructive) {
@@ -431,10 +435,12 @@ struct PageStripSheet: View {
     @ViewBuilder
     private var selectionActions: some View {
         let none: Bool = selected.isEmpty
+        // The queue's edits do nothing while an import, a scan or a save runs.
+        let blocked: Bool = none || state.isBusy
         Button(action: rotateSelected) {
             Label(PageViewerText.rotateLabel, systemImage: "rotate.right")
         }
-        .disabled(none)
+        .disabled(blocked)
         .accessibilityIdentifier("pages.rotateSelected")
         Spacer()
         Button(action: shareSelected) {
@@ -457,13 +463,13 @@ struct PageStripSheet: View {
         } label: {
             Label(PageViewerText.moveLabel, systemImage: "arrow.up.arrow.down")
         }
-        .disabled(none)
+        .disabled(blocked)
         .accessibilityIdentifier("pages.moveSelected")
         Spacer()
         Button(role: .destructive, action: askDelete) {
             Label(PageViewerText.deleteLabel, systemImage: "trash")
         }
-        .disabled(none)
+        .disabled(blocked)
         .accessibilityIdentifier("pages.deleteSelected")
     }
 
@@ -500,6 +506,7 @@ struct PageStripSheet: View {
     }
 
     private func deleteSelected() {
+        guard !state.isBusy else { return }
         for id in IOSPageSelection.ordered(selected, in: state.scannedPages) {
             state.removePage(id: id)
         }
