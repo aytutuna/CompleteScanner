@@ -81,7 +81,7 @@ extension AppState {
 
     /// The full pixels of `page` as it is shown: its spool file turned by the page's rotation (the file
     /// stays unturned until it is saved), or the pixels in memory, which show the rotation already.
-    nonisolated static func fullImage(of page: ScannedPage) -> CGImage {
+    public nonisolated static func fullImage(of page: ScannedPage) -> CGImage {
         guard let spooled = spoolImage(of: page) else { return page.image }
         let turns: Int = ((page.rotationQuarterTurns % 4) + 4) % 4
         if turns == 0 { return spooled }

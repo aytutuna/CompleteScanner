@@ -491,12 +491,14 @@ struct PageStripSheet: View {
 
     private func shareSelected() {
         let ids: Set<UUID> = selected
-        let pages: [ScannedPage] = state.scannedPages
         let format: OutputFormat = state.settings.format.imageFormatOrJPEG
         let quality: Double = state.settings.jpegQuality
         let appState: AppState = state
         sharing = true
         Task { @MainActor in
+            // Turns queued behind a page swap land before the pages are read, as for a save.
+            await appState.pageEditChain?.value
+            let pages: [ScannedPage] = appState.scannedPages
             do {
                 let urls: [URL] = try await IOSPageSelection.writeImages(ids, of: pages, format: format, jpegQuality: quality)
                 share = ShareRequest(urls: urls, title: SaveActions.shareTitle(urls))

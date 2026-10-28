@@ -513,7 +513,7 @@ public final class AppState: ObservableObject {
     /// The last page swap (or the turn clicked behind one) queued; nil when none is under way.
     /// Swaps and turns run in click order, and a save waits for them (`enqueuePageEdit`), and so
     /// does joining or splitting a spread (AppState+Book.swift).
-    var pageEditChain: Task<Void, Never>?
+    public internal(set) var pageEditChain: Task<Void, Never>?
     private var pageEditCount = 0
     /// The pages being cut out of their photos again (AppState+Recut.swift), for a spinner on each.
     @Published public internal(set) var recuttingPages: Set<UUID> = []

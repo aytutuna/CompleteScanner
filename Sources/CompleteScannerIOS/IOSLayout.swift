@@ -1,9 +1,7 @@
 #if os(iOS)
 import CompleteScannerKit
-import CoreGraphics
 import CoreTransferable
 import Foundation
-import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -132,24 +130,17 @@ public enum IOSPageSelection {
             for page in pages {
                 if selected.contains(page.id) {
                     let url: URL = folder.appendingPathComponent("Page \(number).\(format.fileExtension)")
-                    try ImageExporter.write(IOSPageSelection.fullImage(of: page), to: url, format: format, dpi: page.dpi,
-                                            jpegQuality: jpegQuality, colorMode: page.colorMode)
+                    // One pool a page, or a long share holds every page's decoded pixels until the end.
+                    try autoreleasepool {
+                        try ImageExporter.write(AppState.fullImage(of: page), to: url, format: format, dpi: page.dpi,
+                                                jpegQuality: jpegQuality, colorMode: page.colorMode)
+                    }
                     urls.append(url)
                 }
                 number += 1
             }
             return urls
         }.value
-    }
-
-    /// The page's full pixels from its spool file, turned by its rotation as `AppState.saveImages` does; the
-    /// preview in memory when it has no file.
-    static func fullImage(of page: ScannedPage) -> CGImage {
-        guard let url = page.fileURL, let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let spooled = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return page.image }
-        let turns: Int = ((page.rotationQuarterTurns % 4) + 4) % 4
-        if turns == 0 { return spooled }
-        return ImagePipeline.rotate(spooled, quarterTurns: turns)
     }
 }
 
