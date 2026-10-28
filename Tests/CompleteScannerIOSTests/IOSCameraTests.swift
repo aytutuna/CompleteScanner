@@ -192,7 +192,7 @@ private func cameraStill() -> Data {
 
 /// A page search that answers `corners` with `reason`.
 private func fixedFinder(_ corners: Quad, reason: PhotoReviewReason) -> @Sendable (RgbaImage) -> IOSFoundPage {
-    let found = IOSFoundPage(corners: corners, reason: reason, byVision: false)
+    let found = IOSFoundPage(corners: corners, reason: reason, byModel: false)
     return { (_: RgbaImage) -> IOSFoundPage in
         found
     }
@@ -968,20 +968,20 @@ final class IOSCameraTests: XCTestCase {
 
     func test_theLiveOutline_isOnlyAStartWhereThePhotoGivesNone() {
         let start: Quad = PhotoImport.startCorners(width: 600, height: 450)
-        let unsure = IOSFoundPage(corners: start, reason: PhotoReviewReason.unsure, byVision: false)
-        let clear = IOSFoundPage(corners: sheetQuad, reason: PhotoReviewReason.none, byVision: true)
+        let unsure = IOSFoundPage(corners: start, reason: PhotoReviewReason.unsure, byModel: false)
+        let clear = IOSFoundPage(corners: sheetQuad, reason: PhotoReviewReason.none, byModel: true)
         let live: Quad = sheetQuad.scaled(1.0 / 600.0, 1.0 / 450.0)
         // Found clearly in the photo: the photo's own page.
         XCTAssertEqual(IOSImportSession.seeded(clear, liveOutline: live, width: 600, height: 450), clear)
         // No live outline: the search's start.
         XCTAssertEqual(IOSImportSession.seeded(unsure, liveOutline: nil, width: 600, height: 450), unsure)
-        // Vision found the page in the photo, unsure of it: its own corners, refined on the photo.
-        let doubtful = IOSFoundPage(corners: sheetQuad, reason: PhotoReviewReason.unsure, byVision: true)
+        // The corner model found the page in the photo, unsure of it: its own corners, refined on the photo.
+        let doubtful = IOSFoundPage(corners: sheetQuad, reason: PhotoReviewReason.unsure, byModel: true)
         XCTAssertEqual(IOSImportSession.seeded(doubtful, liveOutline: live, width: 600, height: 450), doubtful)
         // The live outline, in the photo's pixels.
         let seeded: IOSFoundPage = IOSImportSession.seeded(unsure, liveOutline: live, width: 600, height: 450)
         XCTAssertEqual(seeded.reason, PhotoReviewReason.none)
-        XCTAssertFalse(seeded.byVision)
+        XCTAssertFalse(seeded.byModel)
         XCTAssertLessThan(seeded.corners.maxCornerDistance(sheetQuad), 1e-6)
         // Partly outside the photo: kept within it.
         let wide = Quad(topLeft: CGPoint(x: -0.1, y: 0.1), topRight: CGPoint(x: 0.9, y: 0.1),

@@ -34,7 +34,7 @@ private func librarySheetPNG() -> Data {
 private func unsureFinder() -> @Sendable (RgbaImage) -> IOSFoundPage {
     let corners = Quad(topLeft: CGPoint(x: 150, y: 80), topRight: CGPoint(x: 350, y: 80),
                        bottomRight: CGPoint(x: 350, y: 363), bottomLeft: CGPoint(x: 150, y: 363))
-    let found = IOSFoundPage(corners: corners, reason: .unsure, byVision: false)
+    let found = IOSFoundPage(corners: corners, reason: .unsure, byModel: false)
     return { (_: RgbaImage) -> IOSFoundPage in
         found
     }

@@ -54,7 +54,7 @@ public struct IOSImportItem: Equatable, Sendable {
 /// in hand is in memory: a photo the Photos picker hands over when asked, a file read off the main
 /// actor (`file`), or bytes already in hand (`item`). A photo from our camera also carries the outline
 /// its live preview showed (`liveOutline`, shares of the upright photo), the corner editor's start
-/// when Vision found no page in the photo itself and the search found none clearly (`shot`), and, in continuous capture, that the
+/// when the corner model found no page in the photo itself and the search found none clearly (`shot`), and, in continuous capture, that the
 /// corner editor opens only when the photo's own search is unsure (`asksOnlyWhenUnsure`).
 public struct IOSImportSource {
     public let name: String
@@ -194,7 +194,7 @@ public enum IOSImportText {
 
 /// Brings photos and PDFs into the queue on the iPhone and iPad, one after another: a photo is read
 /// (`IOSPhotoDecoder`: turned upright by its orientation tag; each page of a TIFF as a photo of its own),
-/// its page found (`IOSPageFinder`: Vision, else the shared detector), and the corner editor opens
+/// its page found (`IOSPageFinder`: the corner model, else the shared detector), and the corner editor opens
 /// (`cornerRequest`) with the corners found; Use corners hands the photo to the queue with its capture
 /// facts (the corners in the photo's pixels, its size and the camera's focal length), so the clean-up
 /// stage cuts the page out at its real size (`AppState.ingest`, `PageProcessor.forCapture`:
@@ -748,12 +748,12 @@ public final class IOSImportSession: ObservableObject {
     }
 
     /// Where the corner editor starts on a photo from our camera: the page as found in the photo when it
-    /// was found clearly (`found.reason` `.none`) or Vision found it there (`found.byVision`: its corners,
+    /// was found clearly (`found.reason` `.none`) or the corner model found it there (`found.byModel`: its corners,
     /// refined on the photo itself, beat the preview's); else the outline the live preview showed
     /// (`liveOutline`, shares of the upright photo of `width` x `height`), in the photo's pixels, kept within
     /// the photo and named again, when the page can be cut out along it; else what the search gave.
     nonisolated static func seeded(_ found: IOSFoundPage, liveOutline: Quad?, width: Int, height: Int) -> IOSFoundPage {
-        guard found.reason != PhotoReviewReason.none, !found.byVision, let outline = liveOutline, width > 0,
+        guard found.reason != PhotoReviewReason.none, !found.byModel, let outline = liveOutline, width > 0,
               height > 0 else { return found }
         let w: Double = Double(width)
         let h: Double = Double(height)
@@ -766,7 +766,7 @@ public final class IOSImportSession: ObservableObject {
         }
         let corners: Quad = Quad.fromCorners(points)
         guard PhotoImport.canUseCorners(corners) else { return found }
-        return IOSFoundPage(corners: corners, reason: PhotoReviewReason.none, byVision: false)
+        return IOSFoundPage(corners: corners, reason: PhotoReviewReason.none, byModel: false)
     }
 
     /// Page `index` of the PDF in `data`, drawn at `IOSPDFPages.dpi`, as a page of the queue.
@@ -842,7 +842,7 @@ struct IOSPreparedPhoto: Sendable {
     var objects: [Quad] = []
 
     /// Page `page` (from 1) of the photo file `data`, read and searched; `liveOutline` (shares of the
-    /// upright photo) is the start where Vision found no page in the photo and the search found none
+    /// upright photo) is the start where the corner model found no page in the photo and the search found none
     /// clearly (`IOSImportSession.seeded`).
     /// For receipts and photos (`kind`) its objects are searched for (`objectFinder`) instead of a page; for
     /// an ID card the card first (sure only when its shape snaps to ID-1, `CaptureScale.measure`), then the
@@ -867,7 +867,7 @@ struct IOSPreparedPhoto: Sendable {
                                                                      imageHeight: decoded.photo.height, kind: .idCard,
                                                                      focalLength: decoded.focalLength)
                 let reason: PhotoReviewReason = scale.isRealSize ? PhotoReviewReason.none : PhotoReviewReason.unsure
-                let found = IOSFoundPage(corners: card, reason: reason, byVision: true)
+                let found = IOSFoundPage(corners: card, reason: reason, byModel: false)
                 return IOSPreparedPhoto(decoded: decoded, found: found, problem: nil, sure: scale.isRealSize,
                                         objects: [card])
             }

@@ -5,8 +5,8 @@ import Foundation
 
 /// One live frame of the camera, made small for the page search: its pixels (upright as the sensor
 /// gives them, not turned for the screen), when it was taken, in milliseconds of the capture clock, and
-/// the page Vision found in it (`IOSPageFinder.segmentation`, in `image`'s pixels; DocAligner's when it is
-/// the page detector picked, `PageDetector`), nil when Vision found none or did not run (fixture frames).
+/// the page the corner model found in it (`IOSFrameFeed.modelPage`, in `image`'s pixels), nil when the model
+/// found none or did not run (fixture frames).
 public struct IOSCameraFrame: Sendable {
     public let image: RgbaImage
     public let timestampMs: Double
@@ -67,11 +67,11 @@ public struct LiveQuadUpdate: Equatable, Sendable {
 
 /// Follows the page in the camera's live frames for the outline drawn over the preview. About ten
 /// frames a second are searched (`frameIntervalMs`; the others are passed over before any work): the
-/// page Vision found in the frame (`IOSCameraFrame.page`) when it is a page's (`IOSPageFinder.accepted`)
+/// page the corner model found in the frame (`IOSCameraFrame.page`) when it is a page's (`IOSPageFinder.accepted`)
 /// and sure enough to start holding still (`CaptureStability.enterConfidence`, at least), else the shared
 /// page search (`PhotoDocumentDetector`, the photo import's) on the frame made small (at most
-/// `analysisLongSide` px), with the outline of the frame before as its hint. Once Vision has found the
-/// page the search waits until Vision has missed it for `holdMs`, so the two outlines (a pixel or two
+/// `analysisLongSide` px), with the outline of the frame before as its hint. Once the model has found the
+/// page the search waits until the model has missed it for `holdMs`, so the two outlines (a pixel or two
 /// apart) do not take turns and shake the outline. What is found is steadied (`LiveQuadFilter`): small
 /// jitter is smoothed, a jump is believed only once it is seen twice, a new page is drawn from its second
 /// sighting and a page missed for a moment keeps its outline for `holdMs`, so it does not flicker; how
@@ -114,8 +114,8 @@ public final class LiveQuadTracker: @unchecked Sendable {
     private var lastQuad: Quad?
     private var lastSeenMs: Double = -Double.infinity
     private var filter = LiveQuadFilter()
-    /// When Vision last found the page (ms of the capture clock).
-    private var visionSeenMs: Double = -Double.infinity
+    /// When the corner model last found the page (ms of the capture clock).
+    private var modelSeenMs: Double = -Double.infinity
     /// The page found in the frame searched before (pixels); nil when none was.
     private var lastFound: Quad?
     /// Where the page held still while `.captured` (pixels); nil while it does not.
@@ -163,7 +163,7 @@ public final class LiveQuadTracker: @unchecked Sendable {
         PhotoDocumentDetector.detect(image, hint: hint, options: liveOptions)
     }
 
-    /// Vision's `page` in a live frame of `width` x `height` as the page search's answer, when it is sure
+    /// The corner model's `page` in a live frame of `width` x `height` as the page search's answer, when it is sure
     /// enough and a page's (`IOSPageFinder.accepted`, as for a photo); nil otherwise.
     public static func detection(_ page: QuadCandidate, width: Int, height: Int) -> PhotoDocumentDetection? {
         guard let quad = IOSPageFinder.accepted(page, width: width, height: height) else { return nil }
@@ -199,20 +199,20 @@ public final class LiveQuadTracker: @unchecked Sendable {
         if let quad = lastQuad, t >= lastSeenMs, t - lastSeenMs <= LiveQuadTracker.holdMs {
             hint = quad
         }
-        let visionLately: Bool = t >= visionSeenMs && t - visionSeenMs <= LiveQuadTracker.holdMs
+        let modelLately: Bool = t >= modelSeenMs && t - modelSeenMs <= LiveQuadTracker.holdMs
         let started: Int = generation
         lock.unlock()
 
-        // A page Vision is less sure of than holding still needs would never be taken: the search looks then.
-        let visionFloor: Double = max(IOSPageFinder.minVisionConfidence, stabilityOptions.enterConfidence)
+        // A page the model is less sure of than holding still needs would never be taken: the search looks then.
+        let modelFloor: Double = max(PhotoImport.minModelConfidence, stabilityOptions.enterConfidence)
         var seen: PhotoDocumentDetection?
-        if let page = frame.page, page.confidence >= visionFloor {
+        if let page = frame.page, page.confidence >= modelFloor {
             seen = LiveQuadTracker.detection(page, width: width, height: height)
         }
         let detection: PhotoDocumentDetection
-        if let vision = seen {
-            detection = vision
-        } else if visionLately {
+        if let found = seen {
+            detection = found
+        } else if modelLately {
             detection = PhotoDocumentDetection.nothing
         } else {
             detection = detector(frame.image, hint)
@@ -240,7 +240,7 @@ public final class LiveQuadTracker: @unchecked Sendable {
         let steady: Bool = holdsStill(decision, quad: steadied.page, confidence: detection.confidence, diagonal: diagonal)
         lastFound = steadied.page
         if seen != nil {
-            visionSeenMs = t
+            modelSeenMs = t
         }
         if let quad = detection.quad {
             lastQuad = quad
@@ -404,7 +404,7 @@ public final class LiveQuadTracker: @unchecked Sendable {
         lastQuad = nil
         lastSeenMs = -Double.infinity
         filter = LiveQuadFilter()
-        visionSeenMs = -Double.infinity
+        modelSeenMs = -Double.infinity
     }
 
     /// Forgets how steady the page was and whether it was taken. Called with the lock held.

@@ -236,7 +236,7 @@ final class IOSCopyTests: XCTestCase {
                                   CGPoint(x: 100, y: 400)]
         let found = IOSFoundPage(corners: Quad(topLeft: corners[0], topRight: corners[1], bottomRight: corners[2],
                                                bottomLeft: corners[3]),
-                                 reason: .unsure, byVision: false)
+                                 reason: .unsure, byModel: false)
         let importer = IOSImportSession(state: state, finder: { (_: RgbaImage) -> IOSFoundPage in found })
         // A square photo: no paper has its shape.
         let data: Data = ImportTestSupport.file(UTType.png,

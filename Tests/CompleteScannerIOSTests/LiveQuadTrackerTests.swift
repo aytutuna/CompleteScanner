@@ -10,7 +10,7 @@ import XCTest
 // still, then taken away; frames with no page; a page missed for a moment; frames too close together;
 // a clock that starts over; the shutter's decision only from a page held still on a sharp, lit frame
 // (blurred and dark frames scripted through a `FrameSource`), a photo taken counting the page as taken,
-// and a pause keeping that; Vision's page taken in place of the search when it is sure. The frames are
+// and a pause keeping that; the corner model's page taken in place of the search when it is sure. The frames are
 // drawn here, pixel by pixel (no real document). Also the outline steadied (`LiveQuadFilter`, scripted
 // outlines), the frames made small for the search (`IOSFrameScaler`) and a live outline turned into the
 // photo's shares.
@@ -783,7 +783,7 @@ final class LiveQuadTrackerTests: XCTestCase {
         XCTAssertEqual(fired, [7, 17])
     }
 
-    func test_visionsPage_isTakenWhenSure_andTheSearchWaitsWhileVisionAnswers() {
+    func test_theModelsPage_isTakenWhenSure_andTheSearchWaitsWhileTheModelAnswers() {
         let count = SearchCount()
         let tracker = LiveQuadTracker(detector: countingDetector(count), quality: goodReadings)
         let sure = QuadCandidate(quad: stubQuad, confidence: 0.9)
@@ -795,8 +795,8 @@ final class LiveQuadTrackerTests: XCTestCase {
         let second: LiveQuadUpdate? = tracker.process(frame(100, sure))
         XCTAssertEqual(second?.outline, expected)
         XCTAssertEqual(count.value, 0)
-        // Vision misses it (too unsure, a sliver, nothing) for up to 300 ms after it last found it: the search
-        // waits and the outline is held.
+        // The model misses it (too unsure, a sliver, nothing) for up to 300 ms after it last found it: the
+        // search waits and the outline is held.
         let unsure: LiveQuadUpdate? = tracker.process(frame(200, QuadCandidate(quad: stubQuad, confidence: 0.3)))
         XCTAssertEqual(unsure?.outline, expected)
         let sliver = Quad(topLeft: CGPoint(x: 10, y: 20), topRight: CGPoint(x: 54, y: 20),
@@ -816,8 +816,8 @@ final class LiveQuadTrackerTests: XCTestCase {
         XCTAssertEqual(found?.rejection, PhotoDocumentRejection.none)
     }
 
-    func test_visionFlickering_doesNotHandTheOutlineToTheSearch() {
-        // Vision finds the sheet on two frames, then on every other one; the search would find it 5 px to the
+    func test_theModelFlickering_doesNotHandTheOutlineToTheSearch() {
+        // The model finds the sheet on two frames, then on every other one; the search would find it 5 px to the
         // right (over the jitter), so taking turns would shake the outline.
         let count = SearchCount()
         let tracker = LiveQuadTracker(detector: { (_: RgbaImage, _: Quad?) -> PhotoDocumentDetection in

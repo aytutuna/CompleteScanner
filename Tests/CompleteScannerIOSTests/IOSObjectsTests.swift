@@ -113,7 +113,7 @@ private func fixedObjects(_ quads: [Quad], for kind: CaptureKind) -> @Sendable (
 /// A page search that finds nothing clearly.
 private func noPage(_ photo: RgbaImage) -> IOSFoundPage {
     IOSFoundPage(corners: PhotoImport.startCorners(width: photo.width, height: photo.height), reason: .nothingFound,
-                 byVision: false)
+                 byModel: false)
 }
 
 /// Vision's corners of a rectangle given in a photo's pixels: normalized, origin bottom-left, top left first.
@@ -492,7 +492,7 @@ final class IOSObjectsTests: XCTestCase {
     @MainActor
     func test_aCardNotFound_opensTheCornerEditor_andGoesInAsACard() async throws {
         let state: AppState = makeState(.idCard)
-        let found = IOSFoundPage(corners: cardQuad, reason: .unsure, byVision: false)
+        let found = IOSFoundPage(corners: cardQuad, reason: .unsure, byModel: false)
         let importer = IOSImportSession(state: state, finder: { (_: RgbaImage) -> IOSFoundPage in found },
                                         objectFinder: fixedObjects([], for: .idCard))
         let importing: Task<IOSImportOutcome, Never> = Task { @MainActor in

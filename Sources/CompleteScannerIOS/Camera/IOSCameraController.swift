@@ -1,29 +1,26 @@
 #if os(iOS)
 import AVFoundation
 import CompleteScannerKit
+import CompleteScannerModel
 import CoreGraphics
 import CoreMedia
 import CoreVideo
 import Foundation
-import Vision
 
 /// The camera's live frames for the page outline: each BGRA frame of the video output made small
-/// (`IOSFrameScaler`, at most `LiveQuadTracker.analysisLongSide` px), searched whole by Vision's document
-/// segmentation (`IOSPageFinder.segmentation`, the page in the small frame's pixels) and handed to the
-/// tracker on the frames' own queue. The frame is searched as the sensor gives it, not turned, since the
-/// tracker's outline is in the sensor's frame. Frames that come sooner than `LiveQuadTracker.minFrameGapMs`
-/// after the last one handed over are passed over before any work, and the video output drops frames while
-/// one is being searched (`alwaysDiscardsLateVideoFrames`), so the work per second stays bounded. With
-/// another page detector picked for the test (`PageDetector`), Vision does not run: our own search alone, or
-/// DocAligner's model on the frame turned upright (`modelPage`) in Vision's place.
+/// (`IOSFrameScaler`, at most `LiveQuadTracker.analysisLongSide` px), searched whole by the corner model
+/// (`modelPage`, the page in the small frame's pixels) and handed to the tracker on the frames' own queue.
+/// The model sees the frame turned upright, the tracker the frame as the sensor gives it, since its outline
+/// is in the sensor's frame. Frames that come sooner than `LiveQuadTracker.minFrameGapMs` after the last one
+/// handed over are passed over before any work, and the video output drops frames while one is being
+/// searched (`alwaysDiscardsLateVideoFrames`), so the work per second stays bounded. Without the model the
+/// frames go to the tracker's own search alone.
 final class IOSFrameFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, FrameSource, @unchecked Sendable {
     private let lock = NSLock()
     private var deliver: (@Sendable (IOSCameraFrame) -> Void)?
     private var lastMs: Double?
     /// A phone held upright shows the back camera's frames turned a quarter clockwise.
     private var uprightTurn: Int = 90
-    private var lastImage: RgbaImage?
-    private var lastModelMs: (model: DocAlignerModel, ms: Double)?
 
     func startFrames(_ deliver: @escaping @Sendable (IOSCameraFrame) -> Void) {
         lock.lock()
@@ -57,22 +54,9 @@ final class IOSFrameFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         guard due, let send = handler, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
               let image = IOSFrameFeed.image(pixelBuffer) else { return }
         lock.lock()
-        lastImage = image
         let turn: Int = uprightTurn
         lock.unlock()
-        let page: QuadCandidate?
-        switch PageDetector.stored() {
-        case .apple:
-            let vision = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
-            page = IOSPageFinder.segmentation(vision, width: image.width, height: image.height)
-        case .builtIn:
-            page = nil
-        case .lc100:
-            page = modelPage(image, model: .lc100, turn: turn)
-        case .fastvitT8:
-            page = modelPage(image, model: .fastvitT8, turn: turn)
-        }
-        send(IOSCameraFrame(image: image, timestampMs: ms, page: page))
+        send(IOSCameraFrame(image: image, timestampMs: ms, page: IOSFrameFeed.modelPage(image, turn: turn)))
     }
 
     /// The preview's turn (clockwise degrees, a multiple of 90) that shows the sensor's frames upright, from
@@ -84,32 +68,15 @@ final class IOSFrameFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         lock.unlock()
     }
 
-    /// How long `model` ran on the last frame it saw, in ms; nil when another model ran since, or none did.
-    func modelMs(_ model: DocAlignerModel) -> Double? {
-        lock.lock()
-        defer { lock.unlock() }
-        return lastModelMs?.model == model ? lastModelMs?.ms : nil
-    }
-
-    /// The last frame handed over (small), turned upright as the preview shows it; nil before the first.
-    func uprightFrame() -> CGImage? {
-        lock.lock()
-        let image: RgbaImage? = lastImage
-        let turn: Int = uprightTurn
-        lock.unlock()
-        return image?.rotatedQuarterTurns(turn / 90).makeCGImage()
-    }
-
-    /// DocAligner's page in the small frame `image` (as the sensor gives it): the model runs on the frame
-    /// turned upright by `turn`, as it was trained on pages the right way up, and its corners are turned back
-    /// into the frame's pixels, where the tracker's outline lives.
-    private func modelPage(_ image: RgbaImage, model: DocAlignerModel, turn: Int) -> QuadCandidate? {
-        guard let upright = image.rotatedQuarterTurns(turn / 90).makeCGImage() else { return nil }
-        let run: DocAlignerRun? = PageDetector.run(model, on: upright)
-        lock.lock()
-        lastModelMs = run.map { (model: model, ms: $0.ms) }
-        lock.unlock()
-        guard let found = run?.page,
+    /// The corner model's page in the small frame `image` (as the sensor gives it), its confidence the
+    /// model's score: the model runs on the frame turned upright by `turn`, as it was trained on pages the
+    /// right way up, and its corners are turned back into the frame's pixels, where the tracker's outline
+    /// lives. Nil when the model is not in this build, did not run or found no page.
+    static func modelPage(_ image: RgbaImage, turn: Int) -> QuadCandidate? {
+        guard let model = IOSPageFinder.model else { return nil }
+        let upright: RgbaImage = image.rotatedQuarterTurns(turn / 90)
+        guard let heat = model.heatmaps(CornerModelInput.make(upright)),
+              let found = CornerHeatmap.decode(heat.values, width: heat.width, height: heat.height),
               let back = LiveQuadTracker.photoOutline(found.quad, rotationDegrees: (360 - turn) % 360) else { return nil }
         return QuadCandidate(quad: back.scaled(Double(image.width), Double(image.height)), confidence: found.confidence)
     }
