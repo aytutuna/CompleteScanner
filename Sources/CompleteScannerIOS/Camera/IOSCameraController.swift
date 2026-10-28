@@ -13,11 +13,17 @@ import Vision
 /// tracker on the frames' own queue. The frame is searched as the sensor gives it, not turned, since the
 /// tracker's outline is in the sensor's frame. Frames that come sooner than `LiveQuadTracker.minFrameGapMs`
 /// after the last one handed over are passed over before any work, and the video output drops frames while
-/// one is being searched (`alwaysDiscardsLateVideoFrames`), so the work per second stays bounded.
+/// one is being searched (`alwaysDiscardsLateVideoFrames`), so the work per second stays bounded. With
+/// another page detector picked for the test (`PageDetector`), Vision does not run: our own search alone, or
+/// DocAligner's model on the frame turned upright (`modelPage`) in Vision's place.
 final class IOSFrameFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, FrameSource, @unchecked Sendable {
     private let lock = NSLock()
     private var deliver: (@Sendable (IOSCameraFrame) -> Void)?
     private var lastMs: Double?
+    /// A phone held upright shows the back camera's frames turned a quarter clockwise.
+    private var uprightTurn: Int = 90
+    private var lastImage: RgbaImage?
+    private var lastModelMs: Double?
 
     func startFrames(_ deliver: @escaping @Sendable (IOSCameraFrame) -> Void) {
         lock.lock()
@@ -50,9 +56,62 @@ final class IOSFrameFeed: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         lock.unlock()
         guard due, let send = handler, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
               let image = IOSFrameFeed.image(pixelBuffer) else { return }
-        let vision = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
-        let page: QuadCandidate? = IOSPageFinder.segmentation(vision, width: image.width, height: image.height)
+        lock.lock()
+        lastImage = image
+        let turn: Int = uprightTurn
+        lock.unlock()
+        let page: QuadCandidate?
+        switch PageDetector.stored() {
+        case .apple:
+            let vision = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
+            page = IOSPageFinder.segmentation(vision, width: image.width, height: image.height)
+        case .builtIn:
+            page = nil
+        case .lc100:
+            page = modelPage(image, model: .lc100, turn: turn)
+        case .fastvitT8:
+            page = modelPage(image, model: .fastvitT8, turn: turn)
+        }
         send(IOSCameraFrame(image: image, timestampMs: ms, page: page))
+    }
+
+    /// The preview's turn (clockwise degrees, a multiple of 90) that shows the sensor's frames upright, from
+    /// the controller's rotation coordinator.
+    func setUprightTurn(_ angle: CGFloat) {
+        let quarters: Int = Int((Double(angle) / 90).rounded())
+        lock.lock()
+        uprightTurn = ((quarters % 4 + 4) % 4) * 90
+        lock.unlock()
+    }
+
+    /// How long DocAligner's model ran on the last frame, in ms; nil when it did not run.
+    var modelMs: Double? {
+        lock.lock()
+        defer { lock.unlock() }
+        return lastModelMs
+    }
+
+    /// The last frame handed over (small), turned upright as the preview shows it; nil before the first.
+    func uprightFrame() -> CGImage? {
+        lock.lock()
+        let image: RgbaImage? = lastImage
+        let turn: Int = uprightTurn
+        lock.unlock()
+        return image?.rotatedQuarterTurns(turn / 90).makeCGImage()
+    }
+
+    /// DocAligner's page in the small frame `image` (as the sensor gives it): the model runs on the frame
+    /// turned upright by `turn`, as it was trained on pages the right way up, and its corners are turned back
+    /// into the frame's pixels, where the tracker's outline lives.
+    private func modelPage(_ image: RgbaImage, model: DocAlignerModel, turn: Int) -> QuadCandidate? {
+        guard let upright = image.rotatedQuarterTurns(turn / 90).makeCGImage() else { return nil }
+        let run: DocAlignerRun? = PageDetector.run(model, on: upright)
+        lock.lock()
+        lastModelMs = run?.ms
+        lock.unlock()
+        guard let found = run?.page,
+              let back = LiveQuadTracker.photoOutline(found.quad, rotationDegrees: (360 - turn) % 360) else { return nil }
+        return QuadCandidate(quad: back.scaled(Double(image.width), Double(image.height)), confidence: found.confidence)
     }
 
     /// The frame's pixels made small; nil when it is not a BGRA frame.
@@ -456,6 +515,7 @@ public final class IOSCameraController: IOSCameraDriving {
     private func applyPreviewRotation() {
         guard let coordinator = rotation, let connection = previewLayer?.connection else { return }
         let angle: CGFloat = coordinator.videoRotationAngleForHorizonLevelPreview
+        capture.feed.setUprightTurn(angle)
         if connection.isVideoRotationAngleSupported(angle) {
             connection.videoRotationAngle = angle
         }

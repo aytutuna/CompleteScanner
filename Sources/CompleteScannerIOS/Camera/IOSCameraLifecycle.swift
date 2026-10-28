@@ -222,6 +222,10 @@ public enum IOSCameraText {
     public static let needsFullScreen = "Needs full screen"
     public static let paused = "Camera paused"
     public static let photoFailed = "Photo not taken"
+    /// The page detector test in the drawer's Camera group (`PageDetector`).
+    public static let detectorLabel = "Page detector"
+    public static let appleDetector = "Apple"
+    public static let builtInDetector = "Built-in"
     /// The pages in the queue: "1 page", "3 pages".
     public static func pageCount(_ count: Int) -> String {
         count == 1 ? "1 page" : "\(count) pages"

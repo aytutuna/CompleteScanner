@@ -36,8 +36,24 @@ public enum IOSPageFinder {
     /// Vision's outline is found clearly when at least this share of its weakest side lies on an edge.
     public static let minSureSupport: Double = 0.7
 
-    /// The page in `photo`, Vision first.
+    /// The page in `photo`, Vision first; with another page detector picked for the test (`PageDetector`),
+    /// that one first (DocAligner's page refined and judged as Vision's is, its confidence as Vision's), or
+    /// the shared detector alone.
     public static func find(_ photo: RgbaImage) -> IOSFoundPage {
+        let detector: PageDetector = PageDetector.stored()
+        if detector == .builtIn {
+            return fallback(photo)
+        }
+        if let model = detector.model {
+            if let image = photo.makeCGImage(), let found = PageDetector.run(model, on: image)?.page {
+                let candidate = QuadCandidate(quad: found.quad.scaled(Double(photo.width), Double(photo.height)),
+                                              confidence: found.confidence)
+                if let corners = accepted(candidate, width: photo.width, height: photo.height) {
+                    return refined(corners, confidence: candidate.confidence, in: photo)
+                }
+            }
+            return fallback(photo)
+        }
         if let image = photo.makeCGImage(), let candidate = visionCandidate(image),
            let corners = accepted(candidate, width: photo.width, height: photo.height) {
             return refined(corners, confidence: candidate.confidence, in: photo)

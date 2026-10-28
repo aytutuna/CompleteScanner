@@ -5,8 +5,8 @@ import Foundation
 
 /// One live frame of the camera, made small for the page search: its pixels (upright as the sensor
 /// gives them, not turned for the screen), when it was taken, in milliseconds of the capture clock, and
-/// the page Vision found in it (`IOSPageFinder.segmentation`, in `image`'s pixels), nil when Vision found
-/// none or did not run (fixture frames).
+/// the page Vision found in it (`IOSPageFinder.segmentation`, in `image`'s pixels; DocAligner's when it is
+/// the page detector picked, `PageDetector`), nil when Vision found none or did not run (fixture frames).
 public struct IOSCameraFrame: Sendable {
     public let image: RgbaImage
     public let timestampMs: Double
