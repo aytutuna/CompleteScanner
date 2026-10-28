@@ -23,4 +23,10 @@
     <ProjectReference Include="..\CompleteScanner.Core\CompleteScanner.Core.csproj" />
   </ItemGroup>
 
+  <!-- The page photos the Swift model tests read too (Tests/Fixtures/Pages at the repository root):
+       SmartDoc 2015 frames with their pages' corners. -->
+  <ItemGroup>
+    <None Include="..\..\Tests\Fixtures\Pages\**\*" LinkBase="Fixtures\Pages" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
