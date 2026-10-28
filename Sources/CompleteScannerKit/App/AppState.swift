@@ -463,6 +463,10 @@ public final class AppState: ObservableObject {
     let barcodeReader: any BarcodeReader
     /// Makes the QR code of a QR separator sheet (a stand-in in tests).
     let qrEncoder: any QrEncoder
+    /// Finds the page in an imported photo before the page search does (`PhotoImport.plan(_:model:)`): the
+    /// Mac's FastViT-T8 when it is in the build; nil, the page search alone. Twin of the Windows view
+    /// model's corner model.
+    public var cornerModel: (any CornerModel)?
     /// Queued pages a reading could not settle (the reader failed on them, or only their preview could
     /// be read and showed no code): not read again on their own, only when the split is chosen again
     /// (AppState+Split.swift).

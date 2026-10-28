@@ -204,6 +204,7 @@ extension AppState {
         let s = settings
         let scorer = orientationScorer
         let barcodes = barcodeReader
+        let model = cornerModel
         let spool = spoolDirectory
         runExclusive { flag in
             var added: [ScannedPage] = []
@@ -249,7 +250,7 @@ extension AppState {
                         }
                         let prepared: (RgbaImage, PhotoImportPlan) = await Task.detached(priority: .userInitiated) {
                             let upright = PhotoImport.oriented(file.stored, orientation: file.orientation)
-                            return (upright, PhotoImport.plan(upright))
+                            return (upright, PhotoImport.plan(upright, model: model))
                         }.value
                         let photo = prepared.0, plan = prepared.1
                         if flag.isCancelled { throw ScanError.cancelled }

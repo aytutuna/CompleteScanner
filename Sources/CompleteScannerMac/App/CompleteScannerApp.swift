@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import CompleteScannerKit
+import CompleteScannerModel
 import SwiftUI
 import SystemConfiguration
 
@@ -26,7 +27,8 @@ public struct CompleteScannerApp: App {
 
 extension AppState {
     /// The Mac app's state: ImageCaptureCore's scanners and the demo scanner, with the Mac's file
-    /// actions, troubleshooter links, printing and app lifecycle, the password dialog of a protected
+    /// actions, troubleshooter links, printing and app lifecycle, the corner model for imported photos
+    /// when it is in the build (`FastViTCornerModel`), the password dialog of a protected
     /// PDF (`PDFPasswordWindow`), the question before adding pages to a signed or PDF/A file, and the
     /// phone link's pieces (the keychain identity, the interfaces, DNS-SD, the phones' sync keys in the
     /// keychain), started when a phone is paired.
@@ -38,6 +40,7 @@ extension AppState {
                              troubleshooterService: SystemTroubleshooterService(),
                              printService: SystemPrintService(),
                              lifecycle: AppKitLifecycle())
+        state.cornerModel = FastViTCornerModel.isAvailable ? FastViTCornerModel.shared : nil
         state.askPDFPassword = { PDFPasswordWindow.ask() }
         state.confirmAppend = { AppState.confirmAppendAlert($0) }
         let computerName = SCDynamicStoreCopyComputerName(nil, nil) as String? ?? "Mac"
