@@ -55,13 +55,13 @@ public struct IOSPhotoSize: Equatable, Sendable {
 /// is taken with the lens that can focus on it; then the wide lens; then whatever the device has, a back
 /// camera before any other. A virtual camera with the ultra wide lens starts at the wide lens's zoom
 /// (`startZoom`), since its zoom 1 is the ultra wide lens's view. Photos are taken at the largest size of
-/// about 12 MP at most (`maxPhotoPixels`): a 48 MP photo would take about 195 MB as pixels, too much for a
-/// queue of pages.
+/// about 24 MP at most (`maxPhotoPixels`), which already resolves a page filling the frame at over 400 dpi:
+/// a 48 MP photo takes about 195 MB as pixels and the clean-up holds several copies of it at once.
 public enum IOSCameraLens {
     /// The cameras picked first, in order.
     public static let preferred: [IOSLensKind] = [.triple, .dualWide, .wide]
-    /// The largest photo taken: 4032 × 3024 (12.2 MP) fits, 8064 × 6048 does not.
-    public static let maxPhotoPixels: Int = 12_600_000
+    /// The largest photo taken: 5712 × 4284 (24.5 MP) fits, 8064 × 6048 does not.
+    public static let maxPhotoPixels: Int = 25_000_000
 
     /// How good a choice `option` is: lower is better (the preferred kinds first, in order, then the other
     /// kinds; any camera that does not face back after every one that does).

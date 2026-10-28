@@ -135,7 +135,7 @@ final class IOSCaptureSession: @unchecked Sendable {
     private var configured: Bool = false
     private var pending: [Int64: IOSPhotoDelegate] = [:]
 
-    /// Sets the session up once: the camera `IOSCameraLens` picks, photos of about 12 MP at most at the
+    /// Sets the session up once: the camera `IOSCameraLens` picks, photos of about 24 MP at most at the
     /// best quality, and BGRA video frames for the outline (the camera works without them when the
     /// session cannot add them), from a smaller video format where one takes photos of that size
     /// (`outlineFormat`). False when there is no camera or it cannot be used.
@@ -175,8 +175,8 @@ final class IOSCaptureSession: @unchecked Sendable {
         // The photo size is one the format chosen for the preset offers.
         if let dimensions = IOSCameraLens.photoDimensions(camera) {
             session.beginConfiguration()
-            // The .photo preset streams video at the photo's own size (12 MP frames of about 48 MB) only for
-            // the outline, which heats the phone; a smaller format that takes the same photos does not.
+            // The .photo preset streams 12 MP video frames (about 48 MB each) only for the outline, which
+            // heats the phone; a smaller format that takes the same photos does not.
             if let small = IOSCaptureSession.outlineFormat(camera, photo: dimensions),
                session.canSetSessionPreset(.inputPriority) {
                 do {

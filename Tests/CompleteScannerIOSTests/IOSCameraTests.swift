@@ -272,22 +272,27 @@ final class IOSCameraTests: XCTestCase {
         XCTAssertEqual(IOSCameraLens.startZoom(kind: .wide, switchOverFactors: [], minZoom: 0.5, maxZoom: 0.5), 1)
     }
 
-    func test_photos_areTheLargestOfAbout12MPAtMost() {
+    func test_photos_areTheLargestOfAbout24MPAtMost() {
         let twelve = IOSPhotoSize(width: 4032, height: 3024)
+        let twentyFour = IOSPhotoSize(width: 5712, height: 4284)
         let fortyEight = IOSPhotoSize(width: 8064, height: 6048)
         let small = IOSPhotoSize(width: 1920, height: 1440)
+        // A 48 MP camera that offers 24 MP takes 24 MP; one that does not, 12 MP.
+        XCTAssertEqual(IOSCameraLens.photoSize([small, twelve, twentyFour, fortyEight]), twentyFour)
+        XCTAssertEqual(IOSCameraLens.photoSize([fortyEight, twentyFour, twelve]), twentyFour)
         XCTAssertEqual(IOSCameraLens.photoSize([small, twelve, fortyEight]), twelve)
-        XCTAssertEqual(IOSCameraLens.photoSize([fortyEight, twelve]), twelve)
-        // 13.4 MP is over the cap.
-        XCTAssertEqual(IOSCameraLens.photoSize([IOSPhotoSize(width: 4224, height: 3168), IOSPhotoSize(width: 3264, height: 2448)]),
-                       IOSPhotoSize(width: 3264, height: 2448))
+        // A 12 MP camera takes 12 MP.
+        XCTAssertEqual(IOSCameraLens.photoSize([small, twelve]), twelve)
+        // 26.5 MP is over the cap.
+        XCTAssertEqual(IOSCameraLens.photoSize([IOSPhotoSize(width: 5944, height: 4458), twelve]), twelve)
         // Nothing small enough: the smallest offered.
-        XCTAssertEqual(IOSCameraLens.photoSize([fortyEight, IOSPhotoSize(width: 5712, height: 4284)]),
-                       IOSPhotoSize(width: 5712, height: 4284))
+        XCTAssertEqual(IOSCameraLens.photoSize([IOSPhotoSize(width: 9248, height: 6936), fortyEight]), fortyEight)
         XCTAssertNil(IOSCameraLens.photoSize([]))
         XCTAssertNil(IOSCameraLens.photoSize([IOSPhotoSize(width: 0, height: 0)]))
-        XCTAssertEqual(IOSCameraLens.maxPhotoPixels, 12_600_000)
+        XCTAssertEqual(IOSCameraLens.maxPhotoPixels, 25_000_000)
         XCTAssertEqual(twelve.pixels, 12_192_768)
+        XCTAssertEqual(twentyFour.pixels, 24_470_208)
+        XCTAssertEqual(fortyEight.pixels, 48_771_072)
     }
 
     // MARK: When the camera runs
