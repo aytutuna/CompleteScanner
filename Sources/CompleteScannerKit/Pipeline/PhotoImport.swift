@@ -98,6 +98,11 @@ public enum PhotoCornersChoice: Sendable {
 public enum PhotoImport {
     /// A page found with at least this confidence is corrected without asking.
     public static let sureConfidence = 0.7
+    /// A corner model's page is taken from this confidence up (`CornerHeatmap`: its weakest corner's peak)…
+    public static let minModelConfidence = 0.5
+    /// …and corrected without asking from `sureConfidence` up when the photo's edges back at least this
+    /// share of its weakest side (`QuadRefinement.support`).
+    public static let minSureSupport = 0.7
     /// The resolution of a page whose paper size is not known (`PerspectiveCorrector.nominalDPI`).
     public static let nominalDPI = 200
     /// The lowest resolution a page from a photo is given (a small photo of a big sheet)…
@@ -182,6 +187,41 @@ public enum PhotoImport {
             detection.quad = QuadRefiner.refine(photo, quad).quad
         }
         return plan(detection, width: photo.width, height: photo.height)
+    }
+
+    /// What to do with `photo` (upright) with `model` tried first: its page (`modelPlan`), else `plan(_:)`
+    /// as without a model.
+    public static func plan(_ photo: RgbaImage, model: CornerModel?) -> PhotoImportPlan {
+        if let model = model, let planned = modelPlan(photo, model: model) {
+            return planned
+        }
+        return plan(photo)
+    }
+
+    /// The page `model` finds in `photo`, taken when its confidence reaches `minModelConfidence` and it is
+    /// a document page's outline (`MultiQuadPicker`, `.document`) the editor can use; its corners moved onto
+    /// the photo's edges (`QuadRefiner`) and kept within the photo. It is corrected without asking when its
+    /// confidence reaches `sureConfidence`, the edges' support `minSureSupport` and it can be corrected;
+    /// otherwise the corner editor starts from it (`.unsure`). Nil when no page was found or taken.
+    public static func modelPlan(_ photo: RgbaImage, model: CornerModel) -> PhotoImportPlan? {
+        guard let heat = model.heatmaps(CornerModelInput.make(photo)),
+              let found = CornerHeatmap.decode(heat.values, width: heat.width, height: heat.height),
+              found.confidence >= minModelConfidence else { return nil }
+        let w = photo.width, h = photo.height
+        let candidate = QuadCandidate(quad: found.quad.scaled(Double(w), Double(h)), confidence: found.confidence)
+        guard let quad = MultiQuadPicker.pick([candidate], imageWidth: w, imageHeight: h, kind: .document).first,
+              canUseCorners(quad) else { return nil }
+        let refinement = QuadRefiner.refine(photo, quad)
+        let corners = clampedToPhoto(refinement.quad, width: w, height: h)
+        let aspect = PerspectiveCorrector.estimateAspect(corners, imageWidth: Double(w), imageHeight: Double(h))
+        let detection = PhotoDocumentDetection(quad: corners, confidence: found.confidence, rejection: .none,
+                                               candidate: nil, aspect: aspect,
+                                               paper: PerspectiveCorrector.matchPaper(aspect.longOverShort))
+        let sure = found.confidence >= sureConfidence && refinement.support >= minSureSupport
+            && PerspectiveCorrector.plan(corners, imageWidth: w, imageHeight: h) != nil
+        return sure
+            ? PhotoImportPlan(action: .correct, corners: corners, reason: .none, detection: detection)
+            : PhotoImportPlan(action: .review, corners: corners, reason: .unsure, detection: detection)
     }
 
     /// What to do with a photo of `width` × `height` where the page search found `detection`: a page

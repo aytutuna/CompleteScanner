@@ -89,6 +89,13 @@ public static class PhotoImport
 {
     /// <summary>A page found with at least this confidence is corrected without asking.</summary>
     public const double SureConfidence = 0.7;
+    /// <summary>A corner model's page is taken from this confidence up (<see cref="CornerHeatmap"/>: its weakest corner's peak)…</summary>
+    public const double MinModelConfidence = 0.5;
+    /// <summary>
+    /// …and corrected without asking from <see cref="SureConfidence"/> up when the photo's edges back at least
+    /// this share of its weakest side (<see cref="QuadRefinement.Support"/>).
+    /// </summary>
+    public const double MinSureSupport = 0.7;
     /// <summary>The resolution of a page whose paper size is not known (<see cref="PerspectiveCorrector.NominalDpi"/>).</summary>
     public const int NominalDpi = 200;
     /// <summary>The lowest resolution a page from a photo is given (a small photo of a big sheet)…</summary>
@@ -176,6 +183,41 @@ public static class PhotoImport
         var detection = PhotoDocumentDetector.Detect(photo);
         if (detection.Quad is { } quad) detection = detection with { Quad = QuadRefiner.Refine(photo, quad).Quad };
         return Plan(detection, photo.Width, photo.Height);
+    }
+
+    /// <summary>
+    /// What to do with <paramref name="photo"/> (upright) with <paramref name="model"/> tried first: its page
+    /// (<see cref="ModelPlan"/>), else <see cref="Plan(RgbaImage)"/> as without a model.
+    /// </summary>
+    public static PhotoImportPlan Plan(RgbaImage photo, ICornerModel? model) =>
+        (model is not null ? ModelPlan(photo, model) : null) ?? Plan(photo);
+
+    /// <summary>
+    /// The page <paramref name="model"/> finds in <paramref name="photo"/>, taken when its confidence reaches
+    /// <see cref="MinModelConfidence"/> and it is a document page's outline (<see cref="MultiQuadPicker"/>,
+    /// <see cref="CaptureKind.Document"/>) the editor can use; its corners moved onto the photo's edges
+    /// (<see cref="QuadRefiner"/>) and kept within the photo. It is corrected without asking when its
+    /// confidence reaches <see cref="SureConfidence"/>, the edges' support <see cref="MinSureSupport"/> and it
+    /// can be corrected; otherwise the corner editor starts from it (Unsure). Null when no page was found or taken.
+    /// </summary>
+    public static PhotoImportPlan? ModelPlan(RgbaImage photo, ICornerModel model)
+    {
+        if (model.Heatmaps(CornerModelInput.Make(photo)) is not { } heat) return null;
+        if (CornerHeatmap.Decode(heat.Values, heat.Width, heat.Height) is not { } found || found.Confidence < MinModelConfidence) return null;
+        int w = photo.Width, h = photo.Height;
+        var candidate = new QuadCandidate(found.Quad.Scaled(w, h), found.Confidence);
+        var picked = MultiQuadPicker.Pick([candidate], w, h, CaptureKind.Document);
+        if (picked.Count == 0 || !CanUseCorners(picked[0])) return null;
+        var refinement = QuadRefiner.Refine(photo, picked[0]);
+        var corners = ClampedToPhoto(refinement.Quad, w, h);
+        var aspect = PerspectiveCorrector.EstimateAspect(corners, w, h);
+        var detection = new PhotoDocumentDetection(corners, found.Confidence, PhotoDocumentRejection.None, null, aspect,
+                                                   PerspectiveCorrector.MatchPaper(aspect.LongOverShort));
+        bool sure = found.Confidence >= SureConfidence && refinement.Support >= MinSureSupport
+            && PerspectiveCorrector.Plan(corners, w, h) is not null;
+        return sure
+            ? new PhotoImportPlan(PhotoImportAction.Correct, corners, PhotoReviewReason.None, detection)
+            : new PhotoImportPlan(PhotoImportAction.Review, corners, PhotoReviewReason.Unsure, detection);
     }
 
     /// <summary>
