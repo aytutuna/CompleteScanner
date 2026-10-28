@@ -19,7 +19,7 @@ struct CornerEditorView: View {
     let fixesCrop: Bool
 
     @State private var model: CornerEditorModel
-    /// The photo made smaller for the screen.
+    /// The photo as shown, made smaller when it is large.
     @State private var display: CGImage?
 
     init(request: PhotoCornersRequest, onAnswer: @escaping @MainActor (PhotoCornersAnswer) -> Void,
@@ -212,15 +212,16 @@ struct CornerEditorView: View {
         .accessibilityHidden(true)
     }
 
-    /// The photo made at most 2048 pixels long, off the main actor.
+    /// The photo made at most 4096 pixels long, off the main actor: a 12 MP photo is shown whole, so the
+    /// magnifier zooms its own pixels. The corners stay in the photo's pixels whatever size it is shown at.
     private func loadDisplay() async {
         let photo: RgbaImage = request.photo
         let shown: CGImage? = await Task.detached(priority: .userInitiated) { () -> CGImage? in
             let longSide: Int = max(photo.width, photo.height, 1)
-            if longSide <= 2048 {
+            if longSide <= 4096 {
                 return photo.makeCGImage()
             }
-            let scale: Double = 2048.0 / Double(longSide)
+            let scale: Double = 4096.0 / Double(longSide)
             let width: Int = max(1, Int(Double(photo.width) * scale))
             let height: Int = max(1, Int(Double(photo.height) * scale))
             return photo.resized(width: width, height: height).makeCGImage()
