@@ -34,6 +34,22 @@ final class PageDetectorTests: XCTestCase {
         XCTAssertTrue(PageDetector.usesNeuralEngine(defaults))
     }
 
+    func test_theCaptionAndTheSpeedTest_sayTheModelAndItsTime() {
+        let model: DocAlignerModel = .lc100
+        if model.isAvailable {
+            XCTAssertEqual(IOSCameraText.detectorCaption(model, ms: 14.4), "LC100 \u{00B7} 14 ms")
+            XCTAssertEqual(IOSCameraText.detectorCaption(model, ms: nil), "LC100")
+        } else {
+            XCTAssertEqual(IOSCameraText.detectorCaption(model, ms: 14.4), "LC100 \u{00B7} not in this build")
+        }
+        XCTAssertEqual(IOSCameraText.speedLine(.fastvitT8, neuralEngine: false, median: 14.2, p90: 17.6),
+                       "FastViT-T8 on the CPU: median 14 ms, p90 18 ms")
+        XCTAssertEqual(IOSCameraText.speedLine(.lc100, neuralEngine: true, median: 3, p90: 4),
+                       "LC100 on the Neural Engine: median 3 ms, p90 4 ms")
+        XCTAssertEqual(PageDetector.allCases.map { (choice: PageDetector) -> String in choice.title },
+                       ["Apple", "Built-in", "LC100", "FastViT-T8"])
+    }
+
     func test_cornersFoundOnTheUprightFrame_turnBackOntoTheSensorsPixels() throws {
         let width: Int = 48
         let height: Int = 36

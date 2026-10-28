@@ -226,6 +226,30 @@ public enum IOSCameraText {
     public static let detectorLabel = "Page detector"
     public static let appleDetector = "Apple"
     public static let builtInDetector = "Built-in"
+    public static let neuralEngineLabel = "Use Neural Engine"
+    public static let speedTestLabel = "Speed test"
+    public static let speedTestOnFrame = "On the camera's last frame"
+    public static let speedTestOnDrawing = "On a drawn page (no camera frame yet)"
+    public static let cpuLabel = "CPU"
+    public static let neuralEngineShort = "Neural Engine"
+    /// The viewfinder's caption while DocAligner finds the page: "LC100 · 14 ms".
+    public static func detectorCaption(_ model: DocAlignerModel, ms: Double?) -> String {
+        guard model.isAvailable else { return "\(model.title) \u{00B7} not in this build" }
+        guard let time = ms else { return model.title }
+        return "\(model.title) \u{00B7} \(Int(time.rounded())) ms"
+    }
+
+    /// One line of the speed test: "LC100 on the CPU: median 14 ms, p90 17 ms".
+    public static func speedLine(_ model: DocAlignerModel, neuralEngine: Bool, median: Double, p90: Double) -> String {
+        let engine: String = neuralEngine ? neuralEngineShort : cpuLabel
+        return "\(model.title) on the \(engine): median \(Int(median.rounded())) ms, p90 \(Int(p90.rounded())) ms"
+    }
+
+    /// The speed test's line when Core ML could not be used and the model ran on the CPU.
+    public static func noCoreML(_ model: DocAlignerModel, why: String) -> String {
+        "\(model.title): Core ML could not be used, so it ran on the CPU (\(why))"
+    }
+
     /// The pages in the queue: "1 page", "3 pages".
     public static func pageCount(_ count: Int) -> String {
         count == 1 ? "1 page" : "\(count) pages"
