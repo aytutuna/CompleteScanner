@@ -72,6 +72,12 @@ let package = Package(
             dependencies: ["CompleteScannerKit", "CompleteScannerMac"],
             path: "Tests/CompleteScannerMacTests"
         ),
+        // The corner model on the page photos in Tests/Fixtures/Pages; skipped where it was not fetched.
+        .testTarget(
+            name: "CompleteScannerModelTests",
+            dependencies: ["CompleteScannerKit", "CompleteScannerModel"],
+            path: "Tests/CompleteScannerModelTests"
+        ),
         .testTarget(
             name: "CompleteScannerIOSTests",
             dependencies: ["CompleteScannerKit", "CompleteScannerIOS"],
