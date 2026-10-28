@@ -36,12 +36,13 @@ public struct IOSImportError: LocalizedError, Equatable {
 /// is read as a photo of its own (`pageCount`, then `decode` with its page), as on the Mac. The size and the orientation tag are read from the
 /// file's header first: a photo of more than `PhotoImport.maxPhotoPixels` is turned down before any
 /// pixel is decoded, and a large photo is decoded straight to at most `maxLongSide` pixels (ImageIO's
-/// thumbnail, without its own turn), so a 48 MP HEIC never sits in memory whole. The orientation tag
+/// thumbnail, without its own turn), so a panorama never sits in memory whole. The orientation tag
 /// (all eight values) is then applied by the shared `PhotoImport.oriented`, the Mac's and Windows'
 /// way, so the page search and the corner editor see the photo the right way up.
 public enum IOSPhotoDecoder {
-    /// The long side a photo is decoded to at most: a 12 MP shot (4032 × 3024) is read whole.
-    public static let maxLongSide: Int = 4096
+    /// The long side a photo is decoded to at most: a 48 MP shot (8064 × 6048) is read whole, as on the Mac,
+    /// and so is a 24 MP one from our camera (5712 × 4284).
+    public static let maxLongSide: Int = 8192
 
     /// How many pages the photo file `data` holds: a TIFF's pages, 1 for other files and for files that
     /// cannot be read (`decode` says why). The Mac's count (`PhotoFileReader.pageCount`).
@@ -75,8 +76,7 @@ public enum IOSPhotoDecoder {
         }
         let tag: Int = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
         let orientation: PhotoOrientation = PhotoOrientation.fromExif(tag)
-        guard let image = storedImage(source, index: index, width: width, height: height, maxLongSide: maxLongSide),
-              let stored = RgbaImage(cgImage: image) else {
+        guard let stored = storedPixels(source, index: index, width: width, height: height, maxLongSide: maxLongSide) else {
             throw IOSImportError(message: PhotoImport.unreadableMessage(shown, detail: PhotoImport.unreadableDetail))
         }
         let upright: RgbaImage = PhotoImport.oriented(stored, orientation: orientation)
@@ -90,19 +90,24 @@ public enum IOSPhotoDecoder {
     }
 
     /// The stored pixels of image `index`, unturned: whole when the long side is at most `maxLongSide`,
-    /// else decoded to that long side.
-    static func storedImage(_ source: CGImageSource, index: Int, width: Int, height: Int, maxLongSide: Int) -> CGImage? {
+    /// else decoded to that long side. The CGImage is released on return, before the turn copies the pixels.
+    static func storedPixels(_ source: CGImageSource, index: Int, width: Int, height: Int, maxLongSide: Int) -> RgbaImage? {
         let longSide: Int = max(width, height)
+        let image: CGImage?
         if longSide > 0 && longSide <= maxLongSide {
-            return CGImageSourceCreateImageAtIndex(source, index, nil)
+            // Uncached: a 48 MP CGImage would otherwise keep a decoded copy of its own (195 MB) beside ours.
+            image = CGImageSourceCreateImageAtIndex(source, index, [kCGImageSourceShouldCache: false] as CFDictionary)
+        } else {
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: false,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxLongSide,
+            ]
+            image = CGImageSourceCreateThumbnailAtIndex(source, index, options as CFDictionary)
         }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: false,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxLongSide,
-        ]
-        return CGImageSourceCreateThumbnailAtIndex(source, index, options as CFDictionary)
+        guard let image else { return nil }
+        return RgbaImage(cgImage: image)
     }
 }
 #endif
