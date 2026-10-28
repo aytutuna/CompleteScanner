@@ -36,7 +36,9 @@ final class PagesTests: XCTestCase {
         let delete: XCUIElement = app.descendants(matching: .any)["pages.deleteSelected"].firstMatch
         app.waitUntilEnabled(delete, "Delete")
         delete.tap()
-        let confirm: XCUIElement = app.descendants(matching: .any)["pages.confirmDelete"].firstMatch
+        // By its label: a dialog's button may not keep its identifier. The bar's Delete is the other one.
+        let confirm: XCUIElement = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "Delete",
+                                                                    "pages.deleteSelected")).firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 10), "The question's Delete")
         confirm.tap()
 

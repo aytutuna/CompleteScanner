@@ -127,8 +127,15 @@ final class ScreenshotTests: XCTestCase {
                 Thread.sleep(forTimeInterval: 1)
                 shot("06-pages")
                 selectionScreen(app)
-                done.tap()
-                waitUntilGone(done)
+                if done.waitForExistence(timeout: 5) {
+                    done.tap()
+                    waitUntilGone(done)
+                } else {
+                    shot("skipped-pages-select-closed")
+                    // Down to half height, then away.
+                    app.swipeDown()
+                    app.swipeDown()
+                }
             } else {
                 shot("skipped-06-pages")
             }
