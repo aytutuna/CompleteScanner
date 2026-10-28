@@ -253,6 +253,7 @@ Requires Xcode (or its toolchain) on macOS 14+.
 
 ```bash
 cd ~/CompleteScanner
+./scripts/fetch_docaligner.sh      # the page corner model; without it the apps use their own page search
 swift run CompleteScanner          # run directly
 # or build a double-clickable app:
 ./scripts/make_app.sh              # -> dist/CompleteScanner.app
@@ -281,7 +282,8 @@ whether to save them or discard them; a printer button switches to printer mode,
 Scan sits beside Save, and a camera button switches back, the scanner kept for next time; Print… and
 Email… in Save's menu, and what runs after each save (Email, Print, Send to PC) under After saving;
 so far the Demo Scanner,
-our own camera as the default way to take pages, with the page's outline found by Vision and held
+our own camera as the default way to take pages, with the page's outline found by the page corner
+model (FastViT-T8) and held
 steady over the preview, the lens that focuses close, the torch, an automatic shutter that takes each page once it
 holds still on a sharp, lit frame (Auto, on unless turned off, with a ring that fills as it waits) and
 continuous capture, page after page, with the corner editor only for a page the photo leaves unsure;
@@ -452,8 +454,8 @@ target for each platform's own parts:
   the app shell's services (`IOSShell`, `IOSFileActions`: Quick Look, the share
   sheet, Mail's composer, the Files app), the password sheet (`Protection/`), Apple's document scanner and our own camera (`Camera/`: the capture session,
   the lens choice, the live page outline, the automatic shutter, when the camera runs), importing photos and PDFs with the
-  corner editor (`Import/`: decoding with the EXIF turn, PDF pages at 300 dpi, Vision's page search
-  and its rectangles for several objects in one shot, the import session), the photo, receipt and ID
+  corner editor (`Import/`: decoding with the EXIF turn, PDF pages at 300 dpi, the page corner model
+  (FastViT-T8) with the shared page search behind it, Vision's rectangles for several objects in one shot, the import session), the photo, receipt and ID
   card reviews (`Review/`, `Views/PhotoReviewScreen.swift`, `Views/IdCardReviewScreen.swift`, the
   card's guide frame on the camera), Quick scan's screen with Live Text, the tasks' camera buttons and
   choices (`Views/TaskControls.swift`), a spread split again, the presets, the scans and the saved
@@ -472,9 +474,15 @@ target for each platform's own parts:
   no-camera state, the scanner picker with the add-by-address sheet, and Settings with a preset saved
   and listed); the `.xcodeproj` XcodeGen
   writes is not checked in
+- `Sources/CompleteScannerModel` — the page corner model for the Mac and the iPhone: DocAligner's
+  FastViT-T8 on ONNX Runtime (`FastViTCornerModel`, Core ML in front of the CPU), its file fetched into
+  `Models/` by `scripts/fetch_docaligner.sh`; the input and the heatmap decoding it shares with Windows
+  are in Kit's `Pipeline`
 - `Sources/CompleteScanner` — the Mac app's entry point
 - `Tests/CompleteScannerTests` — unit tests (synthetic-image based), run on macOS and on the iOS
   Simulator; `Tests/CompleteScannerMacTests` and `Tests/CompleteScannerIOSTests` — each platform's own;
+  `Tests/CompleteScannerModelTests` — the corner model on `Tests/Fixtures/Pages`, six SmartDoc frames
+  with their pages' corners that the Windows tests read too;
   `Tests/Fixtures/Escl` — the eSCL fixtures this suite and the Windows one both read (capability
   documents, request snapshots, a TXT record, RSA-2048, P-256 and P-384 scanner certificates, a
   trust file written by each platform, and two test-only identities with their keys that the
