@@ -1,23 +1,32 @@
 #!/bin/bash
-# Fetches DocAligner's two corner models (DocsaidLab/DocAligner release 1.1.1, Apache-2.0, see
-# Sources/CompleteScannerIOS/Models/DocAligner-LICENSE.txt) into Sources/CompleteScannerIOS/Models for
-# the iPhone's page detector test. They are not checked in; without them the app says the model is not
-# there and the tests that need them skip. Each file is checked against its SHA-256.
+# Fetches DocAligner's FastViT-T8 corner model (DocsaidLab/DocAligner release 1.1.1, Apache-2.0, see
+# Sources/CompleteScannerModel/Models/DocAligner-LICENSE.txt) into Sources/CompleteScannerModel/Models, the
+# page corner model of every platform. It is not checked in; without it the apps fall back to their own
+# page search and the tests that need it skip. The file is checked against its SHA-256. Runs in macOS bash
+# and in Git Bash on Windows.
 set -euo pipefail
 
 release="https://github.com/DocsaidLab/DocAligner/releases/download/1.1.1"
-models="$(cd "$(dirname "$0")/.." && pwd)/Sources/CompleteScannerIOS/Models"
+models="$(cd "$(dirname "$0")/.." && pwd)/Sources/CompleteScannerModel/Models"
+
+sha256() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | cut -d ' ' -f 1
+  else
+    sha256sum "$1" | cut -d ' ' -f 1
+  fi
+}
 
 fetch() {
   local name="$1" expected="$2"
   local file="$models/$name"
-  if [ -f "$file" ] && [ "$(shasum -a 256 "$file" | cut -d ' ' -f 1)" = "$expected" ]; then
+  if [ -f "$file" ] && [ "$(sha256 "$file")" = "$expected" ]; then
     echo "$name: already fetched"
     return
   fi
   curl -fsSL -o "$file.part" "$release/$name"
   local hash
-  hash=$(shasum -a 256 "$file.part" | cut -d ' ' -f 1)
+  hash=$(sha256 "$file.part")
   if [ "$hash" != "$expected" ]; then
     rm -f "$file.part"
     echo "$name: checksum mismatch: $hash" >&2
@@ -27,5 +36,4 @@ fetch() {
   echo "$name: fetched"
 }
 
-fetch lcnet100_h_e_bifpn_256_fp32.onnx f4117b786e3a18470f3865c93f3c2bd69d9b998edd60f385574a5c665e79594e
 fetch fastvit_t8_h_e_bifpn_256_fp32.onnx 950070fd4a46e25d46db7c35d0ed77612d9063f70d4543c7c504f0da6a943a89

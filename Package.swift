@@ -9,6 +9,7 @@ import PackageDescription
 //   Every file is wrapped in `#if os(macOS)`, so it builds to nothing for iOS.
 // - CompleteScannerIOS: the iPhone's and iPad's services and views. Every file is wrapped in
 //   `#if os(iOS)`, so it builds to nothing for macOS.
+// - CompleteScannerModel: the page corner model (DocAligner's FastViT-T8 on ONNX Runtime) for both apps.
 // - CompleteScanner: the Mac app.
 // iOS 18 needs PackageDescription 6.0; the code stays in the Swift 5 language mode.
 let package = Package(
@@ -20,7 +21,7 @@ let package = Package(
         .library(name: "CompleteScannerIOS", targets: ["CompleteScannerIOS"]),
     ],
     dependencies: [
-        // ONNX Runtime (MIT) runs DocAligner's models in the iPhone's page detector test; on the iPhone only.
+        // ONNX Runtime (MIT) runs DocAligner's corner model (CompleteScannerModel) on the Mac and the iPhone.
         .package(url: "https://github.com/microsoft/onnxruntime-swift-package-manager", exact: "1.24.2"),
     ],
     targets: [
@@ -29,21 +30,29 @@ let package = Package(
             path: "Sources/CompleteScannerKit"
         ),
         .target(
+            name: "CompleteScannerModel",
+            dependencies: [
+                "CompleteScannerKit",
+                .product(name: "onnxruntime", package: "onnxruntime-swift-package-manager"),
+            ],
+            path: "Sources/CompleteScannerModel",
+            // The model (scripts/fetch_docaligner.sh); the folder holds only its licence until it is fetched.
+            resources: [.copy("Models")]
+        ),
+        .target(
             name: "CompleteScannerMac",
-            dependencies: ["CompleteScannerKit"],
+            dependencies: ["CompleteScannerKit", "CompleteScannerModel"],
             path: "Sources/CompleteScannerMac"
         ),
         .target(
             name: "CompleteScannerIOS",
             dependencies: [
                 "CompleteScannerKit",
+                "CompleteScannerModel",
                 .product(name: "onnxruntime", package: "onnxruntime-swift-package-manager",
                          condition: .when(platforms: [.iOS])),
             ],
-            path: "Sources/CompleteScannerIOS",
-            // DocAligner's models for the page detector test (scripts/fetch_docaligner.sh); the folder
-            // holds only their licence until they are fetched.
-            resources: [.copy("Models")]
+            path: "Sources/CompleteScannerIOS"
         ),
         .executableTarget(
             name: "CompleteScanner",

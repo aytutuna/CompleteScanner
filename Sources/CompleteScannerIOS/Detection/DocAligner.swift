@@ -1,11 +1,13 @@
 #if os(iOS)
 import CompleteScannerKit
+import CompleteScannerModel
 import CoreGraphics
 import Foundation
 import OnnxRuntimeBindings
 
-/// DocAligner's corner models (DocsaidLab/DocAligner 1.1.1, Apache-2.0), in the package's Models folder
-/// once scripts/fetch_docaligner.sh has fetched them.
+/// DocAligner's corner models (DocsaidLab/DocAligner 1.1.1, Apache-2.0). Only FastViT-T8 is fetched now
+/// (scripts/fetch_docaligner.sh, into CompleteScannerModel's Models folder); LC100 stays in the test switch
+/// as not in this build.
 public enum DocAlignerModel: String, CaseIterable, Identifiable, Sendable {
     case lc100
     case fastvitT8
@@ -19,16 +21,12 @@ public enum DocAlignerModel: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var fileName: String {
-        switch self {
-        case .lc100: return "lcnet100_h_e_bifpn_256_fp32"
-        case .fastvitT8: return "fastvit_t8_h_e_bifpn_256_fp32"
-        }
-    }
-
     /// The model's file; nil when it was not fetched.
     public var url: URL? {
-        Bundle.module.url(forResource: fileName, withExtension: "onnx", subdirectory: "Models")
+        switch self {
+        case .lc100: return nil
+        case .fastvitT8: return FastViTCornerModel.url
+        }
     }
 
     public var isAvailable: Bool { url != nil }

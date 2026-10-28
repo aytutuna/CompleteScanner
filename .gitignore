@@ -9,6 +9,6 @@ windows/**/bin/
 windows/**/obj/
 windows/.vs/
 
-# DocAligner models, fetched by scripts/fetch_docaligner.sh
-Sources/CompleteScannerIOS/Models/*.onnx
-Sources/CompleteScannerIOS/Models/*.part
+# DocAligner's FastViT-T8, fetched by scripts/fetch_docaligner.sh
+Sources/CompleteScannerModel/Models/*.onnx
+Sources/CompleteScannerModel/Models/*.part

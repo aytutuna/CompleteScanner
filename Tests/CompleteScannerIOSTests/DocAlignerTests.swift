@@ -6,7 +6,7 @@ import XCTest
 @testable import CompleteScannerKit
 
 // DocAligner's models run for real (`DocAligner`) on a page drawn here: a white sheet a little turned on a
-// dark, speckled table. Skipped when scripts/fetch_docaligner.sh has not fetched the models.
+// dark, speckled table. Only the models fetched by scripts/fetch_docaligner.sh run; skipped without any.
 
 enum DrawnPage {
     static let width: Int = 360
@@ -49,14 +49,14 @@ enum DrawnPage {
 
 final class DocAlignerTests: XCTestCase {
     func test_eachModel_findsADrawnPage() throws {
-        let missing: [DocAlignerModel] = DocAlignerModel.allCases.filter { (model: DocAlignerModel) -> Bool in !model.isAvailable }
-        if !missing.isEmpty {
+        let fetched: [DocAlignerModel] = DocAlignerModel.allCases.filter { (model: DocAlignerModel) -> Bool in model.isAvailable }
+        if fetched.isEmpty {
             throw XCTSkip("DocAligner's models are not fetched (scripts/fetch_docaligner.sh)")
         }
         let image: CGImage = try XCTUnwrap(DrawnPage.image())
         let diagonal: Double = (Double(DrawnPage.width * DrawnPage.width + DrawnPage.height * DrawnPage.height)).squareRoot()
         let runner = DocAligner()
-        for model in DocAlignerModel.allCases {
+        for model in fetched {
             let run: DocAlignerRun = try runner.run(image, model: model, neuralEngine: false)
             // FastViT-T8 finds nothing on this plain picture, which is outside what it was trained on.
             guard let page = run.page else {
