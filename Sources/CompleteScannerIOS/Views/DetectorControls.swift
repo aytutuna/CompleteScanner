@@ -97,6 +97,10 @@ struct DetectorSpeedTest: View {
                 continue
             }
             for engine in [false, true] {
+                // Dismissing the sheet cancels the task; stop before queueing more runs ahead of the live feed.
+                if Task.isCancelled {
+                    return
+                }
                 let measured: [String] = await withCheckedContinuation {
                     (continuation: CheckedContinuation<[String], Never>) -> Void in
                     DocAligner.queue.async {
