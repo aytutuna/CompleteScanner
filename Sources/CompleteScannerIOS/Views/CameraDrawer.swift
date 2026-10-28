@@ -6,46 +6,51 @@ import SwiftUI
 /// that snaps one kind into its middle, the one there in the accent colour, the others grey. Swiping the
 /// row or tapping a kind picks it (`onKind`, as the printer screen's chips do); a pick that does not happen
 /// (the ID card's or the pages' question answered Cancel, a kind that cannot be started) brings the row back
-/// to the kind set up. Still while a scan or an import runs. The camera screen caps its text at the first
-/// accessibility size, where the widest kind still fits and the row stays one line.
+/// to the kind set up. Still while a scan or an import runs. Every kind is as wide as its word and the same
+/// space either side of it, so the gaps between the words are all alike; the text is one size throughout,
+/// capped by the camera screen at the first accessibility size, and a row too long for the screen scrolls.
 struct KindsRow: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
     @Environment(\.accessibilityReduceMotion) private var reduceMotion: Bool
     let onKind: (IOSScanKind) -> Void
-    /// The kind in the row's middle, while it scrolls too.
-    @State private var centred: IOSScanKind?
+    /// The kind in the row's middle: followed while the row is swiped, set when it is moved to a kind.
+    @State private var middle: IOSScanKind?
+    @State private var position: ScrollPosition = ScrollPosition(idType: IOSScanKind.self)
+    /// The person is moving the row, rather than the row moving itself to a kind.
+    @State private var swiping: Bool = false
+    /// Each kind's width as laid out, for snapping its middle to the row's.
+    @State private var widths: [IOSScanKind: CGFloat] = [:]
 
-    /// Every kind is as wide, so the row can snap one into its middle; it grows with the text.
-    @ScaledMetric(relativeTo: .footnote) private var itemWidth: CGFloat = 96
+    /// Half the gap between two kinds.
+    @ScaledMetric(relativeTo: .footnote) private var gap: CGFloat = 12
 
     var body: some View {
         let current: IOSScanKind = IOSShell.shownKind(state.settings)
         let busy: Bool = state.isBusy || importer.isImporting
         GeometryReader { (geometry: GeometryProxy) in
-            row(busy: busy, current: current)
-                .safeAreaPadding(.horizontal, max(0, (geometry.size.width - itemWidth) / 2))
+            row(busy: busy, current: current, inset: geometry.size.width / 2)
         }
         .frame(height: 44)
         .modifier(EdgeFade(leading: 28, trailing: 28))
         .onAppear {
-            centred = current
+            middle = current
+            position.scrollTo(id: current, anchor: .center)
         }
         .onChange(of: current) { (_: IOSScanKind, kind: IOSScanKind) in
-            withAnimation(animation) {
-                centred = kind
-            }
+            centre(kind)
         }
-        .sensoryFeedback(SensoryFeedback.selection, trigger: centred) { (old: IOSScanKind?, new: IOSScanKind?) -> Bool in
+        .sensoryFeedback(SensoryFeedback.selection, trigger: middle) { (old: IOSScanKind?, new: IOSScanKind?) -> Bool in
             old != nil && new != nil && old != new
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("kinds.row")
     }
 
-    private func row(busy: Bool, current: IOSScanKind) -> some View {
+    private func row(busy: Bool, current: IOSScanKind, inset: CGFloat) -> some View {
         let tiles: [IOSKindTile] = IOSShell.kindTiles(state.taskCards, current: current, order: IOSShell.cameraKinds)
-        let shown: IOSScanKind = centred ?? current
+        let shown: IOSScanKind = middle ?? current
+        let middles: [CGFloat] = centres(tiles, inset: inset)
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 0) {
                 ForEach(tiles) { (tile: IOSKindTile) in
@@ -53,15 +58,40 @@ struct KindsRow: View {
                 }
             }
             .scrollTargetLayout()
+            // Padding in the content rather than safe-area padding, so the snap's offsets are plain content
+            // coordinates; half the row either side lets the first and last kinds reach the middle.
+            .padding(.horizontal, inset)
         }
-        .scrollTargetBehavior(.viewAligned)
-        .scrollPosition(id: $centred, anchor: .center)
+        .scrollTargetBehavior(CentreSnap(middles: middles))
+        .scrollPosition($position)
         .scrollDisabled(busy)
+        // Worked out here rather than read from the position's id, which SwiftUI may report by the leading
+        // visible kind; a kind's own move to the middle passes others on the way, so only a swipe counts.
+        .onScrollGeometryChange(for: CGFloat.self) { (geometry: ScrollGeometry) -> CGFloat in
+            geometry.visibleRect.midX
+        } action: { (_: CGFloat, mid: CGFloat) in
+            if swiping, let index = CentreSnap.nearest(to: mid, in: middles) {
+                middle = tiles[index].kind
+            }
+        }
         .onScrollPhaseChange { (_: ScrollPhase, phase: ScrollPhase) in
+            swiping = phase == .interacting || phase == .decelerating
             if !phase.isScrolling {
                 settle()
             }
         }
+    }
+
+    /// The kinds' middles in the row's content, in its order; empty until every kind is laid out.
+    private func centres(_ tiles: [IOSKindTile], inset: CGFloat) -> [CGFloat] {
+        var leading: CGFloat = inset
+        var middles: [CGFloat] = []
+        for tile in tiles {
+            guard let width = widths[tile.kind] else { return [] }
+            middles.append(leading + width / 2)
+            leading += width
+        }
+        return middles
     }
 
     private func item(_ tile: IOSKindTile, highlighted: Bool, busy: Bool) -> some View {
@@ -77,11 +107,16 @@ struct KindsRow: View {
                 .tracking(0.8)
                 .foregroundStyle(highlighted ? Color.accentColor : Color.secondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(width: itemWidth, height: 44)
+                .padding(.horizontal, gap)
+                .frame(height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onGeometryChange(for: CGFloat.self) { (proxy: GeometryProxy) -> CGFloat in
+            proxy.size.width
+        } action: { (width: CGFloat) in
+            widths[kind] = width
+        }
         .disabled(!available || busy)
         .opacity(available ? 1 : 0.5)
         .accessibilityLabel(Text(kind.title))
@@ -93,21 +128,44 @@ struct KindsRow: View {
     /// The row came to rest: the kind in its middle is picked; if it was not, the row goes back.
     private func settle() {
         let appState: AppState = state
-        guard let kind = centred, kind != IOSShell.shownKind(appState.settings) else { return }
+        guard let kind = middle, kind != IOSShell.shownKind(appState.settings) else { return }
         onKind(kind)
-        let back: Animation = animation
         Task { @MainActor in
             let now: IOSScanKind = IOSShell.shownKind(appState.settings)
-            if centred != now {
-                withAnimation(back) {
-                    centred = now
-                }
+            if middle != now {
+                centre(now)
             }
+        }
+    }
+
+    /// Moves the row so `kind` is in its middle.
+    private func centre(_ kind: IOSScanKind) {
+        withAnimation(animation) {
+            middle = kind
+            position.scrollTo(id: kind, anchor: .center)
         }
     }
 
     private var animation: Animation {
         reduceMotion ? Animation.easeInOut(duration: 0.2) : Animation.spring(duration: 0.35, bounce: 0.15)
+    }
+}
+
+/// Where a swipe would come to rest, moved so the kind nearest the row's middle lands with its middle there:
+/// `.viewAligned` lines up leading edges, which centres a kind only while all are as wide.
+private struct CentreSnap: ScrollTargetBehavior {
+    /// The kinds' middles in the row's content; empty until they are laid out, when a swipe rests where it ends.
+    let middles: [CGFloat]
+
+    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+        guard let index = CentreSnap.nearest(to: target.rect.midX, in: middles) else { return }
+        target.rect.origin.x = middles[index] - target.rect.width / 2
+    }
+
+    static func nearest(to x: CGFloat, in middles: [CGFloat]) -> Int? {
+        middles.indices.min { (a: Int, b: Int) -> Bool in
+            abs(middles[a] - x) < abs(middles[b] - x)
+        }
     }
 }
 

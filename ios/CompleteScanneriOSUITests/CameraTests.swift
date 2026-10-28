@@ -54,6 +54,29 @@ final class CameraTests: XCTestCase {
     }
 
     @MainActor
+    func test_swipingAKindIntoTheMiddle_picksIt() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demoScanner"]
+        app.launch()
+
+        app.switchToCamera()
+        app.pickTask("photos")
+
+        // With Photos in the middle the leftmost kind showing is Photos too; once Receipts is dragged to the
+        // middle Photos still shows on the left, so this catches the leftmost kind being taken for the middle.
+        let row: XCUIElement = app.descendants(matching: .any)["kinds.row"].firstMatch
+        let receipts: XCUIElement = app.descendants(matching: .any)["kinds.receipts"].firstMatch
+        XCTAssertTrue(receipts.waitForExistence(timeout: 10), "The receipts kind")
+        let from: XCUICoordinate = receipts.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let to: XCUICoordinate = row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
+        let picked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: receipts)
+        XCTAssertEqual(XCTWaiter.wait(for: [picked], timeout: 10), .completed, "Receipts picked by the swipe")
+        XCTAssertFalse(app.descendants(matching: .any)["kinds.photos"].firstMatch.isSelected, "Photos let go")
+        XCTAssertEqual(abs(receipts.frame.midX - row.frame.midX), 0, accuracy: 2, "Receipts in the row's middle")
+    }
+
+    @MainActor
     func test_printerButton_andCameraButton_switchTheMode() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-demoScanner"]
