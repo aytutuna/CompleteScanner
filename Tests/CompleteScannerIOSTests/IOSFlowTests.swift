@@ -403,6 +403,17 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertEqual(names, ["Original", "Enhanced", "Grayscale", "Black and white"])
     }
 
+    func test_pageGrid_isTwoAcrossAPhone_untilPinched_andStaysWithinTheWidth() {
+        XCTAssertEqual(PageStripView.columnCount(chosen: 0, width: 390), 2)
+        XCTAssertEqual(PageStripView.columnCount(chosen: 0, width: 1024), 6)
+        XCTAssertEqual(PageStripView.columnCount(chosen: 1, width: 390), 1)
+        XCTAssertEqual(PageStripView.columnCount(chosen: 9, width: 390), 6)
+        XCTAssertEqual(PageStripView.columnCount(chosen: 9, width: 1024), 9)
+        XCTAssertEqual(PageStripView.maxColumns(width: 1366), 10)
+        XCTAssertEqual(PageStripView.spacing(columns: 2), 14)
+        XCTAssertEqual(PageStripView.spacing(columns: 6), 6)
+    }
+
     func test_deletingAPageInTheViewer_showsTheNextOne_orTheOneBeforeTheLast() {
         let a = UUID(), b = UUID(), c = UUID()
         XCTAssertEqual(PageViewer.pageAfterRemoving(a, from: [a, b, c]), b)

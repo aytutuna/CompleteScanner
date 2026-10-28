@@ -52,12 +52,13 @@ struct PageStripCell: Identifiable {
 }
 
 /// The collected pages as a grid of whole pages, two across on an iPhone held upright and more on a wider
-/// screen, with the queue's summary: each page with its number, its side or book badge, the title of the
-/// document it starts and its note (blank, separator) on a badge over it. A tap opens the page (`onOpen`);
-/// its menu turns it, removes it, and for a book's page splits its spread again (`onEditSpread`) or joins its
-/// two pages. A page dragged onto another takes its place (`IOSPageDrop`); VoiceOver has Move left and Move
-/// right for the same. While the sheet is selecting (`selection`), a tap picks or drops the page instead, and
-/// it has no menu and is not dragged.
+/// screen until a pinch changes it (one to six across an iPhone, up to ten on an iPad; kept in the defaults
+/// under `columnsKey`), with the queue's summary: each page with its number, its side or book badge, the
+/// title of the document it starts and its note (blank, separator) on a badge over it. A tap opens the page
+/// (`onOpen`); its menu turns it, removes it, and for a book's page splits its spread again (`onEditSpread`)
+/// or joins its two pages. A page dragged onto another takes its place (`IOSPageDrop`); VoiceOver has Move
+/// left and Move right for the same. While the sheet is selecting (`selection`), a tap picks or drops the
+/// page instead, and it has no menu and is not dragged.
 struct PageStripView: View {
     @EnvironmentObject private var state: AppState
     /// Opens the split sheet for the spread the page with this id was cut from.
@@ -65,14 +66,50 @@ struct PageStripView: View {
     /// The pages picked; nil when the grid is not selecting.
     var selection: Binding<Set<UUID>>?
     let onOpen: @MainActor (UUID) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The pages across chosen with a pinch; 0 until one is.
+    @AppStorage(PageStripView.columnsKey) private var chosenColumns: Int = 0
+    /// The pinch under way has taken its step.
+    @State private var pinched: Bool = false
 
-    /// At least 150 pt a page: two across the narrowest iPhone, more on an iPad or turned sideways.
-    static let columns: [GridItem] = [GridItem(.adaptive(minimum: 150, maximum: 280), spacing: 14, alignment: .top)]
+    static let columnsKey = "pages.columns"
+
+    /// As many pages across as fit at 150 pt each within the grid's margins: two on an iPhone held upright,
+    /// more on an iPad or turned sideways.
+    nonisolated static func defaultColumns(width: CGFloat) -> Int {
+        max(1, Int((width - 32 + 14) / 164))
+    }
+
+    /// The most pages across a pinch gives: six on an iPhone, up to ten on a wide iPad.
+    nonisolated static func maxColumns(width: CGFloat) -> Int {
+        min(10, max(6, Int(width / 100)))
+    }
+
+    /// The pages across at `width`: the number chosen, as far as the width allows, or the default.
+    nonisolated static func columnCount(chosen: Int, width: CGFloat) -> Int {
+        guard chosen > 0 else { return defaultColumns(width: width) }
+        return min(chosen, maxColumns(width: width))
+    }
+
+    /// The gap between pages, tighter as they get smaller: 14 pt up to two across, 6 pt from five.
+    nonisolated static func spacing(columns: Int) -> CGFloat {
+        min(14, max(6, 28 / CGFloat(columns)))
+    }
 
     var body: some View {
+        GeometryReader { (geometry: GeometryProxy) in
+            grid(width: geometry.size.width)
+        }
+    }
+
+    private func grid(width: CGFloat) -> some View {
         let cells: [PageStripCell] = PageStripCell.cells(state.scannedPages, options: state.settings.document)
         let summary: String = DocumentSplitter.queueSummary(state.scannedPages, options: state.settings.document)
-        ScrollView {
+        let count: Int = Self.columnCount(chosen: chosenColumns, width: width)
+        let spacing: CGFloat = Self.spacing(columns: count)
+        let columns: [GridItem] = Array(repeating: GridItem(.flexible(), spacing: spacing, alignment: .top), count: count)
+        let compact: Bool = count >= 4
+        return ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 // The sheet's title already gives the count; the line stays for what it adds (documents, separators).
                 if cells.isEmpty || summary != IOSCameraText.pageCount(state.scannedPages.count) {
@@ -81,12 +118,12 @@ struct PageStripView: View {
                         .foregroundStyle(Color.secondary)
                         .accessibilityIdentifier("pages.summary")
                 }
-                LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 18) {
+                LazyVGrid(columns: columns, alignment: .leading, spacing: spacing + 4) {
                     ForEach(cells) { (cell: PageStripCell) in
                         if let selection {
-                            selectTile(cell, selection: selection)
+                            selectTile(cell, selection: selection, compact: compact)
                         } else {
-                            tile(cell)
+                            tile(cell, compact: compact)
                         }
                     }
                 }
@@ -95,9 +132,38 @@ struct PageStripView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("pages.strip")
         }
+        .simultaneousGesture(pinch(columns: count, most: Self.maxColumns(width: width)))
     }
 
-    private func tile(_ cell: PageStripCell) -> some View {
+    /// Pinching out shows fewer, larger pages and pinching in more, smaller ones, a step a pinch.
+    private func pinch(columns: Int, most: Int) -> some Gesture {
+        MagnifyGesture()
+            .onChanged { (value: MagnifyGesture.Value) in
+                guard !pinched else { return }
+                if value.magnification > 1.15 && columns > 1 {
+                    pinched = true
+                    show(columns: columns - 1)
+                } else if value.magnification < 0.87 && columns < most {
+                    pinched = true
+                    show(columns: columns + 1)
+                }
+            }
+            .onEnded { (_: MagnifyGesture.Value) in
+                pinched = false
+            }
+    }
+
+    private func show(columns: Int) {
+        if reduceMotion {
+            chosenColumns = columns
+        } else {
+            withAnimation(Animation.snappy) {
+                chosenColumns = columns
+            }
+        }
+    }
+
+    private func tile(_ cell: PageStripCell, compact: Bool) -> some View {
         let pageID: UUID = cell.id
         let page: ScannedPage? = state.scannedPages.first(where: { (item: ScannedPage) -> Bool in item.id == pageID })
         let splitLabel: String? = page.flatMap { (item: ScannedPage) -> String? in BookPages.splitActionLabel(item) }
@@ -106,7 +172,7 @@ struct PageStripView: View {
         return Button {
             onOpen(pageID)
         } label: {
-            PageTile(cell: cell, working: state.recuttingPages.contains(pageID), selected: false)
+            PageTile(cell: cell, working: state.recuttingPages.contains(pageID), compact: compact, selected: false)
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -150,7 +216,7 @@ struct PageStripView: View {
         .accessibilityIdentifier("page.\(cell.number)")
     }
 
-    private func selectTile(_ cell: PageStripCell, selection: Binding<Set<UUID>>) -> some View {
+    private func selectTile(_ cell: PageStripCell, selection: Binding<Set<UUID>>, compact: Bool) -> some View {
         let pageID: UUID = cell.id
         let picked: Bool = selection.wrappedValue.contains(pageID)
         return Button {
@@ -160,7 +226,7 @@ struct PageStripView: View {
                 selection.wrappedValue.insert(pageID)
             }
         } label: {
-            PageTile(cell: cell, working: state.recuttingPages.contains(pageID), selected: picked)
+            PageTile(cell: cell, working: state.recuttingPages.contains(pageID), compact: compact, selected: picked)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(cell.accessibilityLabel))
@@ -177,27 +243,34 @@ struct PageStripView: View {
 
 /// One page of the grid: the whole page fitted in a card of a sheet's shape, nothing of it cut off, its note
 /// on a badge over its corner, a spinner while it is cut out again, and its number and badge under it. A page
-/// picked in the grid's selection is dimmed a little and ticked in the other corner.
+/// picked in the grid's selection is dimmed a little and ticked in the other corner. Four or more across
+/// (`compact`), the margins, corners and words shrink with the card.
 private struct PageTile: View {
     let cell: PageStripCell
     let working: Bool
+    let compact: Bool
     let selected: Bool
 
+    private var radius: CGFloat { compact ? 6 : 10 }
+    private var gap: CGFloat { compact ? 3 : 6 }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: gap) {
             if let divider = cell.divider {
                 Text(divider)
-                    .font(.caption.weight(.semibold))
+                    .font(compact ? Font.caption2.weight(.semibold) : Font.caption.weight(.semibold))
                     .foregroundStyle(Color.accentColor)
                     .lineLimit(1)
             }
             card
-            HStack(spacing: 6) {
+            HStack(spacing: gap) {
                 Text("\(cell.number)")
-                    .font(.footnote.weight(.semibold))
+                    .font(compact ? Font.caption2.weight(.semibold) : Font.footnote.weight(.semibold))
+                    .lineLimit(1)
+                    .layoutPriority(1)
                 if let badge = cell.badge {
                     Text(badge)
-                        .font(.caption)
+                        .font(compact ? Font.caption2 : Font.caption)
                         .foregroundStyle(Color.secondary)
                         .lineLimit(1)
                 }
@@ -207,26 +280,26 @@ private struct PageTile: View {
     }
 
     private var card: some View {
-        RoundedRectangle(cornerRadius: 10)
+        RoundedRectangle(cornerRadius: radius)
             .fill(Color(uiColor: .secondarySystemBackground))
             .aspectRatio(PageViewerText.cardAspect, contentMode: .fit)
             .overlay {
                 page
-                    .padding(8)
+                    .padding(compact ? 3 : 8)
             }
             .overlay {
                 if selected {
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: radius)
                         .fill(Color.black.opacity(0.15))
                 }
             }
             .overlay(alignment: .topTrailing) {
                 if selected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.title3)
+                        .font(compact ? Font.body : Font.title3)
                         .symbolRenderingMode(.palette)
                         .foregroundStyle(Color.white, Color.accentColor)
-                        .padding(6)
+                        .padding(gap)
                 }
             }
     }
@@ -244,10 +317,11 @@ private struct PageTile: View {
                     Text(note)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(Color.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
+                        .lineLimit(1)
+                        .padding(.horizontal, compact ? 3 : 6)
+                        .padding(.vertical, compact ? 1 : 3)
                         .background(Capsule().fill(Color.black.opacity(0.65)))
-                        .padding(4)
+                        .padding(compact ? 2 : 4)
                 }
             }
             .overlay {
