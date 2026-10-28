@@ -164,7 +164,7 @@ final class IOSPhotoDecoderTests: XCTestCase {
         let whole: IOSDecodedPhoto = try IOSPhotoDecoder.decode(data, fileName: "big.tiff")
         XCTAssertEqual(whole.photo.width, 200)
         XCTAssertEqual(whole.photo.height, 120)
-        XCTAssertEqual(IOSPhotoDecoder.maxLongSide, 4000)
+        XCTAssertEqual(IOSPhotoDecoder.maxLongSide, 4096)
     }
 
     func test_theFocalLength_comesFromExif_inPixelsOfThePhoto() throws {

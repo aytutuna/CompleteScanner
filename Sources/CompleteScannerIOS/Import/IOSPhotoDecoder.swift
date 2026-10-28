@@ -40,8 +40,8 @@ public struct IOSImportError: LocalizedError, Equatable {
 /// (all eight values) is then applied by the shared `PhotoImport.oriented`, the Mac's and Windows'
 /// way, so the page search and the corner editor see the photo the right way up.
 public enum IOSPhotoDecoder {
-    /// The long side a photo is decoded to at most: about 12 MP for a 4 : 3 photo.
-    public static let maxLongSide: Int = 4000
+    /// The long side a photo is decoded to at most: a 12 MP shot (4032 × 3024) is read whole.
+    public static let maxLongSide: Int = 4096
 
     /// How many pages the photo file `data` holds: a TIFF's pages, 1 for other files and for files that
     /// cannot be read (`decode` says why). The Mac's count (`PhotoFileReader.pageCount`).

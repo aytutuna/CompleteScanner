@@ -2232,7 +2232,7 @@ public final class AppState: ObservableObject {
               let ctx = CGContext(data: nil, width: nw, height: nh, bitsPerComponent: 8,
                                   bytesPerRow: 0, space: srgb,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        ctx.interpolationQuality = .medium
+        ctx.interpolationQuality = .high
         ctx.draw(image, in: CGRect(x: 0, y: 0, width: nw, height: nh))
         return ctx.makeImage()
     }
