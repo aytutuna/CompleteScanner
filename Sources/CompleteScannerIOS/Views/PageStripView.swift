@@ -381,25 +381,21 @@ struct PageStripSheet: View {
                             selectionActions
                         }
                     } else {
-                        ToolbarItem(placement: .topBarLeading) {
+                        ToolbarItemGroup(placement: .topBarLeading) {
                             Button(PageViewerText.selectLabel, action: startSelecting)
                                 .accessibilityIdentifier("pages.select")
+                            if !state.scannedPages.isEmpty {
+                                Button(PageViewerText.deleteAllLabel, role: .destructive, action: askDeleteAll)
+                                    .tint(Color.red)
+                                    .disabled(state.isBusy)
+                                    .accessibilityIdentifier("pages.deleteAll")
+                            }
                         }
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Done") {
                                 onClose()
                             }
                             .accessibilityIdentifier("pages.done")
-                        }
-                        // In the bottom bar: beside Select or Done it would crowd the title on an iPhone.
-                        if !state.scannedPages.isEmpty {
-                            ToolbarItemGroup(placement: .bottomBar) {
-                                Spacer()
-                                Button(PageViewerText.deleteAllLabel, role: .destructive, action: askDeleteAll)
-                                    .tint(Color.red)
-                                    .disabled(state.isBusy)
-                                    .accessibilityIdentifier("pages.deleteAll")
-                            }
                         }
                     }
                 }
