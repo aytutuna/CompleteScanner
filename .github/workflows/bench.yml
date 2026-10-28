@@ -3,8 +3,8 @@ name: Page detector bench
 # The iPhone's page detectors side by side on the SmartDoc 2015 Challenge 1 frames
 # (jchazalon/smartdoc15-ch1-dataset v2.0.0, CC BY 4.0): DocAlignerBenchTests on the iOS Simulator
 # (FastViT-T8, Built-in and the Simulator's Vision), with the model's test on the page photos, then
-# Vision on the Mac itself. Run it by hand from the Actions tab, or push to ci/bench. The table is the docaligner-bench
-# artifact and the run's summary.
+# Vision on the Mac itself. Run it by hand from the Actions tab, or push to ci/bench. The table is
+# the docaligner-bench artifact and the run's summary.
 on:
   workflow_dispatch:
   push:

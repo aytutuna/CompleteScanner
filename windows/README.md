@@ -396,8 +396,9 @@ Each photo is read once into memory and never changed, moved or locked: the spoo
 the photo as the app made them, never the file itself. The photo is turned upright by its
 orientation tag (EXIF 274: all eight values, mirrored ones included), the page's corners are found
 (DocAligner's FastViT-T8 on ONNX Runtime's CPU, `Services/OnnxCornerModel.cs`, as on the Mac and the
-iPhone; `PhotoDocumentDetector` when the model was not fetched or finds no page) and the page is cut out along them with its perspective corrected
-(`PerspectiveCorrector`). When the page is not found clearly (confidence under 0.7, cut off by the
+iPhone; `PhotoDocumentDetector` when the model was not fetched or finds no page) and the page is cut
+out along them with its perspective corrected (`PerspectiveCorrector`). When the page is not found
+clearly (confidence under 0.7, cut off by the
 photo's edge, two pages, or nothing found) the **corner editor** opens with the best guess and says
 why: drag each corner onto a corner of the page (a magnifier shows the photo around the corner
 being moved; keys 1 to 4 select a corner, the arrow keys move it, Shift takes bigger steps); a
