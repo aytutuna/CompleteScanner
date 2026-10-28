@@ -36,7 +36,7 @@ let package = Package(
                 .product(name: "onnxruntime", package: "onnxruntime-swift-package-manager"),
             ],
             path: "Sources/CompleteScannerModel",
-            // The model (scripts/fetch_docaligner.sh); the folder holds only its licence until it is fetched.
+            // The model (scripts/fetch_docaligner.sh); the folder holds only the licences until it is fetched.
             resources: [.copy("Models")]
         ),
         .target(

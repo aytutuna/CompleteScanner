@@ -61,8 +61,10 @@ PLIST
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # The page corner model and its licence, where FastViTCornerModel looks in a packaged app. Without it
-# (scripts/fetch_docaligner.sh not run) the app finds pages with its own search.
+# (scripts/fetch_docaligner.sh not run) the app finds pages with its own search. ONNX Runtime is linked
+# in either way, so its licence always goes in.
 MODELS=Sources/CompleteScannerModel/Models
+cp "$MODELS/ONNXRuntime-LICENSE.txt" "$APP/Contents/Resources/"
 if [ -f "$MODELS/fastvit_t8_h_e_bifpn_256_fp32.onnx" ]; then
   cp "$MODELS/fastvit_t8_h_e_bifpn_256_fp32.onnx" "$MODELS/DocAligner-LICENSE.txt" "$APP/Contents/Resources/"
 else

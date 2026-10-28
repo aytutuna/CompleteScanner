@@ -479,3 +479,17 @@ target for each platform's own parts:
   documents, request snapshots, a TXT record, RSA-2048, P-256 and P-384 scanner certificates, a
   trust file written by each platform, and two test-only identities with their keys that the
   loopback HTTPS scanner of `EsclLoopbackTests` serves)
+
+## Third-party notices
+
+The Mac and iPhone apps include these, each under its own license:
+
+- **ONNX Runtime** 1.24.2 (`onnxruntime-swift-package-manager`, the page corner model) — by Microsoft.
+  Licensed under the MIT License; its license text goes with the apps (`ONNXRuntime-LICENSE.txt`).
+  <https://github.com/microsoft/onnxruntime>
+- **DocAligner FastViT-T8** (`fastvit_t8_h_e_bifpn_256_fp32.onnx`, fetched by
+  `scripts/fetch_docaligner.sh`) — by DocsaidLab, release 1.1.1. Licensed under the Apache License,
+  Version 2.0; its license text is copied next to it (`DocAligner-LICENSE.txt`).
+  <https://github.com/DocsaidLab/DocAligner>
+
+The Windows app's are listed in [windows/README.md](windows/README.md#third-party-notices).
