@@ -396,6 +396,8 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertEqual(PageViewerText.pageName(2), "Page 2")
         XCTAssertEqual(PageViewerText.selectedTitle(0), "Select Pages")
         XCTAssertEqual(PageViewerText.selectedTitle(2), "2 Selected")
+        XCTAssertEqual(PageViewerText.deleteAllQuestion(3), "Delete all 3 pages?")
+        XCTAssertEqual(PageViewerText.deleteAllQuestion(1), "Delete 1 page?")
         var names: [String] = []
         for filter in CaptureFilter.displayOrder {
             names.append(PageViewerText.filterName(filter))

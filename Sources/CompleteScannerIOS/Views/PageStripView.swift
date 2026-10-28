@@ -346,7 +346,8 @@ private struct PageTile: View {
 /// screen's pages button (`capture.pages`), with Done; a page tapped opens in the page viewer over it. Select
 /// picks pages as the Photos app does: "2 Selected" as the title, Select All or Deselect All, and Cancel in
 /// place of Done, with a bottom bar that turns the pages picked, shares them as pictures, moves them to the
-/// start or the end, and deletes them once asked.
+/// start or the end, and deletes them once asked. Outside Select a bottom bar has Delete All, which empties the
+/// queue once asked; the sheet then closes, as it does whenever the pages run out.
 struct PageStripSheet: View {
     @EnvironmentObject private var state: AppState
     var onEditSpread: (@MainActor (UUID) -> Void)?
@@ -356,6 +357,7 @@ struct PageStripSheet: View {
     @State private var selecting: Bool = false
     @State private var selected: Set<UUID> = []
     @State private var asksDelete: Bool = false
+    @State private var asksDeleteAll: Bool = false
     @State private var sharing: Bool = false
     @State private var share: ShareRequest?
 
@@ -389,6 +391,16 @@ struct PageStripSheet: View {
                             }
                             .accessibilityIdentifier("pages.done")
                         }
+                        // In the bottom bar: beside Select or Done it would crowd the title on an iPhone.
+                        if !state.scannedPages.isEmpty {
+                            ToolbarItemGroup(placement: .bottomBar) {
+                                Spacer()
+                                Button(PageViewerText.deleteAllLabel, role: .destructive, action: askDeleteAll)
+                                    .tint(Color.red)
+                                    .disabled(state.isBusy)
+                                    .accessibilityIdentifier("pages.deleteAll")
+                            }
+                        }
                     }
                 }
         }
@@ -403,6 +415,13 @@ struct PageStripSheet: View {
                 deleteSelected()
             }
             .accessibilityIdentifier("pages.confirmDelete")
+        }
+        .confirmationDialog(PageViewerText.deleteAllQuestion(state.scannedPages.count), isPresented: $asksDeleteAll,
+                            titleVisibility: .visible) {
+            Button(PageViewerText.deleteAllLabel, role: .destructive) {
+                state.clearPages()
+            }
+            .accessibilityIdentifier("pages.confirmDeleteAll")
         }
         .sheet(item: $share) { (request: ShareRequest) in
             ActivityView(items: request.urls, onDone: closeShare)
@@ -515,6 +534,10 @@ struct PageStripSheet: View {
 
     private func askDelete() {
         asksDelete = true
+    }
+
+    private func askDeleteAll() {
+        asksDeleteAll = true
     }
 
     private func deleteSelected() {

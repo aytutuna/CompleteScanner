@@ -16,6 +16,7 @@ enum PageViewerText {
     static let filtersLabel = "Filters"
     static let cropLabel = "Crop"
     static let deleteLabel = "Delete"
+    static let deleteAllLabel = "Delete All"
     static let openHint = "Opens the page"
     static let deleteQuestion = "Delete this page?"
     static let deleteMessage = "It is taken out of the pages to save."
@@ -53,6 +54,11 @@ enum PageViewerText {
     /// "Delete 3 pages?" for the pages picked in the grid.
     static func deletePagesQuestion(_ count: Int) -> String {
         count == 1 ? "Delete 1 page?" : "Delete \(count) pages?"
+    }
+
+    /// "Delete all 3 pages?" for Delete All in the page grid.
+    static func deleteAllQuestion(_ count: Int) -> String {
+        count == 1 ? "Delete 1 page?" : "Delete all \(count) pages?"
     }
 }
 
