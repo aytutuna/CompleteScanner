@@ -9,7 +9,7 @@ import Foundation
 /// `width × height` rectangle. When the page is made more than `prefilterAbove` times smaller than
 /// the photo shows it, the photo is first averaged down in k × k blocks (k the whole part of that
 /// factor, `prefilterFactor`), so no detail is skipped over; then `PerspectiveCorrector.warp` samples
-/// it bilinearly, 2 × 2 per pixel when the page is still made smaller by more than
+/// it bicubically (Catmull-Rom), 2 × 2 per pixel when the page is still made smaller by more than
 /// `PerspectiveCorrector.supersampleAbove`. Faster platform paths (Core Image on the iPhone) are
 /// checked against it. Twin of C# `PerspectiveWarp`.
 public enum PerspectiveWarp {

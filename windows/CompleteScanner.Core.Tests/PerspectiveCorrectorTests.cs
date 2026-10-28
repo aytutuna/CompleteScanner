@@ -53,14 +53,14 @@ public class PerspectiveCorrectorTests
     public void CorrectedBytesAreTheSameOnBothPlatforms()
     {
         var forced = new PerspectiveOptions { OutputWidth = PhotoScenes.PageWidth, OutputHeight = PhotoScenes.PageHeight, Supersample = Supersampling.On };
-        Assert.Equal(0x9866E633u, PhotoScenes.Checksum(PerspectiveCorrector.Correct(PhotoScenes.RoundTripScene(), RoundTripQuad, forced)!.Image));
+        Assert.Equal(0xF8DE2BA5u, PhotoScenes.Checksum(PerspectiveCorrector.Correct(PhotoScenes.RoundTripScene(), RoundTripQuad, forced)!.Image));
         var single = forced with { Supersample = Supersampling.Off };
-        Assert.Equal(0xC4BDFAD2u, PhotoScenes.Checksum(PerspectiveCorrector.Correct(PhotoScenes.RoundTripScene(), RoundTripQuad, single)!.Image));
+        Assert.Equal(0x99509981u, PhotoScenes.Checksum(PerspectiveCorrector.Correct(PhotoScenes.RoundTripScene(), RoundTripQuad, single)!.Image));
         var wood = PerspectiveCorrector.Correct(PhotoScenes.WoodScene(), PhotoScenes.WoodMap.Corners(PhotoScenes.PageWidth, PhotoScenes.PageHeight))!;
         Assert.Equal(235, wood.Image.Width);
         Assert.Equal(333, wood.Image.Height);
         Assert.Equal(PaperSize.A4, wood.Plan.Paper!.Size);
-        Assert.Equal(0x0A7E6D3Au, PhotoScenes.Checksum(wood.Image));
+        Assert.Equal(0x32B36A66u, PhotoScenes.Checksum(wood.Image));
     }
 
     [Fact]
@@ -101,6 +101,39 @@ public class PerspectiveCorrectorTests
         var right = result.Image.Pixels.AsSpan(10 * 4 * 100 + 90 * 4, 4).ToArray();
         Assert.Equal(new byte[] { 255, 0, 0, 255 }, left);
         Assert.Equal(new byte[] { 10, 20, 30, 255 }, right);
+    }
+
+    [Fact]
+    public void OnePixelStripesKeepTheirContrastAtOneToOne()
+    {
+        // Black and white columns one pixel wide, read a quarter pixel off at 1:1: Catmull-Rom gives
+        // 40 and 215; bilinear would give 0.25 · 255 and 0.75 · 255, 64 and 191.
+        const int size = 40;
+        var p = new byte[size * size * 4];
+        Array.Fill(p, (byte)255);
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x += 2)
+            {
+                int i = (y * size + x) * 4;
+                p[i] = 0;
+                p[i + 1] = 0;
+                p[i + 2] = 0;
+            }
+        }
+        var stripes = new RgbaImage(size, size, p);
+        var quad = new Quad(new PointD(0.25, 0), new PointD(size + 0.25, 0), new PointD(size + 0.25, size), new PointD(0.25, size));
+        var result = PerspectiveCorrector.Correct(stripes, quad, new PerspectiveOptions { OutputWidth = size, OutputHeight = size, SnapToPaper = false })!;
+        Assert.False(result.Plan.Supersampled);
+        int dark = 255, light = 0;
+        for (int x = 4; x < size - 4; x++)
+        {
+            int value = result.Image.Pixels[(size / 2 * size + x) * 4];
+            Assert.Equal(x % 2 == 0 ? 40 : 215, value);
+            dark = Math.Min(dark, value);
+            light = Math.Max(light, value);
+        }
+        Assert.True(light - dark > 191 - 64);
     }
 
     [Fact]

@@ -58,16 +58,16 @@ final class PerspectiveCorrectorTests: XCTestCase {
     func testCorrectedBytesAreTheSameOnBothPlatforms() throws {
         let on = try XCTUnwrap(PerspectiveCorrector.correct(PhotoScenes.roundTripScene(), quad: roundTripQuad,
                                                             options: forcedOptions(.on)))
-        XCTAssertEqual(PhotoScenes.checksum(on.image), 0x9866_E633)
+        XCTAssertEqual(PhotoScenes.checksum(on.image), 0xF8DE_2BA5)
         let off = try XCTUnwrap(PerspectiveCorrector.correct(PhotoScenes.roundTripScene(), quad: roundTripQuad,
                                                              options: forcedOptions(.off)))
-        XCTAssertEqual(PhotoScenes.checksum(off.image), 0xC4BD_FAD2)
+        XCTAssertEqual(PhotoScenes.checksum(off.image), 0x9950_9981)
         let wood = try XCTUnwrap(PerspectiveCorrector.correct(PhotoScenes.woodScene(),
                                                               quad: PhotoScenes.woodMap.corners(PhotoScenes.pageWidth, PhotoScenes.pageHeight)))
         XCTAssertEqual(wood.image.width, 235)
         XCTAssertEqual(wood.image.height, 333)
         XCTAssertEqual(wood.plan.paper?.size, PaperSize.a4)
-        XCTAssertEqual(PhotoScenes.checksum(wood.image), 0x0A7E_6D3A)
+        XCTAssertEqual(PhotoScenes.checksum(wood.image), 0x32B3_6A66)
     }
 
     func testTheOutputTakesTheLongerEdgesAndNeverMore() throws {
@@ -117,6 +117,40 @@ final class PerspectiveCorrectorTests: XCTestCase {
         let right = Array(result.image.pixels[(10 * 100 + 90) * 4..<(10 * 100 + 90) * 4 + 4])
         XCTAssertEqual(left, [255, 0, 0, 255])
         XCTAssertEqual(right, [10, 20, 30, 255])
+    }
+
+    func testOnePixelStripesKeepTheirContrastAtOneToOne() throws {
+        // Black and white columns one pixel wide, read a quarter pixel off at 1:1: Catmull-Rom gives
+        // 40 and 215; bilinear would give 0.25 · 255 and 0.75 · 255, 64 and 191.
+        let size: Int = 40
+        var p: [UInt8] = [UInt8](repeating: 255, count: size * size * 4)
+        for y in 0..<size {
+            for x in stride(from: 0, to: size, by: 2) {
+                let i: Int = (y * size + x) * 4
+                p[i] = 0
+                p[i + 1] = 0
+                p[i + 2] = 0
+            }
+        }
+        let stripes = RgbaImage(width: size, height: size, pixels: p)
+        let side: Double = Double(size) + 0.25
+        let quad = Quad(topLeft: CGPoint(x: 0.25, y: 0), topRight: CGPoint(x: side, y: 0),
+                        bottomRight: CGPoint(x: side, y: Double(size)), bottomLeft: CGPoint(x: 0.25, y: Double(size)))
+        var options = PerspectiveOptions()
+        options.outputWidth = size
+        options.outputHeight = size
+        options.snapToPaper = false
+        let result = try XCTUnwrap(PerspectiveCorrector.correct(stripes, quad: quad, options: options))
+        XCTAssertFalse(result.plan.supersampled)
+        var dark: Int = 255
+        var light: Int = 0
+        for x in 4..<(size - 4) {
+            let value: Int = Int(result.image.pixels[(size / 2 * size + x) * 4])
+            XCTAssertEqual(value, x % 2 == 0 ? 40 : 215, "column \(x)")
+            dark = min(dark, value)
+            light = max(light, value)
+        }
+        XCTAssertGreaterThan(light - dark, 191 - 64)
     }
 
     func testAQuadFarOutsideThePhotoGivesABoundedOutput() throws {

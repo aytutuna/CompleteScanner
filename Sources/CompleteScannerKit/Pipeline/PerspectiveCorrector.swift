@@ -40,9 +40,9 @@ public struct PaperMatch: Equatable, Sendable {
 public enum Supersampling: Sendable {
     /// Four samples per pixel when the page is made smaller than the photo shows it (by more than 1.25), one otherwise.
     case auto
-    /// One bilinear sample per pixel.
+    /// One bicubic sample per pixel.
     case off
-    /// Four bilinear samples per pixel (2 × 2), averaged.
+    /// Four bicubic samples per pixel (2 × 2), averaged.
     case on
 }
 
@@ -96,8 +96,8 @@ public struct PerspectiveCorrection: Sendable {
 /// Turns the page a quad outlines in a photo into an upright rectangle: the homography from the
 /// output rectangle to the quad, the output size from the quad (the longer of each pair of opposite
 /// edges, so the nearer edge keeps its pixels) and the sheet's shape (a known paper size when it
-/// matches, else the camera's view of the quad, else the edge lengths), then bilinear resampling,
-/// with 2 × 2 supersampling when the page is made smaller. Twin of C# `PerspectiveCorrector`.
+/// matches, else the camera's view of the quad, else the edge lengths), then bicubic (Catmull-Rom)
+/// resampling, with 2 × 2 supersampling when the page is made smaller. Twin of C# `PerspectiveCorrector`.
 public enum PerspectiveCorrector {
     /// A shape matches a known size when the long-over-short ratios differ by at most this share (3 %).
     public static let paperAspectTolerance = 0.03
@@ -292,8 +292,9 @@ public enum PerspectiveCorrector {
         return PerspectiveCorrection(image: warp(image, plan: decided, options: options), plan: decided)
     }
 
-    /// Adds the bilinear sample of the photo at output point (px, py) (continuous) to acc: pixel
-    /// centers at i + 0.5, outside the photo the fill color.
+    /// Adds the Catmull-Rom sample (4 × 4 taps, a = −0.5) of the photo at output point (px, py)
+    /// (continuous) to acc: pixel centers at i + 0.5, outside the photo the fill color. Near 1:1 a
+    /// bilinear tap halfway between pixels averages them, which greys out one-pixel strokes of fine print.
     private static func accumulate(_ pixels: UnsafeBufferPointer<UInt8>, _ iw: Int, _ ih: Int, _ m: Homography,
                                    _ px: Double, _ py: Double, _ acc: inout (Double, Double, Double, Double),
                                    _ o: PerspectiveOptions) {
@@ -308,25 +309,39 @@ public enum PerspectiveCorrector {
             return
         }
         let fx0 = sx.rounded(.down), fy0 = sy.rounded(.down)
-        let x0 = Int(fx0), y0 = Int(fy0)
-        let fx = sx - fx0, fy = sy - fy0
-        for corner in 0..<4 {
-            let cx = x0 + (corner & 1), cy = y0 + (corner >> 1)
-            let weight = ((corner & 1) == 0 ? 1 - fx : fx) * ((corner >> 1) == 0 ? 1 - fy : fy)
-            if weight == 0 { continue }
-            if cx >= 0 && cx < iw && cy >= 0 && cy < ih {
-                let si = (cy * iw + cx) * 4
-                acc.0 += weight * Double(pixels[si])
-                acc.1 += weight * Double(pixels[si + 1])
-                acc.2 += weight * Double(pixels[si + 2])
-                acc.3 += weight * Double(pixels[si + 3])
-            } else {
-                acc.0 += weight * Double(o.fillR)
-                acc.1 += weight * Double(o.fillG)
-                acc.2 += weight * Double(o.fillB)
-                acc.3 += weight * 255
+        let x0 = Int(fx0) - 1, y0 = Int(fy0) - 1
+        let kx: SIMD4<Double> = catmullRom(sx - fx0)
+        let ky: SIMD4<Double> = catmullRom(sy - fy0)
+        let inside: Bool = x0 >= 0 && y0 >= 0 && x0 + 3 < iw && y0 + 3 < ih
+        for j in 0..<4 {
+            let cy = y0 + j
+            for i in 0..<4 {
+                let cx = x0 + i
+                let weight: Double = kx[i] * ky[j]
+                if inside || (cx >= 0 && cx < iw && cy >= 0 && cy < ih) {
+                    let si = (cy * iw + cx) * 4
+                    acc.0 += weight * Double(pixels[si])
+                    acc.1 += weight * Double(pixels[si + 1])
+                    acc.2 += weight * Double(pixels[si + 2])
+                    acc.3 += weight * Double(pixels[si + 3])
+                } else {
+                    acc.0 += weight * Double(o.fillR)
+                    acc.1 += weight * Double(o.fillG)
+                    acc.2 += weight * Double(o.fillB)
+                    acc.3 += weight * 255
+                }
             }
         }
+    }
+
+    /// The Catmull-Rom weights of the taps at −1, 0, 1 and 2 from the pixel `t` (0 to 1) before the
+    /// point; at t = 0 they are exactly 0, 1, 0, 0.
+    private static func catmullRom(_ t: Double) -> SIMD4<Double> {
+        let k0: Double = ((-0.5 * t + 1) * t - 0.5) * t
+        let k1: Double = (1.5 * t - 2.5) * t * t + 1
+        let k2: Double = ((-1.5 * t + 2) * t + 0.5) * t
+        let k3: Double = (0.5 * t - 0.5) * t * t
+        return SIMD4<Double>(k0, k1, k2, k3)
     }
 
     /// An output of `width` × `height` can be made: both sides 1 to `maxOutputSide`.

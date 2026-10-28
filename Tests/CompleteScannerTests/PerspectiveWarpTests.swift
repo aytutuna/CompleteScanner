@@ -126,25 +126,25 @@ final class PerspectiveWarpTests: XCTestCase {
         let supersampled = try XCTUnwrap(PerspectiveWarp.warp(
             WarpFixtures.photo(96, 72), quad: WarpFixtures.quad(10.25, 6.5, 85.75, 12, 80.5, 66.25, 6, 60.75),
             width: 40, height: 30))
-        XCTAssertEqual(PhotoScenes.checksum(supersampled), 0x4F04_2AE9)
-        XCTAssertEqual(pixel(supersampled, 0, 0), [206, 157, 155, 255])
-        XCTAssertEqual(pixel(supersampled, 7, 5), [69, 129, 71, 255])
-        XCTAssertEqual(pixel(supersampled, 19, 13), [216, 173, 70, 255])
+        XCTAssertEqual(PhotoScenes.checksum(supersampled), 0xA255_D919)
+        XCTAssertEqual(pixel(supersampled, 0, 0), [209, 163, 155, 255])
+        XCTAssertEqual(pixel(supersampled, 7, 5), [55, 130, 69, 255])
+        XCTAssertEqual(pixel(supersampled, 19, 13), [227, 174, 62, 255])
 
         let prefiltered = try XCTUnwrap(PerspectiveWarp.warp(
             WarpFixtures.photo(240, 180), quad: WarpFixtures.quad(20.5, 15.25, 220, 30.75, 205.25, 170.5, 12, 150),
             width: 48, height: 36))
-        XCTAssertEqual(PhotoScenes.checksum(prefiltered), 0x9739_6FCA)
-        XCTAssertEqual(pixel(prefiltered, 0, 0), [154, 128, 102, 255])
-        XCTAssertEqual(pixel(prefiltered, 7, 5), [146, 162, 136, 255])
-        XCTAssertEqual(pixel(prefiltered, 19, 13), [138, 194, 140, 255])
+        XCTAssertEqual(PhotoScenes.checksum(prefiltered), 0xB7EA_788D)
+        XCTAssertEqual(pixel(prefiltered, 0, 0), [161, 131, 90, 255])
+        XCTAssertEqual(pixel(prefiltered, 7, 5), [154, 162, 139, 255])
+        XCTAssertEqual(pixel(prefiltered, 19, 13), [142, 201, 145, 255])
 
         let enlarged = try XCTUnwrap(PerspectiveWarp.warp(
             WarpFixtures.photo(32, 24), quad: WarpFixtures.quad(-4, -3, 30, 1, 36, 26, 2, 22), width: 50, height: 40))
-        XCTAssertEqual(PhotoScenes.checksum(enlarged), 0x8B04_5C82)
+        XCTAssertEqual(PhotoScenes.checksum(enlarged), 0x685B_8D2E)
         XCTAssertEqual(pixel(enlarged, 0, 0), [255, 255, 255, 255])
-        XCTAssertEqual(pixel(enlarged, 7, 5), [59, 44, 9, 255])
-        XCTAssertEqual(pixel(enlarged, 19, 13), [215, 188, 148, 255])
+        XCTAssertEqual(pixel(enlarged, 7, 5), [46, 32, 0, 255])
+        XCTAssertEqual(pixel(enlarged, 19, 13), [223, 202, 148, 255])
     }
 
     func testThePrefilterStartsAboveTwiceSmallerAndTakesTheWholePart() {

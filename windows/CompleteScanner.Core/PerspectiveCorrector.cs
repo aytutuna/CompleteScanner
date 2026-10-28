@@ -27,9 +27,9 @@ public enum Supersampling
 {
     /// <summary>Four samples per pixel when the page is made smaller than the photo shows it (by more than 1.25), one otherwise.</summary>
     Auto,
-    /// <summary>One bilinear sample per pixel.</summary>
+    /// <summary>One bicubic sample per pixel.</summary>
     Off,
-    /// <summary>Four bilinear samples per pixel (2 × 2), averaged.</summary>
+    /// <summary>Four bicubic samples per pixel (2 × 2), averaged.</summary>
     On,
 }
 
@@ -79,7 +79,7 @@ public sealed record PerspectiveCorrection(RgbaImage Image, PerspectivePlan Plan
 /// output rectangle to the quad, the output size from the quad (the longer of each pair of
 /// opposite edges, so the nearer edge keeps its pixels) and the sheet's shape (a known paper
 /// size when it matches, else the camera's view of the quad, else the edge lengths), then
-/// bilinear resampling, with 2 × 2 supersampling when the page is made smaller.
+/// bicubic (Catmull-Rom) resampling, with 2 × 2 supersampling when the page is made smaller.
 /// </summary>
 public static class PerspectiveCorrector
 {
@@ -295,8 +295,9 @@ public static class PerspectiveCorrector
     }
 
     /// <summary>
-    /// Adds the bilinear sample of the photo at output point (px, py) (continuous) to acc:
-    /// pixel centers at i + 0.5, outside the photo the fill color.
+    /// Adds the Catmull-Rom sample (4 × 4 taps, a = −0.5) of the photo at output point (px, py)
+    /// (continuous) to acc: pixel centers at i + 0.5, outside the photo the fill color. Near 1:1 a
+    /// bilinear tap halfway between pixels averages them, which greys out one-pixel strokes of fine print.
     /// </summary>
     private static void Accumulate(RgbaImage image, Homography m, double px, double py, double[] acc, PerspectiveOptions o)
     {
@@ -312,31 +313,50 @@ public static class PerspectiveCorrector
             return;
         }
         double fx0 = Math.Floor(sx), fy0 = Math.Floor(sy);
-        int x0 = (int)fx0, y0 = (int)fy0;
-        double fx = sx - fx0, fy = sy - fy0;
+        int x0 = (int)fx0 - 1, y0 = (int)fy0 - 1;
+        Span<double> kx = stackalloc double[4];
+        Span<double> ky = stackalloc double[4];
+        CatmullRom(sx - fx0, kx);
+        CatmullRom(sy - fy0, ky);
         var pixels = image.Pixels;
         int iw = image.Width, ih = image.Height;
-        for (int corner = 0; corner < 4; corner++)
+        bool inside = x0 >= 0 && y0 >= 0 && x0 + 3 < iw && y0 + 3 < ih;
+        for (int j = 0; j < 4; j++)
         {
-            int cx = x0 + (corner & 1), cy = y0 + (corner >> 1);
-            double weight = ((corner & 1) == 0 ? 1 - fx : fx) * ((corner >> 1) == 0 ? 1 - fy : fy);
-            if (weight == 0) continue;
-            if (cx >= 0 && cx < iw && cy >= 0 && cy < ih)
+            int cy = y0 + j;
+            for (int i = 0; i < 4; i++)
             {
-                int si = (cy * iw + cx) * 4;
-                acc[0] += weight * pixels[si];
-                acc[1] += weight * pixels[si + 1];
-                acc[2] += weight * pixels[si + 2];
-                acc[3] += weight * pixels[si + 3];
-            }
-            else
-            {
-                acc[0] += weight * o.FillR;
-                acc[1] += weight * o.FillG;
-                acc[2] += weight * o.FillB;
-                acc[3] += weight * 255;
+                int cx = x0 + i;
+                double weight = kx[i] * ky[j];
+                if (inside || (cx >= 0 && cx < iw && cy >= 0 && cy < ih))
+                {
+                    int si = (cy * iw + cx) * 4;
+                    acc[0] += weight * pixels[si];
+                    acc[1] += weight * pixels[si + 1];
+                    acc[2] += weight * pixels[si + 2];
+                    acc[3] += weight * pixels[si + 3];
+                }
+                else
+                {
+                    acc[0] += weight * o.FillR;
+                    acc[1] += weight * o.FillG;
+                    acc[2] += weight * o.FillB;
+                    acc[3] += weight * 255;
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// The Catmull-Rom weights of the taps at −1, 0, 1 and 2 from the pixel <paramref name="t"/>
+    /// (0 to 1) before the point; at t = 0 they are exactly 0, 1, 0, 0.
+    /// </summary>
+    private static void CatmullRom(double t, Span<double> k)
+    {
+        k[0] = ((-0.5 * t + 1) * t - 0.5) * t;
+        k[1] = (1.5 * t - 2.5) * t * t + 1;
+        k[2] = ((-1.5 * t + 2) * t + 0.5) * t;
+        k[3] = (0.5 * t - 0.5) * t * t;
     }
 
     /// <summary>An output of <paramref name="width"/> × <paramref name="height"/> can be made: both sides 1 to <see cref="MaxOutputSide"/>.</summary>

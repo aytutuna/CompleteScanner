@@ -124,22 +124,22 @@ public class PerspectiveWarpTests
     public void WarpedBytesAreTheSameOnBothPlatforms()
     {
         var supersampled = PerspectiveWarp.Warp(Fixture(96, 72), Q(10.25, 6.5, 85.75, 12, 80.5, 66.25, 6, 60.75), 40, 30)!;
-        Assert.Equal(0x4F042AE9u, PhotoScenes.Checksum(supersampled));
-        Assert.Equal(new byte[] { 206, 157, 155, 255 }, Pixel(supersampled, 0, 0));
-        Assert.Equal(new byte[] { 69, 129, 71, 255 }, Pixel(supersampled, 7, 5));
-        Assert.Equal(new byte[] { 216, 173, 70, 255 }, Pixel(supersampled, 19, 13));
+        Assert.Equal(0xA255D919u, PhotoScenes.Checksum(supersampled));
+        Assert.Equal(new byte[] { 209, 163, 155, 255 }, Pixel(supersampled, 0, 0));
+        Assert.Equal(new byte[] { 55, 130, 69, 255 }, Pixel(supersampled, 7, 5));
+        Assert.Equal(new byte[] { 227, 174, 62, 255 }, Pixel(supersampled, 19, 13));
 
         var prefiltered = PerspectiveWarp.Warp(Fixture(240, 180), Q(20.5, 15.25, 220, 30.75, 205.25, 170.5, 12, 150), 48, 36)!;
-        Assert.Equal(0x97396FCAu, PhotoScenes.Checksum(prefiltered));
-        Assert.Equal(new byte[] { 154, 128, 102, 255 }, Pixel(prefiltered, 0, 0));
-        Assert.Equal(new byte[] { 146, 162, 136, 255 }, Pixel(prefiltered, 7, 5));
-        Assert.Equal(new byte[] { 138, 194, 140, 255 }, Pixel(prefiltered, 19, 13));
+        Assert.Equal(0xB7EA788Du, PhotoScenes.Checksum(prefiltered));
+        Assert.Equal(new byte[] { 161, 131, 90, 255 }, Pixel(prefiltered, 0, 0));
+        Assert.Equal(new byte[] { 154, 162, 139, 255 }, Pixel(prefiltered, 7, 5));
+        Assert.Equal(new byte[] { 142, 201, 145, 255 }, Pixel(prefiltered, 19, 13));
 
         var enlarged = PerspectiveWarp.Warp(Fixture(32, 24), Q(-4, -3, 30, 1, 36, 26, 2, 22), 50, 40)!;
-        Assert.Equal(0x8B045C82u, PhotoScenes.Checksum(enlarged));
+        Assert.Equal(0x685B8D2Eu, PhotoScenes.Checksum(enlarged));
         Assert.Equal(new byte[] { 255, 255, 255, 255 }, Pixel(enlarged, 0, 0));
-        Assert.Equal(new byte[] { 59, 44, 9, 255 }, Pixel(enlarged, 7, 5));
-        Assert.Equal(new byte[] { 215, 188, 148, 255 }, Pixel(enlarged, 19, 13));
+        Assert.Equal(new byte[] { 46, 32, 0, 255 }, Pixel(enlarged, 7, 5));
+        Assert.Equal(new byte[] { 223, 202, 148, 255 }, Pixel(enlarged, 19, 13));
     }
 
     [Fact]

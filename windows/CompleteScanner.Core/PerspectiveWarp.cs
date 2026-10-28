@@ -9,8 +9,8 @@ namespace CompleteScanner.Core;
 /// upright <c>width × height</c> rectangle. When the page is made more than
 /// <see cref="PrefilterAbove"/> times smaller than the photo shows it, the photo is first averaged
 /// down in k × k blocks (k the whole part of that factor, <see cref="PrefilterFactor"/>), so no
-/// detail is skipped over; then <see cref="PerspectiveCorrector.Warp"/> samples it bilinearly, 2 × 2
-/// per pixel when the page is still made smaller by more than
+/// detail is skipped over; then <see cref="PerspectiveCorrector.Warp"/> samples it bicubically
+/// (Catmull-Rom), 2 × 2 per pixel when the page is still made smaller by more than
 /// <see cref="PerspectiveCorrector.SupersampleAbove"/>. Faster platform paths (Core Image on the
 /// iPhone) are checked against it.
 /// </summary>
