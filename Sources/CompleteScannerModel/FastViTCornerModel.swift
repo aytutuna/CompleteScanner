@@ -42,13 +42,22 @@ public final class FastViTCornerModel: CornerModel, @unchecked Sendable {
             return packaged
         }
         #if os(macOS)
-        // SwiftPM's Bundle.module looks for its bundle at the app's top level, where code signing allows no
-        // files, and stops the app when it is not there.
-        if Bundle.main.bundleURL.pathExtension == "app" {
-            return nil
+        // SwiftPM's Bundle.module stops the app when its bundle is neither next to the executable nor at the
+        // path it was built at (an .app, a copied or moved executable), so the bundle is looked for here: next
+        // to the executable, or next to the .xctest bundle under `swift test`.
+        let places: [URL] = [Bundle.main.bundleURL,
+                             Bundle(for: FastViTCornerModel.self).bundleURL.deletingLastPathComponent()]
+        for place in places {
+            let bundleURL: URL = place.appendingPathComponent("CompleteScanner_CompleteScannerModel.bundle")
+            if let bundle = Bundle(url: bundleURL),
+               let found = bundle.url(forResource: fileName, withExtension: "onnx", subdirectory: "Models") {
+                return found
+            }
         }
-        #endif
+        return nil
+        #else
         return Bundle.module.url(forResource: fileName, withExtension: "onnx", subdirectory: "Models")
+        #endif
     }()
 
     public static var isAvailable: Bool { url != nil }
