@@ -25,8 +25,7 @@ import UIKit
 /// clearly goes straight into the queue, otherwise the root view's corner editor opens. The camera rests
 /// while anything covers it (`resting`: a sheet, a cover, the corner editor; Photos or Files), so Auto
 /// takes nothing meanwhile, and waits for the card saying why it is asked for (`waitsForIntro`) before
-/// iOS asks. With a keyboard, Space takes a photo. While one of DocAligner's models finds the page (the page
-/// detector test, `PageDetector`), its name and time sit in the viewfinder's lower left (`DetectorCaption`).
+/// iOS asks. With a keyboard, Space takes a photo.
 struct CameraScreen<Notices: View, SaveControls: View>: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -37,7 +36,6 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
     @State private var drawerGroup: CameraDrawerGroup = .export
     /// Photos or Files is open over the camera.
     @State private var picking: Bool = false
-    @AppStorage(PageDetector.key) private var detector: PageDetector = .apple
     private let resting: Bool
     private let waitsForIntro: Bool
     private let scanner: IOSCameraAvailability
@@ -193,12 +191,6 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
             }
             overlays
                 .padding(12)
-            if model.showsPreview, let docModel = detector.model, let controller = model.driver as? IOSCameraController {
-                DetectorCaption(model: docModel, feed: controller.capture.feed)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                    .padding(12)
-                    .allowsHitTesting(false)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()

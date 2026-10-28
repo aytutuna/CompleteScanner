@@ -44,8 +44,6 @@ final class CameraTests: XCTestCase {
         XCTAssertTrue(scanner.waitForExistence(timeout: 10), "The Use Apple's scanner button")
         XCTAssertFalse(scanner.isEnabled, "No document scanner in the Simulator")
         XCTAssertTrue(app.staticTexts["scanner.reason"].exists, "Why there is no document scanner")
-        XCTAssertTrue(app.descendants(matching: .any)["detector.picker"].firstMatch.exists, "The page detector test")
-        XCTAssertTrue(app.descendants(matching: .any)["detector.speedTest"].firstMatch.exists, "The speed test")
         XCTAssertFalse(app.descendants(matching: .any)["kinds.row"].exists, "The drawer in the kinds' place")
         app.openDrawer("export")
         XCTAssertTrue(app.descendants(matching: .any)["drawer.format"].firstMatch.waitForExistence(timeout: 10),

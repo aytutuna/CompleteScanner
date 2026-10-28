@@ -186,8 +186,8 @@ enum CameraDrawerGroup: String, Identifiable, CaseIterable {
 /// Also .txt where they apply, and More… for the whole Export sheet (separator sheets, After saving).
 /// Colour: the filter new pages get, or the colour mode for the kinds that collect no pages (and Restore
 /// faded colours for Photos). Quality: the PDF's size. Flash: the camera's light (its torch), where it has
-/// one. Camera: the automatic shutter, Both sides and how the sides or a book's pages are taken, Use
-/// Apple's scanner where the task offers it, and the page detector test (`DetectorControls`).
+/// one. Camera: the automatic shutter, Both sides and how the sides or a book's pages are taken, and Use
+/// Apple's scanner where the task offers it.
 struct CameraDrawer: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -276,7 +276,6 @@ struct CameraDrawer: View {
             if IOSShell.offersCamera(state.activeTask) {
                 AppleScannerRow(scanner: scanner, onScanner: onAppleScanner)
             }
-            DetectorControls(feed: (model.driver as? IOSCameraController)?.capture.feed)
         }
     }
 
