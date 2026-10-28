@@ -5,8 +5,8 @@ import XCTest
 @testable import CompleteScannerModel
 
 // DocAligner's FastViT-T8 on the SmartDoc frames in Tests/Fixtures/Pages, with Core ML in front and on the
-// CPU alone: every corner within 1.5 % of the photo's diagonal of the ground truth. Skipped when
-// scripts/fetch_docaligner.sh has not fetched the model.
+// CPU alone: every corner within 1.5 % of the photo's diagonal of the ground truth, and the photo import
+// taking the page. Skipped when scripts/fetch_docaligner.sh has not fetched the model.
 
 final class FastViTCornerModelTests: XCTestCase {
     /// The farthest a corner may lie from the ground truth, as a share of the photo's diagonal.
@@ -51,10 +51,11 @@ final class FastViTCornerModelTests: XCTestCase {
                     errors.append(String(format: "%.2f", error * 100))
                     index += 1
                 }
-                let plan: PhotoImportPlan = PhotoImport.plan(image, model: model)
+                let plan: PhotoImportPlan? = PhotoImport.modelPlan(image, model: model)
+                XCTAssertNotNil(plan, "\(engine): the photo import did not take the page in \(photo.file)")
                 print(String(format: "%@ %@: confidence %.3f, corner errors %@ %% of the diagonal; import plan %@",
                              engine, photo.file, found.confidence, errors.joined(separator: " "),
-                             plan.action == .correct ? "corrects it" : "asks"))
+                             plan?.action == .correct ? "corrects it" : "asks"))
             }
             if let problem = model.coreMLProblem {
                 print("Core ML was not used: \(problem)")
