@@ -34,7 +34,8 @@ final class PagesTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["2 Selected"].waitForExistence(timeout: 10), "2 Selected as the title")
 
         let delete: XCUIElement = app.descendants(matching: .any)["pages.deleteSelected"].firstMatch
-        app.waitUntilEnabled(delete, "Delete")
+        // Off until the import is done, as Save is in BatchTests.
+        app.waitUntilEnabled(delete, "Delete", timeout: 120)
         delete.tap()
         // By its label: a dialog's button may not keep its identifier. The bar's Delete is the other one.
         let confirm: XCUIElement = app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "Delete",
