@@ -6,6 +6,7 @@ import Vision
 import XCTest
 @testable import CompleteScannerIOS
 @testable import CompleteScannerKit
+import CompleteScannerModel
 
 // The page detectors side by side on the SmartDoc 2015 Challenge 1 frames (jchazalon/smartdoc15-ch1-dataset
 // v2.0.0, CC BY 4.0): DocAligner's FastViT-T8 on the CPU, our own detector as the photo import calls it
@@ -92,7 +93,7 @@ final class DocAlignerBenchTests: XCTestCase {
         let frames: [Frame] = try DocAlignerBenchTests.frames(in: folder, step: step)
         XCTAssertFalse(frames.isEmpty, "No frames in metadata.csv")
 
-        let runner = DocAligner()
+        let runner = FastViTCornerModel(coreML: false)
         var tallies: [Detector: [String: BenchTally]] = [:]
         var visionProblem: String?
         for frame in frames {
@@ -111,8 +112,10 @@ final class DocAlignerBenchTests: XCTestCase {
                     var found: Quad?
                     switch detector {
                     case .fastvitT8:
-                        guard DocAlignerModel.fastvitT8.isAvailable else { continue }
-                        found = try runner.run(image, model: .fastvitT8, neuralEngine: false).page?.quad.scaled(width, height)
+                        guard FastViTCornerModel.isAvailable else { continue }
+                        let heat: CornerHeatmaps = try runner.run(CornerModelInput.make(photo))
+                        found = CornerHeatmap.decode(heat.values, width: heat.width, height: heat.height)?.quad
+                            .scaled(width, height)
                     case .builtIn:
                         let page: IOSFoundPage = IOSPageFinder.fallback(photo)
                         found = page.reason == PhotoReviewReason.nothingFound ? nil : page.corners
@@ -149,8 +152,8 @@ final class DocAlignerBenchTests: XCTestCase {
             + "DocAligner may have been trained on SmartDoc, so its scores here are likely optimistic. The Simulator's "
             + "Vision results are not trustworthy; the Apple Vision (macOS) rows are Apple's real score.")
         lines.append("")
-        for model in [DocAlignerModel.fastvitT8] where !model.isAvailable {
-            lines.append("\(model.title) was not fetched (scripts/fetch_docaligner.sh) and is left out.")
+        if !FastViTCornerModel.isAvailable {
+            lines.append("FastViT-T8 was not fetched (scripts/fetch_docaligner.sh) and is left out.")
             lines.append("")
         }
         if let problem = visionProblem {
@@ -189,8 +192,14 @@ final class DocAlignerBenchTests: XCTestCase {
         let count: Double = Double(max(tally.frames, 1))
         let iou: String = String(format: "%.3f", tally.iouSum / count)
         let error: String = String(format: "%.2f %%", tally.errorSum / count)
-        let median: String = String(format: "%.1f", DocAligner.percentile(tally.ms, 0.5))
+        let median: String = String(format: "%.1f", DocAlignerBenchTests.median(tally.ms))
         return "| \(name) | \(background) | \(tally.frames) | \(iou) | \(error) | \(tally.misses) | \(median) |"
+    }
+
+    /// The middle value of `values` once sorted (the upper one of an even count); 0 for none.
+    static func median(_ values: [Double]) -> Double {
+        guard !values.isEmpty else { return 0 }
+        return values.sorted()[values.count / 2]
     }
 
     /// Every `step`-th frame listed in `folder`'s metadata.csv (columns named in its header: bg_name,

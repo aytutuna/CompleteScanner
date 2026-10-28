@@ -46,12 +46,7 @@ let package = Package(
         ),
         .target(
             name: "CompleteScannerIOS",
-            dependencies: [
-                "CompleteScannerKit",
-                "CompleteScannerModel",
-                .product(name: "onnxruntime", package: "onnxruntime-swift-package-manager",
-                         condition: .when(platforms: [.iOS])),
-            ],
+            dependencies: ["CompleteScannerKit", "CompleteScannerModel"],
             path: "Sources/CompleteScannerIOS"
         ),
         .executableTarget(
@@ -80,7 +75,7 @@ let package = Package(
         ),
         .testTarget(
             name: "CompleteScannerIOSTests",
-            dependencies: ["CompleteScannerKit", "CompleteScannerIOS"],
+            dependencies: ["CompleteScannerKit", "CompleteScannerIOS", "CompleteScannerModel"],
             path: "Tests/CompleteScannerIOSTests"
         ),
     ],
