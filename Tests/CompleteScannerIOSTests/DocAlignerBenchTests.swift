@@ -72,7 +72,7 @@ final class DocAlignerBenchTests: XCTestCase {
         case lc100 = "LC100 (CPU)"
         case fastvitT8 = "FastViT-T8 (CPU)"
         case builtIn = "Built-in"
-        case vision = "Apple Vision"
+        case vision = "Apple Vision (Simulator)"
     }
 
     private struct Frame {
@@ -148,7 +148,8 @@ final class DocAlignerBenchTests: XCTestCase {
         lines.append("Every \(step)th frame, \(frames.count) frames, on the iOS Simulator (CPU). IoU: the outline found against "
             + "the ground truth in the frame's pixels. Corner error: the corners' mean distance as % of the frame's "
             + "diagonal. A miss counts as IoU 0 and 100 %. Built-in counts a miss only where it found nothing at all. "
-            + "DocAligner may have been trained on SmartDoc, so its scores here are likely optimistic.")
+            + "DocAligner may have been trained on SmartDoc, so its scores here are likely optimistic. The Simulator's "
+            + "Vision results are not trustworthy; the Apple Vision (macOS) rows are Apple's real score.")
         lines.append("")
         for model in DocAlignerModel.allCases where !model.isAvailable {
             lines.append("\(model.title) was not fetched (scripts/fetch_docaligner.sh) and is left out.")

@@ -98,6 +98,10 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/bench.xcresult" \
             ENABLE_TESTABILITY=YES \
             CODE_SIGNING_ALLOWED=NO
+      # Vision on the Mac itself: the Simulator's gives junk. Appends its rows to the same table.
+      - name: Run Vision on the Mac
+        if: always()
+        run: swift scripts/bench_vision.swift "${{ steps.frames.outputs.folder }}" 25 "$RUNNER_TEMP/bench/bench.md"
       - name: Add the table to the summary
         if: always()
         run: |
