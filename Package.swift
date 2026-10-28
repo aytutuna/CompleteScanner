@@ -19,6 +19,10 @@ let package = Package(
         .library(name: "CompleteScannerKit", targets: ["CompleteScannerKit"]),
         .library(name: "CompleteScannerIOS", targets: ["CompleteScannerIOS"]),
     ],
+    dependencies: [
+        // ONNX Runtime (MIT) runs DocAligner's models in the iPhone's page detector test; on the iPhone only.
+        .package(url: "https://github.com/microsoft/onnxruntime-swift-package-manager", exact: "1.24.2"),
+    ],
     targets: [
         .target(
             name: "CompleteScannerKit",
@@ -31,7 +35,11 @@ let package = Package(
         ),
         .target(
             name: "CompleteScannerIOS",
-            dependencies: ["CompleteScannerKit"],
+            dependencies: [
+                "CompleteScannerKit",
+                .product(name: "onnxruntime", package: "onnxruntime-swift-package-manager",
+                         condition: .when(platforms: [.iOS])),
+            ],
             path: "Sources/CompleteScannerIOS",
             // DocAligner's models for the page detector test (scripts/fetch_docaligner.sh); the folder
             // holds only their licence until they are fetched.
