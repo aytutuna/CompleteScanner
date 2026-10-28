@@ -181,7 +181,7 @@ public static class CaptureScale
     /// <summary>The resolution of a page that matches no known size.</summary>
     public const int NominalDpi = 200;
     /// <summary>A snapped page is made at no more than this resolution (a close-up of a card is made smaller).</summary>
-    public const int MaxDpi = 600;
+    public const int MaxDpi = 1200;
     /// <summary>The diagonal of a 36 × 24 mm frame, which "35 mm equivalent" focal lengths refer to.</summary>
     public const double FullFrameDiagonalMm = 43.266615305567875;
 

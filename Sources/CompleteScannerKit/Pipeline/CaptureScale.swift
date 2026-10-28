@@ -207,7 +207,7 @@ public enum CaptureScale {
     /// The resolution of a page that matches no known size.
     public static let nominalDPI = 200
     /// A snapped page is made at no more than this resolution (a close-up of a card is made smaller).
-    public static let maxDPI = 600
+    public static let maxDPI = 1200
     /// The diagonal of a 36 × 24 mm frame, which "35 mm equivalent" focal lengths refer to.
     public static let fullFrameDiagonalMm: Double = 43.266615305567875
 

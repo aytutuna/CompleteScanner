@@ -121,13 +121,22 @@ public class CaptureScaleTests
         Assert.Equal("a4", far.Size);
         Assert.Equal(24, far.Dpi); // 283 / 11.6929 = 24.2
         Assert.True(far.PixelHeight <= 283 && far.PixelWidth <= 200);
-        // A card filling a 12 MP photo would be 1100 dpi: it is made at 600.
+        // A card filling a 12 MP photo keeps its pixels: 4000 / 3.370 = 1186.9 dpi.
         var close = Rect(16, 12, 4000, 2522);
-        var capped = CaptureScale.Measure(close, PhotoWidth, PhotoHeight, CaptureKind.IdCard);
+        var card = CaptureScale.Measure(close, PhotoWidth, PhotoHeight, CaptureKind.IdCard);
+        Assert.Equal("idCard", card.Size);
+        Assert.Equal(1186, card.Dpi);
+        Assert.Equal((int)Math.Floor(3.370 * 1186 + 0.5), card.PixelWidth);
+        Assert.Equal((int)Math.Floor(2.125 * 1186 + 0.5), card.PixelHeight);
+        Assert.True(card.PixelWidth <= 4000 && card.PixelHeight <= 2522);
+        // Filling a 24 MP photo (5712 × 4284) it would be 1661 dpi: it is made at 1200.
+        var closer = Rect(16, 12, 5600, 3531);
+        var capped = CaptureScale.Measure(closer, 5712, 4284, CaptureKind.IdCard);
         Assert.Equal("idCard", capped.Size);
         Assert.Equal(CaptureScale.MaxDpi, capped.Dpi);
-        Assert.Equal((int)Math.Floor(3.370 * 600 + 0.5), capped.PixelWidth);
-        Assert.Equal((int)Math.Floor(2.125 * 600 + 0.5), capped.PixelHeight);
+        Assert.Equal(1200, capped.Dpi);
+        Assert.Equal((int)Math.Floor(3.370 * 1200 + 0.5), capped.PixelWidth);
+        Assert.Equal((int)Math.Floor(2.125 * 1200 + 0.5), capped.PixelHeight);
     }
 
     [Fact]

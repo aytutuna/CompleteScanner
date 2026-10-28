@@ -126,13 +126,21 @@ final class CaptureScaleTests: XCTestCase {
         XCTAssertEqual(far.size, "a4")
         XCTAssertEqual(far.dpi, 24) // 283 / 11.6929 = 24.2
         XCTAssertTrue(far.pixelHeight <= 283 && far.pixelWidth <= 200)
-        // A card filling a 12 MP photo would be 1100 dpi: it is made at 600.
-        let capped = CaptureScale.measure(rect(16, 12, 4000, 2522), imageWidth: photoWidth, imageHeight: photoHeight,
-                                          kind: .idCard)
+        // A card filling a 12 MP photo keeps its pixels: 4000 / 3.370 = 1186.9 dpi.
+        let card = CaptureScale.measure(rect(16, 12, 4000, 2522), imageWidth: photoWidth, imageHeight: photoHeight,
+                                        kind: .idCard)
+        XCTAssertEqual(card.size, "idCard")
+        XCTAssertEqual(card.dpi, 1186)
+        XCTAssertEqual(card.pixelWidth, rounded(3.370 * 1186))
+        XCTAssertEqual(card.pixelHeight, rounded(2.125 * 1186))
+        XCTAssertTrue(card.pixelWidth <= 4000 && card.pixelHeight <= 2522)
+        // Filling a 24 MP photo (5712 × 4284) it would be 1661 dpi: it is made at 1200.
+        let capped = CaptureScale.measure(rect(16, 12, 5600, 3531), imageWidth: 5712, imageHeight: 4284, kind: .idCard)
         XCTAssertEqual(capped.size, "idCard")
         XCTAssertEqual(capped.dpi, CaptureScale.maxDPI)
-        XCTAssertEqual(capped.pixelWidth, rounded(3.370 * 600))
-        XCTAssertEqual(capped.pixelHeight, rounded(2.125 * 600))
+        XCTAssertEqual(capped.dpi, 1200)
+        XCTAssertEqual(capped.pixelWidth, rounded(3.370 * 1200))
+        XCTAssertEqual(capped.pixelHeight, rounded(2.125 * 1200))
     }
 
     func testAPageThatMatchesNothingGetsTheNominalResolution() {
