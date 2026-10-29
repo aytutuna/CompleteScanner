@@ -1,9 +1,12 @@
-"""Draws the iPhone and iPad app icon: a sheet rising from a flatbed scanner, crossed by the scan
-beam, on a deep blue square. iOS rounds the corners itself, so the square is drawn full and opaque.
+"""Draws the iPhone and iPad app icon: a white page on a blue square, crossed by the scan beam. The
+lines of text above the beam are sharp, the ones below it still out of focus. iOS rounds the corners
+itself, so the square is drawn full and opaque; scripts/make_ico.py draws the same picture with
+rounded, transparent corners for Windows.
 
-Every shape is a signed distance (in pixels) to a rounded rectangle or a circle, and its edge is
-smoothed over one pixel, so the picture is the same at any size without a drawing library. Only the
-standard library is used; the output is the same bytes on every run.
+Every shape is a signed distance (in pixels) to a rounded rectangle, and its edge is smoothed over
+one pixel, or over a gaussian falloff for the blurred shapes, so the picture is the same at any size
+without a drawing library. Only the standard library is used; the output is the same bytes on every
+run.
 
 Usage: python scripts/make_ios_icon.py <out.png> [size]   (size defaults to 1024)
 """
@@ -27,10 +30,6 @@ def rounded_rect(px, py, cx, cy, hw, hh, r):
     return outside + inside - r
 
 
-def circle(px, py, cx, cy, r):
-    return math.hypot(px - cx, py - cy) - r
-
-
 def hex_color(text):
     text = text.lstrip("#")
     return tuple(int(text[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
@@ -44,26 +43,35 @@ class Canvas:
         self.r = array("d", [0.0]) * n
         self.g = array("d", [0.0]) * n
         self.b = array("d", [0.0]) * n
+        self.a = None
 
-    def vertical_gradient(self, top, bottom):
-        top_c = hex_color(top)
-        bottom_c = hex_color(bottom)
+    def fill(self, color):
+        n = self.size * self.size
+        cr, cg, cb = hex_color(color)
+        self.r = array("d", [cr]) * n
+        self.g = array("d", [cg]) * n
+        self.b = array("d", [cb]) * n
+
+    def round_corners(self, radius):
+        """Makes the canvas transparent outside a square with corners of `radius` (design units)."""
         size = self.size
+        s = self.scale
+        half = DESIGN / 2.0
+        self.a = array("d", [1.0]) * (size * size)
         for y in range(size):
-            t = y / (size - 1)
-            color = [top_c[i] + (bottom_c[i] - top_c[i]) * t for i in range(3)]
-            start = y * size
+            py = (y + 0.5) / s
             for x in range(size):
-                self.r[start + x] = color[0]
-                self.g[start + x] = color[1]
-                self.b[start + x] = color[2]
+                d = rounded_rect((x + 0.5) / s, py, half, half, half, half, radius) * s
+                self.a[y * size + x] = min(max(0.5 - d, 0.0), 1.0)
 
-    def shape(self, distance, bounds, color, opacity=1.0, glow=0.0):
+    def shape(self, distance, bounds, color, opacity=1.0, soft=0.0):
         """Paints where `distance` (design units) is negative, the edge smoothed over one pixel;
-        `glow` > 0 adds a soft halo of that width outside the edge."""
+        `soft` > 0 blurs the edge instead, as a gaussian of that sigma would."""
         cr, cg, cb = hex_color(color)
         s = self.scale
-        margin = glow * 2.5 + 2.0
+        margin = soft * 3.0 + 2.0
+        # A blur smaller than a pixel still gets about a pixel of antialiasing.
+        spread = math.hypot(soft * s, 0.4) * math.sqrt(2.0)
         x0 = max(0, int((bounds[0] - margin) * s))
         y0 = max(0, int((bounds[1] - margin) * s))
         x1 = min(self.size, int(math.ceil((bounds[2] + margin) * s)) + 1)
@@ -74,10 +82,10 @@ class Canvas:
             for x in range(x0, x1):
                 px = (x + 0.5) / s
                 d = distance(px, py) * s
-                alpha = min(max(0.5 - d, 0.0), 1.0)
-                if glow > 0.0 and d > 0.0:
-                    halo = math.exp(-((d / (glow * s)) ** 2)) * 0.55
-                    alpha = max(alpha, halo)
+                if soft > 0.0:
+                    alpha = 0.5 * math.erfc(d / spread)
+                else:
+                    alpha = min(max(0.5 - d, 0.0), 1.0)
                 alpha *= opacity
                 if alpha <= 0.0:
                     continue
@@ -97,46 +105,43 @@ class Canvas:
                 raw.append(int(round(min(max(self.r[i], 0.0), 1.0) * 255)))
                 raw.append(int(round(min(max(self.g[i], 0.0), 1.0) * 255)))
                 raw.append(int(round(min(max(self.b[i], 0.0), 1.0) * 255)))
+                if self.a is not None:
+                    raw.append(int(round(self.a[i] * 255)))
 
         def chunk(kind, data):
             body = kind + data
             return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
 
-        header = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)
+        kind = 2 if self.a is None else 6
+        header = struct.pack(">IIBBBBB", size, size, 8, kind, 0, 0, 0)
         return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header)
                 + chunk(b"IDAT", zlib.compress(bytes(raw), 9)) + chunk(b"IEND", b""))
 
 
-def rect_shape(canvas, left, top, right, bottom, radius, color, opacity=1.0, glow=0.0):
+def rect_shape(canvas, left, top, right, bottom, radius, color, opacity=1.0, soft=0.0):
     cx = (left + right) / 2.0
     cy = (top + bottom) / 2.0
     hw = (right - left) / 2.0
     hh = (bottom - top) / 2.0
     canvas.shape(lambda px, py: rounded_rect(px, py, cx, cy, hw, hh, radius),
-                 (left, top, right, bottom), color, opacity, glow)
+                 (left, top, right, bottom), color, opacity, soft)
 
 
-def draw(size):
+def draw(size, corner=0.0):
     canvas = Canvas(size)
-    # The square: deep blue, lighter at the top.
-    canvas.vertical_gradient("#13649A", "#062A4D")
+    canvas.fill("#1769AA")
+    rect_shape(canvas, 292, 201, 732, 823, 36, "#FFFFFF")
 
-    # The sheet, rising from the scanner: white with a faint shadow, lines of text in blue-grey.
-    rect_shape(canvas, 300, 196, 724, 660, 30, "#021A30", opacity=0.35, glow=18.0)
-    rect_shape(canvas, 300, 180, 724, 660, 30, "#FFFFFF")
-    lines = [(356, 262, 668), (356, 322, 640), (356, 382, 668), (356, 442, 600), (356, 502, 652)]
-    for left, top, right in lines:
-        rect_shape(canvas, left, top, right, top + 24, 12, "#A9C1D6")
+    # The beam has swept down the page: text above it is scanned and sharp, below it still soft.
+    for top, width in ((290, 300), (360, 255), (430, 300), (500, 240)):
+        rect_shape(canvas, 356, top, 356 + width, top + 30, 15, "#A9BFD6")
+    for top, width in ((640, 300), (710, 220)):
+        rect_shape(canvas, 356, top, 356 + width, top + 30, 15, "#A9BFD6", opacity=0.7, soft=9.0)
 
-    # The scan beam across the sheet, glowing.
-    rect_shape(canvas, 252, 556, 772, 576, 10, "#5FE3FF", glow=26.0)
-    rect_shape(canvas, 252, 559, 772, 573, 7, "#E9FBFF")
-
-    # The scanner's body over the bottom of the sheet, with its slot and a light.
-    rect_shape(canvas, 176, 636, 848, 836, 56, "#D9E8F3")
-    rect_shape(canvas, 176, 636, 848, 676, 20, "#B9D0E2")
-    rect_shape(canvas, 236, 728, 640, 752, 12, "#9DB8CE")
-    canvas.shape(lambda px, py: circle(px, py, 760, 740, 22), (738, 718, 782, 762), "#2FC6E8")
+    rect_shape(canvas, 192, 562, 832, 598, 18, "#22D3EE", opacity=0.55, soft=16.0)
+    rect_shape(canvas, 212, 569, 812, 591, 11, "#22D3EE")
+    if corner:
+        canvas.round_corners(corner)
     return canvas.png()
 
 
