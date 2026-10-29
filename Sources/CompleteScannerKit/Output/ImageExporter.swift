@@ -24,7 +24,7 @@ public enum ImageExporter {
                 throw ScanError.exportFailed("Could not read the page to write \(url.lastPathComponent).")
             }
             do {
-                try BilevelTIFF.make(pixels, dpi: dpi).write(to: url)
+                try BilevelTIFF.make(pixels, dpi: dpi).write(to: url, options: .atomic)
             } catch {
                 throw ScanError.exportFailed("Could not write \(url.lastPathComponent).")
             }
