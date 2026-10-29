@@ -242,12 +242,19 @@ extension XCUIApplication {
         let toggle: XCUIElement = switches[id].firstMatch
         XCTAssertTrue(toggle.waitForExistence(timeout: 30), "The \(id) switch", file: file, line: line)
         let wanted: String = on ? "1" : "0"
+        let turned: () -> XCTNSPredicateExpectation = {
+            XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", wanted), object: toggle)
+        }
         if (toggle.value as? String) != wanted {
             let inner: XCUIElement = toggle.switches.firstMatch
-            (inner.exists ? inner : toggle).tap()
+            let target: XCUIElement = inner.exists ? inner : toggle
+            target.tap()
+            // The first tap now and then lands while the drawer is still settling and does nothing.
+            if XCTWaiter.wait(for: [turned()], timeout: 3) != .completed {
+                target.tap()
+            }
         }
-        let turned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", wanted), object: toggle)
-        XCTAssertEqual(XCTWaiter.wait(for: [turned], timeout: 10), .completed, "\(id) turned \(on ? "on" : "off")",
+        XCTAssertEqual(XCTWaiter.wait(for: [turned()], timeout: 10), .completed, "\(id) turned \(on ? "on" : "off")",
                        file: file, line: line)
     }
 
