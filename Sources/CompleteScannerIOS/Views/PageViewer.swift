@@ -87,6 +87,8 @@ struct PageViewer: View {
     @State private var requested: [UUID: CaptureFilter] = [:]
     /// The page shown and the ones either side of it read from their spool files, sharper than the queue's previews.
     @State private var sharpCache: SharpCache = SharpCache()
+    /// Set by a memory warning: only the page shown is read until the plan changes.
+    @State private var shownOnly: Bool = false
     /// The pager's longest side so far, in points: it only grows, so turning the phone reads nothing again.
     @State private var viewSide: CGFloat = 0
 
@@ -133,6 +135,11 @@ struct PageViewer: View {
         /// Lets go of every picture not read for one of `reads`.
         mutating func keep(_ reads: [SharpRead]) {
             entries.removeAll { (entry: Entry) -> Bool in !reads.contains(entry.read) }
+        }
+
+        /// Lets go of every picture but the one read for `page` (the page shown), on a memory warning.
+        mutating func keepOnly(_ page: UUID?) {
+            entries.removeAll { (entry: Entry) -> Bool in entry.read.page != page }
         }
 
         /// Holds `image`, read for `read` from the page whose preview is `preview`, in place of what was read
@@ -277,6 +284,11 @@ struct PageViewer: View {
         .task(id: sharpPlan) {
             await loadSharp()
         }
+        // The neighbours are read again on the next swipe; the page shown stays sharp.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { (_: Notification) in
+            shownOnly = true
+            sharpCache.keepOnly(selection)
+        }
         .modifier(ErrorAlert(state: state))
     }
 
@@ -334,11 +346,14 @@ struct PageViewer: View {
     /// in place of their previews; a swipe then lands on a page read already. What was read for pages no longer
     /// near, or for a page as it was before a change, is let go first.
     private func loadSharp() async {
+        shownOnly = false
         sharpCache.keep(sharpPlan)
         // Turns and filters clicked earlier land first, so the files read are the ones the pages end up with.
         await state.pageEditChain?.value
         for read in sharpPlan where sharpCache.image(for: read) == nil {
             guard !Task.isCancelled else { return }
+            // A memory warning while this runs leaves the neighbours to the next plan.
+            guard !shownOnly || read.page == selection else { return }
             guard let preview = state.scannedPages.first(where: { (page: ScannedPage) -> Bool in page.id == read.page })?.image,
                   ObjectIdentifier(preview) == read.preview else { continue }
             let priority: TaskPriority = read.page == selection ? .userInitiated : .utility
@@ -347,7 +362,7 @@ struct PageViewer: View {
             }.value
             // The read can land after a swipe or edit but before SwiftUI cancels this task; one no longer planned
             // would only push out entries that are.
-            guard !Task.isCancelled, sharpPlan.contains(read) else { return }
+            guard !Task.isCancelled, sharpPlan.contains(read), !shownOnly || read.page == selection else { return }
             if let image {
                 sharpCache.add(image, read: read, preview: preview)
             }

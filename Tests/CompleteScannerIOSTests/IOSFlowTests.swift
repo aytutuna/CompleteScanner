@@ -510,6 +510,22 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertEqual(cache.entries.count, 1)
         XCTAssertNotNil(cache.image(for: big))
     }
+
+    func test_theViewerCache_onAMemoryWarning_keepsOnlyThePageShown() {
+        let preview: CGImage = flowPage().image
+        let picture: CGImage = flowPage().image
+        let shown: PageViewer.SharpRead = sharpRead(UUID(), preview: preview)
+        let next: PageViewer.SharpRead = sharpRead(UUID(), preview: preview)
+        let before: PageViewer.SharpRead = sharpRead(UUID(), preview: preview)
+        var cache = PageViewer.SharpCache()
+        for read in [shown, next, before] {
+            cache.add(picture, read: read, preview: preview)
+        }
+        cache.keepOnly(shown.page)
+        XCTAssertEqual(cache.entries.map { (entry: PageViewer.SharpCache.Entry) -> UUID in entry.read.page }, [shown.page])
+        cache.keepOnly(nil)
+        XCTAssertTrue(cache.entries.isEmpty)
+    }
 }
 
 /// What the viewer reads for page `page` with the preview `preview`: a 12 MP shot read whole unless said.
