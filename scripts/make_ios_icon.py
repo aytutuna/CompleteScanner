@@ -1,4 +1,4 @@
-"""Draws the iPhone and iPad app icon: a white page on a blue square, crossed by the scan beam. The
+"""Draws the iPhone app icon: a white page on a blue square, crossed by the scan beam. The
 lines of text above the beam are sharp, the ones below it still out of focus. iOS rounds the corners
 itself, so the square is drawn full and opaque; scripts/make_ico.py draws the same picture with
 rounded, transparent corners for Windows.

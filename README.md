@@ -266,14 +266,15 @@ Run the test suite (photo detection, PDF/OCR, naming, adjustments):
 swift test
 ```
 
-The package also builds for iOS 18 (the iPhone and iPad app is in progress): the shared core and its
+The package also builds for iOS 18, for the iPhone app: the shared core and its
 tests run on the iOS Simulator with Xcode 26 or later, as CI's `ios` job runs them:
 
 ```bash
 xcodebuild test -scheme CompleteScanner-Package   -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5'
 ```
 
-The app itself (one universal app for iPhone and iPad; on the iPhone it opens straight on the camera,
+The app itself (iPhone only for now, which an iPad runs in iPhone compatibility mode, so the iPad
+layouts described below wait for a later version; on the iPhone it opens straight on the camera,
 whose viewfinder is the scan screen, with the last task used set up and what you scan (Photos, Receipts,
 Document, ID card, Book or Text) in a snapping row under it, a chevron that swaps that row for a drawer
 of options (export, colour, quality, flash, camera) and Save floating over the picture once there are
@@ -467,7 +468,7 @@ target for each platform's own parts:
   address; the scanner picker, a sheet on iPhone and a sidebar on iPad; the troubleshooter's
   system side), `CompleteScannerIOSApp` and its SwiftUI views (also the flatbed preview with its
   scan area, a feeder's progress with Cancel, and the troubleshooter)
-- `ios/` — the iPhone and iPad app's Xcode project for XcodeGen (`project.yml`): the app target that
+- `ios/` — the iPhone app's Xcode project for XcodeGen (`project.yml`): the app target that
   only starts `CompleteScannerIOSApp`, its `Info.plist`, privacy manifest and asset catalog, and the
   UI tests (`CompleteScanneriOSUITests`: the smoke test, the photo import, with its fixture
   photo, two prints in one shot under the Photos task saved as two JPEGs, two pages under the

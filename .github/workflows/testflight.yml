@@ -1,6 +1,6 @@
 name: TestFlight
 
-# Builds the iPhone and iPad app for the App Store and uploads it to TestFlight. Run it by hand from
+# Builds the iPhone app for the App Store and uploads it to TestFlight. Run it by hand from
 # the Actions tab, or push to ci/testflight. Signing is cloud-managed through the App Store Connect
 # API key in the repository secrets, so no certificate or profile is kept here.
 on:
