@@ -12,7 +12,7 @@ Point the camera at a page: it finds the edges, straightens it and queues it. Sa
 Description:
 CompleteScanner is a document scanner. Point the camera at a page and it finds the edges, straightens the page and adds it to your queue. If the corners are off, drag them yourself.
 
-Choose what you are scanning: Photos, Receipts, Document, ID card, Book or Text. The app sets itself up for it.
+Choose what you are scanning: Photo, Document, ID card or Book. The app sets itself up for it. Lay several receipts or prints on the table and they are split automatically.
 
 Your pages sit in a grid. Open one to rotate, crop or filter it, delete the ones you don't want, add more. Save them as a PDF, with a password if you like, or as JPEG or TIFF images, and share them anywhere.
 

@@ -74,7 +74,7 @@ final class ImportTests: XCTestCase {
     }
 
     @MainActor
-    func test_book_keepsThePage_receiptsAndTheIdCardAskFirst() throws {
+    func test_book_keepsThePage_photoAndTheIdCardAskFirst() throws {
         let app: XCUIApplication = try launchWithFixture(task: "document")
         let use: XCUIElement = app.buttons["corners.use"]
         XCTAssertTrue(use.waitForExistence(timeout: 120), "The corner editor's Use corners button")
@@ -85,7 +85,7 @@ final class ImportTests: XCTestCase {
 
         app.switchToCamera()
         XCTAssertEqual(app.chipTitle, "Document")
-        for kind in ["receipts", "idCard"] {
+        for kind in ["photos", "idCard"] {
             let item: XCUIElement = app.descendants(matching: .any)["kinds.\(kind)"].firstMatch
             XCTAssertTrue(item.waitForExistence(timeout: 30), "The \(kind) kind")
             app.waitUntilEnabled(item, "The \(kind) kind")

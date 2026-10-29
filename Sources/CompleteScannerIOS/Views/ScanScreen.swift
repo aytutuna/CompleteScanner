@@ -158,7 +158,8 @@ struct ScanScreen: View {
     private var screen: some View {
         content
             .background(cameraMode ? Color(uiColor: .systemBackground) : Color(uiColor: .systemGroupedBackground))
-            .navigationTitle(IOSShell.shownKind(state.settings).title)
+            .navigationTitle(cameraMode ? IOSShell.shownKind(state.settings).cameraTitle
+                             : IOSShell.shownKind(state.settings).title)
             .navigationBarTitleDisplayMode(.inline)
             // The iPad keeps its bar in camera mode too, for the sidebar's button.
             .toolbar(pickerInSidebar ? Visibility.automatic : Visibility.hidden, for: .navigationBar)
@@ -626,7 +627,7 @@ struct ScanScreen: View {
         let appState: AppState = state
         afterOptions {
             if appState.pagesLeftBehind(by: kind.task) > 0 {
-                leavingPages = PagesLeave(reason: IOSShell.keepPagesReason(kind)) { (discarding: Bool) in
+                leavingPages = PagesLeave(reason: IOSShell.keepPagesReason(kind, mode: mode)) { (discarding: Bool) in
                     switchKind(kind, discardingPages: discarding)
                 }
             } else {

@@ -242,6 +242,28 @@ final class IOSShellTests: XCTestCase {
         XCTAssertEqual(state.settings.taskOptions.cameraFilter, .enhanced)
     }
 
+    @MainActor
+    func test_adoptCameraKind_turnsReceiptsAndText_intoTheDocument() {
+        let state = AppState(backends: [], presetStore: PresetStore(directory: folder),
+                             fileActions: IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in }),
+                             files: AppStateFiles.all(in: folder))
+        for task in [ScanTask.receipt, .quickScan] {
+            XCTAssertTrue(state.startTask(task), task.rawValue)
+            IOSShell.adoptCameraKind(state)
+            XCTAssertEqual(state.settings.task, .document, task.rawValue)
+            XCTAssertEqual(IOSShell.shownKind(state.settings), .document, task.rawValue)
+            // The Document's own choices, not the receipts' grey Compact PDF.
+            XCTAssertEqual(state.settings.colorMode, .color, task.rawValue)
+            XCTAssertEqual(state.settings.output.pdfSize, .standard, task.rawValue)
+        }
+        // A kind of the row stays, with its choices.
+        for task in [ScanTask.photos, .photoRestore, .idCard, .book, .email] {
+            XCTAssertTrue(state.startTask(task), task.rawValue)
+            IOSShell.adoptCameraKind(state)
+            XCTAssertEqual(state.settings.task, task, task.rawValue)
+        }
+    }
+
     func test_listedScanner_followsTheRememberedScanner_toAnotherConnection() {
         let direct: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
         let viaDesktop: ScannerInfo = ScannerInfo(id: "companion:x", name: "Office MFP", transport: "Companion", backend: "companion")

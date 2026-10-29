@@ -275,8 +275,9 @@ xcodebuild test -scheme CompleteScanner-Package   -destination 'platform=iOS Sim
 
 The app itself (iPhone only for now, which an iPad runs in iPhone compatibility mode, so the iPad
 layouts described below wait for a later version; on the iPhone it opens straight on the camera,
-whose viewfinder is the scan screen, with the last task used set up and what you scan (Photos, Receipts,
-Document, ID card, Book or Text) in a snapping row under it, a chevron that swaps that row for a drawer
+whose viewfinder is the scan screen, with the last task used set up and what you scan (Photo, Document,
+ID card or Book; several receipts or prints laid on the table are split automatically) in a snapping row
+under it, a chevron that swaps that row for a drawer
 of options (export, colour, quality, flash, camera) and Save floating over the picture once there are
 pages; the pages taken stay when you switch between Document and Book, and any other kind asks first
 whether to save them or discard them; a printer button switches to printer mode, where one scanner is picked in the Scanner sheet and

@@ -106,7 +106,10 @@ public struct IOSRootView: View {
                 followMode()
             }
         }
-        .onChange(of: mode) { (_: IOSScanMode, _: IOSScanMode) in
+        .onChange(of: mode) { (_: IOSScanMode, new: IOSScanMode) in
+            if new == .camera {
+                IOSShell.adoptCameraKind(state)
+            }
             followMode()
         }
         .environmentObject(importer)
@@ -204,7 +207,8 @@ public struct IOSRootView: View {
         // A share or a send reads the spooled pages that starting over them could drop.
         guard !state.readsQueue else { return }
         if state.pagesLeftBehind(by: task) > 0 {
-            leavingPages = PagesLeave(reason: IOSShell.keepPagesReason(IOSShell.kind(of: task))) { (discarding: Bool) in
+            let reason: String = IOSShell.keepPagesReason(IOSShell.kind(of: task), mode: mode)
+            leavingPages = PagesLeave(reason: reason) { (discarding: Bool) in
                 startTask(task, target: target, discardingPages: discarding)
             }
         } else {

@@ -4,7 +4,9 @@ import XCTest
 
 extension XCUIApplication {
     /// The kinds in camera mode's row, left to right (`IOSShell.cameraKinds`).
-    static let cameraKinds: [String] = ["photos", "receipts", "document", "idCard", "book", "text"]
+    static let cameraKinds: [String] = ["photos", "document", "idCard", "book"]
+    /// The printer screen's chips (`IOSScanKind`), which keep Receipts and Text.
+    static let printerKinds: [String] = ["document", "photos", "receipts", "idCard", "book", "text"]
 
     /// Waits for the scan screen in either mode and says which: true for camera mode (its kinds row, or the
     /// drawer in its place), false for printer mode (its chips). The app comes back in the mode the last run
@@ -56,9 +58,9 @@ extension XCUIApplication {
 
     /// Picks what is scanned the way a person does, in either mode: the kind's chip in the printer screen's
     /// top row, swiped into view when the row has scrolled it off, or the kind in camera mode's row, reached
-    /// a neighbour at a time as each tap centres it. `task` is the kind's name ("document", "photos",
-    /// "receipts", "idCard", "book", "text"). The kind already picked changes nothing, and the app comes
-    /// back on the task the last run left, so that one is set up afresh by way of another kind.
+    /// a neighbour at a time as each tap centres it. `task` is the kind's name ("document", "photos", "idCard",
+    /// "book", and in printer mode "receipts" and "text"). The kind already picked changes nothing, and the app
+    /// comes back on the task the last run left, so that one is set up afresh by way of another kind.
     @MainActor
     func pickTask(_ task: String, file: StaticString = #filePath, line: UInt = #line) {
         if waitForScanScreen(file: file, line: line) {
@@ -103,7 +105,7 @@ extension XCUIApplication {
             XCTFail("No kind \(task)", file: file, line: line)
             return
         }
-        var index: Int = XCUIApplication.cameraKinds.firstIndex(of: cameraKind) ?? 2
+        var index: Int = XCUIApplication.cameraKinds.firstIndex(of: cameraKind) ?? 1
         if index == target {
             index = target == 0 ? 1 : target - 1
             tapCameraKind(XCUIApplication.cameraKinds[index], file: file, line: line)
@@ -261,7 +263,7 @@ extension XCUIApplication {
     /// The title of the kind picked, in either mode: "Document"; empty when none is.
     @MainActor
     var chipTitle: String {
-        for kind in XCUIApplication.cameraKinds {
+        for kind in XCUIApplication.printerKinds {
             for id in ["task.\(kind)", "kinds.\(kind)"] {
                 let chip: XCUIElement = descendants(matching: .any)[id].firstMatch
                 if chip.exists && chip.isSelected {

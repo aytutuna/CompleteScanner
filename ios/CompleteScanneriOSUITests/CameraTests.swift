@@ -40,6 +40,7 @@ final class CameraTests: XCTestCase {
         app.openDrawer("camera")
         XCTAssertTrue(app.descendants(matching: .any)["camera.auto"].firstMatch.exists, "The Auto switch")
         XCTAssertTrue(app.switches["options.bothSides"].firstMatch.exists, "Both sides")
+        XCTAssertTrue(app.descendants(matching: .any)["camera.itemsInFrame"].firstMatch.exists, "Items in frame")
         let scanner: XCUIElement = app.buttons["capture.scanner"]
         XCTAssertTrue(scanner.waitForExistence(timeout: 10), "The Use Apple's scanner button")
         XCTAssertFalse(scanner.isEnabled, "No document scanner in the Simulator")
@@ -62,23 +63,23 @@ final class CameraTests: XCTestCase {
         app.switchToCamera()
         app.pickTask("photos")
 
-        // With Photos in the middle the leftmost kind showing is Photos too; once Receipts is dragged to the
-        // middle Photos still shows on the left, so this catches the leftmost kind being taken for the middle.
+        // With Photo in the middle the leftmost kind showing is Photo too; once Document is dragged to the
+        // middle Photo still shows on the left, so this catches the leftmost kind being taken for the middle.
         let row: XCUIElement = app.descendants(matching: .any)["kinds.row"].firstMatch
-        let receipts: XCUIElement = app.descendants(matching: .any)["kinds.receipts"].firstMatch
-        XCTAssertTrue(receipts.waitForExistence(timeout: 10), "The receipts kind")
+        let document: XCUIElement = app.descendants(matching: .any)["kinds.document"].firstMatch
+        XCTAssertTrue(document.waitForExistence(timeout: 10), "The document kind")
         let photos: XCUIElement = app.descendants(matching: .any)["kinds.photos"].firstMatch
         let centred = XCTNSPredicateExpectation(predicate: NSPredicate { (_: Any?, _: [String: Any]?) -> Bool in
             abs(photos.frame.midX - row.frame.midX) < 2
         }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [centred], timeout: 10), .completed, "Photos in the row's middle once picked")
-        let from: XCUICoordinate = receipts.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        XCTAssertEqual(XCTWaiter.wait(for: [centred], timeout: 10), .completed, "Photo in the row's middle once picked")
+        let from: XCUICoordinate = document.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         let to: XCUICoordinate = row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         from.press(forDuration: 0.1, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.3)
-        let picked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: receipts)
-        XCTAssertEqual(XCTWaiter.wait(for: [picked], timeout: 10), .completed, "Receipts picked by the swipe")
-        XCTAssertFalse(app.descendants(matching: .any)["kinds.photos"].firstMatch.isSelected, "Photos let go")
-        XCTAssertEqual(abs(receipts.frame.midX - row.frame.midX), 0, accuracy: 2, "Receipts in the row's middle")
+        let picked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: document)
+        XCTAssertEqual(XCTWaiter.wait(for: [picked], timeout: 10), .completed, "Document picked by the swipe")
+        XCTAssertFalse(app.descendants(matching: .any)["kinds.photos"].firstMatch.isSelected, "Photo let go")
+        XCTAssertEqual(abs(document.frame.midX - row.frame.midX), 0, accuracy: 2, "Document in the row's middle")
     }
 
     @MainActor

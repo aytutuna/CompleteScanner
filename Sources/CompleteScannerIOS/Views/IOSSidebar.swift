@@ -13,7 +13,8 @@ enum IOSDetail: Hashable {
 
 /// The iPad's sidebar (a regular width, `IOSLayout.usesSidebar`): the user's presets, the kinds and "Add
 /// pages to a PDF" as the task list has them (`IOSShell.kindTiles`: dimmed with the reason when
-/// one cannot be started, the kind set up marked), the scanners, one of which picked is printer mode's
+/// one cannot be started, the kind set up marked; in camera mode only camera mode's, `IOSShell.cameraKinds`),
+/// the scanners, one of which picked is printer mode's
 /// (`ScannerPickerSections`, with Add by address and Troubleshoot), and the library: Presets, Scans, Saved files and Settings
 /// (Command-comma). A kind picked goes to the root view (`onTask`), which asks about the pages and an ID card
 /// held; a preset picked while a side of an ID card is held asks to discard the card first
@@ -38,9 +39,12 @@ struct IOSSidebar: View {
     /// A preset that would leave the queued pages without a Save, while the question about them is up.
     @State private var leavingPages: PagesLeave?
     @State private var picksPDF: Bool = false
+    @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
 
     var body: some View {
-        let tiles: [IOSKindTile] = IOSShell.kindTiles(state.taskCards, current: IOSShell.shownKind(state.settings))
+        let kinds: [IOSScanKind] = mode == .camera ? IOSShell.cameraKinds : IOSScanKind.allCases
+        let tiles: [IOSKindTile] = IOSShell.kindTiles(state.taskCards, current: IOSShell.shownKind(state.settings),
+                                                      order: kinds)
         let presets: [IOSPresetRow] = IOSPresetsModel.rows(state.presets)
         List {
             if !presets.isEmpty {

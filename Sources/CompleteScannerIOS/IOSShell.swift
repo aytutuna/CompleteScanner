@@ -432,9 +432,9 @@ public enum IOSShell {
         return "\(reason) \(count == 1 ? "It" : "They") cannot be saved now: discard \(them), or cancel to keep \(them)."
     }
 
-    /// "Photos does not collect pages."
-    public static func keepPagesReason(_ kind: IOSScanKind) -> String {
-        "\(kind.title) does not collect pages."
+    /// "Photos does not collect pages.", "Photo does not collect pages." in camera mode (`cameraTitle`).
+    public static func keepPagesReason(_ kind: IOSScanKind, mode: IOSScanMode = .printer) -> String {
+        "\(mode == .camera ? kind.cameraTitle : kind.title) does not collect pages."
     }
 
     /// "The preset “Receipts” does not collect pages."
@@ -463,9 +463,41 @@ public enum IOSShell {
         return "\(settings.format.saveTitle) first"
     }
 
-    /// The kinds in camera mode's row under the viewfinder, Document in the middle as the Camera app has
-    /// Photo among its modes.
-    public static let cameraKinds: [IOSScanKind] = [.photos, .receipts, .document, .idCard, .book, .text]
+    /// The kinds in camera mode's row under the viewfinder. Receipts are a Document shot that holds several
+    /// (`itemsInFrame`) and Text is the page viewer's, so neither is a kind here; printer mode's chips still
+    /// offer both.
+    public static let cameraKinds: [IOSScanKind] = [.photos, .document, .idCard, .book]
+
+    /// The user's defaults key of camera mode's Items in frame (`IOSItemsInFrame`).
+    public static let itemsInFrameKey = "camera.itemsInFrame"
+
+    /// Whether camera mode offers Items in frame for the settings: Photo, and a Document taken a side at a
+    /// time. The ID card, a book and Both sides take their pages their own way.
+    public static func offersItemsInFrame(_ settings: ScanSettings) -> Bool {
+        switch TaskCatalog.flow(of: settings) {
+        case .photoSplit:
+            return true
+        case .documentQueue:
+            return shownKind(settings) == .document && settings.task != .twoSided
+        case .receiptSplit, .idCard, .copy:
+            return false
+        }
+    }
+
+    /// What a camera shot goes by: the Items in frame kept in `defaults` (Auto when none is), or nil where
+    /// it is not offered, for the kind's own way.
+    public static func itemsInFrame(_ settings: ScanSettings, defaults: UserDefaults) -> IOSItemsInFrame? {
+        guard offersItemsInFrame(settings) else { return nil }
+        return IOSItemsInFrame(rawValue: defaults.string(forKey: itemsInFrameKey) ?? "") ?? .auto
+    }
+
+    /// Camera mode has no Receipts or Text: their task, kept from printer mode or an older build, starts the
+    /// Document over in camera mode, with the Document's own choices.
+    @MainActor
+    static func adoptCameraKind(_ state: AppState) {
+        guard let task = state.settings.task, !cameraKinds.contains(kind(of: task)) else { return }
+        state.startTask(.document)
+    }
 
     /// The `.csdoc` type the app declares (Info.plist's UTExportedTypeDeclarations), which Files offers
     /// beside photos and PDFs.
@@ -818,6 +850,24 @@ public enum IOSScanMode: String, Sendable {
     case printer
 }
 
+/// How many things a camera shot of Photo or Document holds (`IOSShell.itemsInFrame`): Auto splits the shot
+/// when more than one is found, One never does (a page with slips on it), Several always does.
+public enum IOSItemsInFrame: String, CaseIterable, Identifiable, Sendable {
+    case auto
+    case one
+    case several
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .auto: return "Auto"
+        case .one: return "One"
+        case .several: return "Several"
+        }
+    }
+}
+
 /// What the iPhone's scan screen asks first, as chips in its top row: what is being scanned. The rest (the
 /// feeder, both sides, separate documents, the format, PDF/A, email and printing) is an option of the scan
 /// screen or an action of Save.
@@ -851,6 +901,11 @@ public enum IOSScanKind: String, CaseIterable, Identifiable, Sendable {
         case .book: return "Pages or whole spreads"
         case .text: return "One shot, copy the text"
         }
+    }
+
+    /// The kind in camera mode's row: one print or several there, so Photo.
+    public var cameraTitle: String {
+        self == .photos ? "Photo" : title
     }
 
     public var symbol: String {
@@ -934,6 +989,9 @@ extension AppState {
                                        keepsQueue: !options.demoScannerOnly)
         state.platform = .ios
         IOSShell.adoptOriginalFilter(state, defaults: UserDefaults.standard)
+        if UserDefaults.standard.string(forKey: IOSShell.scanModeKey) != IOSScanMode.printer.rawValue {
+            IOSShell.adoptCameraKind(state)
+        }
         if let prompt = passwordPrompt {
             state.askPDFPassword = { () async -> PDFProtection? in
                 await prompt.ask()

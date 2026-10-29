@@ -263,9 +263,11 @@ final class IOSFlowTests: XCTestCase {
 
     // MARK: Camera mode
 
-    func test_cameraKinds_putDocumentInTheMiddle_eachKindOnce() {
-        XCTAssertEqual(IOSShell.cameraKinds, [.photos, .receipts, .document, .idCard, .book, .text])
-        XCTAssertEqual(Set(IOSShell.cameraKinds), Set(IOSScanKind.allCases))
+    func test_cameraKinds_arePhotoDocumentIdCardAndBook() {
+        XCTAssertEqual(IOSShell.cameraKinds, [.photos, .document, .idCard, .book])
+        XCTAssertEqual(IOSShell.cameraKinds.map(\.cameraTitle), ["Photo", "Document", "ID card", "Book"])
+        // Printer mode's chips keep Photos.
+        XCTAssertEqual(IOSScanKind.photos.title, "Photos")
         var cards: [TaskCard] = []
         for definition in TaskCatalog.all {
             cards.append(TaskCard(definition: definition, availability: .available, isCurrent: false, summary: ""))
@@ -273,6 +275,33 @@ final class IOSFlowTests: XCTestCase {
         let tiles: [IOSKindTile] = IOSShell.kindTiles(cards, current: .document, order: IOSShell.cameraKinds)
         XCTAssertEqual(tiles.map(\.kind), IOSShell.cameraKinds)
         XCTAssertEqual(tiles.filter(\.isCurrent).map(\.kind), [.document])
+    }
+
+    func test_itemsInFrame_isForPhotoAndDocument_autoUntilChosen() throws {
+        let name: String = "items.\(UUID().uuidString)"
+        let defaults: UserDefaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let document: ScanSettings = TaskCatalog.apply(.document, to: ScanSettings())
+        XCTAssertEqual(IOSItemsInFrame.allCases.map(\.title), ["Auto", "One", "Several"])
+        XCTAssertEqual(IOSShell.itemsInFrame(document, defaults: defaults), .auto)
+        for task in [ScanTask.document, .email, .word, .archive, .photos, .photoRestore] {
+            XCTAssertTrue(IOSShell.offersItemsInFrame(TaskCatalog.apply(task, to: ScanSettings())), task.rawValue)
+        }
+        // The ID card, a book, Both sides, the photocopy and the printer's Receipts and Quick scan go their own way.
+        for task in [ScanTask.idCard, .book, .twoSided, .copy, .receipt, .quickScan] {
+            let s: ScanSettings = TaskCatalog.apply(task, to: ScanSettings())
+            XCTAssertFalse(IOSShell.offersItemsInFrame(s), task.rawValue)
+            XCTAssertNil(IOSShell.itemsInFrame(s, defaults: defaults), task.rawValue)
+        }
+        defaults.set(IOSItemsInFrame.one.rawValue, forKey: IOSShell.itemsInFrameKey)
+        XCTAssertEqual(IOSShell.itemsInFrame(document, defaults: defaults), .one)
+        defaults.set(IOSItemsInFrame.several.rawValue, forKey: IOSShell.itemsInFrameKey)
+        XCTAssertEqual(IOSShell.itemsInFrame(TaskCatalog.apply(.photos, to: ScanSettings()), defaults: defaults), .several)
+        defaults.set("many", forKey: IOSShell.itemsInFrameKey)
+        XCTAssertEqual(IOSShell.itemsInFrame(document, defaults: defaults), .auto)
+        XCTAssertEqual(IOSShell.itemsInFrameKey, "camera.itemsInFrame")
+        XCTAssertEqual(IOSCameraText.itemsInFrameHint,
+                       "Auto splits the shot when it sees more than one page or photo. Pick One for a page with slips on it.")
     }
 
     func test_drawerGroups_followWhatIsSaved() {
@@ -353,6 +382,9 @@ final class IOSFlowTests: XCTestCase {
                        "\u{201C}Trip.csdoc\u{201D} opens in their place. They cannot be saved now: discard them, or cancel to keep them.")
         XCTAssertEqual(IOSShell.keepPagesLine(IOSShell.keepPagesReason(.photos), count: 1, canSave: false),
                        "Photos does not collect pages. It cannot be saved now: discard it, or cancel to keep it.")
+        // Camera mode's row names it Photo.
+        XCTAssertEqual(IOSShell.keepPagesReason(.photos, mode: .camera), "Photo does not collect pages.")
+        XCTAssertEqual(IOSShell.keepPagesReason(.idCard, mode: .camera), "ID card does not collect pages.")
         let document: ScanSettings = TaskCatalog.apply(.document, to: ScanSettings())
         XCTAssertEqual(IOSShell.saveFirstLabel(document, pageCount: 3, target: nil), "Save PDF first")
         var jpeg: ScanSettings = document
@@ -398,6 +430,9 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertEqual(PageViewerText.selectedTitle(2), "2 Selected")
         XCTAssertEqual(PageViewerText.deleteAllQuestion(3), "Delete all 3 pages?")
         XCTAssertEqual(PageViewerText.deleteAllQuestion(1), "Delete 1 page?")
+        XCTAssertEqual(PageViewerText.textLabel, "Text")
+        XCTAssertEqual(PageViewerText.textTitle, "Text on this page")
+        XCTAssertEqual(PageViewerText.noText, "No text found on this page")
         var names: [String] = []
         for filter in CaptureFilter.displayOrder {
             names.append(PageViewerText.filterName(filter))
