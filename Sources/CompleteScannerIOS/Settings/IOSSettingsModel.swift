@@ -39,6 +39,9 @@ public enum IOSSettingsText {
     public static let aboutBuiltWith = "Built with Apple\u{2019}s frameworks. Pages are found with DocAligner by DocsaidLab "
         + "(Apache License 2.0) on ONNX Runtime by Microsoft (MIT License)."
     public static let aboutPrivacy = "Your scans stay on this device unless you share them."
+    /// About's row to the licence texts that go with the app (`LicencesScreen`).
+    public static let licencesLabel = "Licences"
+    public static let licenceMissing = "Licence text missing"
     /// The camera's group, on this device only: the size its photos are taken at.
     public static let cameraTitle = "Camera"
     public static let cameraResolutionLabel = "Resolution"

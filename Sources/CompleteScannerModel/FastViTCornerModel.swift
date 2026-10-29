@@ -62,6 +62,19 @@ public final class FastViTCornerModel: CornerModel, @unchecked Sendable {
 
     public static var isAvailable: Bool { url != nil }
 
+    /// The text of a licence in Models by its file's name ("DocAligner-LICENSE", "ONNXRuntime-LICENSE"); nil when
+    /// it is not in this build. Outside a packaged Mac app only the iPhone finds it, in this target's bundle.
+    public static func licence(_ name: String) -> String? {
+        var file: URL? = Bundle.main.url(forResource: name, withExtension: "txt")
+        #if !os(macOS)
+        if file == nil {
+            file = Bundle.module.url(forResource: name, withExtension: "txt", subdirectory: "Models")
+        }
+        #endif
+        guard let file else { return nil }
+        return try? String(contentsOf: file, encoding: .utf8)
+    }
+
     /// Core ML is tried in front of the CPU.
     public let coreML: Bool
     private let lock = NSLock()

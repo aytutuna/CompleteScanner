@@ -5,6 +5,7 @@ import SwiftUI
 import XCTest
 @testable import CompleteScannerIOS
 @testable import CompleteScannerKit
+import CompleteScannerModel
 
 // The settings screen, the file name editor and the iPad's layout without a screen (I15): the sections
 // built on the shared InspectorSections (each once, in order, with their summaries), which are open, the
@@ -146,6 +147,12 @@ final class IOSSettingsTests: XCTestCase {
         let noBuild: [String: Any] = ["CFBundleShortVersionString": "0.1.0"]
         XCTAssertEqual(IOSSettingsText.version(noBuild), "Version 0.1.0")
         XCTAssertEqual(IOSSettingsText.version(nil), "Version ?")
+    }
+
+    func test_licences_theTextsGoWithTheApp() {
+        XCTAssertTrue(FastViTCornerModel.licence("DocAligner-LICENSE")?.contains("Apache License") == true)
+        XCTAssertTrue(FastViTCornerModel.licence("ONNXRuntime-LICENSE")?.contains("MIT License") == true)
+        XCTAssertNil(FastViTCornerModel.licence("Nowhere-LICENSE"))
     }
 
     // MARK: After saving

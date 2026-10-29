@@ -1,5 +1,6 @@
 #if os(iOS)
 import CompleteScannerKit
+import CompleteScannerModel
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -830,8 +831,34 @@ struct AboutScreen: View {
                 Text(IOSSettingsText.aboutBuiltWith)
                 Text(IOSSettingsText.aboutPrivacy)
             }
+            Section {
+                NavigationLink(IOSSettingsText.licencesLabel) {
+                    LicencesScreen()
+                }
+                .accessibilityIdentifier("about.licences")
+            }
         }
         .navigationTitle(IOSSettingsText.aboutLabel)
+    }
+}
+
+/// The licence texts of DocAligner and ONNX Runtime, as they go with the app (`FastViTCornerModel.licence`).
+struct LicencesScreen: View {
+    var body: some View {
+        List {
+            licence("DocAligner", file: "DocAligner-LICENSE", id: "licences.docaligner")
+            licence("ONNX Runtime", file: "ONNXRuntime-LICENSE", id: "licences.onnxruntime")
+        }
+        .navigationTitle(IOSSettingsText.licencesLabel)
+    }
+
+    private func licence(_ title: String, file: String, id: String) -> some View {
+        Section(title) {
+            Text(FastViTCornerModel.licence(file) ?? IOSSettingsText.licenceMissing)
+                .font(.footnote.monospaced())
+                .textSelection(.enabled)
+                .accessibilityIdentifier(id)
+        }
     }
 }
 #endif
