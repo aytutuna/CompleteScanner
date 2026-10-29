@@ -80,6 +80,8 @@
 	<string>CompleteScanner uses the camera to scan documents and photos, and the pairing code of your computer. What you scan stays on this device unless you share it.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>CompleteScanner looks for scanners on your local network, such as printers that scan, so you can scan from them, and for the computer you pair it with, so you can send it your scans.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>CompleteScanner adds a scan to your photo library only when you choose Save Image in the share sheet.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
