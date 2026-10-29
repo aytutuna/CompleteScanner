@@ -53,25 +53,40 @@ final class ScreenshotTests: XCTestCase {
         } else {
             shot("skipped-06b-page-viewer")
         }
+        if tapIfThere(app, "viewer.text", for: "06c-page-text") {
+            let done: XCUIElement = element(app, "text.done")
+            if done.waitForExistence(timeout: 10) {
+                // The text is read off the main thread: the shot once it is in, or once none was found.
+                let ids: [String] = ["text.body", "text.none"]
+                let read: XCUIElement = app.descendants(matching: .any)
+                    .matching(NSPredicate(format: "identifier IN %@", ids)).firstMatch
+                _ = read.waitForExistence(timeout: 60)
+                shot("06c-page-text")
+                done.tap()
+                waitUntilGone(done)
+            } else {
+                shot("skipped-06c-page-text")
+            }
+        }
         if tapIfThere(app, "viewer.done", for: "viewer-closed") {
             waitUntilGone(element(app, "viewer.done"))
         }
     }
 
-    /// Camera mode's kinds with Receipts picked, and its drawer open on Export.
+    /// Camera mode's kinds with Photo picked, and its drawer open on Export.
     @MainActor
     private func cameraScreens(_ app: XCUIApplication) {
-        let receipts: XCUIElement = element(app, "kinds.receipts")
+        let photo: XCUIElement = element(app, "kinds.photos")
         let document: XCUIElement = element(app, "kinds.document")
-        if receipts.waitForExistence(timeout: 5) && document.exists {
-            receipts.tap()
-            waitUntilSelected(receipts)
+        if photo.waitForExistence(timeout: 5) && document.exists {
+            photo.tap()
+            waitUntilSelected(photo)
             Thread.sleep(forTimeInterval: 1)
-            shot("02-kinds-receipts")
+            shot("02-kinds-photo")
             document.tap()
             waitUntilSelected(document)
         } else {
-            shot("skipped-02-kinds-receipts")
+            shot("skipped-02-kinds-photo")
         }
         if tapIfThere(app, "drawer.toggle", for: "03-drawer-export") {
             if tapIfThere(app, "drawer.export", for: "03-drawer-export") {

@@ -220,8 +220,9 @@ extension AppState {
         statusMessage = "Quick scan discarded."
     }
 
-    /// The text OCR reads on `page`, in reading order with a blank line between paragraphs.
-    nonisolated static func readText(_ page: ScannedPage) throws -> String {
+    /// The text OCR reads on `page`, in reading order with a blank line between paragraphs; the iPhone's page
+    /// viewer reads a queued page's with it too.
+    public nonisolated static func readText(_ page: ScannedPage) throws -> String {
         let prepared = PDFBuilder.preparePage(page)
         let lines: [OCRLine]
         do {

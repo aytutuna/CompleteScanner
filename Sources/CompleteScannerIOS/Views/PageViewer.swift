@@ -4,6 +4,7 @@ import CoreGraphics
 import ImageIO
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// The page the viewer opens on.
 struct PageViewerStart: Identifiable {
@@ -15,6 +16,11 @@ enum PageViewerText {
     static let rotateLabel = "Rotate"
     static let filtersLabel = "Filters"
     static let cropLabel = "Crop"
+    static let textLabel = "Text"
+    static let textTitle = "Text on this page"
+    static let readingText = "Reading the text\u{2026}"
+    static let noText = "No text found on this page"
+    static let copyLabel = "Copy"
     static let deleteLabel = "Delete"
     static let deleteAllLabel = "Delete All"
     static let openHint = "Opens the page"
@@ -65,7 +71,8 @@ enum PageViewerText {
 /// One page at a time over the whole screen, fitted whole within the safe area: pinch or double-tap to zoom,
 /// swipe to the next page, "3 of 7" over it and Done. Its toolbar shows the filters of a camera's page (a row
 /// of small pictures of this page with each, `AppState.filterPreviews`), turns it a quarter, opens the
-/// corner editor on its photo for Crop (`AppState.pageCropStart`, `recropPage`), and deletes it once asked.
+/// corner editor on its photo for Crop (`AppState.pageCropStart`, `recropPage`), shows the text on it
+/// (`PageTextSheet`), and deletes it once asked.
 /// Filters and Crop are left out for pages that cannot be cut again (`PageRecut.canRecut`): scans, imported
 /// PDFs, the pages of a book's spread taken whole.
 struct PageViewer: View {
@@ -79,6 +86,8 @@ struct PageViewer: View {
     /// The previews are being made; once they are in, a filter without one shows a plain tile.
     @State private var loadingPreviews: Bool = false
     @State private var asksDelete: Bool = false
+    /// The page whose text is shown.
+    @State private var textOf: PageViewerStart?
     @State private var crop: IOSCropRequest?
     @State private var preparesCrop: Bool = false
     /// The page's rotation when the corner editor's picture was turned for it.
@@ -273,6 +282,10 @@ struct PageViewer: View {
         } message: {
             Text(PageViewerText.deleteMessage)
         }
+        .sheet(item: $textOf) { (shown: PageViewerStart) in
+            PageTextSheet(pageID: shown.id)
+                .environmentObject(state)
+        }
         .fullScreenCover(item: $crop) { (request: IOSCropRequest) in
             CornerEditorView(request: request.request, onAnswer: { (answer: PhotoCornersAnswer) -> Void in
                 finishCrop(request, answer: answer)
@@ -412,6 +425,12 @@ struct PageViewer: View {
             .accessibilityIdentifier("viewer.crop")
             Spacer()
         }
+        Button(action: showText) {
+            Label(PageViewerText.textLabel, systemImage: "text.viewfinder")
+        }
+        .disabled(preparesCrop)
+        .accessibilityIdentifier("viewer.text")
+        Spacer()
         Button(role: .destructive, action: askDelete) {
             Label(PageViewerText.deleteLabel, systemImage: "trash")
         }
@@ -425,6 +444,11 @@ struct PageViewer: View {
     private func rotateCurrent() {
         guard let id = selection else { return }
         state.rotatePage(id: id)
+    }
+
+    private func showText() {
+        guard let id = selection else { return }
+        textOf = PageViewerStart(id: id)
     }
 
     private func askDelete() {
@@ -685,6 +709,110 @@ private final class ZoomingImageView: UIScrollView, UIScrollViewDelegate {
         let size = CGSize(width: bounds.width / scale, height: bounds.height / scale)
         zoom(to: CGRect(x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height),
              animated: animated)
+    }
+}
+
+/// The text on a page of the viewer, read as Quick scan's Copy text reads its shot (`AppState.readText`) once
+/// the page's edits under way have landed: selectable, with Copy (on this device only, as Copy text) and Share.
+struct PageTextSheet: View {
+    @EnvironmentObject private var state: AppState
+    @Environment(\.dismiss) private var dismiss
+    let pageID: UUID
+    /// The text read; nil while it is read.
+    @State private var text: String?
+    /// Why it could not be read.
+    @State private var problem: String?
+
+    var body: some View {
+        NavigationStack {
+            content
+                .navigationTitle(PageViewerText.textTitle)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            dismiss()
+                        }
+                        .accessibilityIdentifier("text.done")
+                    }
+                    ToolbarItemGroup(placement: .bottomBar) {
+                        Button(action: copy) {
+                            Label(PageViewerText.copyLabel, systemImage: "doc.on.doc")
+                        }
+                        .disabled(found == nil)
+                        .accessibilityIdentifier("text.copy")
+                        Spacer()
+                        ShareLink(item: found ?? "") {
+                            Label(PageViewerText.shareLabel, systemImage: "square.and.arrow.up")
+                        }
+                        .disabled(found == nil)
+                        .accessibilityIdentifier("text.share")
+                    }
+                }
+        }
+        .task {
+            await read()
+        }
+    }
+
+    private var found: String? {
+        guard let text, !text.isEmpty else { return nil }
+        return text
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let problem {
+            ContentUnavailableView(PageViewerText.noText, systemImage: "exclamationmark.triangle",
+                                   description: Text(problem))
+        } else if let found {
+            ScrollView {
+                Text(found)
+                    .font(.body.monospaced())
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+            }
+            .accessibilityIdentifier("text.body")
+        } else if text != nil {
+            ContentUnavailableView(PageViewerText.noText, systemImage: "text.magnifyingglass")
+                .accessibilityIdentifier("text.none")
+        } else {
+            ProgressView(PageViewerText.readingText)
+        }
+    }
+
+    private func read() async {
+        guard text == nil, problem == nil else { return }
+        await state.pageEditChain?.value
+        if Task.isCancelled { return }
+        guard let page = state.scannedPages.first(where: { (item: ScannedPage) -> Bool in item.id == pageID }) else {
+            text = ""
+            return
+        }
+        // Closing the sheet cancels its task and the read with it: one not begun yet never starts, and the
+        // text of one under way is dropped.
+        let reading: Task<String, Error> = Task.detached(priority: .userInitiated) { () throws -> String in
+            try Task.checkCancellation()
+            return try AppState.readText(page)
+        }
+        do {
+            text = try await withTaskCancellationHandler {
+                try await reading.value
+            } onCancel: {
+                reading.cancel()
+            }
+        } catch is CancellationError {
+            return
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+
+    private func copy() {
+        guard let found else { return }
+        let item: [String: Any] = [UTType.utf8PlainText.identifier: found]
+        UIPasteboard.general.setItems([item], options: [UIPasteboard.OptionsKey.localOnly: true])
     }
 }
 #endif
