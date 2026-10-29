@@ -72,7 +72,7 @@ else
 fi
 
 # App icon (optional — skipped if generation fails)
-if [ ! -f dist/icon_1024.png ]; then
+if [ ! -f dist/icon_1024.png ] || [ scripts/MakeIcon.swift -nt dist/icon_1024.png ]; then
   mkdir -p dist
   swift scripts/MakeIcon.swift dist/icon_1024.png || true
 fi

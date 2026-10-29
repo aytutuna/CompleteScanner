@@ -1,7 +1,10 @@
 // Generates the CompleteScanner app icon as a 1024x1024 PNG.
+// A white page on flat blue with a cyan scan beam across it: the lines the beam has passed are
+// sharp, the ones below it are still soft.
 // Usage: swift scripts/MakeIcon.swift <output.png>
 import AppKit
 import CoreGraphics
+import CoreImage
 import ImageIO
 import UniformTypeIdentifiers
 
@@ -9,9 +12,13 @@ let size: CGFloat = 1024
 guard CommandLine.arguments.count > 1 else { fatalError("usage: MakeIcon <out.png>") }
 let outURL = URL(fileURLWithPath: CommandLine.arguments[1])
 
-let ctx = CGContext(data: nil, width: Int(size), height: Int(size), bitsPerComponent: 8,
-                    bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+func canvas() -> CGContext {
+    CGContext(data: nil, width: Int(size), height: Int(size), bitsPerComponent: 8,
+              bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+}
+let ctx = canvas()
+let full = CGRect(x: 0, y: 0, width: size, height: size)
 
 // macOS-style rounded square
 let inset: CGFloat = 100
@@ -20,43 +27,64 @@ let path = CGPath(roundedRect: square, cornerWidth: 185, cornerHeight: 185, tran
 ctx.addPath(path)
 ctx.clip()
 
-// Background gradient (deep teal -> blue)
-let colors = [CGColor(red: 0.05, green: 0.32, blue: 0.55, alpha: 1),
-              CGColor(red: 0.02, green: 0.16, blue: 0.32, alpha: 1)] as CFArray
-let grad = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!, colors: colors, locations: [0, 1])!
-ctx.drawLinearGradient(grad, start: CGPoint(x: size / 2, y: size), end: CGPoint(x: size / 2, y: 0), options: [])
-
-// Flatbed glass
-let glass = CGRect(x: 232, y: 330, width: 560, height: 420)
-ctx.setFillColor(CGColor(red: 0.88, green: 0.94, blue: 0.98, alpha: 1))
-ctx.addPath(CGPath(roundedRect: glass, cornerWidth: 28, cornerHeight: 28, transform: nil))
-ctx.fillPath()
-
-// Two "photos" on the glass, slightly rotated
-func photo(_ center: CGPoint, _ w: CGFloat, _ h: CGFloat, _ deg: CGFloat, _ color: CGColor) {
-    ctx.saveGState()
-    ctx.translateBy(x: center.x, y: center.y)
-    ctx.rotate(by: deg * .pi / 180)
-    let r = CGRect(x: -w / 2, y: -h / 2, width: w, height: h)
-    ctx.setFillColor(CGColor(gray: 1, alpha: 1))
-    ctx.fill(r.insetBy(dx: -12, dy: -12))
-    ctx.setFillColor(color)
-    ctx.fill(r)
-    ctx.restoreGState()
+// The design is laid out on a 1024 square with y going down; scale it into the inset square.
+let s = square.width / size
+func box(_ x0: CGFloat, _ y0: CGFloat, _ x1: CGFloat, _ y1: CGFloat) -> CGRect {
+    CGRect(x: inset + x0 * s, y: inset + (size - y1) * s, width: (x1 - x0) * s, height: (y1 - y0) * s)
 }
-photo(CGPoint(x: 388, y: 560), 210, 150, 12, CGColor(red: 0.94, green: 0.55, blue: 0.20, alpha: 1))
-photo(CGPoint(x: 640, y: 520), 190, 190, -9, CGColor(red: 0.22, green: 0.62, blue: 0.45, alpha: 1))
 
-// Scan beam
-ctx.setFillColor(CGColor(red: 0.35, green: 0.85, blue: 1.0, alpha: 0.85))
-ctx.fill(CGRect(x: 232, y: 528, width: 560, height: 14))
-ctx.setFillColor(CGColor(red: 0.35, green: 0.85, blue: 1.0, alpha: 0.25))
-ctx.fill(CGRect(x: 232, y: 500, width: 560, height: 70))
+func hex(_ v: Int) -> CGColor {
+    CGColor(srgbRed: CGFloat((v >> 16) & 255) / 255, green: CGFloat((v >> 8) & 255) / 255,
+            blue: CGFloat(v & 255) / 255, alpha: 1)
+}
 
-// Lid bar
-ctx.setFillColor(CGColor(red: 0.10, green: 0.45, blue: 0.72, alpha: 1))
-ctx.addPath(CGPath(roundedRect: CGRect(x: 200, y: 770, width: 624, height: 56), cornerWidth: 24, cornerHeight: 24, transform: nil))
-ctx.fillPath()
+func fill(_ c: CGContext, _ r: CGRect, _ radius: CGFloat, _ color: CGColor) {
+    c.setFillColor(color)
+    c.addPath(CGPath(roundedRect: r, cornerWidth: radius * s, cornerHeight: radius * s, transform: nil))
+    c.fillPath()
+}
+
+let ci = CIContext()
+func blurred(_ sigma: CGFloat, _ draw: (CGContext) -> Void) -> CGImage {
+    let layer = canvas()
+    draw(layer)
+    let input = CIImage(cgImage: layer.makeImage()!)
+    let blur = CIFilter(name: "CIGaussianBlur")!
+    blur.setValue(input.clampedToExtent(), forKey: kCIInputImageKey)
+    blur.setValue(sigma * s, forKey: kCIInputRadiusKey)
+    let out = blur.outputImage!.cropped(to: input.extent)
+    return ci.createCGImage(out, from: input.extent)!
+}
+
+let blue = hex(0x1769AA)
+let ink = hex(0xA9BFD6)
+let cyan = hex(0x22D3EE)
+
+ctx.setFillColor(blue)
+ctx.fill(square)
+
+fill(ctx, box(292, 201, 732, 823), 36, hex(0xFFFFFF))
+
+for (y, w) in [(290, 300), (360, 255), (430, 300), (500, 240)] as [(CGFloat, CGFloat)] {
+    fill(ctx, box(356, y, 356 + w, y + 30), 15, ink)
+}
+
+let soft = blurred(9) { c in
+    for (y, w) in [(640, 300), (710, 220)] as [(CGFloat, CGFloat)] {
+        fill(c, box(356, y, 356 + w, y + 30), 15, ink)
+    }
+}
+ctx.setAlpha(0.7)
+ctx.draw(soft, in: full)
+
+let glow = blurred(16) { c in
+    fill(c, box(192, 562, 832, 598), 18, cyan)
+}
+ctx.setAlpha(0.55)
+ctx.draw(glow, in: full)
+
+ctx.setAlpha(1)
+fill(ctx, box(212, 569, 812, 591), 11, cyan)
 
 let image = ctx.makeImage()!
 let dest = CGImageDestinationCreateWithURL(outURL as CFURL, UTType.png.identifier as CFString, 1, nil)!
