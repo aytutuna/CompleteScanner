@@ -186,6 +186,10 @@ public enum IOSCameraText {
     public static let autoHint = "Takes each page once it holds still"
     /// The automatic shutter's switch in the options drawer.
     public static let autoShutterLabel = "Auto shutter"
+    /// The options drawer's Items in frame (`IOSItemsInFrame`) and the line under it.
+    public static let itemsInFrameLabel = "Items in frame"
+    public static let itemsInFrameHint =
+        "Auto splits the shot when it sees more than one page or photo. Pick One for a page with slips on it."
     /// The status line while a page holds still for the automatic shutter.
     public static let pageFound = "Page found \u{00B7} hold still"
     /// The chevron that swaps the kinds for the options drawer.

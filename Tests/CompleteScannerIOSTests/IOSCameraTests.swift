@@ -158,6 +158,14 @@ private func freshDefaults() throws -> UserDefaults {
     return try XCTUnwrap(UserDefaults(suiteName: name))
 }
 
+/// Fresh defaults with Items in frame set to `items`: on One a Document shot is the page finder's page
+/// whatever Vision's object search makes of the still.
+private func itemsInFrame(_ items: IOSItemsInFrame) throws -> UserDefaults {
+    let defaults: UserDefaults = try freshDefaults()
+    defaults.set(items.rawValue, forKey: IOSShell.itemsInFrameKey)
+    return defaults
+}
+
 /// Lets the updates handed to the main actor be shown.
 @MainActor
 private func settle() async throws {
@@ -959,7 +967,8 @@ final class IOSCameraTests: XCTestCase {
     @MainActor
     func test_aShot_goesThroughTheCornerEditor_intoTheQueue_withItsFocalLength() async throws {
         let state: AppState = ImportTestSupport.makeState(in: folder)
-        let importer = IOSImportSession(state: state, finder: fixedFinder(sheetQuad, reason: .unsure))
+        let defaults: UserDefaults = try itemsInFrame(.one)
+        let importer = IOSImportSession(state: state, finder: fixedFinder(sheetQuad, reason: .unsure), defaults: defaults)
         let shot = IOSCameraShot(data: cameraStill(), liveOutline: nil)
         let importing: Task<IOSImportOutcome, Never> = Task { @MainActor in
             await importer.importShot(shot)
@@ -1002,7 +1011,8 @@ final class IOSCameraTests: XCTestCase {
     func test_aShot_whosePageIsNotFoundClearly_startsFromTheLiveOutline() async throws {
         let state: AppState = ImportTestSupport.makeState(in: folder)
         let start: Quad = PhotoImport.startCorners(width: 600, height: 450)
-        let importer = IOSImportSession(state: state, finder: fixedFinder(start, reason: .nothingFound))
+        let defaults: UserDefaults = try itemsInFrame(.one)
+        let importer = IOSImportSession(state: state, finder: fixedFinder(start, reason: .nothingFound), defaults: defaults)
         let live: Quad = sheetQuad.scaled(1.0 / 600.0, 1.0 / 450.0)
         let importing: Task<IOSImportOutcome, Never> = Task { @MainActor in
             await importer.importShot(IOSCameraShot(data: cameraStill(), liveOutline: live))
@@ -1022,7 +1032,9 @@ final class IOSCameraTests: XCTestCase {
     func test_inContinuousCapture_aPageFoundClearly_goesStraightIntoTheQueue() async throws {
         let state: AppState = ImportTestSupport.makeState(in: folder)
         XCTAssertTrue(IOSShell.capturesContinuously(state.settings))
-        let importer = IOSImportSession(state: state, finder: fixedFinder(sheetQuad, reason: .none))
+        // On Auto: the one sheet is found clearly, so it is the page, never split.
+        let defaults: UserDefaults = try itemsInFrame(.auto)
+        let importer = IOSImportSession(state: state, finder: fixedFinder(sheetQuad, reason: .none), defaults: defaults)
         let shot = IOSCameraShot(data: cameraStill(), liveOutline: nil)
         let importing: Task<IOSImportOutcome, Never> = Task { @MainActor in
             await importer.importShot(shot, asksOnlyWhenUnsure: true)
@@ -1049,7 +1061,8 @@ final class IOSCameraTests: XCTestCase {
     func test_inContinuousCapture_aPageTheStillIsUnsureOf_stillOpensTheEditor() async throws {
         let state: AppState = ImportTestSupport.makeState(in: folder)
         let start: Quad = PhotoImport.startCorners(width: 600, height: 450)
-        let importer = IOSImportSession(state: state, finder: fixedFinder(start, reason: .nothingFound))
+        let defaults: UserDefaults = try itemsInFrame(.one)
+        let importer = IOSImportSession(state: state, finder: fixedFinder(start, reason: .nothingFound), defaults: defaults)
         // Even with the live outline as its start (which the editor shows as found), the still's own search
         // was unsure: the editor opens.
         let live: Quad = sheetQuad.scaled(1.0 / 600.0, 1.0 / 450.0)

@@ -11,7 +11,8 @@ import XCTest
 // Vision runs, on a drawn photo); a shot of two prints imported under the Photos task opening the photo
 // review, Fix crop through the corner editor's request and Save writing two JPEGs (`IOSPhotoReviewModel`);
 // the next shot read only once that review is closed; a shot with no outline coming in whole; the receipts'
-// choices; the ID card taken from shots as the step's sides, in memory only (no spool, no history, no file);
+// choices; a Document or Photo shot going by Items in frame, and a slip measured as a receipt roll; the ID
+// card taken from shots as the step's sides, in memory only (no spool, no history, no file);
 // the guide frame, its prompts and the glare line; the launch option of the photos UI test. The object
 // search is a stand-in where a test needs known outlines.
 
@@ -107,6 +108,18 @@ private func printsPDF(_ count: Int) throws -> Data {
 private func fixedObjects(_ quads: [Quad], for kind: CaptureKind) -> @Sendable (RgbaImage, CaptureKind) -> [Quad] {
     return { (_: RgbaImage, asked: CaptureKind) -> [Quad] in
         asked == kind ? quads : []
+    }
+}
+
+/// A long slip at the right of the same photo, 96 × 408 px (3.6 % of it).
+private let slip = Quad(topLeft: CGPoint(x: 1090, y: 40), topRight: CGPoint(x: 1186, y: 40),
+                        bottomRight: CGPoint(x: 1186, y: 448), bottomLeft: CGPoint(x: 1090, y: 448))
+
+/// A page search that finds `corners` clearly.
+private func clearPage(_ corners: Quad) -> @Sendable (RgbaImage) -> IOSFoundPage {
+    let found = IOSFoundPage(corners: corners, reason: PhotoReviewReason.none, byModel: false)
+    return { (_: RgbaImage) -> IOSFoundPage in
+        found
     }
 }
 
@@ -412,6 +425,155 @@ final class IOSObjectsTests: XCTestCase {
         review.cancel()
         XCTAssertFalse(state.showPhotoReview)
         XCTAssertEqual(state.statusMessage, "Receipts discarded.")
+    }
+
+    // MARK: Items in frame
+
+    private func itemsDefaults(_ items: IOSItemsInFrame) throws -> UserDefaults {
+        let defaults: UserDefaults = try XCTUnwrap(UserDefaults(suiteName: "IOSObjectsTests-\(UUID().uuidString)"))
+        defaults.set(items.rawValue, forKey: IOSShell.itemsInFrameKey)
+        return defaults
+    }
+
+    @MainActor
+    func test_aDocumentShotOfTwoPages_comesInAsTwoPages_onAuto_aSlipAtARollsWidth() async throws {
+        let state: AppState = makeState(.document)
+        let defaults: UserDefaults = try itemsDefaults(.auto)
+        let importer = IOSImportSession(state: state, finder: clearPage(printB),
+                                        objectFinder: fixedObjects([printA, slip], for: .receipt), defaults: defaults)
+        let shot = IOSCameraShot(data: png(printsOnTable()), liveOutline: nil)
+        let outcome: IOSImportOutcome = await importer.importShot(shot)
+        XCTAssertEqual(outcome.added, 2)
+        XCTAssertEqual(outcome.problems, [])
+        // No corner editor and no review: both go into the queue, cut along their outlines.
+        XCTAssertNil(importer.cornerRequest)
+        try await ImportTestSupport.waitUntil(timeout: 60) { !state.isBusy }
+        XCTAssertFalse(state.showPhotoReview)
+        defer { state.deleteSpoolFiles(of: state.scannedPages) }
+        XCTAssertEqual(state.scannedPages.count, 2)
+        guard state.scannedPages.count == 2 else { return }
+        let sheet: CaptureFacts = try XCTUnwrap(state.scannedPages[0].capture)
+        XCTAssertEqual(sheet.quad, printA)
+        XCTAssertEqual(sheet.kind, .document)
+        let roll: CaptureFacts = try XCTUnwrap(state.scannedPages[1].capture)
+        XCTAssertEqual(roll.quad, slip)
+        XCTAssertEqual(roll.kind, .receipt)
+        XCTAssertEqual(roll.scale?.size, "receipt80mm")
+        // The Document's own choices: nothing of the receipts' grey Compact PDF.
+        XCTAssertEqual(state.settings.task, .document)
+        XCTAssertEqual(state.settings.colorMode, .color)
+        XCTAssertEqual(state.settings.output.pdfSize, .standard)
+    }
+
+    @MainActor
+    func test_aDocumentShot_onOne_orWithOnePageFound_isThePageAsBefore() async throws {
+        let state: AppState = makeState(.document)
+        let data: Data = png(printsOnTable())
+        let onOne: UserDefaults = try itemsDefaults(.one)
+        let one = IOSImportSession(state: state, finder: clearPage(printB),
+                                   objectFinder: fixedObjects([printA, slip], for: .receipt), defaults: onOne)
+        let first: IOSImportOutcome = await one.importShot(IOSCameraShot(data: data, liveOutline: nil),
+                                                           asksOnlyWhenUnsure: true)
+        XCTAssertEqual(first.added, 1)
+        let onAuto: UserDefaults = try itemsDefaults(.auto)
+        let auto = IOSImportSession(state: state, finder: clearPage(printB),
+                                    objectFinder: fixedObjects([printA], for: .receipt), defaults: onAuto)
+        let second: IOSImportOutcome = await auto.importShot(IOSCameraShot(data: data, liveOutline: nil),
+                                                             asksOnlyWhenUnsure: true)
+        XCTAssertEqual(second.added, 1)
+        try await ImportTestSupport.waitUntil(timeout: 60) { !state.isBusy }
+        defer { state.deleteSpoolFiles(of: state.scannedPages) }
+        // Each the page the page finder found, not the loose ones.
+        XCTAssertEqual(state.scannedPages.map { (page: ScannedPage) -> Quad? in page.capture?.quad }, [printB, printB])
+    }
+
+    @MainActor
+    func test_aDocumentShot_onAuto_aSheetAndAPhone_staysOnePage() async throws {
+        let state: AppState = makeState(.document)
+        let defaults: UserDefaults = try itemsDefaults(.auto)
+        // A phone beside the sheet, 120 × 180 px: 2 % of the photo.
+        let phone = Quad(topLeft: CGPoint(x: 800, y: 100), topRight: CGPoint(x: 920, y: 100),
+                         bottomRight: CGPoint(x: 920, y: 280), bottomLeft: CGPoint(x: 800, y: 280))
+        let importer = IOSImportSession(state: state, finder: clearPage(printA),
+                                        objectFinder: fixedObjects([printA, phone], for: .receipt), defaults: defaults)
+        let outcome: IOSImportOutcome = await importer.importShot(IOSCameraShot(data: png(printsOnTable()), liveOutline: nil),
+                                                                  asksOnlyWhenUnsure: true)
+        XCTAssertEqual(outcome.added, 1)
+        XCTAssertNil(importer.cornerRequest)
+        try await ImportTestSupport.waitUntil(timeout: 60) { !state.isBusy }
+        defer { state.deleteSpoolFiles(of: state.scannedPages) }
+        XCTAssertEqual(state.scannedPages.map { (page: ScannedPage) -> Quad? in page.capture?.quad }, [printA])
+        XCTAssertEqual(state.scannedPages.first?.capture?.kind, .document)
+    }
+
+    @MainActor
+    func test_aDocumentShot_onAuto_printsOnAPageFoundClearly_areThatPage() async throws {
+        let state: AppState = makeState(.document)
+        let defaults: UserDefaults = try itemsDefaults(.auto)
+        let sheet = Quad(topLeft: CGPoint(x: 100, y: 100), topRight: CGPoint(x: 1100, y: 100),
+                         bottomRight: CGPoint(x: 1100, y: 800), bottomLeft: CGPoint(x: 100, y: 800))
+        let importer = IOSImportSession(state: state, finder: clearPage(sheet),
+                                        objectFinder: fixedObjects([printA, printB], for: .receipt), defaults: defaults)
+        let outcome: IOSImportOutcome = await importer.importShot(IOSCameraShot(data: png(printsOnTable()), liveOutline: nil),
+                                                                  asksOnlyWhenUnsure: true)
+        XCTAssertEqual(outcome.added, 1)
+        try await ImportTestSupport.waitUntil(timeout: 60) { !state.isBusy }
+        defer { state.deleteSpoolFiles(of: state.scannedPages) }
+        XCTAssertEqual(state.scannedPages.map { (page: ScannedPage) -> Quad? in page.capture?.quad }, [sheet])
+    }
+
+    @MainActor
+    func test_aDocumentShot_onSeveral_takesEvenOneLoosePage_withoutTheEditor() async throws {
+        let state: AppState = makeState(.document)
+        let defaults: UserDefaults = try itemsDefaults(.several)
+        let importer = IOSImportSession(state: state, finder: noPage, objectFinder: fixedObjects([slip], for: .receipt),
+                                        defaults: defaults)
+        let outcome: IOSImportOutcome = await importer.importShot(IOSCameraShot(data: png(printsOnTable()), liveOutline: nil))
+        XCTAssertEqual(outcome.added, 1)
+        XCTAssertNil(importer.cornerRequest)
+        try await ImportTestSupport.waitUntil(timeout: 60) { !state.isBusy }
+        defer { state.deleteSpoolFiles(of: state.scannedPages) }
+        XCTAssertEqual(state.scannedPages.first?.capture?.quad, slip)
+    }
+
+    @MainActor
+    func test_aPhotoShot_onOne_keepsTheLargestPrint() async throws {
+        let state: AppState = makeState(.photos)
+        let defaults: UserDefaults = try itemsDefaults(.one)
+        let importer = IOSImportSession(state: state, finder: noPage, objectFinder: fixedObjects([printB, printA], for: .photo),
+                                        defaults: defaults)
+        let outcome: IOSImportOutcome = await importer.importShot(IOSCameraShot(data: png(printsOnTable()), liveOutline: nil))
+        XCTAssertEqual(outcome.added, 1)
+        try await ImportTestSupport.waitUntil(timeout: 60) { state.showPhotoReview && !state.isBusy }
+        XCTAssertEqual(state.detectedPhotos.count, 1)
+        XCTAssertEqual(state.detectedPhotos.first?.image.width, 450)
+        state.cancelPhotoReview()
+    }
+
+    func test_aDocumentPage_snapsToARollByItsShape_fromTwoPointTwoTimesAsLongAsWide() {
+        func rect(_ width: Double, _ height: Double) -> Quad {
+            let x: Double = 600 - width / 2
+            let y: Double = 450 - height / 2
+            return Quad(topLeft: CGPoint(x: x, y: y), topRight: CGPoint(x: x + width, y: y),
+                        bottomRight: CGPoint(x: x + width, y: y + height), bottomLeft: CGPoint(x: x, y: y + height))
+        }
+        let sheets: [(Quad, String)] = [(rect(420, 594), "a4"), (rect(432, 559), "letter"), (rect(432, 711), "legal")]
+        for (quad, size) in sheets {
+            let kind: CaptureKind = IOSImportSession.documentKind(quad, width: 1200, height: 900, focalLength: nil)
+            XCTAssertEqual(kind, .document, size)
+            XCTAssertEqual(CaptureScale.measure(quad, imageWidth: 1200, imageHeight: 900, kind: kind).size, size)
+        }
+        // Legal read at a slight angle, longer than it is, and a DL envelope: still pages.
+        for quad in [rect(400, 700), rect(330, 660)] {
+            XCTAssertEqual(IOSImportSession.documentKind(quad, width: 1200, height: 900, focalLength: nil), .document)
+        }
+        // Slips three and four times as long as wide: the 80 mm roll, the first, as the two widths cannot be
+        // told apart by shape.
+        for quad in [rect(240, 720), rect(171, 684)] {
+            let kind: CaptureKind = IOSImportSession.documentKind(quad, width: 1200, height: 900, focalLength: nil)
+            XCTAssertEqual(kind, .receipt)
+            XCTAssertEqual(CaptureScale.measure(quad, imageWidth: 1200, imageHeight: 900, kind: kind).size, "receipt80mm")
+        }
     }
 
     // MARK: The ID card

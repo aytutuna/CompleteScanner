@@ -115,7 +115,7 @@ struct KindsRow: View {
         return Button {
             onKind(kind)
         } label: {
-            Text(kind.title)
+            Text(kind.cameraTitle)
                 .textCase(.uppercase)
                 .font(.footnote.weight(.semibold))
                 .tracking(0.8)
@@ -133,7 +133,7 @@ struct KindsRow: View {
         }
         .disabled(!available || busy)
         .opacity(available ? 1 : 0.5)
-        .accessibilityLabel(Text(kind.title))
+        .accessibilityLabel(Text(kind.cameraTitle))
         .accessibilityAddTraits(tile.isCurrent ? AccessibilityTraits.isSelected : [])
         .accessibilityHint(Text(hint))
         .accessibilityIdentifier("kinds.\(kind.rawValue)")
@@ -267,8 +267,8 @@ enum CameraDrawerGroup: String, Identifiable, CaseIterable {
 /// Also .txt where they apply, and More… for the whole Export sheet (separator sheets, After saving).
 /// Colour: the filter new pages get, or the colour mode for the kinds that collect no pages (and Restore
 /// faded colours for Photos). Quality: the PDF's size. Flash: the camera's light (its torch), where it has
-/// one. Camera: the automatic shutter, Both sides and how the sides or a book's pages are taken, and Use
-/// Apple's scanner where the task offers it.
+/// one. Camera: the automatic shutter, Both sides and how the sides or a book's pages are taken, Items in
+/// frame for Photo and Document, and Use Apple's scanner where the task offers it.
 struct CameraDrawer: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -354,6 +354,9 @@ struct CameraDrawer: View {
                 BothSidesToggle()
             }
             TaskWayPicker()
+            if IOSShell.offersItemsInFrame(state.settings) {
+                ItemsInFramePicker()
+            }
             if IOSShell.offersCamera(state.activeTask) {
                 AppleScannerRow(scanner: scanner, onScanner: onAppleScanner)
             }
@@ -388,6 +391,31 @@ struct CameraDrawer: View {
             set: { (on: Bool) in
                 shown.setAutoShutter(on)
             })
+    }
+}
+
+/// The drawer's Items in frame, kept in the user's defaults (`IOSShell.itemsInFrameKey`) where the import of
+/// the next shot reads it, with the line that says what Auto does.
+private struct ItemsInFramePicker: View {
+    @AppStorage(IOSShell.itemsInFrameKey) private var items: IOSItemsInFrame = .auto
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(IOSCameraText.itemsInFrameLabel)
+                Spacer()
+                Picker(IOSCameraText.itemsInFrameLabel, selection: $items) {
+                    ForEach(IOSItemsInFrame.allCases) { (choice: IOSItemsInFrame) in
+                        Text(choice.title).tag(choice)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("camera.itemsInFrame")
+            }
+            Text(IOSCameraText.itemsInFrameHint)
+                .font(.caption)
+                .foregroundStyle(Color.secondary)
+        }
     }
 }
 
