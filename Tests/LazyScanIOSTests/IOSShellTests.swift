@@ -202,6 +202,27 @@ final class IOSShellTests: XCTestCase {
         XCTAssertNil(IOSShell.printerScanner(.printer, scanner: "escl:x", selected: nil, devices: []))
     }
 
+    func test_noScannerLine_saysWhereTheSearchIs_orThatNoneIsInUse() {
+        XCTAssertEqual(IOSShell.noScannerLine(explained: false, denied: false, searching: true, found: false),
+                       IOSNetworkText.explanationTitle)
+        XCTAssertEqual(IOSShell.noScannerLine(explained: true, denied: true, searching: true, found: false),
+                       IOSNetworkText.deniedLine)
+        XCTAssertEqual(IOSShell.noScannerLine(explained: true, denied: false, searching: true, found: false),
+                       IOSNetworkText.searching)
+        XCTAssertEqual(IOSShell.noScannerLine(explained: true, denied: false, searching: false, found: false),
+                       IOSNetworkText.noScanner)
+        // Scanners listed, none picked yet or the one picked not among them: not "No scanner found".
+        XCTAssertEqual(IOSShell.noScannerLine(explained: true, denied: false, searching: false, found: true),
+                       IOSShell.noScannerInUse)
+        XCTAssertEqual(IOSShell.noScannerLine(explained: true, denied: true, searching: false, found: true),
+                       IOSNetworkText.deniedLine)
+        // The status line says the same, within its six words.
+        for line in [IOSNetworkText.explanationTitle, IOSNetworkText.deniedLine, IOSNetworkText.searching,
+                     IOSNetworkText.noScanner, IOSShell.noScannerInUse] {
+            XCTAssertLessThanOrEqual(StatusLine.words(line), StatusLine.maxWords, line)
+        }
+    }
+
     func test_migratedScanner_takesTheOldSourcesScanner_once() throws {
         let name: String = "migration.\(UUID().uuidString)"
         let defaults: UserDefaults = try XCTUnwrap(UserDefaults(suiteName: name))

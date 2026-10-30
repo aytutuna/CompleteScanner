@@ -27,8 +27,9 @@ enum ScanCover: String, Identifiable {
 /// the printer screen: the kinds as chips in its top row with the camera at their end (`mode.camera`,
 /// back to camera mode, which selects no scanner so none of its limits apply to the camera), the step
 /// card only while a step needs it (`IOSShell.showsStepCard`, in the step's own words, which speak of the
-/// scanner), the flatbed preview or the last scan, then a row for each option group that applies, which
-/// opens it as a sheet (`ScanOptionGroup`): Scanner (the scanners, "No scanner found", Add by address and
+/// scanner; while no scanner is in use, a card in its place saying what is missing, `noScannerCard`), the
+/// flatbed preview or the last scan, then a row for each option group that applies, which opens it as a
+/// sheet (`ScanOptionGroup`): Scanner (the scanners, "No scanner found", Add by address and
 /// Troubleshoot, then the scanner's Source, Sides, Resolution, Color and the flatbed's Preview; the row
 /// reads the scanner and its source, or "No scanner"), Book, Photos (Restore faded colours) and Export (the
 /// format, Separate documents, One PDF per page, the PDF's choices, After saving), and last the library
@@ -157,10 +158,10 @@ struct ScanScreen: View {
                     .frame(width: 320)
                     .accessibilityIdentifier("scanners.sidebar")
                 Divider()
-                mainColumn
+                printerColumn
             }
         } else {
-            mainColumn
+            printerColumn
         }
     }
 
@@ -271,6 +272,19 @@ struct ScanScreen: View {
         mode == .camera
     }
 
+    /// The printer screen's column, drawn again as the network scanners' search goes on, since the picker's
+    /// flags are not published: with no scanner in use its card and status line say where the search is.
+    @ViewBuilder
+    private var printerColumn: some View {
+        if let network = picker.network {
+            NetworkObserving(network: network) {
+                mainColumn
+            }
+        } else {
+            mainColumn
+        }
+    }
+
     private var mainColumn: some View {
         VStack(spacing: 0) {
             if !pickerInSidebar {
@@ -278,7 +292,11 @@ struct ScanScreen: View {
             }
             List {
                 Section {
-                    stepCard
+                    if printerNeedsScanner {
+                        noScannerCard
+                    } else {
+                        stepCard
+                    }
                     if CameraTaskButtons.showsAny(state) {
                         CameraTaskButtons()
                     }
@@ -998,6 +1016,15 @@ struct ScanScreen: View {
         }
     }
 
+    /// The flatbed's overview, once the Scanner options have closed: its progress and Cancel at the bottom
+    /// are in view while it runs, and it lands in the preview above.
+    private func previewFlatbed() {
+        let appState: AppState = state
+        afterOptions {
+            appState.performOverview()
+        }
+    }
+
     /// The current step's one-line prompt, with its fuller help below (as printer mode says it,
     /// `IOSShell.printerStep`, or the camera's line in its place, `IOSShell.cameraLine`); the back of an ID
     /// card offers "No back side".
@@ -1042,6 +1069,58 @@ struct ScanScreen: View {
                             printer: mode == .printer)
     }
 
+    /// Printer mode with no scanner in use (none picked, or the one picked not found yet): Scan is dimmed. A
+    /// scanner whose entry dropped from the list keeps its session while a scan runs, a review is open or a
+    /// side of an ID card is held (`AppState.autoSwitchMustWait`), and the step card stays with it.
+    private var printerNeedsScanner: Bool {
+        mode == .printer && sourceDevice == nil && state.capabilities == nil
+    }
+
+    private var noScannerLine: String {
+        IOSShell.noScannerLine(explained: !picker.showsExplanation, denied: picker.showsDenied,
+                               searching: picker.showsSearching, found: state.hasRealDevices)
+    }
+
+    /// In the step card's place while no scanner is in use: where the search is, with Pick a scanner (the
+    /// Scanner options; not where the scanners are listed beside the screen) and Troubleshoot (the root's,
+    /// since the picker's is a sheet of the options), which as in the picker waits until the card about the
+    /// local network is read. An ID card whose front the camera took still offers "No back side" here, as the
+    /// step card does.
+    private var noScannerCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(noScannerLine)
+                .font(.body)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("scanner.none")
+            HStack(spacing: 12) {
+                if !pickerBeside {
+                    Button(IOSShell.pickScannerLabel) {
+                        openGroup = .scanner
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(importer.isImporting)
+                    .accessibilityIdentifier("scanner.pick")
+                }
+                if !picker.showsExplanation {
+                    Button(IOSNetworkText.troubleshoot) {
+                        openTroubleshooter()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(importer.isImporting)
+                    .accessibilityIdentifier("scanner.troubleshoot")
+                }
+            }
+            if state.canSkipStep {
+                Button(IdCardSteps.skipBackLabel) {
+                    state.skipStep()
+                }
+                .buttonStyle(.bordered)
+                .disabled(state.isBusy)
+                .accessibilityIdentifier("step.skip")
+            }
+        }
+    }
+
     /// The scanner named, with how it is reached, where the list beside the screen picks it.
     private var sourceRow: some View {
         let name: String = sourceDevice?.name ?? IOSNetworkText.noScannerPicked
@@ -1078,14 +1157,15 @@ struct ScanScreen: View {
         return nil
     }
 
-    /// Preview (the flatbed's overview) while the flatbed is used, Choose area once there is one (the
-    /// preview full screen, `CropScreen`), and Clear selection once an area is chosen.
+    /// Preview (the flatbed's overview, run once the sheet has closed, `previewFlatbed`) while the flatbed
+    /// is used, Choose area once there is one (the preview full screen, `CropScreen`), and Clear selection
+    /// once an area is chosen.
     @ViewBuilder
     private var previewControls: some View {
         if usesFlatbed {
             HStack(spacing: 12) {
                 Button {
-                    state.performOverview()
+                    previewFlatbed()
                 } label: {
                     Label("Preview", systemImage: "eye")
                 }
@@ -1279,7 +1359,7 @@ struct ScanScreen: View {
             .font(.footnote)
             .foregroundStyle(Color.secondary)
             .lineLimit(2)
-            .accessibilityLabel(Text(state.statusMessage))
+            .accessibilityLabel(Text(statusSentence))
             .accessibilityIdentifier("status.line")
         if !state.lastSavedURLs.isEmpty && !state.isBusy {
             SavedFilesRow()
@@ -1459,7 +1539,14 @@ struct ScanScreen: View {
         let selected: String? = state.selectedDeviceID
         let device: String? = state.devices.first(where: { (info: ScannerInfo) -> Bool in info.id == selected })?.name
         let savedShown: Bool = idle && !state.lastSavedURLs.isEmpty
-        return StatusLine.shown(state.statusMessage, deviceName: device, reviewShown: false, savedShown: savedShown)
+        return StatusLine.shown(statusSentence, deviceName: device, reviewShown: false, savedShown: savedShown)
+    }
+
+    /// The status, or while no scanner is in use and nothing runs, where the search is (as the card says it)
+    /// in place of the "Ready" or the camera's status left from before.
+    private var statusSentence: String {
+        guard printerNeedsScanner, !state.isBusy, !importer.isImporting else { return state.statusMessage }
+        return noScannerLine
     }
 }
 

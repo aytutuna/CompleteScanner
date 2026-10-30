@@ -372,6 +372,23 @@ public enum IOSShell {
         return listedScanner(scanner, devices: devices, groups: groups)
     }
 
+    /// What printer mode says while no scanner is in use, on the card in the step card's place and on the
+    /// status line: where the search is, as the Scanner options show it (the explanation card's title before
+    /// the first search, Local Network access being off, "Looking for scanners…", "No scanner found"), or,
+    /// with scanners listed (`found`: none picked yet, or the one picked not among them), that none is in use.
+    public static func noScannerLine(explained: Bool, denied: Bool, searching: Bool, found: Bool) -> String {
+        if !explained { return IOSNetworkText.explanationTitle }
+        if denied { return IOSNetworkText.deniedLine }
+        if found { return noScannerInUse }
+        if searching { return IOSNetworkText.searching }
+        return IOSNetworkText.noScanner
+    }
+
+    /// Printer mode's line while scanners are listed and none is in use, and its card's way to the Scanner
+    /// options.
+    public static let noScannerInUse = "No scanner is in use."
+    public static let pickScannerLabel = "Pick a scanner"
+
     /// Whether our camera takes page after page (continuous capture): the task collects several pages in
     /// the queue, or takes the ID card's front then its back, so the camera stays open after each photo
     /// and the corner editor opens only for a page (or card) its photo's own search is unsure of.
