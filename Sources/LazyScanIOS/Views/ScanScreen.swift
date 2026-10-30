@@ -624,8 +624,8 @@ struct ScanScreen: View {
         state.userSelectNoDevice()
     }
 
-    /// Keep pages as they are: what the stack's own buttons would do before its steps end. Keep Fronts Only
-    /// while no back is in, Combine Anyway once some are; fronts still being scanned stay as they are.
+    /// Keep pages as they are: what the stack's own buttons would do before its steps end. Keep fronts only
+    /// while no back is in, Combine anyway once some are; fronts still being scanned stay as they are.
     private func settleStack() {
         if state.canScanMoreFronts {
             state.keepFrontsOnly()
@@ -1859,7 +1859,7 @@ struct TurnedOverButtons: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 if state.canFinishFronts {
-                    Button("Done with Fronts") {
+                    Button("Done with fronts") {
                         state.finishFronts()
                     }
                     .buttonStyle(.borderedProminent)
@@ -1867,13 +1867,13 @@ struct TurnedOverButtons: View {
                     .accessibilityIdentifier("sides.doneWithFronts")
                 }
                 if state.awaitingBacks && state.sidesMismatch != nil {
-                    Button("Combine Anyway") {
+                    Button(CameraTaskCatalog.combineLabel) {
                         state.combineSidesAnyway()
                     }
                     .buttonStyle(.bordered)
                     .accessibilityHint(Text("Puts the pages in order as they are; the extra pages go at the end"))
                     .accessibilityIdentifier("sides.combine")
-                    Button("Scan Back Sides Again") {
+                    Button("Scan backs again") {
                         state.scanBacksAgain()
                     }
                     .buttonStyle(.bordered)
@@ -1881,7 +1881,7 @@ struct TurnedOverButtons: View {
                     .accessibilityIdentifier("sides.backsAgain")
                 }
                 if state.canScanMoreFronts {
-                    Button("Scan More Fronts") {
+                    Button("Scan more fronts") {
                         state.scanMoreFronts()
                     }
                     .buttonStyle(.bordered)
@@ -1889,7 +1889,7 @@ struct TurnedOverButtons: View {
                     .accessibilityIdentifier("sides.moreFronts")
                 }
                 if state.awaitingBacks {
-                    Button("Keep Fronts Only") {
+                    Button("Keep fronts only") {
                         state.keepFrontsOnly()
                     }
                     .buttonStyle(.bordered)

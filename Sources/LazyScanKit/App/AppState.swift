@@ -1957,9 +1957,12 @@ public final class AppState: ObservableObject {
         }
     }
 
-    /// What to do while the fronts are scanned a part at a time.
-    private static let moreFrontsPrompt =
-        "Load the sheets not scanned yet and scan more fronts; once every front is scanned, choose Done with Fronts."
+    /// What to do while the fronts are scanned a part at a time. The phone's button is in sentence case,
+    /// the Mac's in Title Case.
+    private var moreFrontsPrompt: String {
+        let done: String = platform == .ios ? "Done with fronts" : "Done with Fronts"
+        return "Load the sheets not scanned yet and scan more fronts; once every front is scanned, choose \(done)."
+    }
 
     /// After a scan of a stack turned over by hand: the fronts move the steps on to the backs,
     /// unless the feeder stopped early (`stopped`, a jam): then the steps stay at the fronts so the
@@ -1970,7 +1973,7 @@ public final class AppState: ObservableObject {
         guard taskFlow != nil else { return }
         if side == .front {
             if stopped {
-                statusMessage = "Scanned \(count) front side\(count == 1 ? "" : "s") before the feeder stopped. \(Self.moreFrontsPrompt)"
+                statusMessage = "Scanned \(count) front side\(count == 1 ? "" : "s") before the feeder stopped. \(moreFrontsPrompt)"
                 return
             }
             taskFlow?.advance()
@@ -1998,7 +2001,7 @@ public final class AppState: ObservableObject {
         }
         taskFlow = flow
         sidesMismatch = nil
-        statusMessage = Self.moreFrontsPrompt
+        statusMessage = moreFrontsPrompt
     }
 
     /// How many captures of a step are still in the queue.

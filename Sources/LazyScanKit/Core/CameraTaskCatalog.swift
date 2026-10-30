@@ -20,7 +20,7 @@ public struct CameraStepText: Equatable, Sendable {
 public enum CameraTaskCatalog {
     /// Flip & capture: after each front, its back.
     public static let turnOverPrompt = "Turn the sheet over and take its back."
-    public static let turnOverHelp = "No back skips an empty back. Then take the next sheet's front."
+    public static let turnOverHelp = "No back side skips an empty back. Then take the next sheet's front."
     /// Flip & capture, once a sheet's back is in or skipped.
     public static let nextFrontPrompt = "Take the next sheet's front."
     /// Fronts first, once every front is in.
@@ -29,7 +29,7 @@ public enum CameraTaskCatalog {
     /// The batch's next page starts a new document.
     public static let newDocumentPrompt = "The next page starts a new document."
 
-    public static let noBackLabel = "No back"
+    public static let noBackLabel = "No back side"
     public static let startBacksLabel = "Now the backs"
     public static let putInOrderLabel = "Put in order"
     public static let combineLabel = "Combine anyway"

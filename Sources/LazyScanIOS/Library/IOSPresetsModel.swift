@@ -20,8 +20,8 @@ public enum IOSPresetText {
     public static let discardLabel = "Discard"
 }
 
-/// A preset as the list shows it: its name, the task it brings back with that task's icon, and the
-/// settings' one-line summary (`TaskCatalog.summary`), as the Mac's preset tiles show them.
+/// A preset as the list shows it: its name, the kind it brings back with the kind's icon, as the kind tiles
+/// show them, and the settings' one-line summary (`TaskCatalog.summary`).
 public struct IOSPresetRow: Identifiable, Equatable {
     public let id: UUID
     public let name: String
@@ -30,18 +30,17 @@ public struct IOSPresetRow: Identifiable, Equatable {
     public let symbol: String
 
     public init(preset: Preset) {
-        let task: ScanTask = TaskCatalog.infer(preset.settings)
-        let definition: TaskDefinition = TaskCatalog.definition(task)
+        let kind: IOSScanKind = IOSShell.shownKind(preset.settings)
         self.id = preset.id
         self.name = preset.name
-        self.taskTitle = definition.title
+        self.taskTitle = kind.title
         self.summary = TaskCatalog.summary(preset.settings)
-        self.symbol = IOSShell.systemImage(definition.iconKey)
+        self.symbol = kind.symbol
     }
 
     /// "Invoices preset", as VoiceOver reads the row.
     public var accessibilityLabel: String { "\(name) preset" }
-    /// "Preset for Document to PDF. 300 dpi · Color · PDF."
+    /// "Preset for Document. 300 dpi · Color · PDF."
     public var accessibilityHint: String { "Preset for \(taskTitle). \(summary)." }
 }
 

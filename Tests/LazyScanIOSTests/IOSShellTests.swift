@@ -585,6 +585,13 @@ final class IOSShellTests: XCTestCase {
         XCTAssertTrue(state.canScanMoreFronts)
         XCTAssertTrue(TurnedOverButtons.showsAny(state))
 
+        // The status line names the button as the phone writes it.
+        state.scanMoreFronts()
+        XCTAssertTrue(state.statusMessage.hasSuffix("choose Done with fronts."), state.statusMessage)
+        XCTAssertTrue(state.canFinishFronts)
+        state.finishFronts()
+        XCTAssertTrue(state.awaitingBacks)
+
         state.keepFrontsOnly()
         XCTAssertFalse(state.awaitingBacks)
         XCTAssertFalse(TurnedOverButtons.showsAny(state))

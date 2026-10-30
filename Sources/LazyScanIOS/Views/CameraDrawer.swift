@@ -224,7 +224,7 @@ enum CameraDrawerGroup: String, Identifiable, CaseIterable {
     var title: String {
         switch self {
         case .export: return "Export"
-        case .colour: return "Colour"
+        case .colour: return "Color"
         case .quality: return "Quality"
         case .flash: return IOSCameraText.flashLabel
         case .camera: return IOSImportText.cameraLabel
@@ -550,7 +550,7 @@ private struct ColourDrawer: View {
                 .accessibilityIdentifier("drawer.restore")
             }
             if IOSShell.offersFilters(state.settings) {
-                Picker("Colour", selection: filter) {
+                Picker("Color", selection: filter) {
                     ForEach(CaptureFilter.displayOrder, id: \.self) { (choice: CaptureFilter) in
                         Text(choice.label).tag(choice)
                     }
@@ -558,7 +558,7 @@ private struct ColourDrawer: View {
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("drawer.colourMode")
             } else {
-                Picker("Colour", selection: $state.settings.colorMode) {
+                Picker("Color", selection: $state.settings.colorMode) {
                     ForEach(ColorMode.allCases) { (mode: ColorMode) in
                         Text(mode.label).tag(mode)
                     }

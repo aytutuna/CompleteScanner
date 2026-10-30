@@ -54,7 +54,7 @@ extension AppState {
         guard !isBusy, var sides = cameraSides, sides.canSkipBack else { return }
         sides.skipBack()
         cameraSides = sides
-        statusMessage = "No back. Next sheet."
+        statusMessage = "No back side. Next sheet."
     }
 
     /// Fronts first: every front is in, the backs come next.

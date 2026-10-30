@@ -328,6 +328,9 @@ final class IOSSettingsTests: XCTestCase {
         let model: IOSNamingModel = IOSNamingModel(state: state)
         XCTAssertEqual(model.text, state.settings.namingTemplate)
         XCTAssertEqual(model.parts.count, 7)
+        // The phone has no page strip to name a document in: its name comes from a QR sheet.
+        let documentName: NamingToken? = model.parts.first(where: { (part: NamingToken) -> Bool in part.token == "{label}" })
+        XCTAssertEqual(documentName?.help, "The document\u{2019}s name from its QR sheet")
         XCTAssertNil(model.problem)
 
         model.setText("Invoice {date}")

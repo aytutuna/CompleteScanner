@@ -195,6 +195,7 @@ final class CameraTaskTests: XCTestCase {
         for label in labels {
             XCTAssertLessThanOrEqual(wordCount(label), 3, label)
         }
+        XCTAssertEqual(CameraTaskCatalog.noBackLabel, IdCardSteps.skipBackLabel)
         XCTAssertLessThanOrEqual(wordCount(CameraTaskCatalog.separatorHint), 8)
         XCTAssertLessThanOrEqual(wordCount(CameraTaskCatalog.spreadsWithScannerNote), 25)
     }
@@ -360,6 +361,7 @@ final class CameraTaskTests: XCTestCase {
         // The next sheet has nothing on its back.
         try await bringIn(state, page)
         state.skipCameraBack()
+        XCTAssertEqual(state.statusMessage, "\(CameraTaskCatalog.noBackLabel). Next sheet.")
         XCTAssertEqual(state.cameraSides?.next, .front)
         try await bringIn(state, page)
         XCTAssertEqual(state.scannedPages.map(\.side), [.front, .back, .front, .front])

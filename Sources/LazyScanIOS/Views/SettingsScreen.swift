@@ -679,7 +679,7 @@ private struct SplitSettingsRows: View {
             }
         }
         .disabled(!collecting)
-        .accessibilityHint(Text(collecting ? mode.steps : mode.hint))
+        .accessibilityHint(Text(mode.hint))
         if collecting && !mode.caption.isEmpty {
             Text(mode.caption)
                 .font(.caption)

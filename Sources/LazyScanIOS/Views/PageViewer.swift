@@ -20,6 +20,7 @@ enum PageViewerText {
     static let textTitle = "Text on this page"
     static let readingText = "Reading the text\u{2026}"
     static let noText = "No text found on this page"
+    static let textFailed = "The text could not be read"
     static let copyLabel = "Copy"
     static let deleteLabel = "Delete"
     static let deleteAllLabel = "Delete All"
@@ -811,7 +812,7 @@ struct PageTextSheet: View {
     @ViewBuilder
     private var content: some View {
         if let problem {
-            ContentUnavailableView(PageViewerText.noText, systemImage: "exclamationmark.triangle",
+            ContentUnavailableView(PageViewerText.textFailed, systemImage: "exclamationmark.triangle",
                                    description: Text(problem))
         } else if let found {
             ScrollView {
@@ -853,7 +854,10 @@ struct PageTextSheet: View {
         } catch is CancellationError {
             return
         } catch {
-            problem = error.localizedDescription
+            // The Kit's message starts with the title: the description is the reason alone.
+            let lead: String = PageViewerText.textFailed + ": "
+            let message: String = error.localizedDescription
+            problem = message.hasPrefix(lead) ? String(message.dropFirst(lead.count)) : message
         }
     }
 

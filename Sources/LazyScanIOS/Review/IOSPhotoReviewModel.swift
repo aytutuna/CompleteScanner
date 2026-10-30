@@ -13,8 +13,8 @@ public enum IOSReviewText {
     public static let keepLabel = "Keep"
     public static let fixCropLabel = "Fix crop"
     public static let rotateLabel = "Rotate"
-    /// What the list of photos is for, for VoiceOver (the Windows review's help text).
-    public static let listHelp = "Untick a photo to leave it out, or fix its crop."
+    /// What the list of photos is for, for VoiceOver.
+    public static let listHelp = "Turn Keep off to leave a photo out, or fix its crop."
     /// The receipts' choices (the Mac's and Windows' Receipts section).
     public static let nameByDateLabel = "Name by receipt date"
     public static let combineLabel = "One PDF for all"

@@ -84,9 +84,9 @@ final class IOSLibraryTests: XCTestCase {
         let rows: [IOSPresetRow] = model.rows
         XCTAssertEqual(rows.count, 1)
         XCTAssertEqual(rows[0].name, "Receipts 600")
-        XCTAssertEqual(rows[0].taskTitle, TaskCatalog.definition(.receipt).title)
+        XCTAssertEqual(rows[0].taskTitle, IOSScanKind.receipts.title)
         XCTAssertEqual(rows[0].summary, TaskCatalog.summary(receipts))
-        XCTAssertEqual(rows[0].symbol, IOSShell.systemImage(TaskCatalog.definition(.receipt).iconKey))
+        XCTAssertEqual(rows[0].symbol, IOSScanKind.receipts.symbol)
         XCTAssertEqual(rows[0].accessibilityLabel, "Receipts 600 preset")
         let id: UUID = rows[0].id
 
@@ -125,6 +125,24 @@ final class IOSLibraryTests: XCTestCase {
         model.delete(id)
         XCTAssertTrue(model.rows.isEmpty)
         XCTAssertTrue(PresetStore(directory: folder).load().isEmpty)
+    }
+
+    @MainActor
+    func test_presetRows_areNamedByThePhonesKinds_notTheDesktopsTasks() {
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        let model: IOSPresetsModel = IOSPresetsModel(state: state, importer: IOSImportSession(state: state))
+        let base: ScanSettings = state.settings
+        let tasks: [ScanTask] = [.document, .twoSided, .email, .photoRestore, .quickScan]
+        for (index, task) in tasks.enumerated() {
+            state.settings = TaskCatalog.apply(task, to: base)
+            XCTAssertTrue(model.save(named: "Preset \(index)"))
+        }
+        let rows: [IOSPresetRow] = model.rows
+        XCTAssertEqual(rows.map(\.taskTitle), ["Document", "Document", "Document", "Photos", "Text"])
+        // An Email preset keeps the Document's icon, not an envelope.
+        let kinds: [IOSScanKind] = [.document, .document, .document, .photos, .text]
+        XCTAssertEqual(rows.map(\.symbol), kinds.map(\.symbol))
+        XCTAssertEqual(rows[1].accessibilityHint, "Preset for Document. \(rows[1].summary).")
     }
 
     @MainActor

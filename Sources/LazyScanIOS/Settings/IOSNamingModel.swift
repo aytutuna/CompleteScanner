@@ -21,7 +21,13 @@ public final class IOSNamingModel: ObservableObject {
         self.text = state.settings.namingTemplate
     }
 
-    public var parts: [NamingToken] { NamingTokens.all }
+    /// `NamingTokens.all`, but on the phone a document's name comes from its QR sheet, not the page strip.
+    public var parts: [NamingToken] {
+        NamingTokens.all.map { (part: NamingToken) -> NamingToken in
+            guard part.token == "{label}" else { return part }
+            return NamingToken(label: part.label, token: part.token, help: "The document\u{2019}s name from its QR sheet")
+        }
+    }
 
     /// What is wrong with the template typed; nil when it is fine.
     public var problem: String? { NamingTokens.problem(text) }

@@ -44,7 +44,7 @@ enum IOSPDFOptions {
     static let alsoSaveTextHint = "Saves the text in a .txt file next to the PDF"
 }
 
-/// The camera's buttons between shots for the task set up: No back (flip & capture, while a back is
+/// The camera's buttons between shots for the task set up: No back side (flip & capture, while a back is
 /// due), Now the backs and Put in order or Combine anyway (fronts first), and New document (Separate
 /// documents, the main button there; Command-N). Nothing for the other tasks. The printer screen (`printer`)
 /// has New document only: a scanned page never takes the camera's sides. `onDark` draws them over the
@@ -296,9 +296,9 @@ struct RestoreToggle: View {
     @EnvironmentObject private var importer: IOSImportSession
 
     var body: some View {
-        Toggle("Restore faded colours", isOn: restore)
+        Toggle("Restore faded colors", isOn: restore)
             .disabled(state.isBusy || importer.isImporting)
-            .accessibilityHint(Text("Brings back the colours of old prints"))
+            .accessibilityHint(Text("Brings back the colors of old prints"))
             .accessibilityIdentifier("options.restore")
     }
 

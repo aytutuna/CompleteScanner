@@ -278,7 +278,7 @@ layouts described below wait for a later version; on the iPhone it opens straigh
 whose viewfinder is the scan screen, with the last task used set up and what you scan (Photo, Document,
 ID card or Book; several receipts or prints laid on the table are split automatically) in a snapping row
 under it, a chevron that swaps that row for a drawer
-of options (export, colour, quality, flash, camera) and Save floating over the picture once there are
+of options (export, color, quality, flash, camera) and Save floating over the picture once there are
 pages; the pages taken stay when you switch between Document and Book, and any other kind asks first
 whether to save them or discard them; a printer button switches to printer mode, where one scanner is picked in the Scanner sheet and
 Scan sits beside Save, and a camera button switches back, the scanner kept for next time; Print… and
@@ -303,7 +303,7 @@ glass is; the ID card in a frame of the card's shape, front then back, laid out 
 page, kept in memory only (never written before Save, never in Photos, never read), with a one-line
 "Tilt to avoid glare" when a reflection hid part of it, and a Print button that prints both sides at
 real size over AirPrint (a ruler test page to check that is in Settings); two-sided documents taken as Flip & capture
-(each front, then its back, with No back for an empty one) or every front then every back, put in
+(each front, then its back, with No back side for an empty one) or every front then every back, put in
 order; Separate documents with a New document button between shots and separator sheets (patch code,
 or QR read with Vision) found on the pages, the sheet saved as a PDF to print; a book page by page or
 as whole spreads cut at the spine, split again by hand; Quick scan, from the camera or a scanner, with
