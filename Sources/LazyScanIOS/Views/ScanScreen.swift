@@ -952,6 +952,7 @@ struct ScanScreen: View {
 
     /// The split sheet for the spread the page was cut from, once its picture is read.
     private func openSpreadEditor(_ pageID: UUID) {
+        guard !state.isBusy else { return }
         let appState: AppState = state
         Task { @MainActor in
             spreadEditor = await appState.spreadEditor(for: pageID)

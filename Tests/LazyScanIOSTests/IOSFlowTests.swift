@@ -503,6 +503,16 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertEqual(PageStripView.spacing(columns: 6), 6)
     }
 
+    func test_pageGrid_keepsAPageLeftOut_skipsAPageKept_andOffersNeitherForAPlainPage() {
+        let pages: [ScannedPage] = [flowPage().withInclusion(.skip), flowPage().withInclusion(.keep), flowPage()]
+        let cells: [PageStripCell] = PageStripCell.cells(pages, options: DocumentOptions())
+        XCTAssertEqual(cells.map(\.toggle), ["Keep this page", "Skip this page", nil])
+        XCTAssertEqual(cells.map(\.excluded), [true, false, false])
+        XCTAssertEqual(cells.map(\.note), ["Skipped", nil, nil])
+        XCTAssertEqual(cells[0].toggleSymbol, "checkmark.rectangle")
+        XCTAssertEqual(cells[1].toggleSymbol, "rectangle.slash")
+    }
+
     func test_deletingAPageInTheViewer_showsTheNextOne_orTheOneBeforeTheLast() {
         let a = UUID(), b = UUID(), c = UUID()
         XCTAssertEqual(PageViewer.pageAfterRemoving(a, from: [a, b, c]), b)

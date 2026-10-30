@@ -4,8 +4,9 @@ import CoreGraphics
 import SwiftUI
 
 /// Splitting a book's spread again by hand, as on the Mac (`AppState.spreadEditor(for:)`): the spread as
-/// taken with the cut drawn across it, a slider that moves the cut, Split, and Keep as one page. The pages
-/// in the strip are replaced by the new ones (`AppState.splitSpread`, `joinSpread`).
+/// taken with the cut drawn across it, a slider that moves the cut, and Split (Split here for a spread cut in
+/// two already, which also has Keep as one page). Split and Keep as one page are off while the app is busy.
+/// The pages in the strip are replaced by the new ones (`AppState.splitSpread`, `joinSpread`).
 struct SpreadSplitSheet: View {
     @EnvironmentObject private var state: AppState
     let source: SpreadEditorSource
@@ -49,12 +50,15 @@ struct SpreadSplitSheet: View {
                     .accessibilityLabel(Text("Where the spread is cut"))
                     .accessibilityValue(Text("\(Int((fraction * 100).rounded())) percent"))
                     .accessibilityIdentifier("spread.cut")
-                Button("Keep as one page") {
-                    state.joinSpread(id: source.pageID)
-                    onClose()
+                if source.isSplit {
+                    Button("Keep as one page") {
+                        state.joinSpread(id: source.pageID)
+                        onClose()
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(state.isBusy)
+                    .accessibilityIdentifier("spread.keep")
                 }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("spread.keep")
             }
             .padding(16)
             .navigationTitle("Spread \(source.spreadNumber)")
@@ -66,14 +70,19 @@ struct SpreadSplitSheet: View {
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Split") {
+                    Button(splitLabel) {
                         state.splitSpread(id: source.pageID, axis: source.axis, fraction: fraction)
                         onClose()
                     }
+                    .disabled(state.isBusy)
                     .accessibilityIdentifier("spread.split")
                 }
             }
         }
+    }
+
+    private var splitLabel: String {
+        source.isSplit ? "Split here" : "Split"
     }
 
     /// Where a picture of `width` × `height` lies when fitted into `size`, centred.

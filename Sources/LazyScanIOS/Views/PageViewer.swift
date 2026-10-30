@@ -69,10 +69,12 @@ enum PageViewerText {
 }
 
 /// One page at a time over the whole screen, fitted whole within the safe area: pinch or double-tap to zoom,
-/// swipe to the next page, "3 of 7" over it and Done. Its toolbar shows the filters of a camera's page (a row
-/// of small pictures of this page with each, `AppState.filterPreviews`), turns it a quarter, opens the
-/// corner editor on its photo for Crop (`AppState.pageCropStart`, `recropPage`), shows the text on it
-/// (`PageTextSheet`), and deletes it once asked.
+/// swipe to the next page, "3 of 7" over it and Done, and the grid's note on a page saving leaves out (or
+/// may) on a badge in its corner. Its toolbar shows the filters of a camera's page (a row of small pictures
+/// of this page with each, `AppState.filterPreviews`), turns it a quarter, opens the corner editor on its
+/// photo for Crop (`AppState.pageCropStart`, `recropPage`), shows the text on it (`PageTextSheet`), keeps or
+/// skips it as the grid's menu does (`PageStripCell.toggle`), and deletes it once asked; the edits are off
+/// while the app is busy.
 /// Filters and Crop are left out for pages that cannot be cut again (`PageRecut.canRecut`): scans, imported
 /// PDFs, the pages of a book's spread taken whole.
 struct PageViewer: View {
@@ -220,6 +222,21 @@ struct PageViewer: View {
         current.map { (page: ScannedPage) -> Bool in PageRecut.canRecut(page) } ?? false
     }
 
+    /// The page shown as the grid has it, for its Keep or Skip.
+    private var currentCell: PageStripCell? {
+        let cells: [PageStripCell] = PageStripCell.cells(state.scannedPages, options: state.settings.document)
+        return cells.first(where: { (cell: PageStripCell) -> Bool in cell.id == selection })
+    }
+
+    /// Each page's note as the grid shows it ("Blank, skipped", "Separator"), by page.
+    private var pageNotes: [UUID: String] {
+        var notes: [UUID: String] = [:]
+        for cell in PageStripCell.cells(state.scannedPages, options: state.settings.document) {
+            notes[cell.id] = cell.note
+        }
+        return notes
+    }
+
     /// What `page` is read from for a sharper picture; nil for a page without a spool file, or one whose preview
     /// is as sharp as the view needs.
     private func sharpRead(of page: ScannedPage) -> SharpRead? {
@@ -308,9 +325,10 @@ struct PageViewer: View {
     // MARK: The pages
 
     private var pager: some View {
-        TabView(selection: $selection) {
+        let notes: [UUID: String] = pageNotes
+        return TabView(selection: $selection) {
             ForEach(state.scannedPages) { (page: ScannedPage) in
-                pageView(page)
+                pageView(page, note: notes[page.id])
                     .tag(Optional(page.id))
             }
         }
@@ -327,9 +345,10 @@ struct PageViewer: View {
         }
     }
 
-    private func pageView(_ page: ScannedPage) -> some View {
+    private func pageView(_ page: ScannedPage, note: String?) -> some View {
         let index: Int = state.scannedPages.firstIndex(where: { (item: ScannedPage) -> Bool in item.id == page.id }) ?? 0
         let label: String = PageViewerText.title(number: index + 1, count: state.scannedPages.count)
+        let spoken: String = note.map { (text: String) -> String in "Page \(label), \(text)" } ?? "Page \(label)"
         return ZoomablePage(image: shownImage(page))
             .overlay {
                 if state.recuttingPages.contains(page.id) {
@@ -337,8 +356,13 @@ struct PageViewer: View {
                         .controlSize(.large)
                 }
             }
+            .overlay(alignment: .topLeading) {
+                if let note {
+                    noteBadge(note)
+                }
+            }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text("Page \(label)"))
+            .accessibilityLabel(Text(spoken))
             .accessibilityAddTraits(.isImage)
             .accessibilityAction(named: Text("Next page")) {
                 step(by: 1)
@@ -347,6 +371,18 @@ struct PageViewer: View {
                 step(by: -1)
             }
             .accessibilityIdentifier("viewer.page.\(index + 1)")
+    }
+
+    /// The grid's note on the page, on a badge in the corner as the grid has it.
+    private func noteBadge(_ note: String) -> some View {
+        Text(note)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(Color.black.opacity(0.65)))
+            .padding(12)
+            .allowsHitTesting(false)
     }
 
     /// The page's preview, or its sharper picture once it is read as the page is now.
@@ -403,6 +439,8 @@ struct PageViewer: View {
 
     @ViewBuilder
     private var actions: some View {
+        // The queue's edits do nothing while an import, a scan or a save runs.
+        let blocked: Bool = state.isBusy || preparesCrop
         if canRecut {
             Button(action: toggleFilters) {
                 Label(PageViewerText.filtersLabel, systemImage: "camera.filters")
@@ -414,14 +452,14 @@ struct PageViewer: View {
         Button(action: rotateCurrent) {
             Label(PageViewerText.rotateLabel, systemImage: "rotate.right")
         }
-        .disabled(preparesCrop)
+        .disabled(blocked)
         .accessibilityIdentifier("viewer.rotate")
         Spacer()
         if canRecut {
             Button(action: openCrop) {
                 Label(PageViewerText.cropLabel, systemImage: "crop")
             }
-            .disabled(preparesCrop)
+            .disabled(blocked)
             .accessibilityIdentifier("viewer.crop")
             Spacer()
         }
@@ -431,9 +469,18 @@ struct PageViewer: View {
         .disabled(preparesCrop)
         .accessibilityIdentifier("viewer.text")
         Spacer()
+        if let cell = currentCell, let toggle = cell.toggle {
+            Button(action: toggleInclusion) {
+                Label(toggle, systemImage: cell.toggleSymbol)
+            }
+            .disabled(state.isBusy)
+            .accessibilityIdentifier("viewer.keep")
+            Spacer()
+        }
         Button(role: .destructive, action: askDelete) {
             Label(PageViewerText.deleteLabel, systemImage: "trash")
         }
+        .disabled(state.isBusy)
         .accessibilityIdentifier("viewer.delete")
     }
 
@@ -444,6 +491,11 @@ struct PageViewer: View {
     private func rotateCurrent() {
         guard let id = selection else { return }
         state.rotatePage(id: id)
+    }
+
+    private func toggleInclusion() {
+        guard let id = selection else { return }
+        state.togglePageInclusion(id: id)
     }
 
     private func showText() {
