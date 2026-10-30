@@ -7,10 +7,11 @@ namespace LazyScan.App;
 /// A photo whose page was not found clearly, for the corner editor: the photo (upright), what the
 /// page search found and suggests (<see cref="PhotoImportPlan"/>), where it is in the import, and what
 /// is cut out of it, which the editor's words name (a page here; the iPhone also cuts out ID cards,
-/// photos and receipts).
+/// photos and receipts). <see cref="MoreFollow"/>: more photos or pages of the import follow this
+/// one, so the editor offers Stop import.
 /// </summary>
 public sealed record PhotoCornersRequest(RgbaImage Photo, PhotoImportPlan Plan, string FileName, int Number, int Count,
-                                         CaptureKind Kind = CaptureKind.Document);
+                                         CaptureKind Kind = CaptureKind.Document, bool MoreFollow = false);
 
 /// <summary>The corner editor's answer: what to do with the photo, and the corners placed when they are used.</summary>
 public sealed record PhotoCornersAnswer(PhotoCornersChoice Choice, Quad? Corners = null)
@@ -148,8 +149,9 @@ public sealed partial class AppViewModel
                     : null;
                 if (page is null)
                 {
-                    var answer = ReviewPhotoCorners?.Invoke(new PhotoCornersRequest(photo, plan, file.DisplayName, fileNumber, files.Count))
-                                 ?? PhotoCornersAnswer.Skip;
+                    var request = new PhotoCornersRequest(photo, plan, file.DisplayName, fileNumber, files.Count,
+                                                          MoreFollow: fileNumber < files.Count || file.Page < file.PageCount);
+                    var answer = ReviewPhotoCorners?.Invoke(request) ?? PhotoCornersAnswer.Skip;
                     token.ThrowIfCancellationRequested();
                     page = answer switch
                     {

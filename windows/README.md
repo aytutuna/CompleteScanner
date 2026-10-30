@@ -406,7 +406,8 @@ photo's edge, two pages, or nothing found) the **corner editor** opens with the 
 why: drag each corner onto a corner of the page (a magnifier shows the photo around the corner
 being moved; keys 1 to 4 select a corner, the arrow keys move it, Shift takes bigger steps); a
 corner stays on the photo and the outline stays a page that can be cut out. **Use corners**,
-**Use whole photo** or **Skip photo** (Esc). Every page then goes through the clean-up stage
+**Use whole photo** or **Skip photo** (Esc); **Stop import**, shown while more photos or pages follow,
+ends the import as **Cancel** does. Every page then goes through the clean-up stage
 like a scan, except crop and straighten (blank-page check, separator sheets, barcodes when the stack
 is split at them, turning upright, the adjustments and color mode), and is added to the queue at
 once, so **Cancel** keeps the pages already added. Its resolution is the one its shape gives when it

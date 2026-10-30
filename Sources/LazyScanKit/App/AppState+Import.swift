@@ -15,15 +15,18 @@ public struct PhotoCornersRequest: Identifiable {
     public let number: Int
     public let count: Int
     public let kind: CaptureKind
+    /// More photos or pages of the import follow this one: the Mac's editor then offers Stop import.
+    public let moreFollow: Bool
 
     public init(photo: RgbaImage, plan: PhotoImportPlan, fileName: String, number: Int, count: Int,
-                kind: CaptureKind = .document) {
+                kind: CaptureKind = .document, moreFollow: Bool = false) {
         self.photo = photo
         self.plan = plan
         self.fileName = fileName
         self.number = number
         self.count = count
         self.kind = kind
+        self.moreFollow = moreFollow
     }
 }
 
@@ -265,8 +268,10 @@ extension AppState {
                             }.value
                         }
                         if page == nil {
-                            let answer = await self.askCorners(PhotoCornersRequest(photo: photo, plan: plan, fileName: file.displayName,
-                                                                                   number: index + 1, count: files.count))
+                            let request = PhotoCornersRequest(photo: photo, plan: plan, fileName: file.displayName,
+                                                              number: index + 1, count: files.count,
+                                                              moreFollow: index + 1 < files.count || number < pageCount)
+                            let answer = await self.askCorners(request)
                             if flag.isCancelled { throw ScanError.cancelled }
                             switch answer.choice {
                             case .useCorners:

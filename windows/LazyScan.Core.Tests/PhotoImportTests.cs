@@ -398,8 +398,8 @@ public class PhotoImportTests
         Assert.Equal("Check the corners", PhotoImport.EditorTitle);
         Assert.Equal("Drag each corner onto a corner of the page.", PhotoImport.EditorHelp);
         Assert.Equal("Keys 1–4 select a corner. Arrow keys move it; Shift takes bigger steps.", PhotoImport.EditorKeys);
-        Assert.Equal(("Use corners", "Use whole photo", "Skip photo"),
-                     (PhotoImport.UseCornersLabel, PhotoImport.WholePhotoLabel, PhotoImport.SkipLabel));
+        Assert.Equal(("Use corners", "Use whole photo", "Skip photo", "Stop import"),
+                     (PhotoImport.UseCornersLabel, PhotoImport.WholePhotoLabel, PhotoImport.SkipLabel, PhotoImport.StopLabel));
         Assert.Equal("The page edges are unclear.", PhotoImport.ReasonText(PhotoReviewReason.Unsure));
         Assert.Equal("No page found in this photo.", PhotoImport.ReasonText(PhotoReviewReason.NothingFound));
         Assert.Equal("The page runs off the photo.", PhotoImport.ReasonText(PhotoReviewReason.CutOff));

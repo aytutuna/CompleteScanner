@@ -145,6 +145,7 @@ public enum PhotoImport {
     public static let useCornersLabel = "Use corners"
     public static let wholePhotoLabel = "Use whole photo"
     public static let skipLabel = "Skip photo"
+    public static let stopLabel = "Stop import"
     public static let notOfferedMessage =
         "Photos of documents are added to the page queue: choose Document mode, or a document task, to import them."
     public static let noPhotosMessage =

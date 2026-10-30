@@ -40,7 +40,13 @@ public partial class MainWindow
         CanvasImportButton.ToolTip = PhotoImport.ButtonHint;
         AutomationProperties.SetHelpText(CanvasImportButton, PhotoImport.ButtonHelp);
         CanvasDropHint.Text = PhotoImport.DropHint;
-        ViewModel.ReviewPhotoCorners = request => PhotoCornersWindow.Ask(this, request);
+        ViewModel.ReviewPhotoCorners = request =>
+        {
+            var answer = PhotoCornersWindow.Ask(this, request, out bool stopped);
+            // The editor is modal over the status bar's Cancel; its Stop import cancels in its place.
+            if (stopped) ViewModel.CancelScan();
+            return answer;
+        };
     }
 
     /// <summary>Import is offered with the queue: the button and the stage's link follow the settings and the work running.</summary>

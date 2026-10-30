@@ -140,6 +140,7 @@ public static class PhotoImport
     public const string UseCornersLabel = "Use corners";
     public const string WholePhotoLabel = "Use whole photo";
     public const string SkipLabel = "Skip photo";
+    public const string StopLabel = "Stop import";
     public const string NotOfferedMessage =
         "Photos of documents are added to the page queue: choose Document mode, or a document task, to import them.";
     public const string NoPhotosMessage =

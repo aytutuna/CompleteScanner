@@ -390,8 +390,8 @@ final class PhotoImportTests: XCTestCase {
         XCTAssertEqual(PhotoImport.editorTitle, "Check the corners")
         XCTAssertEqual(PhotoImport.editorHelp, "Drag each corner onto a corner of the page.")
         XCTAssertEqual(PhotoImport.editorKeys, "Keys 1\u{2013}4 select a corner. Arrow keys move it; Shift takes bigger steps.")
-        XCTAssertEqual([PhotoImport.useCornersLabel, PhotoImport.wholePhotoLabel, PhotoImport.skipLabel],
-                       ["Use corners", "Use whole photo", "Skip photo"])
+        XCTAssertEqual([PhotoImport.useCornersLabel, PhotoImport.wholePhotoLabel, PhotoImport.skipLabel, PhotoImport.stopLabel],
+                       ["Use corners", "Use whole photo", "Skip photo", "Stop import"])
         XCTAssertEqual(PhotoImport.reasonText(.unsure), "The page edges are unclear.")
         XCTAssertEqual(PhotoImport.reasonText(.nothingFound), "No page found in this photo.")
         XCTAssertEqual(PhotoImport.reasonText(.cutOff), "The page runs off the photo.")

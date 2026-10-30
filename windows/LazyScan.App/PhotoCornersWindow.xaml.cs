@@ -53,6 +53,9 @@ public partial class PhotoCornersWindow : Window
     /// <summary>What the user chose; <see cref="PhotoCornersAnswer.Skip"/> until a button is pressed.</summary>
     public PhotoCornersAnswer Answer { get; private set; } = PhotoCornersAnswer.Skip;
 
+    /// <summary>Stop import was pressed: the photo is skipped and the import is to end.</summary>
+    public bool Stopped { get; private set; }
+
     /// <summary>Done once the photo is on the stage (or could not be shown), for checks that render the window off screen.</summary>
     internal Task Ready { get; }
 
@@ -75,6 +78,9 @@ public partial class PhotoCornersWindow : Window
         CounterText.ToolTip = request.FileName;
         AutomationProperties.SetName(CounterText, PhotoImport.CounterName(request.Number, request.Count, request.FileName));
         WholePhotoButton.Content = PhotoImport.WholePhotoLabel;
+        // Stop only while more photos follow: on the last one it would do what Skip does.
+        StopButton.Content = PhotoImport.StopLabel;
+        StopButton.Visibility = request.MoreFollow ? Visibility.Visible : Visibility.Collapsed;
         SkipButton.Content = PhotoImport.SkipLabel;
         UseButton.Content = PhotoImport.UseCornersLabel;
         AutomationProperties.SetName(Host, PhotoImport.CornersName(request.Kind));
@@ -95,12 +101,14 @@ public partial class PhotoCornersWindow : Window
 
     /// <summary>
     /// Shows the editor over <paramref name="owner"/> and returns the user's choice; closing it is
-    /// Skip.
+    /// Skip, and so is Stop import, which also sets <paramref name="stopped"/>.
     /// </summary>
-    public static PhotoCornersAnswer Ask(Window owner, PhotoCornersRequest request)
+    public static PhotoCornersAnswer Ask(Window owner, PhotoCornersRequest request, out bool stopped)
     {
         var window = new PhotoCornersWindow(request) { Owner = owner };
-        return window.ShowDialog() == true ? window.Answer : PhotoCornersAnswer.Skip;
+        var answer = window.ShowDialog() == true ? window.Answer : PhotoCornersAnswer.Skip;
+        stopped = window.Stopped;
+        return answer;
     }
 
     /// <summary>Downsamples the photo off the UI thread (it can be tens of megapixels) and puts it on the stage.</summary>
@@ -332,6 +340,12 @@ public partial class PhotoCornersWindow : Window
     }
 
     private void Skip_Click(object sender, RoutedEventArgs e) => Answer = PhotoCornersAnswer.Skip;
+
+    private void Stop_Click(object sender, RoutedEventArgs e)
+    {
+        Stopped = true;
+        DialogResult = false;
+    }
 
     private void Use_Click(object sender, RoutedEventArgs e)
     {

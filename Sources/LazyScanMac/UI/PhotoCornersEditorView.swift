@@ -151,6 +151,11 @@ struct PhotoCornersEditorView: View {
                 state.answerCorners(PhotoCornersAnswer(choice: .wholePhoto))
             }
             Spacer()
+            // Stop only while more photos follow: on the last one it would do what Skip does.
+            if request.moreFollow {
+                Button(PhotoImport.stopLabel) { state.cancelScan() }
+                    .help("End the import and keep the pages added so far")
+            }
             Button(PhotoImport.skipLabel) { state.answerCorners(.skip) }
                 .keyboardShortcut(.cancelAction)
             Button(PhotoImport.useCornersLabel) {
