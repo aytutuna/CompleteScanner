@@ -1,4 +1,6 @@
-# CompleteScanner
+# Lazy Scan
+
+The code, folders and identifiers still use the earlier name, CompleteScanner.
 
 A one-stop, native macOS scanning app: documents to (searchable) PDF, and batch photo
 scanning that automatically finds, straightens, and splits multiple photos laid on the
@@ -115,10 +117,10 @@ scanners** — including the Epson Perfection V39 II.
   it as photographed. The photo files themselves are only read, never changed or moved. On Windows,
   HEIC photos need Microsoft's free HEIF Image Extensions. On the Mac, **File > Import from iPhone or
   iPad** takes a photo or a scanned document from a nearby iPhone or iPad the same way (Continuity
-  Camera), and a CompleteScanner document (`.csdoc`) opened in the Finder, dropped on the window or
+  Camera), and a Lazy Scan document (`.csdoc`) opened in the Finder, dropped on the window or
   picked with Import offers **Add to pages** or **Open as new** on a banner.
 - **Send from your phone** (Windows and the Mac): pair a phone once by scanning a QR code on the PC, and
-  documents scanned with CompleteScanner on the phone are added to the PC's page queue on their own,
+  documents scanned with Lazy Scan on the phone are added to the PC's page queue on their own,
   labelled **From phone**. The phone and the PC talk directly, encrypted and pinned to the PC's own
   key, with no account and no server; the PC listens only on networks you trust (Windows' Private
   networks, and ones you allow in the app, such as your school's Wi-Fi) and only while a phone is
@@ -315,7 +317,7 @@ added to the end of a PDF picked in Files or in the saved files, as the same inc
 the desktop (signed files and PDF/A files that may not stay PDF/A asked about first), from the menu
 beside Save or from the iPad's Add pages to a PDF, which picks the file first so that Save
 reads "Add to Contract.pdf"; the queue shared
-as a CompleteScanner document (`.csdoc`), and one opened from AirDrop, Files or Mail offered on a
+as a Lazy Scan document (`.csdoc`), and one opened from AirDrop, Files or Mail offered on a
 banner with Add to pages or Open as new; the pages taken kept when iOS ends the app in the
 background, and asked about (save them first, discard them or cancel) before a kind, a preset or
 Open as new would leave them without a Save; network
@@ -374,7 +376,7 @@ Scanner is not listed at all. The search itself is
 checked with stand-ins for the system's browsers, and the prompt, a denial, client-isolated Wi-Fi,
 IPv6 and a feeder batch while the app goes to the background need a real iPhone and scanner.
 
-Settings > My computer pairs the iPhone with CompleteScanner on a Windows PC from the PC's QR code
+Settings > My computer pairs the iPhone with Lazy Scan on a Windows PC from the PC's QR code
 (or its text, with a check code to compare), and Send to computer then sends the queue to it, keeping
 what could not go yet to send later; the Simulator has no camera for the code and the tests reach no PC,
 so those are checked with a real iPhone and PC.
@@ -403,7 +405,7 @@ instructions and current status.
 
 - **Epson Perfection V39 II** (and other Epson Perfection models): install "Epson Scanner
   Driver" / *Epson Scan 2* from Epson's macOS downloads if the scanner doesn't appear.
-  Once the driver is installed the scanner shows up in CompleteScanner automatically.
+  Once the driver is installed the scanner shows up in Lazy Scan automatically.
 - Any scanner visible to Apple Image Capture will appear here too — that includes most
   Canon/HP/Brother/Fujitsu devices and all AirScan/eSCL network scanners.
 - If a USB scanner is missing: check the cable/power, then install the manufacturer's macOS

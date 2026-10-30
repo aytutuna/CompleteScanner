@@ -1,6 +1,6 @@
-# CompleteScanner for Windows
+# Lazy Scan for Windows
 
-The Windows sibling of the macOS CompleteScanner app, following the **shared core, native
+The Windows sibling of the macOS Lazy Scan app, following the **shared core, native
 UI per platform** architecture:
 
 - **`CompleteScanner.Core`** — a platform-neutral .NET 10 class library with **zero
@@ -527,7 +527,7 @@ route are the iPhone's own (Swift only).
 
 ### Send from your phone
 
-A phone with CompleteScanner sends what it scans straight into this PC's page queue. **Phone** (at
+A phone with Lazy Scan sends what it scans straight into this PC's page queue. **Phone** (at
 the bottom of the side pane) opens the phone window:
 
 - **Pair a phone** shows a QR code to scan with the phone (Pair a computer, on the phone). The code
@@ -543,7 +543,7 @@ the bottom of the side pane) opens the phone window:
   network you trust but cannot set to Private, such as your school's Wi-Fi). It never listens on any
   other network, and nothing listens at all unless a phone is paired or a code is shown. On a network
   it does not receive on, Pair a phone says why instead of showing a code. On an allowed
-  network that Windows treats as public, Windows Firewall asks once about CompleteScanner the first
+  network that Windows treats as public, Windows Firewall asks once about Lazy Scan the first
   time it receives: tick **Public networks**, then **Allow**.
 - **Connection checks** say why a phone may not connect: the network not received on, Windows
   Firewall blocking the app on a network it receives on (often after its question was cancelled: the
@@ -579,7 +579,7 @@ SHA-256 (`companion-devices.json`), and every request without a paired phone's s
 however often a phone retries, and are refused when too large; repeated wrong secrets or codes block
 the sender for a minute. The PC advertises itself (DNS-SD, `_completescan._tcp`) only on the
 networks it receives on and only while it receives, and the phone also remembers the address from the
-QR code. Only one CompleteScanner window receives at a time.
+QR code. Only one Lazy Scan window receives at a time.
 
 ### Rotate pages upright
 
@@ -1746,7 +1746,7 @@ same scanners through ImageCaptureCore.
   - It needs the 32-bit (x86) .NET 10 Desktop Runtime. Without it, or if the helper is missing,
     the 32-bit drivers are not listed, `devices.txt` says why ("TWAIN 32-bit helper: failed (…)"),
     and the troubleshooter still names them, with the fix (install the x86 runtime, reinstall
-    CompleteScanner). It names them too while the helper's Data Source Manager is missing or
+    Lazy Scan). It names them too while the helper's Data Source Manager is missing or
     lists no usable driver ("reached no usable driver" in `devices.txt`; that helper is stopped
     again). A driver window the helper opens belongs to the helper process, so it may appear behind
     the app's window.
