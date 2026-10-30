@@ -83,7 +83,7 @@ public class TextExportTests
     [Fact]
     public void WriteNewFile_NeverReplacesAFile_AndLeavesNoTemporaryFile()
     {
-        string directory = Path.Combine(Path.GetTempPath(), "cs-text-" + Guid.NewGuid().ToString("N"));
+        string directory = Path.Combine(Path.GetTempPath(), "ls-text-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         try
         {

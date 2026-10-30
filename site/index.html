@@ -379,7 +379,7 @@ input[type=range].plain::-moz-range-track{background:var(--rule-strong)}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&amp;display=swap">
-<script>try{var t=localStorage.getItem("cs-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+<script>try{var t=localStorage.getItem("ls-theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
@@ -1027,7 +1027,7 @@ function syncTheme(){
 themeBtn.addEventListener("click",function(){
   var next=isDark()?"light":"dark";
   root.setAttribute("data-theme",next);
-  try{localStorage.setItem("cs-theme",next);}catch(e){}
+  try{localStorage.setItem("ls-theme",next);}catch(e){}
   syncTheme();
 });
 onMq(mqDark,syncTheme);
