@@ -204,7 +204,8 @@ struct PhoneView: View {
         let shown = codeShown(service)
         let title: String = shown ? "Show a new code" : "Pair a phone"
         return VStack(alignment: .leading, spacing: 10) {
-            Text("Open Lazy Scan on your phone, choose Pair a computer, and scan the code shown here. The code works once, for 5 minutes.")
+            Text("Open Lazy Scan on your phone, go to Settings \u{203A} My computer, and scan the code shown here. "
+                 + "The code works once, for 5 minutes.")
                 .fixedSize(horizontal: false, vertical: true)
             Button(title) {
                 Task { await pair() }
@@ -241,7 +242,8 @@ struct PhoneView: View {
     }
 
     private func codeDetails(_ code: PairingUri, service: CompanionService?) -> some View {
-        HStack(alignment: .top, spacing: 16) {
+        let pairingText = (try? code.format()) ?? ""
+        return HStack(alignment: .top, spacing: 16) {
             if let qr {
                 Image(qr, scale: 1, label: Text("Pairing code to scan with your phone"))
                     .interpolation(.none)
@@ -252,18 +254,22 @@ struct PhoneView: View {
                     Text(expiry(at: context.date, service: service))
                         .font(.headline)
                 }
-                Text("No camera at hand? Enter these on the phone, then check that the phone shows the same check code.")
+                Text("Cannot scan the code? Get this pairing text onto the phone (a message to yourself, say) and paste it "
+                     + "under Settings \u{203A} My computer \u{203A} Enter pairing text, then compare the check code.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Pairing text").foregroundStyle(.secondary)
+                    Text(pairingText)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Copy") {
+                        copyPairingText(pairingText)
+                    }
+                    .accessibilityLabel("Copy the pairing text")
+                }
                 Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-                    GridRow {
-                        Text("Address").foregroundStyle(.secondary)
-                        Text(PhoneView.addresses(code)).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                    }
-                    GridRow {
-                        Text("Code").foregroundStyle(.secondary)
-                        Text(PhoneView.grouped(code.token)).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                    }
                     GridRow {
                         Text("Check code").foregroundStyle(.secondary)
                         Text(code.fingerprintBytes.map { SpkiFingerprint.formatCheckCode(SpkiFingerprint.checkCode($0)) } ?? "")
@@ -290,6 +296,7 @@ struct PhoneView: View {
     /// Shows a new pairing code, or says why none can be shown.
     private func pair() async {
         guard let service = state.ensureCompanionHost() else { return }
+        footerMessage = nil
         opening = true
         let opened = await service.openPairing()
         opening = false
@@ -310,6 +317,12 @@ struct PhoneView: View {
         code = nil
     }
 
+    private func copyPairingText(_ text: String) {
+        let pasteboard = NSPasteboard.general
+        _ = pasteboard.clearContents()
+        footerMessage = pasteboard.setString(text, forType: .string) ? "Copied to the clipboard." : "Copy did not work."
+    }
+
     static func whyNoCode(_ status: CompanionHostStatus) -> String {
         switch status.state {
         case .offline:
@@ -322,26 +335,6 @@ struct PhoneView: View {
         default:
             return "No pairing code could be made."
         }
-    }
-
-    /// "192.168.1.20:52731", one address a line, an IPv6 address in brackets.
-    static func addresses(_ code: PairingUri) -> String {
-        var lines: [String] = []
-        for address in code.addresses {
-            lines.append(address.contains(":") ? "[\(address)]:\(code.port)" : "\(address):\(code.port)")
-        }
-        return lines.joined(separator: "\n")
-    }
-
-    /// The token in groups of four, to type it by hand.
-    static func grouped(_ token: String) -> String {
-        var groups: [String] = []
-        var rest = Substring(token)
-        while !rest.isEmpty {
-            groups.append(String(rest.prefix(4)))
-            rest = rest.dropFirst(4)
-        }
-        return groups.joined(separator: " ")
     }
 
     /// The QR code with a quiet zone of four modules, black on white, at whole pixels per module, so it

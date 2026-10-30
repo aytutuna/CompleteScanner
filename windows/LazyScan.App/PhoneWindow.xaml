@@ -13,7 +13,7 @@
             <Setter Property="VerticalAlignment" Value="Top" />
             <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
         </Style>
-        <!-- Read-only and selectable, so an address or code can be typed on the phone. -->
+        <!-- Read-only and selectable, so the pairing text can be copied. -->
         <Style x:Key="DetailBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
             <Setter Property="IsReadOnly" Value="True" />
             <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
@@ -56,12 +56,12 @@
                 <TextBlock Text="Networks" Style="{StaticResource SectionHeaderText}" Margin="0,4,0,8" />
                 <StackPanel x:Name="NetworksPanel" AutomationProperties.Name="Networks" />
 
-                <!-- Pairing: the QR code with its one-time code, the details to type it by hand, and the question. -->
+                <!-- Pairing: the QR code with its one-time code, the text to paste on the phone, and the question. -->
                 <TextBlock Text="Pair a phone" Style="{StaticResource SectionHeaderText}" Margin="0,16,0,8" />
                 <Border x:Name="PairCard" Style="{StaticResource CardStyle}" Padding="16,12,16,12">
                     <StackPanel>
                         <TextBlock x:Name="PairIntro" Style="{StaticResource BodyText}" TextWrapping="Wrap"
-                                   Text="Open Lazy Scan on your phone, choose Pair a computer, and scan the code shown here. The code works once, for 5 minutes." />
+                                   Text="Open Lazy Scan on your phone, go to Settings › My computer, and scan the code shown here. The code works once, for 5 minutes." />
                         <Button x:Name="PairButton" Content="Pair a phone" ui:Icon.Glyph="&#xE8EA;" HorizontalAlignment="Left"
                                 Margin="0,10,0,0" Style="{StaticResource AccentIconTextButtonStyle}" Click="Pair_Click" />
                         <StackPanel x:Name="PairingPanel" Visibility="Collapsed" Margin="0,8,0,0">
@@ -75,25 +75,20 @@
                                     <TextBlock x:Name="ExpiryText" Style="{StaticResource BodyStrongText}" TextWrapping="Wrap"
                                                AutomationProperties.LiveSetting="Polite" />
                                     <TextBlock Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" Margin="0,4,0,10"
-                                               Text="No camera at hand? Enter these on the phone, then check that the phone shows the same check code." />
+                                               Text="Cannot scan the code? Get this pairing text onto the phone (a message to yourself, say) and paste it under Settings › My computer › Enter pairing text, then compare the check code." />
+                                    <TextBlock x:Name="PairingTextLabel" Text="Pairing text" Style="{StaticResource DetailLabelText}" Margin="0,0,0,4" />
+                                    <TextBox x:Name="PairingTextBox" Style="{StaticResource DetailBox}"
+                                             AutomationProperties.LabeledBy="{Binding ElementName=PairingTextLabel}" />
+                                    <Button x:Name="CopyPairingTextButton" Content="Copy" ui:Icon.Glyph="&#xE8C8;" HorizontalAlignment="Left"
+                                            Margin="0,0,0,6" Style="{StaticResource SubtleButtonStyle}"
+                                            AutomationProperties.Name="Copy the pairing text" Click="CopyPairingText_Click" />
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
-                                        <TextBlock x:Name="AddressLabel" Text="Address" Style="{StaticResource DetailLabelText}" Margin="0,6,16,6" />
-                                        <TextBox Grid.Column="1" x:Name="AddressBox" Style="{StaticResource DetailBox}"
-                                                 AutomationProperties.LabeledBy="{Binding ElementName=AddressLabel}" />
-                                        <TextBlock Grid.Row="1" x:Name="CodeLabel" Text="Code" Style="{StaticResource DetailLabelText}" Margin="0,6,16,6" />
-                                        <TextBox Grid.Row="1" Grid.Column="1" x:Name="CodeBox" Style="{StaticResource DetailBox}"
-                                                 AutomationProperties.LabeledBy="{Binding ElementName=CodeLabel}" />
-                                        <TextBlock Grid.Row="2" x:Name="CheckLabel" Text="Check code" Style="{StaticResource DetailLabelText}" Margin="0,6,16,6" />
-                                        <TextBox Grid.Row="2" Grid.Column="1" x:Name="CheckCodeBox" Style="{StaticResource DetailBox}"
+                                        <TextBlock x:Name="CheckLabel" Text="Check code" Style="{StaticResource DetailLabelText}" Margin="0,6,16,6" />
+                                        <TextBox Grid.Column="1" x:Name="CheckCodeBox" Style="{StaticResource DetailBox}"
                                                  AutomationProperties.LabeledBy="{Binding ElementName=CheckLabel}" />
                                     </Grid>
                                     <Button x:Name="StopPairingButton" Content="Stop pairing" HorizontalAlignment="Left" Margin="0,8,0,0"

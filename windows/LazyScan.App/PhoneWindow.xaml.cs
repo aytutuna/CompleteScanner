@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Windows;
 using System.Windows.Automation;
@@ -271,9 +272,9 @@ public partial class PhoneWindow : Window
         }
         else
         {
-            QrImage.Source = QrBitmap(_code.Format());
-            AddressBox.Text = string.Join("\n", _code.Addresses.Select(a => a.Contains(':') ? $"[{a}]:{_code.Port}" : $"{a}:{_code.Port}"));
-            CodeBox.Text = Grouped(_code.Token);
+            string pairingText = _code.Format();
+            QrImage.Source = QrBitmap(pairingText);
+            PairingTextBox.Text = pairingText;
             var fingerprint = _code.FingerprintBytes;
             CheckCodeBox.Text = fingerprint is null ? "" : SpkiFingerprint.FormatCheckCode(SpkiFingerprint.CheckCode(fingerprint));
             PairNote.Visibility = Visibility.Collapsed;
@@ -303,6 +304,19 @@ public partial class PhoneWindow : Window
         await _companion.ClosePairingAsync();
         _code = null;
         Refresh();
+    }
+
+    private void CopyPairingText_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Clipboard.SetText(PairingTextBox.Text);
+            ShowStatus("Copied to the clipboard.");
+        }
+        catch (COMException error)
+        {
+            ShowStatus($"Copy did not work: {FileActionErrors.Describe(error)}");
+        }
     }
 
     /// <summary>A phone presented the code and the user has not answered yet.</summary>
@@ -420,9 +434,6 @@ public partial class PhoneWindow : Window
         bitmap.Freeze();
         return bitmap;
     }
-
-    private static string Grouped(string token) =>
-        string.Join(" ", Enumerable.Range(0, (token.Length + 3) / 4).Select(i => token.Substring(i * 4, Math.Min(4, token.Length - i * 4))));
 
     // MARK: - Paired phones
 
