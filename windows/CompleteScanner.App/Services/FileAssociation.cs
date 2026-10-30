@@ -15,7 +15,7 @@ namespace CompleteScanner.App.Services;
 public static class FileAssociation
 {
     public const string ProgId = "CompleteScanner.Package";
-    public const string FriendlyName = "CompleteScanner document";
+    public const string FriendlyName = "Lazy Scan document";
 
     /// <summary>The keys under Software\Classes and the default value each gets, for the app at <paramref name="exePath"/>.</summary>
     public static IReadOnlyList<(string Key, string Value)> Entries(string exePath) =>

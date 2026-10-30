@@ -88,8 +88,8 @@ public sealed class ShareService
     internal static void Fill(DataPackage data, IReadOnlyList<IStorageItem> files, string title)
     {
         data.Properties.Title = title;
-        data.Properties.Description = files.Count == 1 ? "Saved by CompleteScanner" : $"{files.Count} files saved by CompleteScanner";
-        data.Properties.ApplicationName = "CompleteScanner";
+        data.Properties.Description = files.Count == 1 ? "Saved by Lazy Scan" : $"{files.Count} files saved by Lazy Scan";
+        data.Properties.ApplicationName = "Lazy Scan";
         data.RequestedOperation = DataPackageOperation.Copy;
         data.SetStorageItems(files, readOnly: true);
     }

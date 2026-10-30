@@ -215,7 +215,7 @@ public partial class MainWindow : Window
             {
                 force = MessageBox.Show(this,
                     "Still stopping the current operation. Quit now anyway? A file being written may be left incomplete.",
-                    "CompleteScanner", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+                    "Lazy Scan", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
             }
             finally
             {
@@ -234,7 +234,7 @@ public partial class MainWindow : Window
             string message = ViewModel.IsBusy
                 ? $"A scan or save is still running.{(unsaved is null ? "" : " " + unsaved)}\n\nStop it and quit?"
                 : $"{unsaved}\n\nQuit anyway?";
-            var answer = MessageBox.Show(this, message, "CompleteScanner", MessageBoxButton.YesNo,
+            var answer = MessageBox.Show(this, message, "Lazy Scan", MessageBoxButton.YesNo,
                                          MessageBoxImage.Warning, MessageBoxResult.No);
             if (answer != MessageBoxResult.Yes)
             {
@@ -1006,7 +1006,7 @@ public partial class MainWindow : Window
 
     private bool AskDiscardIdCardInDialog() =>
         MessageBox.Show(this, "The ID card has not been saved. Its scanned sides will be discarded.\n\nDiscard the ID card?",
-                        "CompleteScanner", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No)
+                        "Lazy Scan", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No)
         == MessageBoxResult.Yes;
 
     /// <summary>A preset card was picked: apply it and go to the scan screen.</summary>

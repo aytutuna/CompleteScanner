@@ -23,7 +23,7 @@ public partial class MainWindow
         {
             var patterns = PhotoImport.FileExtensions.Append(CompanionPackage.FileExtension).Select(e => "*." + e).ToList();
             return "Photos and documents (" + string.Join(", ", patterns) + ")|" + string.Join(";", patterns)
-                + $"|CompleteScanner documents (*.{CompanionPackage.FileExtension})|*.{CompanionPackage.FileExtension}"
+                + $"|Lazy Scan documents (*.{CompanionPackage.FileExtension})|*.{CompanionPackage.FileExtension}"
                 + "|All files (*.*)|*.*";
         }
     }

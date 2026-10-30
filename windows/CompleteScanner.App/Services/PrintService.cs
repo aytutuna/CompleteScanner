@@ -394,7 +394,7 @@ internal static class StaWork
         })
         {
             IsBackground = true,
-            Name = "CompleteScanner print",
+            Name = "Lazy Scan print",
         };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
@@ -432,7 +432,7 @@ internal static class StaWork
         })
         {
             IsBackground = true,
-            Name = "CompleteScanner print",
+            Name = "Lazy Scan print",
         };
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();

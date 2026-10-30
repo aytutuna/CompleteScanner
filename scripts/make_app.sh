@@ -18,8 +18,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>              <string>CompleteScanner</string>
-    <key>CFBundleDisplayName</key>       <string>CompleteScanner</string>
+    <key>CFBundleName</key>              <string>Lazy Scan</string>
+    <key>CFBundleDisplayName</key>       <string>Lazy Scan</string>
     <key>CFBundleIdentifier</key>        <string>local.completescanner.app</string>
     <key>CFBundleExecutable</key>        <string>CompleteScanner</string>
     <key>CFBundleIconFile</key>          <string>AppIcon</string>
@@ -31,13 +31,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>NSPrincipalClass</key>          <string>NSApplication</string>
     <key>NSApplicationSupportsSecureRestorableState</key> <true/>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>CompleteScanner receives documents from your paired phone on your local network.</string>
+    <string>Lazy Scan receives documents from your paired phone on your local network.</string>
     <key>NSBonjourServices</key>
     <array><string>_completescan._tcp</string></array>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
-            <key>CFBundleTypeName</key>      <string>CompleteScanner document</string>
+            <key>CFBundleTypeName</key>      <string>Lazy Scan document</string>
             <key>CFBundleTypeRole</key>      <string>Viewer</string>
             <key>LSHandlerRank</key>         <string>Owner</string>
             <key>LSItemContentTypes</key>    <array><string>com.completescanner.package</string></array>
@@ -47,7 +47,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <array>
         <dict>
             <key>UTTypeIdentifier</key>      <string>com.completescanner.package</string>
-            <key>UTTypeDescription</key>     <string>CompleteScanner document</string>
+            <key>UTTypeDescription</key>     <string>Lazy Scan document</string>
             <key>UTTypeConformsTo</key>      <array><string>public.data</string><string>public.content</string></array>
             <key>UTTypeTagSpecification</key>
             <dict>

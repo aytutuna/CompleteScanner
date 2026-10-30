@@ -8,6 +8,8 @@
     <UseWPF>true</UseWPF>
     <RootNamespace>CompleteScanner.App</RootNamespace>
     <AssemblyName>CompleteScanner</AssemblyName>
+    <Product>Lazy Scan</Product>
+    <AssemblyTitle>Lazy Scan</AssemblyTitle>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <!-- Explorer, the taskbar and Alt+Tab; the windows load the same file as a resource. -->
     <ApplicationIcon>app.ico</ApplicationIcon>
