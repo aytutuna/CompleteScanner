@@ -161,7 +161,7 @@ extension AppState {
     func holdQuickScan(_ pages: [ScannedPage]) {
         guard let page = pages.last else { return }
         quickScanPage = page
-        statusMessage = "Quick scan ready."
+        statusMessage = "Page ready."
     }
 
     /// Saves the held Quick scan page as a picture (JPEG unless an image format is chosen) in the save
@@ -217,7 +217,7 @@ extension AppState {
     public func discardQuickScan() {
         guard !isBusy, quickScanPage != nil else { return }
         quickScanPage = nil
-        statusMessage = "Quick scan discarded."
+        statusMessage = "Page discarded."
     }
 
     /// The text OCR reads on `page`, in reading order with a blank line between paragraphs; the iPhone's page

@@ -266,6 +266,7 @@ final class IOSCameraTasksTests: XCTestCase {
         XCTAssertFalse(model.offersLiveText)
         XCTAssertFalse(model.canAct)
         XCTAssertEqual(model.saveLabel, "Save JPEG")
+        XCTAssertEqual(IOSQuickScanModel.title, "Text")
         let page = ScannedPage(image: try printedLetterPage(blocks: 2), dpi: 60, colorMode: .color)
         XCTAssertTrue(state.ingest([page], source: .photo))
         try await ImportTestSupport.waitUntil(timeout: 60) { !state.isBusy }
@@ -283,6 +284,7 @@ final class IOSCameraTasksTests: XCTestCase {
         try await ImportTestSupport.waitUntil(timeout: 60) { !state.isBusy }
         model.discard()
         XCTAssertFalse(model.isShown)
+        XCTAssertEqual(state.statusMessage, "Page discarded.")
         XCTAssertEqual(state.lastSavedURLs.count, 1)
     }
 

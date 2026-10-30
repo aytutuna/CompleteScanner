@@ -50,7 +50,7 @@ public final class IOSQuickScanModel: ObservableObject {
 
     public static let copyTextLabel = "Copy text"
     public static let discardLabel = "Discard"
-    public static let title = "Quick scan"
+    public static let title = IOSScanKind.text.title
 
     public func save() {
         guard canAct else { return }

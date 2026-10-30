@@ -338,7 +338,9 @@ extension AppState {
         guard !isBusy, !copyPages.isEmpty else { return }
         let ofQueue = copyIsOfQueue
         copyPages = []
-        statusMessage = ofQueue ? "\(scannedPages.count) in queue." : "Copy discarded."
+        statusMessage = ofQueue
+            ? "\(scannedPages.count) page\(scannedPages.count == 1 ? "" : "s") in the queue."
+            : "Copy discarded."
     }
 
     /// Prints the ID card's page: both sides at real size, laid out on the paper of the review (or the

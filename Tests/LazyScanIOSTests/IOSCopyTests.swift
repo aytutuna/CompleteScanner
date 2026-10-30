@@ -162,7 +162,7 @@ final class IOSCopyTests: XCTestCase {
         XCTAssertTrue(state.copyPages.isEmpty)
         XCTAssertFalse(state.copyIsOfQueue)
         XCTAssertEqual(state.scannedPages.count, 1)
-        XCTAssertEqual(state.statusMessage, "1 in queue.")
+        XCTAssertEqual(state.statusMessage, "1 page in the queue.")
     }
 
     @MainActor
