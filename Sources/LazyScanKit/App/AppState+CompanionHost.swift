@@ -162,12 +162,13 @@ extension AppState {
                 pages += document.package.document.pages.count
                 if !names.contains(document.phoneName) { names.append(document.phoneName) }
             }
+            let collects = PhotoImport.isOffered(settings) && settings.documentMultiPage
             let waiting = CompanionHostText.waitingMessage(pageCount: pages, from: names.count == 1 ? names[0] : "your phones",
-                                                           collectsPages: PhotoImport.isOffered(settings) && settings.documentMultiPage)
+                                                           collectsPages: collects)
             if waiting != phoneDocumentsWaitingMessage {
                 phoneDocumentsWaitingMessage = waiting
                 // Only the reason the user can act on is shown on the bar; being busy passes on its own.
-                if !isBusy { phoneBarMessage = waiting }
+                if !isBusy || !collects { phoneBarMessage = waiting }
             }
             if phoneRetry == nil {
                 phoneRetry = Task { @MainActor [weak self] in

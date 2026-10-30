@@ -56,7 +56,7 @@ public sealed partial class AppViewModel
 
     /// <summary>The queue can take a phone's pages now: it collects pages and nothing else is going on.</summary>
     public bool CanTakePhonePages =>
-        !IsBusy && PhotoImport.IsOffered(Settings) && !IsTurningOverByHand && !ShowPhotoReview && !ShowIdCardReview;
+        !IsBusy && CollectsPackages && !IsTurningOverByHand && !ShowPhotoReview && !ShowIdCardReview;
 
     /// <summary>
     /// Starts the phone link at launch when a phone is paired (nothing listens otherwise, and no
@@ -216,7 +216,7 @@ public sealed partial class AppViewModel
             {
                 PhoneDocumentsWaitingMessage = waiting;
                 // Only the reason the user can act on is announced; being busy passes on its own.
-                if (!IsBusy) PhoneDocumentArrived?.Invoke(waiting);
+                if (!IsBusy || !CollectsPackages) PhoneDocumentArrived?.Invoke(waiting);
                 NotifyAll();
             }
             if (_phoneRetryTimer is null)
@@ -240,9 +240,10 @@ public sealed partial class AppViewModel
         string from = _phoneDocuments.Select(d => d.PhoneName).Distinct().Count() == 1 ? _phoneDocuments.Peek().PhoneName : "your phones";
         string are = pages == 1 ? "is" : "are";
         string them = pages == 1 ? "it" : "them";
-        return PhotoImport.IsOffered(Settings)
+        return CollectsPackages
             ? $"{what} from {from} will be added to the queue when the current step is done."
-            : $"{what} from {from} {are} waiting: choose Document mode or a document task to add {them} to the queue.";
+            : $"{what} from {from} {are} waiting: choose Document mode, or a document task, "
+              + $"with Collect pages before saving on, to add {them} to the queue.";
     }
 
     /// <summary>
