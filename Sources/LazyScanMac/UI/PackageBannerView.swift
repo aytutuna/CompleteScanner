@@ -25,9 +25,9 @@ struct PackageBannerView: View {
             Spacer(minLength: 8)
             Group {
                 Button(PackageText.addToPages) { state.addPendingPackageToPages() }
-                    .help("Add the pages after the pages in the queue")
+                    .help(state.isTurningOverByHand ? DocumentSides.notWhileTurningOverReason : "Add the pages after the pages in the queue")
                 Button(PackageText.openAsNew) { state.openPendingPackageAsNew() }
-                    .help("Clear the queue and open the document's pages in it")
+                    .help(state.isTurningOverByHand ? DocumentSides.notWhileTurningOverReason : "Clear the queue and open the document's pages in it")
             }
             .disabled(!state.canIngest)
             Button {

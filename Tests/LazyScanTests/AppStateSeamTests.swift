@@ -619,4 +619,26 @@ final class AppStateSeamTests: XCTestCase {
         XCTAssertEqual(AppState.pdfNote(size: "412 KB", isProtected: false), "412 KB")
         XCTAssertEqual(AppState.pdfNote(size: "412 KB", isProtected: true), "412 KB, password-protected")
     }
+
+    // MARK: Preview
+
+    @MainActor
+    func test_previewUnavailableReason_isNilOnTheFlatbed_andSaysWhyOnTheFeeder() async throws {
+        let state = makeState(backends: [MockScannerBackend()])
+        state.start()
+        try await waitUntil(timeout: 30) { state.capabilities != nil && state.statusMessage.hasPrefix("Ready") }
+        XCTAssertNil(state.previewUnavailableReason)
+
+        let reason = "Preview needs the flatbed. Choose Flatbed as the source to preview."
+        state.settings.source = .documentFeeder
+        XCTAssertEqual(state.previewUnavailableReason, reason)
+        // Preview itself says the same and scans nothing.
+        state.performOverview()
+        XCTAssertEqual(state.statusMessage, reason)
+        XCTAssertFalse(state.isBusy)
+        XCTAssertNil(state.overviewImage)
+
+        state.settings.source = .flatbed
+        XCTAssertNil(state.previewUnavailableReason)
+    }
 }

@@ -1196,8 +1196,8 @@ struct InspectorView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-                .disabled(state.isBusy || previewUnavailable)
-                .help(previewHelp)
+                .disabled(state.isBusy || state.previewUnavailableReason != nil)
+                .help(state.previewUnavailableReason ?? "Quick look at the whole glass")
 
                 Button {
                     state.performScan()
@@ -1219,22 +1219,12 @@ struct InspectorView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(!state.canImportPhotos)
-                .help(PhotoImport.buttonHint)
+                .help(state.isTurningOverByHand ? DocumentSides.notWhileTurningOverReason : PhotoImport.buttonHint)
                 .accessibilityHint(Text(PhotoImport.buttonHelp))
             }
         }
         .padding(12)
         .background(.bar)
-    }
-
-    private var previewUnavailable: Bool {
-        state.capabilities?.supportsOverview == false || state.settings.source == .documentFeeder
-    }
-
-    private var previewHelp: String {
-        if state.capabilities?.supportsOverview == false { return "This scanner has no preview" }
-        if feederSelected { return "Preview shows the flatbed: choose Flatbed as the source" }
-        return "Quick look at the whole glass"
     }
 }
 

@@ -328,12 +328,10 @@ public partial class MainWindow : Window
         PageList.IsEnabled = !ViewModel.IsBusy;
 
         // As on macOS, the preview is of the flatbed: not offered while the feeder is the source.
-        PreviewButton.IsEnabled = !ViewModel.IsBusy && ViewModel.Capabilities?.SupportsOverview != false
-                                  && ViewModel.Settings.Source != ScanSource.DocumentFeeder;
+        string? previewReason = ViewModel.PreviewUnavailableReason;
+        PreviewButton.IsEnabled = !ViewModel.IsBusy && previewReason is null;
         // The tooltip also shows while the button is greyed out (ShowOnDisabled), so it says why.
-        string previewHint = ViewModel.Capabilities?.SupportsOverview == false ? "This scanner has no preview"
-            : ViewModel.Settings.Source == ScanSource.DocumentFeeder ? "Preview shows the flatbed: choose Flatbed as the source"
-            : "Quick look at the whole glass";
+        string previewHint = previewReason ?? "Quick look at the whole glass";
         PreviewButton.ToolTip = previewHint;
         AutomationProperties.SetHelpText(PreviewButton, previewHint);
         ScanButton.IsEnabled = !ViewModel.IsBusy;

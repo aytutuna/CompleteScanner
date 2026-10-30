@@ -150,6 +150,7 @@ public class DocumentSidesTests
         Assert.Null(DocumentSides.SideName(null, 3));
         Assert.Equal("Needs the feeder", DocumentSides.NeedsFeederReason);
         Assert.Equal("Two-sided scanning uses the document feeder.", DocumentSides.FeederOnlyReason);
+        Assert.Equal("Not while the stack is turned over by hand", DocumentSides.NotWhileTurningOverReason);
     }
 
     [Fact]

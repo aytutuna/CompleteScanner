@@ -467,6 +467,7 @@ public struct QueueCollation: Equatable, Sendable { order: [UUID]; positions: [U
 public enum DocumentSides {
     public static let feederOnlyReason: String, oneSidedFeederReason: String
     public static let needsFeederReason: String         // "Needs the feeder": next to Sides on the flatbed of a scanner with a feeder
+    public static let notWhileTurningOverReason: String // "Not while the stack is turned over by hand": the help of Import photos and the package buttons, greyed out then
     public static let frontsStepID = "fronts", backsStepID = "backs"
     public static let manualSteps: [TaskStep]           // "Scan fronts", "Scan backs" (skippable, no capture required)
     /// Reading order (by sheet, front first) of a feeder scan's transfers; two-sided transfers come

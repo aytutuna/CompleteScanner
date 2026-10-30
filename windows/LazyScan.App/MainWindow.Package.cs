@@ -1,4 +1,5 @@
 using System.Windows;
+using LazyScan.Core;
 
 namespace LazyScan.App;
 
@@ -38,6 +39,9 @@ public partial class MainWindow
         bool takes = ViewModel.CanTakePhonePages || (!ViewModel.IsBusy && !ViewModel.CollectsPackages);
         PackageAddButton.IsEnabled = takes;
         PackageOpenButton.IsEnabled = takes;
+        bool turningOver = ViewModel.IsTurningOverByHand;
+        PackageAddButton.ToolTip = turningOver ? DocumentSides.NotWhileTurningOverReason : "Add its pages after the pages in the queue";
+        PackageOpenButton.ToolTip = turningOver ? DocumentSides.NotWhileTurningOverReason : "Clear the queue and open the document in its place";
         PackageBar.Visibility = Visibility.Visible;
         if (isNew) AnnounceWhenShown(PackageBarText);
     }

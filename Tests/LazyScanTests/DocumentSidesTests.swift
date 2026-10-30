@@ -132,6 +132,7 @@ final class DocumentSidesTests: XCTestCase {
         XCTAssertNil(DocumentSides.sideName(side: nil, sheetIndex: 3))
         XCTAssertEqual(DocumentSides.needsFeederReason, "Needs the feeder")
         XCTAssertEqual(DocumentSides.feederOnlyReason, "Two-sided scanning uses the document feeder.")
+        XCTAssertEqual(DocumentSides.notWhileTurningOverReason, "Not while the stack is turned over by hand")
     }
 
     func test_backQuarterTurns_shortEdgeBacksAreUpsideDown() {

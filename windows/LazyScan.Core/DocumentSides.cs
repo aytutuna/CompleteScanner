@@ -57,6 +57,9 @@ public static class DocumentSides
     public const string OneSidedFeederReason =
         "This scanner's feeder scans one side at a time. To scan both sides, turn the stack over by hand.";
 
+    /// <summary>Why Import photos and the package bar's buttons are greyed out while a stack is turned over by hand.</summary>
+    public const string NotWhileTurningOverReason = "Not while the stack is turned over by hand";
+
     /// <summary>The step that scans the fronts of a stack turned over by hand.</summary>
     public const string FrontsStepId = "fronts";
     /// <summary>The step that scans the backs, after the stack was turned over.</summary>

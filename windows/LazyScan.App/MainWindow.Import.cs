@@ -28,16 +28,17 @@ public partial class MainWindow
         }
     }
 
+    /// <summary>The icon button's name, for its tooltip and for screen readers.</summary>
+    private static readonly string ImportName = PhotoImport.ButtonLabel.TrimEnd('…');
+
     private void SetUpImport()
     {
         // An icon button: its tooltip is its name; what it does is its help text.
-        string importName = PhotoImport.ButtonLabel.TrimEnd('…');
-        ImportPhotosButton.ToolTip = importName;
         ToolTipService.SetShowOnDisabled(ImportPhotosButton, true);
-        AutomationProperties.SetName(ImportPhotosButton, importName);
+        AutomationProperties.SetName(ImportPhotosButton, ImportName);
         AutomationProperties.SetHelpText(ImportPhotosButton, PhotoImport.ButtonHelp);
         CanvasImportButton.Content = PhotoImport.ButtonLabel;
-        CanvasImportButton.ToolTip = PhotoImport.ButtonHint;
+        ToolTipService.SetShowOnDisabled(CanvasImportButton, true);
         AutomationProperties.SetHelpText(CanvasImportButton, PhotoImport.ButtonHelp);
         CanvasDropHint.Text = PhotoImport.DropHint;
         ViewModel.ReviewPhotoCorners = request =>
@@ -53,10 +54,13 @@ public partial class MainWindow
     private void SyncImportOptions()
     {
         bool offered = PhotoImport.IsOffered(ViewModel.Settings);
+        bool turningOver = ViewModel.IsTurningOverByHand;
         ImportPhotosButton.Visibility = offered ? Visibility.Visible : Visibility.Collapsed;
         ImportPhotosButton.IsEnabled = ViewModel.CanImportPhotos;
+        ImportPhotosButton.ToolTip = turningOver ? DocumentSides.NotWhileTurningOverReason : ImportName;
         CanvasImport.Visibility = offered ? Visibility.Visible : Visibility.Collapsed;
         CanvasImportButton.IsEnabled = ViewModel.CanImportPhotos;
+        CanvasImportButton.ToolTip = turningOver ? DocumentSides.NotWhileTurningOverReason : PhotoImport.ButtonHint;
     }
 
     private void ImportPhotos_Click(object sender, RoutedEventArgs e)

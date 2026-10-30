@@ -1009,11 +1009,21 @@ public final class AppState: ObservableObject {
 
     // MARK: Scanning
 
+    /// Why Preview cannot be used with the settings and the scanner at hand; nil when it can. A greyed-out
+    /// Preview shows it as its help. Twin of the Windows `AppViewModel.PreviewUnavailableReason`.
+    public var previewUnavailableReason: String? {
+        if capabilities?.supportsOverview == false { return "This scanner has no preview." }
+        // The preview shows the flatbed; a feeder scan would ignore a selection drawn on it.
+        if settings.source == .documentFeeder {
+            return "Preview needs the flatbed. Choose Flatbed as the source to preview."
+        }
+        return nil
+    }
+
     public func performOverview() {
         guard let session else { return noDevice() }
-        // The preview shows the flatbed; a feeder scan would ignore a selection drawn on it.
-        guard settings.source != .documentFeeder else {
-            statusMessage = "Preview needs the flatbed. Choose Flatbed as the source to preview."
+        if let reason = previewUnavailableReason {
+            statusMessage = reason
             return
         }
         let generation = switchGeneration

@@ -84,6 +84,9 @@ public enum DocumentSides {
     public static let oneSidedFeederReason =
         "This scanner's feeder scans one side at a time. To scan both sides, turn the stack over by hand."
 
+    /// Why Import photos and the package banner's buttons are greyed out while a stack is turned over by hand.
+    public static let notWhileTurningOverReason = "Not while the stack is turned over by hand"
+
     /// The step that scans the fronts of a stack turned over by hand.
     public static let frontsStepID = "fronts"
     /// The step that scans the backs, after the stack was turned over.

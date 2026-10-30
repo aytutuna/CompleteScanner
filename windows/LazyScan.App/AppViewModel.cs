@@ -1399,13 +1399,28 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
 
     // MARK: Scanning
 
+    /// <summary>
+    /// Why Preview cannot be used with the settings and the scanner at hand; null when it can. A greyed-out
+    /// Preview shows it as its tooltip. Twin of the Mac's <c>AppState.previewUnavailableReason</c>.
+    /// </summary>
+    public string? PreviewUnavailableReason
+    {
+        get
+        {
+            if (Capabilities?.SupportsOverview == false) return "This scanner has no preview.";
+            // The preview shows the flatbed; a feeder scan would ignore a selection drawn on it.
+            return Settings.Source == ScanSource.DocumentFeeder
+                ? "Preview needs the flatbed. Choose Flatbed as the source to preview."
+                : null;
+        }
+    }
+
     public Task PerformOverview()
     {
         if (_session is not { } session) { NoDevice(); return Task.CompletedTask; }
-        // The preview shows the flatbed; a feeder scan would ignore a selection drawn on it.
-        if (Settings.Source == ScanSource.DocumentFeeder)
+        if (PreviewUnavailableReason is { } reason)
         {
-            StatusMessage = "Preview needs the flatbed. Choose Flatbed as the source to preview.";
+            StatusMessage = reason;
             NotifyAll();
             return Task.CompletedTask;
         }
