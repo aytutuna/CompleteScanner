@@ -138,6 +138,7 @@ public final class IOSPresetsModel {
             if discardingPages {
                 appState.clearPages()
             }
+            IOSShell.rememberChoices(appState.settings, defaults: userDefaults)
             appState.applyPreset(preset)
             var settings: ScanSettings = IOSShell.savingActionsAsDocument(appState.settings)
             if camera {

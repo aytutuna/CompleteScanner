@@ -327,13 +327,16 @@ final class IOSShellTests: XCTestCase {
     }
 
     @MainActor
-    func test_adoptCameraKind_turnsReceiptsAndText_intoTheDocument() {
+    func test_adoptCameraKind_turnsReceiptsAndText_intoTheDocument() throws {
+        let name: String = "adopt.\(UUID().uuidString)"
+        let defaults: UserDefaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
         let state = AppState(backends: [], presetStore: PresetStore(directory: folder),
                              fileActions: IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in }),
                              files: AppStateFiles.all(in: folder))
         for task in [ScanTask.receipt, .quickScan] {
             XCTAssertTrue(state.startTask(task), task.rawValue)
-            IOSShell.adoptCameraKind(state)
+            IOSShell.adoptCameraKind(state, defaults: defaults)
             XCTAssertEqual(state.settings.task, .document, task.rawValue)
             XCTAssertEqual(IOSShell.shownKind(state.settings), .document, task.rawValue)
             // The Document's own choices, not the receipts' grey Compact PDF.
@@ -343,22 +346,97 @@ final class IOSShellTests: XCTestCase {
         // A kind of the row stays, with its choices.
         for task in [ScanTask.photos, .photoRestore, .idCard, .book, .email] {
             XCTAssertTrue(state.startTask(task), task.rawValue)
-            IOSShell.adoptCameraKind(state)
+            IOSShell.adoptCameraKind(state, defaults: defaults)
             XCTAssertEqual(state.settings.task, task, task.rawValue)
         }
     }
 
     @MainActor
-    func test_adoptCameraKind_startsTheDocument_overSettingsLeftWithoutATask() {
+    func test_adoptCameraKind_startsTheDocument_overSettingsLeftWithoutATask() throws {
+        let name: String = "adoptNoTask.\(UUID().uuidString)"
+        let defaults: UserDefaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
         let state = AppState(backends: [], presetStore: PresetStore(directory: folder),
                              fileActions: IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in }),
                              files: AppStateFiles.all(in: folder))
         // Settings printer mode left without a task, on the feeder.
         state.settings.taskId = nil
         state.settings.source = .documentFeeder
-        IOSShell.adoptCameraKind(state)
+        IOSShell.adoptCameraKind(state, defaults: defaults)
         XCTAssertEqual(state.settings.task, .document)
         XCTAssertEqual(IOSShell.shownKind(state.settings), .document)
+    }
+
+    @MainActor
+    func test_adoptCameraKind_startsTheDocument_withTheChoicesItWasLeftWith() throws {
+        let name: String = "adoptChoices.\(UUID().uuidString)"
+        let defaults: UserDefaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let state = AppState(backends: [], presetStore: PresetStore(directory: folder),
+                             fileActions: IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in }),
+                             files: AppStateFiles.all(in: folder))
+        XCTAssertTrue(IOSShell.startKind(.document, in: state, defaults: defaults))
+        state.settings.format = .word
+        // Printer mode went on to Text, then the phone goes to camera mode.
+        XCTAssertTrue(IOSShell.startKind(.text, in: state, defaults: defaults))
+        IOSShell.adoptCameraKind(state, defaults: defaults)
+        XCTAssertEqual(state.settings.task, .document)
+        XCTAssertEqual(state.settings.format, .word)
+    }
+
+    func test_rememberChoices_layBackTheDrawersChoices_perKind() throws {
+        let name: String = "choices.\(UUID().uuidString)"
+        let defaults: UserDefaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        XCTAssertEqual(IOSShell.choicesKey(.document), "scan.choices.document")
+        let fresh: ScanSettings = TaskCatalog.apply(.document, to: ScanSettings())
+        // Nothing kept yet: the task's defaults as they are.
+        XCTAssertEqual(IOSShell.restoringChoices(for: .document, in: fresh, defaults: defaults), fresh)
+
+        var left: ScanSettings = fresh
+        left.format = .word
+        left.output.pdfSize = .best
+        left.output.archival = true
+        left.output.alsoSaveText = true
+        left = IOSShell.settingEachPage(true, in: left)
+        left.colorMode = .blackWhite
+        left.adjustments.brightness = 0.3
+        left.namingTemplate = "Letter {date}"
+        left.resolution = 600
+        IOSShell.rememberChoices(left, defaults: defaults)
+        let back: ScanSettings = IOSShell.restoringChoices(for: .document, in: fresh, defaults: defaults)
+        XCTAssertEqual(back.format, .word)
+        XCTAssertEqual(back.output.pdfSize, .best)
+        XCTAssertTrue(back.output.archival)
+        XCTAssertTrue(back.output.alsoSaveText)
+        XCTAssertTrue(IOSShell.savesEachPage(back))
+        XCTAssertEqual(back.colorMode, .blackWhite)
+        XCTAssertEqual(back.adjustments, left.adjustments)
+        XCTAssertEqual(back.namingTemplate, "Letter {date}")
+        XCTAssertEqual(back.task, .document)
+        // Not a choice of the drawer: the task's.
+        XCTAssertEqual(back.resolution, fresh.resolution)
+        // Each kind keeps its own.
+        let book: ScanSettings = TaskCatalog.apply(.book, to: ScanSettings())
+        XCTAssertEqual(IOSShell.restoringChoices(for: .book, in: book, defaults: defaults), book)
+
+        // A password turned on since keeps PDF/A off, as its chip would.
+        var locked: ScanSettings = fresh
+        locked.output.protect = true
+        let withPassword: ScanSettings = IOSShell.restoringChoices(for: .document, in: locked, defaults: defaults)
+        XCTAssertFalse(withPassword.output.archival)
+        XCTAssertTrue(withPassword.output.protect)
+
+        // Separate documents starts afresh, its file names with it.
+        IOSShell.rememberChoices(IOSShell.settingSeparate(true, in: fresh), defaults: defaults)
+        XCTAssertEqual(IOSShell.restoringChoices(for: .document, in: fresh, defaults: defaults), fresh)
+
+        // Photos with restored colours is Restore old photos again.
+        let photos: ScanSettings = TaskCatalog.apply(.photos, to: ScanSettings())
+        IOSShell.rememberChoices(IOSShell.settingRestore(true, in: photos), defaults: defaults)
+        let restored: ScanSettings = IOSShell.restoringChoices(for: .photos, in: photos, defaults: defaults)
+        XCTAssertEqual(restored.task, .photoRestore)
+        XCTAssertEqual(restored, IOSShell.settingRestore(true, in: photos))
     }
 
     func test_listedScanner_followsTheRememberedScanner_toAnotherConnection() {

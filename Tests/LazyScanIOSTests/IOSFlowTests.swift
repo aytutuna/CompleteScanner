@@ -189,6 +189,67 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertEqual(IOSShell.shownKind(ScanSettings()), .document)
     }
 
+    @MainActor
+    func test_aKindPickedAgain_hasTheDrawersChoicesItWasLeftWith() throws {
+        let folder: URL = try ImportTestSupport.makeFolder("kindChoices")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let suite: String = "kindChoices.\(UUID().uuidString)"
+        let defaults: UserDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        let saveFolder: String = state.settings.destinationPath
+        XCTAssertTrue(IOSShell.startKind(.document, in: state, defaults: defaults))
+        XCTAssertEqual(state.settings.format, .pdf)
+        state.settings.format = .jpeg
+        state.settings.output.pdfSize = .compact
+        state.settings.output.alsoSaveText = true
+        state.settings = IOSShell.settingEachPage(true, in: state.settings)
+        state.settings = IOSShell.settingDrawerFilter(.grayscale, in: state.settings)
+        state.settings.namingTemplate = "Letter {date}"
+
+        XCTAssertTrue(IOSShell.startKind(.photos, in: state, defaults: defaults))
+        XCTAssertEqual(state.activeTask, .photos)
+        // Photo has choices of its own, none kept yet.
+        XCTAssertEqual(state.settings.colorMode, .color)
+        XCTAssertFalse(IOSShell.savesEachPage(state.settings))
+        XCTAssertEqual(state.settings.namingTemplate, "Photo {date} {counter}")
+        // The password is the user's for every kind.
+        state.settings.output.protect = true
+
+        XCTAssertTrue(IOSShell.startKind(.document, in: state, defaults: defaults))
+        XCTAssertEqual(state.activeTask, .document)
+        XCTAssertEqual(state.settings.format, .jpeg)
+        XCTAssertEqual(state.settings.output.pdfSize, .compact)
+        XCTAssertTrue(state.settings.output.alsoSaveText)
+        XCTAssertTrue(IOSShell.savesEachPage(state.settings))
+        XCTAssertEqual(IOSShell.drawerFilter(state.settings), .grayscale)
+        XCTAssertEqual(state.settings.namingTemplate, "Letter {date}")
+        XCTAssertTrue(state.settings.output.protect)
+        XCTAssertEqual(state.settings.destinationPath, saveFolder)
+    }
+
+    @MainActor
+    func test_aPresetOfAnotherKind_keepsTheChoicesOfTheKindItReplaces() throws {
+        let folder: URL = try ImportTestSupport.makeFolder("presetChoices")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let suite: String = "presetChoices.\(UUID().uuidString)"
+        let defaults: UserDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        let model: IOSPresetsModel = IOSPresetsModel(state: state, importer: IOSImportSession(state: state),
+                                                     defaults: defaults)
+        state.settings = TaskCatalog.apply(.photos, to: state.settings)
+        XCTAssertTrue(model.save(named: "Prints"))
+        let id: UUID = try XCTUnwrap(model.rows.first?.id)
+        XCTAssertTrue(IOSShell.startKind(.document, in: state, defaults: defaults))
+        state.settings.format = .word
+
+        XCTAssertEqual(model.apply(id) {}, IOSPresetApply.applied)
+        XCTAssertEqual(IOSShell.shownKind(state.settings), .photos)
+        XCTAssertTrue(IOSShell.startKind(.document, in: state, defaults: defaults))
+        XCTAssertEqual(state.settings.format, .word)
+    }
+
     func test_kindTiles_areTheSixKinds_withTheCurrentOne() {
         var cards: [TaskCard] = []
         for definition in TaskCatalog.all {

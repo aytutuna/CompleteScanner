@@ -720,12 +720,13 @@ struct ScanScreen: View {
         reduceMotion ? Animation.easeInOut(duration: 0.2) : Animation.spring(duration: 0.45, bounce: 0.25)
     }
 
-    /// Picking a kind starts its task as the task list's tile does (its own choices back to their defaults,
-    /// and no PDF picked to add to). The pages taken stay when the kind collects pages too (Document, Book);
-    /// any other kind would leave them without a Save, so it asks first (`KeepPagesQuestion`). With a side of
-    /// an ID card held it asks about the card too. The chip already picked changes nothing, so a stray tap
-    /// keeps Both sides, the steps and the PDF picked. Nothing changes while a share or a send reads the
-    /// spooled pages, which Discard would delete.
+    /// Picking a kind starts its task as the task list's tile does (fresh steps, and no PDF picked to add to),
+    /// the drawer's choices the kind was left with laid back over its defaults (`IOSShell.startKind`). The
+    /// pages taken stay when the kind collects pages too (Document, Book); any other kind would leave them
+    /// without a Save, so it asks first (`KeepPagesQuestion`). With a side of an ID card held it asks about
+    /// the card too. The chip already picked changes nothing, so a stray tap keeps Both sides, the steps and
+    /// the PDF picked. Nothing changes while a share or a send reads the spooled pages, which Discard would
+    /// delete.
     private func pickKind(_ kind: IOSScanKind) {
         guard !saveBlocked else { return }
         guard kind != IOSShell.shownKind(state.settings) || state.activeTask == nil else { return }
@@ -746,7 +747,8 @@ struct ScanScreen: View {
     private func switchKind(_ kind: IOSScanKind, discardingPages: Bool = false, then next: (@MainActor () -> Void)? = nil) {
         let appState: AppState = state
         appState.leaveIdCard {
-            let started: Bool = discardingPages ? appState.discardPages(andStart: kind.task) : appState.startTask(kind.task)
+            let started: Bool = IOSShell.startKind(kind, in: appState, discardingPages: discardingPages,
+                                                   defaults: UserDefaults.standard)
             if started {
                 appState.clearAppendTarget()
                 next?()

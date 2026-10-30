@@ -551,13 +551,75 @@ public enum IOSShell {
         return IOSItemsInFrame(rawValue: defaults.string(forKey: itemsInFrameKey) ?? "") ?? .auto
     }
 
-    /// Camera mode has no Receipts or Text: their task, kept from printer mode or an older build, starts the
-    /// Document over in camera mode, with the Document's own choices, as do settings left without a task in
-    /// printer mode, since camera mode always shows a kind.
+    /// The user's defaults key of the drawer's choices `kind` was left with (`rememberChoices`).
+    static func choicesKey(_ kind: IOSScanKind) -> String {
+        "scan.choices.\(kind.rawValue)"
+    }
+
+    /// Keeps the drawer's choices of the kind the settings are shown as in `defaults`, for when that kind is
+    /// picked again (`restoringChoices`).
+    static func rememberChoices(_ settings: ScanSettings, defaults: UserDefaults) {
+        let choices: IOSKindChoices = IOSKindChoices(
+            format: settings.format, pdfSize: settings.output.pdfSize,
+            archival: IOSPDFOptions.archivalShown(settings.output), alsoSaveText: settings.output.alsoSaveText,
+            eachPage: savesEachPage(settings), colorMode: settings.colorMode, adjustments: settings.adjustments,
+            namingTemplate: settings.namingTemplate)
+        guard let data = try? JSONEncoder().encode(choices) else { return }
+        defaults.set(data, forKey: choicesKey(shownKind(settings)))
+    }
+
+    /// The settings of `kind`'s task, just started, with the drawer's choices the kind was left with laid back
+    /// over them (none kept: unchanged): the format, the PDF's size, PDF/A unless a password was turned on
+    /// since (a PDF/A file can't have one), Also .txt, One PDF per page, the colour, the adjustments (restored
+    /// colours make Photos Restore old photos again) and the file name, unless it was Separate documents',
+    /// which starts afresh as Both sides does. The folder, the paper and the password are never the kind's.
+    static func restoringChoices(for kind: IOSScanKind, in settings: ScanSettings,
+                                 defaults: UserDefaults) -> ScanSettings {
+        guard let data = defaults.data(forKey: choicesKey(kind)),
+              let kept = try? JSONDecoder().decode(IOSKindChoices.self, from: data) else { return settings }
+        var s: ScanSettings = settings
+        if s.task == .photos && kept.adjustments.restoreFadedColors {
+            s.taskId = ScanTask.photoRestore.rawValue
+        }
+        s.format = kept.format
+        s.output.pdfSize = kept.pdfSize
+        s.output = IOSPDFOptions.settingArchival(kept.archival, in: s.output)
+        s.output.alsoSaveText = kept.alsoSaveText
+        if kept.eachPage {
+            s = settingEachPage(true, in: s)
+        }
+        s.colorMode = kept.colorMode
+        s.adjustments = kept.adjustments
+        if kept.namingTemplate != separateNames {
+            s.namingTemplate = kept.namingTemplate
+        }
+        return s
+    }
+
+    /// A kind picked on the printer screen's chips or camera mode's row: the drawer's choices of the kind shown
+    /// are kept (`rememberChoices`), the picked kind's task starts as its tile did, with the availability check,
+    /// fresh steps and the fit to the scanner (`AppState.startTask`; `discardPages(andStart:)` when the queued
+    /// pages go), and the choices that kind was left with go back over the task's (`restoringChoices`). False
+    /// when the task was refused.
     @MainActor
-    static func adoptCameraKind(_ state: AppState) {
+    @discardableResult
+    static func startKind(_ kind: IOSScanKind, in state: AppState, discardingPages: Bool = false,
+                          defaults: UserDefaults) -> Bool {
+        rememberChoices(state.settings, defaults: defaults)
+        let started: Bool = discardingPages ? state.discardPages(andStart: kind.task) : state.startTask(kind.task)
+        if started {
+            state.settings = restoringChoices(for: kind, in: state.settings, defaults: defaults)
+        }
+        return started
+    }
+
+    /// Camera mode has no Receipts or Text: their task, kept from printer mode or an older build, starts the
+    /// Document over in camera mode, with the choices it was left with (`startKind`), as do settings left
+    /// without a task in printer mode, since camera mode always shows a kind.
+    @MainActor
+    static func adoptCameraKind(_ state: AppState, defaults: UserDefaults) {
         if let task = state.settings.task, cameraKinds.contains(kind(of: task)) { return }
-        state.startTask(.document)
+        startKind(.document, in: state, defaults: defaults)
     }
 
     /// The `.lsdoc` type the app declares (Info.plist's UTExportedTypeDeclarations), which Files offers
@@ -973,6 +1035,18 @@ public enum IOSItemsInFrame: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// The drawer's choices a kind was left with, kept in the user's defaults (`IOSShell.rememberChoices`).
+private struct IOSKindChoices: Codable {
+    let format: OutputFormat
+    let pdfSize: PDFSizePreset
+    let archival: Bool
+    let alsoSaveText: Bool
+    let eachPage: Bool
+    let colorMode: ColorMode
+    let adjustments: AdjustmentSettings
+    let namingTemplate: String
+}
+
 /// What the iPhone's scan screen asks first, as chips in its top row: what is being scanned. The rest (the
 /// feeder, both sides, separate documents, the format, PDF/A, email and printing) is an option of the scan
 /// screen or an action of Save.
@@ -1095,7 +1169,7 @@ extension AppState {
         state.platform = .ios
         IOSShell.adoptOriginalFilter(state, defaults: UserDefaults.standard)
         if UserDefaults.standard.string(forKey: IOSShell.scanModeKey) != IOSScanMode.printer.rawValue {
-            IOSShell.adoptCameraKind(state)
+            IOSShell.adoptCameraKind(state, defaults: UserDefaults.standard)
         }
         if let prompt = passwordPrompt {
             state.askPDFPassword = { () async -> PDFProtection? in

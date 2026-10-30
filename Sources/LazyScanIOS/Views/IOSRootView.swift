@@ -110,7 +110,7 @@ public struct IOSRootView: View {
         }
         .onChange(of: mode) { (_: IOSScanMode, new: IOSScanMode) in
             if new == .camera {
-                IOSShell.adoptCameraKind(state)
+                IOSShell.adoptCameraKind(state, defaults: UserDefaults.standard)
             }
             followMode()
         }
@@ -228,6 +228,7 @@ public struct IOSRootView: View {
         let appState: AppState = state
         let open: @MainActor () -> Void = openScanner
         appState.leaveIdCard {
+            IOSShell.rememberChoices(appState.settings, defaults: UserDefaults.standard)
             let started: Bool = discardingPages ? appState.discardPages(andStart: task) : appState.startTask(task)
             guard started else { return }
             if let target {
@@ -442,6 +443,7 @@ public struct IOSRootView: View {
     /// one that does not collect pages the banner offers to open it in Document.
     private func openPackage(_ url: URL) {
         if state.activeTask == nil {
+            IOSShell.rememberChoices(state.settings, defaults: UserDefaults.standard)
             _ = state.startTask(.document)
         }
         showsSettings = false
@@ -461,9 +463,11 @@ public struct IOSRootView: View {
     private func prepareForImport(_ task: ScanTask?) -> Bool {
         if let wanted = task {
             if state.activeTask != wanted {
+                IOSShell.rememberChoices(state.settings, defaults: UserDefaults.standard)
                 _ = state.startTask(wanted)
             }
         } else if state.activeTask == nil || !IOSShell.takesPhotos(state.settings) || (state.isCopyFlow && state.copyPages.isEmpty) {
+            IOSShell.rememberChoices(state.settings, defaults: UserDefaults.standard)
             _ = state.startTask(.document)
         }
         let presented: Bool = cameraRests
