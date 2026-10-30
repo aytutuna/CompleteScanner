@@ -63,6 +63,35 @@ final class IOSSettingsTests: XCTestCase {
         XCTAssertTrue(archiveLocked)
     }
 
+    func test_sections_inCameraMode_haveNoScanner_andPagesCountsWhatRunsOnTheCamerasPages() {
+        var ids: [String] = []
+        for section in IOSSettingsSections.sections(ScanSettings(), camera: true) {
+            ids.append(section.id)
+        }
+        XCTAssertEqual(ids, ["output", "adjustments", "pages", "split", "archive", "more"])
+
+        // The camera's pages are cut along their corners already: never cropped or straightened.
+        var cut: ScanSettings = ScanSettings()
+        cut.document.autoCrop = true
+        cut.document.autoStraighten = true
+        let camera: IOSSettingsSection? = pagesSection(cut, camera: true)
+        XCTAssertEqual(camera?.summary, "")
+        XCTAssertEqual(camera?.changed, false)
+        XCTAssertEqual(camera?.accessibilityLabel, "Pages")
+        let printer: IOSSettingsSection? = pagesSection(cut, camera: false)
+        XCTAssertEqual(printer?.summary, "Crop \u{00B7} Straighten")
+        XCTAssertEqual(printer?.changed, true)
+        XCTAssertEqual(printer?.accessibilityLabel, "Pages, 2 options on")
+
+        // Facing pages are split only from spreads taken whole (the Book kind's Whole spread).
+        var book: ScanSettings = TaskCatalog.apply(.book, to: ScanSettings())
+        XCTAssertEqual(pagesSection(book, camera: false)?.summary, "Straighten \u{00B7} Upright +1")
+        XCTAssertEqual(pagesSection(book, camera: true)?.summary, "Upright")
+        book.taskOptions.cameraSpreads = true
+        XCTAssertEqual(pagesSection(book, camera: true)?.summary, "Upright \u{00B7} Facing pages")
+        XCTAssertEqual(pagesSection(book, camera: true)?.accessibilityLabel, "Pages, 2 options on")
+    }
+
     func test_sections_aQueueSavedAsPictures_writesNoPDF_soArchiveIsHidden() {
         var pictures: ScanSettings = ScanSettings()
         pictures.format = .jpeg
@@ -190,6 +219,8 @@ final class IOSSettingsTests: XCTestCase {
 
     func test_scannerRows_needASelectedScanner_andListTheSourceChosen() {
         XCTAssertEqual(IOSSettingsSections.scannerRowsReason(selected: nil), IOSSettingsText.noScannerReason)
+        // Shown in printer mode, which the app never names.
+        XCTAssertFalse(IOSSettingsText.noScannerReason.contains("printer mode"))
         XCTAssertNil(IOSSettingsSections.scannerRowsReason(selected: "escl:office"))
         // Both sides set up for the camera chose the feeder before the scanner's sources are known.
         XCTAssertEqual(IOSSettingsSections.offeredSources(nil, chosen: .documentFeeder), [.flatbed, .documentFeeder])
@@ -467,6 +498,14 @@ final class IOSSettingsTests: XCTestCase {
                          isDirectory: true)
         XCTAssertEqual(IOSFileActions.filesAppURL(for: [iCloud])?.absoluteString,
                        "shareddocuments:///private/var/mobile/Library/Mobile%20Documents/com~apple~CloudDocs/Scans/")
+    }
+
+    private func pagesSection(_ s: ScanSettings, camera: Bool) -> IOSSettingsSection? {
+        var pages: IOSSettingsSection?
+        for section in IOSSettingsSections.sections(s, camera: camera) where section.id == InspectorSections.pages {
+            pages = section
+        }
+        return pages
     }
 
     @MainActor

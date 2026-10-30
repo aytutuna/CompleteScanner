@@ -35,8 +35,9 @@ public enum IOSSettingsText {
     /// Why Source is locked while a side of an ID card is held (from the camera or the scanner alike).
     public static let idCardHeldReason =
         "Source is locked while a side of the ID card is held. Save or discard the card, or leave the task, to change it."
-    /// In place of the Scanner section's rows while no scanner is selected: the camera does not use them.
-    public static let noScannerReason = "Pick a scanner in printer mode to change these."
+    /// In place of the Scanner section's rows while no scanner is selected: printer mode until the scanner
+    /// picked is found (camera mode has no Scanner section).
+    public static let noScannerReason = "No scanner is in use. Pick one in the Scanner row to change these."
     /// The About screen: what the app is built with (Apple's frameworks, and the page corner model with
     /// what runs it, whose licenses go with the app) and where scans stay.
     public static let aboutBuiltWith = "Built with Apple\u{2019}s frameworks. Pages are found with DocAligner by DocsaidLab "
@@ -85,8 +86,9 @@ public struct IOSSettingsSection: Identifiable, Equatable {
 /// Text kind's held page (`AppState.saveQuickScan`) write no PDF, so Archive & password is hidden there and
 /// the text beside a PDF does not count, and Output shows that page's picture format (`shownFormat`).
 /// More options leaves out the action after a save, which the phone sets under Export's After saving
-/// (`IOSAfterSave.thenTitle`). Which sections the user left open is kept in the user's defaults
-/// (`storageKey`), not in presets, as on the desktop.
+/// (`IOSAfterSave.thenTitle`). Camera mode has no Scanner section, the camera measuring its own pages, and
+/// its Pages header counts only what runs on them (`cameraShown`). Which sections the user left open is kept
+/// in the user's defaults (`storageKey`), not in presets, as on the desktop.
 public enum IOSSettingsSections {
     public static let storageKey = "settings.openSections"
 
@@ -107,8 +109,8 @@ public enum IOSSettingsSections {
         InspectorSections.writesPDF(s) && !savesPictures(s)
     }
 
-    /// The Scanner section's rows are a selected scanner's; with none (camera mode, or printer mode's scanner
-    /// not found yet) a line says where to pick one instead.
+    /// The Scanner section's rows are a selected scanner's; with none (printer mode's scanner not found yet)
+    /// a line says where to pick one instead.
     public static func scannerRowsReason(selected: String?) -> String? {
         selected == nil ? IOSSettingsText.noScannerReason : nil
     }
@@ -128,16 +130,33 @@ public enum IOSSettingsSections {
         InspectorSections.textApplies(s) && !savesPictures(s)
     }
 
-    public static func sections(_ s: ScanSettings) -> [IOSSettingsSection] {
+    /// `s` with only the page options that run on camera mode's pages, which its Pages header counts: they
+    /// are cut out of the photo along their corners already, so never cropped or straightened, and facing
+    /// pages are split only from spreads taken whole (`PageProcessor.forCapture`).
+    public static func cameraShown(_ s: ScanSettings) -> ScanSettings {
+        var shown: ScanSettings = s
+        shown.document.autoCrop = false
+        shown.document.autoStraighten = false
+        shown.document.splitFacingPages = PageProcessor.splitsCameraSpreads(s)
+        return shown
+    }
+
+    public static func sections(_ s: ScanSettings, camera: Bool = false) -> [IOSSettingsSection] {
+        let pages: ScanSettings = camera ? cameraShown(s) : s
         var result: [IOSSettingsSection] = []
         for id in InspectorSections.shown(s) {
             if id == InspectorSections.archive && !writesPDF(s) { continue }
+            if id == InspectorSections.scanner && camera { continue }
             let title: String = InspectorSections.title(id, for: s)
             var summary: String = InspectorSections.summary(id, for: s)
             var changed: Bool = InspectorSections.changed(id, for: s)
             if id == InspectorSections.output {
                 summary = InspectorSections.outputSummary(s, shownFormat: shownFormat(s))
                 changed = InspectorSections.outputChanged(s, shownFormat: shownFormat(s))
+            }
+            if id == InspectorSections.pages {
+                summary = InspectorSections.summary(id, for: pages)
+                changed = InspectorSections.changed(id, for: pages)
             }
             if id == InspectorSections.more {
                 var output: OutputOptions = s.output
@@ -146,7 +165,7 @@ public enum IOSSettingsSections {
                 changed = !summary.isEmpty
             }
             let name: String = id == InspectorSections.pages
-                ? InspectorSections.pagesHeaderName(s.document)
+                ? InspectorSections.pagesHeaderName(pages.document)
                 : InspectorSections.headerName(title, summary: summary)
             let locked: Bool = id == InspectorSections.archive && s.output.protect
             result.append(IOSSettingsSection(id: id, title: title, summary: summary, changed: changed, locked: locked,

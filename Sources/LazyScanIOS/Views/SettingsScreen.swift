@@ -6,12 +6,13 @@ import UniformTypeIdentifiers
 
 /// Settings: the presets, this session's scans and the saved files first, then the settings in the shared
 /// sections (`IOSSettingsSections`, built on `InspectorSections`: which are shown, in which order, their
-/// titles and the summaries their collapsed headers show; the task's own, Scanner and Output start open),
-/// then the camera's photo size where the camera offers more than one (`CameraSettingsRows`, this device's
-/// own), then Troubleshoot and About. My computer (since I20) pairs the phone with a computer and sends to it
-/// (`CompanionScreen`). Which sections are open is kept for the user, not in presets; a task
-/// started opens the section it needs (`AppState.sectionsOpenedByTask`) until it is closed. While an import
-/// runs the settings cannot be changed: its pages belong to the task and format it started with.
+/// titles and the summaries their collapsed headers show; the task's own, Scanner and Output start open;
+/// camera mode has no Scanner), then in camera mode the camera's photo size where the camera offers more
+/// than one (`CameraSettingsRows`, this device's own), then Troubleshoot and About. My computer (since I20)
+/// pairs the phone with a computer and sends to it (`CompanionScreen`). Which sections are open is kept for
+/// the user, not in presets; a task started opens the section it needs (`AppState.sectionsOpenedByTask`)
+/// until it is closed. While an import runs the settings cannot be changed: its pages belong to the task
+/// and format it started with.
 struct SettingsScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -30,8 +31,8 @@ struct SettingsScreen: View {
     @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
 
     var body: some View {
-        let sections: [IOSSettingsSection] = IOSSettingsSections.sections(state.settings)
         let camera: Bool = mode == .camera
+        let sections: [IOSSettingsSection] = IOSSettingsSections.sections(state.settings, camera: camera)
         Form {
             Section {
                 NavigationLink {
@@ -75,7 +76,7 @@ struct SettingsScreen: View {
                     .accessibilityIdentifier("settings.section.\(section.id)")
                 }
             }
-            if IOSCameraLens.choices(IOSCameraLens.offered).count > 1 {
+            if camera && IOSCameraLens.choices(IOSCameraLens.offered).count > 1 {
                 Section {
                     CameraSettingsRows(offered: IOSCameraLens.offered)
                 } header: {
@@ -206,7 +207,7 @@ private struct SettingsSectionRows: View {
         case InspectorSections.adjustments:
             AdjustmentSettingsRows()
         case InspectorSections.pages:
-            PageSettingsRows()
+            PageSettingsRows(camera: camera)
         case InspectorSections.split:
             SplitSettingsRows()
         case InspectorSections.archive:
@@ -279,10 +280,10 @@ private struct TaskSettingsRows: View {
 }
 
 /// The scanner's Source, Sides (with a feeder), Resolution and Color: for the scanner in use (a network
-/// scanner, the demo scanner); the camera measures its own pages, so with no scanner selected a line says
-/// where to pick one instead. Source is locked while a side of an ID card is held, as on the Mac: another
-/// source would end the task and drop the card. Also the scan screen's Options, outside a form, so each
-/// picker sits beside its name (`LabeledContent`).
+/// scanner, the demo scanner), in printer mode only, since the camera measures its own pages; with no
+/// scanner selected yet a line says where to pick one instead. Source is locked while a side of an ID card
+/// is held, as on the Mac: another source would end the task and drop the card. Also the scan screen's
+/// Options, outside a form, so each picker sits beside its name (`LabeledContent`).
 struct ScannerSettingsRows: View {
     @EnvironmentObject private var state: AppState
 
@@ -577,9 +578,13 @@ private struct AdjustmentSettingsRows: View {
 }
 
 /// Skip blank pages (with what counts as blank), crop and straighten, rotate upright, and split facing
-/// pages with the book's choices: on pages collected before saving only.
+/// pages with the book's choices: on pages collected before saving only. Camera mode offers what runs on
+/// its pages (`PageProcessor.forCapture`): they are cut along their corners already, so there is nothing to
+/// crop or straighten, and spreads are split only with Whole spread picked, so Split facing pages shows
+/// only then and the book's choices only while whole spreads are cut.
 private struct PageSettingsRows: View {
     @EnvironmentObject private var state: AppState
+    let camera: Bool
 
     var body: some View {
         let s: ScanSettings = state.settings
@@ -587,6 +592,7 @@ private struct PageSettingsRows: View {
         let separators: Bool = collecting && DocumentSplitter.blankPagesAreSeparators(s.document, sides: state.effectiveDuplex)
         let upright: Bool = state.canTurnPagesUpright
         let oneSide: Bool = BookPages.scansOneSide(s)
+        let spreads: Bool = camera ? PageProcessor.splitsCameraSpreads(s) : s.document.splitFacingPages
         if !collecting {
             ReasonLine(text: IOSSettingsText.notCollectingReason)
         }
@@ -609,24 +615,28 @@ private struct PageSettingsRows: View {
                 ReasonLine(text: BlankSensitivity.highWarning, systemImage: "exclamationmark.triangle")
             }
         }
-        Toggle("Crop to page", isOn: $state.settings.document.autoCrop)
-            .disabled(!collecting)
-            .accessibilityHint(Text("Cut away the scanner background"))
-        Toggle("Straighten pages", isOn: $state.settings.document.autoStraighten)
-            .disabled(!collecting)
-            .accessibilityHint(Text("Straighten slanted pages"))
+        if !camera {
+            Toggle("Crop to page", isOn: $state.settings.document.autoCrop)
+                .disabled(!collecting)
+                .accessibilityHint(Text("Cut away the scanner background"))
+            Toggle("Straighten pages", isOn: $state.settings.document.autoStraighten)
+                .disabled(!collecting)
+                .accessibilityHint(Text("Straighten slanted pages"))
+        }
         Toggle("Rotate pages upright", isOn: $state.settings.document.autoRotate)
             .disabled(!collecting || !upright)
             .accessibilityHint(Text(PageTurns.hint(s, available: upright)))
         if collecting && !upright {
             ReasonLine(text: PageTurns.hint(s, available: upright))
         }
-        Toggle("Split facing pages", isOn: $state.settings.document.splitFacingPages)
-            .disabled(!collecting || !oneSide)
-        if collecting && !oneSide {
-            ReasonLine(text: BookPages.notWithTwoSidedReason)
+        if !camera || s.taskOptions.cameraSpreads {
+            Toggle("Split facing pages", isOn: $state.settings.document.splitFacingPages)
+                .disabled(!collecting || !oneSide)
+            if collecting && !oneSide {
+                ReasonLine(text: BookPages.notWithTwoSidedReason)
+            }
         }
-        if collecting && oneSide && s.document.splitFacingPages {
+        if collecting && oneSide && spreads {
             Toggle("Reads right to left", isOn: $state.settings.taskOptions.bookRightToLeft)
                 .accessibilityHint(Text("Arabic, Hebrew, manga: the right page of each spread comes first."))
             Picker("Book rotation", selection: bookTurns) {
