@@ -176,7 +176,9 @@ struct ContentView: View {
                 if hasPhotos { state.importPhotos(urls) }
                 return true
             }
-            guard state.canImportPhotos, hasPhotos else { return false }
+            // Photos dropped where the settings do not import them are taken too, so importPhotos can say why.
+            let takes: Bool = state.canImportPhotos || (!state.isBusy && !PhotoImport.isOffered(state.settings))
+            guard hasPhotos, takes else { return false }
             state.importPhotos(urls)
             return true
         } isTargeted: { targeted in
