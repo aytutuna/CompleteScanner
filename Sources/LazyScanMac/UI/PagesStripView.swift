@@ -144,7 +144,7 @@ struct PagesStripView: View {
                             state.clearPages()
                         }
                     }
-                    .disabled(state.isBusy)
+                    .disabled(state.isBusy || state.scannedPages.isEmpty)
                     .help("Remove all pages")
                     .accessibilityHint(Text("Remove every page from the queue"))
                 }

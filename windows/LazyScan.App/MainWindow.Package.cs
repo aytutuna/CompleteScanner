@@ -48,7 +48,21 @@ public partial class MainWindow
 
     private void PackageAdd_Click(object sender, RoutedEventArgs e) => _ = ViewModel.AddPendingPackageToPages();
 
-    private void PackageOpen_Click(object sender, RoutedEventArgs e) => _ = ViewModel.OpenPendingPackageAsNew();
+    /// <summary>Open as new asks first while it would drop queued pages, as on the Mac and the iPhone.</summary>
+    private void PackageOpen_Click(object sender, RoutedEventArgs e)
+    {
+        int n = ViewModel.ScannedPages.Count;
+        // Where the settings collect no pages the click only says why, and the queue stays.
+        if (n > 0 && ViewModel.CanTakePhonePages && ViewModel.PendingPackage is { } package)
+        {
+            string question = n == 1
+                ? $"The page in the queue has not been saved. “{package.FileName}” opens in its place.\n\nDiscard the page?"
+                : $"The {n} pages in the queue have not been saved. “{package.FileName}” opens in their place.\n\nDiscard the pages?";
+            if (MessageBox.Show(this, question, "Lazy Scan", MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                                MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        }
+        _ = ViewModel.OpenPendingPackageAsNew();
+    }
 
     private void PackageBarClose_Click(object sender, RoutedEventArgs e)
     {

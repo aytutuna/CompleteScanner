@@ -9,8 +9,16 @@ struct PackageBannerView: View {
     @EnvironmentObject var state: AppState
 
     let package: PendingPackage
+    /// Open as new asks first while it would drop queued pages (the replace alert), as the iPhone does.
+    @State private var asksReplace = false
 
     var body: some View {
+        let pageCount: Int = state.scannedPages.count
+        let replaceTitle: String = pageCount == 1 ? "Replace the page in the queue?" : "Replace the \(pageCount) pages in the queue?"
+        let replaceLine: String = pageCount == 1
+            ? "It has not been saved. \u{201C}\(package.fileName)\u{201D} opens in its place."
+            : "They have not been saved. \u{201C}\(package.fileName)\u{201D} opens in their place."
+        let discardLabel: String = "Discard \(pageCount) page\(pageCount == 1 ? "" : "s")"
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: "doc.on.doc")
                 .font(.system(size: 15))
@@ -26,7 +34,7 @@ struct PackageBannerView: View {
             Group {
                 Button(PackageText.addToPages) { state.addPendingPackageToPages() }
                     .help(state.isTurningOverByHand ? DocumentSides.notWhileTurningOverReason : "Add the pages after the pages in the queue")
-                Button(PackageText.openAsNew) { state.openPendingPackageAsNew() }
+                Button(PackageText.openAsNew) { openAsNew() }
                     .help(state.isTurningOverByHand ? DocumentSides.notWhileTurningOverReason : "Clear the queue and open the document's pages in it")
             }
             .disabled(!state.canIngest)
@@ -43,6 +51,21 @@ struct PackageBannerView: View {
         .padding(.vertical, 8)
         .background(.bar)
         .accessibilityElement(children: .contain)
+        .alert(replaceTitle, isPresented: $asksReplace) {
+            Button(discardLabel, role: .destructive) { state.openPendingPackageAsNew() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(replaceLine)
+        }
+    }
+
+    private func openAsNew() {
+        // Where the settings collect no pages the click only says why, and the queue stays.
+        if state.canTakePhonePages && !state.scannedPages.isEmpty {
+            asksReplace = true
+        } else {
+            state.openPendingPackageAsNew()
+        }
     }
 }
 #endif
