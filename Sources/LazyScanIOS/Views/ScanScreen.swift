@@ -108,7 +108,8 @@ struct ScanScreen: View {
     @State private var leavingPages: PagesLeave?
     /// Camera mode was asked for in the middle of a stack turned over by hand: the question about it is up.
     @State private var leavingStack: Bool = false
-    /// The status a busy spell left in camera mode ("3 pages sent to Office PC."), on a card for a few seconds.
+    /// The status a busy spell left in camera mode ("3 pages sent to Office PC."), or one the companion said
+    /// while idle (`companionNoticed`), on a card for a few seconds.
     @State private var statusAfterBusy: String?
     /// The status, the files saved last and whether the queue had pages as the busy spell began, to tell what
     /// it changed, and whether it is a send, whose "3 pages sent to Office PC." is the same each time.
@@ -244,6 +245,9 @@ struct ScanScreen: View {
             }
             .onChange(of: working) { (_: Bool, busy: Bool) in
                 busyChanged(busy)
+            }
+            .onChange(of: state.companionNotice) { (_: CompanionNotice?, notice: CompanionNotice?) in
+                companionNoticed(notice)
             }
             .onChange(of: cover) { (_: ScanCover?, shown: ScanCover?) in
                 if shown == nil {
@@ -396,9 +400,9 @@ struct ScanScreen: View {
     }
 
     /// The package banner, the app's progress with Cancel while it is busy (a save, an export, After saving's
-    /// steps), an import's progress with Stop, the status a busy spell left (`busyChanged`), and the files
-    /// saved last until the next page comes in, back with the next save only (`savedRowStale`), each on a
-    /// card over the viewfinder.
+    /// steps), an import's progress with Stop, the status a busy spell left (`busyChanged`) or the companion
+    /// said while idle (`companionNoticed`), and the files saved last until the next page comes in, back with
+    /// the next save only (`savedRowStale`), each on a card over the viewfinder.
     @ViewBuilder
     private var cameraNotices: some View {
         if let offered = state.pendingPackage {
@@ -422,7 +426,7 @@ struct ScanScreen: View {
         }
     }
 
-    /// The status a busy spell left, gone after about four seconds.
+    /// The status a busy spell or the companion left, gone after about four seconds.
     private func statusCard(_ message: String) -> some View {
         Text(message)
             .font(.footnote)
@@ -463,6 +467,13 @@ struct ScanScreen: View {
         guard cameraMode, !message.isEmpty, message != statusBeforeBusy || busySends, state.errorMessage == nil,
               !importer.isImporting, state.lastSavedURLs == savedBeforeBusy else { return }
         statusAfterBusy = message
+    }
+
+    /// The companion said a document was sent, put in the cloud folder or received, which happens while nothing
+    /// is busy too (the pull, the drain on becoming active): camera mode shows it on the busy spell's card.
+    private func companionNoticed(_ notice: CompanionNotice?) {
+        guard let notice, cameraMode, !working, state.errorMessage == nil else { return }
+        statusAfterBusy = notice.text
     }
 
     /// Printer mode's progress row with Cancel, and the status line under the bar when the progress has no
@@ -1360,11 +1371,13 @@ struct ScanScreen: View {
     }
 
     /// A send whose document stays in the outbox, the computer not answering or no longer knowing the
-    /// phone, says so in an alert, unless it failed with an error of its own.
+    /// phone, says so in an alert, naming the cloud folder when the document went there, unless it failed with
+    /// an error of its own.
     private func reportUnsent(_ appState: AppState) {
         if appState.errorMessage == nil {
             appState.errorMessage = IOSAfterSave.notSentMessage(appState.companionStatus,
-                                                                waiting: appState.companionOutboxCount)
+                                                                waiting: appState.companionOutboxCount,
+                                                                inFolder: appState.companionInSyncFolderCount)
         }
     }
 

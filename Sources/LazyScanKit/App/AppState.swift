@@ -424,6 +424,10 @@ public final class AppState: ObservableObject {
     @Published public internal(set) var companionStatus = CompanionStatus.notPaired
     /// Documents waiting in the outbox to be sent to the desktop.
     @Published public internal(set) var companionOutboxCount = 0
+    /// The status last said about documents sent, put in the cloud folder or received (`statusMessage` has it
+    /// too): these come while the app may be idle, from a drain or the pull in the background, so a screen
+    /// without a status line (the iPhone's camera mode) shows them. Nil until the first.
+    @Published public internal(set) var companionNotice: CompanionNotice?
     /// Whether the connected scanner's feeder scans both sides is known: ImageCaptureCore reports it
     /// only once the feeder has been selected (`ScannerSession.feederSupportsDuplex`). Set once the
     /// scanner has answered; one that did not answer is asked again the next time.

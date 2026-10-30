@@ -292,6 +292,11 @@ final class IOSSettingsTests: XCTestCase {
         let reason: String = CompanionText.notOnNetworkReason("Office PC")
         XCTAssertEqual(IOSAfterSave.notSentMessage(.unreachable(reason: reason), waiting: 1),
                        "Office PC is not on this network. The pages wait on this phone and are sent once it answers.")
+        XCTAssertEqual(IOSAfterSave.notSentMessage(.unreachable(reason: reason), waiting: 1, inFolder: 1),
+                       "Office PC is not on this network. The document is in the cloud folder; the computer takes it from there.")
+        XCTAssertEqual(IOSAfterSave.notSentMessage(.unreachable(reason: reason), waiting: 2, inFolder: 1),
+                       "Office PC is not on this network. The pages wait on this phone and are sent once it answers.",
+                       "One of them waits on this phone")
         XCTAssertEqual(IOSAfterSave.notSentMessage(.unpaired(byDesktop: "Office PC"), waiting: 2),
                        "This phone is no longer paired with Office PC. The pages were not sent.")
         XCTAssertNil(IOSAfterSave.notSentMessage(.reachable(desktopName: "Office PC", queuedPages: 0), waiting: 1),

@@ -89,6 +89,13 @@ public enum CompanionStatus: Equatable, Sendable {
     case unpaired(byDesktop: String)
 }
 
+/// A companion status for a screen without a status line (`AppState.companionNotice`); each one is new, so the
+/// same words twice still count.
+public struct CompanionNotice: Identifiable, Equatable, Sendable {
+    public let id = UUID()
+    public let text: String
+}
+
 extension AppState {
     /// Keeps the companion's files in `folder` (companion-desktop.json, the "Outbox" and "Inbox"
     /// folders; the iPhone's network folder, out of backups) and the device secret in `secrets` (the
@@ -320,6 +327,7 @@ extension AppState {
         }
         if pages > 0 {
             statusMessage = CompanionText.sentMessage(pages, desktopName: desktop.name)
+            companionNotice = CompanionNotice(text: statusMessage)
             await checkDesktop()
         }
     }
@@ -328,6 +336,11 @@ extension AppState {
     public var canUseSyncFolder: Bool {
         guard let desktop = companionDesktop else { return false }
         return companionStore?.syncKey(for: desktop) != nil
+    }
+
+    /// The documents waiting in the outbox that are in the sync folder, for the desktop to take from there.
+    public var companionInSyncFolderCount: Int {
+        companionOutbox?.items.filter(\.inSyncFolder).count ?? 0
     }
 
     /// Keeps `bookmark` (made by the shell of the folder picked in My computer, in iCloud Drive or
@@ -398,6 +411,7 @@ extension AppState {
         outbox.markInSyncFolder(item.id)
         let name = URL(fileURLWithPath: item.fileName).deletingPathExtension().lastPathComponent
         statusMessage = CompanionText.putInSyncFolderMessage(name, desktopName: desktop.name)
+        companionNotice = CompanionNotice(text: statusMessage)
         return true
     }
 
@@ -542,7 +556,10 @@ extension AppState {
                 break
             }
         }
-        if put > 1 { statusMessage = CompanionText.putInSyncFolderMessage(count: put, desktopName: desktop.name) }
+        if put > 1 {
+            statusMessage = CompanionText.putInSyncFolderMessage(count: put, desktopName: desktop.name)
+            companionNotice = CompanionNotice(text: statusMessage)
+        }
     }
 
     /// Whether `id`'s file is still in the sync folder `folder` (an iCloud file moved off the phone shows
@@ -666,6 +683,7 @@ extension AppState {
             await offerReceivedPackage()
         } else {
             statusMessage = CompanionText.receivedMessage(url.lastPathComponent, desktopName: desktop.name)
+            companionNotice = CompanionNotice(text: statusMessage)
         }
         if let failure = failure { throw failure }
     }

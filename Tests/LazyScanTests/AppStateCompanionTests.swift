@@ -239,6 +239,8 @@ final class AppStateCompanionTests: XCTestCase {
 
         XCTAssertNil(state.errorMessage)
         XCTAssertEqual(state.statusMessage, "2 pages sent to Office PC.")
+        let notice = try XCTUnwrap(state.companionNotice)
+        XCTAssertEqual(notice.text, CompanionText.sentMessage(2, desktopName: "Office PC"))
         XCTAssertEqual(state.companionOutboxCount, 0)
         XCTAssertEqual(state.companionStatus, .reachable(desktopName: "Office PC", queuedPages: 2))
         XCTAssertEqual(state.scannedPages.count, 2)
@@ -247,6 +249,11 @@ final class AppStateCompanionTests: XCTestCase {
         XCTAssertEqual(try CompanionPackage.read(put.body).pages.count, 2)
         let left = try FileManager.default.contentsOfDirectory(atPath: companionFolder.appendingPathComponent("Outbox").path)
         XCTAssertEqual(left.filter { $0.hasSuffix(".lsdoc") }, [])
+
+        // Sent again, the same words are a new notice.
+        await state.sendQueueToDesktop(target: .new)
+        XCTAssertEqual(state.companionNotice?.text, notice.text)
+        XCTAssertNotEqual(state.companionNotice, notice)
     }
 
     @MainActor
@@ -458,6 +465,7 @@ final class AppStateCompanionTests: XCTestCase {
         XCTAssertEqual(fake.requests("DELETE " + CompanionProtocol.outboxPrefix + item.id).count, 1)
         XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent("Invoice.pdf")), pdf)
         XCTAssertEqual(state.statusMessage, "Received Invoice.pdf from Office PC.")
+        XCTAssertEqual(state.companionNotice?.text, "Received Invoice.pdf from Office PC.")
         XCTAssertNil(state.pendingPackage)
     }
 
@@ -561,6 +569,8 @@ final class AppStateCompanionTests: XCTestCase {
         let status = state.statusMessage
         XCTAssertTrue(status.hasPrefix("Put "), status)
         XCTAssertTrue(status.hasSuffix(" in the cloud folder for Office PC."), status)
+        XCTAssertEqual(state.companionNotice?.text, status)
+        XCTAssertEqual(state.companionInSyncFolderCount, 1)
 
         // It waits until the desktop takes the file out of the folder.
         await state.drainOutbox()
@@ -632,6 +642,29 @@ final class AppStateCompanionTests: XCTestCase {
         await state.drainOutbox()
         XCTAssertEqual(state.statusMessage, "Office PC cannot be reached on this network.")
         XCTAssertEqual(state.companionOutboxCount, 1)
+    }
+
+    @MainActor
+    func test_drainOutbox_unreachable_saysHowManyDocumentsWentInTheSyncFolder() async throws {
+        let fake = CompanionFakeDesktop()
+        let state = try await makeState(pages: 1)
+        try await pairWithSyncKey(state, with: fake)
+        fake.downHosts = [CompanionLink.address]
+        await state.sendQueueToDesktop(target: .new)
+        await state.sendQueueToDesktop(target: .new)
+        XCTAssertEqual(state.companionOutboxCount, 2)
+        // A desktop that does not answer is no notice: only a document that went somewhere is.
+        XCTAssertNil(state.companionNotice)
+
+        let cloud = folder.appendingPathComponent("iCloud Drive", isDirectory: true)
+        try FileManager.default.createDirectory(at: cloud, withIntermediateDirectories: true)
+        setSyncFolder(state, cloud)
+        await state.drainOutbox()
+
+        XCTAssertEqual(state.statusMessage, "Put 2 documents in the cloud folder for Office PC.")
+        XCTAssertEqual(state.companionNotice?.text, state.statusMessage)
+        XCTAssertEqual(state.companionInSyncFolderCount, 2)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: cloud.path).count, 2)
     }
 
     @MainActor
