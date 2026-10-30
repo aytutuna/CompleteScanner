@@ -13,6 +13,8 @@ internal static class ShortText
     public const string PlaceOriginal = "Place the original face down, then select Scan.";
     /// <summary>The chip on a preview until an area is selected.</summary>
     public const string DragToSelect = "Drag to select an area";
+    /// <summary>Saturation and Restore faded colors while the scan is grayscale or black and white.</summary>
+    public const string NeedsColor = "Needs Color";
     /// <summary>Page clean-up and splitting while each scan is saved at once.</summary>
     public const string NeedsCollectPages = "Needs Collect pages";
     /// <summary>Skip blank pages while blank sheets split the stack into documents.</summary>

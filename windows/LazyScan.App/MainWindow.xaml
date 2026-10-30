@@ -1011,7 +1011,7 @@
                                                 <TextBlock Grid.Row="2" Text="Saturation" Style="{StaticResource SliderLabelText}" />
                                                 <Slider Grid.Row="2" Grid.Column="1" x:Name="SaturationSlider"
                                                         Style="{StaticResource CenteredSliderStyle}"
-                                                        AutomationProperties.Name="Saturation"
+                                                        AutomationProperties.Name="Saturation" ToolTipService.ShowOnDisabled="True"
                                                         ValueChanged="Adjustment_Changed" />
                                                 <TextBlock Grid.Row="2" Grid.Column="2" x:Name="SaturationReadout" Text="0"
                                                            Style="{StaticResource ReadoutText}" />
@@ -1034,8 +1034,12 @@
                                                       ToolTip="Smooths the dot pattern of magazines and printed photos (descreen)"
                                                       Checked="Setting_Changed" Unchecked="Setting_Changed" />
                                             <CheckBox x:Name="RestoreBox" Style="{StaticResource ToggleSwitchStyle}"
-                                                      Content="Restore faded colors"
+                                                      Content="Restore faded colors" ToolTipService.ShowOnDisabled="True"
                                                       Checked="Setting_Changed" Unchecked="Setting_Changed" />
+                                            <DockPanel x:Name="ColorReason" Margin="0,0,0,4" Visibility="Collapsed">
+                                                <TextBlock DockPanel.Dock="Left" Style="{StaticResource ReasonGlyph}" Text="&#xE946;" />
+                                                <TextBlock Style="{StaticResource ReasonText}" Text="{x:Static local:ShortText.NeedsColor}" />
+                                            </DockPanel>
                                         </StackPanel>
                                     </Expander>
 

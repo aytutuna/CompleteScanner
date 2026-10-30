@@ -647,22 +647,27 @@ struct InspectorView: View {
 
     // MARK: Photos
 
-    /// Photos mode: finding and straightening each photo, the image format and where it is saved.
+    /// Photos mode: finding and straightening each photo, the image format and where it is saved. The
+    /// smallest photo side and the edge trim show while Find each photo is on: only the finder reads them.
     private var photosSection: some View {
         section(InspectorSections.output, title: "Photos",
                 summary: InspectorSections.outputSummary(state.settings, shownFormat: shownFormat),
                 changed: InspectorSections.outputChanged(state.settings, shownFormat: shownFormat)) {
             Toggle("Find each photo", isOn: $state.settings.photoAutoSplit)
                 .help("Finds each photo on the glass and saves it on its own")
+            if state.settings.photoAutoSplit {
+                Stepper(value: $state.settings.photoMinSideInches, in: 0.5...4, step: 0.1) {
+                    LabeledContent("Min photo side",
+                                   value: String(format: "%.1f in", state.settings.photoMinSideInches))
+                }
+                .padding(.leading, 12)
+                Stepper(value: $state.settings.photoCropInsetPixels, in: 0...20) {
+                    LabeledContent("Edge trim", value: "\(state.settings.photoCropInsetPixels) px")
+                }
+                .padding(.leading, 12)
+            }
             Toggle("Straighten photos", isOn: $state.settings.photoAutoDeskew)
                 .help("Turns each photo straight (deskew)")
-            Stepper(value: $state.settings.photoMinSideInches, in: 0.5...4, step: 0.1) {
-                LabeledContent("Min photo side",
-                               value: String(format: "%.1f in", state.settings.photoMinSideInches))
-            }
-            Stepper(value: $state.settings.photoCropInsetPixels, in: 0...20) {
-                LabeledContent("Edge trim", value: "\(state.settings.photoCropInsetPixels) px")
-            }
             formatPicker
             if shownFormat == .jpeg {
                 jpegQualityRow
@@ -1016,11 +1021,15 @@ struct InspectorView: View {
 
     private var adjustmentsSection: some View {
         let summary: String = InspectorSections.adjustmentsSummary(state.settings.adjustments)
+        let color: Bool = state.settings.colorMode == .color
+        let colorHelp: String = color ? "" : Self.colorOnlyHelp
         return section(InspectorSections.adjustments, title: "Adjustments", summary: summary, changed: !summary.isEmpty) {
             Toggle("Auto-enhance", isOn: $state.settings.adjustments.autoEnhance)
             amountSlider("Brightness", value: brightnessAmount)
             amountSlider("Contrast", value: contrastAmount)
             amountSlider("Saturation", value: saturationAmount)
+                .disabled(!color)
+                .help(colorHelp)
             amountSlider("Sharpness", value: sharpnessAmount)
                 .help("Positive sharpens, negative softens")
             Button {
@@ -1034,6 +1043,12 @@ struct InspectorView: View {
             Toggle("Remove print dots", isOn: $state.settings.adjustments.descreen)
                 .help("Smooths the dot pattern of magazines and printed photos (descreen)")
             Toggle("Restore faded colors", isOn: $state.settings.adjustments.restoreFadedColors)
+                .disabled(!color)
+                .help(colorHelp)
+            if !color {
+                reasonLine("Needs Color")
+                    .help(Self.colorOnlyHelp)
+            }
             if state.settings.colorMode == .blackWhite {
                 LabeledContent("B&W threshold") {
                     HStack(spacing: 6) {
@@ -1047,6 +1062,11 @@ struct InspectorView: View {
             }
         }
     }
+
+    /// Why Saturation and Restore faded colors are greyed out unless the scan is in color: the page is
+    /// turned gray right after them (`ImagePipeline.apply`).
+    private static let colorOnlyHelp =
+        "Saturation and Restore faded colors change nothing on a grayscale or black-and-white scan. Choose Color under Scanner."
 
     private func amountSlider(_ title: LocalizedStringKey, value: Binding<Double>) -> some View {
         LabeledContent(title) {

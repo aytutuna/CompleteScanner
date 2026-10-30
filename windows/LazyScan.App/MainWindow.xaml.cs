@@ -1340,6 +1340,7 @@ public partial class MainWindow : Window
             SyncBlankPageOptions();
             SyncGeometryOptions();
             SyncAutoRotateOptions();
+            SyncAdjustmentOptions();
             SyncCapabilityPickers();
         }
         finally
@@ -1399,6 +1400,7 @@ public partial class MainWindow : Window
         SyncBlankPageOptions();
         SyncGeometryOptions();
         SyncAutoRotateOptions();
+        SyncAdjustmentOptions();
         RefreshFromViewModel();
     }
 
@@ -1788,6 +1790,24 @@ public partial class MainWindow : Window
         a.Sharpness = 0;
         PushAdjustmentSliders();
         ViewModel.SettingsEdited();
+    }
+
+    /// <summary>
+    /// Saturation and Restore faded colors work in color only: a grayscale or black and white scan is
+    /// turned gray right after them (<see cref="ImagePipeline.Apply"/>), so they are off and say why.
+    /// </summary>
+    private void SyncAdjustmentOptions()
+    {
+        bool color = ViewModel.Settings.ColorMode == ColorMode.Color;
+        SaturationSlider.IsEnabled = color;
+        RestoreBox.IsEnabled = color;
+        ColorReason.Visibility = color ? Visibility.Collapsed : Visibility.Visible;
+        string? tip = color ? null
+            : "Saturation and Restore faded colors change nothing on a grayscale or black-and-white scan. Choose Color under Scanner.";
+        SaturationSlider.ToolTip = tip;
+        RestoreBox.ToolTip = tip;
+        AutomationProperties.SetHelpText(SaturationSlider, tip ?? "");
+        AutomationProperties.SetHelpText(RestoreBox, tip ?? "");
     }
 
     // MARK: - Buttons
