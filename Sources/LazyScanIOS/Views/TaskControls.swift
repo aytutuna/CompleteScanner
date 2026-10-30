@@ -46,18 +46,20 @@ enum IOSPDFOptions {
 
 /// The camera's buttons between shots for the task set up: No back (flip & capture, while a back is
 /// due), Now the backs and Put in order or Combine anyway (fronts first), and New document (Separate
-/// documents, the main button there; Command-N). Nothing for the other tasks. `onDark` draws them over the
+/// documents, the main button there; Command-N). Nothing for the other tasks. The printer screen (`printer`)
+/// has New document only: a scanned page never takes the camera's sides. `onDark` draws them over the
 /// camera's live preview, which is mostly the white page or a dark desk: the secondary ones white on a dark
 /// capsule, as the status line is, the prominent ones in the accent color.
 struct CameraTaskButtons: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
     var onDark: Bool = false
+    var printer: Bool = false
 
     var body: some View {
         let busy: Bool = state.isBusy || importer.isImporting
         HStack(spacing: 10) {
-            if let sides = state.cameraSides {
+            if !printer, let sides = state.cameraSides {
                 if sides.canSkipBack {
                     Button(CameraTaskCatalog.noBackLabel) {
                         state.skipCameraBack()
@@ -99,8 +101,8 @@ struct CameraTaskButtons: View {
     }
 
     /// Whether any button shows, so the scan screen leaves out an empty row.
-    static func showsAny(_ state: AppState) -> Bool {
-        if let sides = state.cameraSides, sides.canSkipBack || sides.canStartBacks || sides.canPutInOrder {
+    static func showsAny(_ state: AppState, printer: Bool = false) -> Bool {
+        if !printer, let sides = state.cameraSides, sides.canSkipBack || sides.canStartBacks || sides.canPutInOrder {
             return true
         }
         return state.offersNewDocument

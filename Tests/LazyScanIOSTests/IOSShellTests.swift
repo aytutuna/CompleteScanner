@@ -126,15 +126,25 @@ final class IOSShellTests: XCTestCase {
                                          turningOverByHand: true, printer: false))
         XCTAssertNil(IOSShell.cameraLine(nil, options: options, sides: nil, newDocument: false,
                                          turningOverByHand: false, printer: false))
-        // In printer mode, a back due or a new document pending is still said.
+        // A back due is said with a stack turned over by hand too, but not in printer mode, whose scans never
+        // take it; a new document pending is still said there.
         var flip = CameraSides(mode: .flip)
         flip.took([UUID()])
         XCTAssertEqual(IOSShell.cameraLine(.twoSided, options: options, sides: flip, newDocument: false,
-                                           turningOverByHand: false, printer: true)?.prompt,
+                                           turningOverByHand: true, printer: false)?.prompt,
                        CameraTaskCatalog.turnOverPrompt)
+        XCTAssertNil(IOSShell.cameraLine(.twoSided, options: options, sides: flip, newDocument: false,
+                                         turningOverByHand: false, printer: true))
         XCTAssertEqual(IOSShell.cameraLine(.batch, options: options, sides: nil, newDocument: true,
                                            turningOverByHand: false, printer: true)?.prompt,
                        CameraTaskCatalog.newDocumentPrompt)
+    }
+
+    func test_finishStackQuestion_saysCameraModeEndsTheStack() {
+        XCTAssertEqual(IOSShell.finishStackTitle, "Finish the stack first?")
+        XCTAssertEqual(IOSShell.finishStackLine,
+                       "The front sides wait for their backs. Camera mode ends the stack; the pages stay as they are.")
+        XCTAssertEqual(IOSShell.keepStackLabel, "Keep pages as they are")
     }
 
     func test_printerStep_saysHowTextIsScannedOnThePhone_andKeepsTheOtherSteps() throws {

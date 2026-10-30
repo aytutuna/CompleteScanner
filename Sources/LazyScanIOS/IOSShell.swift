@@ -131,14 +131,15 @@ public enum IOSShell {
 
     /// The camera's line the scan screen's step card shows in place of the task's step, which speaks of the
     /// glass and the feeder (`CameraTaskCatalog.current`): for every task but the ID card, whose steps say
-    /// which side is next, while the pages come from the camera, Photos or Files. In printer mode
-    /// (`printer`), or with a stack turned over by hand, only while a back is due in the camera's two-sided
-    /// steps or the next page starts a new document. Nil when the step's own words stay.
+    /// which side is next, while the pages come from the camera, Photos or Files. With a stack turned over
+    /// by hand, only while a back is due in the camera's two-sided steps or the next page starts a new
+    /// document; in printer mode (`printer`) only for the new document, since a scanned page never takes the
+    /// camera's back. Nil when the step's own words stay.
     public static func cameraLine(_ task: ScanTask?, options: TaskOptions, sides: CameraSides?, newDocument: Bool,
                                   turningOverByHand: Bool, printer: Bool) -> CameraStepText? {
         guard task != .idCard else { return nil }
         let pending: Bool = sides?.next == .back || newDocument
-        guard pending || !(turningOverByHand || printer) else { return nil }
+        guard pending || !turningOverByHand, !printer || newDocument else { return nil }
         return CameraTaskCatalog.current(task, options: options, sides: sides, newDocument: newDocument)
     }
 
@@ -514,6 +515,13 @@ public enum IOSShell {
         }
         return "\(settings.format.saveTitle) first"
     }
+
+    /// The question before camera mode ends a stack turned over by hand with pages in: its steps go as the
+    /// sides turn back to both (`AppState.userSelectNoDevice`). Keep pages as they are does first what the
+    /// stack's own buttons would.
+    public static let finishStackTitle = "Finish the stack first?"
+    public static let finishStackLine = "The front sides wait for their backs. Camera mode ends the stack; the pages stay as they are."
+    public static let keepStackLabel = "Keep pages as they are"
 
     /// The kinds in camera mode's row under the viewfinder. Receipts are a Document shot that holds several
     /// (`itemsInFrame`) and Text is the page viewer's, so neither is a kind here; printer mode's chips still

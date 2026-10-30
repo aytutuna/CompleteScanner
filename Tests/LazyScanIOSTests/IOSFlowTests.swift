@@ -151,6 +151,9 @@ final class IOSFlowTests: XCTestCase {
         flip.took([UUID()])
         XCTAssertTrue(IOSShell.showsStepCard(.twoSided, options: options, sides: flip, newDocument: false,
                                              turningOverByHand: false, printer: false))
+        // Printer mode keeps the card with a camera back due, in the step's own words.
+        XCTAssertTrue(IOSShell.showsStepCard(.twoSided, options: options, sides: flip, newDocument: false,
+                                             turningOverByHand: false, printer: true))
         XCTAssertTrue(IOSShell.showsStepCard(.document, options: options, sides: nil, newDocument: false,
                                              turningOverByHand: false, printer: true))
         XCTAssertTrue(IOSShell.showsStepCard(.twoSided, options: options, sides: nil, newDocument: false,

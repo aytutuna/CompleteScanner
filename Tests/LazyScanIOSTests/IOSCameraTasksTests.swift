@@ -12,7 +12,7 @@ import XCTest
 // saved with the password typed, nothing saved after Cancel); Quick scan's screen model; the page strip's
 // side, book and document labels; and the two UI tests' imports (a two-page PDF under the two-sided task
 // saving one PDF with both sides, and a PDF with a patch-code sheet between two pages under Separate
-// documents saving two PDFs), here through the import session.
+// documents saving two PDFs), here through the import session. No back is offered in camera mode only.
 
 /// The PDF of `pages` at Letter size, each picture drawn over the whole page.
 private func letterPDF(_ pages: [CGImage]) throws -> Data {
@@ -94,6 +94,20 @@ final class IOSCameraTasksTests: XCTestCase {
             }
         }
         XCTAssertEqual(offered, ScanTask.allCases.count)
+    }
+
+    // MARK: The camera's buttons
+
+    @MainActor
+    func test_aBackDue_offersNoBack_inCameraModeOnly() async throws {
+        let state: AppState = makeState(.twoSided)
+        let page = ScannedPage(image: try printedLetterPage(blocks: 2), dpi: 60, colorMode: .color)
+        XCTAssertTrue(state.ingest([page], source: .photo))
+        try await ImportTestSupport.waitUntil(timeout: 60) { !state.isBusy }
+        XCTAssertEqual(state.cameraSides?.next, .back)
+        XCTAssertTrue(CameraTaskButtons.showsAny(state))
+        // A scanned page never takes the camera's back, so the printer screen leaves No back out.
+        XCTAssertFalse(CameraTaskButtons.showsAny(state, printer: true))
     }
 
     // MARK: Archive and Password

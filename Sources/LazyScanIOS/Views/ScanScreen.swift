@@ -106,6 +106,8 @@ struct ScanScreen: View {
     @State private var stepsAfterAlert: [IOSAfterSave]?
     /// What was asked for that would leave the pages without a Save, while the question about them is up.
     @State private var leavingPages: PagesLeave?
+    /// Camera mode was asked for in the middle of a stack turned over by hand: the question about it is up.
+    @State private var leavingStack: Bool = false
     /// The status a busy spell left in camera mode ("3 pages sent to Office PC."), on a card for a few seconds.
     @State private var statusAfterBusy: String?
     /// The status, the files saved last and whether the queue had pages as the busy spell began, to tell what
@@ -142,6 +144,15 @@ struct ScanScreen: View {
             }
             .modifier(IdCardDiscardQuestion(state: state, asked: $askedToDiscard))
             .modifier(KeepPagesQuestion(state: state, leave: $leavingPages, blocked: saveBlocked))
+            .alert(IOSShell.finishStackTitle, isPresented: $leavingStack) {
+                Button(IOSShell.keepStackLabel) {
+                    settleStack()
+                    leaveForCamera()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(IOSShell.finishStackLine)
+            }
             .modifier(SaveDialogs(state: state, asksSendTarget: $asksSendTarget, picksPDF: $picksPDF,
                                   onSend: sendToComputer))
     }
@@ -297,13 +308,14 @@ struct ScanScreen: View {
                     } else {
                         stepCard
                     }
-                    if CameraTaskButtons.showsAny(state) {
-                        CameraTaskButtons()
+                    if CameraTaskButtons.showsAny(state, printer: !cameraMode) {
+                        CameraTaskButtons(printer: !cameraMode)
                     }
                     if TurnedOverButtons.showsAny(state) {
                         TurnedOverButtons()
                     }
-                    if let mismatch = state.sidesMismatch, state.cameraSides != nil || state.isTurningOverByHand {
+                    // The camera's own mismatch is said in camera mode, beside its Combine anyway.
+                    if let mismatch = state.sidesMismatch, state.isTurningOverByHand {
                         Label(mismatch, systemImage: "exclamationmark.triangle.fill")
                             .font(.footnote)
                             .foregroundStyle(Color.orange)
@@ -364,10 +376,18 @@ struct ScanScreen: View {
         }
     }
 
-    /// Printer mode: the root view selects its scanner once listed.
+    /// Printer mode: the root view selects its scanner once listed. A side of an ID card held keeps the scanner
+    /// from being selected, so it asks to discard the card first, as picking a scanner does; Cancel stays in
+    /// camera mode, where the card's other side can be taken.
     private func switchToPrinter() {
+        let appState: AppState = state
         afterOptions {
-            mode = .printer
+            appState.leaveIdCard {
+                mode = .printer
+            }
+            if appState.pendingIdCardLeave != nil {
+                askedToDiscard = true
+            }
         }
     }
 
@@ -555,12 +575,31 @@ struct ScanScreen: View {
     }
 
     /// Camera mode, with no scanner selected, so none of its limits apply to the camera (the sides turned
-    /// over by hand back to both, `AppState.userSelectNoDevice`).
+    /// over by hand back to both, `AppState.userSelectNoDevice`). That ends a stack turned over by hand, so
+    /// while one has pages in (`TurnedOverButtons.showsAny`) it asks first (`leavingStack`).
     private func switchToCamera() {
         let appState: AppState = state
         afterOptions {
-            mode = .camera
-            appState.userSelectNoDevice()
+            if TurnedOverButtons.showsAny(appState) {
+                leavingStack = true
+            } else {
+                leaveForCamera()
+            }
+        }
+    }
+
+    private func leaveForCamera() {
+        mode = .camera
+        state.userSelectNoDevice()
+    }
+
+    /// Keep pages as they are: what the stack's own buttons would do before its steps end. Keep Fronts Only
+    /// while no back is in, Combine Anyway once some are; fronts still being scanned stay as they are.
+    private func settleStack() {
+        if state.canScanMoreFronts {
+            state.keepFrontsOnly()
+        } else if state.awaitingBacks {
+            state.combineSidesAnyway()
         }
     }
 
