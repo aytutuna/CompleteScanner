@@ -67,12 +67,16 @@ struct PreviewCanvasView: View {
             Image(systemName: "scanner")
                 .font(.system(size: 64, weight: .light))
                 .foregroundStyle(.secondary)
-            Text(emptyStateLine)
-                .font(.title3)
-                .foregroundStyle(.secondary)
-            Text("No scanner around? Pick the Demo Scanner in the sidebar to try everything out.")
-                .font(.callout)
-                .foregroundStyle(.tertiary)
+            if let line = startLine {
+                Text(line)
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+            }
+            if demoSelected {
+                Text("This is the demo scanner: it scans sample pages. Your own scanner appears in the sidebar once it is found.")
+                    .font(.callout)
+                    .foregroundStyle(.tertiary)
+            }
         }
         .multilineTextAlignment(.center)
         .padding(40)
@@ -80,10 +84,20 @@ struct PreviewCanvasView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var emptyStateLine: String {
-        state.settings.source == .documentFeeder
-            ? "Load the pages in the feeder and press Scan"
-            : "Press Preview to see the flatbed, or Scan to go straight ahead"
+    /// What to do first; none while the task banner above already says it.
+    private var startLine: String? {
+        if state.activeTaskDefinition != nil || state.isTurningOverByHand { return nil }
+        let action: String = state.primaryActionLabel
+        if state.previewUnavailableReason == nil {
+            return "Press Preview to see the flatbed, or \(action) to go straight ahead"
+        }
+        if state.settings.source == .documentFeeder { return "Load the pages in the feeder and press \(action)" }
+        return "Press \(action) to start"
+    }
+
+    private var demoSelected: Bool {
+        let selected: ScannerInfo? = state.devices.first(where: { $0.id == state.selectedDeviceID })
+        return selected?.isDemo == true
     }
 
     // MARK: Image
