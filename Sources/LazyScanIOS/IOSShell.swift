@@ -692,7 +692,8 @@ public enum IOSShell {
     // would reset the other choices; the task changes under the hood where its flow needs it.
 
     /// Both sides on the camera: the two-sided task, whose camera steps (flip & capture, or fronts first)
-    /// need it, with the feeder and both sides it fits; off, Document again on the flatbed, as its tile was.
+    /// need it, with the feeder and both sides it fits and the pages collected, since the steps pair the
+    /// sides in the queue; off, Document again on the flatbed, as its tile was.
     public static func settingBothSides(_ on: Bool, in settings: ScanSettings) -> ScanSettings {
         var s: ScanSettings = settings
         if on {
@@ -700,6 +701,7 @@ public enum IOSShell {
             if separatesDocuments(s) { s = settingSeparate(false, in: s) }
             s.source = .documentFeeder
             s.duplex = .both
+            s.documentMultiPage = true
         } else {
             s.source = .flatbed
             s.duplex = .off

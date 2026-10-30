@@ -580,6 +580,25 @@ public class ScanTaskTests
     }
 
     [Fact]
+    public void Fits_ABookCollectsItsPages_AQuickScanSavesEachAtOnce()
+    {
+        // Each page saved at once is never split: the book ends, and the settings look like a document.
+        var book = TaskCatalog.Apply(ScanTask.Book, new ScanSettings());
+        book.DocumentMultiPage = false;
+        Assert.False(TaskCatalog.Fits(ScanTask.Book, book));
+        Assert.Null(TaskCatalog.GuidedSteps(book, null));
+        book.TaskId = null;
+        Assert.Equal(ScanTask.Document, TaskCatalog.Infer(book));
+        // Collected pages wait in the queue instead of being saved at once: it ends too.
+        var quick = TaskCatalog.Apply(ScanTask.QuickScan, new ScanSettings());
+        quick.DocumentMultiPage = true;
+        Assert.False(TaskCatalog.Fits(ScanTask.QuickScan, quick));
+        Assert.Null(TaskCatalog.GuidedSteps(quick, null));
+        quick.TaskId = null;
+        Assert.Equal(ScanTask.Document, TaskCatalog.Infer(quick));
+    }
+
+    [Fact]
     public void FlowOf_TaskThenMode()
     {
         Assert.Equal(TaskFlowKind.DocumentQueue, TaskCatalog.FlowOf(new ScanSettings()));

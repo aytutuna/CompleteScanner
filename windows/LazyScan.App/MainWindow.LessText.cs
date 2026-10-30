@@ -49,7 +49,8 @@ public partial class MainWindow
     /// of the PDF glyph while the PDF gets a password, and its name for screen readers: "Save PDF, 5
     /// pages" or "Save password-protected PDF, 5 pages". With pages queued but none to save, it is
     /// greyed out and its tooltip says why. While a PDF picked on the start screen takes the pages it
-    /// reads "Add to Contract.pdf", with the file's path and a × under it.
+    /// reads "Add to Contract.pdf", with the file's path and a × under it, and Collect pages is greyed
+    /// out with its tooltip and help text saying why.
     /// </summary>
     private void SyncSaveButton(SavePlan savePlan, int pageCount)
     {
@@ -79,6 +80,15 @@ public partial class MainWindow
         AppendTargetText.Text = target ?? "";
         AppendTargetText.ToolTip = target;
         ClearAppendTargetButton.IsEnabled = !ViewModel.IsBusy;
+        // Turned off, each scan would be saved as a new file while this row still offers to add to the PDF.
+        MultiPageBox.IsEnabled = target is null;
+        string? why = target is null
+            ? null
+            : $"Pages are collected until they are added to {Path.GetFileName(target)}. The × under Save saves new files again.";
+        MultiPageBox.ToolTip = why ?? "Off: each scan is saved right away";
+        var shownFormat = InspectorSections.SavesPageFormat(ViewModel.Settings) ? OutputFormats.PageFormat(format) : format;
+        AutomationProperties.SetHelpText(MultiPageBox,
+            why ?? $"On: pages are collected until you {OutputFormats.SaveTitle(shownFormat)}. Off: each scan is saved right away.");
     }
 
     /// <summary>The Save button's ▾: the other ways to save the queue.</summary>

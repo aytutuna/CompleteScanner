@@ -504,11 +504,19 @@ struct InspectorView: View {
             }
             if !state.isReceiptFlow && !state.isIdCardFlow {
                 Toggle("Collect pages before saving", isOn: $state.settings.documentMultiPage)
-                    .help("Off: each scan is saved right away")
-                    .accessibilityHint(Text("On: pages are collected until you \(shownFormat.saveTitle). Off: each scan is saved right away."))
+                    .disabled(addingHint != nil)
+                    .help(addingHint ?? "Off: each scan is saved right away")
+                    .accessibilityHint(Text(addingHint ?? "On: pages are collected until you \(shownFormat.saveTitle). Off: each scan is saved right away."))
             }
             destinationRow
         }
+    }
+
+    /// Why Collect pages cannot be turned off while a PDF picked on the start screen takes the pages: each
+    /// scan would be saved as a new file while the strip still offers to add to this one.
+    private var addingHint: String? {
+        guard let target = state.appendTarget else { return nil }
+        return "Pages are collected until they are added to \(target.lastPathComponent). Stop Adding saves new files again."
     }
 
     /// Searchable PDF applies whenever the save writes a PDF that can carry text: not for Word, text or

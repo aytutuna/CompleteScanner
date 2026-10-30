@@ -954,6 +954,8 @@ the appender (`PDFReaderLite.swift`, `PDFAppender.swift`).
 The start screen's "Add pages to a PDF" tile asks for the PDF first and then sets up Document to
 PDF: Save reads "Add to Contract.pdf", with the file's path and a × under it to save a new PDF
 instead, and adds the scanned pages to that file. Picking another task or a preset forgets the file.
+**Collect pages before saving** is greyed out while the file is picked, and its tooltip and help text
+say why: with it off each scan would be saved as a new file.
 
 **Not done yet** (from the M21 spec): the picker showing the chosen file's first page. (The split
 button is there now: Save with Add to existing PDF… in its ▾ menu; instead of a "Save as new PDF"
@@ -1293,7 +1295,8 @@ scan of an open book or magazine at the spine into its two pages. The **Book or 
 each page straightened and turned upright on its own, named `{task} {date} {counter}` ("Book
 2026-10-19 3.pdf"), and the banner asks for one spread at a time ("Open the book face down with the
 spine in the middle of the glass and press it gently flat, then scan. Turn the page and scan the
-next spread; each one becomes two pages."; the button says **Scan spread**). Color is the default
+next spread; each one becomes two pages."; the button says **Scan spread**). Turning
+**Split facing pages** or **Collect pages before saving** off ends the task. Color is the default
 because the Standard PDF size already stores pages that are really gray in gray, and magazines keep
 their color. The switch works for any collected document scan of one side of each sheet; with each
 scan saved at once and for two-sided feeder scans (whose pages are paired by sheet and side) it is

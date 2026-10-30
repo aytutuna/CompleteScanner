@@ -26,6 +26,9 @@ public enum IOSSettingsText {
     public static let rulerHint = "Prints a ruler to check copies come out at real size"
     public static let resetLabel = "Reset"
     public static let notCollectingReason = "Needs Collect pages"
+    /// Why Collect pages is locked while the camera's Both sides is on: its fronts and backs are paired in
+    /// the queue.
+    public static let bothSidesCollectsReason = "Both sides pairs the pages in the stack"
     public static let docdateReason = "Needs {docdate} in File name"
     public static let onlyPDFReason = "Only for PDFs"
     public static let importingReason = "Can be changed once the import has finished"
@@ -45,6 +48,12 @@ public enum IOSSettingsText {
     /// The camera's group, on this device only: the size its photos are taken at.
     public static let cameraTitle = "Camera"
     public static let cameraResolutionLabel = "Resolution"
+
+    /// Why Collect pages is locked while a PDF picked in the task list takes the pages: turned off, each scan
+    /// would be saved as a new file while Save still names this one.
+    public static func addingToReason(_ fileName: String) -> String {
+        "Adding to \(fileName)"
+    }
 
     /// A photo size in the Resolution picker, "24 MP (default)" for the one taken until another is picked.
     public static func resolutionChoice(_ size: IOSPhotoSize, isDefault: Bool) -> String {
