@@ -9,7 +9,7 @@ using System.Text.Unicode;
 
 namespace LazyScan.Core;
 
-// Port of Sources/CompleteScannerKit/Persistence/PresetStore.swift.
+// Port of Sources/LazyScanKit/Persistence/PresetStore.swift.
 
 public sealed class PresetStore
 {

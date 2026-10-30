@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/Quad.swift: the same arithmetic in the same order.
+// Twin of Sources/LazyScanKit/Pipeline/Quad.swift: the same arithmetic in the same order.
 
 /// <summary>
 /// Four corners of a page seen in a photo, in image pixels (origin top-left, x right, y down,

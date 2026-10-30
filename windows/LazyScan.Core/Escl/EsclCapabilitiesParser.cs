@@ -6,7 +6,7 @@ namespace LazyScan.Core;
 
 // eSCL (AirScan) protocol logic used by LazyScan.App/Scanning/EsclScannerBackend.cs,
 // kept in Core so it can be tested against fixture XML (Tests/Fixtures/Escl, shared with the Swift
-// suite). Twin of Sources/CompleteScannerKit/Escl/EsclCapabilities.swift, which the iPhone's eSCL
+// suite). Twin of Sources/LazyScanKit/Escl/EsclCapabilities.swift, which the iPhone's eSCL
 // connection uses: the same rules and tests on both platforms.
 
 /// <summary>What one eSCL input source (platen, feeder simplex, feeder duplex) offers.</summary>

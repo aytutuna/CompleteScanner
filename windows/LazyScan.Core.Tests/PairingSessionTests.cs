@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/PairingSessionTests.swift (same clock steps, same answers).
+// Mirrored by Tests/LazyScanTests/PairingSessionTests.swift (same clock steps, same answers).
 
 public class PairingSessionTests
 {

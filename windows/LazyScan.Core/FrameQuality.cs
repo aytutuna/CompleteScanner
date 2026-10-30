@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/FrameQuality.swift: the same integer sums, so the same
+// Twin of Sources/LazyScanKit/Pipeline/FrameQuality.swift: the same integer sums, so the same
 // frame gives the same readings on both platforms.
 
 /// <summary>A live frame's readings (<see cref="FrameQuality.Measure(GrayImage, Quad?)"/>).</summary>

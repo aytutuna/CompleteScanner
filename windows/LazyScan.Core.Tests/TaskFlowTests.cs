@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/TaskFlowTests.swift: the same cases.
+// Mirrored by Tests/LazyScanTests/TaskFlowTests.swift: the same cases.
 
 public class TaskFlowTests
 {

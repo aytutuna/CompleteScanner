@@ -66,8 +66,8 @@
   <!-- DocAligner's FastViT-T8 and its licence, into Models next to the app, from the folder
        scripts/fetch_docaligner.sh fetches the model into. Builds without it go on, and the photo import
        then uses its own page search. -->
-  <ItemGroup Condition="Exists('..\..\Sources\CompleteScannerModel\Models\fastvit_t8_h_e_bifpn_256_fp32.onnx')">
-    <None Include="..\..\Sources\CompleteScannerModel\Models\fastvit_t8_h_e_bifpn_256_fp32.onnx;..\..\Sources\CompleteScannerModel\Models\DocAligner-LICENSE.txt"
+  <ItemGroup Condition="Exists('..\..\Sources\LazyScanModel\Models\fastvit_t8_h_e_bifpn_256_fp32.onnx')">
+    <None Include="..\..\Sources\LazyScanModel\Models\fastvit_t8_h_e_bifpn_256_fp32.onnx;..\..\Sources\LazyScanModel\Models\DocAligner-LICENSE.txt"
           Link="Models\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
 

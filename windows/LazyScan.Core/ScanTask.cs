@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Port of Sources/CompleteScannerKit/Core/ScanTask.swift.
+// Port of Sources/LazyScanKit/Core/ScanTask.swift.
 
 /// <summary>
 /// What the user is scanning, as picked on the start screen. Settings files store it as its

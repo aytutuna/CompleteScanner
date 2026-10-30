@@ -17,7 +17,7 @@ public sealed class TempFileKeptException(string tempPath, Exception inner)
 
 /// <summary>
 /// RgbaImage ↔ WPF bitmap conversion plus file export with DPI metadata — the Windows
-/// counterpart of Sources/CompleteScannerKit/Output/ImageExporter.swift (which uses ImageIO).
+/// counterpart of Sources/LazyScanKit/Output/ImageExporter.swift (which uses ImageIO).
 /// Uses only WPF's built-in encoders, so no package dependencies.
 /// </summary>
 public static class WpfImageCodec

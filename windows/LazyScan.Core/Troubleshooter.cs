@@ -5,7 +5,7 @@ namespace LazyScan.Core;
 // "Why isn't my scanner listed?": what the app knows about finding scanners, gathered into one
 // snapshot and turned into plain-language checks, each with the actions that help. The apps only
 // read the system's state and link to the system's settings; they never change a service or a
-// setting. Mirrored by Sources/CompleteScannerKit/Core/Troubleshooter.swift (same checks, same
+// setting. Mirrored by Sources/LazyScanKit/Core/Troubleshooter.swift (same checks, same
 // text, same order).
 
 /// <summary>Which app the snapshot comes from: the checks and their wording follow it.</summary>

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/BlankPageDetectorTests.swift: same pages, same expectations.
+// Twin of Tests/LazyScanTests/BlankPageDetectorTests.swift: same pages, same expectations.
 
 public class BlankPageDetectorTests
 {

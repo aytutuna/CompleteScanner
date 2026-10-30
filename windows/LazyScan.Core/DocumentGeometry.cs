@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/DocumentGeometry.swift: same constants, same steps.
+// Twin of Sources/LazyScanKit/Pipeline/DocumentGeometry.swift: same constants, same steps.
 
 /// <summary>Which way the lines of text on a page run (<see cref="DocumentGeometry.EstimateTextLayout"/>).</summary>
 public enum TextAxis

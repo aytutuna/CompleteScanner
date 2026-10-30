@@ -256,10 +256,10 @@ Requires Xcode (or its toolchain) on macOS 14+.
 ```bash
 cd ~/CompleteScanner
 ./scripts/fetch_docaligner.sh      # the page corner model; without it the apps use their own page search
-swift run CompleteScanner          # run directly
+swift run LazyScan                 # run directly
 # or build a double-clickable app:
-./scripts/make_app.sh              # -> dist/CompleteScanner.app
-open dist/CompleteScanner.app
+./scripts/make_app.sh              # -> dist/Lazy Scan.app
+open "dist/Lazy Scan.app"
 ```
 
 Run the test suite (photo detection, PDF/OCR, naming, adjustments):
@@ -272,7 +272,7 @@ The package also builds for iOS 18, for the iPhone app: the shared core and its
 tests run on the iOS Simulator with Xcode 26 or later, as CI's `ios` job runs them:
 
 ```bash
-xcodebuild test -scheme CompleteScanner-Package   -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5'
+xcodebuild test -scheme LazyScan-Package   -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5'
 ```
 
 The app itself (iPhone only for now, which an iPad runs in iPhone compatibility mode, so the iPad
@@ -422,7 +422,7 @@ instructions and current status.
 The Swift package (tools 6.0, Swift 5 language mode, macOS 14 and iOS 18) has one shared core and a
 target for each platform's own parts:
 
-- `Sources/CompleteScannerKit` — the shared core, built for macOS and iOS, with no AppKit, UIKit,
+- `Sources/LazyScanKit` — the shared core, built for macOS and iOS, with no AppKit, UIKit,
   SwiftUI or ImageCaptureCore:
   - `Core` — shared models + backend protocols
   - `Backends` — the demo backend
@@ -451,10 +451,10 @@ target for each platform's own parts:
   - `App` — `AppState`, which every view binds to, and the protocols of the system services each
     app passes in (`FileActionService`, `PrintService`, `TroubleshooterService`,
     `PlatformLifecycle`, `BackgroundActivity`); pages from a scan or any other source come in through `AppState.ingest`
-- `Sources/CompleteScannerMac` — the Mac only (each file inside `#if os(macOS)`): the SwiftUI views,
+- `Sources/LazyScanMac` — the Mac only (each file inside `#if os(macOS)`): the SwiftUI views,
   the ImageCaptureCore backend, the system services (`SystemFileActions`, `SystemPrintService`,
-  `SystemTroubleshooterService`, `AppKitLifecycle`) and `CompleteScannerApp`
-- `Sources/CompleteScannerIOS` — the iPhone and iPad only (each file inside `#if os(iOS)`):
+  `SystemTroubleshooterService`, `AppKitLifecycle`) and `LazyScanApp`
+- `Sources/LazyScanIOS` — the iPhone and iPad only (each file inside `#if os(iOS)`):
   `UIKitLifecycle`, `UIKitBackgroundActivity` (the system's background time for a network scan),
   the app shell's services (`IOSShell`, `IOSFileActions`: Quick Look, the share
   sheet, Mail's composer, the Files app), the password sheet (`Protection/`), Apple's document scanner and our own camera (`Camera/`: the capture session,
@@ -469,24 +469,24 @@ target for each platform's own parts:
   (`IOSLayout.swift`, `Views/IOSSidebar.swift`), network scanners (`Network/`: the search, run only while the app is in
   front, after a short card that explains the system's Local Network prompt; adding a scanner by
   address; the scanner picker, a sheet on iPhone and a sidebar on iPad; the troubleshooter's
-  system side), `CompleteScannerIOSApp` and its SwiftUI views (also the flatbed preview with its
+  system side), `LazyScanIOSApp` and its SwiftUI views (also the flatbed preview with its
   scan area, a feeder's progress with Cancel, and the troubleshooter)
 - `ios/` — the iPhone app's Xcode project for XcodeGen (`project.yml`): the app target that
-  only starts `CompleteScannerIOSApp`, its `Info.plist`, privacy manifest and asset catalog, and the
+  only starts `LazyScanIOSApp`, its `Info.plist`, privacy manifest and asset catalog, and the
   UI tests (`CompleteScanneriOSUITests`: the smoke test, the photo import, with its fixture
   photo, two prints in one shot under the Photos task saved as two JPEGs, two pages under the
   two-sided task saved as one PDF, a patch-code sheet splitting a PDF into two, the camera screen's
   no-camera state, the scanner picker with the add-by-address sheet, and Settings with a preset saved
   and listed); the `.xcodeproj` XcodeGen
   writes is not checked in
-- `Sources/CompleteScannerModel` — the page corner model for the Mac and the iPhone: DocAligner's
+- `Sources/LazyScanModel` — the page corner model for the Mac and the iPhone: DocAligner's
   FastViT-T8 on ONNX Runtime (`FastViTCornerModel`, Core ML in front of the CPU), its file fetched into
   `Models/` by `scripts/fetch_docaligner.sh`; the input and the heatmap decoding it shares with Windows
   are in Kit's `Pipeline`
-- `Sources/CompleteScanner` — the Mac app's entry point
-- `Tests/CompleteScannerTests` — unit tests (synthetic-image based), run on macOS and on the iOS
-  Simulator; `Tests/CompleteScannerMacTests` and `Tests/CompleteScannerIOSTests` — each platform's own;
-  `Tests/CompleteScannerModelTests` — the corner model on `Tests/Fixtures/Pages`, six SmartDoc frames
+- `Sources/LazyScan` — the Mac app's entry point
+- `Tests/LazyScanTests` — unit tests (synthetic-image based), run on macOS and on the iOS
+  Simulator; `Tests/LazyScanMacTests` and `Tests/LazyScanIOSTests` — each platform's own;
+  `Tests/LazyScanModelTests` — the corner model on `Tests/Fixtures/Pages`, six SmartDoc frames
   with their pages' corners that the Windows tests read too;
   `Tests/Fixtures/Escl` — the eSCL fixtures this suite and the Windows one both read (capability
   documents, request snapshots, a TXT record, RSA-2048, P-256 and P-384 scanner certificates, a

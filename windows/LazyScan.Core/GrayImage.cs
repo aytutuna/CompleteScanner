@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/GrayImage.swift: same arithmetic, so the same
+// Twin of Sources/LazyScanKit/Pipeline/GrayImage.swift: same arithmetic, so the same
 // pixels give the same bytes on both platforms.
 
 /// <summary>

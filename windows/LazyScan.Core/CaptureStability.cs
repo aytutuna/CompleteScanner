@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/CaptureStability.swift.
+// Twin of Sources/LazyScanKit/Pipeline/CaptureStability.swift.
 
 /// <summary>Where the camera's automatic shutter stands (<see cref="CaptureStability"/>).</summary>
 public enum CaptureState

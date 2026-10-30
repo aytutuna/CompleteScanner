@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Port of Sources/CompleteScannerKit/Core/PaperSize.swift: one paper size model for scan areas,
+// Port of Sources/LazyScanKit/Core/PaperSize.swift: one paper size model for scan areas,
 // the ID card page and printing.
 
 /// <summary>

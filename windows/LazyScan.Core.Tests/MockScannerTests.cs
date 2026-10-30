@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// The demo scanner's feeder. Mirrored by Tests/CompleteScannerTests/MockScannerTests.swift.
+// The demo scanner's feeder. Mirrored by Tests/LazyScanTests/MockScannerTests.swift.
 
 public class MockScannerTests
 {

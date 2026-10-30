@@ -91,11 +91,11 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test \
-            -scheme CompleteScanner-Package \
+            -scheme LazyScan-Package \
             -configuration Release \
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
-            -only-testing:CompleteScannerIOSTests/DocAlignerBenchTests \
-            -only-testing:CompleteScannerModelTests/FastViTCornerModelTests \
+            -only-testing:LazyScanIOSTests/DocAlignerBenchTests \
+            -only-testing:LazyScanModelTests/FastViTCornerModelTests \
             -resultBundlePath "$RUNNER_TEMP/bench.xcresult" \
             ENABLE_TESTABILITY=YES \
             CODE_SIGNING_ALLOWED=NO

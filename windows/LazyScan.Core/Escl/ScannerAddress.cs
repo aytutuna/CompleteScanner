@@ -4,7 +4,7 @@ using System.Net.Sockets;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Escl/ScannerAddress.swift: the same rules and tests on both platforms.
+// Twin of Sources/LazyScanKit/Escl/ScannerAddress.swift: the same rules and tests on both platforms.
 
 /// <summary>
 /// Where an eSCL scanner answers: scheme, host, port and resource path. Parsed from what a

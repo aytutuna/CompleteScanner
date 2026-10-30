@@ -4,7 +4,7 @@ using System.Text;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Escl/EsclClient.swift (URLSession there: the same job rules and
+// Twin of Sources/LazyScanKit/Escl/EsclClient.swift (URLSession there: the same job rules and
 // tests on both platforms; the Swift one downloads each page to a file and also stops for the app
 // being suspended, which only the iPhone has).
 

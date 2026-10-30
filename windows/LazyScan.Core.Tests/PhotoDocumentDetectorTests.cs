@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/PhotoDocumentDetectorTests.swift: the same synthetic photos
+// Twin of Tests/LazyScanTests/PhotoDocumentDetectorTests.swift: the same synthetic photos
 // (PhotoScenes, byte-identical, checked by checksum) and the same expectations.
 
 public class PhotoDocumentDetectorTests

@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Escl/EsclHostList.swift: the same rules and tests on both platforms.
+// Twin of Sources/LazyScanKit/Escl/EsclHostList.swift: the same rules and tests on both platforms.
 
 /// <summary>
 /// The network scanners added by address: %APPDATA%\CompleteScanner\escl-hosts.json, a JSON

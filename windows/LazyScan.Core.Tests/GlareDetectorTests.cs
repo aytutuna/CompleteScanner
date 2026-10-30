@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/GlareDetectorTests.swift: the same cards, readings and answers.
+// Twin of Tests/LazyScanTests/GlareDetectorTests.swift: the same cards, readings and answers.
 // The readings are pinned to an independent model of GlareDetector's description.
 
 /// <summary>

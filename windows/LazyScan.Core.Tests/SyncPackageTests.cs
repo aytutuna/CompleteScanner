@@ -4,7 +4,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/SyncPackageTests.swift (the same golden bytes).
+// Mirrored by Tests/LazyScanTests/SyncPackageTests.swift (the same golden bytes).
 
 public class SyncPackageTests
 {

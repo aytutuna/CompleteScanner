@@ -2,7 +2,7 @@ using LazyScan.Core;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/PhotoScenes.swift: the same scenes, byte for byte. Integer
+// Twin of Tests/LazyScanTests/PhotoScenes.swift: the same scenes, byte for byte. Integer
 // arithmetic only (64-bit, no floating point), and TestPages' xorshift32 generator consumed in the
 // same order, so both platforms draw identical pixels (pinned by checksum in both suites).
 

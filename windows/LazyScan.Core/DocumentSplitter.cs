@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Core/DocumentSplitter.swift.
+// Twin of Sources/LazyScanKit/Core/DocumentSplitter.swift.
 
 /// <summary>What saving does with a queued page (<see cref="DocumentSplitter.Plan(IReadOnlyList{PageFacts}, DocumentOptions)"/>).</summary>
 public enum PageRole

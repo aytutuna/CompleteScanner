@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/TroubleshootingTests.swift.
+// Mirrored by Tests/LazyScanTests/TroubleshootingTests.swift.
 
 public class TroubleshootingTests
 {

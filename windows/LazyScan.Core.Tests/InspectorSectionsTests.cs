@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/InspectorSectionsTests.swift: the settings column's sections and
+// Twin of Tests/LazyScanTests/InspectorSectionsTests.swift: the settings column's sections and
 // the summaries their collapsed headers show.
 public class InspectorSectionsTests
 {

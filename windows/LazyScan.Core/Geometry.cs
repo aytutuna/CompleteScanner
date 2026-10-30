@@ -85,7 +85,7 @@ public struct MinAreaRect
 
 /// <summary>
 /// Pure geometry used by the photo detector: convex hull and minimum-area enclosing rectangle.
-/// Behavior-for-behavior port of Sources/CompleteScannerKit/Pipeline/Geometry.swift.
+/// Behavior-for-behavior port of Sources/LazyScanKit/Pipeline/Geometry.swift.
 /// </summary>
 public static class Geometry
 {

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/DocumentSplitterTests.swift: the same cases.
+// Twin of Tests/LazyScanTests/DocumentSplitterTests.swift: the same cases.
 
 public class DocumentSplitterTests
 {

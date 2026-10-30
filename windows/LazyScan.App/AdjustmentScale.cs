@@ -4,7 +4,7 @@ namespace LazyScan.App;
 /// The inspector's centered adjustment sliders: every slider shows one -100...+100 scale
 /// with 0 (neutral) in the middle, mapped onto the model's parameter ranges. Settings and
 /// presets keep the model semantics on disk. Port of the bindings in
-/// Sources/CompleteScannerKit/UI/InspectorView.swift.
+/// Sources/LazyScanKit/UI/InspectorView.swift.
 /// </summary>
 public static class AdjustmentScale
 {

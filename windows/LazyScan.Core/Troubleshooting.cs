@@ -2,7 +2,7 @@ namespace LazyScan.Core;
 
 // Scanner problems every backend reports the same way (WIA HRESULTs, eSCL scanner status,
 // the demo scanner), so the user sees one wording whatever the connection. Mirrored by
-// Sources/CompleteScannerKit/Core/Troubleshooting.swift.
+// Sources/LazyScanKit/Core/Troubleshooting.swift.
 
 /// <summary>
 /// A condition at the scanner that stops a scan and that the user can usually fix. The first

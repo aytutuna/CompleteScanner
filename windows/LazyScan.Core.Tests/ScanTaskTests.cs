@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/ScanTaskTests.swift: the same cases, the Archive document
+// Mirrored by Tests/LazyScanTests/ScanTaskTests.swift: the same cases, the Archive document
 // task included.
 
 public class ScanTaskTests

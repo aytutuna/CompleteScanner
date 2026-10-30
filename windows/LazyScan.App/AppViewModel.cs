@@ -353,7 +353,7 @@ public sealed class HistoryItem(ScanHistoryEntry entry, BitmapSource thumbnail)
 /// <summary>
 /// Central controller: owns backends, the open scanner session, settings, scan results, and
 /// every user-triggered operation. All UI binds to this object. Port of
-/// Sources/CompleteScannerKit/App/AppState.swift — the orchestration logic (device merging,
+/// Sources/LazyScanKit/App/AppState.swift — the orchestration logic (device merging,
 /// generation-guarded switching, scan flows, page spooling, atomic saves, cooperative
 /// cancellation, scan history, live preview) carries over; only the change-notification
 /// plumbing is WPF-flavored. Must be created and used on a Dispatcher thread.

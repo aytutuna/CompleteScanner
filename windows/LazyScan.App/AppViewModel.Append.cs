@@ -7,7 +7,7 @@ namespace LazyScan.App;
 /// <summary>
 /// Adding the queued pages to the end of an existing PDF the user picks (Add to existing PDF… under
 /// the queue, or a PDF's menu in the Saved tab), as an incremental update (<see cref="PdfAppender"/>).
-/// The Mac and the iPhone add pages the same way (Sources/CompleteScannerKit/App/AppState+Append.swift).
+/// The Mac and the iPhone add pages the same way (Sources/LazyScanKit/App/AppState+Append.swift).
 /// A PDF picked before scanning (<see cref="AppendTarget"/>) takes the queue when it is saved.
 /// </summary>
 public sealed partial class AppViewModel

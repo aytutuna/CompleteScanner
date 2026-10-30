@@ -4,7 +4,7 @@ using System.Text;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Output/PDFSyntax.swift: the same values, lexer, filter, limits
+// Twin of Sources/LazyScanKit/Output/PDFSyntax.swift: the same values, lexer, filter, limits
 // and error texts.
 
 // The object syntax of an existing PDF, as PdfReaderLite reads it and PdfAppender writes back the

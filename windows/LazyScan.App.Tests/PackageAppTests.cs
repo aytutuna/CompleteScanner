@@ -9,7 +9,7 @@ namespace LazyScan.App.Tests;
 // A .csdoc opened by hand, and the queue written as one (AppViewModel.Package.cs), decoded and
 // encoded with WIC. The view model itself reads the user's settings, so, as for CompanionAppTests,
 // its pieces are tested here: what is offered, the pages Open as new takes, and the written
-// document. Twin of Tests/CompleteScannerTests/AppStatePackageTests.swift, which also adds and
+// document. Twin of Tests/LazyScanTests/AppStatePackageTests.swift, which also adds and
 // opens through AppState. A package the Swift writer makes is read here through the golden package
 // (CompanionPackageTests: the Swift suite writes the same bytes).
 

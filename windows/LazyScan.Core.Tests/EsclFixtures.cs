@@ -2,7 +2,7 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/EsclFixtures.swift: both suites read the same files in
+// Twin of Tests/LazyScanTests/EsclFixtures.swift: both suites read the same files in
 // Tests/Fixtures/Escl (copied next to this assembly by the project file), so the eSCL cases on the two
 // platforms cannot drift apart.
 

@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/MultiQuadPicker.swift: the same filters, order and numbers.
+// Twin of Sources/LazyScanKit/Pipeline/MultiQuadPicker.swift: the same filters, order and numbers.
 
 /// <summary>An outline a finder proposed (Vision's rectangles, a page finder), with how sure it is (0 to 1).</summary>
 public sealed record QuadCandidate(Quad Quad, double Confidence);

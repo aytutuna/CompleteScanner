@@ -11,7 +11,7 @@ namespace LazyScan.App.Services;
 /// model next to the app when scripts/fetch_docaligner.sh has fetched it; without it there is no model
 /// (<see cref="Load"/> gives null) and the photo import uses its own page search. The session is made on
 /// the first run and kept; ONNX Runtime runs it for several threads at once. The Mac's and the iPhone's
-/// twin is Sources/CompleteScannerModel/FastViTCornerModel.swift, with Core ML in front.
+/// twin is Sources/LazyScanModel/FastViTCornerModel.swift, with Core ML in front.
 /// </summary>
 public sealed class OnnxCornerModel : ICornerModel
 {

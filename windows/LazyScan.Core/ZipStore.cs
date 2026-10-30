@@ -2,7 +2,7 @@ using System.Text;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Output/ZipStore.swift: the same bytes for the same entries.
+// Twin of Sources/LazyScanKit/Output/ZipStore.swift: the same bytes for the same entries.
 
 /// <summary>One file in a zip package: its path inside the package ("word/document.xml") and its bytes.</summary>
 public sealed record ZipStoreEntry(string Name, byte[] Data);

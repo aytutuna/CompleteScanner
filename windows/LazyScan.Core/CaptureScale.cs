@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/CaptureScale.swift: the same sizes, rules and arithmetic
+// Twin of Sources/LazyScanKit/Pipeline/CaptureScale.swift: the same sizes, rules and arithmetic
 // (+ − × ÷ and square roots on doubles in the same order, rounding with floor(x + 0.5)).
 
 /// <summary>

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/BarcodeTests.swift: the same cases, with a stand-in reader.
+// Twin of Tests/LazyScanTests/BarcodeTests.swift: the same cases, with a stand-in reader.
 // The real readers are checked on synthetic scans by the app's tests (ZXing.Net here,
 // LazyScan.App.Tests/BarcodeReaderTests.cs; Vision on the Mac, VisionBarcodeTests.swift).
 

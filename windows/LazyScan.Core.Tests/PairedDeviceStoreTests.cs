@@ -4,7 +4,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/PairedDeviceStoreTests.swift (same cases; each platform
+// Mirrored by Tests/LazyScanTests/PairedDeviceStoreTests.swift (same cases; each platform
 // writes its own file in its own settings folder, so only the JSON keys are shared, not dates).
 
 public sealed class PairedDeviceStoreTests : IDisposable

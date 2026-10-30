@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/StatusLineTests.swift: the status line's six words.
+// Twin of Tests/LazyScanTests/StatusLineTests.swift: the status line's six words.
 public class StatusLineTests
 {
     [Theory]

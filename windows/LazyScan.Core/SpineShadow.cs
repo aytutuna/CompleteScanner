@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/SpineShadow.swift: same constants, same steps and the
+// Twin of Sources/LazyScanKit/Pipeline/SpineShadow.swift: same constants, same steps and the
 // same arithmetic (no library functions beyond + − × ÷), so a page gives the same bytes on both platforms.
 
 /// <summary>An edge of a page.</summary>

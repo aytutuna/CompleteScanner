@@ -2,7 +2,7 @@ using LazyScan.Core;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/CameraFixtures.swift: the same pixels, checked by FNV-1a
+// Twin of Tests/LazyScanTests/CameraFixtures.swift: the same pixels, checked by FNV-1a
 // (PhotoScenes.Checksum). Drawn here with integers only, no real document.
 
 /// <summary>

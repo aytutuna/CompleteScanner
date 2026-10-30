@@ -4,7 +4,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/ZipStoreReaderTests.swift: the same cases, the same
+// Mirrored by Tests/LazyScanTests/ZipStoreReaderTests.swift: the same cases, the same
 // hand-built archives (RawZip), the same error kinds and messages.
 
 public class ZipStoreReaderTests

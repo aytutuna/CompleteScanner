@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/PerspectiveWarp.swift: integer box averages and the
+// Twin of Sources/LazyScanKit/Pipeline/PerspectiveWarp.swift: integer box averages and the
 // corrector's sampler (+ − × ÷ on doubles in the same order, halves rounded to even), so the same
 // photo, quad and size give the same bytes on both platforms.
 

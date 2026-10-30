@@ -16,9 +16,9 @@ UI per platform** architecture:
   backend contract, scanner problems with their user-facing text (`Troubleshooting.cs`), the
   "Why isn't my scanner listed?" checks (`Troubleshooter.cs`), and the hardware-free demo
   scanner. It is a type-for-type port of the
-  Swift `CompleteScannerKit` core, the Swift package's shared target, which builds for macOS and
-  iOS (the Mac's views and system services are in `CompleteScannerMac`, the iPhone's in
-  `CompleteScannerIOS`, with the iPhone app's Xcode project in `../ios/`; see `../CONTRACTS.md` for
+  Swift `LazyScanKit` core, the Swift package's shared target, which builds for macOS and
+  iOS (the Mac's views and system services are in `LazyScanMac`, the iPhone's in
+  `LazyScanIOS`, with the iPhone app's Xcode project in `../ios/`; see `../CONTRACTS.md` for
   the shared conventions, especially the four
   coordinate systems). It also holds the testable protocol logic of the
   Windows-only backends, which has no Swift twin because macOS reaches the same scanners
@@ -34,7 +34,7 @@ UI per platform** architecture:
   capabilities parser, job request builder, status mapping, 503 retry policy, DNS-SD TXT
   records, address parsing, endpoints, the added-address list, certificate pinning for HTTPS,
   and the HTTP client and session, `EsclClient.cs` and `EsclScannerSession.cs`) have Swift
-  twins in `Sources/CompleteScannerKit/Escl/`, for the iPhone, which has no ImageCaptureCore
+  twins in `Sources/LazyScanKit/Escl/`, for the iPhone, which has no ImageCaptureCore
   scanners; see [Network scanners](#network-scanners-escl). Device merging (`DeviceMerge.cs`: one row per physical
   scanner, whichever backends list it) is shared with macOS. So is the page clean-up stage
   (`PageProcessor.cs`: the steps every scanned page goes through before it is queued) and the
@@ -1848,7 +1848,7 @@ row's **via** menu chooses between them.
   never falls back to plain HTTP. A certificate Windows itself accepts (valid chain and name)
   is used without asking.
 - **Shared with the iPhone.** The protocol logic above has Swift twins in
-  `Sources/CompleteScannerKit/Escl/` that behave the same way and pass the same tests:
+  `Sources/LazyScanKit/Escl/` that behave the same way and pass the same tests:
   capabilities, the scan request (the same ScanSettings bytes), the status mapping, the retry
   policy, TXT records, addresses and their canonical text, one entry per scanner, the
   added-address list, the trust store with its validator, and since I11 the HTTP client and
@@ -1940,6 +1940,6 @@ When an algorithm changes on either side:
    `PhotoDetector.cs` is diffable against `PhotoDetector.swift` stage by stage).
 3. Both `swift test` (repo root) and `dotnet test` (this directory) must pass; CI also runs the
    shared Swift suite on the iOS Simulator and the iPhone app's UI smoke test (the `ios` job).
-   Shared Swift code goes in `Sources/CompleteScannerKit`, which uses no AppKit, UIKit, SwiftUI or
-   ImageCaptureCore; what only the Mac has goes in `Sources/CompleteScannerMac`, what only the
-   iPhone and iPad have in `Sources/CompleteScannerIOS` (the app's project is `../ios/project.yml`).
+   Shared Swift code goes in `Sources/LazyScanKit`, which uses no AppKit, UIKit, SwiftUI or
+   ImageCaptureCore; what only the Mac has goes in `Sources/LazyScanMac`, what only the
+   iPhone and iPad have in `Sources/LazyScanIOS` (the app's project is `../ios/project.yml`).

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/DocumentGeometryTests.swift: crop to the page and straighten
+// Twin of Tests/LazyScanTests/DocumentGeometryTests.swift: crop to the page and straighten
 // it, on the same synthetic pages (TestPages, byte-identical, checked by checksum).
 
 public class DocumentGeometryTests

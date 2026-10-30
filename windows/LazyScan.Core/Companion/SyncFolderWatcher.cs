@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Companion/SyncFolderWatcher.swift: the same rules for taking,
+// Twin of Sources/LazyScanKit/Companion/SyncFolderWatcher.swift: the same rules for taking,
 // skipping and leaving a file; a FileSystemWatcher where the Mac has a DispatchSource.
 
 /// <summary>

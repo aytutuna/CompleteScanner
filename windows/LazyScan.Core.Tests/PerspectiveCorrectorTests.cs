@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/PerspectiveCorrectorTests.swift: the same photos and quads, the
+// Twin of Tests/LazyScanTests/PerspectiveCorrectorTests.swift: the same photos and quads, the
 // same corrected bytes (pinned by checksum in both suites).
 
 public class PerspectiveCorrectorTests

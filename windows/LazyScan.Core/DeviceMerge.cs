@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Core/DeviceMerge.swift; the tests in DeviceMergeTests
+// Twin of Sources/LazyScanKit/Core/DeviceMerge.swift; the tests in DeviceMergeTests
 // (both platforms) share one table of cases.
 
 /// <summary>

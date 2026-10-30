@@ -2,7 +2,7 @@ using System.Text;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Output/TextExport.swift: the same bytes and the same messages.
+// Twin of Sources/LazyScanKit/Output/TextExport.swift: the same bytes and the same messages.
 
 /// <summary>
 /// The text file of a save (<see cref="OutputFormat.Text"/>, or the text beside a PDF with

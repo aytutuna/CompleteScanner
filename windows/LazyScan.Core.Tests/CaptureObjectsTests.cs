@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/CaptureObjectsTests.swift: the same shots, pages and answers.
+// Twin of Tests/LazyScanTests/CaptureObjectsTests.swift: the same shots, pages and answers.
 
 /// <summary>
 /// Made-up camera shots for the objects of one photo, drawn the same way on both platforms: two prints

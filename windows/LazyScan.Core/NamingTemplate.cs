@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 namespace LazyScan.Core;
 
 /// <summary>
-/// Filename templating, ported from Sources/CompleteScannerKit/Output/NamingTemplate.swift.
+/// Filename templating, ported from Sources/LazyScanKit/Output/NamingTemplate.swift.
 /// </summary>
 public sealed partial class NamingTemplate
 {

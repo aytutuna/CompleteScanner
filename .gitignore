@@ -10,5 +10,5 @@ windows/**/obj/
 windows/.vs/
 
 # DocAligner's FastViT-T8, fetched by scripts/fetch_docaligner.sh
-Sources/CompleteScannerModel/Models/*.onnx
-Sources/CompleteScannerModel/Models/*.part
+Sources/LazyScanModel/Models/*.onnx
+Sources/LazyScanModel/Models/*.part

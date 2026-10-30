@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/CornerHeatmapTests.swift: DocAligner's heatmaps read back into corners
+// Twin of Tests/LazyScanTests/CornerHeatmapTests.swift: DocAligner's heatmaps read back into corners
 // (CornerHeatmap), on heatmaps drawn here: a Gaussian spot per channel where the corner is, as the model
 // draws them.
 

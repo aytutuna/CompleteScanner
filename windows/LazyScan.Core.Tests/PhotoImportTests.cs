@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/PhotoImportTests.swift: the same cases on the same synthetic
+// Twin of Tests/LazyScanTests/PhotoImportTests.swift: the same cases on the same synthetic
 // photos (PhotoScenes).
 
 public class PhotoImportTests

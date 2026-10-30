@@ -5,7 +5,7 @@ using Xunit;
 namespace LazyScan.Core.Tests;
 
 // The ID card task: paper, steps, layout, composer and detector. Mirrored by
-// Tests/CompleteScannerTests/IdCardTests.swift: the same cases, on the same synthetic beds.
+// Tests/LazyScanTests/IdCardTests.swift: the same cases, on the same synthetic beds.
 
 public class IdCardTests
 {

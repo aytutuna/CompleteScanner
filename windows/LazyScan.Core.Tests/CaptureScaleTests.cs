@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/CaptureScaleTests.swift: the same shots, sizes and answers.
+// Twin of Tests/LazyScanTests/CaptureScaleTests.swift: the same shots, sizes and answers.
 
 public class CaptureScaleTests
 {

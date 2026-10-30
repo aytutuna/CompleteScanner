@@ -14,7 +14,7 @@ namespace LazyScan.Core;
 /// or barcode sheets when the stack is split at barcode or QR sheets); for the Book or
 /// magazine task its glass holds an open book, whose page it turns after every scan
 /// (<see cref="BookSpread"/>, <see cref="MockBedRenderer.RenderBookSpread"/>). Port of
-/// Sources/CompleteScannerKit/Backends/MockScannerBackend.swift.
+/// Sources/LazyScanKit/Backends/MockScannerBackend.swift.
 ///
 /// Divergence from the macOS mock: the demo document page renders text-shaped bars rather
 /// than real glyphs (the Core has no font rasterizer), so OCR demos need a real scan or a

@@ -4,7 +4,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Port of Tests/CompleteScannerTests/SaveActionsTests.swift: what happens after a save, the
+// Port of Tests/LazyScanTests/SaveActionsTests.swift: what happens after a save, the
 // actions offered for saved files, what Copy puts on the clipboard and how files are sent.
 public class SaveActionsTests
 {

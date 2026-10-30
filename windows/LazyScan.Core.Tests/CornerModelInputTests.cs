@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/CornerModelInputTests.swift: the same photos and the same expected
+// Twin of Tests/LazyScanTests/CornerModelInputTests.swift: the same photos and the same expected
 // numbers, compared exactly, so both platforms are known to give a corner model the same input.
 
 public class CornerModelInputTests

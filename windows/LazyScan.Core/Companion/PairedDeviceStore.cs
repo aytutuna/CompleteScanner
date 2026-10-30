@@ -3,7 +3,7 @@ using System.Text;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Companion/PairedDeviceStore.swift: the same rules for pairing,
+// Twin of Sources/LazyScanKit/Companion/PairedDeviceStore.swift: the same rules for pairing,
 // checking and removing phones; each platform keeps its own file in its own settings folder.
 
 /// <summary>A phone paired with this desktop (an entry of companion-devices.json).</summary>

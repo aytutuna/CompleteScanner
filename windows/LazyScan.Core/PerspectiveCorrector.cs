@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/PerspectiveCorrector.swift: + − × ÷ and square roots
+// Twin of Sources/LazyScanKit/Pipeline/PerspectiveCorrector.swift: + − × ÷ and square roots
 // on doubles in the same order, rounding halves to even as RgbaImage's bilinear sampler does, so
 // the same photo and quad give the same bytes on both platforms.
 

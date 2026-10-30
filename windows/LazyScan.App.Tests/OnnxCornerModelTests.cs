@@ -20,7 +20,7 @@ public sealed class CornerModelFactAttribute : FactAttribute
     }
 }
 
-// Twin of Tests/CompleteScannerModelTests/FastViTCornerModelTests.swift: DocAligner's FastViT-T8 on the
+// Twin of Tests/LazyScanModelTests/FastViTCornerModelTests.swift: DocAligner's FastViT-T8 on the
 // SmartDoc frames in Tests/Fixtures/Pages, here on ONNX Runtime's CPU: every corner within 1.5 % of the
 // photo's diagonal of the ground truth, and the photo import taking the page.
 public class OnnxCornerModelTests

@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/BlankPageDetector.swift: same constants, same
+// Twin of Sources/LazyScanKit/Pipeline/BlankPageDetector.swift: same constants, same
 // steps, same arithmetic, so a page gives the same result on both platforms.
 
 /// <summary>What <see cref="BlankPageDetector.Analyze"/> looks for.</summary>

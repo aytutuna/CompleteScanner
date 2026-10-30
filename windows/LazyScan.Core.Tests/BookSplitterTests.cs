@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/BookSplitterTests.swift: finding the gutter of an open book and
+// Twin of Tests/LazyScanTests/BookSplitterTests.swift: finding the gutter of an open book and
 // cutting the spread into its pages, on the same synthetic spreads (TestPages, byte-identical,
 // checked by checksum).
 

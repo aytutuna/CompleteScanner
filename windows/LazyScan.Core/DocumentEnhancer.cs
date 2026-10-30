@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/DocumentEnhancer.swift: the same tiles, the same sums and
+// Twin of Sources/LazyScanKit/Pipeline/DocumentEnhancer.swift: the same tiles, the same sums and
 // the same arithmetic in the same order, so a page gives the same bytes on both platforms.
 
 /// <summary>How a page taken by a camera is cleaned up (<see cref="DocumentEnhancer"/>).</summary>

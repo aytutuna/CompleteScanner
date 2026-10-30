@@ -4,7 +4,7 @@ using System.Xml.Linq;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Output/PDFReaderLite.swift: the same layouts, limits, refusals
+// Twin of Sources/LazyScanKit/Output/PDFReaderLite.swift: the same layouts, limits, refusals
 // and error texts.
 
 /// <summary>

@@ -4,7 +4,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/TextExportTests.swift: the same cases, except
+// Mirrored by Tests/LazyScanTests/TextExportTests.swift: the same cases, except
 // WriteNewFile (the Mac writes files with Data.write(.atomic)).
 
 public class TextExportTests

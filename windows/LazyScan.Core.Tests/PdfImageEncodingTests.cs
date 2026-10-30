@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/PDFImageEncodingTests.swift: the same table and cases.
+// Mirrored by Tests/LazyScanTests/PDFImageEncodingTests.swift: the same table and cases.
 // The actual file sizes per setting depend on the platform's JPEG encoder; the Swift suite
 // checks their order on a synthetic page, and real documents were measured by hand (see
 // windows/README.md).

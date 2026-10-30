@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Port of Sources/CompleteScannerKit/Output/NamingTokens.swift: what the file name field offers around
+// Port of Sources/LazyScanKit/Output/NamingTokens.swift: what the file name field offers around
 // NamingTemplate (same parts, same texts, same tests).
 
 /// <summary>

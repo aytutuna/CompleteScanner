@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/ColorAnalysis.swift: same constants, same
+// Twin of Sources/LazyScanKit/Pipeline/ColorAnalysis.swift: same constants, same
 // sampling, same luma weights.
 
 /// <summary>Color facts about a page, used to store pages scanned in color as gray when they have no color.</summary>

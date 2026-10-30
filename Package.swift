@@ -2,81 +2,81 @@
 import PackageDescription
 
 // One shared core for the Mac and the iPhone, and a target for each platform's own parts:
-// - CompleteScannerKit: everything both apps share (models, the page pipeline, output, settings
+// - LazyScanKit: everything both apps share (models, the page pipeline, output, settings
 //   files, the demo scanner, AppState and the protocols of the system services). No AppKit, UIKit,
 //   SwiftUI or ImageCaptureCore.
-// - CompleteScannerMac: the Mac's views, its ImageCaptureCore scanners and its system services.
+// - LazyScanMac: the Mac's views, its ImageCaptureCore scanners and its system services.
 //   Every file is wrapped in `#if os(macOS)`, so it builds to nothing for iOS.
-// - CompleteScannerIOS: the iPhone's and iPad's services and views. Every file is wrapped in
+// - LazyScanIOS: the iPhone's and iPad's services and views. Every file is wrapped in
 //   `#if os(iOS)`, so it builds to nothing for macOS.
-// - CompleteScannerModel: the page corner model (DocAligner's FastViT-T8 on ONNX Runtime) for both apps.
-// - CompleteScanner: the Mac app.
+// - LazyScanModel: the page corner model (DocAligner's FastViT-T8 on ONNX Runtime) for both apps.
+// - LazyScan: the Mac app.
 // iOS 18 needs PackageDescription 6.0; the code stays in the Swift 5 language mode.
 let package = Package(
-    name: "CompleteScanner",
+    name: "LazyScan",
     platforms: [.macOS(.v14), .iOS(.v18)],
     products: [
-        .executable(name: "CompleteScanner", targets: ["CompleteScanner"]),
-        .library(name: "CompleteScannerKit", targets: ["CompleteScannerKit"]),
-        .library(name: "CompleteScannerIOS", targets: ["CompleteScannerIOS"]),
+        .executable(name: "LazyScan", targets: ["LazyScan"]),
+        .library(name: "LazyScanKit", targets: ["LazyScanKit"]),
+        .library(name: "LazyScanIOS", targets: ["LazyScanIOS"]),
     ],
     dependencies: [
-        // ONNX Runtime (MIT) runs DocAligner's corner model (CompleteScannerModel) on the Mac and the iPhone.
+        // ONNX Runtime (MIT) runs DocAligner's corner model (LazyScanModel) on the Mac and the iPhone.
         .package(url: "https://github.com/microsoft/onnxruntime-swift-package-manager", exact: "1.24.2"),
     ],
     targets: [
         .target(
-            name: "CompleteScannerKit",
-            path: "Sources/CompleteScannerKit"
+            name: "LazyScanKit",
+            path: "Sources/LazyScanKit"
         ),
         .target(
-            name: "CompleteScannerModel",
+            name: "LazyScanModel",
             dependencies: [
-                "CompleteScannerKit",
+                "LazyScanKit",
                 .product(name: "onnxruntime", package: "onnxruntime-swift-package-manager"),
             ],
-            path: "Sources/CompleteScannerModel",
+            path: "Sources/LazyScanModel",
             // The model (scripts/fetch_docaligner.sh); the folder holds only the licences until it is fetched.
             resources: [.copy("Models")]
         ),
         .target(
-            name: "CompleteScannerMac",
-            dependencies: ["CompleteScannerKit", "CompleteScannerModel"],
-            path: "Sources/CompleteScannerMac"
+            name: "LazyScanMac",
+            dependencies: ["LazyScanKit", "LazyScanModel"],
+            path: "Sources/LazyScanMac"
         ),
         .target(
-            name: "CompleteScannerIOS",
-            dependencies: ["CompleteScannerKit", "CompleteScannerModel"],
-            path: "Sources/CompleteScannerIOS"
+            name: "LazyScanIOS",
+            dependencies: ["LazyScanKit", "LazyScanModel"],
+            path: "Sources/LazyScanIOS"
         ),
         .executableTarget(
-            name: "CompleteScanner",
+            name: "LazyScan",
             dependencies: [
-                .target(name: "CompleteScannerMac", condition: .when(platforms: [.macOS])),
+                .target(name: "LazyScanMac", condition: .when(platforms: [.macOS])),
             ],
-            path: "Sources/CompleteScanner"
+            path: "Sources/LazyScan"
         ),
         // Shared: `swift test` on macOS and the iOS Simulator run the same cases.
         .testTarget(
-            name: "CompleteScannerTests",
-            dependencies: ["CompleteScannerKit"],
-            path: "Tests/CompleteScannerTests"
+            name: "LazyScanTests",
+            dependencies: ["LazyScanKit"],
+            path: "Tests/LazyScanTests"
         ),
         .testTarget(
-            name: "CompleteScannerMacTests",
-            dependencies: ["CompleteScannerKit", "CompleteScannerMac"],
-            path: "Tests/CompleteScannerMacTests"
+            name: "LazyScanMacTests",
+            dependencies: ["LazyScanKit", "LazyScanMac"],
+            path: "Tests/LazyScanMacTests"
         ),
         // The corner model on the page photos in Tests/Fixtures/Pages; skipped where it was not fetched.
         .testTarget(
-            name: "CompleteScannerModelTests",
-            dependencies: ["CompleteScannerKit", "CompleteScannerModel"],
-            path: "Tests/CompleteScannerModelTests"
+            name: "LazyScanModelTests",
+            dependencies: ["LazyScanKit", "LazyScanModel"],
+            path: "Tests/LazyScanModelTests"
         ),
         .testTarget(
-            name: "CompleteScannerIOSTests",
-            dependencies: ["CompleteScannerKit", "CompleteScannerIOS", "CompleteScannerModel"],
-            path: "Tests/CompleteScannerIOSTests"
+            name: "LazyScanIOSTests",
+            dependencies: ["LazyScanKit", "LazyScanIOS", "LazyScanModel"],
+            path: "Tests/LazyScanIOSTests"
         ),
     ],
     swiftLanguageModes: [.v5]

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/FrameQualityTests.swift: the same frames, the same readings (to
+// Twin of Tests/LazyScanTests/FrameQualityTests.swift: the same frames, the same readings (to
 // the last bit: integer sums divided once), recomputed by an independent model of the description.
 
 public class FrameQualityTests

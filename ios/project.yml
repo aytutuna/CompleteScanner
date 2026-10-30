@@ -1,7 +1,7 @@
 # The iPhone app's Xcode project, for XcodeGen (CI pins its release and SHA-256; see the
 # ios job in .github/workflows/ci.yml). `xcodegen generate --spec ios/project.yml` writes
 # ios/CompleteScanneriOS.xcodeproj, which is not checked in. The app target holds no logic: it starts
-# CompleteScannerIOSApp from the package at the repository root (Sources/CompleteScannerIOS).
+# LazyScanIOSApp from the package at the repository root (Sources/LazyScanIOS).
 name: CompleteScanneriOS
 
 options:
@@ -18,7 +18,7 @@ settings:
     IPHONEOS_DEPLOYMENT_TARGET: "18.0"
 
 packages:
-  CompleteScanner:
+  LazyScan:
     path: ..
 
 targets:
@@ -34,8 +34,8 @@ targets:
       - path: CompleteScanneriOS/PrivacyInfo.xcprivacy
         buildPhase: resources
     dependencies:
-      - package: CompleteScanner
-        product: CompleteScannerIOS
+      - package: LazyScan
+        product: LazyScanIOS
     settings:
       base:
         PRODUCT_NAME: CompleteScanneriOS

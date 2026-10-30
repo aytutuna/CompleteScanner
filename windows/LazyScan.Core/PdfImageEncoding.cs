@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Output/PDFImageEncoding.swift: the same table, the same
+// Twin of Sources/LazyScanKit/Output/PDFImageEncoding.swift: the same table, the same
 // rules and the same rounding. Windows encodes the planned JPEG with WIC
 // (WpfImageCodec.EncodeJpeg), or black & white pages as CCITT G4 (PdfCcittImage), and embeds
 // them through PdfBuilder; macOS encodes the JPEG with ImageIO and embeds it, like black & white

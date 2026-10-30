@@ -5,7 +5,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/SpkiFingerprintTests.swift (same vectors; the scanner
+// Mirrored by Tests/LazyScanTests/SpkiFingerprintTests.swift (same vectors; the scanner
 // certificates are the shared fixtures in Tests/Fixtures/Escl). C#-only case:
 // MatchesDotNetSubjectPublicKeyInfo (makes certificates with CertificateRequest, which Swift lacks).
 

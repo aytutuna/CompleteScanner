@@ -8,7 +8,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Port of Tests/CompleteScannerTests/ModelsCompatTests.swift: settings files load across
+// Port of Tests/LazyScanTests/ModelsCompatTests.swift: settings files load across
 // versions (CONTRACTS.md, rule 6). Same cases, same fixtures; the fixture JSON is in the
 // format this platform writes (declaration order, lowercase id).
 

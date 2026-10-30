@@ -3,7 +3,7 @@ using System.Text;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Companion/PairingUri.swift: the same text for the same pairing
+// Twin of Sources/LazyScanKit/Companion/PairingUri.swift: the same text for the same pairing
 // code, the same checks and the same refusals.
 
 /// <summary>Why a scanned code is not a pairing code this app can use.</summary>

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/GrayImageTests.swift: GrayImage and BackgroundMap, same
+// Twin of Tests/LazyScanTests/GrayImageTests.swift: GrayImage and BackgroundMap, same
 // cases, same bytes.
 
 public class GrayImageTests

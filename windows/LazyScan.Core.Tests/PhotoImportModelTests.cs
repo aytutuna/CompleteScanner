@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/PhotoImportModelTests.swift: the photo import with a corner model tried
+// Twin of Tests/LazyScanTests/PhotoImportModelTests.swift: the photo import with a corner model tried
 // first, on the wood scene (PhotoScenes) with a fake model that draws its heatmaps where it is told.
 
 public class PhotoImportModelTests

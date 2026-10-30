@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/MultiQuadPickerTests.swift: the same outlines and picks.
+// Twin of Tests/LazyScanTests/MultiQuadPickerTests.swift: the same outlines and picks.
 
 public class MultiQuadPickerTests
 {

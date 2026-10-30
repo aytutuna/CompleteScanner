@@ -10,7 +10,7 @@ namespace LazyScan.Core.Tests;
 // Black & white pages in the files the app writes: CCITT G4 images in every kind of PDF (plain,
 // PDF/A, protected, pages added to an existing PDF) and G4 TIFFs of one or several pages. PdfPig
 // (test-only) decodes the PDF images; WIC decodes the TIFFs and Windows.Data.Pdf renders the PDFs
-// in LazyScan.App.Tests/BilevelOutputTests.cs. The Mac's twin (Tests/CompleteScannerTests/
+// in LazyScan.App.Tests/BilevelOutputTests.cs. The Mac's twin (Tests/LazyScanTests/
 // BilevelOutputTests.swift) has the plain-PDF and TIFF cases with the same golden values (see
 // CONTRACTS.md, "CCITT G4 for black & white pages").
 

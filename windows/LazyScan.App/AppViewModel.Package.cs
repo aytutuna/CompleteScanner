@@ -87,7 +87,7 @@ public sealed record PendingPackage(string FileName, IReadOnlyList<ScannedPage> 
 /// A <c>.csdoc</c> opened by hand (dropped on the window, or opened through the file association) is
 /// offered, not added: a banner adds its pages to the queue or opens it as a new one, unlike a paired
 /// phone's documents, which <see cref="AppViewModel"/>'s phone link adds on its own. The queue can also
-/// be written as a <c>.csdoc</c>. The Mac and the iPhone do the same (Sources/CompleteScannerKit/App/AppState+Package.swift).
+/// be written as a <c>.csdoc</c>. The Mac and the iPhone do the same (Sources/LazyScanKit/App/AppState+Package.swift).
 /// </summary>
 public sealed partial class AppViewModel
 {

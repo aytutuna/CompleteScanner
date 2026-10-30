@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// The Mac's twin is Sources/CompleteScannerKit/Pipeline/Bilevel.swift (the same packing); see
+// The Mac's twin is Sources/LazyScanKit/Pipeline/Bilevel.swift (the same packing); see
 // CONTRACTS.md, "CCITT G4 for black & white pages".
 
 /// <summary>

@@ -3,7 +3,7 @@ using System.Text;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Escl/EsclScanRequest.swift: the same rules and tests on both platforms.
+// Twin of Sources/LazyScanKit/Escl/EsclScanRequest.swift: the same rules and tests on both platforms.
 
 /// <summary>A scan region in eSCL units (1/300 inch), origin top-left.</summary>
 public readonly record struct EsclRegion(int XOffset, int YOffset, int Width, int Height);

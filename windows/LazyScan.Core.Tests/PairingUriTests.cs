@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/PairingUriTests.swift (same codes, same refusals).
+// Mirrored by Tests/LazyScanTests/PairingUriTests.swift (same codes, same refusals).
 
 public class PairingUriTests
 {

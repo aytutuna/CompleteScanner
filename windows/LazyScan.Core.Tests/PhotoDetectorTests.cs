@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Port of Tests/CompleteScannerTests/PhotoDetectorTests.swift. The synthetic flatbed is
+// Port of Tests/LazyScanTests/PhotoDetectorTests.swift. The synthetic flatbed is
 // rendered in pure C# (the Swift version used CoreGraphics), with the same geometry, colors,
 // and tolerances — this suite is the cross-platform conformance contract for the detector.
 

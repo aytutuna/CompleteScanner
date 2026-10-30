@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// The Mac's twin (Sources/CompleteScannerKit/Output/CCITTG4Encoder.swift) gives the same bytes
+// The Mac's twin (Sources/LazyScanKit/Output/CCITTG4Encoder.swift) gives the same bytes
 // (the golden values in CcittG4EncoderTests, checked on both platforms); see CONTRACTS.md, "CCITT
 // G4 for black & white pages". The code tables below are written as the bit strings of ITU-T T.4
 // (tables 2 and 3: terminating, make-up and extended make-up codes) and T.6 (table 1: the mode

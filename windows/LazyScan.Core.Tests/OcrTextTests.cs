@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/OCRTextTests.swift: the same cases.
+// Mirrored by Tests/LazyScanTests/OCRTextTests.swift: the same cases.
 
 /// <summary>Lines placed on a 1000 × 1000 page by their top-left corner, as a person reads the page.</summary>
 internal static class OcrFixtures

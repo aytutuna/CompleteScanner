@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/MaskOps.swift.
+// Twin of Sources/LazyScanKit/Pipeline/MaskOps.swift.
 
 /// <summary>One 4-connected region of a binary mask.</summary>
 internal sealed class MaskComponent

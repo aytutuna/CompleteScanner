@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Escl/EsclScannerSession.swift: the same rules and tests on both
+// Twin of Sources/LazyScanKit/Escl/EsclScannerSession.swift: the same rules and tests on both
 // platforms (the Swift one also asks the iPhone for background time while a job runs).
 
 /// <summary>

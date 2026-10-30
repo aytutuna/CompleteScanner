@@ -1,6 +1,6 @@
 # Companion fixtures
 
-Read by the Swift suite (`Tests/CompleteScannerTests`, through the `CompanionFixtures` extension in
+Read by the Swift suite (`Tests/LazyScanTests`, through the `CompanionFixtures` extension in
 `CompanionLoopbackTests.swift`). The loopback companion server serves these identities, imported to
 memory, because a CI runner's keychain refuses the keys a test would make (errSecMissingEntitlement).
 

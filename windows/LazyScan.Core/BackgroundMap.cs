@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/BackgroundMap.swift: same tiles, same arithmetic.
+// Twin of Sources/LazyScanKit/Pipeline/BackgroundMap.swift: same tiles, same arithmetic.
 
 /// <summary>
 /// How bright the paper is across a page, so that ink can be told from paper whatever the

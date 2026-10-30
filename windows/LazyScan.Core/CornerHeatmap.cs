@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/CornerHeatmap.swift: the same search, sums and divisions in
+// Twin of Sources/LazyScanKit/Pipeline/CornerHeatmap.swift: the same search, sums and divisions in
 // the same order, so both platforms read the same corners from the same heatmaps.
 
 /// <summary>

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/DeviceMergeTests.swift: same tables, same cases.
+// Mirrored by Tests/LazyScanTests/DeviceMergeTests.swift: same tables, same cases.
 
 public class DeviceMergeTests
 {

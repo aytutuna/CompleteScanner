@@ -2,7 +2,7 @@ using System.Diagnostics;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/Orientation.swift.
+// Twin of Sources/LazyScanKit/Pipeline/Orientation.swift.
 
 /// <summary>
 /// How much text recognition read on a page held one way up. Text read the right way up comes out

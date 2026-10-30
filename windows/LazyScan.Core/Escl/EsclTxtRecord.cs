@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Escl/EsclTxtRecord.swift: the same rules and tests on both platforms.
+// Twin of Sources/LazyScanKit/Escl/EsclTxtRecord.swift: the same rules and tests on both platforms.
 
 /// <summary>
 /// The TXT record a network scanner advertises with its _uscan._tcp / _uscans._tcp DNS-SD

@@ -3,7 +3,7 @@ using System.Net.Sockets;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Escl/EsclEndpoint.swift: the same rules and tests on both platforms.
+// Twin of Sources/LazyScanKit/Escl/EsclEndpoint.swift: the same rules and tests on both platforms.
 
 /// <summary>
 /// One DNS-SD service instance of a network scanner, as the operating system reports it:

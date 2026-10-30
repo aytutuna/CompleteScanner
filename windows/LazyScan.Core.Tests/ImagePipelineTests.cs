@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Port of Tests/CompleteScannerTests/ImagePipelineTests.swift.
+// Port of Tests/LazyScanTests/ImagePipelineTests.swift.
 
 public class ImagePipelineTests
 {

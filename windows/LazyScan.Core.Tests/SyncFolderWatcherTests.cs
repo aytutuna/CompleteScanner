@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/SyncFolderWatcherTests.swift (same cases). The sync keys are
+// Mirrored by Tests/LazyScanTests/SyncFolderWatcherTests.swift (same cases). The sync keys are
 // kept with the Data Protection API, so these run on Windows only.
 
 public sealed class SyncFolderWatcherTests : IDisposable

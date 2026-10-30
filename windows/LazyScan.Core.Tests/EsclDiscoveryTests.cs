@@ -4,7 +4,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/EsclDiscoveryTests.swift (same cases; the TXT record is the
+// Mirrored by Tests/LazyScanTests/EsclDiscoveryTests.swift (same cases; the TXT record is the
 // shared fixture Tests/Fixtures/Escl/txt-hp.txt). Covers what discovery hands over: TXT records, the
 // addresses users type, and how a scanner's DNS-SD services become one endpoint.
 

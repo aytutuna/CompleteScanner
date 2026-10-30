@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/PageProcessor.swift.
+// Twin of Sources/LazyScanKit/Pipeline/PageProcessor.swift.
 
 /// <summary>
 /// One step of the work done on every scanned page before it is queued or saved. A step gets

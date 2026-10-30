@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/QuadRefiner.swift: the same search and numbers.
+// Twin of Sources/LazyScanKit/Pipeline/QuadRefiner.swift: the same search and numbers.
 
 /// <summary>
 /// What <see cref="QuadRefiner.Refine"/> made of an outline: the corners (refined, or the outline as

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/CapturePageTests.swift: camera pages in the clean-up stage, their
+// Twin of Tests/LazyScanTests/CapturePageTests.swift: camera pages in the clean-up stage, their
 // capture facts kept by every rebuild, and the geometry of perspective pages.
 
 public class CapturePageTests

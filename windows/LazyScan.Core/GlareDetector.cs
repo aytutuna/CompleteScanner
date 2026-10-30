@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/GlareDetector.swift: the same cells, rules and numbers.
+// Twin of Sources/LazyScanKit/Pipeline/GlareDetector.swift: the same cells, rules and numbers.
 
 /// <summary>
 /// How much of a card or a glossy print a camera saw blown out by a reflection

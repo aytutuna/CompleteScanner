@@ -6,7 +6,7 @@ using Xunit;
 
 namespace LazyScan.App.Tests;
 
-// Twin of Tests/CompleteScannerModelTests/PageFixtures.swift: both suites read the SmartDoc frames in
+// Twin of Tests/LazyScanModelTests/PageFixtures.swift: both suites read the SmartDoc frames in
 // Tests/Fixtures/Pages (copied next to this assembly by the project file) and their corners.json.
 
 /// <summary>A photo among the page fixtures and its page's corners in its pixels, named by position (<see cref="Quad.FromCorners"/>).</summary>

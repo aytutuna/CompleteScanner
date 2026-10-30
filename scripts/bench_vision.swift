@@ -5,7 +5,7 @@ import Vision
 
 // Apple's document segmentation on the SmartDoc 2015 Challenge 1 frames, run natively on the Mac: the
 // Simulator's Vision gives nothing usable. The frames, the sampling, IoU and corner error are the same as
-// Tests/CompleteScannerIOSTests/DocAlignerBenchTests.swift. Appends its rows to the bench table.
+// Tests/LazyScanIOSTests/DocAlignerBenchTests.swift. Appends its rows to the bench table.
 //
 //   swift scripts/bench_vision.swift <framesDir> <step> <outFile>
 

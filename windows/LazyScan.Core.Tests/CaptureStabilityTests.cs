@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/CaptureStabilityTests.swift: the same scripted frame sequences.
+// Twin of Tests/LazyScanTests/CaptureStabilityTests.swift: the same scripted frame sequences.
 
 public class CaptureStabilityTests
 {

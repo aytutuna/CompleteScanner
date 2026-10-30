@@ -46,7 +46,7 @@ jobs:
             "stisvc: start type set to $((Get-Service stisvc).StartType)"
           }
       # DocAligner's FastViT-T8, the page corner model of every platform (pinned release, SHA-256 checked
-      # by the script), into Sources/CompleteScannerModel/Models before anything builds.
+      # by the script), into Sources/LazyScanModel/Models before anything builds.
       - name: Fetch the corner model
         shell: bash
         run: bash scripts/fetch_docaligner.sh
@@ -141,7 +141,7 @@ jobs:
       - name: Toolchain
         run: swift --version
       # The page corner model, as in the Windows job, so the model's tests run here
-      # (CompleteScannerModelTests, on the photos in Tests/Fixtures/Pages).
+      # (LazyScanModelTests, on the photos in Tests/Fixtures/Pages).
       - name: Fetch the corner model
         run: bash scripts/fetch_docaligner.sh
       # The app as developers build it (debug).
@@ -221,7 +221,7 @@ jobs:
           echo "veraPDF $version: all $passed samples from the Swift writer are PDF/A-2b."
 
   ios:
-    # The shared Swift suite (CompleteScannerKit's tests) and the iPhone's own tests on the iOS
+    # The shared Swift suite (LazyScanKit's tests) and the iPhone's own tests on the iOS
     # Simulator, once the macOS job is green. The macos-26 image (arm64; image 20261013) ships Xcode
     # 26.0.1 through 26.6 with 26.6 as its default, and iOS Simulator runtimes 26.2, 26.4 and 26.5;
     # select 26.6 explicitly so a change of the image's default Xcode cannot change the toolchain
@@ -286,7 +286,7 @@ jobs:
           TEST_RUNNER_COMPLETESCANNER_REQUIRE_CORNER_MODEL: '1'
         run: |
           set -o pipefail
-          xcodebuild test             -scheme CompleteScanner-Package             -configuration Release             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}"             -resultBundlePath "$RUNNER_TEMP/ios-tests.xcresult"             ENABLE_TESTABILITY=YES             CODE_SIGNING_ALLOWED=NO
+          xcodebuild test             -scheme LazyScan-Package             -configuration Release             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}"             -resultBundlePath "$RUNNER_TEMP/ios-tests.xcresult"             ENABLE_TESTABILITY=YES             CODE_SIGNING_ALLOWED=NO
       # XcodeGen (MIT) writes the iPhone app's Xcode project from ios/project.yml. It is
       # downloaded here only, pinned to one release and its SHA-256 (the release's xcodegen.zip, a
       # universal macOS binary with its setting presets), and never shipped; the project it writes is
@@ -444,7 +444,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test \
-            -scheme CompleteScanner-Package \
+            -scheme LazyScan-Package \
             -configuration Release \
             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
             -resultBundlePath "$RUNNER_TEMP/ios18-tests.xcresult" \

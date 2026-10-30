@@ -8,7 +8,7 @@ using Xunit;
 namespace LazyScan.Core.Tests;
 
 // PDF/A-2b output and the Unicode text layer, checked in the bytes and, through PdfPig (a
-// test-only package), as a PDF reader sees them. Mirrored by Tests/CompleteScannerTests/PDFATests.swift
+// test-only package), as a PDF reader sees them. Mirrored by Tests/LazyScanTests/PDFATests.swift
 // (the PDF/A cases, the same golden bytes) and PDFWriterTests.swift (the object writer, the plain
 // file); the WriteNewFile cases stay C#-only.
 

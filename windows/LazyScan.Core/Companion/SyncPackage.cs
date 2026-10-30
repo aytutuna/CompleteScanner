@@ -3,7 +3,7 @@ using System.Text;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Companion/SyncPackage.swift: the same bytes for the same
+// Twin of Sources/LazyScanKit/Companion/SyncPackage.swift: the same bytes for the same
 // package, key and nonce, and the same checks when opening one.
 
 /// <summary>Why a <c>.cssync</c> file could not be opened.</summary>

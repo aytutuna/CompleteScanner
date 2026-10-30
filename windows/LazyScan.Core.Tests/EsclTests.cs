@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/EsclTests.swift (same cases). The fixtures, which the Swift
+// Mirrored by Tests/LazyScanTests/EsclTests.swift (same cases). The fixtures, which the Swift
 // suite reads too (Tests/Fixtures/Escl, see EsclFixtures), are hand-written in the shape real devices
 // send (namespace prefixes vary between devices).
 

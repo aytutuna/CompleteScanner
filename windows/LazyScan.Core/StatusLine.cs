@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace LazyScan.Core;
 
-// Port of Sources/CompleteScannerKit/Core/StatusLine.swift: the status line's short text. Both apps
+// Port of Sources/LazyScanKit/Core/StatusLine.swift: the status line's short text. Both apps
 // show at most six words of their status sentence, facts only, and keep the whole sentence as the
 // line's accessible name.
 

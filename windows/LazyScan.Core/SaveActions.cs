@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Port of Sources/CompleteScannerKit/Core/SaveActions.swift: what can be done with saved files
+// Port of Sources/LazyScanKit/Core/SaveActions.swift: what can be done with saved files
 // (open, open with, show in folder, share, email, copy) and what happens on its own after a
 // save. The platform carries the actions out; the choices are made here so both apps make
 // the same ones.

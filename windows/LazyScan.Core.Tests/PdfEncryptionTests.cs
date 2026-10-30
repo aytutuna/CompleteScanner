@@ -10,7 +10,7 @@ namespace LazyScan.Core.Tests;
 
 // Password-protected PDFs: the standard security handler V5 R6 (AES-256) checked against known
 // answers, then whole files read back with the password by PdfPig (a test-only package). Mirrored by
-// Tests/CompleteScannerTests/PDFEncryptionTests.swift: the same cases and the same bytes (the pinned
+// Tests/LazyScanTests/PDFEncryptionTests.swift: the same cases and the same bytes (the pinned
 // values and SHA-256 below), the files opened there with PDFKit.
 
 public class PdfEncryptionTests

@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/BookSplitter.swift: same constants, same steps.
+// Twin of Sources/LazyScanKit/Pipeline/BookSplitter.swift: same constants, same steps.
 
 /// <summary>Which way the gutter of an open book runs across a scan (<see cref="GutterResult"/>).</summary>
 public enum GutterAxis

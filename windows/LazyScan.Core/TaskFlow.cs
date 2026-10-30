@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Port of Sources/CompleteScannerKit/Core/TaskFlow.swift.
+// Port of Sources/LazyScanKit/Core/TaskFlow.swift.
 
 /// <summary>One step of a guided task, as the banner on the scan screen shows it.</summary>
 /// <param name="Id">Stable within its task, for example "scan", "front" or "back".</param>

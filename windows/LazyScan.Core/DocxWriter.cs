@@ -3,7 +3,7 @@ using System.Text;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Output/DocxWriter.swift: the same package, byte for byte.
+// Twin of Sources/LazyScanKit/Output/DocxWriter.swift: the same package, byte for byte.
 
 /// <summary>How the picture of a page is stored in a Word document.</summary>
 public enum DocxPictureFormat

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/SavePlanTests.swift: the same cases.
+// Twin of Tests/LazyScanTests/SavePlanTests.swift: the same cases.
 
 public class SavePlanTests
 {

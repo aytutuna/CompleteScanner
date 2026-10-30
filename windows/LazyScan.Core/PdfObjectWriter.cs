@@ -3,7 +3,7 @@ using System.Text;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Output/PDFObjectWriter.swift: the same bytes, the update's
+// Twin of Sources/LazyScanKit/Output/PDFObjectWriter.swift: the same bytes, the update's
 // sections included.
 
 /// <summary>

@@ -3,7 +3,7 @@ using System.Net;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Escl/EsclRetry.swift: the same rules and tests on both platforms.
+// Twin of Sources/LazyScanKit/Escl/EsclRetry.swift: the same rules and tests on both platforms.
 
 /// <summary>
 /// How long to keep retrying an eSCL request the device answers with HTTP 503 (busy, or the

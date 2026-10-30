@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/PhotoImport.swift: the same rules, numbers and words.
+// Twin of Sources/LazyScanKit/Pipeline/PhotoImport.swift: the same rules, numbers and words.
 
 /// <summary>
 /// How a photo's stored pixels are turned to show it the right way up, read from the orientation

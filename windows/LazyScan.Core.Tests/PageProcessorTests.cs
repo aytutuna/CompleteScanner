@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/PageProcessorTests.swift: the clean-up stage, which pages
+// Twin of Tests/LazyScanTests/PageProcessorTests.swift: the clean-up stage, which pages
 // are saved, and the page facts every rebuild keeps.
 
 public class PageProcessorTests

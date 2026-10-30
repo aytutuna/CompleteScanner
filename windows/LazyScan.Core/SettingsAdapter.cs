@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Port of Sources/CompleteScannerKit/Core/SettingsAdapter.swift.
+// Port of Sources/LazyScanKit/Core/SettingsAdapter.swift.
 
 /// <summary>Which setting <see cref="SettingsAdapter.Adapt"/> changed.</summary>
 public enum SettingsChange

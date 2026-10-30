@@ -3,7 +3,7 @@ using System.Text;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/Barcodes.swift.
+// Twin of Sources/LazyScanKit/Pipeline/Barcodes.swift.
 
 /// <summary>
 /// The kinds of code read on scanned pages for splitting a stack at barcode or QR sheets

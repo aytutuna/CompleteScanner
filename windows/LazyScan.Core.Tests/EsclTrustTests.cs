@@ -9,9 +9,9 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/EsclTrustTests.swift (same cases), except the two checks
+// Mirrored by Tests/LazyScanTests/EsclTrustTests.swift (same cases), except the two checks
 // through a real TLS connection to a loopback server, whose Swift twins are in
-// Tests/CompleteScannerTests/EsclLoopbackTests.swift with the client (an NWListener serving the
+// Tests/LazyScanTests/EsclLoopbackTests.swift with the client (an NWListener serving the
 // fixtures' PKCS #12 identities, where this suite makes its certificates as it runs). Certificate
 // pinning for eSCL over HTTPS and the escl-trust.json and escl-hosts.json files, including trust files
 // written by either platform (Tests/Fixtures/Escl).

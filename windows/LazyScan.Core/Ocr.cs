@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Port of the OCR surface from Sources/CompleteScannerKit/Output/OCRService.swift. The Mac
+// Port of the OCR surface from Sources/LazyScanKit/Output/OCRService.swift. The Mac
 // app uses Apple Vision; on Windows the shell provides an implementation backed by
 // Windows.Media.Ocr (see LazyScan.App/Services/WindowsOcrService.cs).
 

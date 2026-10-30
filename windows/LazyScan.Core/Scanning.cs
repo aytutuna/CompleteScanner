@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Port of Sources/CompleteScannerKit/Core/ScannerBackend.swift. The Swift protocols are
+// Port of Sources/LazyScanKit/Core/ScannerBackend.swift. The Swift protocols are
 // @MainActor; here the contract is: all members are called from the UI thread, and
 // implementations marshal their own callbacks back to it.
 

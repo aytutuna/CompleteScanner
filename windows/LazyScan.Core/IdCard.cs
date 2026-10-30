@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/IdCard.swift: the ID card task. The front and the
+// Twin of Sources/LazyScanKit/Pipeline/IdCard.swift: the ID card task. The front and the
 // back of a card are scanned on the flatbed, the card is found on each scan (PhotoDetector), and
 // both sides are laid out on one page at their real size (ID-1 is 85.60 × 53.98 mm).
 

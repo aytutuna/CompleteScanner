@@ -4,7 +4,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/CompanionProtocolTests.swift (same JSON, byte for byte).
+// Mirrored by Tests/LazyScanTests/CompanionProtocolTests.swift (same JSON, byte for byte).
 
 public class CompanionProtocolTests
 {

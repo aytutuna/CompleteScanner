@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/RgbaImageTests.swift: the Swift RgbaImage is a port of this
+// Twin of Tests/LazyScanTests/RgbaImageTests.swift: the Swift RgbaImage is a port of this
 // type, and both must give these exact bytes.
 
 public class RgbaImageTests

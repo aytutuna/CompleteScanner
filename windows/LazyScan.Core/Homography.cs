@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/Homography.swift: + − × ÷ on doubles in the same
+// Twin of Sources/LazyScanKit/Pipeline/Homography.swift: + − × ÷ on doubles in the same
 // order, so the same quad gives the same matrix, bit for bit, on both platforms.
 
 /// <summary>

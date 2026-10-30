@@ -1,13 +1,13 @@
 #!/bin/bash
 # Fetches DocAligner's FastViT-T8 corner model (DocsaidLab/DocAligner release 1.1.1, Apache-2.0, see
-# Sources/CompleteScannerModel/Models/DocAligner-LICENSE.txt) into Sources/CompleteScannerModel/Models, the
+# Sources/LazyScanModel/Models/DocAligner-LICENSE.txt) into Sources/LazyScanModel/Models, the
 # page corner model of every platform. It is not checked in; without it the apps fall back to their own
 # page search and the tests that need it skip. The file is checked against its SHA-256. Runs in macOS bash
 # and in Git Bash on Windows.
 set -euo pipefail
 
 release="https://github.com/DocsaidLab/DocAligner/releases/download/1.1.1"
-models="$(cd "$(dirname "$0")/.." && pwd)/Sources/CompleteScannerModel/Models"
+models="$(cd "$(dirname "$0")/.." && pwd)/Sources/LazyScanModel/Models"
 
 sha256() {
   if command -v shasum >/dev/null 2>&1; then

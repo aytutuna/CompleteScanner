@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Port of Sources/CompleteScannerKit/Core/TaskCatalog.swift.
+// Port of Sources/LazyScanKit/Core/TaskCatalog.swift.
 
 /// <summary>How the app handles a task's scans.</summary>
 public enum TaskFlowKind

@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/OrientationTests.swift: rotate pages upright — what a reading
+// Twin of Tests/LazyScanTests/OrientationTests.swift: rotate pages upright — what a reading
 // scores, which ways up are read, when a page is turned, and what the page strip says about it.
 
 public class OrientationTests

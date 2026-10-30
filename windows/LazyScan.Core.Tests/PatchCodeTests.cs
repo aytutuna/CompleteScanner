@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/PatchCodeTests.swift: the same pages, the same expectations.
+// Twin of Tests/LazyScanTests/PatchCodeTests.swift: the same pages, the same expectations.
 
 public class PatchCodeTests
 {

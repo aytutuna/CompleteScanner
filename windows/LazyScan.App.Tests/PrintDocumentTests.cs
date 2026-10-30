@@ -15,7 +15,7 @@ namespace LazyScan.App.Tests;
 // The print document is what Windows' print path receives: here it is written to an XPS file
 // instead of a printer and read back, so the paper size and where each image lands (in 1/96 inch)
 // are checked without a printer and without a window. Windows only: no Swift twin (the Mac's print
-// document is checked by Tests/CompleteScannerTests/PrintDocumentTests.swift).
+// document is checked by Tests/LazyScanTests/PrintDocumentTests.swift).
 public class PrintDocumentTests : IDisposable
 {
     private readonly string _folder = Directory.CreateTempSubdirectory("CompleteScanner-print-tests-").FullName;

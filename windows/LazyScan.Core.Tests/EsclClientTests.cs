@@ -5,7 +5,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/EsclClientTests.swift (same cases; there a URLProtocol stub
+// Mirrored by Tests/LazyScanTests/EsclClientTests.swift (same cases; there a URLProtocol stub
 // plays the device). EsclClient and EsclScannerSession against a stub HttpMessageHandler that plays a
 // device; retry waits run on a fake clock. Pages are "decoded" by a stub decoder: "PAGE w h" becomes a
 // w×h image, anything else is unreadable.

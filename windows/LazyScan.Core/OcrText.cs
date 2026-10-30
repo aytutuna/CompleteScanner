@@ -2,7 +2,7 @@ using System.Text;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Output/OCRText.swift: same rules, same numbers, same text.
+// Twin of Sources/LazyScanKit/Output/OCRText.swift: same rules, same numbers, same text.
 
 /// <summary>
 /// The recognized text of one page: the lines as the OCR engine returned them and the page's

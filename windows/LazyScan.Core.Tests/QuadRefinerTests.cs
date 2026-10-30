@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/QuadRefinerTests.swift: outlines put 1 % of the diagonal off the
+// Twin of Tests/LazyScanTests/QuadRefinerTests.swift: outlines put 1 % of the diagonal off the
 // pages of the synthetic photos (PhotoScenes), or 2 % too large, moved back onto their edges; a page on a
 // sheet whose edges lie just outside it; and a table with no page.
 

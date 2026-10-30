@@ -6,7 +6,7 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Escl/EsclTrust.swift (the store, the validator's rules and the
+// Twin of Sources/LazyScanKit/Escl/EsclTrust.swift (the store, the validator's rules and the
 // same escl-trust.json keys; the TLS hook and X509Certificate2 stay platform-specific).
 //
 // Trust for eSCL over HTTPS (_uscans). Scanners make their own certificates, which Windows

@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Port of Sources/CompleteScannerKit/Core/DocumentSides.swift: which page is which side of which
+// Port of Sources/LazyScanKit/Core/DocumentSides.swift: which page is which side of which
 // sheet in a two-sided scan, and putting pages in reading order. The one collation helper for
 // feeders that scan both sides and for stacks turned over by hand.
 

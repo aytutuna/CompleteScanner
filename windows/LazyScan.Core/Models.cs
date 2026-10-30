@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace LazyScan.Core;
 
-// Port of Sources/CompleteScannerKit/Core/Models.swift. Enums serialize as camelCase
+// Port of Sources/LazyScanKit/Core/Models.swift. Enums serialize as camelCase
 // strings (see StoreFiles.JsonOptions in Persistence.cs) matching the Swift rawValues, so
 // settings/preset files stay conceptually interchangeable. Settings files load across
 // versions (CONTRACTS.md, rule 6): every persisted property needs an initializer default,
@@ -374,7 +374,7 @@ public static class ModelLabels
 
 /// <summary>
 /// Which formats each mode offers and what each save writes for a format. Twin of the
-/// <c>OutputFormat</c> members in Sources/CompleteScannerKit/Core/Models.swift.
+/// <c>OutputFormat</c> members in Sources/LazyScanKit/Core/Models.swift.
 /// </summary>
 public static class OutputFormats
 {

@@ -5,7 +5,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/CompanionPackageTests.swift: the same cases, the same
+// Mirrored by Tests/LazyScanTests/CompanionPackageTests.swift: the same cases, the same
 // golden package (CompanionFixtures, written here and pinned as hex, length and SHA-256), which
 // the Swift writer must reproduce byte for byte and the Swift reader must decode.
 

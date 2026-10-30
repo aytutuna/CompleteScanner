@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Port of Tests/CompleteScannerTests/NamingTemplateTests.swift — the same cases, so the two
+// Port of Tests/LazyScanTests/NamingTemplateTests.swift — the same cases, so the two
 // implementations stay behaviorally identical.
 
 public class NamingTemplateTests

@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Core/SavePlan.swift.
+// Twin of Sources/LazyScanKit/Core/SavePlan.swift.
 
 /// <summary>A document of the queue as saved: its number (from 1), its pages in order and its name, if any.</summary>
 public sealed record SaveDocument(int Number, IReadOnlyList<ScannedPage> Pages, string? Label);

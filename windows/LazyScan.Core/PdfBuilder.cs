@@ -58,7 +58,7 @@ public sealed record PdfPageInput(PdfImageData Image, int PixelWidth, int PixelH
 
 /// <summary>
 /// Minimal, dependency-free PDF writer for scanned pages (its object level, with PDF/A and the
-/// password, has a Swift twin, Sources/CompleteScannerKit/Output/PDFWriter.swift, through which the
+/// password, has a Swift twin, Sources/LazyScanKit/Output/PDFWriter.swift, through which the
 /// Mac and the iPhone write every PDF, byte for byte as here). It writes PDF 1.4, PDF/A-2b for
 /// keeping, or a PDF 1.7 file that opens only with a password (AES-256), as
 /// <see cref="PdfWriteOptions"/> ask.

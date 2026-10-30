@@ -5,7 +5,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/EsclRetryTests.swift (same cases). Time is simulated: the
+// Mirrored by Tests/LazyScanTests/EsclRetryTests.swift (same cases). Time is simulated: the
 // fake delay advances a fake clock instead of waiting.
 
 [Collection(WallClockCollection.Name)]

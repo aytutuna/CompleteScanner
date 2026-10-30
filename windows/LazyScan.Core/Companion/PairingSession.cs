@@ -2,7 +2,7 @@ using System.Security.Cryptography;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Companion/PairingSession.swift: the same lifetime, attempt
+// Twin of Sources/LazyScanKit/Companion/PairingSession.swift: the same lifetime, attempt
 // limit and answers.
 
 /// <summary>Where a pairing session is.</summary>

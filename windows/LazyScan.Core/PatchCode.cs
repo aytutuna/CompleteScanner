@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/PatchCodeDetector.swift.
+// Twin of Sources/LazyScanKit/Pipeline/PatchCodeDetector.swift.
 
 /// <summary>
 /// The six patch codes of document scanners: four parallel bars, two wide and two narrow, in an

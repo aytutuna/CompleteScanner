@@ -10,7 +10,7 @@ public sealed class PhotoDetectorOptions
 
 /// <summary>
 /// Finds distinct photos lying on a flatbed scan. Step-for-step port of
-/// Sources/CompleteScannerKit/Pipeline/PhotoDetector.swift; the numbered stages below
+/// Sources/LazyScanKit/Pipeline/PhotoDetector.swift; the numbered stages below
 /// match the Swift source so the two implementations can be diffed side by side.
 /// </summary>
 public static class PhotoDetector

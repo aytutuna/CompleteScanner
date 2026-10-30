@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/TroubleshooterTests.swift (same fixtures, same text).
+// Mirrored by Tests/LazyScanTests/TroubleshooterTests.swift (same fixtures, same text).
 // C#-only case: OperationCanceledException in FailureFrom (Swift has CancellationError instead,
 // tested there).
 

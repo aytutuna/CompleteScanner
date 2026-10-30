@@ -4,7 +4,7 @@ namespace LazyScan.Core;
 
 /// <summary>
 /// Adjustments + color-mode conversion, ported from
-/// Sources/CompleteScannerKit/Pipeline/ImagePipeline.swift.
+/// Sources/LazyScanKit/Pipeline/ImagePipeline.swift.
 ///
 /// The macOS original composes Core Image filters; this port re-implements each step as
 /// per-pixel math so the Core stays dependency-free. Semantics per step match the CI filter

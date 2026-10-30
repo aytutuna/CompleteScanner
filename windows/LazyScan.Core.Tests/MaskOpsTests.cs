@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/MaskOpsTests.swift. MaskOps was moved out of
+// Twin of Tests/LazyScanTests/MaskOpsTests.swift. MaskOps was moved out of
 // PhotoDetector; these tests prove it still does exactly what PhotoDetector's private copies did
 // (kept below, verbatim, as the reference) and that photo detection gives the same regions.
 

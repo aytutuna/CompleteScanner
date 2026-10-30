@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/SpineShadowTests.swift: softening the shadow along the spine on a
+// Twin of Tests/LazyScanTests/SpineShadowTests.swift: softening the shadow along the spine on a
 // page cut from a spread, on the same synthetic book pages (TestPages, byte-identical, checked by
 // checksum), with the same softened bytes on both platforms.
 

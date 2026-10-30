@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Port of Sources/CompleteScannerKit/Core/InspectorSections.swift: the settings column's sections,
+// Port of Sources/LazyScanKit/Core/InspectorSections.swift: the settings column's sections,
 // which of them start open, which a task opens, and the summary a collapsed section's header shows.
 // Both apps lay their settings out in these sections.
 

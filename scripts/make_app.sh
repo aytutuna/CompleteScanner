@@ -1,17 +1,17 @@
 #!/bin/bash
-# Builds CompleteScanner in release mode and packages dist/CompleteScanner.app
+# Builds Lazy Scan in release mode and packages dist/Lazy Scan.app
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "==> Building (release)…"
 swift build -c release
 
-APP=dist/CompleteScanner.app
-BIN=".build/release/CompleteScanner"
+APP="dist/Lazy Scan.app"
+BIN=".build/release/LazyScan"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-cp "$BIN" "$APP/Contents/MacOS/CompleteScanner"
+cp "$BIN" "$APP/Contents/MacOS/LazyScan"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -21,7 +21,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleName</key>              <string>Lazy Scan</string>
     <key>CFBundleDisplayName</key>       <string>Lazy Scan</string>
     <key>CFBundleIdentifier</key>        <string>local.completescanner.app</string>
-    <key>CFBundleExecutable</key>        <string>CompleteScanner</string>
+    <key>CFBundleExecutable</key>        <string>LazyScan</string>
     <key>CFBundleIconFile</key>          <string>AppIcon</string>
     <key>CFBundlePackageType</key>       <string>APPL</string>
     <key>CFBundleShortVersionString</key><string>1.0</string>
@@ -63,7 +63,7 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 # The page corner model and its licence, where FastViTCornerModel looks in a packaged app. Without it
 # (scripts/fetch_docaligner.sh not run) the app finds pages with its own search. ONNX Runtime is linked
 # in either way, so its licence always goes in.
-MODELS=Sources/CompleteScannerModel/Models
+MODELS=Sources/LazyScanModel/Models
 cp "$MODELS/ONNXRuntime-LICENSE.txt" "$APP/Contents/Resources/"
 if [ -f "$MODELS/fastvit_t8_h_e_bifpn_256_fp32.onnx" ]; then
   cp "$MODELS/fastvit_t8_h_e_bifpn_256_fp32.onnx" "$MODELS/DocAligner-LICENSE.txt" "$APP/Contents/Resources/"
@@ -92,4 +92,4 @@ echo "==> Signing (ad-hoc)…"
 codesign --force --deep -s - "$APP"
 
 echo "==> Done: $APP"
-echo "    Launch with:  open $APP"
+echo "    Launch with:  open \"$APP\""

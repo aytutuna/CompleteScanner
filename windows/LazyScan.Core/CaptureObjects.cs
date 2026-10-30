@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/CaptureObjects.swift: the same kinds, pages and rules.
+// Twin of Sources/LazyScanKit/Pipeline/CaptureObjects.swift: the same kinds, pages and rules.
 
 /// <summary>
 /// The objects of one camera shot as pages (I13): several receipts or photos, or the side of an ID

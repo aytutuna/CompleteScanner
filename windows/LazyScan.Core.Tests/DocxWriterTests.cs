@@ -6,7 +6,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/DocxWriterTests.swift: the same cases. The Mac has no
+// Mirrored by Tests/LazyScanTests/DocxWriterTests.swift: the same cases. The Mac has no
 // zip reader, so its tests read the package with a small reader of their own; here
 // System.IO.Compression.ZipArchive opens it, as Word's own reader would.
 

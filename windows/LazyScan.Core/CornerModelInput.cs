@@ -1,6 +1,6 @@
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/CornerModelInput.swift: the same sampling arithmetic in the
+// Twin of Sources/LazyScanKit/Pipeline/CornerModelInput.swift: the same sampling arithmetic in the
 // same order, so a corner model gets the very same numbers on both platforms.
 
 /// <summary>

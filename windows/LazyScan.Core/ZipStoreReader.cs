@@ -2,7 +2,7 @@ using System.Text;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Output/ZipStoreReader.swift: the same checks, in the same
+// Twin of Sources/LazyScanKit/Output/ZipStoreReader.swift: the same checks, in the same
 // order, with the same error kinds and messages.
 
 /// <summary>Why <see cref="ZipStoreReader"/> refused an archive.</summary>

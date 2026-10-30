@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/ReceiptTests.swift: the same cases, on the same synthetic
+// Mirrored by Tests/LazyScanTests/ReceiptTests.swift: the same cases, on the same synthetic
 // beds (TestPages.ReceiptBed) and the same date table (ReceiptDateCases).
 
 public class ReceiptTests

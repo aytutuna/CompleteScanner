@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Companion/SpkiFingerprint.swift: the same DER walk, the same
+// Twin of Sources/LazyScanKit/Companion/SpkiFingerprint.swift: the same DER walk, the same
 // fingerprint, check code and test vectors on both platforms.
 
 /// <summary>

@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Pipeline/ReceiptProcessing.swift: same constants, same steps,
+// Twin of Sources/LazyScanKit/Pipeline/ReceiptProcessing.swift: same constants, same steps,
 // same patterns.
 
 /// <summary>How a receipt's edges were found (<see cref="ReceiptDetector"/>).</summary>

@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Companion/CompanionProtocol.swift: the same constants, the same
+// Twin of Sources/LazyScanKit/Companion/CompanionProtocol.swift: the same constants, the same
 // JSON bytes for the same message and the same lenient reading, so the phone (Swift) and the
 // desktop (C# now, Swift on the Mac later) speak exactly one protocol.
 

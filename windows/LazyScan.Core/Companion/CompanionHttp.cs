@@ -3,7 +3,7 @@ using System.Text;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Companion/CompanionHTTP.swift: the same subset of HTTP/1.1,
+// Twin of Sources/LazyScanKit/Companion/CompanionHTTP.swift: the same subset of HTTP/1.1,
 // the same limits and the same answers to malformed requests.
 
 /// <summary>How far parsing a request's head got.</summary>

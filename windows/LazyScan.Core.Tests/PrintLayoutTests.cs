@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/PrintLayoutTests.swift: the same cases.
+// Mirrored by Tests/LazyScanTests/PrintLayoutTests.swift: the same cases.
 
 public class PrintLayoutTests
 {

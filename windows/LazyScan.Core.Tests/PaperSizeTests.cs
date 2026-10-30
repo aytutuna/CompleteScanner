@@ -4,7 +4,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/PaperSizeTests.swift: the same cases.
+// Mirrored by Tests/LazyScanTests/PaperSizeTests.swift: the same cases.
 
 public class PaperSizeTests
 {

@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Output/CompanionPackage.swift: the same manifest, the same
+// Twin of Sources/LazyScanKit/Output/CompanionPackage.swift: the same manifest, the same
 // bytes for the same document, the same checks and messages when reading one.
 
 /// <summary>How a page's picture is stored in a companion package.</summary>

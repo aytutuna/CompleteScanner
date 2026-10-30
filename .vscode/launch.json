@@ -4,21 +4,21 @@
             "type": "swift",
             "request": "launch",
             "args": [],
-            "cwd": "${workspaceFolder:CompleteScanner}",
-            "name": "Debug CompleteScanner",
-            "target": "CompleteScanner",
+            "cwd": "${workspaceFolder:LazyScan}",
+            "name": "Debug LazyScan",
+            "target": "LazyScan",
             "configuration": "debug",
-            "preLaunchTask": "swift: Build Debug CompleteScanner"
+            "preLaunchTask": "swift: Build Debug LazyScan"
         },
         {
             "type": "swift",
             "request": "launch",
             "args": [],
-            "cwd": "${workspaceFolder:CompleteScanner}",
-            "name": "Release CompleteScanner",
-            "target": "CompleteScanner",
+            "cwd": "${workspaceFolder:LazyScan}",
+            "name": "Release LazyScan",
+            "target": "LazyScan",
             "configuration": "release",
-            "preLaunchTask": "swift: Build Release CompleteScanner"
+            "preLaunchTask": "swift: Build Release LazyScan"
         }
     ]
 }

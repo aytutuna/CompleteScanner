@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/HomographyTests.swift: the quad, homography and sheet-shape math.
+// Twin of Tests/LazyScanTests/HomographyTests.swift: the quad, homography and sheet-shape math.
 
 public class HomographyTests
 {

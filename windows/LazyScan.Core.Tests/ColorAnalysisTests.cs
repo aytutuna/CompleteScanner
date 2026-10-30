@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Mirrored by Tests/CompleteScannerTests/ColorAnalysisTests.swift: the same pages, the same answers.
+// Mirrored by Tests/LazyScanTests/ColorAnalysisTests.swift: the same pages, the same answers.
 
 public class ColorAnalysisTests
 {

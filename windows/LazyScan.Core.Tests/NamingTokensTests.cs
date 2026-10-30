@@ -3,7 +3,7 @@ using Xunit;
 
 namespace LazyScan.Core.Tests;
 
-// Twin of Tests/CompleteScannerTests/NamingTokensTests.swift: the file name field's parts, putting one
+// Twin of Tests/LazyScanTests/NamingTokensTests.swift: the file name field's parts, putting one
 // in, what is wrong with a template, and the name the next file gets.
 public class NamingTokensTests
 {

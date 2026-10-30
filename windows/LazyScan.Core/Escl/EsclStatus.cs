@@ -3,7 +3,7 @@ using System.Xml.Linq;
 
 namespace LazyScan.Core;
 
-// Twin of Sources/CompleteScannerKit/Escl/EsclStatus.swift: the same rules and tests on both platforms.
+// Twin of Sources/LazyScanKit/Escl/EsclStatus.swift: the same rules and tests on both platforms.
 
 /// <summary>
 /// A parsed eSCL ScannerStatus document: the device state (pwg:State) and the feeder state
