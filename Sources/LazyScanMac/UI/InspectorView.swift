@@ -966,21 +966,41 @@ struct InspectorView: View {
 
     private var fileNameRow: some View {
         LabeledContent("File name") {
-            HStack(spacing: 4) {
-                TextField("Naming template", text: $state.settings.namingTemplate)
-                    .textFieldStyle(.roundedBorder)
-                    .labelsHidden()
-                Button {
-                    showNamingHelp.toggle()
-                } label: {
-                    Image(systemName: "questionmark.circle")
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    TextField("Naming template", text: $state.settings.namingTemplate)
+                        .textFieldStyle(.roundedBorder)
+                        .labelsHidden()
+                    Button {
+                        showNamingHelp.toggle()
+                    } label: {
+                        Image(systemName: "questionmark.circle")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Naming template tokens")
+                    .popover(isPresented: $showNamingHelp, arrowEdge: .bottom) {
+                        namingHelpPopover
+                    }
                 }
-                .buttonStyle(.borderless)
-                .help("Naming template tokens")
-                .popover(isPresented: $showNamingHelp, arrowEdge: .bottom) {
-                    namingHelpPopover
-                }
+                fileNameNote
             }
+        }
+    }
+
+    /// What is wrong with the file name, else the name the next file gets.
+    @ViewBuilder
+    private var fileNameNote: some View {
+        let template: String = state.settings.namingTemplate
+        let format: OutputFormat = NamingTokens.savedFormat(state.settings)
+        if let problem = NamingTokens.problem(template) {
+            reasonLine(problem, systemImage: "exclamationmark.triangle")
+        } else {
+            Text(state.fileNameExample(template, format: format))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help("The next file is named like this")
         }
     }
 
@@ -989,14 +1009,10 @@ struct InspectorView: View {
             Text("Naming Tokens")
                 .font(.headline)
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
-                namingTokenRow("{date}", "Scan date, e.g. 2026-08-13")
-                namingTokenRow("{time}", "Scan time, e.g. 14.05.32")
-                namingTokenRow("{counter}", "Running number")
+                ForEach(NamingTokens.all, id: \.token) { part in
+                    namingTokenRow(part.token, part.help)
+                }
                 namingTokenRow("{counter:3}", "Zero-padded number, e.g. 007")
-                namingTokenRow("{intent}", "\u{201C}Document\u{201D} or \u{201C}Photos\u{201D}")
-                namingTokenRow("{index}", "Photo number within a batch")
-                namingTokenRow("{task}", "The task, e.g. \u{201C}Document\u{201D} or \u{201C}Photo\u{201D}")
-                namingTokenRow("{label}", "The document\u{2019}s name, given in the page strip")
             }
         }
         .padding(14)
