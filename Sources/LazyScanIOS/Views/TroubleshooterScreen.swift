@@ -6,7 +6,8 @@ import SwiftUI
 /// one-line headline, then a card for each problem and warning (title, its one line, its buttons, and
 /// More help when there is more), a compact row for each check that is fine, and the tips. Refresh and
 /// Copy diagnostics are at the bottom. It reads the app's state again every two seconds while shown, so
-/// scanners and the search's state appear as they change.
+/// scanners and the search's state appear as they change. A scanner added by address is picked as in the
+/// picker (`ScannerPickerSheets`), once its sheet has closed, asking here first about a side of an ID card held.
 struct TroubleshooterScreen: View {
     @EnvironmentObject private var state: AppState
     @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
@@ -17,6 +18,8 @@ struct TroubleshooterScreen: View {
     @State private var snapshot: DiscoverySnapshot = DiscoverySnapshot(platform: .ios)
     @State private var footer: String?
     @State private var showsAdd: Bool = false
+    @State private var addedID: String?
+    @State private var asksAboutCard: Bool = false
 
     /// The screen's title, as the Windows window's.
     static let title = "Why isn't my scanner listed?"
@@ -69,13 +72,14 @@ struct TroubleshooterScreen: View {
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
                 }
             }
-            .sheet(isPresented: $showsAdd) {
+            .sheet(isPresented: $showsAdd, onDismiss: addClosed) {
                 if let makeAddModel {
                     AddScannerView(model: makeAddModel(), onAdded: added, onClose: closeAdd)
                         .environmentObject(state)
                 }
             }
         }
+        .modifier(IdCardDiscardQuestion(state: state, asked: $asksAboutCard))
     }
 
     private func reload() {
@@ -103,11 +107,23 @@ struct TroubleshooterScreen: View {
     }
 
     private func added(_ deviceID: String) {
+        addedID = deviceID
         showsAdd = false
-        state.userSelectDevice(deviceID)
-        scanner = deviceID
-        mode = .printer
-        reload()
+    }
+
+    private func addClosed() {
+        guard let id = addedID else { return }
+        addedID = nil
+        let appState: AppState = state
+        state.leaveIdCard {
+            scanner = id
+            mode = .printer
+            appState.userSelectDevice(id)
+            reload()
+        }
+        if state.pendingIdCardLeave != nil {
+            asksAboutCard = true
+        }
     }
 
     private func closeAdd() {

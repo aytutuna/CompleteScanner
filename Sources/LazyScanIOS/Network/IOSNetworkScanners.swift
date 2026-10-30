@@ -22,6 +22,8 @@ public enum IOSNetworkText {
     public static let addButton = "Add by address"
     public static let removeAddress = "Remove address"
     public static let searching = "Looking for scanners…"
+    /// Opens the scanner picked again after connecting to it failed.
+    public static let retry = "Try again"
     /// Adding a scanner by address (the Windows dialog's wording).
     public static let addTitle = "Add a network scanner"
     public static let addLine = "Enter the scanner's IP address or name."

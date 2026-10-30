@@ -483,7 +483,7 @@ public final class AppState: ObservableObject {
     /// The user chose no scanner (`userSelectNoDevice`): none is selected on its own until they pick one.
     private var keepsNoDevice = false
     /// The phone's printer mode at launch: the scanner picked last time, selected once it is listed
-    /// (`start(onlySelecting:)`).
+    /// (`start(onlySelecting:)`); likewise the scanner in use once it has dropped off the list (`mergeDevices`).
     private var awaitedDeviceID: String?
     /// The user's no scanner also turns the sides turned over by hand back to both, once the session that
     /// decided them has closed (`userSelectNoDevice(resetsManualSides:)`).
@@ -680,6 +680,11 @@ public final class AppState: ObservableObject {
             } else if autoSwitchMustWait {
                 // The scanner went away (unplugged, powered off): the same deferral applies.
                 connectionSwitchDeferred = true
+            } else if platform == .ios {
+                // The phone waits for its scanner to be listed again, as at launch.
+                awaitedDeviceID = sel
+                keepsNoDevice = true
+                selectDevice(nil)
             } else {
                 userPickedDevice = false
                 selectDevice(preferredDefaultDevice())
@@ -788,12 +793,17 @@ public final class AppState: ObservableObject {
     }
 
     /// The troubleshooter's Refresh: every connection that can looks for scanners again; the list
-    /// updates as they answer.
+    /// updates as they answer. A selected scanner that could not be connected to is opened again, unless
+    /// that would end a scan, a review or an ID card's sides (`autoSwitchMustWait`). Twin of the Windows
+    /// `AppViewModel.RefreshScanners`.
     public func refreshScanners() {
         for backend in backends {
             if let diagnostics = backend as? any ScannerBackendDiagnostics { diagnostics.rescan() }
         }
         mergeDevices()
+        if let id = selectedDeviceID, session == nil, switchTask == nil, !autoSwitchMustWait {
+            selectDevice(id, interactive: true)
+        }
     }
 
     /// The text of devices.txt and of Copy Diagnostics: how the device list was grouped, then the
@@ -895,6 +905,10 @@ public final class AppState: ObservableObject {
             selectedEntry = nil
         }
         refreshDeviceRows()
+        // Named at once: this switch waits for the one before, which may still be connecting.
+        if let id, let name = devices.first(where: { $0.id == id })?.name {
+            statusMessage = "Connecting to \(name)…"
+        }
         switchGeneration += 1
         let generation = switchGeneration
         let previous = switchTask
@@ -985,6 +999,8 @@ public final class AppState: ObservableObject {
                 }
             }
         } catch {
+            // Another scanner was picked meanwhile: no alert or troubleshooter entry for one the user left.
+            guard selectedDeviceID == id else { return }
             errorMessage = error.localizedDescription
             statusMessage = "Could not connect to \(name)."
             recordFailure(deviceName: name, error: error)

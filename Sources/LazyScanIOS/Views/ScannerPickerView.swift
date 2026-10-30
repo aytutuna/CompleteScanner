@@ -17,7 +17,8 @@ struct ScannerPickerList: View {
                                   asksAboutCard: $asksAboutCard)
         }
         .listStyle(.insetGrouped)
-        .modifier(ScannerPickerSheets(picker: picker, showsAdd: $showsAdd, showsTroubleshooter: $showsTroubleshooter))
+        .modifier(ScannerPickerSheets(picker: picker, showsAdd: $showsAdd, showsTroubleshooter: $showsTroubleshooter,
+                                      asksAboutCard: $asksAboutCard))
         .modifier(IdCardDiscardQuestion(state: state, asked: $asksAboutCard))
     }
 
@@ -31,7 +32,9 @@ struct ScannerPickerList: View {
 }
 
 /// Add by address and the troubleshooter, as sheets of the list (or the sidebar) the picker's sections are
-/// in. A scanner added is selected and scanned with, in printer mode.
+/// in. A scanner added is selected and scanned with, in printer mode, once the Add sheet has closed; with a
+/// side of an ID card held, as a pick does, only once the card is discarded (`asksAboutCard`, which the
+/// host's `IdCardDiscardQuestion` answers).
 struct ScannerPickerSheets: ViewModifier {
     @EnvironmentObject private var state: AppState
     @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
@@ -39,12 +42,15 @@ struct ScannerPickerSheets: ViewModifier {
     let picker: IOSScannerPickerModel
     @Binding var showsAdd: Bool
     @Binding var showsTroubleshooter: Bool
+    @Binding var asksAboutCard: Bool
     /// Runs once a scanner added is in use (the iPad's sidebar brings the scan screen back).
     var onPicked: (@MainActor () -> Void)? = nil
+    /// The scanner just added, picked once its sheet has gone: the question about the card cannot show sooner.
+    @State private var addedID: String?
 
     func body(content: Content) -> some View {
         content
-            .sheet(isPresented: $showsAdd) {
+            .sheet(isPresented: $showsAdd, onDismiss: addClosed) {
                 AddScannerView(model: picker.makeAddModel(), onAdded: added, onClose: closeAdd)
                     .environmentObject(state)
             }
@@ -59,11 +65,25 @@ struct ScannerPickerSheets: ViewModifier {
     }
 
     private func added(_ deviceID: String) {
+        addedID = deviceID
         showsAdd = false
-        scanner = deviceID
-        mode = .printer
-        state.userSelectDevice(deviceID)
-        onPicked?()
+    }
+
+    private func addClosed() {
+        guard let id = addedID else { return }
+        addedID = nil
+        let appState: AppState = state
+        let picked: (@MainActor () -> Void)? = onPicked
+        state.leaveIdCard {
+            // Remembered first, as a pick from the list is.
+            scanner = id
+            mode = .printer
+            appState.userSelectDevice(id)
+            picked?()
+        }
+        if state.pendingIdCardLeave != nil {
+            asksAboutCard = true
+        }
     }
 
     private func closeAdd() {
@@ -207,7 +227,7 @@ private struct ScannerPickerContent: View {
         }
     }
 
-    /// Discovery may still list the scanner; the root view lets go of it once it is gone.
+    /// Discovery may still list the scanner; once it is gone the state lets go of it and waits for it again.
     private func remove(_ row: IOSScannerRow) {
         guard !state.isBusy else { return }
         picker.removeAddresses(row)

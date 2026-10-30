@@ -1171,12 +1171,18 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// The troubleshooter's Refresh: every connection that can looks for scanners again
-    /// (<see cref="IScannerBackendDiagnostics.Rescan"/>); the list updates as they answer.
+    /// (<see cref="IScannerBackendDiagnostics.Rescan"/>); the list updates as they answer. A selected
+    /// scanner that could not be connected to is opened again, unless that would end a scan, a review
+    /// or an ID card's sides (<see cref="AutoSwitchMustWait"/>).
     /// </summary>
     public void RefreshScanners()
     {
         foreach (var backend in _backends.OfType<IScannerBackendDiagnostics>()) backend.Rescan();
         _ = ReadSystemStateAsync();
+        if (SelectedDeviceId is { } id && _session is null && _switchTask.IsCompleted && !AutoSwitchMustWait)
+        {
+            SelectDevice(id, interactive: true);
+        }
     }
 
     /// <summary>
@@ -1261,6 +1267,11 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         _selectedEntry = id is null ? null
             : DeviceGroups.SelectMany(g => g.Members).FirstOrDefault(m => m.Id == id) ?? _selectedEntry;
         RefreshDeviceRows();
+        // Named at once: this switch waits for the one before, which may still be connecting.
+        if (id is not null && DeviceGroups.SelectMany(g => g.Members).FirstOrDefault(d => d.Id == id) is { } chosen)
+        {
+            StatusMessage = $"Connecting to {chosen.Name}…";
+        }
         _switchGeneration += 1;
         int generation = _switchGeneration;
         var previous = _switchTask;
@@ -1375,9 +1386,13 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         }
         catch (Exception e)
         {
-            ErrorMessage = e.Message;
-            StatusMessage = $"Could not connect to {name}.";
-            RecordFailure(name, e);
+            // Another scanner was picked meanwhile: no error or troubleshooter entry for one the user left.
+            if (SelectedDeviceId == id)
+            {
+                ErrorMessage = e.Message;
+                StatusMessage = $"Could not connect to {name}.";
+                RecordFailure(name, e);
+            }
         }
         NotifyAll();
     }

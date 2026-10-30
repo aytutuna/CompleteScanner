@@ -310,10 +310,10 @@ public struct IOSRootView: View {
         UIApplication.shared.isIdleTimerDisabled = IOSShell.keepsScreenAwake(isBusy: busy, device: device)
     }
 
-    /// The selection follows the mode: in printer mode the remembered scanner once it is listed (at launch
-    /// the state waits for it too, `AppState.start(onlySelecting:)`; one the app moved to another connection
-    /// stays the one remembered), else no scanner. Picked again while connected, so a scanner found later
-    /// does not take its place.
+    /// The selection follows the mode: in printer mode the remembered scanner once it is listed (at launch,
+    /// and once it has dropped off the list, the state waits for it too, `AppState.start(onlySelecting:)`;
+    /// one the app moved to another connection stays the one remembered), else no scanner. Picked again
+    /// while connected, so a scanner found later does not take its place.
     private func followMode() {
         guard selectionCanMove else { return }
         if let listed = IOSShell.followedScanner(mode, scanner: scanner, devices: state.devices,
@@ -557,8 +557,9 @@ private struct MailSheet: View {
 }
 
 /// The question about a network scanner whose certificate changed since it was trusted, asked when the user
-/// picks it (`IOSNetworkScanners.certificateQuestion`).
-private struct CertificateQuestion: View {
+/// picks it (`IOSNetworkScanners.certificateQuestion`). The root view has it, and so does the Scanner options
+/// sheet, since the root's sheet cannot show over that one.
+struct CertificateQuestion: View {
     @ObservedObject var network: IOSNetworkScanners
 
     var body: some View {

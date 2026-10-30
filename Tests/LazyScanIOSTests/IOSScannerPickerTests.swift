@@ -496,7 +496,8 @@ final class IOSScannerPickerTests: XCTestCase {
             XCTAssertTrue(StatusLine.words(line) <= 9, line)
         }
         let buttons: [String] = [IOSNetworkText.explanationButton, IOSNetworkText.settingsButton, IOSNetworkText.add,
-                                 IOSNetworkText.troubleshoot, IOSNetworkText.removeAddress, IOSNetworkText.addButton]
+                                 IOSNetworkText.troubleshoot, IOSNetworkText.removeAddress, IOSNetworkText.addButton,
+                                 IOSNetworkText.retry]
         for button in buttons {
             XCTAssertTrue(StatusLine.words(button) <= 3, button)
         }

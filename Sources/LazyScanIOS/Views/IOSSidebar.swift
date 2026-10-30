@@ -82,7 +82,7 @@ struct IOSSidebar: View {
         .listStyle(.sidebar)
         .accessibilityIdentifier("scanners.sidebar")
         .modifier(ScannerPickerSheets(picker: picker, showsAdd: $showsAdd, showsTroubleshooter: $showsTroubleshooter,
-                                      onPicked: onPresetApplied))
+                                      asksAboutCard: $askedToDiscard, onPicked: onPresetApplied))
         .modifier(IdCardDiscardQuestion(state: state, asked: $askedToDiscard))
         .modifier(KeepPagesQuestion(state: state, leave: $leavingPages, blocked: importer.isImporting))
         .fileImporter(isPresented: $picksPDF, allowedContentTypes: [UTType.pdf]) { (result: Result<URL, Error>) in

@@ -89,7 +89,7 @@ struct ScanScreen: View {
     @State private var showsAdd: Bool = false
     @State private var showsTroubleshooter: Bool = false
     @State private var askedToDiscard: Bool = false
-    /// A scanner picked in the Scanner options asks there about a side of an ID card held.
+    /// A scanner picked or added in the Scanner options asks there about a side of an ID card held.
     @State private var cardAskedInOptions: Bool = false
     /// Files is open to pick the PDF the pages are added to.
     @State private var picksPDF: Bool = false
@@ -896,7 +896,8 @@ struct ScanScreen: View {
                     .accessibilityIdentifier("options.done")
                 }
             }
-            .modifier(ScannerPickerSheets(picker: picker, showsAdd: $showsAdd, showsTroubleshooter: $showsTroubleshooter))
+            .modifier(ScannerPickerSheets(picker: picker, showsAdd: $showsAdd, showsTroubleshooter: $showsTroubleshooter,
+                                          asksAboutCard: $cardAskedInOptions))
             .modifier(IdCardDiscardQuestion(state: state, asked: $cardAskedInOptions))
         }
         .presentationDetents(sheetDetents)
@@ -904,6 +905,12 @@ struct ScanScreen: View {
         .presentationBackgroundInteraction(sheetInteraction)
         // The root's alert cannot show over a sheet, nor its troubleshooter until the sheet has closed.
         .modifier(ErrorAlert(state: state, onTroubleshoot: openTroubleshooter))
+        // Nor its question about a changed certificate, which a scanner picked here asks.
+        .background {
+            if let network = picker.network {
+                CertificateQuestion(network: network)
+            }
+        }
     }
 
     private func openTroubleshooter() {
@@ -1274,6 +1281,13 @@ struct ScanScreen: View {
         state.capabilities != nil && !state.isBusy
     }
 
+    /// The scanner in use while connecting to it failed last and nothing runs: Try again opens it again.
+    private var retryDevice: ScannerInfo? {
+        guard let device = sourceDevice, state.capabilities == nil, !state.isBusy,
+              state.lastFailure?.deviceName == device.name else { return nil }
+        return device
+    }
+
     private func scan() {
         state.performScan()
     }
@@ -1405,7 +1419,7 @@ struct ScanScreen: View {
     }
 
     /// A scan's progress with Cancel (none while the kept queue comes back), the package banner, the status
-    /// line and the files saved last.
+    /// line, Try again while the scanner in use could not be connected to, and the files saved last.
     @ViewBuilder
     private var statusRows: some View {
         if state.isBusy {
@@ -1431,6 +1445,14 @@ struct ScanScreen: View {
             .lineLimit(2)
             .accessibilityLabel(Text(statusSentence))
             .accessibilityIdentifier("status.line")
+        if let device = retryDevice {
+            Button(IOSNetworkText.retry) {
+                state.userSelectDevice(device.id)
+            }
+            .buttonStyle(.bordered)
+            .disabled(importer.isImporting)
+            .accessibilityIdentifier("scanner.retry")
+        }
         if !state.lastSavedURLs.isEmpty && !state.isBusy {
             SavedFilesRow()
         }
