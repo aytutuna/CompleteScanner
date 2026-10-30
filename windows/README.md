@@ -563,7 +563,8 @@ came with; one sent to the current document joins it. While the queue does not c
 and says so, and is added as soon as it can be. Pages the phone kept as photographed can be shown
 that way with one click, as for imported photos. A `.lsdoc` opened from File Explorer (the app
 registers the type for your user each time it starts), dropped on the window or picked with Import
-photos is not added on its own: a bar offers **Add to pages** or **Open as new**.
+photos is not added on its own: a bar offers **Add to pages** or **Open as new**, which replaces the queue
+and so asks first when pages are queued.
 
 When the network keeps the phone and this PC apart, the phone can put its documents, sealed with a
 key only this PC and that phone hold, in a folder synced through OneDrive or iCloud Drive; the PC
