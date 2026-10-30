@@ -85,7 +85,7 @@ struct CaptureBar: View {
             new > old
         }
         .accessibilityLabel(Text(IOSCameraText.pageCount(count)))
-        .accessibilityHint(Text(IOSCameraText.pagesHint))
+        .accessibilityHint(Text(IOSCameraText.pagesHintScanner))
         .accessibilityIdentifier("capture.pages")
     }
 

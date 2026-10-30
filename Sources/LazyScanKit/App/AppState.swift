@@ -1008,7 +1008,10 @@ public final class AppState: ObservableObject {
             self.clearFailure()
             if flag.isCancelled { throw ScanError.cancelled }
             self.overviewImage = image
-            self.statusMessage = "Overview ready — drag on the preview to select an area, then Scan."
+            // The phone's preview in the column cannot be dragged: tapping it opens the scan area screen.
+            self.statusMessage = self.platform == .ios
+                ? "Overview ready — tap the preview to choose the scan area, then Scan."
+                : "Overview ready — drag on the preview to select an area, then Scan."
         }
     }
 

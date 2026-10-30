@@ -129,7 +129,9 @@ private struct SecondaryTaskButton: ViewModifier {
 /// How the camera takes the task set up: Flip & capture or Fronts, then backs for the two-sided task;
 /// Page by page or Whole spread for a book (`TaskOptions.cameraFrontsFirst`, `cameraSpreads`), and while
 /// spreads are cut (whole spreads, or a network scanner's scans) whether the book reads right to left
-/// (`bookRightToLeft`, as the Mac's inspector has it; `IOSShell.showsRightToLeft`).
+/// (`bookRightToLeft`, as the Mac's inspector has it; `IOSShell.showsRightToLeft`). With a scanner in use
+/// the book's picker only governs the photos brought in from Photos and Files, since a scanner's spreads are
+/// always cut, and a note under it says so.
 /// Nothing for the other tasks. Kept in the settings, as the task's other choices are.
 struct TaskWayPicker: View {
     @EnvironmentObject private var state: AppState
@@ -152,6 +154,11 @@ struct TaskWayPicker: View {
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("task.bookWay")
+                if selectedDevice != nil {
+                    Text(CameraTaskCatalog.spreadsWithScannerNote)
+                        .font(.footnote)
+                        .foregroundStyle(Color.secondary)
+                }
                 if IOSShell.showsRightToLeft(state.settings, device: selectedDevice) {
                     Toggle(CameraTaskCatalog.rightToLeftLabel, isOn: rightToLeft)
                         .accessibilityHint(Text(CameraTaskCatalog.rightToLeftHint))

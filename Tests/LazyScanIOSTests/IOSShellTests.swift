@@ -153,6 +153,39 @@ final class IOSShellTests: XCTestCase {
         }
     }
 
+    func test_printerStep_namesThePhonesSeparatorSheet_forSeparateDocuments() throws {
+        let batch: TaskStep = try XCTUnwrap(TaskCatalog.definition(.batch).steps.first)
+        let split: TaskStep = IOSShell.printerStep(batch, settings: TaskCatalog.apply(.batch, to: ScanSettings()))
+        XCTAssertEqual(split.help, IOSShell.printerBatchHelp)
+        XCTAssertFalse(split.help.contains("on the right"))
+        XCTAssertFalse(split.help.contains("page strip"))
+        XCTAssertTrue(split.help.contains("Export"))
+        XCTAssertEqual(split.id, batch.id)
+        XCTAssertEqual(split.prompt, batch.prompt)
+        XCTAssertEqual(split.primaryActionLabel, batch.primaryActionLabel)
+    }
+
+    func test_printerStep_asksToFeedPhotosAndReceipts_whileTheFeederIsTheSource() throws {
+        let prompts: [(ScanTask, String)] = [(.photos, IOSShell.printerFeederPhotosPrompt),
+                                             (.photoRestore, IOSShell.printerFeederPhotosPrompt),
+                                             (.receipt, IOSShell.printerFeederReceiptPrompt)]
+        for (task, prompt) in prompts {
+            let step: TaskStep = try XCTUnwrap(TaskCatalog.definition(task).steps.first)
+            var s: ScanSettings = TaskCatalog.apply(task, to: ScanSettings())
+            XCTAssertEqual(IOSShell.printerStep(step, settings: s), step, task.rawValue)
+            s.source = .documentFeeder
+            let fed: TaskStep = IOSShell.printerStep(step, settings: s)
+            XCTAssertEqual(fed.prompt, prompt, task.rawValue)
+            XCTAssertFalse(fed.prompt.contains("glass"), task.rawValue)
+            XCTAssertLessThanOrEqual(StatusLine.words(fed.prompt), 10, task.rawValue)
+            XCTAssertEqual(fed.help, step.help, task.rawValue)
+            XCTAssertEqual(fed.primaryActionLabel, step.primaryActionLabel, task.rawValue)
+            XCTAssertEqual(fed.id, step.id, task.rawValue)
+            s.source = .flatbed
+            XCTAssertEqual(IOSShell.printerStep(step, settings: s), step, task.rawValue)
+        }
+    }
+
     func test_printerStep_speaksOfTheFeeder_whileDocumentScansIt() throws {
         let document: TaskStep = try XCTUnwrap(TaskCatalog.definition(.document).steps.first)
         let feeder: TaskStep = try XCTUnwrap(TaskCatalog.definition(.feeder).steps.first)
@@ -361,6 +394,10 @@ final class IOSShellTests: XCTestCase {
             XCTAssertTrue(tile.availability.isAvailable, tile.kind.rawValue)
             XCTAssertEqual(tile.summary, "300 dpi")
         }
+    }
+
+    func test_textKind_isHintedAsAScan_notAShot() {
+        XCTAssertEqual(IOSScanKind.text.subtitle, "One scan, copy its text")
     }
 
     func test_aKindsTile_keepsItsCardsOwnReason() {

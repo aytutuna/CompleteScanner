@@ -22,6 +22,7 @@ final class StatusLineTests: XCTestCase {
             ("Page queue cleared.", "Queue cleared"),
             ("Ready \u{2014} Demo Scanner", "Ready \u{2014} Demo Scanner"),
             ("Overview ready \u{2014} drag on the preview to select an area, then Scan.", "Overview ready"),
+            ("Overview ready \u{2014} tap the preview to choose the scan area, then Scan.", "Overview ready"),
             ("Scanning\u{2026}", "Scanning\u{2026}"),
             ("Reading the text of page 3 of 12\u{2026}", "Reading page 3 of 12\u{2026}"),
             ("Adding 3 pages to Scan 2026-10-20 1.pdf\u{2026}", "Adding 3 pages\u{2026}"),

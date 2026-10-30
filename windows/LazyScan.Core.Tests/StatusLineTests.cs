@@ -18,6 +18,7 @@ public class StatusLineTests
     [InlineData("Page queue cleared.", "Queue cleared")]
     [InlineData("Ready — Demo Scanner", "Ready — Demo Scanner")]
     [InlineData("Overview ready — drag on the preview to select an area, then Scan.", "Overview ready")]
+    [InlineData("Overview ready — tap the preview to choose the scan area, then Scan.", "Overview ready")]
     [InlineData("Scanning…", "Scanning…")]
     [InlineData("Reading the text of page 3 of 12…", "Reading page 3 of 12…")]
     [InlineData("Adding 3 pages to Scan 2026-10-20 1.pdf…", "Adding 3 pages…")]

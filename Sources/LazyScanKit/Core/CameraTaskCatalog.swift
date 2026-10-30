@@ -41,6 +41,8 @@ public enum CameraTaskCatalog {
     /// A book read from right to left: the right page of each spread comes first.
     public static let rightToLeftLabel = "Right to left"
     public static let rightToLeftHint = "Arabic, Hebrew, manga: the right page of each spread comes first."
+    /// Under the Book picker while a scanner is in use: the choice steers only the photos brought in.
+    public static let spreadsWithScannerNote = "For photos from Photos and Files. The scanner's spreads are always cut at the spine."
     public static let separatorSheetLabel = "Separator sheet"
     public static let patchCodeLabel = "Patch code"
     public static let qrCodeLabel = "QR code"

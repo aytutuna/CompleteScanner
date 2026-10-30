@@ -196,6 +196,7 @@ final class CameraTaskTests: XCTestCase {
             XCTAssertLessThanOrEqual(wordCount(label), 3, label)
         }
         XCTAssertLessThanOrEqual(wordCount(CameraTaskCatalog.separatorHint), 8)
+        XCTAssertLessThanOrEqual(wordCount(CameraTaskCatalog.spreadsWithScannerNote), 25)
     }
 
     func test_catalog_currentLine_followsTheSidesAndNewDocument() {

@@ -790,7 +790,8 @@ struct ScanScreen: View {
     }
 
     /// What the row says the group is set to: the scanner and its source ("No scanner" until one is picked
-    /// or found); the book's way, whether old prints are restored, the format with the PDF's size.
+    /// or found); the book's way (a scanner's spreads are always cut, so the camera's choice only shows
+    /// without one), whether old prints are restored, the format with the PDF's size.
     private func optionValue(_ group: ScanOptionGroup) -> String {
         let s: ScanSettings = state.settings
         switch group {
@@ -798,6 +799,10 @@ struct ScanScreen: View {
             guard let device = sourceDevice else { return IOSNetworkText.noScannerPicked }
             return "\(device.name) \u{00B7} \(s.source.label)"
         case .book:
+            if sourceDevice != nil {
+                let spine: String = "Split at the spine"
+                return s.taskOptions.bookRightToLeft ? "\(spine) \u{00B7} \(CameraTaskCatalog.rightToLeftLabel)" : spine
+            }
             return s.taskOptions.cameraSpreads ? CameraTaskCatalog.wholeSpreadLabel : CameraTaskCatalog.pageByPageLabel
         case .photos:
             return s.adjustments.restoreFadedColors ? "Restored" : "As taken"
