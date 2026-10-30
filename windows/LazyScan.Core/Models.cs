@@ -345,7 +345,7 @@ public static class ModelLabels
         SplitMode.SheetCount => "A new document starts every few sheets, for forms that all have the same number of sheets. "
                                 + "Check the dividers in the page strip, then save.",
         SplitMode.Barcode => "1. Print a QR sheet, one per document, with a name or without. 2. Put it in front of the document. "
-                             + "3. Scan: the sheet is left out and its name names the document. Only codes starting with CS-SEP count.",
+                             + "3. Scan: the sheet is left out and its name names the document. Only codes starting with LS-SEP count.",
         _ => "",
     };
 
@@ -595,7 +595,7 @@ public sealed class DocumentOptions : IEquatable<DocumentOptions>
     public bool BarcodeStartsDocument { get; set; } = false;
 
     /// <summary>
-    /// At QR codes or barcodes: the text a separator sheet's code starts with ("CS-SEP",
+    /// At QR codes or barcodes: the text a separator sheet's code starts with ("LS-SEP",
     /// <see cref="BarcodeSeparators.DefaultPrefix"/>; a–z matching A–Z, spaces around it ignored), which
     /// the QR separator sheets the app prints carry, so codes printed on the documents themselves do not
     /// split the stack. Empty: every code makes a separator sheet. Kept in settings files and presets

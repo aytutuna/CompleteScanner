@@ -63,7 +63,7 @@ public enum BarcodeSeparators {
     /// The text a separator sheet's code starts with (`DocumentOptions.splitBarcodePrefix` by
     /// default): only such a code makes a separator sheet, so the codes printed on the documents
     /// themselves (payment QR codes, order numbers) are not taken for one.
-    public static let defaultPrefix = "CS-SEP"
+    public static let defaultPrefix = "LS-SEP"
 
     /// The text of a separator sheet that gives no name (`QrSeparatorSheet` with no name, when the
     /// prefix is empty): the document after it is not named by it. Compared ignoring case.
@@ -133,7 +133,7 @@ public enum BarcodeSeparators {
     }
 
     /// The document name a splitting code gives: its text after `splitBarcodePrefix` when it starts with
-    /// it (a separator sheet's "CS-SEP Lease" names "Lease"), otherwise all of it, as `label` makes it.
+    /// it (a separator sheet's "LS-SEP Lease" names "Lease"), otherwise all of it, as `label` makes it.
     /// nil for no text or nothing left.
     public static func codeLabel(_ text: String?, options: DocumentOptions) -> String? {
         guard let text else { return nil }
@@ -334,7 +334,7 @@ public enum QrSeparatorSheet {
     public static let jobName = "Separator sheet (QR code)"
 
     /// The text of the sheet's code: `prefix` (`BarcodeSeparators.prefix`; `DocumentOptions.splitBarcodePrefix`),
-    /// a space and the name as a code's text gives it (`BarcodeSeparators.label`): "CS-SEP Lease 2026";
+    /// a space and the name as a code's text gives it (`BarcodeSeparators.label`): "LS-SEP Lease 2026";
     /// the prefix alone with no name. With an empty prefix the name alone, or `BarcodeSeparators.unnamedText`.
     public static func text(_ name: String?, prefix: String = BarcodeSeparators.defaultPrefix) -> String {
         let start = BarcodeSeparators.prefix(prefix)

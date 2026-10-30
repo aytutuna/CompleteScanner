@@ -254,8 +254,8 @@ or, with **Both sides, turned by hand**, the side facing up: it turns its stack 
 fronts, as the user would, so the next scan delivers the backs, last sheet first. A paper size
 makes it deliver sheets of that size. For the **Separate documents** task its feeder holds
 seven sheets instead, the third and fifth being separator sheets (the Patch T sheet the app prints,
-with a blank back; split at barcode or QR sheets, a Code 39 sheet saying "CS-SEP INVOICE 1002"
-and "CS-SEP INVOICE 1003" instead, naming the document after it), so the stack splits into documents of two,
+with a blank back; split at barcode or QR sheets, a Code 39 sheet saying "LS-SEP INVOICE 1002"
+and "LS-SEP INVOICE 1003" instead, naming the document after it), so the stack splits into documents of two,
 one and two sheets.
 
 ### Two-sided scanning and paper size
@@ -1220,8 +1220,8 @@ that shrinks the page), feeders that skew sheets more than 3°, and very dark or
 #### Barcode and QR separator sheets
 
 **At QR codes or barcodes** splits the stack at separator sheets carrying a QR code, Code 128,
-Code 39 or Data Matrix code (other kinds are not looked for) whose text starts with `CS-SEP`, the
-separator prefix the app's QR sheets carry ("CS-SEP Lease 2026"): a sheet with such a code on either
+Code 39 or Data Matrix code (other kinds are not looked for) whose text starts with `LS-SEP`, the
+separator prefix the app's QR sheets carry ("LS-SEP Lease 2026"): a sheet with such a code on either
 side is a separator, left out like a patch-code sheet, and the rest of the code's text names the
 document after it (`{label}`; when several such sheets are in a row the last one names it). Other
 codes are ignored, so a payment QR code or an order number printed on an invoice never makes its
@@ -1239,7 +1239,7 @@ each starts a new document named after its code (without the prefix when it has 
 that carry their own code, such as invoices or forms; a click on the gap joins one back. The page
 strip shows all of this before saving, as for patch codes; a separator page's tooltip names the
 sheet's code, read on either side, and the document the plan starts after it ("Separator sheet (QR
-code “CS-SEP Lease”): a new document named “Lease” starts after it. It is not saved."; when two
+code “LS-SEP Lease”): a new document named “Lease” starts after it. It is not saved."; when two
 code sheets are in a row, both name the document the last one names; when the page after a
 separator is joined to the document before, the tooltip says so instead). Separator pages are not
 saved, and a successful save clears the queue and deletes the spool files of every page in it,
@@ -1248,7 +1248,7 @@ this page) before saving.
 
 **Save sheet** and **Print sheet** (shown with this split while codes are on separator sheets)
 make the sheet to print, with the name typed in **Name on sheet** (optional):
-"SEPARATOR SHEET", the QR code of the prefix and the name ("CS-SEP Lease 2026"; 2.5 in at most, UTF-8 so names in any script read back, error
+"SEPARATOR SHEET", the QR code of the prefix and the name ("LS-SEP Lease 2026"; 2.5 in at most, UTF-8 so names in any script read back, error
 correction level M), "THE NEXT DOCUMENT IS NAMED" and the name in the sheet's dot type (accents
 dropped; characters it does not have show as "?", while the code keeps the name exactly), and how to
 use it, saved as "Separator sheet (QR code, Lease 2026, Letter).pdf" or printed at real size on the

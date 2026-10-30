@@ -384,7 +384,7 @@ public enum DocumentSplitter {
     /// new document starts after it. It is not saved." (the code when one was found); at barcode or QR
     /// sheets the sheet's code (read on either side) and the name of the document that follows as the
     /// plan names it (the last code sheet in a row names it, a name the user gives wins): "Separator
-    /// sheet (QR code “CS-SEP Lease”): a new document named “Lease” starts after it. It is not saved.";
+    /// sheet (QR code “LS-SEP Lease”): a new document named “Lease” starts after it. It is not saved.";
     /// when the user joined the page after the sheet to the document before: "Separator sheet (Patch
     /// T): the pages after it are joined to the document before. It is not saved."; nil for other pages.
     public static func separatorNote(_ plan: SplitPlan, _ index: Int, page: ScannedPage) -> String? {

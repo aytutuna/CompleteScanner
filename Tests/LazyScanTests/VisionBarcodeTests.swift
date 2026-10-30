@@ -122,7 +122,7 @@ private func read(_ scan: GrayImage) throws -> [BarcodeReading] {
 /// always runs them.
 private func skipUnlessVisionReadsCodes() throws {
     #if targetEnvironment(simulator)
-    let modules = try qrModules("CS-SEP PROBE")
+    let modules = try qrModules("LS-SEP PROBE")
     let page = printed(3, 3) { pixels, w, h in
         stamp(modules, x: 0.5, y: 0.5, moduleInches: 0.06)(&pixels, w, h)
     }
@@ -217,10 +217,10 @@ final class VisionBarcodeTests: XCTestCase {
         try skipUnlessVisionReadsCodes()
         // The demo's sheets carry the separator prefix and a name (`MockScannerBackend.batchBarcodeText`).
         for dpi in [150, 300] {
-            let sheet = Code39.renderSheet("CS-SEP INVOICE 1002", widthInches: 8.5, heightInches: 11, dpi: dpi)
+            let sheet = Code39.renderSheet("LS-SEP INVOICE 1002", widthInches: 8.5, heightInches: 11, dpi: dpi)
             let found = try read(scanned(sheet, dpi: dpi, noise: 4))
             XCTAssertEqual(found.map(\.symbology), [.code39], "at \(dpi) dpi")
-            XCTAssertEqual(found.map(\.text), ["CS-SEP INVOICE 1002"], "at \(dpi) dpi")
+            XCTAssertEqual(found.map(\.text), ["LS-SEP INVOICE 1002"], "at \(dpi) dpi")
             XCTAssertEqual(BarcodeSeparators.codeLabel(found.first?.text, options: DocumentOptions()), "INVOICE 1002")
         }
     }
@@ -247,7 +247,7 @@ final class VisionBarcodeTests: XCTestCase {
             QrSeparatorSheet.render(lease, name: "Lease 2026", widthInches: 8.5, heightInches: 11, dpi: 300),
             document,
             document,
-            Code39.renderSheet("CS-SEP INV-7", widthInches: 8.5, heightInches: 11, dpi: 300),
+            Code39.renderSheet("LS-SEP INV-7", widthInches: 8.5, heightInches: 11, dpi: 300),
             document,
             QrSeparatorSheet.render(unnamed, name: nil, widthInches: 8.5, heightInches: 11, dpi: 300),
             document,

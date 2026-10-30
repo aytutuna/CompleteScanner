@@ -430,7 +430,7 @@ internal static class MockBedRenderer
 
     /// <summary>
     /// The Code 39 text of the demo's barcode separator sheet in front of document
-    /// <paramref name="document"/> (from 1): the separator prefix and a name, "CS-SEP INVOICE 1002"
+    /// <paramref name="document"/> (from 1): the separator prefix and a name, "LS-SEP INVOICE 1002"
     /// for the second, which names it "INVOICE 1002".
     /// </summary>
     public static string BatchBarcodeText(int document) => $"{BarcodeSeparators.DefaultPrefix} INVOICE {1000 + document}";

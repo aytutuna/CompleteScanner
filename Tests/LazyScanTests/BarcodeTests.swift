@@ -37,7 +37,7 @@ private func qr(_ text: String, x: Double = 10, y: Double = 10) -> BarcodeReadin
 
 private let plain = PageFacts()
 
-/// The code of a QR separator sheet naming `name`: "CS-SEP Lease"; "CS-SEP" for none.
+/// The code of a QR separator sheet naming `name`: "LS-SEP Lease"; "LS-SEP" for none.
 private func sheet(_ name: String?) -> String { QrSeparatorSheet.text(name) }
 
 /// A side of a separator sheet naming `name`.
@@ -243,7 +243,7 @@ final class BarcodeTests: XCTestCase {
                        "Code 39 \u{201C}\(String(longText.prefix(39)))\u{2026}\u{201D}")
         XCTAssertTrue(BarcodeSeparators.startsDocumentHint(true).contains("invoices"))
         XCTAssertTrue(BarcodeSeparators.startsDocumentHint(false).contains("left out"))
-        XCTAssertTrue(BarcodeSeparators.startsDocumentHint(false).contains("starts with \u{201C}CS-SEP\u{201D}"))
+        XCTAssertTrue(BarcodeSeparators.startsDocumentHint(false).contains("starts with \u{201C}LS-SEP\u{201D}"))
         XCTAssertTrue(BarcodeSeparators.startsDocumentHint(false, prefix: " DOC ").contains("starts with \u{201C}DOC\u{201D}"))
         XCTAssertFalse(BarcodeSeparators.startsDocumentHint(false, prefix: "").contains("starts with"))
     }
@@ -339,7 +339,7 @@ final class BarcodeTests: XCTestCase {
         let corrected = original.withGeometry(solid(3, 3, 0), geometry: geometry)
         XCTAssertEqual(corrected.withVersionsSwapped(solid(30, 40, 255)).barcodes, codes)
         XCTAssertNil(original.withBarcodes(nil).barcodes)
-        XCTAssertEqual(PageFacts.of(original, options: options()).barcode?.text, "CS-SEP Lease")
+        XCTAssertEqual(PageFacts.of(original, options: options()).barcode?.text, "LS-SEP Lease")
         XCTAssertNil(PageFacts.of(pageOf(), options: options()).barcode)
     }
 
@@ -378,7 +378,7 @@ final class BarcodeTests: XCTestCase {
         let page: ScannedPage = try photographed(TestPages.singlePageAcross().toRgba())
         // The payload the phone's saved QR sheet carries, as Vision (or ZXing) hands it back.
         let payload: String = QrSeparatorSheet.text("Lease 2026", prefix: s.document.splitBarcodePrefix)
-        XCTAssertEqual(payload, "CS-SEP Lease 2026")
+        XCTAssertEqual(payload, "LS-SEP Lease 2026")
         let sheetPages: [ScannedPage] = try PageProcessor.forCapture(s, barcodes: FakeReader(qr(payload))).process([page]).pages
         let sheet: ScannedPage = try XCTUnwrap(sheetPages.first)
         let content: [ScannedPage] = try PageProcessor.forCapture(s, barcodes: FakeReader()).process([page, page]).pages
@@ -445,17 +445,17 @@ final class BarcodeTests: XCTestCase {
         XCTAssertEqual(roles(plan), "cxcccxc")
         XCTAssertEqual(plan.documents.map(\.label), [nil, "Lease", nil])
         // Compared with a–z matching A–Z, after spaces and invisible characters (a byte-order mark).
-        XCTAssertEqual(BarcodeSeparators.defaultPrefix, "CS-SEP")
-        XCTAssertEqual(DocumentOptions().splitBarcodePrefix, "CS-SEP")
-        XCTAssertTrue(BarcodeSeparators.startsWithPrefix("cs-sep Lease", "CS-SEP"))
-        XCTAssertTrue(BarcodeSeparators.startsWithPrefix("\u{FEFF} CS-SEP", " CS-SEP "))
-        XCTAssertFalse(BarcodeSeparators.startsWithPrefix("CS-SE", "CS-SEP"))
-        XCTAssertFalse(BarcodeSeparators.startsWithPrefix("INVOICE CS-SEP", "CS-SEP"))
-        XCTAssertEqual(BarcodeSeparators.codeLabel("cs-sep Lease", options: options()), "Lease")
-        XCTAssertEqual(BarcodeSeparators.codeLabel("\u{FEFF}CS-SEP Lease", options: options()), "Lease")
+        XCTAssertEqual(BarcodeSeparators.defaultPrefix, "LS-SEP")
+        XCTAssertEqual(DocumentOptions().splitBarcodePrefix, "LS-SEP")
+        XCTAssertTrue(BarcodeSeparators.startsWithPrefix("ls-sep Lease", "LS-SEP"))
+        XCTAssertTrue(BarcodeSeparators.startsWithPrefix("\u{FEFF} LS-SEP", " LS-SEP "))
+        XCTAssertFalse(BarcodeSeparators.startsWithPrefix("LS-SE", "LS-SEP"))
+        XCTAssertFalse(BarcodeSeparators.startsWithPrefix("INVOICE LS-SEP", "LS-SEP"))
+        XCTAssertEqual(BarcodeSeparators.codeLabel("ls-sep Lease", options: options()), "Lease")
+        XCTAssertEqual(BarcodeSeparators.codeLabel("\u{FEFF}LS-SEP Lease", options: options()), "Lease")
         XCTAssertEqual(BarcodeSeparators.codeLabel("ORDER-4711", options: options()), "ORDER-4711")
-        XCTAssertNil(BarcodeSeparators.codeLabel("CS-SEP", options: options()))
-        XCTAssertNil(BarcodeSeparators.codeLabel("CS-SEP \u{200B} ", options: options()))
+        XCTAssertNil(BarcodeSeparators.codeLabel("LS-SEP", options: options()))
+        XCTAssertNil(BarcodeSeparators.codeLabel("LS-SEP \u{200B} ", options: options()))
         XCTAssertNil(BarcodeSeparators.codeLabel(nil, options: options()))
         // On a page with several codes, the first separator code counts, wherever it is; a barcode
         // starting a document takes the first code.
@@ -559,9 +559,9 @@ final class BarcodeTests: XCTestCase {
         XCTAssertEqual(documents(plan), [[0], [2], [4]])
         XCTAssertEqual(DocumentSplitter.badge(plan, 1, page: pages[1], options: o), "Separator")
         XCTAssertEqual(DocumentSplitter.separatorNote(plan, 1, page: pages[1]),
-                       "Separator sheet (QR code \u{201C}CS-SEP Lease\u{201D}): a new document named \u{201C}Lease\u{201D} starts after it. It is not saved.")
+                       "Separator sheet (QR code \u{201C}LS-SEP Lease\u{201D}): a new document named \u{201C}Lease\u{201D} starts after it. It is not saved.")
         XCTAssertEqual(DocumentSplitter.separatorNote(plan, 3, page: pages[3]),
-                       "Separator sheet (QR code \u{201C}CS-SEP\u{201D}): a new document starts after it. It is not saved.")
+                       "Separator sheet (QR code \u{201C}LS-SEP\u{201D}): a new document starts after it. It is not saved.")
         XCTAssertNil(DocumentSplitter.separatorNote(plan, 2, page: pages[2]))
         XCTAssertEqual(DocumentSplitter.dividerTitle(plan, 2), "Document 2 \u{00B7} Lease")
         XCTAssertEqual(DocumentSplitter.queueSummary(pages, options: o), "5 pages \u{00B7} 3 documents \u{00B7} 2 separator pages skipped")
@@ -583,14 +583,14 @@ final class BarcodeTests: XCTestCase {
         ]
         let plan = DocumentSplitter.plan(pages, options: options())
         XCTAssertEqual(DocumentSplitter.separatorNote(plan, 1, page: pages[1]),
-                       "Separator sheet (QR code \u{201C}CS-SEP Lease\u{201D}): a new document named \u{201C}Invoice 7\u{201D} starts after it. It is not saved.")
+                       "Separator sheet (QR code \u{201C}LS-SEP Lease\u{201D}): a new document named \u{201C}Invoice 7\u{201D} starts after it. It is not saved.")
         XCTAssertEqual(DocumentSplitter.separatorNote(plan, 2, page: pages[2]),
-                       "Separator sheet (QR code \u{201C}CS-SEP Invoice 7\u{201D}): a new document named \u{201C}Invoice 7\u{201D} starts after it. It is not saved.")
+                       "Separator sheet (QR code \u{201C}LS-SEP Invoice 7\u{201D}): a new document named \u{201C}Invoice 7\u{201D} starts after it. It is not saved.")
         // A name the user gives wins.
         pages[3] = pages[3].withDocumentLabel("Mine")
         let named = DocumentSplitter.plan(pages, options: options())
         XCTAssertEqual(DocumentSplitter.separatorNote(named, 2, page: pages[2]),
-                       "Separator sheet (QR code \u{201C}CS-SEP Invoice 7\u{201D}): a new document named \u{201C}Mine\u{201D} starts after it. It is not saved.")
+                       "Separator sheet (QR code \u{201C}LS-SEP Invoice 7\u{201D}): a new document named \u{201C}Mine\u{201D} starts after it. It is not saved.")
         // Two-sided, the code on the back only: the front gives the sheet's code too.
         let sheets = [
             pageOf().withSide(.front, sheetIndex: 0), pageOf().withSide(.back, sheetIndex: 0),
@@ -600,13 +600,13 @@ final class BarcodeTests: XCTestCase {
         let twoSided = DocumentSplitter.plan(sheets, options: options())
         XCTAssertEqual(twoSided.pages[2].code?.text, sheet("Lease"))
         XCTAssertEqual(DocumentSplitter.separatorNote(twoSided, 2, page: sheets[2]),
-                       "Separator sheet (QR code \u{201C}CS-SEP Lease\u{201D}): a new document named \u{201C}Lease\u{201D} starts after it. It is not saved.")
+                       "Separator sheet (QR code \u{201C}LS-SEP Lease\u{201D}): a new document named \u{201C}Lease\u{201D} starts after it. It is not saved.")
         XCTAssertEqual(DocumentSplitter.separatorNote(twoSided, 2, page: sheets[2]),
                        DocumentSplitter.separatorNote(twoSided, 3, page: sheets[3]))
         // A sheet with nothing after it.
         let last = DocumentSplitter.plan([pageOf(), pageOf().withBarcodes([qr(sheet("Lease"))])], options: options())
         XCTAssertEqual(DocumentSplitter.separatorNote(last, 1, page: pageOf().withBarcodes([qr(sheet("Lease"))])),
-                       "Separator sheet (QR code \u{201C}CS-SEP Lease\u{201D}): a new document starts after it. It is not saved.")
+                       "Separator sheet (QR code \u{201C}LS-SEP Lease\u{201D}): a new document starts after it. It is not saved.")
         // Joined across the sheet: no document starts after it, so none is named.
         let joinedPages = [
             pageOf().withDocumentLabel("Alpha"), pageOf().withBarcodes([qr(sheet("Lease"))]), pageOf().withDocumentBreak(.join),
@@ -615,7 +615,7 @@ final class BarcodeTests: XCTestCase {
         XCTAssertEqual(documents(joined), [[0, 2]])
         XCTAssertEqual(joined.documents[0].label, "Alpha")
         XCTAssertEqual(DocumentSplitter.separatorNote(joined, 1, page: joinedPages[1]),
-                       "Separator sheet (QR code \u{201C}CS-SEP Lease\u{201D}): the pages after it are joined to the document before. It is not saved.")
+                       "Separator sheet (QR code \u{201C}LS-SEP Lease\u{201D}): the pages after it are joined to the document before. It is not saved.")
         // Patch codes and other splits carry no code.
         XCTAssertTrue(DocumentSplitter.plan(pages, options: options(mode: .separatorSheet)).pages.allSatisfy { $0.code == nil })
     }
@@ -633,10 +633,10 @@ final class BarcodeTests: XCTestCase {
     }
 
     func test_qrSheet_textAndCaption() {
-        XCTAssertEqual(QrSeparatorSheet.text(" Lease  2026 "), "CS-SEP Lease 2026")
-        XCTAssertEqual(QrSeparatorSheet.text(nil), "CS-SEP")
-        XCTAssertEqual(QrSeparatorSheet.text("  "), "CS-SEP")
-        XCTAssertEqual(QrSeparatorSheet.text("separator"), "CS-SEP")
+        XCTAssertEqual(QrSeparatorSheet.text(" Lease  2026 "), "LS-SEP Lease 2026")
+        XCTAssertEqual(QrSeparatorSheet.text(nil), "LS-SEP")
+        XCTAssertEqual(QrSeparatorSheet.text("  "), "LS-SEP")
+        XCTAssertEqual(QrSeparatorSheet.text("separator"), "LS-SEP")
         XCTAssertEqual(BarcodeSeparators.codeLabel(QrSeparatorSheet.text(" Lease  2026 "), options: DocumentOptions()), "Lease 2026")
         XCTAssertEqual(QrSeparatorSheet.caption("Lease 2026"), "LEASE 2026")
         XCTAssertEqual(QrSeparatorSheet.caption("Fatura Şubat №5 東京"), "FATURA SUBAT ?5 ??")

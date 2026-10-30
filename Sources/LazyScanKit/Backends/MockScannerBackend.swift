@@ -72,7 +72,7 @@ public final class MockScannerBackend: ScannerBackend {
     public var batchSeparatorSheets: Set<Int> = [2, 4]
 
     /// The Code 39 text of the demo's barcode separator sheet in front of document `document` (from 1):
-    /// the separator prefix and a name, "CS-SEP INVOICE 1002" for the second, which names it
+    /// the separator prefix and a name, "LS-SEP INVOICE 1002" for the second, which names it
     /// "INVOICE 1002". Twin of C# `MockBedRenderer.BatchBarcodeText`.
     nonisolated static func batchBarcodeText(_ document: Int) -> String {
         "\(BarcodeSeparators.defaultPrefix) INVOICE \(1000 + document)"

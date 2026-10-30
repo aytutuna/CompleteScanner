@@ -360,7 +360,7 @@ final class OrientationTests: XCTestCase {
         var split = DocumentOptions()
         split.splitMode = .barcode
         let sheet = page(textRgba.rotatedQuarterTurns(2))
-            .withBarcodes([BarcodeReading(symbology: .qrCode, text: "CS-SEP Lease", bounds: CGRect(x: 10, y: 10, width: 20, height: 20))])
+            .withBarcodes([BarcodeReading(symbology: .qrCode, text: "LS-SEP Lease", bounds: CGRect(x: 10, y: 10, width: 20, height: 20))])
         let skipped = OrientationStep(scorer: scorer, split: split).apply(sheet)
         XCTAssertNil(skipped.upright)
         XCTAssertTrue(skipped.image === sheet.image)

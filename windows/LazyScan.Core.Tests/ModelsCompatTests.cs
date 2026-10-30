@@ -940,7 +940,7 @@ public class ModelsCompatTests
         Assert.All(SplitModes.DisplayOrder, mode => Assert.False(string.IsNullOrWhiteSpace(mode.Steps())));
         Assert.StartsWith("1. Save or print a separator sheet. 2. Put one in front of each document after the first.",
                           SplitMode.SeparatorSheet.Steps());
-        Assert.EndsWith("Only codes starting with CS-SEP count.", SplitMode.Barcode.Steps());
+        Assert.EndsWith("Only codes starting with LS-SEP count.", SplitMode.Barcode.Steps());
         Assert.Equal("Put an empty sheet between documents. With both sides scanned, only a sheet blank on both sides splits.",
                      SplitMode.BlankSheet.Steps());
         Assert.Equal("Pages are kept", BarcodeSeparators.StartsDocumentCaption(true));
@@ -1052,15 +1052,15 @@ public class ModelsCompatTests
     [Fact]
     public void SplitBarcodePrefix_IsCsSepByDefault_AndInFilesWithoutIt()
     {
-        Assert.Equal("CS-SEP", new ScanSettings().Document.SplitBarcodePrefix);
-        Assert.Equal("CS-SEP", Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize)[0].Settings.Document.SplitBarcodePrefix);
+        Assert.Equal("LS-SEP", new ScanSettings().Document.SplitBarcodePrefix);
+        Assert.Equal("LS-SEP", Decode<List<Preset>>(CompatFixtures.PresetsJsonBeforePdfSize)[0].Settings.Document.SplitBarcodePrefix);
         var older = Decode<ScanSettings>("""{"document": {"splitMode": "barcode", "barcodeStartsDocument": true}}""");
-        Assert.Equal((SplitMode.Barcode, true, "CS-SEP"),
+        Assert.Equal((SplitMode.Barcode, true, "LS-SEP"),
                      (older.Document.SplitMode, older.Document.BarcodeStartsDocument, older.Document.SplitBarcodePrefix));
         foreach (string value in new[] { "null", "1", "true", "{}", "[]" })
         {
             var settings = Decode<ScanSettings>($$"""{"document": {"splitMode": "barcode", "splitBarcodePrefix": {{value}}, "autoRotate": true}, "resolution": 150}""");
-            Assert.Equal("CS-SEP", settings.Document.SplitBarcodePrefix);
+            Assert.Equal("LS-SEP", settings.Document.SplitBarcodePrefix);
             Assert.Equal((SplitMode.Barcode, true, 150), (settings.Document.SplitMode, settings.Document.AutoRotate, settings.Resolution));
         }
         // Any text is kept as written, an empty one too (every code makes a separator sheet).
@@ -1071,7 +1071,7 @@ public class ModelsCompatTests
     [Fact]
     public void SplitBarcodePrefix_RoundTrips_AndCloneIsIndependent()
     {
-        foreach (string prefix in new[] { "CS-SEP", "", "Fatura №" })
+        foreach (string prefix in new[] { "LS-SEP", "", "Fatura №" })
         {
             var settings = new ScanSettings();
             settings.Document.SplitBarcodePrefix = prefix;

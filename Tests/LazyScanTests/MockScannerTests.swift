@@ -445,10 +445,10 @@ final class MockScannerTests: XCTestCase {
         settings.resolution = mockDPI
         let pages = try await session.performScan(settings: settings, selection: nil)
         XCTAssertEqual(pages.count, 7)
-        XCTAssertEqual(MockScannerBackend.batchBarcodeText(2), "CS-SEP INVOICE 1002")
+        XCTAssertEqual(MockScannerBackend.batchBarcodeText(2), "LS-SEP INVOICE 1002")
         XCTAssertEqual(BarcodeSeparators.codeLabel(MockScannerBackend.batchBarcodeText(2), options: settings.document), "INVOICE 1002")
-        let second = try XCTUnwrap(MockScannerBackend.renderBarcodeSeparatorSheet(dpi: mockDPI, text: "CS-SEP INVOICE 1002"))
-        let third = try XCTUnwrap(MockScannerBackend.renderBarcodeSeparatorSheet(dpi: mockDPI, text: "CS-SEP INVOICE 1003"))
+        let second = try XCTUnwrap(MockScannerBackend.renderBarcodeSeparatorSheet(dpi: mockDPI, text: "LS-SEP INVOICE 1002"))
+        let third = try XCTUnwrap(MockScannerBackend.renderBarcodeSeparatorSheet(dpi: mockDPI, text: "LS-SEP INVOICE 1003"))
         XCTAssertEqual(rgbaPixels(pages[2].image), rgbaPixels(second))
         XCTAssertEqual(rgbaPixels(pages[4].image), rgbaPixels(third))
         // No patch code on them, and the documents' sheets keep their numbers.

@@ -29,7 +29,7 @@ public class BarcodeTests
 
     private static readonly PageFacts Page = new();
 
-    /// <summary>The code of a QR separator sheet naming <paramref name="name"/>: "CS-SEP Lease"; "CS-SEP" for none.</summary>
+    /// <summary>The code of a QR separator sheet naming <paramref name="name"/>: "LS-SEP Lease"; "LS-SEP" for none.</summary>
     private static string Sheet(string? name) => QrSeparatorSheet.Text(name);
 
     /// <summary>A side of a separator sheet naming <paramref name="name"/>.</summary>
@@ -202,7 +202,7 @@ public class BarcodeTests
                      BarcodeSeparators.Describe(new BarcodeReading(BarcodeSymbology.Code39, longText, new RectD(0, 0, 1, 1))));
         Assert.Contains("invoices", BarcodeSeparators.StartsDocumentHint(true));
         Assert.Contains("left out", BarcodeSeparators.StartsDocumentHint(false));
-        Assert.Contains("starts with “CS-SEP”", BarcodeSeparators.StartsDocumentHint(false));
+        Assert.Contains("starts with “LS-SEP”", BarcodeSeparators.StartsDocumentHint(false));
         Assert.Contains("starts with “DOC”", BarcodeSeparators.StartsDocumentHint(false, " DOC "));
         Assert.DoesNotContain("starts with", BarcodeSeparators.StartsDocumentHint(false, ""));
     }
@@ -309,7 +309,7 @@ public class BarcodeTests
         var corrected = page.WithGeometry(RgbaImage.Filled(3, 3, 0, 0, 0), new PageGeometry(false, 1.5, GeometryBasis.TextLines));
         Assert.Same(codes, corrected.WithVersionsSwapped(PageOf().Image).Barcodes);
         Assert.Null(page.WithBarcodes(null).Barcodes);
-        Assert.Equal("CS-SEP Lease", PageFacts.Of(page, Options()).Barcode!.Text);
+        Assert.Equal("LS-SEP Lease", PageFacts.Of(page, Options()).Barcode!.Text);
         Assert.Null(PageFacts.Of(PageOf(), Options()).Barcode);
     }
 
@@ -348,7 +348,7 @@ public class BarcodeTests
         var page = Photographed(TestPages.SinglePageAcross().ToRgba());
         // The payload the phone's saved QR sheet carries, as Vision (or ZXing) hands it back.
         var payload = QrSeparatorSheet.Text("Lease 2026", s.Document.SplitBarcodePrefix);
-        Assert.Equal("CS-SEP Lease 2026", payload);
+        Assert.Equal("LS-SEP Lease 2026", payload);
         var sheet = PageProcessor.ForCapture(s, barcodes: new FakeReader(Qr(payload))).Process([page]).Pages.Single();
         var content = PageProcessor.ForCapture(s, barcodes: new FakeReader()).Process([page, page]).Pages;
         Assert.Equal(payload, Assert.Single(sheet.Barcodes!).Text);
@@ -418,17 +418,17 @@ public class BarcodeTests
         Assert.Equal("cxcccxc", Roles(plan));
         Assert.Equal([null, "Lease", null], plan.Documents.Select(d => d.Label));
         // Compared with a–z matching A–Z, after spaces and invisible characters (a byte-order mark).
-        Assert.Equal("CS-SEP", BarcodeSeparators.DefaultPrefix);
-        Assert.Equal("CS-SEP", new DocumentOptions().SplitBarcodePrefix);
-        Assert.True(BarcodeSeparators.StartsWithPrefix("cs-sep Lease", "CS-SEP"));
-        Assert.True(BarcodeSeparators.StartsWithPrefix("\uFEFF CS-SEP", " CS-SEP "));
-        Assert.False(BarcodeSeparators.StartsWithPrefix("CS-SE", "CS-SEP"));
-        Assert.False(BarcodeSeparators.StartsWithPrefix("INVOICE CS-SEP", "CS-SEP"));
-        Assert.Equal("Lease", BarcodeSeparators.CodeLabel("cs-sep Lease", Options()));
-        Assert.Equal("Lease", BarcodeSeparators.CodeLabel("\uFEFFCS-SEP Lease", Options()));
+        Assert.Equal("LS-SEP", BarcodeSeparators.DefaultPrefix);
+        Assert.Equal("LS-SEP", new DocumentOptions().SplitBarcodePrefix);
+        Assert.True(BarcodeSeparators.StartsWithPrefix("ls-sep Lease", "LS-SEP"));
+        Assert.True(BarcodeSeparators.StartsWithPrefix("\uFEFF LS-SEP", " LS-SEP "));
+        Assert.False(BarcodeSeparators.StartsWithPrefix("LS-SE", "LS-SEP"));
+        Assert.False(BarcodeSeparators.StartsWithPrefix("INVOICE LS-SEP", "LS-SEP"));
+        Assert.Equal("Lease", BarcodeSeparators.CodeLabel("ls-sep Lease", Options()));
+        Assert.Equal("Lease", BarcodeSeparators.CodeLabel("\uFEFFLS-SEP Lease", Options()));
         Assert.Equal("ORDER-4711", BarcodeSeparators.CodeLabel("ORDER-4711", Options()));
-        Assert.Null(BarcodeSeparators.CodeLabel("CS-SEP", Options()));
-        Assert.Null(BarcodeSeparators.CodeLabel("CS-SEP \u200B ", Options()));
+        Assert.Null(BarcodeSeparators.CodeLabel("LS-SEP", Options()));
+        Assert.Null(BarcodeSeparators.CodeLabel("LS-SEP \u200B ", Options()));
         Assert.Null(BarcodeSeparators.CodeLabel(null, Options()));
         // On a page with several codes, the first separator code counts, wherever it is; a barcode
         // starting a document takes the first code.
@@ -543,9 +543,9 @@ public class BarcodeTests
         var plan = DocumentSplitter.Plan(pages, options);
         Assert.Equal([[0], [2], [4]], Documents(plan));
         Assert.Equal("Separator", DocumentSplitter.Badge(plan, 1, pages[1], options));
-        Assert.Equal("Separator sheet (QR code “CS-SEP Lease”): a new document named “Lease” starts after it. It is not saved.",
+        Assert.Equal("Separator sheet (QR code “LS-SEP Lease”): a new document named “Lease” starts after it. It is not saved.",
                      DocumentSplitter.SeparatorNote(plan, 1, pages[1]));
-        Assert.Equal("Separator sheet (QR code “CS-SEP”): a new document starts after it. It is not saved.",
+        Assert.Equal("Separator sheet (QR code “LS-SEP”): a new document starts after it. It is not saved.",
                      DocumentSplitter.SeparatorNote(plan, 3, pages[3]));
         Assert.Null(DocumentSplitter.SeparatorNote(plan, 2, pages[2]));
         Assert.Equal("Document 2 · Lease", DocumentSplitter.DividerTitle(plan, 2));
@@ -571,14 +571,14 @@ public class BarcodeTests
             PageOf(), PageOf().WithBarcodes([Qr(Sheet("Lease"))]), PageOf().WithBarcodes([Qr(Sheet("Invoice 7"))]), PageOf(),
         };
         var plan = DocumentSplitter.Plan(pages, Options());
-        Assert.Equal("Separator sheet (QR code “CS-SEP Lease”): a new document named “Invoice 7” starts after it. It is not saved.",
+        Assert.Equal("Separator sheet (QR code “LS-SEP Lease”): a new document named “Invoice 7” starts after it. It is not saved.",
                      DocumentSplitter.SeparatorNote(plan, 1, pages[1]));
-        Assert.Equal("Separator sheet (QR code “CS-SEP Invoice 7”): a new document named “Invoice 7” starts after it. It is not saved.",
+        Assert.Equal("Separator sheet (QR code “LS-SEP Invoice 7”): a new document named “Invoice 7” starts after it. It is not saved.",
                      DocumentSplitter.SeparatorNote(plan, 2, pages[2]));
         // A name the user gives wins.
         pages[3] = pages[3].WithDocumentLabel("Mine");
         var named = DocumentSplitter.Plan(pages, Options());
-        Assert.Equal("Separator sheet (QR code “CS-SEP Invoice 7”): a new document named “Mine” starts after it. It is not saved.",
+        Assert.Equal("Separator sheet (QR code “LS-SEP Invoice 7”): a new document named “Mine” starts after it. It is not saved.",
                      DocumentSplitter.SeparatorNote(named, 2, pages[2]));
         // Two-sided, the code on the back only: the front gives the sheet's code too.
         var sheets = new List<ScannedPage>
@@ -589,12 +589,12 @@ public class BarcodeTests
         };
         var twoSided = DocumentSplitter.Plan(sheets, Options());
         Assert.Equal(Sheet("Lease"), twoSided.Pages[2].Code!.Text);
-        Assert.Equal("Separator sheet (QR code “CS-SEP Lease”): a new document named “Lease” starts after it. It is not saved.",
+        Assert.Equal("Separator sheet (QR code “LS-SEP Lease”): a new document named “Lease” starts after it. It is not saved.",
                      DocumentSplitter.SeparatorNote(twoSided, 2, sheets[2]));
         Assert.Equal(DocumentSplitter.SeparatorNote(twoSided, 2, sheets[2]), DocumentSplitter.SeparatorNote(twoSided, 3, sheets[3]));
         // A sheet with nothing after it.
         var last = DocumentSplitter.Plan([PageOf(), PageOf().WithBarcodes([Qr(Sheet("Lease"))])], Options());
-        Assert.Equal("Separator sheet (QR code “CS-SEP Lease”): a new document starts after it. It is not saved.",
+        Assert.Equal("Separator sheet (QR code “LS-SEP Lease”): a new document starts after it. It is not saved.",
                      DocumentSplitter.SeparatorNote(last, 1, PageOf().WithBarcodes([Qr(Sheet("Lease"))])));
         // Joined across the sheet: no document starts after it, so none is named.
         var joinedPages = new List<ScannedPage>
@@ -604,7 +604,7 @@ public class BarcodeTests
         var joined = DocumentSplitter.Plan(joinedPages, Options());
         Assert.Equal([[0, 2]], Documents(joined));
         Assert.Equal("Alpha", joined.Documents[0].Label);
-        Assert.Equal("Separator sheet (QR code “CS-SEP Lease”): the pages after it are joined to the document before. It is not saved.",
+        Assert.Equal("Separator sheet (QR code “LS-SEP Lease”): the pages after it are joined to the document before. It is not saved.",
                      DocumentSplitter.SeparatorNote(joined, 1, joinedPages[1]));
         // Patch codes and other splits carry no code.
         Assert.All(DocumentSplitter.Plan(pages, Options(mode: SplitMode.SeparatorSheet)).Pages, p => Assert.Null(p.Code));
@@ -636,10 +636,10 @@ public class BarcodeTests
     [Fact]
     public void QrSheet_TextAndCaption()
     {
-        Assert.Equal("CS-SEP Lease 2026", QrSeparatorSheet.Text(" Lease  2026 "));
-        Assert.Equal("CS-SEP", QrSeparatorSheet.Text(null));
-        Assert.Equal("CS-SEP", QrSeparatorSheet.Text("  "));
-        Assert.Equal("CS-SEP", QrSeparatorSheet.Text("separator"));
+        Assert.Equal("LS-SEP Lease 2026", QrSeparatorSheet.Text(" Lease  2026 "));
+        Assert.Equal("LS-SEP", QrSeparatorSheet.Text(null));
+        Assert.Equal("LS-SEP", QrSeparatorSheet.Text("  "));
+        Assert.Equal("LS-SEP", QrSeparatorSheet.Text("separator"));
         Assert.Equal("Lease 2026", BarcodeSeparators.CodeLabel(QrSeparatorSheet.Text(" Lease  2026 "), new DocumentOptions()));
         Assert.Equal("LEASE 2026", QrSeparatorSheet.Caption("Lease 2026"));
         Assert.Equal("FATURA SUBAT ?5 ??", QrSeparatorSheet.Caption("Fatura Şubat №5 東京"));

@@ -357,7 +357,7 @@ public class OrientationTests
         var scorer = LikeALetter();
         var split = new DocumentOptions { SplitMode = SplitMode.Barcode };
         var sheet = Page(TextImage.RotatedQuarterTurns(2))
-            .WithBarcodes([new BarcodeReading(BarcodeSymbology.QrCode, "CS-SEP Lease", new RectD(10, 10, 20, 20))]);
+            .WithBarcodes([new BarcodeReading(BarcodeSymbology.QrCode, "LS-SEP Lease", new RectD(10, 10, 20, 20))]);
         Assert.Same(sheet, new OrientationStep(scorer, split: split).Apply(sheet));
         Assert.Empty(scorer.Seen);
         // Without the split's options, or under another split, the page is read.

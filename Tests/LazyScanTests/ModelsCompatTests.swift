@@ -855,7 +855,7 @@ final class ModelsCompatTests: XCTestCase {
         }
         XCTAssertTrue(SplitMode.separatorSheet.steps
             .hasPrefix("1. Save or print a separator sheet. 2. Put one in front of each document after the first."))
-        XCTAssertTrue(SplitMode.barcode.steps.hasSuffix("Only codes starting with CS-SEP count."))
+        XCTAssertTrue(SplitMode.barcode.steps.hasSuffix("Only codes starting with LS-SEP count."))
         XCTAssertEqual(SplitMode.blankSheet.steps,
                        "Put an empty sheet between documents. With both sides scanned, only a sheet blank on both sides splits.")
         XCTAssertEqual(BarcodeSeparators.startsDocumentCaption(true), "Pages are kept")
@@ -963,16 +963,16 @@ final class ModelsCompatTests: XCTestCase {
     }
 
     func test_splitBarcodePrefix_isCsSepByDefault_andInFilesWithoutIt() throws {
-        XCTAssertEqual(ScanSettings().document.splitBarcodePrefix, "CS-SEP")
-        XCTAssertEqual(try decode([Preset].self, presetsJSONBeforePDFSize)[0].settings.document.splitBarcodePrefix, "CS-SEP")
+        XCTAssertEqual(ScanSettings().document.splitBarcodePrefix, "LS-SEP")
+        XCTAssertEqual(try decode([Preset].self, presetsJSONBeforePDFSize)[0].settings.document.splitBarcodePrefix, "LS-SEP")
         let older = try decode(ScanSettings.self, #"{"document": {"splitMode": "barcode", "barcodeStartsDocument": true}}"#)
         XCTAssertEqual(older.document.splitMode, .barcode)
         XCTAssertTrue(older.document.barcodeStartsDocument)
-        XCTAssertEqual(older.document.splitBarcodePrefix, "CS-SEP")
+        XCTAssertEqual(older.document.splitBarcodePrefix, "LS-SEP")
         for value in ["null", "1", "true", "{}", "[]"] {
             let settings = try decode(ScanSettings.self,
                                       #"{"document": {"splitMode": "barcode", "splitBarcodePrefix": "# + value + #", "autoRotate": true}, "resolution": 150}"#)
-            XCTAssertEqual(settings.document.splitBarcodePrefix, "CS-SEP", value)
+            XCTAssertEqual(settings.document.splitBarcodePrefix, "LS-SEP", value)
             XCTAssertEqual(settings.document.splitMode, .barcode, value)
             XCTAssertTrue(settings.document.autoRotate, value)
             XCTAssertEqual(settings.resolution, 150)
@@ -983,7 +983,7 @@ final class ModelsCompatTests: XCTestCase {
     }
 
     func test_splitBarcodePrefix_roundTrips_andCopyIsIndependent() throws {
-        for prefix in ["CS-SEP", "", "Fatura №"] {
+        for prefix in ["LS-SEP", "", "Fatura №"] {
             var settings = ScanSettings()
             settings.document.splitBarcodePrefix = prefix
             let back = try JSONDecoder().decode(ScanSettings.self, from: encode(settings))

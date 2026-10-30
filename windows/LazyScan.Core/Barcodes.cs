@@ -74,7 +74,7 @@ public static class BarcodeSeparators
     /// by default): only such a code makes a separator sheet, so the codes printed on the documents
     /// themselves (payment QR codes, order numbers) are not taken for one.
     /// </summary>
-    public const string DefaultPrefix = "CS-SEP";
+    public const string DefaultPrefix = "LS-SEP";
 
     /// <summary>
     /// The text of a separator sheet that gives no name (<see cref="QrSeparatorSheet"/> with no name,
@@ -146,7 +146,7 @@ public static class BarcodeSeparators
 
     /// <summary>
     /// The document name a splitting code gives: its text after <see cref="DocumentOptions.SplitBarcodePrefix"/>
-    /// when it starts with it (a separator sheet's "CS-SEP Lease" names "Lease"), otherwise all of it,
+    /// when it starts with it (a separator sheet's "LS-SEP Lease" names "Lease"), otherwise all of it,
     /// as <see cref="Label"/> makes it. Null for no text or nothing left.
     /// </summary>
     public static string? CodeLabel(string? text, DocumentOptions options)
@@ -360,7 +360,7 @@ public static class QrSeparatorSheet
     /// <summary>
     /// The text of the sheet's code: <paramref name="prefix"/> (<see cref="BarcodeSeparators.Prefix"/>;
     /// <see cref="DocumentOptions.SplitBarcodePrefix"/>), a space and the name as a code's text gives it
-    /// (<see cref="BarcodeSeparators.Label"/>): "CS-SEP Lease 2026"; the prefix alone with no name. With
+    /// (<see cref="BarcodeSeparators.Label"/>): "LS-SEP Lease 2026"; the prefix alone with no name. With
     /// an empty prefix the name alone, or <see cref="BarcodeSeparators.UnnamedText"/>.
     /// </summary>
     public static string Text(string? name, string prefix = BarcodeSeparators.DefaultPrefix)

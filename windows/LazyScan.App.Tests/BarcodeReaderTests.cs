@@ -245,7 +245,7 @@ public class BarcodeReaderTests(ITestOutputHelper output)
     public void AQueuedPage_IsReadOnItsSpoolFile_WhereSmallCodesItsPreviewLosesAreFound(BarcodeFormat format, BarcodeSymbology kind,
                                                                                          double moduleInches, double heightInches)
     {
-        const string text = "CS-SEP INV-42";
+        const string text = "LS-SEP INV-42";
         var scan = Scanned(Printed(8.5, heightInches, Code(format, text, 1.0, 1.0, moduleInches)), 300, seed: 3);
         var full = scan.ToRgba();
         // Read during the scan: found.
@@ -270,9 +270,9 @@ public class BarcodeReaderTests(ITestOutputHelper output)
         // The demo's sheets carry the separator prefix and a name (MockBedRenderer.BatchBarcodeText).
         foreach (int dpi in new[] { 100, 150, 300 })
         {
-            var sheet = Code39.RenderSheet("CS-SEP INVOICE 1002", 8.5, 11, dpi);
+            var sheet = Code39.RenderSheet("LS-SEP INVOICE 1002", 8.5, 11, dpi);
             var reading = Assert.Single(Read(Scanned(sheet, dpi, noise: 4), $"the demo sheet at {dpi} dpi"));
-            Assert.Equal((BarcodeSymbology.Code39, "CS-SEP INVOICE 1002"), (reading.Symbology, reading.Text));
+            Assert.Equal((BarcodeSymbology.Code39, "LS-SEP INVOICE 1002"), (reading.Symbology, reading.Text));
             Assert.Equal("INVOICE 1002", BarcodeSeparators.CodeLabel(reading.Text, new DocumentOptions()));
         }
         // Every character Code 39 has, as ZXing writes it (its wide elements are two narrow ones, ours three).
@@ -318,7 +318,7 @@ public class BarcodeReaderTests(ITestOutputHelper output)
             QrSeparatorSheet.Render(qr.Encode(QrSeparatorSheet.Text("Lease 2026"))!, "Lease 2026", 8.5, 11, 300),
             Document(2),
             Document(3, "ORDER-4711"),
-            Printed(8.5, 11, Code(BarcodeFormat.CODE_128, "CS-SEP INV-7", 2, 2, 0.02, 0.8)),
+            Printed(8.5, 11, Code(BarcodeFormat.CODE_128, "LS-SEP INV-7", 2, 2, 0.02, 0.8)),
             Document(4),
             QrSeparatorSheet.Render(qr.Encode(QrSeparatorSheet.Text(null))!, null, 8.5, 11, 300),
             Document(5),

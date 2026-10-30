@@ -172,7 +172,7 @@ scanners** — including the Epson Perfection V39 II.
   code works, either way round, at a slant of a few degrees). Instead of separator sheets the stack
   can be split at empty sheets (with both sides scanned, only a sheet empty on both sides splits,
   so the blank backs of one-sided pages do not), every few sheets, or **at barcode or QR sheets**:
-  a sheet with a QR code, Code 128, Code 39 or Data Matrix code starting with `CS-SEP` is left out
+  a sheet with a QR code, Code 128, Code 39 or Data Matrix code starting with `LS-SEP` is left out
   and the rest of the code's text names the document after it (`{label}`); other codes, such as a
   payment QR code on an invoice, are ignored. **Save QR separator sheet** and **Print QR separator
   sheet** make such a sheet with the name you type, or with none for a sheet that only splits. With
@@ -243,7 +243,7 @@ scanners** — including the Epson Perfection V39 II.
   both; the second sheet's back is blank; for the ID card task a made-up sample card, which it
   turns over after each scan; for the Receipts task two made-up receipts with faded print and a
   date each; for the Separate documents task a stack of seven sheets with two separator sheets in it, patch-code
-  sheets or, split at QR codes or barcodes, Code 39 sheets saying "CS-SEP INVOICE 1002" and naming
+  sheets or, split at QR codes or barcodes, Code 39 sheets saying "LS-SEP INVOICE 1002" and naming
   the documents after them) with no
   hardware connected.
 
