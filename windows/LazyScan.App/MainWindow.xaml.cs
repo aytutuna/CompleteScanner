@@ -330,6 +330,12 @@ public partial class MainWindow : Window
         // As on macOS, the preview is of the flatbed: not offered while the feeder is the source.
         PreviewButton.IsEnabled = !ViewModel.IsBusy && ViewModel.Capabilities?.SupportsOverview != false
                                   && ViewModel.Settings.Source != ScanSource.DocumentFeeder;
+        // The tooltip also shows while the button is greyed out (ShowOnDisabled), so it says why.
+        string previewHint = ViewModel.Capabilities?.SupportsOverview == false ? "This scanner has no preview"
+            : ViewModel.Settings.Source == ScanSource.DocumentFeeder ? "Preview shows the flatbed: choose Flatbed as the source"
+            : "Quick look at the whole glass";
+        PreviewButton.ToolTip = previewHint;
+        AutomationProperties.SetHelpText(PreviewButton, previewHint);
         ScanButton.IsEnabled = !ViewModel.IsBusy;
         ScanButton.Content = ViewModel.PrimaryActionLabel;
         SyncTaskBanner();
@@ -614,6 +620,7 @@ public partial class MainWindow : Window
         {
             TaskBanner.Visibility = Visibility.Collapsed;
             CanvasHintTitle.Visibility = Visibility.Visible;
+            CanvasHintBody.Text = ViewModel.Settings.Source == ScanSource.DocumentFeeder ? ShortText.LoadFeeder : ShortText.PlaceOriginal;
             CanvasHintBody.Visibility = Visibility.Visible;
             return;
         }

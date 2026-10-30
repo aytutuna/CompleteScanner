@@ -11,6 +11,8 @@ internal static class ShortText
 {
     /// <summary>The empty stage's line without a task.</summary>
     public const string PlaceOriginal = "Place the original face down, then select Scan.";
+    /// <summary>The same line while the feeder is the source.</summary>
+    public const string LoadFeeder = "Load the pages in the feeder, then select Scan.";
     /// <summary>The chip on a preview until an area is selected.</summary>
     public const string DragToSelect = "Drag to select an area";
     /// <summary>Saturation and Restore faded colors while the scan is grayscale or black and white.</summary>

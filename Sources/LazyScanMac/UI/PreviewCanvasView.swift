@@ -67,7 +67,7 @@ struct PreviewCanvasView: View {
             Image(systemName: "scanner")
                 .font(.system(size: 64, weight: .light))
                 .foregroundStyle(.secondary)
-            Text("Press Preview to see the flatbed, or Scan to go straight ahead")
+            Text(emptyStateLine)
                 .font(.title3)
                 .foregroundStyle(.secondary)
             Text("No scanner around? Pick the Demo Scanner in the sidebar to try everything out.")
@@ -78,6 +78,12 @@ struct PreviewCanvasView: View {
         .padding(40)
         .frame(maxWidth: 480)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var emptyStateLine: String {
+        state.settings.source == .documentFeeder
+            ? "Load the pages in the feeder and press Scan"
+            : "Press Preview to see the flatbed, or Scan to go straight ahead"
     }
 
     // MARK: Image

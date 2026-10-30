@@ -1203,7 +1203,7 @@ struct InspectorView: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(state.isBusy || previewUnavailable)
-                .help("Quick look at the whole glass")
+                .help(previewHelp)
 
                 Button {
                     state.performScan()
@@ -1235,6 +1235,12 @@ struct InspectorView: View {
 
     private var previewUnavailable: Bool {
         state.capabilities?.supportsOverview == false || state.settings.source == .documentFeeder
+    }
+
+    private var previewHelp: String {
+        if state.capabilities?.supportsOverview == false { return "This scanner has no preview" }
+        if feederSelected { return "Preview shows the flatbed: choose Flatbed as the source" }
+        return "Quick look at the whole glass"
     }
 }
 
