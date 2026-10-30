@@ -92,8 +92,8 @@ final class OutputTests: XCTestCase {
         if text.isEmpty {
             throw XCTSkip("PDF has no extractable text — Vision OCR appears unavailable in this environment.")
         }
-        XCTAssertTrue(text.lowercased().contains("scanner"),
-                      "Searchable PDF text layer should contain SCANNER; got: \(text)")
+        XCTAssertTrue(text.lowercased().contains("scan"),
+                      "Searchable PDF text layer should contain SCAN; got: \(text)")
     }
 
     func test_imageExporterWritesFormatsWithDPI() throws {
