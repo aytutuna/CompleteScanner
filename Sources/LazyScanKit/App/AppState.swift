@@ -505,8 +505,9 @@ public final class AppState: ObservableObject {
     let keepsQueue: Bool
     /// The queue's record written shortly after the queue last changed (`scheduleQueueRecord`).
     var queueRecordTask: Task<Void, Never>?
-    /// The pages of the queue kept last time are being read back; the record waits for them.
-    var restoringQueue = false
+    /// The pages of the queue kept last time are being read back; the record waits for them, and the screens
+    /// show no Cancel, which would not stop it.
+    @Published public internal(set) var restoringQueue = false
     /// How long the queue's record waits after a change (nanoseconds; shorter in tests).
     var queueRecordDelay: UInt64 = 500_000_000
     /// The current exclusive operation's cancel flag (nil when idle).

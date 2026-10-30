@@ -370,8 +370,9 @@ private struct PageTile: View {
     }
 }
 
-/// The page grid in a sheet that opens at full height and can be pulled down to half, opened from the scan
-/// screen's pages button (`capture.pages`), with Done; a page tapped opens in the page viewer over it. Select
+/// The page grid in a sheet that opens at full height and can be pulled down to half (`detents`: not in
+/// camera mode, whose camera rests under the sheet), opened from the scan screen's pages button
+/// (`capture.pages`), with Done; a page tapped opens in the page viewer over it. Select
 /// picks pages as the Photos app does: "2 Selected" as the title, Select All or Deselect All, and Cancel in
 /// place of Done, with a bottom bar that turns the pages picked, shares them as pictures, moves them to the
 /// start or the end, and deletes them once asked. Outside Select a bottom bar has Delete All, which empties the
@@ -381,6 +382,7 @@ struct PageStripSheet: View {
     @EnvironmentObject private var state: AppState
     var onEditSpread: (@MainActor (UUID) -> Void)?
     let onClose: () -> Void
+    var detents: Set<PresentationDetent> = [.medium, .large]
     @State private var detent: PresentationDetent = .large
     @State private var viewing: PageViewerStart?
     @State private var selecting: Bool = false
@@ -436,7 +438,7 @@ struct PageStripSheet: View {
                     }
                 }
         }
-        .presentationDetents([.medium, .large], selection: $detent)
+        .presentationDetents(detents, selection: $detent)
         // A save or a send that ends while picking takes its pages out of the queue, and out of the pick.
         .onChange(of: state.scannedPages.map { (page: ScannedPage) -> UUID in page.id }) { (_: [UUID], ids: [UUID]) in
             selected.formIntersection(ids)

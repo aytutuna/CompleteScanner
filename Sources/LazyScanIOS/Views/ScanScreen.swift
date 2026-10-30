@@ -107,11 +107,15 @@ struct ScanScreen: View {
     @State private var leavingPages: PagesLeave?
     /// The status a busy spell left in camera mode ("3 pages sent to Office PC."), on a card for a few seconds.
     @State private var statusAfterBusy: String?
-    /// The status and the files saved last as the busy spell began, to tell what it changed, and whether it
-    /// is a send, whose "3 pages sent to Office PC." is the same each time.
+    /// The status, the files saved last and whether the queue had pages as the busy spell began, to tell what
+    /// it changed, and whether it is a send, whose "3 pages sent to Office PC." is the same each time.
     @State private var statusBeforeBusy: String = ""
     @State private var savedBeforeBusy: [URL] = []
+    @State private var pagesBeforeBusy: Bool = false
     @State private var busySends: Bool = false
+    /// Pages came in since the files saved last: camera mode's card of them waits for the next save, so a
+    /// queue emptied without one (discarded, deleted) does not bring it back as if those pages were saved.
+    @State private var savedRowStale: Bool = false
     @Namespace private var kindSpace: Namespace.ID
 
     var body: some View {
@@ -122,13 +126,18 @@ struct ScanScreen: View {
                     .environmentObject(importer)
             }
             .sheet(isPresented: $pagesShown, onDismiss: pagesClosed) {
-                PageStripSheet(onEditSpread: editSpreadFromPages, onClose: closePages)
+                PageStripSheet(onEditSpread: editSpreadFromPages, onClose: closePages, detents: sheetDetents)
                     .environmentObject(state)
             }
             .onChange(of: state.scannedPages.isEmpty) { (_: Bool, empty: Bool) in
                 if empty {
                     pagesShown = false
+                } else {
+                    savedRowStale = true
                 }
+            }
+            .onChange(of: state.lastSavedURLs) { (_: [URL], _: [URL]) in
+                savedRowStale = false
             }
             .modifier(IdCardDiscardQuestion(state: state, asked: $askedToDiscard))
             .modifier(KeepPagesQuestion(state: state, leave: $leavingPages, blocked: saveBlocked))
@@ -350,7 +359,8 @@ struct ScanScreen: View {
 
     /// The package banner, the app's progress with Cancel while it is busy (a save, an export, After saving's
     /// steps), an import's progress with Stop, the status a busy spell left (`busyChanged`), and the files
-    /// saved last until the next page comes in, each on a card over the viewfinder.
+    /// saved last until the next page comes in, back with the next save only (`savedRowStale`), each on a
+    /// card over the viewfinder.
     @ViewBuilder
     private var cameraNotices: some View {
         if let offered = state.pendingPackage {
@@ -368,7 +378,7 @@ struct ScanScreen: View {
         if let message = statusAfterBusy, !state.isBusy {
             statusCard(message)
         }
-        if !state.lastSavedURLs.isEmpty && state.scannedPages.isEmpty && !state.isBusy {
+        if !state.lastSavedURLs.isEmpty && state.scannedPages.isEmpty && !state.isBusy && !savedRowStale {
             SavedFilesRow()
                 .modifier(NoticeCard())
         }
@@ -402,8 +412,14 @@ struct ScanScreen: View {
             statusAfterBusy = nil
             statusBeforeBusy = state.statusMessage
             savedBeforeBusy = state.lastSavedURLs
+            pagesBeforeBusy = !state.scannedPages.isEmpty
             busySends = sendsToComputer
             return
+        }
+        // A save that emptied the queue has the files saved last even when they are the same ones as before
+        // (more pages added to the same PDF), which `lastSavedURLs` does not report as a change.
+        if pagesBeforeBusy && state.scannedPages.isEmpty {
+            savedRowStale = false
         }
         let message: String = state.statusMessage
         guard cameraMode, !message.isEmpty, message != statusBeforeBusy || busySends, state.errorMessage == nil,
@@ -412,7 +428,8 @@ struct ScanScreen: View {
     }
 
     /// Printer mode's progress row with Cancel, and the status line under the bar when the progress has no
-    /// words of its own (a save's text reading, its PDF being written).
+    /// words of its own (a save's text reading, its PDF being written). Bringing the kept queue back has no
+    /// Cancel: nothing stops it.
     private var busyCard: some View {
         let worded: Bool = !(state.progress?.message ?? "").isEmpty
         let status: String = state.statusMessage
@@ -426,13 +443,15 @@ struct ScanScreen: View {
                         .accessibilityIdentifier("camera.status")
                 }
             }
-            Button(role: .cancel) {
-                state.cancelScan()
-            } label: {
-                Text("Cancel")
+            if !state.restoringQueue {
+                Button(role: .cancel) {
+                    state.cancelScan()
+                } label: {
+                    Text("Cancel")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("cancel.button")
             }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("cancel.button")
         }
         .modifier(NoticeCard())
     }
@@ -772,7 +791,17 @@ struct ScanScreen: View {
         }
     }
 
-    /// A group's sheet, half height first, with the screen still usable above it.
+    /// The heights of the screen's sheets. Camera mode's camera rests under a sheet, so a half sheet would
+    /// show the stopped viewfinder above it: full height only.
+    private var sheetDetents: Set<PresentationDetent> {
+        cameraMode ? [.large] : [.medium, .large]
+    }
+
+    private var sheetInteraction: PresentationBackgroundInteraction {
+        cameraMode ? .disabled : .enabled(upThrough: .medium)
+    }
+
+    /// A group's sheet: in printer mode half height first, with the screen still usable above it.
     private func optionsSheet(_ group: ScanOptionGroup) -> some View {
         NavigationStack {
             Form {
@@ -791,9 +820,9 @@ struct ScanScreen: View {
             .modifier(ScannerPickerSheets(picker: picker, showsAdd: $showsAdd, showsTroubleshooter: $showsTroubleshooter))
             .modifier(IdCardDiscardQuestion(state: state, asked: $cardAskedInOptions))
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents(sheetDetents)
         .presentationDragIndicator(.visible)
-        .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        .presentationBackgroundInteraction(sheetInteraction)
         // The root's alert cannot show over a sheet, nor its troubleshooter until the sheet has closed.
         .modifier(ErrorAlert(state: state, onTroubleshoot: openTroubleshooter))
     }
@@ -1225,19 +1254,22 @@ struct ScanScreen: View {
         .background(Color(uiColor: .secondarySystemGroupedBackground), ignoresSafeAreaEdges: .bottom)
     }
 
-    /// A scan's progress with Cancel, the package banner, the status line and the files saved last.
+    /// A scan's progress with Cancel (none while the kept queue comes back), the package banner, the status
+    /// line and the files saved last.
     @ViewBuilder
     private var statusRows: some View {
         if state.isBusy {
             HStack(spacing: 12) {
                 ScanProgressRow(progress: state.progress)
-                Button(role: .cancel) {
-                    state.cancelScan()
-                } label: {
-                    Text("Cancel")
+                if !state.restoringQueue {
+                    Button(role: .cancel) {
+                        state.cancelScan()
+                    } label: {
+                        Text("Cancel")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("cancel.button")
                 }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("cancel.button")
             }
         }
         if let offered = state.pendingPackage {
