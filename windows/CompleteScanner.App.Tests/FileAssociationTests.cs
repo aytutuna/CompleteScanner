@@ -21,7 +21,7 @@ public sealed class FileAssociationTests : IDisposable
         Assert.Equal(
             [
                 (".csdoc", "CompleteScanner.Package"),
-                ("CompleteScanner.Package", "CompleteScanner document"),
+                ("CompleteScanner.Package", "Lazy Scan document"),
                 (@"CompleteScanner.Package\DefaultIcon", "\"C:\\Program Files\\CompleteScanner\\CompleteScanner.exe\",0"),
                 (@"CompleteScanner.Package\shell\open\command", "\"C:\\Program Files\\CompleteScanner\\CompleteScanner.exe\" \"%1\""),
             ],
