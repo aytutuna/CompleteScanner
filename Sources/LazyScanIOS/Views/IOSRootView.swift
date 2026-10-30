@@ -132,7 +132,7 @@ public struct IOSRootView: View {
             }
         }
         .fullScreenCover(item: cornerRequest) { (request: PhotoCornersRequest) in
-            CornerEditorView(request: request, onAnswer: answerCorners, onStop: importer.canStop ? stopImport : nil,
+            CornerEditorView(request: request, onAnswer: answerCorners, onStop: stopAction,
                              isShot: importer.importsShot)
         }
         .sheet(isPresented: $state.showTroubleshooter) {
@@ -355,6 +355,10 @@ public struct IOSRootView: View {
 
     private func stopImport() {
         importer.stop()
+    }
+
+    private var stopAction: (@MainActor () -> Void)? {
+        importer.canStop ? stopImport : nil
     }
 
     /// The scan screen in front: the iPad's detail, and on the iPhone the library gone.
