@@ -2217,7 +2217,7 @@ public partial class MainWindow : Window
         new(Math.Clamp(p.X, r.X, r.Right), Math.Clamp(p.Y, r.Y, r.Bottom));
 }
 
-/// <summary>Minimal modal text prompt (used for naming presets).</summary>
+/// <summary>Minimal modal text prompt (used for naming presets); OK stays off while the box is blank.</summary>
 public sealed class PromptWindow : Window
 {
     private readonly TextBox _textBox = new();
@@ -2238,9 +2238,10 @@ public sealed class PromptWindow : Window
         ResizeMode = ResizeMode.NoResize;
         SetResourceReference(FontFamilyProperty, "TextFontFamily");
 
-        var ok = new Button { Content = okLabel, IsDefault = true, MinWidth = 88 };
+        var ok = new Button { Content = okLabel, IsDefault = true, IsEnabled = false, MinWidth = 88 };
         ok.SetResourceReference(StyleProperty, "AccentButtonStyle");
         ok.Click += (_, _) => DialogResult = true;
+        _textBox.TextChanged += (_, _) => ok.IsEnabled = _textBox.Text.Trim().Length > 0;
         var cancel = new Button
         {
             Content = "Cancel", IsCancel = true,

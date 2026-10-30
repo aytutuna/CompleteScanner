@@ -43,6 +43,7 @@ struct InspectorView: View {
         .alert("Save Preset", isPresented: $showSavePresetAlert) {
             TextField("Preset name", text: $newPresetName)
             Button("Save") { state.saveCurrentAsPreset(named: newPresetName) }
+                .disabled(newPresetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("The current scan settings will be saved as a reusable preset.")
@@ -1143,7 +1144,7 @@ struct InspectorView: View {
         Section("Presets") {
             Menu {
                 if state.presets.isEmpty {
-                    Button("No Presets Saved") {}
+                    Button("No presets saved") {}
                         .disabled(true)
                 } else {
                     ForEach(state.presets) { preset in
@@ -1162,7 +1163,7 @@ struct InspectorView: View {
                     showSavePresetAlert = true
                 }
                 if !state.presets.isEmpty {
-                    Menu("Delete Preset") {
+                    Menu("Delete preset") {
                         ForEach(state.presets) { preset in
                             Button(preset.name, role: .destructive) {
                                 state.deletePreset(id: preset.id)
@@ -1172,13 +1173,6 @@ struct InspectorView: View {
                 }
             } label: {
                 Label("Presets", systemImage: "slider.horizontal.3")
-            }
-            .contextMenu {
-                ForEach(state.presets) { preset in
-                    Button("Delete \u{201C}\(preset.name)\u{201D}", role: .destructive) {
-                        state.deletePreset(id: preset.id)
-                    }
-                }
             }
         }
     }
