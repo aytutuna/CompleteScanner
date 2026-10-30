@@ -31,7 +31,7 @@ public static class Icon
 public static class AppIcon
 {
     /// <summary>Names the assembly, so it also resolves when the windows are hosted by another executable.</summary>
-    private static readonly Uri Source = new("pack://application:,,,/CompleteScanner;component/app.ico");
+    private static readonly Uri Source = new("pack://application:,,,/LazyScan;component/app.ico");
 
     private static System.Windows.Media.ImageSource? _image;
 
