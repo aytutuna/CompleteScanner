@@ -435,10 +435,11 @@ public static class TaskCatalog
     /// The settings still do what the task is for: the same scan mode, and the task's
     /// required source; for the two-sided task, both sides; for Scan to Word, a Word document; for
     /// the Batch task, a split; for the Book or magazine task, collected pages with their facing pages
-    /// split; for Quick scan, each scan saved at once; for the Archive document task, an archival PDF.
-    /// Changing the mode by hand (or choosing one side, another format, no split or a plain PDF, or
-    /// turning Collect pages before saving off for a book or on for a quick scan), or a scanner
-    /// without that source, ends the task.
+    /// split; for Quick scan, each scan saved at once; for the Archive document task, an archival PDF;
+    /// for Email a document, the share window after saving. Changing the mode by hand (or choosing one
+    /// side, another format, no split, a plain PDF or another action after saving, or turning Collect
+    /// pages before saving off for a book or on for a quick scan), or a scanner without that source,
+    /// ends the task.
     /// </summary>
     public static bool Fits(ScanTask task, ScanSettings settings)
     {
@@ -450,7 +451,8 @@ public static class TaskCatalog
                && (task != ScanTask.Batch || settings.Document.SplitMode != SplitMode.None)
                && (task != ScanTask.Book || (settings.Document.SplitFacingPages && settings.DocumentMultiPage))
                && (task != ScanTask.QuickScan || !settings.DocumentMultiPage)
-               && (task != ScanTask.Archive || (settings.Output.Archival && settings.Format == OutputFormat.Pdf));
+               && (task != ScanTask.Archive || (settings.Output.Archival && settings.Format == OutputFormat.Pdf))
+               && (task != ScanTask.Email || settings.Output.AfterSave == AfterSaveAction.Share);
     }
 
     /// <summary>
@@ -462,6 +464,30 @@ public static class TaskCatalog
     {
         if (DocumentSides.UsesManualSteps(settings, capabilities)) return DocumentSides.ManualSteps;
         return settings.Task is { } task && Fits(task, settings) ? Definition(task).Steps : null;
+    }
+
+    /// <summary>
+    /// A guided step as the banner and the Scan button word it for these settings. The flow keeps the
+    /// task's own steps, and a change of source or of Collect pages before saving does not start it
+    /// again, so the words follow the settings here: Document to PDF's step is Stack from feeder's while the
+    /// feeder is the source, and says each scan is saved right away while Collect pages before saving
+    /// is off; Quick scan's says its scans are collected while it is on. Other steps are their task's own.
+    /// </summary>
+    public static TaskStep ShownStep(TaskStep step, ScanSettings settings)
+    {
+        if (step == Definition(ScanTask.Document).Steps[0])
+        {
+            bool feeder = settings.Source == ScanSource.DocumentFeeder;
+            var shown = feeder ? Definition(ScanTask.Feeder).Steps[0] : step;
+            if (settings.DocumentMultiPage) return shown;
+            return shown with
+            {
+                Prompt = feeder ? shown.Prompt : "Place each page face down and scan.",
+                Help = "Each scan is saved right away.",
+            };
+        }
+        if (step != Definition(ScanTask.QuickScan).Steps[0] || !settings.DocumentMultiPage) return step;
+        return step with { Help = "They are collected until you save." };
     }
 
     /// <summary>How a scan with these settings is handled: the stored task's flow while it fits, otherwise by mode.</summary>

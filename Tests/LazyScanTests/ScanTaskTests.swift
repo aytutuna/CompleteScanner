@@ -558,6 +558,79 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertEqual(TaskCatalog.infer(quick), .document)
     }
 
+    func test_fits_emailSharesAfterSaving() {
+        var email = TaskCatalog.apply(.email, to: ScanSettings())
+        XCTAssertTrue(TaskCatalog.fits(.email, email))
+        for action in AfterSaveAction.allCases where action != .share {
+            email.output.afterSave = action
+            XCTAssertFalse(TaskCatalog.fits(.email, email), action.rawValue)
+            XCTAssertNil(TaskCatalog.guidedSteps(email, capabilities: nil), action.rawValue)
+        }
+        // The other tasks run whatever action is picked.
+        for task in ScanTask.allCases where task != .email {
+            var s = TaskCatalog.apply(task, to: ScanSettings())
+            for action in AfterSaveAction.allCases {
+                s.output.afterSave = action
+                XCTAssertTrue(TaskCatalog.fits(task, s), "\(task.rawValue) \(action.rawValue)")
+            }
+        }
+    }
+
+    func test_shownStep_speaksOfTheFeeder_whileDocumentScansIt() {
+        let document: TaskStep = TaskCatalog.definition(.document).steps[0]
+        let feeder: TaskStep = TaskCatalog.definition(.feeder).steps[0]
+        var s = TaskCatalog.apply(.document, to: ScanSettings())
+        XCTAssertEqual(TaskCatalog.shownStep(document, settings: s), document)
+        s.source = .documentFeeder
+        let fed: TaskStep = TaskCatalog.shownStep(document, settings: s)
+        XCTAssertEqual(fed, feeder)
+        XCTAssertEqual(fed.primaryActionLabel, "Scan stack")
+        XCTAssertFalse(fed.prompt.contains("face down"))
+        // Every other step is its task's own, from the feeder too, as are the steps of a stack turned over by hand.
+        for definition in TaskCatalog.all where definition.task != .document {
+            var own = TaskCatalog.apply(definition.task, to: ScanSettings())
+            own.source = .documentFeeder
+            for step in definition.steps {
+                XCTAssertEqual(TaskCatalog.shownStep(step, settings: own), step, definition.title)
+            }
+        }
+        for step in DocumentSides.manualSteps {
+            XCTAssertEqual(TaskCatalog.shownStep(step, settings: s), step, step.id)
+        }
+    }
+
+    func test_shownStep_saysEachScanIsSavedRightAway_whileDocumentCollectsNoPages() {
+        let document: TaskStep = TaskCatalog.definition(.document).steps[0]
+        var s = TaskCatalog.apply(.document, to: ScanSettings())
+        s.documentMultiPage = false
+        let single: TaskStep = TaskCatalog.shownStep(document, settings: s)
+        XCTAssertEqual(single.prompt, "Place each page face down and scan.")
+        XCTAssertEqual(single.help, "Each scan is saved right away.")
+        XCTAssertEqual(single.primaryActionLabel, "Scan page")
+        XCTAssertEqual(single.id, document.id)
+        s.source = .documentFeeder
+        let fed: TaskStep = TaskCatalog.shownStep(document, settings: s)
+        XCTAssertEqual(fed.prompt, "Load the pages in the feeder and scan.")
+        XCTAssertEqual(fed.help, "Each scan is saved right away.")
+        XCTAssertEqual(fed.primaryActionLabel, "Scan stack")
+        for step in [single, fed] {
+            XCTAssertFalse(step.prompt.contains("save"), step.prompt)
+            XCTAssertTrue((1...10).contains(StatusLine.words(step.prompt)), step.prompt)
+        }
+    }
+
+    func test_shownStep_saysQuickScansAreCollected_whileCollectPagesIsOn() {
+        let quick: TaskStep = TaskCatalog.definition(.quickScan).steps[0]
+        var s = TaskCatalog.apply(.quickScan, to: ScanSettings())
+        XCTAssertEqual(TaskCatalog.shownStep(quick, settings: s), quick)
+        s.documentMultiPage = true
+        let collected: TaskStep = TaskCatalog.shownStep(quick, settings: s)
+        XCTAssertEqual(collected.help, "They are collected until you save.")
+        XCTAssertEqual(collected.prompt, quick.prompt)
+        XCTAssertEqual(collected.primaryActionLabel, quick.primaryActionLabel)
+        XCTAssertEqual(collected.id, quick.id)
+    }
+
     func test_flowOf_taskThenMode() {
         XCTAssertEqual(TaskCatalog.flow(of: ScanSettings()), .documentQueue)
         var photo = ScanSettings()

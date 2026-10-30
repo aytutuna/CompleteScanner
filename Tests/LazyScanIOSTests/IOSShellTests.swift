@@ -208,6 +208,18 @@ final class IOSShellTests: XCTestCase {
         }
     }
 
+    func test_printerStep_saysEachScanIsSavedRightAway_whileDocumentCollectsNoPages() throws {
+        let document: TaskStep = try XCTUnwrap(TaskCatalog.definition(.document).steps.first)
+        var s: ScanSettings = TaskCatalog.apply(.document, to: ScanSettings())
+        s.documentMultiPage = false
+        for source in [ScanSource.flatbed, .documentFeeder] {
+            s.source = source
+            let step: TaskStep = IOSShell.printerStep(document, settings: s)
+            XCTAssertEqual(step, TaskCatalog.shownStep(document, settings: s), source.rawValue)
+            XCTAssertEqual(step.help, "Each scan is saved right away.", source.rawValue)
+        }
+    }
+
     func test_flatbedPreview_andItsArea_onlyWhileTheFlatbedIsTheSource() {
         var s = ScanSettings()
         s.source = .flatbed

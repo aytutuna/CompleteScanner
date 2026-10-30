@@ -171,10 +171,10 @@ final class SaveActionsTests: XCTestCase {
             XCTAssertEqual(TaskCatalog.apply(task, to: current).output.afterSave, expected, task.rawValue)
         }
         XCTAssertEqual(current.output.afterSave, .open)
-        // Choosing another action by hand keeps the task.
+        // Choosing another action by hand ends the task, whose help speaks of the share window.
         var email = TaskCatalog.apply(.email, to: current)
         email.output.afterSave = .reveal
-        XCTAssertTrue(TaskCatalog.fits(.email, email))
+        XCTAssertFalse(TaskCatalog.fits(.email, email))
         XCTAssertTrue(TaskCatalog.definition(.email).steps[0].help.contains("share window"))
     }
 }

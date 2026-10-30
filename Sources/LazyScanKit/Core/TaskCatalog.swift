@@ -434,10 +434,11 @@ public enum TaskCatalog {
     /// The settings still do what the task is for: the same scan mode, and the task's required
     /// source; for the two-sided task, both sides; for Scan to Word, a Word document; for the Batch
     /// task, a split; for the Book or magazine task, collected pages with their facing pages split;
-    /// for Quick scan, each scan saved at once; for the Archive document task, an archival PDF.
-    /// Changing the mode by hand (or choosing one side, another format, no split or a plain PDF, or
-    /// turning Collect pages before saving off for a book or on for a quick scan), or a scanner
-    /// without that source, ends the task.
+    /// for Quick scan, each scan saved at once; for the Archive document task, an archival PDF; for
+    /// Email a document, the share window after saving. Changing the mode by hand (or choosing one
+    /// side, another format, no split, a plain PDF or another action after saving, or turning Collect
+    /// pages before saving off for a book or on for a quick scan), or a scanner without that source,
+    /// ends the task.
     public static func fits(_ task: ScanTask, _ settings: ScanSettings) -> Bool {
         let taskDefinition = TaskCatalog.definition(task)
         guard settings.intent == taskDefinition.intent else { return false }
@@ -447,6 +448,7 @@ public enum TaskCatalog {
         if task == .book && !(settings.document.splitFacingPages && settings.documentMultiPage) { return false }
         if task == .quickScan && settings.documentMultiPage { return false }
         if task == .archive && !(settings.output.archival && settings.format == .pdf) { return false }
+        if task == .email && settings.output.afterSave != .share { return false }
         if let source = taskDefinition.requiredSource { return settings.source == source }
         return true
     }
@@ -458,6 +460,28 @@ public enum TaskCatalog {
         if DocumentSides.usesManualSteps(settings, capabilities: capabilities) { return DocumentSides.manualSteps }
         guard let task = settings.task, fits(task, settings) else { return nil }
         return TaskCatalog.definition(task).steps
+    }
+
+    /// A guided step as the banner and the Scan button word it for these settings. The flow keeps the
+    /// task's own steps, and a change of source or of Collect pages before saving does not start it
+    /// again, so the words follow the settings here: Document to PDF's step is Stack from feeder's while the
+    /// feeder is the source, and says each scan is saved right away while Collect pages before saving
+    /// is off; Quick scan's says its scans are collected while it is on. Other steps are their task's own.
+    public static func shownStep(_ step: TaskStep, settings: ScanSettings) -> TaskStep {
+        if step == definition(.document).steps[0] {
+            let feeder: Bool = settings.source == .documentFeeder
+            let shown: TaskStep = feeder ? definition(.feeder).steps[0] : step
+            guard !settings.documentMultiPage else { return shown }
+            return reworded(shown, prompt: feeder ? shown.prompt : "Place each page face down and scan.",
+                            help: "Each scan is saved right away.")
+        }
+        guard step == definition(.quickScan).steps[0], settings.documentMultiPage else { return step }
+        return reworded(step, prompt: step.prompt, help: "They are collected until you save.")
+    }
+
+    private static func reworded(_ step: TaskStep, prompt: String, help: String) -> TaskStep {
+        TaskStep(id: step.id, title: step.title, prompt: prompt, primaryActionLabel: step.primaryActionLabel,
+                 skippable: step.skippable, repeats: step.repeats, requiresCapture: step.requiresCapture, help: help)
     }
 
     /// How a scan with these settings is handled: the stored task's flow while it fits,

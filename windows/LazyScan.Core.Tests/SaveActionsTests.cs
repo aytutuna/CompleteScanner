@@ -202,10 +202,10 @@ public class SaveActionsTests
             Assert.Equal(expected, TaskCatalog.Apply(task, current).Output.AfterSave);
         }
         Assert.Equal(AfterSaveAction.Open, current.Output.AfterSave);
-        // Choosing another action by hand keeps the task.
+        // Choosing another action by hand ends the task, whose help speaks of the share window.
         var email = TaskCatalog.Apply(ScanTask.Email, current);
         email.Output.AfterSave = AfterSaveAction.Reveal;
-        Assert.True(TaskCatalog.Fits(ScanTask.Email, email));
+        Assert.False(TaskCatalog.Fits(ScanTask.Email, email));
         Assert.Contains("share window", TaskCatalog.Definition(ScanTask.Email).Steps[0].Help);
     }
 }

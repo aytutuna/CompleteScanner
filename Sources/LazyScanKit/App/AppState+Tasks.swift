@@ -23,8 +23,12 @@ extension AppState {
 
     public var activeTaskDefinition: TaskDefinition? { activeTask.map { TaskCatalog.definition($0) } }
 
-    /// Caption of the Scan button: the current step's action ("Scan page"), or "Scan".
-    public var primaryActionLabel: String { taskFlow?.current?.primaryActionLabel ?? "Scan" }
+    /// Caption of the Scan button: the current step's action as the settings word it ("Scan page", "Scan
+    /// stack" while the feeder scans for Document to PDF: `TaskCatalog.shownStep`), or "Scan".
+    public var primaryActionLabel: String {
+        guard let step = taskFlow?.current else { return "Scan" }
+        return TaskCatalog.shownStep(step, settings: settings).primaryActionLabel
+    }
 
     /// The steps guide turning a stack over by hand: fronts, then backs.
     public var isTurningOverByHand: Bool { taskFlow != nil && flowIsManual }

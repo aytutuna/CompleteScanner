@@ -599,6 +599,88 @@ public class ScanTaskTests
     }
 
     [Fact]
+    public void Fits_EmailSharesAfterSaving()
+    {
+        var email = TaskCatalog.Apply(ScanTask.Email, new ScanSettings());
+        Assert.True(TaskCatalog.Fits(ScanTask.Email, email));
+        foreach (var action in Enum.GetValues<AfterSaveAction>().Where(a => a != AfterSaveAction.Share))
+        {
+            email.Output.AfterSave = action;
+            Assert.False(TaskCatalog.Fits(ScanTask.Email, email), action.ToString());
+            Assert.Null(TaskCatalog.GuidedSteps(email, null));
+        }
+        // The other tasks run whatever action is picked.
+        foreach (var task in ScanTasks.All.Where(t => t != ScanTask.Email))
+        {
+            var s = TaskCatalog.Apply(task, new ScanSettings());
+            foreach (var action in Enum.GetValues<AfterSaveAction>())
+            {
+                s.Output.AfterSave = action;
+                Assert.True(TaskCatalog.Fits(task, s), $"{task.RawValue()} {action}");
+            }
+        }
+    }
+
+    [Fact]
+    public void ShownStep_SpeaksOfTheFeeder_WhileDocumentScansIt()
+    {
+        var document = TaskCatalog.Definition(ScanTask.Document).Steps[0];
+        var feeder = TaskCatalog.Definition(ScanTask.Feeder).Steps[0];
+        var s = TaskCatalog.Apply(ScanTask.Document, new ScanSettings());
+        Assert.Equal(document, TaskCatalog.ShownStep(document, s));
+        s.Source = ScanSource.DocumentFeeder;
+        var fed = TaskCatalog.ShownStep(document, s);
+        Assert.Equal(feeder, fed);
+        Assert.Equal("Scan stack", fed.PrimaryActionLabel);
+        Assert.DoesNotContain("face down", fed.Prompt);
+        // Every other step is its task's own, from the feeder too, as are the steps of a stack turned over by hand.
+        foreach (var definition in TaskCatalog.All.Where(d => d.Task != ScanTask.Document))
+        {
+            var own = TaskCatalog.Apply(definition.Task, new ScanSettings());
+            own.Source = ScanSource.DocumentFeeder;
+            Assert.All(definition.Steps, step => Assert.Equal(step, TaskCatalog.ShownStep(step, own)));
+        }
+        Assert.All(DocumentSides.ManualSteps, step => Assert.Equal(step, TaskCatalog.ShownStep(step, s)));
+    }
+
+    [Fact]
+    public void ShownStep_SaysEachScanIsSavedRightAway_WhileDocumentCollectsNoPages()
+    {
+        var document = TaskCatalog.Definition(ScanTask.Document).Steps[0];
+        var s = TaskCatalog.Apply(ScanTask.Document, new ScanSettings());
+        s.DocumentMultiPage = false;
+        var single = TaskCatalog.ShownStep(document, s);
+        Assert.Equal("Place each page face down and scan.", single.Prompt);
+        Assert.Equal("Each scan is saved right away.", single.Help);
+        Assert.Equal("Scan page", single.PrimaryActionLabel);
+        Assert.Equal(document.Id, single.Id);
+        s.Source = ScanSource.DocumentFeeder;
+        var fed = TaskCatalog.ShownStep(document, s);
+        Assert.Equal("Load the pages in the feeder and scan.", fed.Prompt);
+        Assert.Equal("Each scan is saved right away.", fed.Help);
+        Assert.Equal("Scan stack", fed.PrimaryActionLabel);
+        foreach (var step in new[] { single, fed })
+        {
+            Assert.DoesNotContain("save", step.Prompt);
+            Assert.InRange(StatusLine.Words(step.Prompt), 1, 10);
+        }
+    }
+
+    [Fact]
+    public void ShownStep_SaysQuickScansAreCollected_WhileCollectPagesIsOn()
+    {
+        var quick = TaskCatalog.Definition(ScanTask.QuickScan).Steps[0];
+        var s = TaskCatalog.Apply(ScanTask.QuickScan, new ScanSettings());
+        Assert.Equal(quick, TaskCatalog.ShownStep(quick, s));
+        s.DocumentMultiPage = true;
+        var collected = TaskCatalog.ShownStep(quick, s);
+        Assert.Equal("They are collected until you save.", collected.Help);
+        Assert.Equal(quick.Prompt, collected.Prompt);
+        Assert.Equal(quick.PrimaryActionLabel, collected.PrimaryActionLabel);
+        Assert.Equal(quick.Id, collected.Id);
+    }
+
+    [Fact]
     public void FlowOf_TaskThenMode()
     {
         Assert.Equal(TaskFlowKind.DocumentQueue, TaskCatalog.FlowOf(new ScanSettings()));

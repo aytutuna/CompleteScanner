@@ -626,7 +626,7 @@ public partial class MainWindow : Window
         TaskBanner.Visibility = reviewShown ? Visibility.Hidden : Visibility.Visible;
         TaskBannerGlyph.Text = TaskIcons.Glyph(task?.IconKey ?? "twoSided");
         var flow = ViewModel.Flow;
-        var step = flow?.Current;
+        var step = flow?.Current is { } current ? TaskCatalog.ShownStep(current, ViewModel.Settings) : null;
         TaskBannerTitle.Text = title;
         // A task of several steps: where it is, as "Front · Back · Check" with the current step stressed.
         if (flow is { StepCount: > 1 } && step is not null)

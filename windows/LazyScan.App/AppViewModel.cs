@@ -490,8 +490,12 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     /// <summary>What <see cref="Flow"/> was made for: a task, or (Manual) turning the stack over by hand.</summary>
     private (ScanTask? Task, bool Manual) _flowKey;
 
-    /// <summary>Caption of the Scan button: the current step's action ("Scan page"), or "Scan".</summary>
-    public string PrimaryActionLabel => Flow?.Current?.PrimaryActionLabel ?? "Scan";
+    /// <summary>
+    /// Caption of the Scan button: the current step's action as the settings word it ("Scan page", "Scan
+    /// stack" while the feeder scans for Document to PDF: <see cref="TaskCatalog.ShownStep"/>), or "Scan".
+    /// </summary>
+    public string PrimaryActionLabel =>
+        Flow?.Current is { } step ? TaskCatalog.ShownStep(step, Settings).PrimaryActionLabel : "Scan";
 
     /// <summary>The steps guide turning a stack over by hand: fronts, then backs.</summary>
     public bool IsTurningOverByHand => Flow is not null && _flowKey.Manual;

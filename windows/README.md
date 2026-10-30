@@ -134,10 +134,13 @@ The main window has four tabs, like the macOS app:
   feeder task on a flatbed-only scanner, Photocopy without a printer) is greyed out with a short
   reason ("Needs a document feeder", "Needs a printer"). On **Scan** a banner
   names the active task and says what to do in one line, with the fuller guidance behind its ⓘ
-  (`TaskStep.Prompt` and `Help`); **Change task** goes back to Start and the close
-  button leaves the task (its settings stay). The task is saved with the settings, so a
-  restart comes back to it. A first run opens on Start, later runs on Scan. The task tiles are
-  one Tab stop, the presets another; the arrow keys move between tiles and Enter or Space picks one.
+  (`TaskStep.Prompt` and `Help`, worded for the settings by `TaskCatalog.ShownStep`: with the
+  feeder as the source Document to PDF asks to load the pages and its button reads **Scan stack**,
+  and with **Collect pages before saving** off it says each scan is saved right away);
+  **Change task** goes back to Start and the close button leaves the task (its settings stay).
+  The task is saved with the settings, so a restart comes back to it. A first run opens on Start,
+  later runs on Scan. The task tiles are one Tab stop, the presets another; the arrow keys move
+  between tiles and Enter or Space picks one.
 - **Scan** — preview canvas, page queue and the settings inspector (Preview/Scan stay pinned
   at the bottom). Adjustment sliders are centered (-100…+100, 0 = neutral) and preview live
   on the canvas; queued pages can be reordered, rotated 90° or removed; detected photos open
@@ -997,10 +1000,10 @@ button) runs one of these on its own once a save has finished: **Do nothing** (t
 **Open**, **Show in folder** or **Share…**. Several files are shown in their folder rather than
 opened one by one. A cancelled or failed save runs nothing, and a file that has been moved or
 deleted since is reported instead. Picking a task sets it: the **Email a document** task shares,
-the others do nothing. The choice is decided in Core (`SaveActions`: the plan, the actions
-offered, what Copy puts on the clipboard, the email route) and carried out by
-`Services/FileActions.cs` and `Services/ShareService.cs`, which the view model takes as a
-stand-in in checks.
+the others do nothing; choosing another action ends the Email task. The choice is decided in Core
+(`SaveActions`: the plan, the actions offered, what Copy puts on the clipboard, the email route)
+and carried out by `Services/FileActions.cs` and `Services/ShareService.cs`, which the view model
+takes as a stand-in in checks.
 
 ### Text: Word documents, text files and Copy Text
 

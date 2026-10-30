@@ -152,21 +152,17 @@ public enum IOSShell {
                           turningOverByHand: turningOverByHand, printer: printer) == nil
     }
 
-    /// The step as printer mode says it. Document with the feeder as the source is Stack from feeder's step
-    /// ("Load the pages in the feeder and scan.", "Scan stack"): the phone folds that task into Document, and
-    /// a Source changed in the Scanner options keeps the kind. Photos, Restore old photos and Receipts with
-    /// the feeder as the source are fed, not laid on the glass. Separate documents' help on the Mac sends you
-    /// to "Split into documents, on the right" and the page strip, but here the separator sheet is saved
-    /// under Export and the splits are checked in the pages. Text's words on the Mac speak of dragging over
-    /// its preview and of a scan saved at once, but here the preview is in the Scanner options, the area is
-    /// chosen by tapping the preview, and the page waits on the Quick scan screen. Other steps are the
-    /// task's own.
+    /// The step as printer mode says it. As on the desktops' banners (`TaskCatalog.shownStep`), Document with
+    /// the feeder as the source is Stack from feeder's step ("Load the pages in the feeder and scan.", "Scan
+    /// stack"): the phone folds that task into Document, and a Source changed in the Scanner options keeps
+    /// the kind; with Collect pages before saving off it says each scan is saved right away. Photos, Restore
+    /// old photos and Receipts with the feeder as the source are fed, not laid on the glass. Separate
+    /// documents' help on the Mac sends you to "Split into documents, on the right" and the page strip, but
+    /// here the separator sheet is saved under Export and the splits are checked in the pages. Text's words on
+    /// the Mac speak of dragging over its preview and of a scan saved at once, but here the preview is in the
+    /// Scanner options, the area is chosen by tapping the preview, and the page waits on the Quick scan
+    /// screen. Other steps are as `TaskCatalog.shownStep` words them.
     public static func printerStep(_ step: TaskStep, settings: ScanSettings) -> TaskStep {
-        let document: TaskStep? = TaskCatalog.definition(.document).steps.first
-        if step == document && settings.source == .documentFeeder,
-           let feeder = TaskCatalog.definition(.feeder).steps.first {
-            return feeder
-        }
         if step == TaskCatalog.definition(.batch).steps.first {
             return reworded(step, prompt: step.prompt, help: printerBatchHelp)
         }
@@ -180,7 +176,9 @@ public enum IOSShell {
                 return reworded(step, prompt: printerFeederReceiptPrompt, help: step.help)
             }
         }
-        guard step == TaskCatalog.definition(.quickScan).steps.first else { return step }
+        guard step == TaskCatalog.definition(.quickScan).steps.first else {
+            return TaskCatalog.shownStep(step, settings: settings)
+        }
         return reworded(step, prompt: printerTextPrompt, help: printerTextHelp)
     }
 

@@ -26,11 +26,17 @@ struct TaskBannerView: View {
 
     private var name: String { definition?.title ?? Self.turningOverTitle }
 
+    /// The current step as the settings word it (`TaskCatalog.shownStep`).
+    private var shownStep: TaskStep? {
+        guard let step = state.taskFlow?.current else { return nil }
+        return TaskCatalog.shownStep(step, settings: state.settings)
+    }
+
     /// The step's short line.
-    private var prompt: String { state.taskFlow?.current?.prompt ?? definition?.subtitle ?? DuplexMode.manual.hint }
+    private var prompt: String { shownStep?.prompt ?? definition?.subtitle ?? DuplexMode.manual.hint }
 
     /// The step's fuller guidance; empty when the prompt says it all.
-    private var guidance: String { state.taskFlow?.current?.help ?? "" }
+    private var guidance: String { shownStep?.help ?? "" }
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -54,7 +60,7 @@ struct TaskBannerView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityLabel(Text(state.taskFlow?.current?.fullPrompt ?? prompt))
+                        .accessibilityLabel(Text(shownStep?.fullPrompt ?? prompt))
                     if !guidance.isEmpty {
                         Button {
                             showHelp.toggle()
