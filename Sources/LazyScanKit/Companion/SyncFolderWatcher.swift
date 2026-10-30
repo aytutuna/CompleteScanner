@@ -6,7 +6,7 @@ import Foundation
 // and the C# events are closures.
 
 /// Watches the cloud sync folder (C2) for the packages phones put there (`SyncPackage`) and receives them
-/// as if they had been uploaded. A "<packageId>.cssync" file is taken once its size has not changed for
+/// as if they had been uploaded. A "<packageId>.lssync" file is taken once its size has not changed for
 /// `settleTime` (the sync client may still be writing it): the phone that sealed it is found by trying
 /// each paired phone's sync key, its package is received into the inbox under that phone, passed to
 /// `onPackageReceived` and the file deleted. A package the inbox has received before (over the network
@@ -58,7 +58,7 @@ public final class SyncFolderWatcher: @unchecked Sendable {
         self.clock = clock
     }
 
-    /// "A file in the cloud folder could not be read: 1a2b3c4d.cssync. …"
+    /// "A file in the cloud folder could not be read: 1a2b3c4d.lssync. …"
     public static func unreadableMessage(_ fileName: String, reason: String) -> String {
         "A file in the cloud folder could not be read: \(fileName). \(reason)"
     }

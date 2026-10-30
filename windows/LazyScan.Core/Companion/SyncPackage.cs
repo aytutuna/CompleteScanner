@@ -6,7 +6,7 @@ namespace LazyScan.Core;
 // Twin of Sources/LazyScanKit/Companion/SyncPackage.swift: the same bytes for the same
 // package, key and nonce, and the same checks when opening one.
 
-/// <summary>Why a <c>.cssync</c> file could not be opened.</summary>
+/// <summary>Why a <c>.lssync</c> file could not be opened.</summary>
 public enum SyncPackageErrorKind
 {
     /// <summary>Too short, or not starting with <see cref="SyncPackage.Magic"/>.</summary>
@@ -18,7 +18,7 @@ public enum SyncPackageErrorKind
     TooLarge,
 }
 
-/// <summary>A <c>.cssync</c> file that cannot be made or opened, with a message for the user.</summary>
+/// <summary>A <c>.lssync</c> file that cannot be made or opened, with a message for the user.</summary>
 public sealed class SyncPackageException(SyncPackageErrorKind kind, string message) : IOException(message)
 {
     public SyncPackageErrorKind Kind { get; } = kind;
@@ -27,7 +27,7 @@ public sealed class SyncPackageException(SyncPackageErrorKind kind, string messa
 /// <summary>
 /// A <c>.lsdoc</c> package sealed for the cloud sync folder (C2): what a phone writes into a folder
 /// the user syncs (iCloud Drive, OneDrive) when the desktop cannot be reached, as
-/// "&lt;packageId&gt;.cssync". The bytes are <see cref="Magic"/>, a 16-byte header (version, target,
+/// "&lt;packageId&gt;.lssync". The bytes are <see cref="Magic"/>, a 16-byte header (version, target,
 /// two reserved zero bytes, the 12-byte nonce) and the package encrypted with AES-256-GCM under the
 /// sync key the desktop handed out at pairing, its 16-byte tag last. The magic and header, the
 /// package id and the phone's id are authenticated with it, so a file renamed, moved to another
@@ -35,15 +35,15 @@ public sealed class SyncPackageException(SyncPackageErrorKind kind, string messa
 /// </summary>
 public static class SyncPackage
 {
-    public const string FileExtension = "cssync";
+    public const string FileExtension = "lssync";
     public const int Version = 1;
     public const int KeyByteCount = 32;
     public const int NonceByteCount = 12;
     public const int TagByteCount = 16;
     public const int HeaderByteCount = 16;
 
-    /// <summary>"CSSYNC01".</summary>
-    public static ReadOnlySpan<byte> Magic => "CSSYNC01"u8;
+    /// <summary>"LSSYNC01".</summary>
+    public static ReadOnlySpan<byte> Magic => "LSSYNC01"u8;
 
     /// <summary>The largest file opened: a package as large as an upload may be, plus the framing.</summary>
     public static long MaxFileBytes => CompanionProtocol.MaxUploadBytes + 64;

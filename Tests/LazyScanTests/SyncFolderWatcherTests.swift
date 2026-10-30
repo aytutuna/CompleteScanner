@@ -110,7 +110,7 @@ final class SyncFolderWatcherTests: XCTestCase {
     func test_aFileNoPairedPhoneOpens_isLeftAndReportedOnce() async throws {
         _ = try pairPhone()
         let url = try put("package-0001", key: Data(count: SyncPackage.keyByteCount))
-        let other = folder.appendingPathComponent("notes.cssync")
+        let other = folder.appendingPathComponent("notes.lssync")
         try Data("not a package".utf8).write(to: other)
 
         await pollTwice()
@@ -121,9 +121,9 @@ final class SyncFolderWatcherTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: other.path))
         XCTAssertEqual(problems.count, 2)
         XCTAssertTrue(problems.contains(SyncFolderWatcher.unreadableMessage(
-            "package-0001.cssync", reason: SyncPackageError.wrongKeyOrTampered.localizedDescription)))
+            "package-0001.lssync", reason: SyncPackageError.wrongKeyOrTampered.localizedDescription)))
         XCTAssertTrue(problems.contains(SyncFolderWatcher.unreadableMessage(
-            "notes.cssync", reason: SyncPackageError.notASyncPackage.localizedDescription)))
+            "notes.lssync", reason: SyncPackageError.notASyncPackage.localizedDescription)))
     }
 
     func test_aReportedFile_isTriedAgainOnlyAfterAMinute() async throws {
@@ -132,7 +132,7 @@ final class SyncFolderWatcherTests: XCTestCase {
         try keys.delete(for: phoneId)
         await pollTwice()
         XCTAssertEqual(problems, [SyncFolderWatcher.unreadableMessage(
-            "package-0001.cssync", reason: SyncPackageError.wrongKeyOrTampered.localizedDescription)])
+            "package-0001.lssync", reason: SyncPackageError.wrongKeyOrTampered.localizedDescription)])
 
         try keys.save(key, for: phoneId)
         now = now.addingTimeInterval(SyncFolderWatcher.retryTime - 1)
@@ -174,7 +174,7 @@ final class SyncFolderWatcherTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
         XCTAssertEqual(problems.count, 2)
         XCTAssertEqual(problems.last, SyncFolderWatcher.unreadableMessage(
-            "package-0002.cssync", reason: SyncPackageError.wrongKeyOrTampered.localizedDescription))
+            "package-0002.lssync", reason: SyncPackageError.wrongKeyOrTampered.localizedDescription))
     }
 
     func test_aFileStillGrowing_waitsUntilItSettles() async throws {

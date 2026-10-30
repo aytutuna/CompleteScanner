@@ -14,9 +14,9 @@ final class SyncPackageTests: XCTestCase {
     private let nonce = Data((0x10...0x1B).map { UInt8($0) })
     private let plaintext = Data("hello sync".utf8)
 
-    /// "CSSYNC01", version 1, target current, the nonce, then "hello sync" sealed and its tag.
-    private let golden = "435353594e433031" + "01010000" + "101112131415161718191a1b" + "da8ed674e45b6fdc2533"
-        + "7cacc7081262a9c7e1084e3576d63d53"
+    /// "LSSYNC01", version 1, target current, the nonce, then "hello sync" sealed and its tag.
+    private let golden = "4c5353594e433031" + "01010000" + "101112131415161718191a1b" + "da8ed674e45b6fdc2533"
+        + "327fe87decc055a04273593450152a73"
 
     private func sealed() throws -> Data {
         try SyncPackage.seal(packageId: packageId, phoneId: phoneId, target: .current, plaintext: plaintext, key: key,

@@ -4,7 +4,7 @@ import Foundation
 // Twin of windows/LazyScan.Core/Companion/SyncPackage.cs: the same bytes for the same package,
 // key and nonce, and the same checks when opening one.
 
-/// Why a `.cssync` file could not be made or opened.
+/// Why a `.lssync` file could not be made or opened.
 public enum SyncPackageError: Error, Equatable, LocalizedError, Sendable {
     /// Too short, or not starting with `SyncPackage.magic`.
     case notASyncPackage
@@ -25,20 +25,20 @@ public enum SyncPackageError: Error, Equatable, LocalizedError, Sendable {
 }
 
 /// A `.lsdoc` package sealed for the cloud sync folder (C2): what a phone writes into a folder the user
-/// syncs (iCloud Drive, OneDrive) when the desktop cannot be reached, as "<packageId>.cssync". The bytes
+/// syncs (iCloud Drive, OneDrive) when the desktop cannot be reached, as "<packageId>.lssync". The bytes
 /// are `magic`, a 16-byte header (version, target, two reserved zero bytes, the 12-byte nonce) and the
 /// package encrypted with AES-256-GCM under the sync key the desktop handed out at pairing, its 16-byte
 /// tag last. The magic and header, the package id and the phone's id are authenticated with it, so a
 /// file renamed, moved to another phone's name or changed in any byte does not open.
 public enum SyncPackage {
-    public static let fileExtension = "cssync"
+    public static let fileExtension = "lssync"
     public static let version = 1
     public static let keyByteCount = 32
     public static let nonceByteCount = 12
     public static let tagByteCount = 16
     public static let headerByteCount = 16
-    /// "CSSYNC01".
-    public static let magic = Data("CSSYNC01".utf8)
+    /// "LSSYNC01".
+    public static let magic = Data("LSSYNC01".utf8)
 
     /// The largest file opened: a package as large as an upload may be, plus the framing.
     public static var maxFileBytes: Int { CompanionProtocol.maxUploadBytes + 64 }

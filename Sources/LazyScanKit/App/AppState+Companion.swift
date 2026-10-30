@@ -360,7 +360,7 @@ extension AppState {
     }
 
     /// Seals the waiting document `itemId` with the paired desktop's sync key (`SyncPackage`) and puts it
-    /// in the sync folder as "<id>.cssync", written whole in a coordinated write, so the provider (iCloud
+    /// in the sync folder as "<id>.lssync", written whole in a coordinated write, so the provider (iCloud
     /// Drive, OneDrive) takes it as a new file and the desktop never takes half of it; it stays in the
     /// outbox, marked in the folder, until the desktop has it (`drainOutbox`). False when it is not for the
     /// paired desktop, the desktop refused it, it is in the folder already, or there is no key or folder;

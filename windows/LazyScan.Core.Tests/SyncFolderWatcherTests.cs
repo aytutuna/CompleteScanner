@@ -129,7 +129,7 @@ public sealed class SyncFolderWatcherTests : IDisposable
         if (!OperatingSystem.IsWindows()) return;
         PairPhone();
         string path = Put("package-0001", new byte[SyncPackage.KeyByteCount]);
-        string other = Path.Combine(_folder, "notes.cssync");
+        string other = Path.Combine(_folder, "notes.lssync");
         File.WriteAllText(other, "not a package");
 
         await PollTwiceAsync();
@@ -139,8 +139,8 @@ public sealed class SyncFolderWatcherTests : IDisposable
         Assert.True(File.Exists(path));
         Assert.True(File.Exists(other));
         Assert.Equal(2, _problems.Count);
-        Assert.Contains(SyncFolderWatcher.UnreadableMessage("package-0001.cssync", SyncPackage.WrongKeyMessage), _problems);
-        Assert.Contains(SyncFolderWatcher.UnreadableMessage("notes.cssync", SyncPackage.NotASyncPackageMessage), _problems);
+        Assert.Contains(SyncFolderWatcher.UnreadableMessage("package-0001.lssync", SyncPackage.WrongKeyMessage), _problems);
+        Assert.Contains(SyncFolderWatcher.UnreadableMessage("notes.lssync", SyncPackage.NotASyncPackageMessage), _problems);
     }
 
     [Fact]
@@ -173,7 +173,7 @@ public sealed class SyncFolderWatcherTests : IDisposable
         string paired = File.ReadAllText(devicesFile);
         File.WriteAllText(devicesFile, """{"devices":[{"id":"phone-0001","name":"Aytu's iPhone"}]}""");
         await PollTwiceAsync();
-        Assert.Equal([SyncFolderWatcher.UnreadableMessage("package-0001.cssync", SyncPackage.WrongKeyMessage)], _problems);
+        Assert.Equal([SyncFolderWatcher.UnreadableMessage("package-0001.lssync", SyncPackage.WrongKeyMessage)], _problems);
 
         File.WriteAllText(devicesFile, paired);
         _now += SyncFolderWatcher.RetryTime - TimeSpan.FromSeconds(1);
@@ -217,7 +217,7 @@ public sealed class SyncFolderWatcherTests : IDisposable
         Assert.Single(_received);
         Assert.False(File.Exists(path));
         Assert.Equal(2, _problems.Count);
-        Assert.Equal(SyncFolderWatcher.UnreadableMessage("package-0002.cssync", SyncPackage.WrongKeyMessage), _problems[1]);
+        Assert.Equal(SyncFolderWatcher.UnreadableMessage("package-0002.lssync", SyncPackage.WrongKeyMessage), _problems[1]);
     }
 
     [Fact]

@@ -321,8 +321,8 @@ public static class TwainHelperProtocol
     /// <summary>The protocol version; the app and the helper are built together and must agree.</summary>
     public const int Version = 1;
 
-    /// <summary>"CSTW": the first field of <see cref="TwainHelperHello"/> and its reply.</summary>
-    public const uint Magic = 0x57545343;
+    /// <summary>"LSTW": the first field of <see cref="TwainHelperHello"/> and its reply.</summary>
+    public const uint Magic = 0x5754534C;
 
     /// <summary>The most image bytes one <see cref="TwainHelperChunk"/> carries.</summary>
     public const int ChunkSize = 256 * 1024;

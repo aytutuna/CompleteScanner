@@ -17,9 +17,9 @@ public class SyncPackageTests
     private static readonly byte[] Nonce = [.. Enumerable.Range(0x10, 12).Select(i => (byte)i)];
     private static readonly byte[] Plaintext = Encoding.UTF8.GetBytes("hello sync");
 
-    /// <summary>"CSSYNC01", version 1, target current, the nonce, then "hello sync" sealed and its tag.</summary>
+    /// <summary>"LSSYNC01", version 1, target current, the nonce, then "hello sync" sealed and its tag.</summary>
     private const string Golden =
-        "435353594e433031" + "01010000" + "101112131415161718191a1b" + "da8ed674e45b6fdc2533" + "7cacc7081262a9c7e1084e3576d63d53";
+        "4c5353594e433031" + "01010000" + "101112131415161718191a1b" + "da8ed674e45b6fdc2533" + "327fe87decc055a04273593450152a73";
 
     private static byte[] Sealed() => SyncPackage.Seal(PackageId, PhoneId, CompanionTarget.Current, Plaintext, Key, Nonce);
 

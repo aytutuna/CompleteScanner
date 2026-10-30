@@ -7,7 +7,7 @@ namespace LazyScan.Core;
 
 /// <summary>
 /// Watches the cloud sync folder (C2) for the packages phones put there (<see cref="SyncPackage"/>)
-/// and receives them as if they had been uploaded. A "&lt;packageId&gt;.cssync" file is taken once its
+/// and receives them as if they had been uploaded. A "&lt;packageId&gt;.lssync" file is taken once its
 /// size has not changed for <see cref="SettleTime"/> (the sync client may still be writing it): the
 /// phone that sealed it is found by trying each paired phone's sync key, its package is received into
 /// the inbox under that phone, raised through <see cref="PackageReceived"/> and the file deleted. A
@@ -58,7 +58,7 @@ public sealed class SyncFolderWatcher : IDisposable
     /// <summary>A file in the folder could not be opened, or a phone's key read: the message to show, once per file or phone.</summary>
     public event EventHandler<string>? Problem;
 
-    /// <summary>"A file in the cloud folder could not be read: 1a2b3c4d.cssync. …"</summary>
+    /// <summary>"A file in the cloud folder could not be read: 1a2b3c4d.lssync. …"</summary>
     public static string UnreadableMessage(string fileName, string reason) =>
         $"A file in the cloud folder could not be read: {fileName}. {reason}";
 
