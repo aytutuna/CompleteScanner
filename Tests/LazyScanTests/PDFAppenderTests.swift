@@ -612,9 +612,9 @@ final class PDFAppenderTests: XCTestCase {
     }
 
     /// PDF/A files with pages added, for veraPDF in CI next to PDFATests' samples
-    /// (COMPLETESCANNER_PDFA_SAMPLES); without that folder they are written, read back and removed.
+    /// (LAZYSCAN_PDFA_SAMPLES); without that folder they are written, read back and removed.
     func test_pdfA_validationSamples() throws {
-        let samples: String = ProcessInfo.processInfo.environment["COMPLETESCANNER_PDFA_SAMPLES"] ?? ""
+        let samples: String = ProcessInfo.processInfo.environment["LAZYSCAN_PDFA_SAMPLES"] ?? ""
         let keep = !samples.trimmingCharacters(in: .whitespaces).isEmpty
         let folder: URL = keep
             ? URL(fileURLWithPath: samples, isDirectory: true)

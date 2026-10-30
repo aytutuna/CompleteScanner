@@ -6,7 +6,7 @@ using Xunit;
 
 namespace LazyScan.App.Tests;
 
-// A .csdoc opened by hand, and the queue written as one (AppViewModel.Package.cs), decoded and
+// A .lsdoc opened by hand, and the queue written as one (AppViewModel.Package.cs), decoded and
 // encoded with WIC. The view model itself reads the user's settings, so, as for CompanionAppTests,
 // its pieces are tested here: what is offered, the pages Open as new takes, and the written
 // document. Twin of Tests/LazyScanTests/AppStatePackageTests.swift, which also adds and
@@ -60,12 +60,12 @@ public sealed class PackageAppTests : IDisposable
     [Fact]
     public void OpenedPackage_IsOfferedWithItsPagesAndName()
     {
-        var offered = PendingPackage.Read(Write("Receipt.csdoc", CompanionPackage.Make(Document())), PendingPackage.Decode);
-        Assert.Equal("Receipt.csdoc", offered.FileName);
+        var offered = PendingPackage.Read(Write("Receipt.lsdoc", CompanionPackage.Make(Document())), PendingPackage.Decode);
+        Assert.Equal("Receipt.lsdoc", offered.FileName);
         Assert.Equal(2, offered.PageCount);
         Assert.Equal("Lunch 2026-10-20", offered.DocumentName);
-        Assert.Equal("Opened Receipt.csdoc: 2 pages", PackageText.OpenedMessage(offered.FileName, offered.PageCount));
-        Assert.Equal("Opened Receipt.csdoc: 1 page", PackageText.OpenedMessage(offered.FileName, 1));
+        Assert.Equal("Opened Receipt.lsdoc: 2 pages", PackageText.OpenedMessage(offered.FileName, offered.PageCount));
+        Assert.Equal("Opened Receipt.lsdoc: 1 page", PackageText.OpenedMessage(offered.FileName, 1));
         Assert.All(offered.Pages, page => Assert.Equal(PageSource.Phone, page.Source));
         Assert.Equal((60, 40), (offered.Pages[0].Image.Width, offered.Pages[0].Image.Height));
         Assert.True(offered.Pages[1].CanSwapVersions);
@@ -84,10 +84,10 @@ public sealed class PackageAppTests : IDisposable
     [Fact]
     public void PackageFiles_AreKnownByTheirExtension()
     {
-        Assert.True(PendingPackage.IsPackageFile(@"C:\Scans\Receipt.csdoc"));
-        Assert.True(PendingPackage.IsPackageFile("RECEIPT.CSDOC"));
-        Assert.False(PendingPackage.IsPackageFile("Receipt.csdoc.pdf"));
-        Assert.False(PendingPackage.IsPackageFile("csdoc"));
+        Assert.True(PendingPackage.IsPackageFile(@"C:\Scans\Receipt.lsdoc"));
+        Assert.True(PendingPackage.IsPackageFile("RECEIPT.LSDOC"));
+        Assert.False(PendingPackage.IsPackageFile("Receipt.lsdoc.pdf"));
+        Assert.False(PendingPackage.IsPackageFile("lsdoc"));
         Assert.False(PendingPackage.IsPackageFile("Receipt.jpg"));
     }
 
@@ -97,7 +97,7 @@ public sealed class PackageAppTests : IDisposable
         var entries = CompanionPackage.Entries(Document()).ToList();
         string manifest = System.Text.Encoding.UTF8.GetString(entries[0].Data).Replace("\"formatVersion\":1", "\"formatVersion\":2");
         entries[0] = entries[0] with { Data = System.Text.Encoding.UTF8.GetBytes(manifest) };
-        string path = Write("Newer.csdoc", ZipStore.Make(entries));
+        string path = Write("Newer.lsdoc", ZipStore.Make(entries));
         var e = Assert.Throws<CompanionPackageException>(() => PendingPackage.Read(path, PendingPackage.Decode));
         Assert.Equal(CompanionPackageErrorKind.NewerVersion, e.Kind);
         Assert.Equal("This document was made by a newer version of Lazy Scan (package format 2). Update Lazy Scan to open it.",
@@ -109,9 +109,9 @@ public sealed class PackageAppTests : IDisposable
     {
         byte[] broken = [0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0];
         var document = new CompanionDocument("Scan", [new CompanionPage(new CompanionImage(broken, CompanionImageFormat.Jpeg, 8, 8, 300, ColorMode.Color))]);
-        string path = Write("Broken.csdoc", CompanionPackage.Make(document));
+        string path = Write("Broken.lsdoc", CompanionPackage.Make(document));
         var e = Assert.Throws<CompanionPackageException>(() => PendingPackage.Read(path, PendingPackage.Decode));
-        Assert.Equal("Broken.csdoc cannot be opened: one of its pictures cannot be read.", e.Message);
+        Assert.Equal("Broken.lsdoc cannot be opened: one of its pictures cannot be read.", e.Message);
     }
 
     [Fact]
@@ -125,9 +125,9 @@ public sealed class PackageAppTests : IDisposable
         bytes[sof + 7] = 0x4E;
         bytes[sof + 8] = 0x20;
         var document = new CompanionDocument("Scan", [new CompanionPage(new CompanionImage(bytes, CompanionImageFormat.Jpeg, 40, 30, 200, ColorMode.Color))]);
-        string path = Write("Huge.csdoc", CompanionPackage.Make(document));
+        string path = Write("Huge.lsdoc", CompanionPackage.Make(document));
         var e = Assert.Throws<CompanionPackageException>(() => PendingPackage.Read(path, PendingPackage.Decode));
-        Assert.Equal("Huge.csdoc cannot be opened: one of its pictures cannot be read.", e.Message);
+        Assert.Equal("Huge.lsdoc cannot be opened: one of its pictures cannot be read.", e.Message);
     }
 
     [Fact]
@@ -153,7 +153,7 @@ public sealed class PackageAppTests : IDisposable
         Assert.Equal((PageSide?)PageSide.Back, read.Pages[1].Side);
         Assert.Equal(capture, read.Pages[0].Capture);
         // Opened again, the pages are the queue's.
-        var offered = PendingPackage.Read(Write("Scan 7.csdoc", CompanionPackage.Make(document)), PendingPackage.Decode);
+        var offered = PendingPackage.Read(Write("Scan 7.lsdoc", CompanionPackage.Make(document)), PendingPackage.Decode);
         Assert.Equal("Scan 7", offered.DocumentName);
         Assert.Equal([(40, 60), (40, 60), (64, 32)], offered.Pages.Select(p => (p.Image.Width, p.Image.Height)));
         Assert.Equal(capture, offered.Pages[0].Capture);

@@ -798,7 +798,7 @@ public static class TwainHelperProtocol
         public int MagicThenInt()
         {
             uint magic = BinaryPrimitives.ReadUInt32LittleEndian(Take(4));
-            if (magic != Magic) throw new TwainProtocolException("This is not the CompleteScanner TWAIN helper protocol.");
+            if (magic != Magic) throw new TwainProtocolException("This is not the Lazy Scan TWAIN helper protocol.");
             return Int();
         }
 

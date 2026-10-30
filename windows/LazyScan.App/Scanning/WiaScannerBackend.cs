@@ -677,7 +677,7 @@ internal sealed class WiaScannerSession(ScannerInfo info, string wiaDeviceId, Ac
         {
             throw WiaErrors.ToScanException(e.HResult, e.Message);
         }
-        string tempPath = Path.Combine(Path.GetTempPath(), $"CompleteScanner-{Guid.NewGuid()}.bmp");
+        string tempPath = Path.Combine(Path.GetTempPath(), $"LazyScan-{Guid.NewGuid()}.bmp");
         try
         {
             imageFile.SaveFile(tempPath);

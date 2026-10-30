@@ -126,9 +126,9 @@ final class IOSPhotoDelegate: NSObject, AVCapturePhotoCaptureDelegate, @unchecke
 /// there), so the session is set up, started and stopped off the main thread.
 final class IOSCaptureSession: @unchecked Sendable {
     let session = AVCaptureSession()
-    let queue = DispatchQueue(label: "CompleteScanner.camera.session")
+    let queue = DispatchQueue(label: "LazyScan.camera.session")
     let feed = IOSFrameFeed()
-    private let frameQueue = DispatchQueue(label: "CompleteScanner.camera.frames", qos: .userInitiated)
+    private let frameQueue = DispatchQueue(label: "LazyScan.camera.frames", qos: .userInitiated)
     private let photoOutput = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()
     private(set) var device: AVCaptureDevice?

@@ -694,7 +694,7 @@ public struct ScanSettings: Codable, Equatable, Sendable {
     public var task: ScanTask? { ScanTask.tryParse(taskId) }
 
     public static var defaultDestinationPath: String {
-        (NSHomeDirectory() as NSString).appendingPathComponent("Documents/CompleteScanner")
+        (NSHomeDirectory() as NSString).appendingPathComponent("Documents/Lazy Scan")
     }
 
     /// `path` moved into `documents` when it lies in another iOS app container's Documents folder

@@ -149,7 +149,7 @@ struct ImportProgressRow: View {
 }
 
 /// Photos (the system's photo picker, several in the order picked) and Files (photos and PDFs, and a
-/// CompleteScanner document, which goes to the scan screen's banner instead), as icons on the capture bar
+/// Lazy Scan document, which goes to the scan screen's banner instead), as icons on the capture bar
 /// and, in grey circles (`round`), on camera mode's bar, which rests its camera while one is open
 /// (`onPresenting`). Each picked photo is loaded only when its turn comes.
 struct ImportButtons: View {

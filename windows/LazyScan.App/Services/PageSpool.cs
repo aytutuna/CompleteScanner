@@ -7,14 +7,14 @@ namespace LazyScan.App.Services;
 /// doesn't hold gigabytes of pixels in memory.
 ///
 /// Every running instance gets its own subfolder of
-/// %TEMP%\CompleteScanner-pages and holds a ".lock" file in it open, unshared, for its whole
+/// %TEMP%\LazyScan-pages and holds a ".lock" file in it open, unshared, for its whole
 /// lifetime. On startup the folders of instances that are gone (their lock is no longer
 /// held, because the process exited or crashed) are deleted; the folder of an instance
 /// that is still running can't be, because its lock file can't be deleted.
 /// </summary>
 public sealed class PageSpool : IDisposable
 {
-    public static readonly string DefaultRoot = Path.Combine(Path.GetTempPath(), "CompleteScanner-pages");
+    public static readonly string DefaultRoot = Path.Combine(Path.GetTempPath(), "LazyScan-pages");
 
     private const string LockFileName = ".lock";
     /// <summary>A folder without a lock file may belong to an instance that is just starting up.</summary>

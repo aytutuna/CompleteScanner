@@ -2,8 +2,8 @@
 import LazyScanKit
 import SwiftUI
 
-/// The banner under the tab bar while a `.csdoc` opened by hand is offered (`AppState.pendingPackage`):
-/// "Opened Receipt.csdoc: 3 pages", Add to pages, Open as new and a close button that drops the offer.
+/// The banner under the tab bar while a `.lsdoc` opened by hand is offered (`AppState.pendingPackage`):
+/// "Opened Receipt.lsdoc: 3 pages", Add to pages, Open as new and a close button that drops the offer.
 /// The two buttons wait while something runs or a review is open. Twin of the Windows package banner.
 struct PackageBannerView: View {
     @EnvironmentObject var state: AppState

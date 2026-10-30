@@ -83,9 +83,9 @@ final class IOSShellTests: XCTestCase {
     // MARK: Launch options
 
     func test_launchOptions_demoScannerArgument() {
-        XCTAssertTrue(IOSLaunchOptions(arguments: ["CompleteScanner", "-demoScanner"]).demoScannerOnly)
-        XCTAssertFalse(IOSLaunchOptions(arguments: ["CompleteScanner"]).demoScannerOnly)
-        XCTAssertFalse(IOSLaunchOptions(arguments: ["CompleteScanner", "-demoScannerX"]).demoScannerOnly)
+        XCTAssertTrue(IOSLaunchOptions(arguments: ["LazyScan", "-demoScanner"]).demoScannerOnly)
+        XCTAssertFalse(IOSLaunchOptions(arguments: ["LazyScan"]).demoScannerOnly)
+        XCTAssertFalse(IOSLaunchOptions(arguments: ["LazyScan", "-demoScannerX"]).demoScannerOnly)
         XCTAssertEqual(IOSLaunchOptions.demoScannerArgument, "-demoScanner")
     }
 
@@ -369,7 +369,7 @@ final class IOSShellTests: XCTestCase {
         let actions = IOSFileActions(pasteboard: own, openSystemURL: { (url: URL) -> Void in
             opened.urls.append(url)
         })
-        let options = IOSLaunchOptions(arguments: ["CompleteScanner", IOSLaunchOptions.demoScannerArgument])
+        let options = IOSLaunchOptions(arguments: ["LazyScan", IOSLaunchOptions.demoScannerArgument])
         let state = AppState(backends: IOSShell.backends(options: options),
                              presetStore: PresetStore(directory: folder), fileActions: actions,
                              orientationScorer: ShellScorer(), barcodeReader: ShellBarcodes(),
@@ -415,7 +415,7 @@ final class IOSShellTests: XCTestCase {
 
     @MainActor
     func test_textKind_holdsAScannersPage_forTheQuickScanScreen() async throws {
-        let options = IOSLaunchOptions(arguments: ["CompleteScanner", IOSLaunchOptions.demoScannerArgument])
+        let options = IOSLaunchOptions(arguments: ["LazyScan", IOSLaunchOptions.demoScannerArgument])
         let state = AppState(backends: IOSShell.backends(options: options),
                              presetStore: PresetStore(directory: folder),
                              fileActions: IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in }),
@@ -474,7 +474,7 @@ final class IOSShellTests: XCTestCase {
     func test_emailFromSave_sendsThatSaveByEmail_andTheNextSaveAsTheSettingsSay() async throws {
         let actions = IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in },
                                      mailAvailable: { () -> Bool in true })
-        let options = IOSLaunchOptions(arguments: ["CompleteScanner", IOSLaunchOptions.demoScannerArgument])
+        let options = IOSLaunchOptions(arguments: ["LazyScan", IOSLaunchOptions.demoScannerArgument])
         let state = AppState(backends: IOSShell.backends(options: options),
                              presetStore: PresetStore(directory: folder), fileActions: actions,
                              orientationScorer: ShellScorer(), barcodeReader: ShellBarcodes(),

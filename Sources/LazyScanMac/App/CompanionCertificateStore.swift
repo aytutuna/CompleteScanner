@@ -11,14 +11,14 @@ import Security
 /// key, so the certificate is renewed with the same key `renewBefore` its end and every pin stays
 /// valid; only `renew` (Reset pairing) makes a new key. The key never leaves the keychain.
 final class CompanionCertificateStore: CompanionIdentity {
-    static let label = "CompleteScanner companion"
-    static let keyTag = Data("com.completescanner.companion".utf8)
+    static let label = "Lazy Scan companion"
+    static let keyTag = Data("com.lazyscan.companion".utf8)
     static let renewBefore: TimeInterval = 60 * 24 * 60 * 60
 
     private let hostName: String
     private let lock = NSLock()
 
-    /// `hostName` goes in the certificate's name ("Aytus-MacBook CompleteScanner").
+    /// `hostName` goes in the certificate's name ("Aytus-MacBook Lazy Scan").
     init(hostName: String) {
         self.hostName = hostName
     }

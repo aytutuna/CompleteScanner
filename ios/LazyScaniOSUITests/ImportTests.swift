@@ -126,7 +126,7 @@ final class ImportTests: XCTestCase {
         }
         // Several files go comma-separated, as `IOSLaunchOptions` reads them.
         let photos: [String] = Array(repeating: bytes.base64EncodedString(), count: count)
-        app.launchEnvironment["COMPLETESCANNER_IMPORT_FIXTURE"] = photos.joined(separator: ",")
+        app.launchEnvironment["LAZYSCAN_IMPORT_FIXTURE"] = photos.joined(separator: ",")
         app.launch()
         return app
     }

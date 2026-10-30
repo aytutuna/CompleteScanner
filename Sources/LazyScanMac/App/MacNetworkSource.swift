@@ -131,7 +131,7 @@ final class MacNetworkSource: CompanionNetworkSource, @unchecked Sendable {
     /// missing until the router is known, and on a network without one.
     private static func signatures() -> [String: String] {
         var found: [String: String] = [:]
-        guard let store = SCDynamicStoreCreate(nil, "CompleteScanner" as CFString, nil, nil) else { return found }
+        guard let store = SCDynamicStoreCreate(nil, "LazyScan" as CFString, nil, nil) else { return found }
         let pattern = SCDynamicStoreKeyCreateNetworkServiceEntity(nil, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4)
         guard let values = SCDynamicStoreCopyMultiple(store, nil, [pattern] as CFArray) as? [String: Any] else { return found }
         for value in values.values {

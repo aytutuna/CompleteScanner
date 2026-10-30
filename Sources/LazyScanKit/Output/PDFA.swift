@@ -86,7 +86,7 @@ public struct PDFWriteOptions: @unchecked Sendable {
 /// the archival option are here too. Twin of C# `PdfA`.
 public enum PDFA {
     /// What the file names as its producer and creator tool (pdf:Producer, xmp:CreatorTool).
-    public static let producer = "CompleteScanner"
+    public static let producer = "Lazy Scan"
 
     /// The output intent's condition: the color space of the embedded profile.
     public static let outputConditionIdentifier = "sRGB IEC61966-2.1"

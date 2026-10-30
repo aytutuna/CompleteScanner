@@ -576,12 +576,12 @@ public class PdfAppenderTests
 
     /// <summary>
     /// PDF/A files with pages added, for veraPDF in CI next to PdfATests' samples
-    /// (COMPLETESCANNER_PDFA_SAMPLES); without that folder they are written, read back and removed.
+    /// (LAZYSCAN_PDFA_SAMPLES); without that folder they are written, read back and removed.
     /// </summary>
     [Fact]
     public void PdfA_ValidationSamples()
     {
-        string? samples = Environment.GetEnvironmentVariable("COMPLETESCANNER_PDFA_SAMPLES");
+        string? samples = Environment.GetEnvironmentVariable("LAZYSCAN_PDFA_SAMPLES");
         bool keep = !string.IsNullOrWhiteSpace(samples);
         string dir = keep ? samples! : Path.Combine(Path.GetTempPath(), $"PdfAppenderTests-{Guid.NewGuid()}");
         Directory.CreateDirectory(dir);

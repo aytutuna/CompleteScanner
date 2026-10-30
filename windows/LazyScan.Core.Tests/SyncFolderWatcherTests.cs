@@ -20,8 +20,8 @@ public sealed class SyncFolderWatcherTests : IDisposable
 
     public SyncFolderWatcherTests()
     {
-        _root = Path.Combine(Path.GetTempPath(), "CompleteScannerTests-" + Guid.NewGuid().ToString("N"));
-        _folder = Path.Combine(_root, "OneDrive", "CompleteScanner");
+        _root = Path.Combine(Path.GetTempPath(), "LazyScanTests-" + Guid.NewGuid().ToString("N"));
+        _folder = Path.Combine(_root, "OneDrive", "Lazy Scan");
         Directory.CreateDirectory(_folder);
         _devices = new PairedDeviceStore(_root);
         _inbox = new CompanionInbox(Path.Combine(_root, "Inbox"));

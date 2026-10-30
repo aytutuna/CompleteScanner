@@ -24,7 +24,7 @@ public enum SyncPackageError: Error, Equatable, LocalizedError, Sendable {
     }
 }
 
-/// A `.csdoc` package sealed for the cloud sync folder (C2): what a phone writes into a folder the user
+/// A `.lsdoc` package sealed for the cloud sync folder (C2): what a phone writes into a folder the user
 /// syncs (iCloud Drive, OneDrive) when the desktop cannot be reached, as "<packageId>.cssync". The bytes
 /// are `magic`, a 16-byte header (version, target, two reserved zero bytes, the 12-byte nonce) and the
 /// package encrypted with AES-256-GCM under the sync key the desktop handed out at pairing, its 16-byte
@@ -43,7 +43,7 @@ public enum SyncPackage {
     /// The largest file opened: a package as large as an upload may be, plus the framing.
     public static var maxFileBytes: Int { CompanionProtocol.maxUploadBytes + 64 }
 
-    /// `plaintext` (a `.csdoc`) sealed under `key` with `nonce` (a random one when nil). Throws
+    /// `plaintext` (a `.lsdoc`) sealed under `key` with `nonce` (a random one when nil). Throws
     /// `SyncPackageError.tooLarge` for a package larger than an upload may be.
     public static func seal(packageId: String, phoneId: String, target: CompanionTarget, plaintext: Data, key: Data,
                             nonce: Data? = nil) throws -> Data {

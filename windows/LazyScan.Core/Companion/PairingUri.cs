@@ -9,11 +9,11 @@ namespace LazyScan.Core;
 /// <summary>Why a scanned code is not a pairing code this app can use.</summary>
 public enum PairingUriErrorKind
 {
-    /// <summary>Not a CompleteScanner pairing code at all (another app's QR code, a web address).</summary>
+    /// <summary>Not a Lazy Scan pairing code at all (another app's QR code, a web address).</summary>
     NotPairingCode,
     /// <summary>A pairing code of a newer protocol version than this app speaks.</summary>
     NewerVersion,
-    /// <summary>A CompleteScanner pairing code with a missing or malformed part.</summary>
+    /// <summary>A Lazy Scan pairing code with a missing or malformed part.</summary>
     Damaged,
 }
 
@@ -25,7 +25,7 @@ public sealed class PairingUriException(PairingUriErrorKind kind, string message
 
 /// <summary>
 /// What the desktop's QR code carries so a phone can pair with it, as a URI:
-/// <c>completescanner://pair?v=1&amp;id=…&amp;n=…&amp;fp=…&amp;a=…&amp;p=…&amp;t=…</c>: the protocol
+/// <c>lazyscan://pair?v=1&amp;id=…&amp;n=…&amp;fp=…&amp;a=…&amp;p=…&amp;t=…</c>: the protocol
 /// version, the desktop's id and name, its certificate's <see cref="SpkiFingerprint"/> (base64url),
 /// the addresses it listens on (comma-separated, each percent-encoded), its port and the pairing
 /// session's one-time token (base64url of 16 bytes). Values are percent-encoded UTF-8 (everything but
@@ -34,8 +34,8 @@ public sealed class PairingUriException(PairingUriErrorKind kind, string message
 public sealed record PairingUri(string DesktopId, string Name, string Fingerprint, IReadOnlyList<string> Addresses,
                                 int Port, string Token)
 {
-    public const string Scheme = "completescanner";
-    public const string Prefix = "completescanner://pair?";
+    public const string Scheme = "lazyscan";
+    public const string Prefix = "lazyscan://pair?";
     /// <summary>The longest code read, in UTF-8 bytes.</summary>
     public const int MaxLength = 2048;
     public const int MaxAddresses = 8;

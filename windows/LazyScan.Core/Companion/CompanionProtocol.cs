@@ -20,7 +20,7 @@ namespace LazyScan.Core;
 /// <item><c>POST /v1/pair</c>: the one call an unpaired phone may make, with the pairing code's token
 /// (<see cref="PairRequest"/> → <see cref="PairResponse"/>).</item>
 /// <item><c>GET /v1/hello</c>: the desktop's name, its queue and its upload limit (<see cref="HelloResponse"/>).</item>
-/// <item><c>PUT /v1/inbox/{packageId}</c>: a <c>.csdoc</c> package (<see cref="CompanionPackage"/>),
+/// <item><c>PUT /v1/inbox/{packageId}</c>: a <c>.lsdoc</c> package (<see cref="CompanionPackage"/>),
 /// idempotent by package id (<see cref="InboxResponse"/>); <c>X-Target: new|current</c>.</item>
 /// <item><c>GET /v1/outbox[?wait=seconds]</c>, <c>GET /v1/outbox/{id}</c> (the file),
 /// <c>DELETE /v1/outbox/{id}</c>: what the desktop sends the phone (<see cref="OutboxList"/>).</item>
@@ -33,9 +33,9 @@ public static class CompanionProtocol
     /// <summary>The protocol version, in the pairing code and every response.</summary>
     public const int Version = 1;
     /// <summary>The DNS-SD service type the desktop advertises while it receives.</summary>
-    public const string ServiceType = "_completescan._tcp";
+    public const string ServiceType = "_lazyscan._tcp";
     /// <summary>The <c>service</c> value of <see cref="HealthResponse"/>.</summary>
-    public const string ServiceName = "completescanner";
+    public const string ServiceName = "lazyscan";
     /// <summary>The port the desktop tries first; another free one is used when it is taken.</summary>
     public const int DefaultPort = 52731;
 
@@ -54,7 +54,7 @@ public static class CompanionProtocol
     /// <summary>Where an upload goes: <c>new</c> (a document of its own, the default) or <c>current</c>.</summary>
     public const string TargetHeader = "X-Target";
     public const string JsonContentType = "application/json; charset=utf-8";
-    public const string PackageContentType = "application/vnd.completescanner.document";
+    public const string PackageContentType = "application/vnd.lazyscan.document";
 
     /// <summary>The largest JSON request body (a pairing request).</summary>
     public const int MaxJsonBodyBytes = 8192;
@@ -325,7 +325,7 @@ public sealed record HealthResponse(int ProtocolVersion, bool Paired)
         $"{{\"service\":{CompanionPackage.Quote(CompanionProtocol.ServiceName)}"
         + $",\"protocolVersion\":{CompanionProtocol.Integer(ProtocolVersion)},\"paired\":{CompanionProtocol.Bool(Paired)}}}";
 
-    /// <summary>Null unless the body says it is CompleteScanner's.</summary>
+    /// <summary>Null unless the body says it is Lazy Scan's.</summary>
     public static HealthResponse? FromJson(ReadOnlySpan<byte> json) =>
         CompanionProtocol.Decode<Dto>(json) is { } dto && dto.Service == CompanionProtocol.ServiceName
             ? new HealthResponse(dto.ProtocolVersion, dto.Paired)

@@ -7,7 +7,7 @@ import XCTest
 // DocAligner's FastViT-T8 on the SmartDoc frames in Tests/Fixtures/Pages, with Core ML in front and on the
 // CPU alone: every corner within 1.5 % of the photo's diagonal of the ground truth, and the photo import
 // taking the page. Skipped when scripts/fetch_docaligner.sh has not fetched the model, unless
-// COMPLETESCANNER_REQUIRE_CORNER_MODEL=1 (CI fetches it), where a missing model fails.
+// LAZYSCAN_REQUIRE_CORNER_MODEL=1 (CI fetches it), where a missing model fails.
 
 final class FastViTCornerModelTests: XCTestCase {
     /// The farthest a corner may lie from the ground truth, as a share of the photo's diagonal.
@@ -27,7 +27,7 @@ final class FastViTCornerModelTests: XCTestCase {
 
     func testFastViTFindsEveryPageWithinOnePointFivePercentOfTheDiagonal() throws {
         guard FastViTCornerModel.isAvailable else {
-            if ProcessInfo.processInfo.environment["COMPLETESCANNER_REQUIRE_CORNER_MODEL"] == "1" {
+            if ProcessInfo.processInfo.environment["LAZYSCAN_REQUIRE_CORNER_MODEL"] == "1" {
                 XCTFail("The corner model is not in LazyScanModel's bundle")
                 return
             }

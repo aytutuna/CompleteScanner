@@ -25,7 +25,7 @@ public sealed class SyncPackageException(SyncPackageErrorKind kind, string messa
 }
 
 /// <summary>
-/// A <c>.csdoc</c> package sealed for the cloud sync folder (C2): what a phone writes into a folder
+/// A <c>.lsdoc</c> package sealed for the cloud sync folder (C2): what a phone writes into a folder
 /// the user syncs (iCloud Drive, OneDrive) when the desktop cannot be reached, as
 /// "&lt;packageId&gt;.cssync". The bytes are <see cref="Magic"/>, a 16-byte header (version, target,
 /// two reserved zero bytes, the 12-byte nonce) and the package encrypted with AES-256-GCM under the
@@ -49,7 +49,7 @@ public static class SyncPackage
     public static long MaxFileBytes => CompanionProtocol.MaxUploadBytes + 64;
 
     /// <summary>
-    /// <paramref name="plaintext"/> (a <c>.csdoc</c>) sealed under <paramref name="key"/> with a random
+    /// <paramref name="plaintext"/> (a <c>.lsdoc</c>) sealed under <paramref name="key"/> with a random
     /// nonce. Throws <see cref="SyncPackageException"/> for a package larger than an upload may be.
     /// </summary>
     public static byte[] Seal(string packageId, string phoneId, CompanionTarget target, ReadOnlySpan<byte> plaintext,

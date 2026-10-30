@@ -13,7 +13,7 @@ final class PairingUriTests: XCTestCase {
     }
 
     private let sampleText =
-        "completescanner://pair?v=1&id=0123456789abcdef0123456789abcdef&n=Aytu%27s%20PC"
+        "lazyscan://pair?v=1&id=0123456789abcdef0123456789abcdef&n=Aytu%27s%20PC"
             + "&fp=R1STe1-AgDTWPVEg6ThZ8R9D7-BwgdO6tHmWcwlDMS4&a=192.168.1.20,fd00%3A%3A1&p=52731&t=AAECAwQFBgcICQoLDA0ODw"
 
     private func assertRefused(_ kind: PairingUriErrorKind, _ text: String, file: StaticString = #filePath, line: UInt = #line) {
@@ -45,7 +45,7 @@ final class PairingUriTests: XCTestCase {
     }
 
     func testParse_IgnoresUnknownPartsAndTheSchemesCase() throws {
-        let upper = sampleText.replacingOccurrences(of: "completescanner://pair?", with: "CompleteScanner://PAIR?") + "&later=1&x"
+        let upper = sampleText.replacingOccurrences(of: "lazyscan://pair?", with: "LazyScan://PAIR?") + "&later=1&x"
         XCTAssertEqual(try PairingUri.parse(upper), sample())
         XCTAssertEqual(try PairingUri.parse(sampleText.replacingOccurrences(of: "&p=", with: "&&p=")), sample())
     }
@@ -57,16 +57,16 @@ final class PairingUriTests: XCTestCase {
     }
 
     func testParse_RefusesNewerVersions() {
-        assertRefused(.newerVersion, "completescanner://pair?v=2")
+        assertRefused(.newerVersion, "lazyscan://pair?v=2")
         assertRefused(.newerVersion, sampleText.replacingOccurrences(of: "v=1", with: "v=17"))
-        XCTAssertThrowsError(try PairingUri.parse("completescanner://pair?v=2")) { error in
+        XCTAssertThrowsError(try PairingUri.parse("lazyscan://pair?v=2")) { error in
             XCTAssertEqual((error as? PairingUriError)?.message, PairingUri.newerVersionMessage)
         }
     }
 
     func testParse_RefusesDamagedCodes() {
-        for text in ["completescanner:pair?v=1", "completescanner://other?v=1", "completescanner://pair",
-                     "completescanner://pair?v=0", "completescanner://pair?v=one", "completescanner://pair?id=x"] {
+        for text in ["lazyscan:pair?v=1", "lazyscan://other?v=1", "lazyscan://pair",
+                     "lazyscan://pair?v=0", "lazyscan://pair?v=one", "lazyscan://pair?id=x"] {
             assertRefused(.damaged, text)
         }
     }

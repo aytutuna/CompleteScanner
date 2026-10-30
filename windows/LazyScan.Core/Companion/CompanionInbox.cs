@@ -26,7 +26,7 @@ public sealed class ReceivedLog
 /// Where uploads from paired phones land (one folder per phone under the inbox folder). A body is
 /// streamed to "&lt;id&gt;.part", must be exactly as long as announced, is read in full as a
 /// <see cref="CompanionPackage"/> (through <see cref="ZipStoreReader"/>: every picture's checksum and
-/// format checked) and only then renamed to "&lt;id&gt;.csdoc" and logged in received.json, so a
+/// format checked) and only then renamed to "&lt;id&gt;.lsdoc" and logged in received.json, so a
 /// package is either received whole and valid or not at all. Uploads are idempotent by package id:
 /// one received before is answered from the log (the last <see cref="MaxLoggedPackages"/> per phone),
 /// and the same id cannot be received twice at once. Ids are checked by
@@ -46,10 +46,10 @@ public sealed class CompanionInbox
         _directory = directory;
     }
 
-    /// <summary>The default inbox: %LOCALAPPDATA%\CompleteScanner\Companion\Inbox.</summary>
+    /// <summary>The default inbox: %LOCALAPPDATA%\Lazy Scan\Companion\Inbox.</summary>
     public static string DefaultDirectory =>
         System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                               "CompleteScanner", "Companion", "Inbox");
+                               "Lazy Scan", "Companion", "Inbox");
 
     /// <summary>The package <paramref name="packageId"/> received from <paramref name="deviceId"/> before; null when it was not.</summary>
     public ReceivedEntry? Find(string deviceId, string packageId)

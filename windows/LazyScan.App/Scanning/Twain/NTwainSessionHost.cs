@@ -37,8 +37,8 @@ internal sealed class NTwainSessionHost
             var version = typeof(NTwainSessionHost).Assembly.GetName().Version ?? new Version(1, 0);
             // StopOnTransferError stays off: with it on, NTwain 3.7 resets the pending transfers
             // after every finished one (TWRC_XFERDONE), ending feeder batches after one sheet.
-            _session ??= new TwainSession(TWIdentity.Create(DataGroups.Image, version, "CompleteScanner",
-                                                            "CompleteScanner", "CompleteScanner", "CompleteScanner"));
+            _session ??= new TwainSession(TWIdentity.Create(DataGroups.Image, version, "Lazy Scan",
+                                                            "Lazy Scan", "Lazy Scan", "Lazy Scan"));
             return _session.Open() == ReturnCode.Success ? TwainAvailability.Available : TwainAvailability.Failed;
         }
         catch (Exception e) when (e is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)

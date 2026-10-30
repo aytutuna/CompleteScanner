@@ -15,7 +15,7 @@ namespace LazyScan.App.Services.Companion;
 public sealed class CompanionCertificateStore
 {
     /// <summary>The friendly name that marks the app's certificate in the store.</summary>
-    public const string FriendlyName = "CompleteScanner phone link";
+    public const string FriendlyName = "Lazy Scan phone link";
     /// <summary>How long a certificate is valid (Apple's limit for TLS server certificates).</summary>
     public static readonly TimeSpan Validity = TimeSpan.FromDays(825);
     /// <summary>A certificate is renewed (same key) when it has less than this left.</summary>
@@ -130,7 +130,7 @@ public sealed class CompanionCertificateStore
         bool added = false;
         try
         {
-            var request = new CertificateRequest($"CN={Environment.MachineName} CompleteScanner", signing, HashAlgorithmName.SHA256);
+            var request = new CertificateRequest($"CN={Environment.MachineName} Lazy Scan", signing, HashAlgorithmName.SHA256);
             request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
             request.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
             request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid("1.3.6.1.5.5.7.3.1")], false));
@@ -163,7 +163,7 @@ public sealed class CompanionCertificateStore
             KeyCreationOptions = CngKeyCreationOptions.None,
             KeyUsage = CngKeyUsages.Signing,
         };
-        var key = CngKey.Create(CngAlgorithm.ECDsaP256, "CompleteScanner-" + Guid.NewGuid().ToString("N"), parameters);
+        var key = CngKey.Create(CngAlgorithm.ECDsaP256, "LazyScan-" + Guid.NewGuid().ToString("N"), parameters);
         return new ECDsaCng(key);
     }
 

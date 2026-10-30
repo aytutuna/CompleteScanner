@@ -18,16 +18,16 @@ namespace LazyScan.App.Tests;
 
 /// <summary>
 /// A test that adds a certificate and a key to a store of the user's own (named for the tests) and
-/// removes them again. It runs where COMPLETESCANNER_CERT_STORE_TESTS=1 (CI); elsewhere it is
+/// removes them again. It runs where LAZYSCAN_CERT_STORE_TESTS=1 (CI); elsewhere it is
 /// skipped, so a developer's certificate stores are left alone.
 /// </summary>
 public sealed class CertificateStoreFactAttribute : FactAttribute
 {
     public CertificateStoreFactAttribute()
     {
-        if (Environment.GetEnvironmentVariable("COMPLETESCANNER_CERT_STORE_TESTS") != "1")
+        if (Environment.GetEnvironmentVariable("LAZYSCAN_CERT_STORE_TESTS") != "1")
         {
-            Skip = "Set COMPLETESCANNER_CERT_STORE_TESTS=1 to let this test use a certificate store of its own.";
+            Skip = "Set LAZYSCAN_CERT_STORE_TESTS=1 to let this test use a certificate store of its own.";
         }
     }
 }
@@ -112,12 +112,12 @@ public class CompanionAppTests
     [Fact]
     public void FirewallState_JudgesTheNetworksReceivedOn()
     {
-        const string app = @"C:\Program Files\CompleteScanner\LazyScan.exe";
+        const string app = @"C:\Program Files\Lazy Scan\LazyScan.exe";
         // Allowed for Private at the firewall's question, which blocks Public; a public virtual switch is connected too.
         FirewallRule[] rules =
         [
-            new("CompleteScanner", app, true, true, true, FirewallProfiles.Private, 6, "*"),
-            new("CompleteScanner", app, true, false, true, FirewallProfiles.Public, 6, "*"),
+            new("Lazy Scan", app, true, true, true, FirewallProfiles.Private, 6, "*"),
+            new("Lazy Scan", app, true, false, true, FirewallProfiles.Public, 6, "*"),
         ];
         var state = new FirewallState(true, FirewallProfiles.Private | FirewallProfiles.Public, true, rules,
                                       FirewallProfiles.Domain | FirewallProfiles.Private | FirewallProfiles.Public);
@@ -125,7 +125,7 @@ public class CompanionAppTests
         Assert.Equal(CompanionFirewallVerdict.Allowed, state.Verdict(app, 52731, FirewallProfiles.Private));
         Assert.Empty(state.BlockingRules(app, FirewallProfiles.Private));
         Assert.Equal(CompanionFirewallVerdict.Blocked, state.Verdict(app, 52731, FirewallProfiles.Public));
-        Assert.Equal(["CompleteScanner"], state.BlockingRules(app, FirewallProfiles.Public));
+        Assert.Equal(["Lazy Scan"], state.BlockingRules(app, FirewallProfiles.Public));
         // The firewall off for the profile received on.
         var privateOff = state with { EnabledProfiles = FirewallProfiles.Public };
         Assert.Equal(CompanionFirewallVerdict.Off, privateOff.Verdict(app, 52731, FirewallProfiles.Private));
@@ -138,7 +138,7 @@ public class CompanionAppTests
     public void FirewallReader_ReadsWithoutChangingAnything()
     {
         // A program that has no rules: whatever the firewall says, nothing is about it.
-        string path = Path.Combine(Path.GetTempPath(), "CompleteScanner-no-such-program-" + Guid.NewGuid().ToString("N") + ".exe");
+        string path = Path.Combine(Path.GetTempPath(), "LazyScan-no-such-program-" + Guid.NewGuid().ToString("N") + ".exe");
         var state = FirewallReader.Read(path);
         Assert.Empty(state.Rules);
         if (state.Read)
@@ -167,7 +167,7 @@ public class CompanionAppTests
     [CertificateStoreFact]
     public async Task Certificate_IsKeptRenewedWithItsKeyAndServesTls()
     {
-        const string storeName = "CompleteScannerTests";
+        const string storeName = "LazyScanTests";
         var store = new CompanionCertificateStore(storeName, StoreLocation.CurrentUser);
         try
         {
@@ -219,7 +219,7 @@ public class CompanionAppTests
     [CertificateStoreFact]
     public void Certificate_KeepsTheOldOneWhenNoNewKeyCanBeMade()
     {
-        const string storeName = "CompleteScannerTestsRenew";
+        const string storeName = "LazyScanTestsRenew";
         var store = new CompanionCertificateStore(storeName, StoreLocation.CurrentUser);
         try
         {

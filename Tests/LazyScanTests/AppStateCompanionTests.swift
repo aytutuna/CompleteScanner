@@ -246,7 +246,7 @@ final class AppStateCompanionTests: XCTestCase {
         XCTAssertEqual(put.header(CompanionProtocol.targetHeader), "new")
         XCTAssertEqual(try CompanionPackage.read(put.body).pages.count, 2)
         let left = try FileManager.default.contentsOfDirectory(atPath: companionFolder.appendingPathComponent("Outbox").path)
-        XCTAssertEqual(left.filter { $0.hasSuffix(".csdoc") }, [])
+        XCTAssertEqual(left.filter { $0.hasSuffix(".lsdoc") }, [])
     }
 
     @MainActor
@@ -287,7 +287,7 @@ final class AppStateCompanionTests: XCTestCase {
             return .json(201, InboxResponse(packageId: id, pageCount: 1, duplicate: false).toJSON())
         }
         let outbox = try XCTUnwrap(state.companionOutbox)
-        let file = folder.appendingPathComponent("For another.csdoc")
+        let file = folder.appendingPathComponent("For another.lsdoc")
         try Data("package".utf8).write(to: file)
         try outbox.enqueue(file, target: .new, desktopId: "desk-0002-other")
 
@@ -367,7 +367,7 @@ final class AppStateCompanionTests: XCTestCase {
         let state = try await makeState()
         try await pair(state, with: fake)
         let package = try receipt()
-        let item = OutboxItem(id: "item-0001-abcd", name: "Receipt.csdoc", contentType: CompanionProtocol.packageContentType,
+        let item = OutboxItem(id: "item-0001-abcd", name: "Receipt.lsdoc", contentType: CompanionProtocol.packageContentType,
                               byteCount: package.count, created: Date(timeIntervalSince1970: 1_790_000_000))
         fake.on("GET " + CompanionProtocol.outboxPath,
                 .json(200, OutboxList(items: [item]).toJSON()),
@@ -389,7 +389,7 @@ final class AppStateCompanionTests: XCTestCase {
         XCTAssertEqual(PairedDesktopStore(directory: companionFolder, secrets: secrets).load()?.received, [item.id])
         try await waitUntil(timeout: 30) { state.pendingPackage != nil }
         let offered = try XCTUnwrap(state.pendingPackage)
-        XCTAssertEqual(offered.fileName, "Receipt.csdoc")
+        XCTAssertEqual(offered.fileName, "Receipt.lsdoc")
         XCTAssertEqual(offered.pageCount, 1)
         XCTAssertEqual(fake.requests("GET " + CompanionProtocol.outboxPath).first?.query, "wait=25")
         var keys: [String] = []
@@ -400,7 +400,7 @@ final class AppStateCompanionTests: XCTestCase {
                               "DELETE " + CompanionProtocol.outboxPrefix + item.id])
         // The file stays until the offer is answered: the desktop has let go of it.
         let inbox = companionFolder.appendingPathComponent("Inbox")
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: inbox.path), ["Receipt.csdoc"])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: inbox.path), ["Receipt.lsdoc"])
         state.dismissPendingPackage()
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: inbox.path), [])
     }
@@ -412,9 +412,9 @@ final class AppStateCompanionTests: XCTestCase {
         try await pair(state, with: fake)
         let package = try receipt()
         let type = CompanionProtocol.packageContentType
-        let first = OutboxItem(id: "item-0001-abcd", name: "First.csdoc", contentType: type, byteCount: package.count,
+        let first = OutboxItem(id: "item-0001-abcd", name: "First.lsdoc", contentType: type, byteCount: package.count,
                                created: Date(timeIntervalSince1970: 1_790_000_000))
-        let second = OutboxItem(id: "item-0002-abcd", name: "Second.csdoc", contentType: type, byteCount: package.count,
+        let second = OutboxItem(id: "item-0002-abcd", name: "Second.lsdoc", contentType: type, byteCount: package.count,
                                 created: Date(timeIntervalSince1970: 1_790_000_060))
         fake.on("GET " + CompanionProtocol.outboxPath,
                 .json(200, OutboxList(items: [first, second]).toJSON()),
@@ -428,10 +428,10 @@ final class AppStateCompanionTests: XCTestCase {
             !fake.requests("DELETE " + CompanionProtocol.outboxPrefix + second.id).isEmpty && state.pendingPackage != nil
         }
 
-        XCTAssertEqual(state.pendingPackage?.fileName, "First.csdoc")
+        XCTAssertEqual(state.pendingPackage?.fileName, "First.lsdoc")
         state.dismissPendingPackage()
         try await waitUntil(timeout: 30) { state.pendingPackage != nil }
-        XCTAssertEqual(state.pendingPackage?.fileName, "Second.csdoc")
+        XCTAssertEqual(state.pendingPackage?.fileName, "Second.lsdoc")
         state.dismissPendingPackage()
         let inbox = companionFolder.appendingPathComponent("Inbox")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: inbox.path), [])

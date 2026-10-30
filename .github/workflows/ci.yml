@@ -32,7 +32,7 @@ jobs:
             & $script -Channel 10.0 -Runtime windowsdesktop -Architecture x86 -InstallDir $root -NoPath
           }
           Get-ChildItem (Join-Path $root 'shared\Microsoft.WindowsDesktop.App') | Select-Object -ExpandProperty Name
-      # WIA's tests ask the real WIA Automation (COMPLETESCANNER_REQUIRE_WIA below). The image's
+      # WIA's tests ask the real WIA Automation (LAZYSCAN_REQUIRE_WIA below). The image's
       # Windows Image Acquisition service (stisvc) is left stopped if it is: asking WIA starts it,
       # as the app relies on. Only a disabled one is set to Manual, so it can be started that way.
       - name: Show the WIA service
@@ -57,15 +57,15 @@ jobs:
         run: dotnet test windows/LazyScan.sln -c Release --no-build
         env:
           # The helper's tests must run here, never be skipped for a missing runtime.
-          COMPLETESCANNER_REQUIRE_TWAIN_HELPER: '1'
+          LAZYSCAN_REQUIRE_TWAIN_HELPER: '1'
           # PdfATests.Archival_ValidationSamples keeps the PDF/A files it writes here, for veraPDF.
-          COMPLETESCANNER_PDFA_SAMPLES: ${{ runner.temp }}\pdfa-samples
+          LAZYSCAN_PDFA_SAMPLES: ${{ runner.temp }}\pdfa-samples
           # The phone link's certificate test uses a certificate store of its own; on the runner only.
-          COMPLETESCANNER_CERT_STORE_TESTS: '1'
+          LAZYSCAN_CERT_STORE_TESTS: '1'
           # WIA's tests must ask the real WIA here, never be skipped.
-          COMPLETESCANNER_REQUIRE_WIA: '1'
+          LAZYSCAN_REQUIRE_WIA: '1'
           # The corner model was fetched above; its test must find it, never be skipped.
-          COMPLETESCANNER_REQUIRE_CORNER_MODEL: '1'
+          LAZYSCAN_REQUIRE_CORNER_MODEL: '1'
       - name: Show the WIA service after the tests
         if: always()
         shell: pwsh
@@ -155,9 +155,9 @@ jobs:
         env:
           # PDFATests.test_archival_validationSamples keeps the PDF/A files the Swift writer makes here,
           # for veraPDF below.
-          COMPLETESCANNER_PDFA_SAMPLES: ${{ runner.temp }}/pdfa-samples
+          LAZYSCAN_PDFA_SAMPLES: ${{ runner.temp }}/pdfa-samples
           # The corner model was fetched above; its test must find it, never be skipped.
-          COMPLETESCANNER_REQUIRE_CORNER_MODEL: '1'
+          LAZYSCAN_REQUIRE_CORNER_MODEL: '1'
       # The same pinned veraPDF as the Windows job checks the Swift writer's PDF/A files. It is
       # downloaded here only, pinned to one release and its SHA-256, and never shipped; installed from
       # its release installer the way the official Docker image's Dockerfile does it.
@@ -283,7 +283,7 @@ jobs:
       - name: Test on the iOS Simulator
         env:
           # As in the macOS job; TEST_RUNNER_ variables reach the tests without the prefix.
-          TEST_RUNNER_COMPLETESCANNER_REQUIRE_CORNER_MODEL: '1'
+          TEST_RUNNER_LAZYSCAN_REQUIRE_CORNER_MODEL: '1'
         run: |
           set -o pipefail
           xcodebuild test             -scheme LazyScan-Package             -configuration Release             -destination "platform=iOS Simulator,id=${{ steps.simulator.outputs.udid }}"             -resultBundlePath "$RUNNER_TEMP/ios-tests.xcresult"             ENABLE_TESTABILITY=YES             CODE_SIGNING_ALLOWED=NO
@@ -440,7 +440,7 @@ jobs:
           PY
       - name: Test on the iOS 18 Simulator
         env:
-          TEST_RUNNER_COMPLETESCANNER_REQUIRE_CORNER_MODEL: '1'
+          TEST_RUNNER_LAZYSCAN_REQUIRE_CORNER_MODEL: '1'
         run: |
           set -o pipefail
           xcodebuild test \

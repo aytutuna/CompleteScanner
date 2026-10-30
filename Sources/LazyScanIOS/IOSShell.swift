@@ -18,7 +18,7 @@ public struct IOSLaunchOptions: Equatable, Sendable {
     /// The launch argument that imports the photo in `importFixtureVariable` at launch.
     public static let importFixtureArgument = "-importFixture"
     /// The environment variable holding that photo's bytes, base64.
-    public static let importFixtureVariable = "COMPLETESCANNER_IMPORT_FIXTURE"
+    public static let importFixtureVariable = "LAZYSCAN_IMPORT_FIXTURE"
     /// The name the photo imported at launch is shown with.
     public static let importFixtureName = "fixture.png"
     /// The name a PDF imported at launch is shown with.
@@ -442,7 +442,7 @@ public enum IOSShell {
         "The preset \u{201C}\(name)\u{201D} does not collect pages."
     }
 
-    /// "“Trip.csdoc” opens in their place."
+    /// "“Trip.lsdoc” opens in their place."
     public static func keepPagesReason(package fileName: String) -> String {
         "\u{201C}\(fileName)\u{201D} opens in their place."
     }
@@ -499,22 +499,22 @@ public enum IOSShell {
         state.startTask(.document)
     }
 
-    /// The `.csdoc` type the app declares (Info.plist's UTExportedTypeDeclarations), which Files offers
+    /// The `.lsdoc` type the app declares (Info.plist's UTExportedTypeDeclarations), which Files offers
     /// beside photos and PDFs.
-    public static let packageType: UTType = UTType(exportedAs: "com.completescanner.package", conformingTo: .data)
+    public static let packageType: UTType = UTType(exportedAs: "com.lazyscan.package", conformingTo: .data)
 
-    /// The Save row's button that shares the queue as one `.csdoc` (`sharePackage`).
+    /// The Save row's button that shares the queue as one `.lsdoc` (`sharePackage`).
     public static let sharePackageLabel = "Share as Lazy Scan document"
     /// The package banner's Open as new in a kind that keeps no pages: it switches to Document first.
     public static let openPackageInDocumentLabel = "Open in Document"
 
-    /// Whether a file opened in this app (AirDrop, Files, Mail) or picked in Files is a CompleteScanner
+    /// Whether a file opened in this app (AirDrop, Files, Mail) or picked in Files is a Lazy Scan
     /// document: it goes to the scan screen's banner (`openPackage`), never into a task's import.
     public static func isPackage(_ url: URL) -> Bool {
         url.pathExtension.lowercased() == CompanionPackage.fileExtension
     }
 
-    /// Offers the `.csdoc` at `url` on the scan screen's banner (`AppState.openPackage(at:)`). It is copied
+    /// Offers the `.lsdoc` at `url` on the scan screen's banner (`AppState.openPackage(at:)`). It is copied
     /// into a folder of its own first, through its security scope and a coordinated read: the package is
     /// read a picture at a time while its pages are decoded, and a file opened in place may be another
     /// app's (iCloud Drive, a file provider). The copy goes once it is read.
@@ -563,12 +563,12 @@ public enum IOSShell {
         return copy
     }
 
-    /// The folder the queue is written in to be shared, emptied before each `.csdoc` is written.
+    /// The folder the queue is written in to be shared, emptied before each `.lsdoc` is written.
     static var packageShareFolder: URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("Shared documents", isDirectory: true)
     }
 
-    /// Share as Lazy Scan document: the queue written as one `.csdoc` in `packageShareFolder`
+    /// Share as Lazy Scan document: the queue written as one `.lsdoc` in `packageShareFolder`
     /// (`AppState.exportPackage(to:)`, named as the next saved file would be), then the share sheet with
     /// it. Returns the file; nil when it could not be written, which the error alert says.
     @MainActor

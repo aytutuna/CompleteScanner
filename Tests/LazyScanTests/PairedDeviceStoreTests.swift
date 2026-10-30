@@ -11,7 +11,7 @@ final class PairedDeviceStoreTests: XCTestCase {
     private var directory: URL!
 
     override func setUpWithError() throws {
-        directory = FileManager.default.temporaryDirectory.appendingPathComponent("CompleteScannerTests-\(UUID().uuidString)")
+        directory = FileManager.default.temporaryDirectory.appendingPathComponent("LazyScanTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 

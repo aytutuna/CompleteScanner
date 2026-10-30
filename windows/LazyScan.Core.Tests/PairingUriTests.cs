@@ -13,7 +13,7 @@ public class PairingUriTests
         new(DesktopId, "Aytu's PC", CompanionVectors.FingerprintText, ["192.168.1.20", "fd00::1"], 52731, CompanionVectors.TokenText);
 
     private const string SampleText =
-        "completescanner://pair?v=1&id=0123456789abcdef0123456789abcdef&n=Aytu%27s%20PC"
+        "lazyscan://pair?v=1&id=0123456789abcdef0123456789abcdef&n=Aytu%27s%20PC"
         + "&fp=R1STe1-AgDTWPVEg6ThZ8R9D7-BwgdO6tHmWcwlDMS4&a=192.168.1.20,fd00%3A%3A1&p=52731&t=AAECAwQFBgcICQoLDA0ODw";
 
     [Fact]
@@ -45,7 +45,7 @@ public class PairingUriTests
     [Fact]
     public void Parse_IgnoresUnknownPartsAndTheSchemesCase()
     {
-        var code = PairingUri.Parse(SampleText.Replace("completescanner://pair?", "CompleteScanner://PAIR?") + "&later=1&x");
+        var code = PairingUri.Parse(SampleText.Replace("lazyscan://pair?", "LazyScan://PAIR?") + "&later=1&x");
         Assert.Equal(Sample(), code);
         Assert.Equal(Sample(), PairingUri.Parse(SampleText.Replace("&p=", "&&p=")));
     }
@@ -59,19 +59,19 @@ public class PairingUriTests
     [Fact]
     public void Parse_RefusesNewerVersions()
     {
-        AssertRefused(PairingUriErrorKind.NewerVersion, "completescanner://pair?v=2");
+        AssertRefused(PairingUriErrorKind.NewerVersion, "lazyscan://pair?v=2");
         AssertRefused(PairingUriErrorKind.NewerVersion, SampleText.Replace("v=1", "v=17"));
         Assert.Equal(PairingUri.NewerVersionMessage,
-                     Assert.Throws<PairingUriException>(() => PairingUri.Parse("completescanner://pair?v=2")).Message);
+                     Assert.Throws<PairingUriException>(() => PairingUri.Parse("lazyscan://pair?v=2")).Message);
     }
 
     [Theory]
-    [InlineData("completescanner:pair?v=1")]
-    [InlineData("completescanner://other?v=1")]
-    [InlineData("completescanner://pair")]
-    [InlineData("completescanner://pair?v=0")]
-    [InlineData("completescanner://pair?v=one")]
-    [InlineData("completescanner://pair?id=x")]
+    [InlineData("lazyscan:pair?v=1")]
+    [InlineData("lazyscan://other?v=1")]
+    [InlineData("lazyscan://pair")]
+    [InlineData("lazyscan://pair?v=0")]
+    [InlineData("lazyscan://pair?v=one")]
+    [InlineData("lazyscan://pair?id=x")]
     public void Parse_RefusesDamagedCodes(string text) => AssertRefused(PairingUriErrorKind.Damaged, text);
 
     [Theory]

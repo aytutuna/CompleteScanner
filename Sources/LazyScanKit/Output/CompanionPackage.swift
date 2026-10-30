@@ -78,7 +78,7 @@ public struct CompanionWriterInfo: Equatable, Sendable {
     }
 }
 
-/// A document moved between the phone and the desktop as one `.csdoc` package.
+/// A document moved between the phone and the desktop as one `.lsdoc` package.
 public struct CompanionDocument {
     public var title: String
     public var pages: [CompanionPage]
@@ -93,7 +93,7 @@ public struct CompanionDocument {
     public var namingTemplate: String?
 
     public init(title: String, pages: [CompanionPage],
-                writer: CompanionWriterInfo = CompanionWriterInfo(app: "CompleteScanner", appVersion: "", platform: ""),
+                writer: CompanionWriterInfo = CompanionWriterInfo(app: "Lazy Scan", appVersion: "", platform: ""),
                 created: Date? = nil, taskId: String? = nil, suggestedName: String? = nil,
                 namingTemplate: String? = nil) {
         self.title = title
@@ -110,7 +110,7 @@ public struct CompanionDocument {
 public enum CompanionPackageErrorKind: String, Equatable, Sendable {
     /// The zip archive itself was refused (see `ZipReadError`).
     case invalidArchive
-    /// No manifest, or a manifest that is not a CompleteScanner document's.
+    /// No manifest, or a manifest that is not a Lazy Scan document's.
     case notPackage
     /// A newer major format version than this app reads.
     case newerVersion
@@ -142,7 +142,7 @@ public struct CompanionPackageError: LocalizedError, Equatable, Sendable {
     public var errorDescription: String? { message }
 }
 
-/// The `.csdoc` package: a `ZipStore` archive holding `manifest.json` first and then each page's
+/// The `.lsdoc` package: a `ZipStore` archive holding `manifest.json` first and then each page's
 /// picture ("pages/0001.jpg") followed by its original ("pages/0001-original.png"). Writing is
 /// deterministic: the manifest is compact JSON written by hand with a fixed key order and fixed
 /// number format, entries are stored and dated 1980-01-01, so this and the C# twin write the same
@@ -151,8 +151,8 @@ public struct CompanionPackageError: LocalizedError, Equatable, Sendable {
 /// values fall back), refuses a newer major version, and checks every picture's byte count,
 /// SHA-256 and format.
 public enum CompanionPackage {
-    public static let fileExtension = "csdoc"
-    public static let formatName = "csdoc"
+    public static let fileExtension = "lsdoc"
+    public static let formatName = "lsdoc"
     /// The major version: a reader refuses a larger one.
     public static let formatVersion = 1
     /// The minor version: raised for additions older readers can ignore (1: the pages' capture facts).

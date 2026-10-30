@@ -11,7 +11,7 @@ public struct PhoneOutboxItem: Codable, Equatable, Sendable {
     /// The package id the desktop receives it under (`PUT /v1/inbox/{id}`), so sending it again is
     /// harmless.
     public var id = ""
-    /// The package's file in the outbox folder ("Scan 12.csdoc").
+    /// The package's file in the outbox folder ("Scan 12.lsdoc").
     public var fileName = ""
     /// The desktop it was sent to (`PairedDesktop.id`); no other desktop gets it.
     public var desktopId = ""
@@ -81,7 +81,7 @@ public enum PhoneOutboxError: Error, Equatable, LocalizedError, Sendable {
     public var errorDescription: String? { CompanionText.outboxFullMessage }
 }
 
-/// The documents waiting to be sent to the paired desktop, oldest first: a folder of `.csdoc` files
+/// The documents waiting to be sent to the paired desktop, oldest first: a folder of `.lsdoc` files
 /// and outbox.json listing them (rule 6). A document stays until the desktop has it (201, or 200 for
 /// one it had already) or the user removes it, across launches; entries whose file went are dropped
 /// when the folder is opened. Safe to use from any thread.

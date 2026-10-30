@@ -20,7 +20,7 @@ final class SyncFolderWatcherTests: XCTestCase {
     override func setUpWithError() throws {
         root = FileManager.default.temporaryDirectory
             .appendingPathComponent("SyncFolderWatcherTests-\(UUID().uuidString)", isDirectory: true)
-        folder = root.appendingPathComponent("iCloud Drive/CompleteScanner", isDirectory: true)
+        folder = root.appendingPathComponent("iCloud Drive/Lazy Scan", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         keys = MemorySecretStore()
         devices = PairedDeviceStore(directory: root, syncKeyStore: keys)

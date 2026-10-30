@@ -12,7 +12,7 @@ namespace LazyScan.Core;
 // Trust for eSCL over HTTPS (_uscans). Scanners make their own certificates, which Windows
 // cannot check, so a scanner's certificate is trusted the first time the app connects to it
 // (trust on first use) and pinned: its public key (SPKI) SHA-256 is kept in
-// %APPDATA%\CompleteScanner\escl-trust.json, and a scanner that later shows a different key
+// %APPDATA%\Lazy Scan\escl-trust.json, and a scanner that later shows a different key
 // is refused with a clear warning until the user trusts the new one.
 
 /// <summary>What the trust store says about a certificate a scanner presented.</summary>

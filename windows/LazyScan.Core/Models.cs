@@ -829,7 +829,7 @@ public sealed class ScanSettings
     public TaskOptions TaskOptions { get; set; } = new();
 
     public static string DefaultDestinationPath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "CompleteScanner");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Lazy Scan");
 
     public ScanSettings Clone()
     {

@@ -39,10 +39,10 @@ public sealed class CompanionOutbox
         _directory = directory;
     }
 
-    /// <summary>The default outbox: %LOCALAPPDATA%\CompleteScanner\Companion\Outbox.</summary>
+    /// <summary>The default outbox: %LOCALAPPDATA%\Lazy Scan\Companion\Outbox.</summary>
     public static string DefaultDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                     "CompleteScanner", "Companion", "Outbox");
+                     "Lazy Scan", "Companion", "Outbox");
 
     /// <summary>Copies <paramref name="sourcePath"/> into the phone's outbox under <paramref name="name"/>.</summary>
     public OutboxItem Add(string deviceId, string sourcePath, string name, string contentType, DateTimeOffset now)

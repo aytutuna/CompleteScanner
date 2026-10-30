@@ -40,7 +40,7 @@ enum ScanCover: String, Identifiable {
 /// Save's menu, in both modes, saves as a new PDF or adds the pages to the end of a PDF picked in Files
 /// (`AppState.appendToPDF(at:)`; with a PDF picked in the task list, `AppState.appendTarget`, Save adds
 /// them to that one), opens After saving, prints them as a copy (Print…), saves and emails them (Email…),
-/// shares them as a CompleteScanner document (`IOSShell.sharePackage`) or, with a computer paired, sends
+/// shares them as a Lazy Scan document (`IOSShell.sharePackage`) or, with a computer paired, sends
 /// them to it (`AppState.sendQueueToDesktop`); Save itself runs what After saving has checked
 /// (`IOSAfterSave`). Photos and receipts open the photo review once found, the ID card its review once its
 /// sides are in, Quick scan its page and the photocopy its copy screen, each full screen; a book page's
@@ -92,7 +92,7 @@ struct ScanScreen: View {
     @State private var cardAskedInOptions: Bool = false
     /// Files is open to pick the PDF the pages are added to.
     @State private var picksPDF: Bool = false
-    /// The queue is being written to be shared as a CompleteScanner document.
+    /// The queue is being written to be shared as a Lazy Scan document.
     @State private var sharesPackage: Bool = false
     /// Send to computer asks where the pages go.
     @State private var asksSendTarget: Bool = false
@@ -1330,7 +1330,7 @@ struct ScanScreen: View {
     /// while a picked PDF takes them, the pages added to a PDF picked now, and while one is picked, back to
     /// saving new files; After saving… (its choices in a sheet); then Print… (the pages as a copy on the
     /// copy screen, the queue kept), Email… (saved as Save would, then sent by email), the queue shared as a
-    /// CompleteScanner document and, with a computer paired, Send to computer. Each runs once, whatever
+    /// Lazy Scan document and, with a computer paired, Send to computer. Each runs once, whatever
     /// After saving has checked.
     @ViewBuilder
     private func saveMenuContent(canSave: Bool) -> some View {
@@ -1759,8 +1759,8 @@ private struct SavedFilesRow: View {
     }
 }
 
-/// A CompleteScanner document opened in the app or picked in Files, offered until it is taken or closed:
-/// "Opened Receipt.csdoc: 3 pages", with Add to pages (after the queued pages) and Open as new (in place
+/// A Lazy Scan document opened in the app or picked in Files, offered until it is taken or closed:
+/// "Opened Receipt.lsdoc: 3 pages", with Add to pages (after the queued pages) and Open as new (in place
 /// of them, `onOpenAsNew`). A kind that keeps no pages offers only Open in Document.
 private struct PackageBanner: View {
     @EnvironmentObject private var state: AppState

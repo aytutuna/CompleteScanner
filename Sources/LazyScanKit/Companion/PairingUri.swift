@@ -5,11 +5,11 @@ import Foundation
 
 /// Why a scanned code is not a pairing code this app can use.
 public enum PairingUriErrorKind: Equatable, Sendable {
-    /// Not a CompleteScanner pairing code at all (another app's QR code, a web address).
+    /// Not a Lazy Scan pairing code at all (another app's QR code, a web address).
     case notPairingCode
     /// A pairing code of a newer protocol version than this app speaks.
     case newerVersion
-    /// A CompleteScanner pairing code with a missing or malformed part.
+    /// A Lazy Scan pairing code with a missing or malformed part.
     case damaged
 }
 
@@ -27,7 +27,7 @@ public struct PairingUriError: LocalizedError, Equatable, Sendable {
 }
 
 /// What the desktop's QR code carries so a phone can pair with it, as a URI:
-/// `completescanner://pair?v=1&id=…&n=…&fp=…&a=…&p=…&t=…`: the protocol version, the desktop's id
+/// `lazyscan://pair?v=1&id=…&n=…&fp=…&a=…&p=…&t=…`: the protocol version, the desktop's id
 /// and name, its certificate's `SpkiFingerprint` (base64url), the addresses it listens on
 /// (comma-separated, each percent-encoded), its port and the pairing session's one-time token
 /// (base64url of 16 bytes). Values are percent-encoded UTF-8 (everything but letters, digits and
@@ -40,8 +40,8 @@ public struct PairingUri: Equatable, Sendable, CustomStringConvertible {
     public var port: Int
     public var token: String
 
-    public static let scheme = "completescanner"
-    public static let prefix = "completescanner://pair?"
+    public static let scheme = "lazyscan"
+    public static let prefix = "lazyscan://pair?"
     /// The longest code read, in UTF-8 bytes.
     public static let maxLength = 2048
     public static let maxAddresses = 8

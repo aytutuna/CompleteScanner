@@ -424,7 +424,7 @@ private final class ICHardwareScannerSession: NSObject, ScannerSession, ICScanne
         }
 
         let tempDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CompleteScanner-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("LazyScan-\(UUID().uuidString)", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         } catch {

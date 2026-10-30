@@ -1659,7 +1659,7 @@ public sealed class PresetStoreFileTests : IDisposable
 
     public PresetStoreFileTests()
     {
-        _directory = Path.Combine(Path.GetTempPath(), "CompleteScannerTests-" + Guid.NewGuid().ToString("N"));
+        _directory = Path.Combine(Path.GetTempPath(), "LazyScanTests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_directory);
     }
 

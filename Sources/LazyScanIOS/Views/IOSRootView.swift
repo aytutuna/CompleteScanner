@@ -21,7 +21,7 @@ import UIKit
 /// in printer mode the remembered scanner once it is listed, else none, so no scanner's limits apply to
 /// the camera. Photos and PDFs opened in this app from another one ("Open in Lazy Scan") are
 /// imported: into the task set up when it takes photos (`IOSShell.takesPhotos`), else into Document to
-/// PDF; while an import runs they wait for it (`IOSImportSession`). A CompleteScanner document (`.csdoc`,
+/// PDF; while an import runs they wait for it (`IOSImportSession`). A Lazy Scan document (`.lsdoc`,
 /// I18) is not imported: the scan screen offers it on its banner. Leaving the scan screen stops an import
 /// and closes the scan screen's covers. The scan screen opens the photo and ID card reviews.
 public struct IOSRootView: View {
@@ -397,7 +397,7 @@ public struct IOSRootView: View {
         }
     }
 
-    /// Files opened in this app: a CompleteScanner document to the scan screen's banner, the others
+    /// Files opened in this app: a Lazy Scan document to the scan screen's banner, the others
     /// imported into the queue; the scan screen shown.
     private func openFiles(_ urls: [URL]) {
         var imports: [URL] = []
@@ -417,7 +417,7 @@ public struct IOSRootView: View {
         }
     }
 
-    /// A `.csdoc` opened in this app, offered on the scan screen's banner. Document to PDF is set up when no
+    /// A `.lsdoc` opened in this app, offered on the scan screen's banner. Document to PDF is set up when no
     /// task is; a task set up is kept (an ID card half taken, say), and in one that does not collect pages
     /// the banner offers to open it in Document.
     private func openPackage(_ url: URL) {

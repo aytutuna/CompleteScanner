@@ -7,7 +7,7 @@ using LazyScan.Core;
 
 namespace LazyScan.App;
 
-/// <summary>The banner's texts for a <c>.csdoc</c> opened by hand. Twin of Swift <c>PackageText</c>.</summary>
+/// <summary>The banner's texts for a <c>.lsdoc</c> opened by hand. Twin of Swift <c>PackageText</c>.</summary>
 public static class PackageText
 {
     public const string AddToPages = "Add to pages";
@@ -15,17 +15,17 @@ public static class PackageText
     public const string NotOfferedMessage =
         "A document's pages are added to the page queue: choose Document mode, or a document task, with Collect pages before saving on, to add them.";
 
-    /// <summary>"Opened Receipt.csdoc: 3 pages"</summary>
+    /// <summary>"Opened Receipt.lsdoc: 3 pages"</summary>
     public static string OpenedMessage(string fileName, int pageCount) =>
         $"Opened {fileName}: {pageCount} page{(pageCount == 1 ? "" : "s")}";
 
-    /// <summary>"Receipt.csdoc cannot be opened: one of its pictures cannot be read."</summary>
+    /// <summary>"Receipt.lsdoc cannot be opened: one of its pictures cannot be read."</summary>
     public static string UnreadablePictureMessage(string fileName) =>
         $"{fileName} cannot be opened: one of its pictures cannot be read.";
 }
 
 /// <summary>
-/// A <c>.csdoc</c> opened by hand and waiting on the banner: its file's name, its pages decoded as the
+/// A <c>.lsdoc</c> opened by hand and waiting on the banner: its file's name, its pages decoded as the
 /// queue takes them (<see cref="CompanionPages.ToScannedPages"/> for a document added to the current
 /// one), and the name its document carries ("" for none).
 /// </summary>
@@ -33,7 +33,7 @@ public sealed record PendingPackage(string FileName, IReadOnlyList<ScannedPage> 
 {
     public int PageCount => Pages.Count;
 
-    /// <summary><paramref name="path"/> names a <c>.csdoc</c> (by its extension).</summary>
+    /// <summary><paramref name="path"/> names a <c>.lsdoc</c> (by its extension).</summary>
     public static bool IsPackageFile(string path) =>
         Path.GetExtension(path).Equals("." + CompanionPackage.FileExtension, StringComparison.OrdinalIgnoreCase);
 
@@ -84,21 +84,21 @@ public sealed record PendingPackage(string FileName, IReadOnlyList<ScannedPage> 
 }
 
 /// <summary>
-/// A <c>.csdoc</c> opened by hand (dropped on the window, or opened through the file association) is
+/// A <c>.lsdoc</c> opened by hand (dropped on the window, or opened through the file association) is
 /// offered, not added: a banner adds its pages to the queue or opens it as a new one, unlike a paired
 /// phone's documents, which <see cref="AppViewModel"/>'s phone link adds on its own. The queue can also
-/// be written as a <c>.csdoc</c>. The Mac and the iPhone do the same (Sources/LazyScanKit/App/AppState+Package.swift).
+/// be written as a <c>.lsdoc</c>. The Mac and the iPhone do the same (Sources/LazyScanKit/App/AppState+Package.swift).
 /// </summary>
 public sealed partial class AppViewModel
 {
-    /// <summary>The <c>.csdoc</c> offered on the banner; null when none is.</summary>
+    /// <summary>The <c>.lsdoc</c> offered on the banner; null when none is.</summary>
     public PendingPackage? PendingPackage { get; private set; }
 
-    /// <summary>Counts the <c>.csdoc</c> files opened, so a slow read does not replace a file opened after it.</summary>
+    /// <summary>Counts the <c>.lsdoc</c> files opened, so a slow read does not replace a file opened after it.</summary>
     private int _packageOpens;
 
     /// <summary>
-    /// Reads the <c>.csdoc</c> at <paramref name="path"/> off the UI thread and offers it, replacing one
+    /// Reads the <c>.lsdoc</c> at <paramref name="path"/> off the UI thread and offers it, replacing one
     /// offered before; a package that cannot be read is said in <see cref="ErrorMessage"/>. When another
     /// file is opened before the read ends, the read is dropped: the file opened last is the one offered.
     /// The queue is not touched, so a package can be opened while a scan runs.
@@ -177,7 +177,7 @@ public sealed partial class AppViewModel
     }
 
     /// <summary>
-    /// Writes the queued pages as one <c>.csdoc</c> in <paramref name="folder"/>, named as the next
+    /// Writes the queued pages as one <c>.lsdoc</c> in <paramref name="folder"/>, named as the next
     /// saved file would be (the running number is read, not taken), and returns its path
     /// (<see cref="CompanionPages.ToDocument"/>).
     /// </summary>
@@ -208,7 +208,7 @@ public sealed partial class AppViewModel
                 return PdfBuilder.PreparePage(page, spooled).Image;
             }) with
             {
-                Writer = new CompanionWriterInfo("CompleteScanner", typeof(AppViewModel).Assembly.GetName().Version?.ToString(3) ?? "", "windows"),
+                Writer = new CompanionWriterInfo("Lazy Scan", typeof(AppViewModel).Assembly.GetName().Version?.ToString(3) ?? "", "windows"),
                 Created = DateTimeOffset.Now,
                 TaskId = s.TaskId,
                 NamingTemplate = s.NamingTemplate,

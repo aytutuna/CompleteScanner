@@ -22,7 +22,7 @@ final class BatchTests: XCTestCase {
         let bytes: Data = try Data(contentsOf: fixture)
         let app = XCUIApplication()
         app.launchArguments = ["-demoScanner", "-importFixture", "-importTask", "batch"]
-        app.launchEnvironment["COMPLETESCANNER_IMPORT_FIXTURE"] = bytes.base64EncodedString()
+        app.launchEnvironment["LAZYSCAN_IMPORT_FIXTURE"] = bytes.base64EncodedString()
         app.launch()
 
         app.openPages(3)

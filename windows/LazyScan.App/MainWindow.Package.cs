@@ -3,7 +3,7 @@ using System.Windows;
 namespace LazyScan.App;
 
 /// <summary>
-/// A <c>.csdoc</c> opened by hand: given on the command line (File Explorer, through
+/// A <c>.lsdoc</c> opened by hand: given on the command line (File Explorer, through
 /// <see cref="Services.FileAssociation"/>), dropped on the window or picked with Import photos. The bar
 /// above the window content offers it (<see cref="AppViewModel.PendingPackage"/>) until it is added,
 /// opened as new or dismissed.
@@ -13,7 +13,7 @@ public partial class MainWindow
     /// <summary>The offer the bar shows; a new one is announced.</summary>
     private PendingPackage? _shownPackage;
 
-    /// <summary>Opens the first <c>.csdoc</c> among the command line's arguments (File Explorer passes one).</summary>
+    /// <summary>Opens the first <c>.lsdoc</c> among the command line's arguments (File Explorer passes one).</summary>
     private void OpenCommandLinePackage()
     {
         if (Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(PendingPackage.IsPackageFile) is { } path)

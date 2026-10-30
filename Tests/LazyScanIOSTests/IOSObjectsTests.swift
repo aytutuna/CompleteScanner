@@ -738,17 +738,17 @@ final class IOSObjectsTests: XCTestCase {
 
     func test_theLaunchOption_namesTheTaskThePhotoGoesInto() {
         let environment: [String: String] = [IOSLaunchOptions.importFixtureVariable: Data([1, 2, 3]).base64EncodedString()]
-        let photos = IOSLaunchOptions(arguments: ["CompleteScanner", "-demoScanner", "-importFixture", "-importTask", "photos"],
+        let photos = IOSLaunchOptions(arguments: ["LazyScan", "-demoScanner", "-importFixture", "-importTask", "photos"],
                                       environment: environment)
         XCTAssertEqual(photos.launchTask, .photos)
         XCTAssertNotNil(photos.launchImport)
-        let document = IOSLaunchOptions(arguments: ["CompleteScanner", "-importFixture"], environment: environment)
+        let document = IOSLaunchOptions(arguments: ["LazyScan", "-importFixture"], environment: environment)
         XCTAssertNil(document.launchTask)
-        let unknown = IOSLaunchOptions(arguments: ["CompleteScanner", "-importFixture", "-importTask", "nothing"],
+        let unknown = IOSLaunchOptions(arguments: ["LazyScan", "-importFixture", "-importTask", "nothing"],
                                        environment: environment)
         XCTAssertNil(unknown.launchTask)
         // Without a photo to import, no task.
-        XCTAssertNil(IOSLaunchOptions(arguments: ["CompleteScanner", "-importTask", "photos"]).launchTask)
+        XCTAssertNil(IOSLaunchOptions(arguments: ["LazyScan", "-importTask", "photos"]).launchTask)
         XCTAssertNil(IOSLaunchOptions(demoScannerOnly: true).launchTask)
     }
 }

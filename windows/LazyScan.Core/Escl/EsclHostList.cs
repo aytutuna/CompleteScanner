@@ -3,7 +3,7 @@ namespace LazyScan.Core;
 // Twin of Sources/LazyScanKit/Escl/EsclHostList.swift: the same rules and tests on both platforms.
 
 /// <summary>
-/// The network scanners added by address: %APPDATA%\CompleteScanner\escl-hosts.json, a JSON
+/// The network scanners added by address: %APPDATA%\Lazy Scan\escl-hosts.json, a JSON
 /// list of address strings (["192.168.1.50", "scanner.local:8080", "https://10.0.0.7"]). The
 /// "Add scanner by address" dialog writes it, and entries written by hand keep working.
 /// Entries that do not parse as an address are kept but not used. The file follows the

@@ -20,7 +20,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <dict>
     <key>CFBundleName</key>              <string>Lazy Scan</string>
     <key>CFBundleDisplayName</key>       <string>Lazy Scan</string>
-    <key>CFBundleIdentifier</key>        <string>local.completescanner.app</string>
+    <key>CFBundleIdentifier</key>        <string>local.lazyscan.app</string>
     <key>CFBundleExecutable</key>        <string>LazyScan</string>
     <key>CFBundleIconFile</key>          <string>AppIcon</string>
     <key>CFBundlePackageType</key>       <string>APPL</string>
@@ -33,25 +33,25 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>NSLocalNetworkUsageDescription</key>
     <string>Lazy Scan receives documents from your paired phone on your local network.</string>
     <key>NSBonjourServices</key>
-    <array><string>_completescan._tcp</string></array>
+    <array><string>_lazyscan._tcp</string></array>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
             <key>CFBundleTypeName</key>      <string>Lazy Scan document</string>
             <key>CFBundleTypeRole</key>      <string>Viewer</string>
             <key>LSHandlerRank</key>         <string>Owner</string>
-            <key>LSItemContentTypes</key>    <array><string>com.completescanner.package</string></array>
+            <key>LSItemContentTypes</key>    <array><string>com.lazyscan.package</string></array>
         </dict>
     </array>
     <key>UTExportedTypeDeclarations</key>
     <array>
         <dict>
-            <key>UTTypeIdentifier</key>      <string>com.completescanner.package</string>
+            <key>UTTypeIdentifier</key>      <string>com.lazyscan.package</string>
             <key>UTTypeDescription</key>     <string>Lazy Scan document</string>
             <key>UTTypeConformsTo</key>      <array><string>public.data</string><string>public.content</string></array>
             <key>UTTypeTagSpecification</key>
             <dict>
-                <key>public.filename-extension</key> <array><string>csdoc</string></array>
+                <key>public.filename-extension</key> <array><string>lsdoc</string></array>
             </dict>
         </dict>
     </array>

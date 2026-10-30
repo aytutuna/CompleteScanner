@@ -21,7 +21,7 @@ public sealed class CompanionRouterTests : IDisposable
 
     public CompanionRouterTests()
     {
-        _directory = Path.Combine(Path.GetTempPath(), "CompleteScannerTests-" + Guid.NewGuid().ToString("N"));
+        _directory = Path.Combine(Path.GetTempPath(), "LazyScanTests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_directory);
         _devices = new PairedDeviceStore(_directory);
         _inbox = new CompanionInbox(Path.Combine(_directory, "Inbox"));

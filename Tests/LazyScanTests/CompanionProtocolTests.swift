@@ -60,7 +60,7 @@ final class CompanionProtocolTests: XCTestCase {
 
     func testConstants_AreTheProtocols() {
         XCTAssertEqual(CompanionProtocol.version, 1)
-        XCTAssertEqual(CompanionProtocol.serviceType, "_completescan._tcp")
+        XCTAssertEqual(CompanionProtocol.serviceType, "_lazyscan._tcp")
         XCTAssertEqual(CompanionProtocol.defaultPort, 52731)
         XCTAssertEqual(CompanionProtocol.maxUploadBytes, 553_648_128)
         XCTAssertEqual(CompanionProtocol.pageLabel, "From phone")
@@ -82,7 +82,7 @@ final class CompanionProtocolTests: XCTestCase {
                          syncKey: CompanionVectors.secretText).toJSON(),
             #"{"protocolVersion":1,"desktopId":"0123456789abcdef0123456789abcdef","desktopName":"AYTU-PC","deviceSecret":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8","syncKey":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"}"#)
         XCTAssertEqual(HealthResponse(protocolVersion: 1, paired: false).toJSON(),
-                       #"{"service":"completescanner","protocolVersion":1,"paired":false}"#)
+                       #"{"service":"lazyscan","protocolVersion":1,"paired":false}"#)
         XCTAssertEqual(
             HelloResponse(desktopId: desktopId, desktopName: "AYTU-PC", protocolVersion: 1, queuedPages: 12,
                           maxUploadBytes: 553_648_128).toJSON(),
@@ -133,10 +133,10 @@ final class CompanionProtocolTests: XCTestCase {
         XCTAssertNil(PairRequest.fromJSON(utf8("null")))
         XCTAssertNil(PairRequest.fromJSON(utf8("not json")))
         XCTAssertNil(PairRequest.fromJSON(Data()))
-        // An error needs its code; a health answer must be CompleteScanner's.
+        // An error needs its code; a health answer must be Lazy Scan's.
         XCTAssertNil(CompanionError.fromJSON(utf8(#"{"message":"x"}"#)))
         XCTAssertNil(HealthResponse.fromJSON(utf8(#"{"service":"other","protocolVersion":1}"#)))
-        XCTAssertEqual(HealthResponse.fromJSON(utf8(#"{"service":"completescanner"}"#)), HealthResponse(protocolVersion: 0, paired: false))
+        XCTAssertEqual(HealthResponse.fromJSON(utf8(#"{"service":"lazyscan"}"#)), HealthResponse(protocolVersion: 0, paired: false))
     }
 
     func testOutboxList_SkipsItemsItCannotUse() throws {

@@ -93,7 +93,7 @@ public enum SettingsStore {
 
 // MARK: - Shared file plumbing
 
-private let storeLog = Logger(subsystem: "CompleteScanner", category: "Persistence")
+private let storeLog = Logger(subsystem: "LazyScan", category: "Persistence")
 
 enum StoreReadResult<Value> {
     /// No file yet (first run).
@@ -127,14 +127,14 @@ private final class ProtectedFiles: @unchecked Sendable {
     }
 }
 
-/// JSON storage under `~/Library/Application Support/CompleteScanner/` (created on demand). Also used
+/// JSON storage under `~/Library/Application Support/Lazy Scan/` (created on demand). Also used
 /// by the phone link's files (`PairedDeviceStore`), which follow the same settings-file rules.
 enum StoreFiles {
     static var defaultDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory())
                 .appendingPathComponent("Library/Application Support", isDirectory: true)
-        return base.appendingPathComponent("CompleteScanner", isDirectory: true)
+        return base.appendingPathComponent("Lazy Scan", isDirectory: true)
     }
 
     static func presetsURL(in directory: URL) -> URL { directory.appendingPathComponent("presets.json") }

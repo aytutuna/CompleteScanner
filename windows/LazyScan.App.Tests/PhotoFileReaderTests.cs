@@ -13,7 +13,7 @@ namespace LazyScan.App.Tests;
 // shared rules are PhotoImportTests in both Core suites.
 public class PhotoFileReaderTests : IDisposable
 {
-    private readonly string _folder = Directory.CreateTempSubdirectory("CompleteScanner-photo-import-tests-").FullName;
+    private readonly string _folder = Directory.CreateTempSubdirectory("LazyScan-photo-import-tests-").FullName;
 
     public void Dispose()
     {

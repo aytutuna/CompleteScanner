@@ -7,13 +7,13 @@ namespace LazyScan.App.Tests;
 
 /// <summary>
 /// A test that runs the corner model, skipped when scripts/fetch_docaligner.sh has not fetched it, unless
-/// COMPLETESCANNER_REQUIRE_CORNER_MODEL=1 (CI fetches it), where it runs anyway and fails.
+/// LAZYSCAN_REQUIRE_CORNER_MODEL=1 (CI fetches it), where it runs anyway and fails.
 /// </summary>
 public sealed class CornerModelFactAttribute : FactAttribute
 {
     public CornerModelFactAttribute()
     {
-        if (Environment.GetEnvironmentVariable("COMPLETESCANNER_REQUIRE_CORNER_MODEL") != "1" && OnnxCornerModel.Load() is null)
+        if (Environment.GetEnvironmentVariable("LAZYSCAN_REQUIRE_CORNER_MODEL") != "1" && OnnxCornerModel.Load() is null)
         {
             Skip = "The corner model is not fetched (scripts/fetch_docaligner.sh).";
         }

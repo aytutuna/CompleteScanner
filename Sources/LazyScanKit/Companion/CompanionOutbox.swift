@@ -80,7 +80,7 @@ public final class CompanionOutbox: @unchecked Sendable {
         self.directory = directory
     }
 
-    /// The default outbox: Application Support/CompleteScanner/Companion/Outbox.
+    /// The default outbox: Application Support/Lazy Scan/Companion/Outbox.
     public static var defaultDirectory: URL {
         StoreFiles.defaultDirectory.appendingPathComponent("Companion", isDirectory: true)
             .appendingPathComponent("Outbox", isDirectory: true)

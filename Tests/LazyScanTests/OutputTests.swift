@@ -18,7 +18,7 @@ private func makeSolidImage(width: Int, height: Int,
     return ctx.makeImage()!
 }
 
-/// 8.5x11" @150dpi white page with big black "COMPLETE SCANNER TEST PAGE" drawn via CoreText.
+/// 8.5x11" @150dpi white page with big black "LAZY SCAN TEST PAGE" drawn via CoreText.
 private func makeTextImage() -> CGImage {
     let width = 1275, height = 1650
     let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
@@ -35,7 +35,7 @@ private func makeTextImage() -> CGImage {
             CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 1),
     ]
     let line = CTLineCreateWithAttributedString(
-        NSAttributedString(string: "COMPLETE SCANNER TEST PAGE", attributes: attributes))
+        NSAttributedString(string: "LAZY SCAN TEST PAGE", attributes: attributes))
     let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
     let x = max(20, (CGFloat(width) - lineWidth) / 2)
     // The context is y-up; draw the line twice around mid-page.

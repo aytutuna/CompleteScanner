@@ -6,7 +6,7 @@ using LazyScan.Core;
 namespace LazyScan.TwainHelper;
 
 /// <summary>
-/// CompleteScanner's 32-bit TWAIN helper. Started by the app only:
+/// Lazy Scan's 32-bit TWAIN helper. Started by the app only:
 /// <c>LazyScan.TwainHelper.exe --pipe NAME --parent PID [--simulate]</c>. It connects to
 /// the app's pipe (which only the current user may open), serves TWAIN requests on its main
 /// thread (single-threaded apartment, as drivers expect) and exits when the app asks, when the

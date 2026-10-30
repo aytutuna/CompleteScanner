@@ -5,7 +5,7 @@ import XCTest
 @testable import LazyScanIOS
 @testable import LazyScanKit
 
-// A CompleteScanner document (.csdoc) on the iPhone, through the shell as the root view and the scan
+// A Lazy Scan document (.lsdoc) on the iPhone, through the shell as the root view and the scan
 // screen use it, without a screen: where an opened file goes, the queue shared as one, and one opened
 // from a folder of the test's own. What the banner's buttons do is AppStatePackageTests'.
 
@@ -34,12 +34,12 @@ final class IOSPackageTests: XCTestCase {
     }
 
     func test_aPackage_goesToTheBanner_otherFilesToTheImport() {
-        XCTAssertTrue(IOSShell.isPackage(URL(fileURLWithPath: "/tmp/Inbox/Receipt.csdoc")))
-        XCTAssertTrue(IOSShell.isPackage(URL(fileURLWithPath: "/tmp/RECEIPT.CSDOC")))
+        XCTAssertTrue(IOSShell.isPackage(URL(fileURLWithPath: "/tmp/Inbox/Receipt.lsdoc")))
+        XCTAssertTrue(IOSShell.isPackage(URL(fileURLWithPath: "/tmp/RECEIPT.LSDOC")))
         XCTAssertFalse(IOSShell.isPackage(URL(fileURLWithPath: "/tmp/scan.pdf")))
         XCTAssertFalse(IOSShell.isPackage(URL(fileURLWithPath: "/tmp/photo.jpg")))
-        XCTAssertFalse(IOSShell.isPackage(URL(fileURLWithPath: "/tmp/csdoc")))
-        XCTAssertEqual(IOSShell.packageType.identifier, "com.completescanner.package")
+        XCTAssertFalse(IOSShell.isPackage(URL(fileURLWithPath: "/tmp/lsdoc")))
+        XCTAssertEqual(IOSShell.packageType.identifier, "com.lazyscan.package")
         XCTAssertEqual(IOSShell.sharePackageLabel, "Share as Lazy Scan document")
     }
 
@@ -71,7 +71,7 @@ final class IOSPackageTests: XCTestCase {
         let shared: URL? = await IOSShell.sharePackage(state)
         let url: URL = try XCTUnwrap(shared)
         XCTAssertNil(state.errorMessage)
-        XCTAssertEqual(url.lastPathComponent, "Lunch.csdoc")
+        XCTAssertEqual(url.lastPathComponent, "Lunch.lsdoc")
         XCTAssertEqual(url.deletingLastPathComponent().standardizedFileURL.path,
                        IOSShell.packageShareFolder.standardizedFileURL.path)
         XCTAssertEqual(actions.shareRequest?.urls, [url])
@@ -80,7 +80,7 @@ final class IOSPackageTests: XCTestCase {
 
         // The folder is emptied each time, so the next share keeps the plain name.
         let again: URL? = await IOSShell.sharePackage(state)
-        XCTAssertEqual(again?.lastPathComponent, "Lunch.csdoc")
+        XCTAssertEqual(again?.lastPathComponent, "Lunch.lsdoc")
     }
 
     @MainActor
@@ -89,22 +89,22 @@ final class IOSPackageTests: XCTestCase {
         let jpeg: Data = try XCTUnwrap(PDFImageEncoding.encodeJPEG(picture(width: 40, height: 60), quality: 0.9))
         let document = CompanionDocument(title: "Receipt", pages: [CompanionPage(image: CompanionImage(
             data: jpeg, format: .jpeg, pixelWidth: 40, pixelHeight: 60, dpi: 200, colorMode: .color))])
-        let url: URL = folder.appendingPathComponent("Receipt.csdoc")
+        let url: URL = folder.appendingPathComponent("Receipt.lsdoc")
         try CompanionPackage.make(document).write(to: url)
 
         await IOSShell.openPackage(url, in: state)
         XCTAssertNil(state.errorMessage)
         let offered: PendingPackage = try XCTUnwrap(state.pendingPackage)
-        XCTAssertEqual(offered.fileName, "Receipt.csdoc")
+        XCTAssertEqual(offered.fileName, "Receipt.lsdoc")
         XCTAssertEqual(offered.pageCount, 1)
         XCTAssertEqual(offered.documentName, "Receipt")
         XCTAssertTrue(state.scannedPages.isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
 
         state.dismissPendingPackage()
-        await IOSShell.openPackage(folder.appendingPathComponent("Missing.csdoc"), in: state)
+        await IOSShell.openPackage(folder.appendingPathComponent("Missing.lsdoc"), in: state)
         XCTAssertNil(state.pendingPackage)
-        XCTAssertTrue(state.errorMessage?.hasPrefix("Missing.csdoc could not be opened: ") == true)
+        XCTAssertTrue(state.errorMessage?.hasPrefix("Missing.lsdoc could not be opened: ") == true)
     }
 }
 #endif

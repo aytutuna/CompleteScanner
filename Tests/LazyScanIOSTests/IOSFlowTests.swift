@@ -378,8 +378,8 @@ final class IOSFlowTests: XCTestCase {
                        "ID card does not collect pages. Save it first, or discard it.")
         XCTAssertEqual(IOSShell.keepPagesLine(IOSShell.keepPagesReason(preset: "Till slips"), count: 2, canSave: true),
                        "The preset \u{201C}Till slips\u{201D} does not collect pages. Save them first, or discard them.")
-        XCTAssertEqual(IOSShell.keepPagesLine(IOSShell.keepPagesReason(package: "Trip.csdoc"), count: 2, canSave: false),
-                       "\u{201C}Trip.csdoc\u{201D} opens in their place. They cannot be saved now: discard them, or cancel to keep them.")
+        XCTAssertEqual(IOSShell.keepPagesLine(IOSShell.keepPagesReason(package: "Trip.lsdoc"), count: 2, canSave: false),
+                       "\u{201C}Trip.lsdoc\u{201D} opens in their place. They cannot be saved now: discard them, or cancel to keep them.")
         XCTAssertEqual(IOSShell.keepPagesLine(IOSShell.keepPagesReason(.photos), count: 1, canSave: false),
                        "Photos does not collect pages. It cannot be saved now: discard it, or cancel to keep it.")
         // Camera mode's row names it Photo.

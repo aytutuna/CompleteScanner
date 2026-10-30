@@ -81,7 +81,7 @@ public enum CompanionInboxError: Error, Equatable, Sendable {
 /// Where uploads from paired phones land (one folder per phone under the inbox folder). A body is
 /// streamed to "<id>.part", must be exactly as long as announced, is read in full as a
 /// `CompanionPackage` (every picture's checksum and format checked) and only then renamed to
-/// "<id>.csdoc" and logged in received.json, so a package is either received whole and valid or not
+/// "<id>.lsdoc" and logged in received.json, so a package is either received whole and valid or not
 /// at all. Uploads are idempotent by package id: one received before is answered from the log (the
 /// last `maxLoggedPackages` per phone), and the same id cannot be received twice at once. Ids are
 /// checked by `CompanionProtocol.isValidId`, so they are safe file names. Safe to use from any thread.
@@ -97,7 +97,7 @@ public final class CompanionInbox: @unchecked Sendable {
         self.directory = directory
     }
 
-    /// The default inbox: Application Support/CompleteScanner/Companion/Inbox.
+    /// The default inbox: Application Support/Lazy Scan/Companion/Inbox.
     public static var defaultDirectory: URL {
         StoreFiles.defaultDirectory.appendingPathComponent("Companion", isDirectory: true)
             .appendingPathComponent("Inbox", isDirectory: true)

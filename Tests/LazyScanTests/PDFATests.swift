@@ -133,7 +133,7 @@ final class PDFATests: XCTestCase {
     }
 
     func test_infoDictionary_hasTheTitleProducerAndDates() {
-        var expected = "<</Title (Scan 1) /Producer (CompleteScanner) /Creator (CompleteScanner) "
+        var expected = "<</Title (Scan 1) /Producer (Lazy Scan) /Creator (Lazy Scan) "
         expected += "/CreationDate (D:20261019213005+03'00') /ModDate (D:20261019213005+03'00')>>"
         XCTAssertEqual(PDFA.infoDictionary(title: "Scan 1", date: Self.date, timeZone: Self.zone), expected)
         XCTAssertFalse(PDFA.infoDictionary(title: nil, date: Self.date, timeZone: Self.zone).contains("/Title"))
@@ -158,8 +158,8 @@ final class PDFATests: XCTestCase {
         for name in ["CreateDate", "ModifyDate", "MetadataDate"] {
             XCTAssertEqual(reader.values(xmpNs, name), ["2026-10-19T21:30:05+03:00"], name)
         }
-        XCTAssertEqual(reader.values(xmpNs, "CreatorTool"), ["CompleteScanner"])
-        XCTAssertEqual(reader.values(pdf, "Producer"), ["CompleteScanner"])
+        XCTAssertEqual(reader.values(xmpNs, "CreatorTool"), ["Lazy Scan"])
+        XCTAssertEqual(reader.values(pdf, "Producer"), ["Lazy Scan"])
         let untitled = try XCTUnwrap(XMLTextReader.read(PDFA.xmp(title: nil, date: Self.date, timeZone: Self.zone)))
         XCTAssertEqual(untitled.values(dc, "title"), [])
     }
@@ -237,7 +237,7 @@ final class PDFATests: XCTestCase {
         XCTAssertFalse(Self.has(pdf, "/Font"))
         XCTAssertTrue(Self.has(pdf, "/Metadata 4 0 R"))
         XCTAssertTrue(Self.has(pdf, "/DestOutputProfile 5 0 R"))
-        XCTAssertTrue(Self.has(pdf, "3 0 obj\n<</Producer (CompleteScanner)"))
+        XCTAssertTrue(Self.has(pdf, "3 0 obj\n<</Producer (Lazy Scan)"))
         XCTAssertTrue(Self.has(pdf, "/Kids [6 0 R 9 0 R] /Count 2"))
         XCTAssertTrue(Self.has(pdf, "/Info 3 0 R /ID"))
         PDFWriterTests.assertXrefPointsAtEveryObject(pdf, objects: 11)
@@ -252,8 +252,8 @@ final class PDFATests: XCTestCase {
         XCTAssertEqual(document.pageCount, 1)
         let attributes: [AnyHashable: Any] = document.documentAttributes ?? [:]
         XCTAssertEqual(attributes[PDFDocumentAttribute.titleAttribute] as? String, "Tapu belgesi — Çağrı")
-        XCTAssertEqual(attributes[PDFDocumentAttribute.producerAttribute] as? String, "CompleteScanner")
-        XCTAssertEqual(attributes[PDFDocumentAttribute.creatorAttribute] as? String, "CompleteScanner")
+        XCTAssertEqual(attributes[PDFDocumentAttribute.producerAttribute] as? String, "Lazy Scan")
+        XCTAssertEqual(attributes[PDFDocumentAttribute.creatorAttribute] as? String, "Lazy Scan")
         XCTAssertEqual(attributes[PDFDocumentAttribute.creationDateAttribute] as? Date, Self.date)
         XCTAssertEqual(attributes[PDFDocumentAttribute.modificationDateAttribute] as? Date, Self.date)
         // Each XMP property says what the information dictionary says.
@@ -264,8 +264,8 @@ final class PDFATests: XCTestCase {
         XCTAssertEqual(reader.values("http://www.aiim.org/pdfa/ns/id/", "part"), ["2"])
         XCTAssertEqual(reader.values("http://www.aiim.org/pdfa/ns/id/", "conformance"), ["B"])
         XCTAssertEqual(reader.values("http://www.w3.org/1999/02/22-rdf-syntax-ns#", "li"), ["Tapu belgesi — Çağrı"])
-        XCTAssertEqual(reader.values("http://ns.adobe.com/pdf/1.3/", "Producer"), ["CompleteScanner"])
-        XCTAssertEqual(reader.values("http://ns.adobe.com/xap/1.0/", "CreatorTool"), ["CompleteScanner"])
+        XCTAssertEqual(reader.values("http://ns.adobe.com/pdf/1.3/", "Producer"), ["Lazy Scan"])
+        XCTAssertEqual(reader.values("http://ns.adobe.com/xap/1.0/", "CreatorTool"), ["Lazy Scan"])
         XCTAssertEqual(reader.values("http://ns.adobe.com/xap/1.0/", "CreateDate"), [PDFA.xmpDate(Self.date, timeZone: Self.zone)])
         XCTAssertEqual(reader.values("http://ns.adobe.com/xap/1.0/", "ModifyDate"), [PDFA.xmpDate(Self.date, timeZone: Self.zone)])
     }
@@ -316,9 +316,9 @@ final class PDFATests: XCTestCase {
         let line = OCRLine(text: "Çağrı Işık İzmir'de öğün şüpheli", boundingBox: CGRect(x: 0.1, y: 0.8, width: 0.6, height: 0.04),
                            confidence: 0.9)
         let pdf = try PDFWriter.make([Self.page([line])], options: Self.archival("Tapu belgesi — Çağrı"))
-        XCTAssertEqual(pdf.count, 11497)
+        XCTAssertEqual(pdf.count, 11473)
         XCTAssertEqual(CompanionPackage.sha256Hex(pdf).uppercased(),
-                       "D643A7AA9B4C152F00054009074EF194586428938319BA9DB70EC5F96D2B6370")
+                       "387107CDC430BDF0BD348CD837BF6BFB673C168706F4C310570D1231C86A8FD8")
     }
 
     // MARK: - Files
@@ -334,12 +334,12 @@ final class PDFATests: XCTestCase {
         XCTAssertEqual(names.count, 1)
     }
 
-    /// PDF/A files for an outside validator: with COMPLETESCANNER_PDFA_SAMPLES naming a folder they are
+    /// PDF/A files for an outside validator: with LAZYSCAN_PDFA_SAMPLES naming a folder they are
     /// written there and kept (the macOS CI job runs veraPDF on them, see .github/workflows/ci.yml);
     /// without it they are written to a temporary folder, read back and removed. Twin of
     /// `Archival_ValidationSamples`.
     func test_archival_validationSamples() throws {
-        let samples: String = ProcessInfo.processInfo.environment["COMPLETESCANNER_PDFA_SAMPLES"] ?? ""
+        let samples: String = ProcessInfo.processInfo.environment["LAZYSCAN_PDFA_SAMPLES"] ?? ""
         let keep = !samples.trimmingCharacters(in: .whitespaces).isEmpty
         let folder: URL = keep
             ? URL(fileURLWithPath: samples, isDirectory: true)

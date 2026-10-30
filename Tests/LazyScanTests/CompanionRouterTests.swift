@@ -41,7 +41,7 @@ final class CompanionRouterTests: XCTestCase {
     private var pairing: PairingSession?
 
     override func setUpWithError() throws {
-        directory = FileManager.default.temporaryDirectory.appendingPathComponent("CompleteScannerTests-\(UUID().uuidString)")
+        directory = FileManager.default.temporaryDirectory.appendingPathComponent("LazyScanTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         devices = PairedDeviceStore(directory: directory)
         inbox = CompanionInbox(directory: directory.appendingPathComponent("Inbox", isDirectory: true))

@@ -11,7 +11,7 @@ namespace LazyScan.App.Scanning;
 /// <list type="bullet">
 /// <item>automatically, by DNS-SD (<see cref="EsclDiscovery"/>: _uscan._tcp and _uscans._tcp);</item>
 /// <item>by address: the "Add scanner by address" dialog, which writes
-/// %APPDATA%\CompleteScanner\escl-hosts.json (<see cref="EsclHostList"/>; entries written by
+/// %APPDATA%\Lazy Scan\escl-hosts.json (<see cref="EsclHostList"/>; entries written by
 /// hand keep working).</item>
 /// </list>
 /// A scanner found both ways is one entry (matched by its eSCL UUID, which is also its

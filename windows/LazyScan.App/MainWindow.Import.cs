@@ -11,12 +11,12 @@ namespace LazyScan.App;
 /// Import photos of documents: the button under Preview and Scan and the empty stage's link pick photo
 /// files, and photos dropped anywhere on the window are taken too; the view model adds their pages
 /// (<see cref="AppViewModel.ImportPhotos"/>), asking for the corners of a page it did not find
-/// clearly in the corner editor (<see cref="PhotoCornersWindow"/>). A <c>.csdoc</c> picked or dropped
+/// clearly in the corner editor (<see cref="PhotoCornersWindow"/>). A <c>.lsdoc</c> picked or dropped
 /// the same way is offered on its bar (<see cref="AppViewModel.OpenPackage"/>).
 /// </summary>
 public partial class MainWindow
 {
-    /// <summary>The picker's filter: the photo types and <c>.csdoc</c> first, then the documents alone, then every file.</summary>
+    /// <summary>The picker's filter: the photo types and <c>.lsdoc</c> first, then the documents alone, then every file.</summary>
     private static string PhotoFilter
     {
         get
@@ -68,7 +68,7 @@ public partial class MainWindow
         if (dialog.ShowDialog(this) == true) Take(dialog.FileNames);
     }
 
-    /// <summary>Picked or dropped files: the first <c>.csdoc</c> among them is offered, the photos imported.</summary>
+    /// <summary>Picked or dropped files: the first <c>.lsdoc</c> among them is offered, the photos imported.</summary>
     private void Take(string[] paths)
     {
         if (paths.FirstOrDefault(PendingPackage.IsPackageFile) is not { } package)
@@ -86,7 +86,7 @@ public partial class MainWindow
     /// them, or, while the settings do not collect pages in the queue (Photos mode, the ID card…) and
     /// nothing is running, to say why they are not imported (<see cref="PhotoImport.NotOfferedMessage"/>).
     /// Null otherwise: no photos, the source does not let them be copied, or work is running. A
-    /// <c>.csdoc</c> among them is taken on its own, or with photos while photos can be taken: opening
+    /// <c>.lsdoc</c> among them is taken on its own, or with photos while photos can be taken: opening
     /// one only offers it.
     /// </summary>
     private string[]? DroppedPhotos(DragEventArgs e)
@@ -113,7 +113,7 @@ public partial class MainWindow
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
         var photos = DroppedPhotos(e);
         e.Effects = photos is null ? DragDropEffects.None : DragDropEffects.Copy;
-        // "Drop to add as pages" while the drop would add them (not when it would only say why not, nor for a .csdoc, which is offered).
+        // "Drop to add as pages" while the drop would add them (not when it would only say why not, nor for a .lsdoc, which is offered).
         ShowDropOverlay(photos is not null && ViewModel.CanImportPhotos && !photos.Any(PendingPackage.IsPackageFile));
         e.Handled = true;
     }

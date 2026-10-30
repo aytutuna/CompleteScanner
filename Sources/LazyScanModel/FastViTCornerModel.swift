@@ -3,7 +3,7 @@ import Foundation
 import OnnxRuntimeBindings
 import os
 
-private let modelLog = Logger(subsystem: "CompleteScanner", category: "CornerModel")
+private let modelLog = Logger(subsystem: "LazyScan", category: "CornerModel")
 
 /// Why the corner model did not run.
 public enum CornerModelError: Error, Equatable, LocalizedError {

@@ -196,8 +196,8 @@ internal static class ProtectedFiles
 }
 
 /// <summary>
-/// JSON storage under %APPDATA%\CompleteScanner\ (the Windows analogue of
-/// ~/Library/Application Support/CompleteScanner/), created on demand.
+/// JSON storage under %APPDATA%\Lazy Scan\ (the Windows analogue of
+/// ~/Library/Application Support/Lazy Scan/), created on demand.
 /// </summary>
 internal static class StoreFiles
 {
@@ -221,7 +221,7 @@ internal static class StoreFiles
 
     internal static string DefaultDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                     "CompleteScanner");
+                     "Lazy Scan");
 
     internal static string PresetsPath(string directory) => Path.Combine(directory, "presets.json");
     internal static string SettingsPath(string directory) => Path.Combine(directory, "settings.json");

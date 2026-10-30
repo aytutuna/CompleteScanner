@@ -31,7 +31,7 @@ final class SelfSignedCertificateTests: XCTestCase {
     func testMake_IsACertificateTheSystemReads() throws {
         let der = try SelfSignedCertificate.make(hostName: "aytu-mac.local", key: try makeKey(), now: now)
         let certificate = try XCTUnwrap(SelfSignedCertificate.certificate(der))
-        XCTAssertEqual(SecCertificateCopySubjectSummary(certificate) as String?, "aytu-mac.local CompleteScanner")
+        XCTAssertEqual(SecCertificateCopySubjectSummary(certificate) as String?, "aytu-mac.local Lazy Scan")
         XCTAssertEqual(SecCertificateCopyData(certificate) as Data, der)
     }
 
@@ -97,7 +97,7 @@ final class SelfSignedCertificateTests: XCTestCase {
         let spoken = try SelfSignedCertificate.make(hostName: "Aytu's Mac", key: try makeKey(), now: now)
         XCTAssertNil(spoken.range(of: san))
         let certificate = try XCTUnwrap(SelfSignedCertificate.certificate(spoken))
-        XCTAssertEqual(SecCertificateCopySubjectSummary(certificate) as String?, "Aytu's Mac CompleteScanner")
+        XCTAssertEqual(SecCertificateCopySubjectSummary(certificate) as String?, "Aytu's Mac Lazy Scan")
         XCTAssertTrue(SelfSignedCertificate.isDnsName("localhost"))
         XCTAssertFalse(SelfSignedCertificate.isDnsName(""))
         XCTAssertFalse(SelfSignedCertificate.isDnsName("-mac.local"))

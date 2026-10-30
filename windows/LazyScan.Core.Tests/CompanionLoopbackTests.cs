@@ -126,7 +126,7 @@ internal sealed class FakePhone : IDisposable
 [Collection(WallClockCollection.Name)]
 public sealed class CompanionLoopbackTests : IAsyncLifetime
 {
-    private readonly string _directory = Path.Combine(Path.GetTempPath(), "CompleteScannerTests-" + Guid.NewGuid().ToString("N"));
+    private readonly string _directory = Path.Combine(Path.GetTempPath(), "LazyScanTests-" + Guid.NewGuid().ToString("N"));
     private readonly FakeNetworkSource _networks = new(FakeNetworkSource.Loopback());
     private readonly FakeAdvertiser _advertiser = new();
     private readonly ConcurrentQueue<CompanionPackageReceivedEventArgs> _received = new();
@@ -171,7 +171,7 @@ public sealed class CompanionLoopbackTests : IAsyncLifetime
     internal static X509Certificate2 MakeCertificate()
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var request = new CertificateRequest("CN=CompleteScanner test", key, HashAlgorithmName.SHA256);
+        var request = new CertificateRequest("CN=Lazy Scan test", key, HashAlgorithmName.SHA256);
         using var ephemeral = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30));
         return X509CertificateLoader.LoadPkcs12(ephemeral.Export(X509ContentType.Pfx), null);
     }

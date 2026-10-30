@@ -26,7 +26,7 @@ public sealed class CompanionNetworkTests : IDisposable
 
     public CompanionNetworkTests()
     {
-        _directory = Path.Combine(Path.GetTempPath(), "CompleteScannerTests-" + Guid.NewGuid().ToString("N"));
+        _directory = Path.Combine(Path.GetTempPath(), "LazyScanTests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_directory);
     }
 
@@ -173,10 +173,10 @@ public sealed class CompanionNetworkTests : IDisposable
 
     // MARK: - Firewall
 
-    private const string App = @"C:\Program Files\CompleteScanner\LazyScan.exe";
+    private const string App = @"C:\Program Files\Lazy Scan\LazyScan.exe";
 
     private static FirewallRule Rule(bool allow, FirewallProfiles profiles, string path = App, bool enabled = true,
-                                     bool inbound = true, int protocol = 6, string ports = "*", string name = "CompleteScanner") =>
+                                     bool inbound = true, int protocol = 6, string ports = "*", string name = "Lazy Scan") =>
         new(name, path, inbound, allow, enabled, profiles, protocol, ports);
 
     [Fact]

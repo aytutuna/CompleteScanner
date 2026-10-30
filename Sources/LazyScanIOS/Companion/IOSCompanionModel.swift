@@ -10,7 +10,7 @@ public enum IOSCompanionText {
     public static let pairTitle = "Pair with a computer"
     public static let pairLine = "On the computer, choose Pair a phone."
     public static let textLabel = "Enter pairing text"
-    public static let textPlaceholder = "completescanner://pair?\u{2026}"
+    public static let textPlaceholder = "lazyscan://pair?\u{2026}"
     public static let compareLine = "Compare with the code on the computer"
     public static let phoneNameLabel = "Name of this phone"
     public static let pairButton = "Pair"

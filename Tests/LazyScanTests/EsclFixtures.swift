@@ -31,14 +31,14 @@ enum EsclFixtures {
 
     static let certificates: [CertificateVector] = [
         CertificateVector(file: "certificate-rsa2048.pem",
-                          fingerprint: "4ad3ab48789a9c2f6b9b8cb55503d2bdf9fa889488beca7137476c0e1bb4e4e9",
-                          subject: "CN=CompleteScanner test scanner RSA-2048"),
+                          fingerprint: "ef21ff96c67a12d62b5fd5bc7367fc0b265fe4da4e0e8ebc0a0d404457d7a74c",
+                          subject: "CN=Lazy Scan test scanner RSA-2048"),
         CertificateVector(file: "certificate-p256.pem",
-                          fingerprint: "61010433c5795ff33b96976a6bc6f2aa324a36b7182a1ddcab4d234744fe7d6c",
-                          subject: "CN=CompleteScanner test scanner P-256"),
+                          fingerprint: "80c2501cf098b63f418350c6fea5a6e420362e6be8aff337c3aee239a40570a4",
+                          subject: "CN=Lazy Scan test scanner P-256"),
         CertificateVector(file: "certificate-p384.pem",
-                          fingerprint: "ef13555c8bd3534a2726779408e4e0c0ed39733864f463517d6181263f2fe199",
-                          subject: "CN=CompleteScanner test scanner P-384"),
+                          fingerprint: "c287be8b8476f2aaa5d6f61eee6f4a7b062c89222ad861abc1265383e5f8d9bb",
+                          subject: "CN=Lazy Scan test scanner P-384"),
     ]
 
     /// A self-signed identity (certificate and private key, PKCS #12) and the SHA-256 of its
@@ -58,7 +58,7 @@ enum EsclFixtures {
     ]
 
     /// The password of the `loopbackIdentities` files.
-    static let loopbackPassword: String = "CompleteScanner-test"
+    static let loopbackPassword: String = "LazyScan-test"
 
     /// Tests/Fixtures/Escl in the repository.
     static var directory: URL {

@@ -14,14 +14,14 @@ namespace LazyScan.App.Tests;
 /// <summary>
 /// A test that asks the real WIA Automation for its devices. Where WIA cannot be asked (WIA
 /// Automation not registered, or stisvc not installed or disabled) it is skipped, and the skip
-/// says why, with stisvc's state and start type; with COMPLETESCANNER_REQUIRE_WIA=1 (CI) it runs
+/// says why, with stisvc's state and start type; with LAZYSCAN_REQUIRE_WIA=1 (CI) it runs
 /// anyway and fails there, so it can never pass on CI without WIA having been asked.
 /// </summary>
 public sealed class WiaFactAttribute : FactAttribute
 {
     public WiaFactAttribute()
     {
-        if (Environment.GetEnvironmentVariable("COMPLETESCANNER_REQUIRE_WIA") != "1" && WhyNot() is { } reason)
+        if (Environment.GetEnvironmentVariable("LAZYSCAN_REQUIRE_WIA") != "1" && WhyNot() is { } reason)
         {
             Skip = $"WIA cannot be asked here: {reason} ({ServiceDescription()}).";
         }
@@ -97,7 +97,7 @@ public class WinRtScannerTests
     [Fact]
     public async Task WatcherFinishesItsFirstPassCleanly()
     {
-        string scratch = Path.Combine(Path.GetTempPath(), "CompleteScanner-winrt-test-" + Guid.NewGuid().ToString("N"));
+        string scratch = Path.Combine(Path.GetTempPath(), "LazyScan-winrt-test-" + Guid.NewGuid().ToString("N"));
         var backend = new WinRtScannerBackend(() => scratch);
         int changes = 0;
         backend.DevicesChanged += () => Interlocked.Increment(ref changes);

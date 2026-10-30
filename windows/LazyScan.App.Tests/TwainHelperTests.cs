@@ -13,14 +13,14 @@ namespace LazyScan.App.Tests;
 
 /// <summary>
 /// A test that starts the real 32-bit helper, which needs the 32-bit (x86) .NET Desktop Runtime.
-/// Without it the test is skipped, unless COMPLETESCANNER_REQUIRE_TWAIN_HELPER=1 (CI installs the
+/// Without it the test is skipped, unless LAZYSCAN_REQUIRE_TWAIN_HELPER=1 (CI installs the
 /// runtime and sets it, so the tests can never be skipped there unnoticed).
 /// </summary>
 public sealed class HelperFactAttribute : FactAttribute
 {
     public HelperFactAttribute()
     {
-        if (Environment.GetEnvironmentVariable("COMPLETESCANNER_REQUIRE_TWAIN_HELPER") != "1" && !X86DesktopRuntimeInstalled())
+        if (Environment.GetEnvironmentVariable("LAZYSCAN_REQUIRE_TWAIN_HELPER") != "1" && !X86DesktopRuntimeInstalled())
         {
             Skip = "The 32-bit .NET Desktop Runtime (x86) is not installed, so the 32-bit TWAIN helper cannot run here.";
         }
@@ -44,7 +44,7 @@ public sealed class HelperFactAttribute : FactAttribute
 [Collection(WallClockCollection.Name)]
 public class TwainHelperTests
 {
-    private const string Scanner = "CompleteScanner Simulated Scanner";
+    private const string Scanner = "Lazy Scan Simulated Scanner";
 
     private static string HelperPath => Path.Combine(AppContext.BaseDirectory, TwainHelperOptions.FileName);
 
@@ -114,7 +114,7 @@ public class TwainHelperTests
         var info = Assert.Single(devices, d => d.Id == Id(Scanner));
         Assert.Equal((Scanner + " (32-bit driver)", "TWAIN (32-bit driver)", "twain32"), (info.Name, info.Transport, info.Backend));
         Assert.Contains("TWAIN 32-bit helper: works", backend.DiagnosticsReport);
-        Assert.Contains("left out (WIA bridge, or also a 64-bit driver) \"WIA-CompleteScanner Simulated Bridge\"", backend.DiagnosticsReport);
+        Assert.Contains("left out (WIA bridge, or also a 64-bit driver) \"WIA-Lazy Scan Simulated Bridge\"", backend.DiagnosticsReport);
 
         // It is the 32-bit helper, running as a separate process.
         int helper = backend.HelperProcessId ?? throw new Xunit.Sdk.XunitException("No helper is running.");
@@ -158,7 +158,7 @@ public class TwainHelperTests
     {
         using var backend = NewBackend();
         await Listed(backend);
-        var session = await backend.OpenSessionAsync(Id("CompleteScanner Simulated Native"));
+        var session = await backend.OpenSessionAsync(Id("Lazy Scan Simulated Native"));
         var progress = new List<ScanProgress>();
         session.ProgressHandler = p =>
         {
@@ -188,18 +188,18 @@ public class TwainHelperTests
         using var backend = NewBackend();
         await Listed(backend);
 
-        var jam = await backend.OpenSessionAsync(Id("CompleteScanner Simulated Jam"));
+        var jam = await backend.OpenSessionAsync(Id("Lazy Scan Simulated Jam"));
         var kept = await jam.PerformScanAsync(Gray(ScanSource.DocumentFeeder), null);
         Assert.Single(kept);
         Assert.Equal(ScannerProblem.PaperJam, jam.LastScanStop?.Problem);
         await jam.CloseAsync();
 
-        var offline = await backend.OpenSessionAsync(Id("CompleteScanner Simulated Offline"));
+        var offline = await backend.OpenSessionAsync(Id("Lazy Scan Simulated Offline"));
         var notThere = await Assert.ThrowsAsync<ScanException>(offline.GetCapabilitiesAsync);
         Assert.Equal(ScannerProblem.Offline, notThere.Problem);
         await offline.CloseAsync();
 
-        var busy = await Assert.ThrowsAsync<ScanException>(() => backend.OpenSessionAsync(Id("CompleteScanner Simulated Busy")));
+        var busy = await Assert.ThrowsAsync<ScanException>(() => backend.OpenSessionAsync(Id("Lazy Scan Simulated Busy")));
         Assert.Equal(ScannerProblem.Busy, busy.Problem);
         Assert.Equal(ScanException.ForProblem(ScannerProblem.Busy, "TWAIN TWCC_MAXCONNECTIONS").Message, busy.Message);
     }
@@ -211,7 +211,7 @@ public class TwainHelperTests
         await Listed(backend);
         int first = backend.HelperProcessId!.Value;
 
-        var crashing = await backend.OpenSessionAsync(Id("CompleteScanner Simulated Crash"));
+        var crashing = await backend.OpenSessionAsync(Id("Lazy Scan Simulated Crash"));
         await crashing.GetCapabilitiesAsync();
         var error = await Assert.ThrowsAsync<ScanException>(() => crashing.PerformScanAsync(Gray(ScanSource.Flatbed), null));
         Assert.Equal(ScanException.ScanFailed(TwainHelperConnection.StoppedMessage).Message, error.Message);
@@ -234,7 +234,7 @@ public class TwainHelperTests
         await Listed(backend);
         int first = backend.HelperProcessId!.Value;
 
-        var hanging = await backend.OpenSessionAsync(Id("CompleteScanner Simulated Hang"));
+        var hanging = await backend.OpenSessionAsync(Id("Lazy Scan Simulated Hang"));
         var error = await Assert.ThrowsAsync<ScanException>(hanging.GetCapabilitiesAsync);
         Assert.Equal(ScanException.ScanFailed(TwainHelperConnection.NotRespondingMessage).Message, error.Message);
         Assert.True(await ExitsWithin(first, TimeSpan.FromSeconds(15)));
@@ -253,7 +253,7 @@ public class TwainHelperTests
         await Listed(backend);
         int helper = backend.HelperProcessId!.Value;
 
-        var slow = await backend.OpenSessionAsync(Id("CompleteScanner Simulated Slow"));
+        var slow = await backend.OpenSessionAsync(Id("Lazy Scan Simulated Slow"));
         slow.ProgressHandler = p =>
         {
             if (p.Message == "Transferred page 2…") slow.CancelScan();

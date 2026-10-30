@@ -213,7 +213,7 @@ final class CompanionHostTests: XCTestCase {
         let advertised = try XCTUnwrap(advertiser.active.values.first)
         XCTAssertEqual(advertised.interfaceIndex, 1)
         XCTAssertEqual(advertised.port, code.port)
-        XCTAssertEqual(advertised.serviceType, "_completescan._tcp")
+        XCTAssertEqual(advertised.serviceType, "_lazyscan._tcp")
         XCTAssertEqual(advertised.txt, ["v": "1", "id": service.devices.desktopId])
         XCTAssertEqual(advertised.instanceName, "TEST-MAC")
         // Closing the code without pairing stops listening again.

@@ -16,7 +16,7 @@ public struct IOSKeychainError: Error, Equatable, LocalizedError {
 /// (account "<desktopId>.sync", as `PairedDesktopStore` names it), readable only while the phone is
 /// unlocked and never moved to another device, in a backup or otherwise.
 public struct IOSCompanionSecrets: CompanionSecretStore {
-    public static let service = "com.completescanner.companion"
+    public static let service = "com.lazyscan.companion"
 
     /// The Keychain service the secrets are kept under (tests use one of their own).
     public let service: String

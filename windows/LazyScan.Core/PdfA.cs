@@ -80,7 +80,7 @@ public sealed record PdfWriteOptions
 public static class PdfA
 {
     /// <summary>What the file names as its producer and creator tool (pdf:Producer, xmp:CreatorTool).</summary>
-    public const string Producer = "CompleteScanner";
+    public const string Producer = "Lazy Scan";
 
     /// <summary>The output intent's condition: the color space of the embedded profile.</summary>
     public const string OutputConditionIdentifier = "sRGB IEC61966-2.1";

@@ -457,7 +457,7 @@ private struct OutputSettingsRows: View {
     }
 }
 
-/// Where files are saved: the app's own folder in Files (On My iPhone › CompleteScanner) or one picked with
+/// Where files are saved: the app's own folder in Files (On My iPhone › Lazy Scan) or one picked with
 /// Choose… (iCloud Drive, a USB drive; `IOSSaveFolder`), with Show in Files. Use app folder goes back to
 /// the app's own once another is picked.
 private struct SaveFolderRow: View {

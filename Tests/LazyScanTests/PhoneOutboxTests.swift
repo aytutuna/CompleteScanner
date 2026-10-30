@@ -28,14 +28,14 @@ final class PhoneOutboxTests: XCTestCase {
 
     func test_enqueue_movesTheFileInAndNextIsTheOldest() throws {
         let outbox = PhoneOutbox(directory: outboxFolder)
-        let source = try package("Scan 1.csdoc")
+        let source = try package("Scan 1.lsdoc")
 
         let first = try outbox.enqueue(source, target: .new, desktopId: desk)
-        let second = try outbox.enqueue(try package("Scan 2.csdoc"), target: .current, desktopId: desk)
+        let second = try outbox.enqueue(try package("Scan 2.lsdoc"), target: .current, desktopId: desk)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
-        XCTAssertEqual(first.fileName, "Scan 1.csdoc")
-        XCTAssertEqual(try Data(contentsOf: outbox.fileURL(of: first)), Data("package Scan 1.csdoc".utf8))
+        XCTAssertEqual(first.fileName, "Scan 1.lsdoc")
+        XCTAssertEqual(try Data(contentsOf: outbox.fileURL(of: first)), Data("package Scan 1.lsdoc".utf8))
         XCTAssertTrue(CompanionProtocol.isValidId(first.id))
         XCTAssertNotEqual(first.id, second.id)
         XCTAssertEqual(second.target, .current)
@@ -47,20 +47,20 @@ final class PhoneOutboxTests: XCTestCase {
     func test_enqueue_aFileInTheOutboxStaysWhereItIs_aNameTakenGetsANumber() throws {
         let outbox = PhoneOutbox(directory: outboxFolder)
         try FileManager.default.createDirectory(at: outboxFolder, withIntermediateDirectories: true)
-        let inside = outboxFolder.appendingPathComponent("Scan.csdoc")
+        let inside = outboxFolder.appendingPathComponent("Scan.lsdoc")
         try Data("inside".utf8).write(to: inside)
 
         let kept = try outbox.enqueue(inside, target: .new, desktopId: desk)
-        let moved = try outbox.enqueue(try package("Scan.csdoc"), target: .new, desktopId: desk)
+        let moved = try outbox.enqueue(try package("Scan.lsdoc"), target: .new, desktopId: desk)
 
-        XCTAssertEqual(kept.fileName, "Scan.csdoc")
-        XCTAssertEqual(moved.fileName, "Scan 2.csdoc")
+        XCTAssertEqual(kept.fileName, "Scan.lsdoc")
+        XCTAssertEqual(moved.fileName, "Scan 2.lsdoc")
         XCTAssertEqual(try Data(contentsOf: inside), Data("inside".utf8))
     }
 
     func test_markFailed_countsAndKeepsWhy_markSentRemovesTheFile() throws {
         let outbox = PhoneOutbox(directory: outboxFolder)
-        let item = try outbox.enqueue(try package("Scan.csdoc"), target: .new, desktopId: desk)
+        let item = try outbox.enqueue(try package("Scan.lsdoc"), target: .new, desktopId: desk)
 
         outbox.markFailed(item.id, error: "Office PC cannot be reached on this network.")
         outbox.markFailed(item.id, error: "Too many attempts.")
@@ -77,9 +77,9 @@ final class PhoneOutboxTests: XCTestCase {
     func test_enqueue_atMost50() throws {
         let outbox = PhoneOutbox(directory: outboxFolder)
         for index in 0..<PhoneOutbox.maxItems {
-            try outbox.enqueue(try package("Scan \(index).csdoc"), target: .new, desktopId: desk)
+            try outbox.enqueue(try package("Scan \(index).lsdoc"), target: .new, desktopId: desk)
         }
-        let extra = try package("One more.csdoc")
+        let extra = try package("One more.lsdoc")
 
         XCTAssertThrowsError(try outbox.enqueue(extra, target: .new, desktopId: desk)) { error in
             XCTAssertEqual(error as? PhoneOutboxError, .full)
@@ -91,8 +91,8 @@ final class PhoneOutboxTests: XCTestCase {
 
     func test_survivesANewInstance_droppingEntriesWhoseFileWent() throws {
         let outbox = PhoneOutbox(directory: outboxFolder)
-        let kept = try outbox.enqueue(try package("Kept.csdoc"), target: .current, desktopId: desk)
-        let gone = try outbox.enqueue(try package("Gone.csdoc"), target: .new, desktopId: desk)
+        let kept = try outbox.enqueue(try package("Kept.lsdoc"), target: .current, desktopId: desk)
+        let gone = try outbox.enqueue(try package("Gone.lsdoc"), target: .new, desktopId: desk)
         outbox.markFailed(kept.id, error: "Busy.")
         try FileManager.default.removeItem(at: outbox.fileURL(of: gone))
 
@@ -108,9 +108,9 @@ final class PhoneOutboxTests: XCTestCase {
 
     func test_load_isLenient() throws {
         try FileManager.default.createDirectory(at: outboxFolder, withIntermediateDirectories: true)
-        try Data("x".utf8).write(to: outboxFolder.appendingPathComponent("A.csdoc"))
+        try Data("x".utf8).write(to: outboxFolder.appendingPathComponent("A.lsdoc"))
         let json = """
-            {"items":[{"id":"pkg-0001-abcd","fileName":"A.csdoc","target":"sideways","attempts":"many","more":1}]}
+            {"items":[{"id":"pkg-0001-abcd","fileName":"A.lsdoc","target":"sideways","attempts":"many","more":1}]}
             """
         try Data(json.utf8).write(to: outboxFolder.appendingPathComponent(PhoneOutbox.fileName))
 
@@ -124,7 +124,7 @@ final class PhoneOutboxTests: XCTestCase {
 
     func test_markViaSyncFolder_isKept_andReadLeniently() throws {
         let outbox = PhoneOutbox(directory: outboxFolder)
-        let item = try outbox.enqueue(try package("Scan.csdoc"), target: .new, desktopId: desk)
+        let item = try outbox.enqueue(try package("Scan.lsdoc"), target: .new, desktopId: desk)
         XCTAssertFalse(item.viaSyncFolder)
 
         outbox.markViaSyncFolder(item.id)
@@ -134,14 +134,14 @@ final class PhoneOutboxTests: XCTestCase {
         let text = try String(contentsOf: outboxFolder.appendingPathComponent(PhoneOutbox.fileName), encoding: .utf8)
         XCTAssertTrue(text.contains("\"viaSyncFolder\""))
 
-        let json = #"{"items":[{"id":"pkg-0001-abcd","fileName":"Scan.csdoc","viaSyncFolder":"yes"}]}"#
+        let json = #"{"items":[{"id":"pkg-0001-abcd","fileName":"Scan.lsdoc","viaSyncFolder":"yes"}]}"#
         try Data(json.utf8).write(to: outboxFolder.appendingPathComponent(PhoneOutbox.fileName))
         XCTAssertEqual(PhoneOutbox(directory: outboxFolder).items.first?.viaSyncFolder, false)
     }
 
     func test_markInSyncFolder_andMarkRefused_areKept_andReadLeniently() throws {
         let outbox = PhoneOutbox(directory: outboxFolder)
-        let item = try outbox.enqueue(try package("Scan.csdoc"), target: .new, desktopId: desk)
+        let item = try outbox.enqueue(try package("Scan.lsdoc"), target: .new, desktopId: desk)
         XCTAssertFalse(item.inSyncFolder)
         XCTAssertFalse(item.refused)
 
@@ -154,7 +154,7 @@ final class PhoneOutboxTests: XCTestCase {
         outbox.markInSyncFolder(item.id, false)
         XCTAssertEqual(PhoneOutbox(directory: outboxFolder).items.first?.inSyncFolder, false)
 
-        let json = #"{"items":[{"id":"pkg-0001-abcd","fileName":"Scan.csdoc","inSyncFolder":"yes","refused":"no"}]}"#
+        let json = #"{"items":[{"id":"pkg-0001-abcd","fileName":"Scan.lsdoc","inSyncFolder":"yes","refused":"no"}]}"#
         try Data(json.utf8).write(to: outboxFolder.appendingPathComponent(PhoneOutbox.fileName))
         let lenient = try XCTUnwrap(PhoneOutbox(directory: outboxFolder).items.first)
         XCTAssertFalse(lenient.inSyncFolder)

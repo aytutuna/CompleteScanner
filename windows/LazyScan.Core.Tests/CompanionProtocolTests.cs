@@ -78,7 +78,7 @@ public class CompanionProtocolTests
     public void Constants_AreTheProtocols()
     {
         Assert.Equal(1, CompanionProtocol.Version);
-        Assert.Equal("_completescan._tcp", CompanionProtocol.ServiceType);
+        Assert.Equal("_lazyscan._tcp", CompanionProtocol.ServiceType);
         Assert.Equal(52731, CompanionProtocol.DefaultPort);
         Assert.Equal(553_648_128L, CompanionProtocol.MaxUploadBytes);
         Assert.Equal("From phone", CompanionProtocol.PageLabel);
@@ -99,7 +99,7 @@ public class CompanionProtocolTests
         Assert.Equal(
             """{"protocolVersion":1,"desktopId":"0123456789abcdef0123456789abcdef","desktopName":"AYTU-PC","deviceSecret":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8","syncKey":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"}""",
             new PairResponse(DesktopId, "AYTU-PC", CompanionVectors.SecretText, 1, CompanionVectors.SecretText).ToJson());
-        Assert.Equal("""{"service":"completescanner","protocolVersion":1,"paired":false}""", new HealthResponse(1, false).ToJson());
+        Assert.Equal("""{"service":"lazyscan","protocolVersion":1,"paired":false}""", new HealthResponse(1, false).ToJson());
         Assert.Equal(
             """{"protocolVersion":1,"desktopId":"0123456789abcdef0123456789abcdef","desktopName":"AYTU-PC","queuedPages":12,"maxUploadBytes":553648128}""",
             new HelloResponse(DesktopId, "AYTU-PC", 1, 12, 553_648_128).ToJson());
@@ -148,10 +148,10 @@ public class CompanionProtocolTests
         Assert.Null(PairRequest.FromJson(Utf8("null")));
         Assert.Null(PairRequest.FromJson(Utf8("not json")));
         Assert.Null(PairRequest.FromJson([]));
-        // An error needs its code; a health answer must be CompleteScanner's.
+        // An error needs its code; a health answer must be Lazy Scan's.
         Assert.Null(CompanionError.FromJson(Utf8("""{"message":"x"}""")));
         Assert.Null(HealthResponse.FromJson(Utf8("""{"service":"other","protocolVersion":1}""")));
-        Assert.Equal(new HealthResponse(0, false), HealthResponse.FromJson(Utf8("""{"service":"completescanner"}""")));
+        Assert.Equal(new HealthResponse(0, false), HealthResponse.FromJson(Utf8("""{"service":"lazyscan"}""")));
     }
 
     [Fact]

@@ -179,7 +179,7 @@ final class IOSCompanionTests: XCTestCase {
     // MARK: Keychain
 
     func test_keychain_keepsReplacesAndDeletesTheSecret() throws {
-        let secrets = IOSCompanionSecrets(service: "com.completescanner.companion.tests-\(UUID().uuidString)")
+        let secrets = IOSCompanionSecrets(service: "com.lazyscan.companion.tests-\(UUID().uuidString)")
         let first = Data(repeating: 1, count: PairedDeviceStore.secretByteCount)
         let second = Data(repeating: 2, count: PairedDeviceStore.secretByteCount)
         do {
@@ -202,7 +202,7 @@ final class IOSCompanionTests: XCTestCase {
     }
 
     func test_keychain_keepsTheSyncKeyNextToTheSecret() throws {
-        let secrets = IOSCompanionSecrets(service: "com.completescanner.companion.tests-\(UUID().uuidString)")
+        let secrets = IOSCompanionSecrets(service: "com.lazyscan.companion.tests-\(UUID().uuidString)")
         let secret = Data(repeating: 3, count: PairedDeviceStore.secretByteCount)
         let syncKey = Data((1...32).map { UInt8($0) })
         do {
@@ -252,7 +252,7 @@ final class IOSCompanionTests: XCTestCase {
 
         XCTAssertTrue(PairingScannerView.isPairingCode(text))
         XCTAssertTrue(PairingScannerView.isPairingCode(text.uppercased()))
-        XCTAssertFalse(PairingScannerView.isPairingCode("https://example.com/?completescanner://pair?v=1"))
+        XCTAssertFalse(PairingScannerView.isPairingCode("https://example.com/?lazyscan://pair?v=1"))
     }
 
     func test_statusLines() {

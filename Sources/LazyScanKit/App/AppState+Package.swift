@@ -2,30 +2,30 @@ import CoreGraphics
 import Foundation
 import ImageIO
 
-// Twin of windows/LazyScan.App/AppViewModel.Package.cs: a `.csdoc` opened by hand (dropped,
+// Twin of windows/LazyScan.App/AppViewModel.Package.cs: a `.lsdoc` opened by hand (dropped,
 // opened from Files or the Finder, or through the file association) is offered, not added: a banner
 // adds its pages to the queue or opens it as a new one, unlike a paired phone's documents, which C1
-// adds on its own. The queue can also be written as a `.csdoc`, for the iPhone's share sheet.
+// adds on its own. The queue can also be written as a `.lsdoc`, for the iPhone's share sheet.
 
-/// The banner's texts for a `.csdoc` opened by hand. Twin of C# `PackageText`.
+/// The banner's texts for a `.lsdoc` opened by hand. Twin of C# `PackageText`.
 public enum PackageText {
     public static let addToPages = "Add to pages"
     public static let openAsNew = "Open as new"
     public static let notOfferedMessage =
         "A document's pages are added to the page queue: choose Document mode, or a document task, with Collect pages before saving on, to add them."
 
-    /// "Opened Receipt.csdoc: 3 pages"
+    /// "Opened Receipt.lsdoc: 3 pages"
     public static func openedMessage(_ fileName: String, pageCount: Int) -> String {
         "Opened \(fileName): \(pageCount) page\(pageCount == 1 ? "" : "s")"
     }
 
-    /// "Receipt.csdoc cannot be opened: one of its pictures cannot be read."
+    /// "Receipt.lsdoc cannot be opened: one of its pictures cannot be read."
     public static func unreadablePictureMessage(_ fileName: String) -> String {
         "\(fileName) cannot be opened: one of its pictures cannot be read."
     }
 }
 
-/// A `.csdoc` opened by hand and waiting on the banner: its file's name, its pages decoded as the
+/// A `.lsdoc` opened by hand and waiting on the banner: its file's name, its pages decoded as the
 /// queue takes them (`source == .phone`, as C1's), and the name its document carries ("" for none).
 /// Twin of C# `PendingPackage`, plus the file it was read from (`url`), which says whether it came
 /// from the paired desktop.
@@ -103,7 +103,7 @@ public struct PendingPackage {
 }
 
 extension AppState {
-    /// Reads the `.csdoc` at `url` off the main actor and offers it (`pendingPackage`), replacing one
+    /// Reads the `.lsdoc` at `url` off the main actor and offers it (`pendingPackage`), replacing one
     /// offered before; a package that cannot be read is said in `errorMessage`. When another file is
     /// opened before the read ends, the read is dropped: the file opened last is the one offered. The
     /// queue is not touched, so a package can be opened while a scan runs.
@@ -162,7 +162,7 @@ extension AppState {
         return true
     }
 
-    /// Writes the queued pages as one `.csdoc` in `folder`, named as the next saved file would be
+    /// Writes the queued pages as one `.lsdoc` in `folder`, named as the next saved file would be
     /// (the running number is read, not taken), and returns the file, for the share sheet. Each page
     /// is its picture as shown at full resolution, a black & white page as a bilevel TIFF and the
     /// others as a JPEG at the settings' quality, with its side, sheet and capture facts; the
@@ -224,7 +224,7 @@ extension AppState {
         #endif
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
         return CompanionDocument(title: name, pages: packaged,
-                                 writer: CompanionWriterInfo(app: "CompleteScanner", appVersion: version, platform: platform),
+                                 writer: CompanionWriterInfo(app: "Lazy Scan", appVersion: version, platform: platform),
                                  suggestedName: name)
     }
 }

@@ -267,7 +267,7 @@ final class CompanionClientTests: XCTestCase {
 
     func test_outbox_waitIsClampedAndTheItemDownloadedAndAcked() async throws {
         let fake = CompanionFakeDesktop()
-        let item = OutboxItem(id: "item-0001-abcd", name: "Receipt.csdoc", contentType: CompanionProtocol.packageContentType,
+        let item = OutboxItem(id: "item-0001-abcd", name: "Receipt.lsdoc", contentType: CompanionProtocol.packageContentType,
                               byteCount: 5, created: Date(timeIntervalSince1970: 1_790_000_000))
         fake.on("GET " + CompanionProtocol.outboxPath, .json(200, OutboxList(items: [item]).toJSON()))
         fake.on("GET " + CompanionProtocol.outboxPrefix + item.id,

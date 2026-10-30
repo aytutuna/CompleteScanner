@@ -27,12 +27,12 @@ internal static class EsclFixtures
     /// <summary>Self-signed scanner certificates (PEM) and the SHA-256 of their SubjectPublicKeyInfo.</summary>
     public static readonly (string File, string Fingerprint, string Subject)[] Certificates =
     [
-        ("certificate-rsa2048.pem", "4ad3ab48789a9c2f6b9b8cb55503d2bdf9fa889488beca7137476c0e1bb4e4e9",
-         "CN=CompleteScanner test scanner RSA-2048"),
-        ("certificate-p256.pem", "61010433c5795ff33b96976a6bc6f2aa324a36b7182a1ddcab4d234744fe7d6c",
-         "CN=CompleteScanner test scanner P-256"),
-        ("certificate-p384.pem", "ef13555c8bd3534a2726779408e4e0c0ed39733864f463517d6181263f2fe199",
-         "CN=CompleteScanner test scanner P-384"),
+        ("certificate-rsa2048.pem", "ef21ff96c67a12d62b5fd5bc7367fc0b265fe4da4e0e8ebc0a0d404457d7a74c",
+         "CN=Lazy Scan test scanner RSA-2048"),
+        ("certificate-p256.pem", "80c2501cf098b63f418350c6fea5a6e420362e6be8aff337c3aee239a40570a4",
+         "CN=Lazy Scan test scanner P-256"),
+        ("certificate-p384.pem", "c287be8b8476f2aaa5d6f61eee6f4a7b062c89222ad861abc1265383e5f8d9bb",
+         "CN=Lazy Scan test scanner P-384"),
     ];
 
     /// <summary>
@@ -47,7 +47,7 @@ internal static class EsclFixtures
     ];
 
     /// <summary>The password of the <see cref="LoopbackIdentities"/> files.</summary>
-    public const string LoopbackPassword = "CompleteScanner-test";
+    public const string LoopbackPassword = "LazyScan-test";
 
     /// <summary>The folder the fixtures are copied to.</summary>
     public static string Directory => Path.Combine(AppContext.BaseDirectory, "Fixtures", "Escl");

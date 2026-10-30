@@ -15,7 +15,7 @@ namespace LazyScan.App;
 public sealed partial class AppViewModel
 {
     /// <summary>One instance per user session receives from phones; others say so.</summary>
-    private const string CompanionMutexName = @"Local\CompleteScanner.PhoneLink";
+    private const string CompanionMutexName = @"Local\LazyScan.PhoneLink";
 
     private CompanionService? _companion;
     private Mutex? _companionMutex;
@@ -164,10 +164,10 @@ public sealed partial class AppViewModel
     }
 
     private static string CompanionSettingsDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CompleteScanner");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Lazy Scan");
 
     private static string CompanionDataDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CompleteScanner", "Companion");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Lazy Scan", "Companion");
 
     private async Task StartCompanionAsync(CompanionService companion)
     {

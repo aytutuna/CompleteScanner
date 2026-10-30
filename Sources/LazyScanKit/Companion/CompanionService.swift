@@ -310,11 +310,11 @@ public final class CompanionService: @unchecked Sendable {
         return clean.isEmpty ? "Computer" : clean
     }
 
-    /// Application Support/CompleteScanner, where the app's settings are: companion-devices.json and
+    /// Application Support/Lazy Scan, where the app's settings are: companion-devices.json and
     /// companion-networks.json go next to them.
     public static var settingsFolder: URL { StoreFiles.defaultDirectory }
 
-    /// Application Support/CompleteScanner/Companion, created and kept out of backups: what phones sent
+    /// Application Support/Lazy Scan/Companion, created and kept out of backups: what phones sent
     /// and what waits for them.
     public static func dataFolder() -> URL {
         var folder = StoreFiles.defaultDirectory.appendingPathComponent("Companion", isDirectory: true)

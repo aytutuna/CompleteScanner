@@ -81,7 +81,7 @@ struct PairingScannerView: View {
         return IOSCameraAvailability.resolve(isSupported: found, authorization: status)
     }
 
-    /// A text read from a QR code that is a CompleteScanner pairing code.
+    /// A text read from a QR code that is a Lazy Scan pairing code.
     static func isPairingCode(_ text: String) -> Bool {
         text.lowercased().hasPrefix(PairingUri.prefix)
     }
@@ -152,7 +152,7 @@ private struct PairingCaptureScanner: UIViewControllerRepresentable {
 /// The capture session, started and stopped off the main thread as AVFoundation asks.
 private final class PairingCaptureSession: @unchecked Sendable {
     let session: AVCaptureSession = AVCaptureSession()
-    let queue: DispatchQueue = DispatchQueue(label: "CompleteScanner.pairing.camera")
+    let queue: DispatchQueue = DispatchQueue(label: "LazyScan.pairing.camera")
 
     func start() {
         queue.async {

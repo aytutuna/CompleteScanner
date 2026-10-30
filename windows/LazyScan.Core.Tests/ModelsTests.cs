@@ -233,7 +233,7 @@ public class ModelsTests
         var preferences = JsonSerializer.Deserialize<AppPreferences>(json, StoreFiles.JsonOptions);
         Assert.Equal(AppAppearance.System, preferences!.Appearance);
 
-        string dir = Path.Combine(Path.GetTempPath(), "CompleteScanner.Tests." + Guid.NewGuid().ToString("N"));
+        string dir = Path.Combine(Path.GetTempPath(), "LazyScan.Tests." + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         try
         {

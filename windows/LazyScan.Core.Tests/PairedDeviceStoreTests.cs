@@ -14,7 +14,7 @@ public sealed class PairedDeviceStoreTests : IDisposable
 
     public PairedDeviceStoreTests()
     {
-        _directory = Path.Combine(Path.GetTempPath(), "CompleteScannerTests-" + Guid.NewGuid().ToString("N"));
+        _directory = Path.Combine(Path.GetTempPath(), "LazyScanTests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_directory);
     }
 

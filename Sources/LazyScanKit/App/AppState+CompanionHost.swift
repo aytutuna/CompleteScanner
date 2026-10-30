@@ -121,7 +121,7 @@ extension AppState {
     }
 
     /// The queue can take a phone's pages now: it collects pages (`PhotoImport.isOffered` with Collect
-    /// pages before saving on, as for a `.csdoc` opened by hand) and nothing else is going on
+    /// pages before saving on, as for a `.lsdoc` opened by hand) and nothing else is going on
     /// (`canIngest`). Twin of C# `CanTakePhonePages`.
     public var canTakePhonePages: Bool {
         PhotoImport.isOffered(settings) && settings.documentMultiPage && canIngest

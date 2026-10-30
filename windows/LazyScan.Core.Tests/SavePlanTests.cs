@@ -80,7 +80,7 @@ public class SavePlanTests
 
     private static string TempFolder()
     {
-        string folder = Path.Combine(Path.GetTempPath(), "CompleteScannerTests", "SavePlan-" + Guid.NewGuid().ToString("N"));
+        string folder = Path.Combine(Path.GetTempPath(), "LazyScanTests", "SavePlan-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(folder);
         return folder;
     }

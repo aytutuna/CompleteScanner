@@ -14,7 +14,7 @@ namespace LazyScan.App.Tests;
 // is to be checked with ImageIO there (see CONTRACTS.md, "CCITT G4 for black & white pages").
 public class BilevelOutputTests : IDisposable
 {
-    private readonly string _folder = Directory.CreateTempSubdirectory("CompleteScanner-bilevel-tests-").FullName;
+    private readonly string _folder = Directory.CreateTempSubdirectory("LazyScan-bilevel-tests-").FullName;
 
     public void Dispose()
     {

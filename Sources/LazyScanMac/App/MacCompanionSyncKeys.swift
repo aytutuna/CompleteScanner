@@ -11,8 +11,8 @@ import Security
 /// swift build has no keychain entitlement, so these are the legacy keychain's items, as for
 /// `CompanionCertificateStore`, not the data protection keychain's.
 struct MacCompanionSyncKeys: CompanionSecretStore {
-    static let service = "com.completescanner.companion.sync"
-    static let label = "CompleteScanner cloud folder key"
+    static let service = "com.lazyscan.companion.sync"
+    static let label = "Lazy Scan cloud folder key"
 
     func save(_ key: Data, for phoneId: String) throws {
         let deleted = SecItemDelete(query(phoneId) as CFDictionary)

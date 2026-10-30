@@ -7,14 +7,14 @@ using Microsoft.Win32;
 namespace LazyScan.App.Services;
 
 /// <summary>
-/// Opens <c>.csdoc</c> files with this app from File Explorer: the extension and its program id are
+/// Opens <c>.lsdoc</c> files with this app from File Explorer: the extension and its program id are
 /// written for the current user only (HKCU\Software\Classes, never HKLM), each start, pointing at the
 /// exe that runs. The app has no installer, so nothing removes them; a value already right is not
 /// written again.
 /// </summary>
 public static class FileAssociation
 {
-    public const string ProgId = "CompleteScanner.Package";
+    public const string ProgId = "LazyScan.Package";
     public const string FriendlyName = "Lazy Scan document";
 
     /// <summary>The keys under Software\Classes and the default value each gets, for the app at <paramref name="exePath"/>.</summary>

@@ -25,7 +25,7 @@ public final class EsclNWBrowser: EsclServiceBrowsing {
         self.type = secure ? "_uscans._tcp" : "_uscan._tcp"
     }
 
-    /// Browses `type` ("_completescan._tcp"); `secure` is false.
+    /// Browses `type` ("_lazyscan._tcp"); `secure` is false.
     public init(type: String) {
         self.secure = false
         self.type = type

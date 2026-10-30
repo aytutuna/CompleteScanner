@@ -21,15 +21,15 @@ struct AppStateFiles {
     /// (`QueueRecord`): the iPhone's, which iOS ends in the background without asking.
     var keepsQueue: Bool = false
 
-    /// Application Support, CompleteScanner-pages in the temporary folder, and
-    /// ~/Library/Logs/CompleteScanner/devices.txt.
+    /// Application Support, LazyScan-pages in the temporary folder, and
+    /// ~/Library/Logs/Lazy Scan/devices.txt.
     static var standard: AppStateFiles {
         let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first
         let logs = library?.appendingPathComponent("Logs", isDirectory: true)
-            .appendingPathComponent("CompleteScanner", isDirectory: true)
+            .appendingPathComponent("Lazy Scan", isDirectory: true)
         return AppStateFiles(settingsDirectory: StoreFiles.defaultDirectory,
                              spoolDirectory: FileManager.default.temporaryDirectory
-                                 .appendingPathComponent("CompleteScanner-pages", isDirectory: true),
+                                 .appendingPathComponent("LazyScan-pages", isDirectory: true),
                              diagnosticsFile: logs?.appendingPathComponent("devices.txt"))
     }
 
@@ -414,10 +414,10 @@ public final class AppState: ObservableObject {
     var copyAreaSelected = false
     /// The save under way sends its files by email once written (`saveAndEmail`).
     var emailsAfterSave = false
-    /// A `.csdoc` opened by hand, offered on a banner until its pages are added, opened as a new queue
+    /// A `.lsdoc` opened by hand, offered on a banner until its pages are added, opened as a new queue
     /// or dismissed (AppState+Package.swift); nil otherwise.
     @Published public internal(set) var pendingPackage: PendingPackage?
-    /// Counts the `.csdoc` files opened, so a slow read does not replace a file opened after it.
+    /// Counts the `.lsdoc` files opened, so a slow read does not replace a file opened after it.
     var packageOpens = 0
     /// The desktop this phone is paired with (AppState+Companion.swift); nil when there is none.
     @Published public internal(set) var companionDesktop: PairedDesktop?
@@ -739,7 +739,7 @@ public final class AppState: ObservableObject {
     }
 
     /// Writes the raw device names, how they were grouped and the troubleshooter's checks to
-    /// devices.txt (`diagnosticsFile`: ~/Library/Logs/CompleteScanner/devices.txt in the app) whenever
+    /// devices.txt (`diagnosticsFile`: ~/Library/Logs/Lazy Scan/devices.txt in the app) whenever
     /// they change, so the names real devices report can be collected to tune `DeviceMerge` and a
     /// user's setup can be read from one file. Best effort.
     private func writeDeviceDiagnostics() {
@@ -2477,7 +2477,7 @@ public final class AppState: ObservableObject {
     }
 
     /// Where the running number of {counter} is kept, in the user's defaults.
-    static let counterKey = "CompleteScanner.counter"
+    static let counterKey = "LazyScan.counter"
 
     private func nextCounter() -> Int {
         let value = UserDefaults.standard.integer(forKey: Self.counterKey) + 1

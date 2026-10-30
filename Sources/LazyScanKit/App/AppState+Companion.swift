@@ -1,7 +1,7 @@
 import Foundation
 
 // The phone's side of C1 (I20): pairing with a desktop from its code, checking the link, sending the
-// queue as a `.csdoc` and taking what the desktop holds for the phone. The desktop is the server
+// queue as a `.lsdoc` and taking what the desktop holds for the phone. The desktop is the server
 // (windows/LazyScan.Core/Companion); this is the client, through `CompanionClient`. When the
 // desktop cannot be reached, documents go through the cloud sync folder instead (C2, `SyncPackage`).
 
@@ -50,7 +50,7 @@ public enum CompanionText {
         "Sent \(pageCount == 1 ? "1 page" : "\(pageCount) pages") to \(desktopName)."
     }
 
-    /// "Scan 12.csdoc was not sent: This document is too large to send in one piece."
+    /// "Scan 12.lsdoc was not sent: This document is too large to send in one piece."
     public static func notSentMessage(_ fileName: String, reason: String) -> String {
         "\(fileName) was not sent: \(reason)"
     }
@@ -222,7 +222,7 @@ extension AppState {
         }
     }
 
-    /// Writes the queue as a `.csdoc` (`exportPackage`) into the outbox for the paired desktop and sends
+    /// Writes the queue as a `.lsdoc` (`exportPackage`) into the outbox for the paired desktop and sends
     /// what waits there (`drainOutbox`); the queue is not touched. A document that cannot be sent now
     /// waits in the outbox for the next time.
     public func sendQueueToDesktop(target: CompanionTarget) async {
@@ -402,7 +402,7 @@ extension AppState {
     }
 
     /// Starts taking what the desktop holds for this phone: a long poll (`outbox(wait: 25)`) for as long
-    /// as it runs. A `.csdoc` is downloaded into the inbox folder and offered on the banner as one opened
+    /// as it runs. A `.lsdoc` is downloaded into the inbox folder and offered on the banner as one opened
     /// by hand (`openPackage(at:)`) once nothing else is offered, its file kept until it is taken or
     /// dismissed (`offerReceivedPackage`); any other file goes to the save folder and is said. Each is
     /// acknowledged once written, so the desktop drops it, and its id kept (`PairedDesktop.received`):

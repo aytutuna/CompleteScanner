@@ -144,10 +144,10 @@ final class IOSFileActionsTests: XCTestCase {
     }
 
     func test_filesAppURL_keepsTheFoldersPathEncoded_andNeedsALocalFile() throws {
-        let scan = URL(fileURLWithPath: "/var/mobile/Containers/Data/Application/ABC/Documents/CompleteScanner/My Scan.pdf")
+        let scan = URL(fileURLWithPath: "/var/mobile/Containers/Data/Application/ABC/Documents/Lazy Scan/My Scan.pdf")
         let address: URL = try XCTUnwrap(IOSFileActions.filesAppURL(for: [scan]))
         XCTAssertEqual(address.absoluteString,
-                       "shareddocuments:///var/mobile/Containers/Data/Application/ABC/Documents/CompleteScanner/")
+                       "shareddocuments:///var/mobile/Containers/Data/Application/ABC/Documents/Lazy%20Scan/")
         let spaced = URL(fileURLWithPath: "/var/mobile/Documents/My Scans/Scan 1.pdf")
         XCTAssertEqual(IOSFileActions.filesAppURL(for: [spaced])?.absoluteString,
                        "shareddocuments:///var/mobile/Documents/My%20Scans/")

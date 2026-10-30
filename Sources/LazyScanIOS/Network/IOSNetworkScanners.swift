@@ -46,7 +46,7 @@ public enum IOSNetworkText {
 
 /// The iPhone's and iPad's network scanners: the eSCL connection (`EsclScannerBackend`) with its search
 /// (`EsclDiscovery` over NWBrowser and dnssd), the addresses added by hand and the trusted certificates
-/// (escl-hosts.json and escl-trust.json in Application Support's CompleteScanner/Network folder, which is
+/// (escl-hosts.json and escl-trust.json in Application Support's Lazy Scan/Network folder, which is
 /// kept out of backups: pinned keys belong to this device), and what the screens need around it:
 /// - the explanation card before the first search (`needsExplanation`, kept in the user's defaults once
 ///   read), so the system's Local Network prompt comes when the user expects it;
@@ -111,11 +111,11 @@ public final class IOSNetworkScanners: ObservableObject {
         }
     }
 
-    /// Application Support/CompleteScanner/Network, created and kept out of backups.
+    /// Application Support/Lazy Scan/Network, created and kept out of backups.
     public static func filesFolder() -> URL {
         let base: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support", isDirectory: true)
-        var folder: URL = base.appendingPathComponent("CompleteScanner", isDirectory: true)
+        var folder: URL = base.appendingPathComponent("Lazy Scan", isDirectory: true)
             .appendingPathComponent("Network", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         var values: URLResourceValues = URLResourceValues()

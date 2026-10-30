@@ -15,7 +15,7 @@ final class PagesTests: XCTestCase {
                                          "The fixture PDF in the test bundle")
         let app = XCUIApplication()
         app.launchArguments = ["-demoScanner", "-importFixture", "-importTask", "batch"]
-        app.launchEnvironment["COMPLETESCANNER_IMPORT_FIXTURE"] = try Data(contentsOf: fixture).base64EncodedString()
+        app.launchEnvironment["LAZYSCAN_IMPORT_FIXTURE"] = try Data(contentsOf: fixture).base64EncodedString()
         app.launch()
 
         app.openPages(3)
@@ -57,7 +57,7 @@ final class PagesTests: XCTestCase {
                                          "The fixture PDF in the test bundle")
         let app = XCUIApplication()
         app.launchArguments = ["-demoScanner", "-importFixture", "-importTask", "batch"]
-        app.launchEnvironment["COMPLETESCANNER_IMPORT_FIXTURE"] = try Data(contentsOf: fixture).base64EncodedString()
+        app.launchEnvironment["LAZYSCAN_IMPORT_FIXTURE"] = try Data(contentsOf: fixture).base64EncodedString()
         app.launch()
 
         app.openPages(3)

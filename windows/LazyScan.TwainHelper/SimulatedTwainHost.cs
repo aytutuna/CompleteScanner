@@ -12,20 +12,20 @@ namespace LazyScan.TwainHelper;
 /// </summary>
 internal sealed class SimulatedTwainHost : ITwainHelperHost
 {
-    public const string Scanner = "CompleteScanner Simulated Scanner";
-    public const string Native = "CompleteScanner Simulated Native";
-    public const string Jam = "CompleteScanner Simulated Jam";
-    public const string Offline = "CompleteScanner Simulated Offline";
-    public const string Busy = "CompleteScanner Simulated Busy";
-    public const string Crash = "CompleteScanner Simulated Crash";
-    public const string Hang = "CompleteScanner Simulated Hang";
-    public const string Slow = "CompleteScanner Simulated Slow";
-    public const string WiaBridge = "WIA-CompleteScanner Simulated Bridge";
+    public const string Scanner = "Lazy Scan Simulated Scanner";
+    public const string Native = "Lazy Scan Simulated Native";
+    public const string Jam = "Lazy Scan Simulated Jam";
+    public const string Offline = "Lazy Scan Simulated Offline";
+    public const string Busy = "Lazy Scan Simulated Busy";
+    public const string Crash = "Lazy Scan Simulated Crash";
+    public const string Hang = "Lazy Scan Simulated Hang";
+    public const string Slow = "Lazy Scan Simulated Slow";
+    public const string WiaBridge = "WIA-Lazy Scan Simulated Bridge";
 
     private static readonly string[] Names = [Scanner, Native, Jam, Offline, Busy, Crash, Hang, Slow, WiaBridge];
 
     public TwainHelperSourceList ListSources() =>
-        new(TwainAvailability.Available, [.. Names.Select(name => new TwainHelperSource(name, "CompleteScanner", "Simulated"))]);
+        new(TwainAvailability.Available, [.. Names.Select(name => new TwainHelperSource(name, "Lazy Scan", "Simulated"))]);
 
     public ITwainTransport Open(string name)
     {

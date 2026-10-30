@@ -1091,7 +1091,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// Writes the raw device names, how they were grouped, what each connection reports and the
-    /// troubleshooter's checks to %LOCALAPPDATA%\CompleteScanner\Logs\devices.txt whenever they
+    /// troubleshooter's checks to %LOCALAPPDATA%\Lazy Scan\Logs\devices.txt whenever they
     /// change, so the names real drivers report can be collected to tune <see cref="DeviceMerge"/>
     /// and a user's setup can be read from one file. Best effort.
     /// </summary>
@@ -1103,7 +1103,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         try
         {
             string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                                         "CompleteScanner", "Logs");
+                                         "Lazy Scan", "Logs");
             Directory.CreateDirectory(folder);
             File.WriteAllText(Path.Combine(folder, "devices.txt"), report);
         }
@@ -3519,7 +3519,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     {
         string counterPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "CompleteScanner", "counter.txt");
+            "Lazy Scan", "counter.txt");
         try
         {
             return File.Exists(counterPath) ? int.Parse(File.ReadAllText(counterPath).Trim()) : _counterFallback;
@@ -3536,7 +3536,7 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         // presets serves the same purpose.
         string counterPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "CompleteScanner", "counter.txt");
+            "Lazy Scan", "counter.txt");
         try
         {
             int value = File.Exists(counterPath) ? int.Parse(File.ReadAllText(counterPath).Trim()) : 0;

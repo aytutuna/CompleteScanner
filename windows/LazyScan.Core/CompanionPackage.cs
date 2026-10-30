@@ -57,10 +57,10 @@ public sealed record CompanionPage(CompanionImage Image)
 /// <summary>The app that wrote a package: its name, version and platform ("windows", "macos", "ios").</summary>
 public sealed record CompanionWriterInfo(string App, string AppVersion, string Platform);
 
-/// <summary>A document moved between the phone and the desktop as one <c>.csdoc</c> package.</summary>
+/// <summary>A document moved between the phone and the desktop as one <c>.lsdoc</c> package.</summary>
 public sealed record CompanionDocument(string Title, IReadOnlyList<CompanionPage> Pages)
 {
-    public CompanionWriterInfo Writer { get; init; } = new("CompleteScanner", "", "");
+    public CompanionWriterInfo Writer { get; init; } = new("Lazy Scan", "", "");
 
     /// <summary>When the document was made; kept to the second, in UTC.</summary>
     public DateTimeOffset? Created { get; init; }
@@ -80,7 +80,7 @@ public enum CompanionPackageErrorKind
 {
     /// <summary>The zip archive itself was refused (see <see cref="ZipReadException"/>).</summary>
     InvalidArchive,
-    /// <summary>No manifest, or a manifest that is not a CompleteScanner document's.</summary>
+    /// <summary>No manifest, or a manifest that is not a Lazy Scan document's.</summary>
     NotPackage,
     /// <summary>A newer major format version than this app reads.</summary>
     NewerVersion,
@@ -112,7 +112,7 @@ public sealed class CompanionPackageException : IOException
 }
 
 /// <summary>
-/// The <c>.csdoc</c> package: a <see cref="ZipStore"/> archive holding <c>manifest.json</c> first
+/// The <c>.lsdoc</c> package: a <see cref="ZipStore"/> archive holding <c>manifest.json</c> first
 /// and then each page's picture ("pages/0001.jpg") followed by its original
 /// ("pages/0001-original.png"). Writing is deterministic: the manifest is compact JSON written by
 /// hand with a fixed key order and fixed number format, entries are stored and dated 1980-01-01,
@@ -123,8 +123,8 @@ public sealed class CompanionPackageException : IOException
 /// </summary>
 public static class CompanionPackage
 {
-    public const string FileExtension = "csdoc";
-    public const string FormatName = "csdoc";
+    public const string FileExtension = "lsdoc";
+    public const string FormatName = "lsdoc";
     /// <summary>The major version: a reader refuses a larger one.</summary>
     public const int FormatVersion = 1;
     /// <summary>The minor version: raised for additions older readers can ignore (1: the pages' capture facts).</summary>

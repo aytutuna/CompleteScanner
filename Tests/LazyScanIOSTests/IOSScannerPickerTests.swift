@@ -515,7 +515,7 @@ final class IOSScannerPickerTests: XCTestCase {
         let real: [any ScannerBackend] = IOSShell.backends(options: IOSLaunchOptions(demoScannerOnly: false), networkScanners: network)
         XCTAssertEqual(real.count, 1)
         XCTAssertTrue(real[0] === network.backend)
-        let demo: [any ScannerBackend] = IOSShell.backends(options: IOSLaunchOptions(arguments: ["CompleteScanner", "-demoScanner"]),
+        let demo: [any ScannerBackend] = IOSShell.backends(options: IOSLaunchOptions(arguments: ["LazyScan", "-demoScanner"]),
                                                             networkScanners: network)
         XCTAssertEqual(demo.count, 1)
         // The demo scanner's state never starts the network connection, so nothing is searched.

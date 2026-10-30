@@ -136,7 +136,7 @@
                 </DockPanel>
             </Border>
 
-            <!-- A .csdoc opened by hand (dropped, picked, or opened from File Explorer): its pages wait
+            <!-- A .lsdoc opened by hand (dropped, picked, or opened from File Explorer): its pages wait
                  here until they are added or opened as a new document. Shown while the view model offers it. -->
             <Border x:Name="PackageBar" Style="{StaticResource SavedBarStyle}" Visibility="Collapsed">
                 <DockPanel>

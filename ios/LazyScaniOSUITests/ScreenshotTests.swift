@@ -34,7 +34,7 @@ final class ScreenshotTests: XCTestCase {
                                          "The fixture photo in the test bundle")
         let app = XCUIApplication()
         app.launchArguments = ["-demoScanner", "-importFixture", "-importTask", "document"]
-        app.launchEnvironment["COMPLETESCANNER_IMPORT_FIXTURE"] = try Data(contentsOf: fixture).base64EncodedString()
+        app.launchEnvironment["LAZYSCAN_IMPORT_FIXTURE"] = try Data(contentsOf: fixture).base64EncodedString()
         app.launch()
 
         let use: XCUIElement = app.buttons["corners.use"]

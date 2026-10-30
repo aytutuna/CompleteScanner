@@ -80,7 +80,7 @@ public struct CompanionHostStatus: Equatable {
 public struct CompanionHostOptions {
     /// The port tried first (after the one used last); 0 lets the system pick.
     public var preferredPort = CompanionProtocol.defaultPort
-    public var instanceName = "CompleteScanner"
+    public var instanceName = "Lazy Scan"
     /// The desktop's id for the TXT record, asked for when advertising starts.
     public var desktopId: () -> String = { "" }
     public var server = CompanionServerOptions()

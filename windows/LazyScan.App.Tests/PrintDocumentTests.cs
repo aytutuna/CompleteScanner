@@ -18,7 +18,7 @@ namespace LazyScan.App.Tests;
 // document is checked by Tests/LazyScanTests/PrintDocumentTests.swift).
 public class PrintDocumentTests : IDisposable
 {
-    private readonly string _folder = Directory.CreateTempSubdirectory("CompleteScanner-print-tests-").FullName;
+    private readonly string _folder = Directory.CreateTempSubdirectory("LazyScan-print-tests-").FullName;
 
     public void Dispose()
     {

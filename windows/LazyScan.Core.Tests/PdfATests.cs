@@ -90,7 +90,7 @@ public class PdfATests
     [Fact]
     public void InfoDictionary_HasTheTitleProducerAndDates()
     {
-        Assert.Equal("<</Title (Scan 1) /Producer (CompleteScanner) /Creator (CompleteScanner) " +
+        Assert.Equal("<</Title (Scan 1) /Producer (Lazy Scan) /Creator (Lazy Scan) " +
                      "/CreationDate (D:20261019213005+03'00') /ModDate (D:20261019213005+03'00')>>",
                      PdfA.InfoDictionary("Scan 1", Date));
         Assert.DoesNotContain("/Title", PdfA.InfoDictionary(null, Date));
@@ -117,8 +117,8 @@ public class PdfATests
         {
             Assert.Equal("2026-10-19T21:30:05+03:00", root.Descendants(xmpNs + date).Single().Value);
         }
-        Assert.Equal("CompleteScanner", root.Descendants(xmpNs + "CreatorTool").Single().Value);
-        Assert.Equal("CompleteScanner", root.Descendants(pdf + "Producer").Single().Value);
+        Assert.Equal("Lazy Scan", root.Descendants(xmpNs + "CreatorTool").Single().Value);
+        Assert.Equal("Lazy Scan", root.Descendants(pdf + "Producer").Single().Value);
         Assert.Empty(XDocument.Parse(Encoding.UTF8.GetString(PdfA.Xmp(null, Date))).Descendants(dc + "title"));
     }
 
@@ -197,7 +197,7 @@ public class PdfATests
         Assert.DoesNotContain("/Font", text);
         Assert.Contains("/Metadata 4 0 R", text);
         Assert.Contains("/DestOutputProfile 5 0 R", text);
-        Assert.Contains("3 0 obj\n<</Producer (CompleteScanner)", text);
+        Assert.Contains("3 0 obj\n<</Producer (Lazy Scan)", text);
         Assert.Contains("/Kids [6 0 R 9 0 R] /Count 2", text);
         Assert.Contains("/Info 3 0 R /ID", text);
         AssertXrefPointsAtEveryObject(text, 11);
@@ -227,7 +227,7 @@ public class PdfATests
         Assert.Equal(1, document.NumberOfPages);
         var info = document.Information;
         Assert.Equal("Tapu belgesi — Çağrı", info.Title);
-        Assert.Equal(("CompleteScanner", "CompleteScanner"), (info.Producer, info.Creator));
+        Assert.Equal(("Lazy Scan", "Lazy Scan"), (info.Producer, info.Creator));
         Assert.Equal(("D:20261019213005+03'00'", "D:20261019213005+03'00'"), (info.CreationDate, info.ModifiedDate));
 
         Assert.True(document.TryGetXmpMetadata(out var metadata));
@@ -321,8 +321,8 @@ public class PdfATests
         // One Letter page with a Turkish line, dated and identified: the Mac's writer port must match.
         var line = new OcrLine("Çağrı Işık İzmir'de öğün şüpheli", new RectD(0.1, 0.8, 0.6, 0.04), 0.9f);
         byte[] pdf = PdfBuilder.Make([Page([line])], options: Archival("Tapu belgesi — Çağrı"));
-        Assert.Equal(11497, pdf.Length);
-        Assert.Equal("D643A7AA9B4C152F00054009074EF194586428938319BA9DB70EC5F96D2B6370", Convert.ToHexString(SHA256.HashData(pdf)));
+        Assert.Equal(11473, pdf.Length);
+        Assert.Equal("387107CDC430BDF0BD348CD837BF6BFB673C168706F4C310570D1231C86A8FD8", Convert.ToHexString(SHA256.HashData(pdf)));
     }
 
     [Fact]
@@ -401,14 +401,14 @@ public class PdfATests
     }
 
     /// <summary>
-    /// PDF/A files for an outside validator: with COMPLETESCANNER_PDFA_SAMPLES naming a folder they
+    /// PDF/A files for an outside validator: with LAZYSCAN_PDFA_SAMPLES naming a folder they
     /// are written there and kept (CI runs veraPDF on them, see .github/workflows/ci.yml); without
     /// it they are written to a temporary folder, read back and removed.
     /// </summary>
     [Fact]
     public void Archival_ValidationSamples()
     {
-        string? samples = Environment.GetEnvironmentVariable("COMPLETESCANNER_PDFA_SAMPLES");
+        string? samples = Environment.GetEnvironmentVariable("LAZYSCAN_PDFA_SAMPLES");
         bool keep = !string.IsNullOrWhiteSpace(samples);
         string dir = keep ? samples! : Path.Combine(Path.GetTempPath(), $"PdfATests-{Guid.NewGuid()}");
         Directory.CreateDirectory(dir);

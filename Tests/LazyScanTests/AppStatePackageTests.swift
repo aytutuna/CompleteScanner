@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import LazyScanKit
 
-// A .csdoc opened by hand and the queue written as one, through the app's state
+// A .lsdoc opened by hand and the queue written as one, through the app's state
 // (AppState+Package.swift). Twin of windows/LazyScan.App.Tests/PackageAppTests.cs, which tests
 // the same pieces without the view model (it reads the user's settings); adding and opening as new
 // are tested here only. A package the Swift writer makes is read by the C# suite through the golden
@@ -118,15 +118,15 @@ final class AppStatePackageTests: XCTestCase {
     func test_openPackage_offersItsPagesWithoutTouchingTheQueue() async throws {
         let state = try await makeState(pages: 1)
         let queued = state.scannedPages.map(\.id)
-        let url = try write("Receipt.csdoc", CompanionPackage.make(packageDocument()))
+        let url = try write("Receipt.lsdoc", CompanionPackage.make(packageDocument()))
         await state.openPackage(at: url)
         XCTAssertNil(state.errorMessage)
         let offered = try XCTUnwrap(state.pendingPackage)
-        XCTAssertEqual(offered.fileName, "Receipt.csdoc")
+        XCTAssertEqual(offered.fileName, "Receipt.lsdoc")
         XCTAssertEqual(offered.pageCount, 2)
         XCTAssertEqual(offered.documentName, "Lunch 2026-10-20")
-        XCTAssertEqual(PackageText.openedMessage(offered.fileName, pageCount: offered.pageCount), "Opened Receipt.csdoc: 2 pages")
-        XCTAssertEqual(PackageText.openedMessage(offered.fileName, pageCount: 1), "Opened Receipt.csdoc: 1 page")
+        XCTAssertEqual(PackageText.openedMessage(offered.fileName, pageCount: offered.pageCount), "Opened Receipt.lsdoc: 2 pages")
+        XCTAssertEqual(PackageText.openedMessage(offered.fileName, pageCount: 1), "Opened Receipt.lsdoc: 1 page")
         XCTAssertEqual(PackageText.addToPages, "Add to pages")
         XCTAssertEqual(PackageText.openAsNew, "Open as new")
         XCTAssertEqual(offered.pages.map(\.source), [.phone, .phone])
@@ -144,7 +144,7 @@ final class AppStatePackageTests: XCTestCase {
     func test_addPendingPackageToPages_appendsAfterTheQueuedPages() async throws {
         let state = try await makeState(pages: 1)
         let queued = state.scannedPages.map(\.id)
-        let url = try write("Receipt.csdoc", CompanionPackage.make(packageDocument()))
+        let url = try write("Receipt.lsdoc", CompanionPackage.make(packageDocument()))
         await state.openPackage(at: url)
         let offered = try XCTUnwrap(state.pendingPackage)
         XCTAssertTrue(state.addPendingPackageToPages())
@@ -160,7 +160,7 @@ final class AppStatePackageTests: XCTestCase {
     @MainActor
     func test_openPendingPackageAsNew_replacesTheQueue() async throws {
         let state = try await makeState(pages: 2)
-        let url = try write("Receipt.csdoc", CompanionPackage.make(packageDocument()))
+        let url = try write("Receipt.lsdoc", CompanionPackage.make(packageDocument()))
         await state.openPackage(at: url)
         let offered = try XCTUnwrap(state.pendingPackage)
         XCTAssertTrue(state.openPendingPackageAsNew())
@@ -174,7 +174,7 @@ final class AppStatePackageTests: XCTestCase {
     @MainActor
     func test_pendingPackage_waitsWhileTheSettingsDoNotCollectPages() async throws {
         let state = try await makeState(pages: 1)
-        let url = try write("Receipt.csdoc", CompanionPackage.make(packageDocument()))
+        let url = try write("Receipt.lsdoc", CompanionPackage.make(packageDocument()))
         await state.openPackage(at: url)
         state.settings.intent = .photo
         XCTAssertFalse(state.openPendingPackageAsNew())
@@ -194,7 +194,7 @@ final class AppStatePackageTests: XCTestCase {
     @MainActor
     func test_pendingPackage_waitsWhileBusy_andOpensWhileBusy() async throws {
         let state = try await makeState(pages: 1)
-        let url = try write("Receipt.csdoc", CompanionPackage.make(packageDocument()))
+        let url = try write("Receipt.lsdoc", CompanionPackage.make(packageDocument()))
         await state.openPackage(at: url)
         XCTAssertTrue(state.ingest([ScannedPage(image: packagePicture(width: 400, height: 520), dpi: 50, colorMode: .color)],
                                    source: .photo))
@@ -222,7 +222,7 @@ final class AppStatePackageTests: XCTestCase {
         let manifest = String(decoding: entries[0].data, as: UTF8.self)
             .replacingOccurrences(of: "\"formatVersion\":1", with: "\"formatVersion\":2")
         entries[0] = ZipStoreEntry(name: entries[0].name, data: Data(manifest.utf8))
-        let url = try write("Newer.csdoc", ZipStore.make(entries))
+        let url = try write("Newer.lsdoc", ZipStore.make(entries))
         await state.openPackage(at: url)
         XCTAssertNil(state.pendingPackage)
         XCTAssertEqual(state.errorMessage,
@@ -235,10 +235,10 @@ final class AppStatePackageTests: XCTestCase {
         let broken = Data([0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0])
         let document = CompanionDocument(title: "Scan", pages: [CompanionPage(image: CompanionImage(
             data: broken, format: .jpeg, pixelWidth: 8, pixelHeight: 8, dpi: 300, colorMode: .color))])
-        let url = try write("Broken.csdoc", CompanionPackage.make(document))
+        let url = try write("Broken.lsdoc", CompanionPackage.make(document))
         await state.openPackage(at: url)
         XCTAssertNil(state.pendingPackage)
-        XCTAssertEqual(state.errorMessage, "Broken.csdoc cannot be opened: one of its pictures cannot be read.")
+        XCTAssertEqual(state.errorMessage, "Broken.lsdoc cannot be opened: one of its pictures cannot be read.")
     }
 
     @MainActor
@@ -250,10 +250,10 @@ final class AppStatePackageTests: XCTestCase {
         bytes.replaceSubrange(sof + 5..<sof + 9, with: [0x27, 0x10, 0x4E, 0x20])
         let document = CompanionDocument(title: "Scan", pages: [CompanionPage(image: CompanionImage(
             data: Data(bytes), format: .jpeg, pixelWidth: 40, pixelHeight: 30, dpi: 200, colorMode: .color))])
-        let url = try write("Huge.csdoc", CompanionPackage.make(document))
+        let url = try write("Huge.lsdoc", CompanionPackage.make(document))
         await state.openPackage(at: url)
         XCTAssertNil(state.pendingPackage)
-        XCTAssertEqual(state.errorMessage, "Huge.csdoc cannot be opened: one of its pictures cannot be read.")
+        XCTAssertEqual(state.errorMessage, "Huge.lsdoc cannot be opened: one of its pictures cannot be read.")
     }
 
     @MainActor
@@ -261,7 +261,7 @@ final class AppStatePackageTests: XCTestCase {
         let state = try await makeState(pages: 2)
         let pages = state.scannedPages
         let url = try await state.exportPackage(to: folder)
-        XCTAssertEqual(url.pathExtension, "csdoc")
+        XCTAssertEqual(url.pathExtension, "lsdoc")
         XCTAssertEqual(url.deletingLastPathComponent().standardizedFileURL, folder.standardizedFileURL)
         let read = try CompanionPackage.read(contentsOf: url)
         let name = url.deletingPathExtension().lastPathComponent

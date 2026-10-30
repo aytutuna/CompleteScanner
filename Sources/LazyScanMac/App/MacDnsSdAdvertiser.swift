@@ -14,7 +14,7 @@ private let companionRegisterReply: DNSServiceRegisterReply = {
     // Name conflicts are settled by mDNSResponder (it renames); nothing to do here.
 }
 
-/// Advertises `_completescan._tcp` with its TXT record on one interface each, for as long as the host
+/// Advertises `_lazyscan._tcp` with its TXT record on one interface each, for as long as the host
 /// keeps it; the host and address records are the Mac's own (mDNSResponder's).
 final class MacDnsSdAdvertiser: DnsSdAdvertiser, @unchecked Sendable {
     private let queue = DispatchQueue(label: "MacDnsSdAdvertiser")

@@ -13,7 +13,7 @@ import Foundation
 /// - `POST /v1/pair`: the one call an unpaired phone may make, with the pairing code's token
 ///   (`PairRequest` → `PairResponse`).
 /// - `GET /v1/hello`: the desktop's name, its queue and its upload limit (`HelloResponse`).
-/// - `PUT /v1/inbox/{packageId}`: a `.csdoc` package (`CompanionPackage`), idempotent by package id
+/// - `PUT /v1/inbox/{packageId}`: a `.lsdoc` package (`CompanionPackage`), idempotent by package id
 ///   (`InboxResponse`); `X-Target: new|current`.
 /// - `GET /v1/outbox[?wait=seconds]`, `GET /v1/outbox/{id}` (the file), `DELETE /v1/outbox/{id}`:
 ///   what the desktop sends the phone (`OutboxList`).
@@ -23,9 +23,9 @@ public enum CompanionProtocol {
     /// The protocol version, in the pairing code and every response.
     public static let version = 1
     /// The DNS-SD service type the desktop advertises while it receives.
-    public static let serviceType = "_completescan._tcp"
+    public static let serviceType = "_lazyscan._tcp"
     /// The `service` value of `HealthResponse`.
-    public static let serviceName = "completescanner"
+    public static let serviceName = "lazyscan"
     /// The port the desktop tries first; another free one is used when it is taken.
     public static let defaultPort = 52731
 
@@ -44,7 +44,7 @@ public enum CompanionProtocol {
     /// Where an upload goes: `new` (a document of its own, the default) or `current`.
     public static let targetHeader = "X-Target"
     public static let jsonContentType = "application/json; charset=utf-8"
-    public static let packageContentType = "application/vnd.completescanner.document"
+    public static let packageContentType = "application/vnd.lazyscan.document"
 
     /// The largest JSON request body (a pairing request).
     public static let maxJsonBodyBytes = 8192
@@ -320,7 +320,7 @@ public struct HealthResponse: Equatable, Sendable {
             + ",\"protocolVersion\":\(CompanionProtocol.integer(protocolVersion)),\"paired\":\(CompanionProtocol.bool(paired))}"
     }
 
-    /// nil unless the body says it is CompleteScanner's.
+    /// nil unless the body says it is Lazy Scan's.
     public static func fromJSON(_ json: Data) -> HealthResponse? {
         guard let dto = CompanionProtocol.decode(HealthDTO.self, json), dto.service == CompanionProtocol.serviceName else {
             return nil

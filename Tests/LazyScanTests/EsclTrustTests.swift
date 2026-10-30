@@ -15,7 +15,7 @@ final class EsclTrustTests: XCTestCase {
     private var directory: URL!
 
     override func setUpWithError() throws {
-        directory = FileManager.default.temporaryDirectory.appendingPathComponent("CompleteScannerTests-\(UUID().uuidString)")
+        directory = FileManager.default.temporaryDirectory.appendingPathComponent("LazyScanTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
@@ -239,8 +239,8 @@ final class EsclTrustTests: XCTestCase {
     }
 
     func testTrustFilesFromEitherPlatformLoad() throws {
-        let p256: String = "61010433c5795ff33b96976a6bc6f2aa324a36b7182a1ddcab4d234744fe7d6c"
-        let rsa: String = "4ad3ab48789a9c2f6b9b8cb55503d2bdf9fa889488beca7137476c0e1bb4e4e9"
+        let p256: String = "80c2501cf098b63f418350c6fea5a6e420362e6be8aff337c3aee239a40570a4"
+        let rsa: String = "ef21ff96c67a12d62b5fd5bc7367fc0b265fe4da4e0e8ebc0a0d404457d7a74c"
         let names: [String] = ["escl-trust-windows.json", "escl-trust-apple.json"]
         for name in names {
             let folder: URL = directory.appendingPathComponent(name, isDirectory: true)

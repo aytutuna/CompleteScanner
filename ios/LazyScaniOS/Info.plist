@@ -41,7 +41,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.completescanner.package</string>
+				<string>com.lazyscan.package</string>
 			</array>
 		</dict>
 	</array>
@@ -74,7 +74,7 @@
 	<array>
 		<string>_uscan._tcp</string>
 		<string>_uscans._tcp</string>
-		<string>_completescan._tcp</string>
+		<string>_lazyscan._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Lazy Scan uses the camera to scan documents and photos, and the pairing code of your computer. What you scan stays on this device unless you share it.</string>
@@ -117,12 +117,12 @@
 			<key>UTTypeDescription</key>
 			<string>Lazy Scan document</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.completescanner.package</string>
+			<string>com.lazyscan.package</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
 				<array>
-					<string>csdoc</string>
+					<string>lsdoc</string>
 				</array>
 			</dict>
 		</dict>

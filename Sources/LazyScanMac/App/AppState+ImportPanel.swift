@@ -5,8 +5,8 @@ import Foundation
 import UniformTypeIdentifiers
 
 extension AppState {
-    /// Picks photo files, or a `.csdoc`, with the open panel: the photos are imported (`importPhotos`),
-    /// the first `.csdoc` is offered on the banner (`openPackage(at:)`).
+    /// Picks photo files, or a `.lsdoc`, with the open panel: the photos are imported (`importPhotos`),
+    /// the first `.lsdoc` is offered on the banner (`openPackage(at:)`).
     public func chooseAndImportPhotos() {
         guard canImportPhotos else { return }
         let panel = NSOpenPanel()

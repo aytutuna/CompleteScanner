@@ -416,16 +416,16 @@ final class ModelsCompatTests: XCTestCase {
         let documents = URL(fileURLWithPath: "/var/mobile/Containers/Data/Application/0B3C9D1E-5F0A-4C2B-9E7D-1A2B3C4D5E6F/Documents",
                             isDirectory: true)
         let earlier = "/private/var/mobile/Containers/Data/Application/7A1F2E3D-4C5B-4A69-8778-96A5B4C3D2E1/Documents"
-        XCTAssertEqual(ScanSettings.rebasedDestinationPath(earlier + "/CompleteScanner", documents: documents),
-                       documents.path + "/CompleteScanner")
-        XCTAssertEqual(ScanSettings.rebasedDestinationPath(earlier + "/CompleteScanner/Receipts", documents: documents),
-                       documents.path + "/CompleteScanner/Receipts")
+        XCTAssertEqual(ScanSettings.rebasedDestinationPath(earlier + "/Lazy Scan", documents: documents),
+                       documents.path + "/Lazy Scan")
+        XCTAssertEqual(ScanSettings.rebasedDestinationPath(earlier + "/Lazy Scan/Receipts", documents: documents),
+                       documents.path + "/Lazy Scan/Receipts")
         XCTAssertEqual(ScanSettings.rebasedDestinationPath(earlier, documents: documents), documents.path)
-        XCTAssertEqual(ScanSettings.rebasedDestinationPath(documents.path + "/CompleteScanner", documents: documents),
-                       documents.path + "/CompleteScanner")
+        XCTAssertEqual(ScanSettings.rebasedDestinationPath(documents.path + "/Lazy Scan", documents: documents),
+                       documents.path + "/Lazy Scan")
         // The Mac keeps every path.
-        XCTAssertEqual(ScanSettings.rebasedDestinationPath(earlier + "/CompleteScanner", documents: nil),
-                       earlier + "/CompleteScanner")
+        XCTAssertEqual(ScanSettings.rebasedDestinationPath(earlier + "/Lazy Scan", documents: nil),
+                       earlier + "/Lazy Scan")
     }
 
     func test_savePath_outsideAnAppsDocuments_isKept() {
@@ -433,9 +433,9 @@ final class ModelsCompatTests: XCTestCase {
                             isDirectory: true)
         let kept = [
             "/private/var/mobile/Library/Mobile Documents/com~apple~CloudDocs/Scans",
-            "/Users/someone/Documents/CompleteScanner",
+            "/Users/someone/Documents/Lazy Scan",
             "/var/mobile/Containers/Data/Application/7A1F2E3D-4C5B-4A69-8778-96A5B4C3D2E1/tmp/Documents",
-            "/var/mobile/Containers/Data/Application/not-a-uuid/Documents/CompleteScanner",
+            "/var/mobile/Containers/Data/Application/not-a-uuid/Documents/Lazy Scan",
         ]
         for path in kept {
             XCTAssertEqual(ScanSettings.rebasedDestinationPath(path, documents: documents), path)
@@ -1450,7 +1450,7 @@ final class PresetStoreFileTests: XCTestCase {
 
     override func setUpWithError() throws {
         directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CompleteScannerTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("LazyScanTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 

@@ -190,9 +190,9 @@ final class AppStateSeamTests: XCTestCase {
         let files = AppStateFiles.standard
         XCTAssertEqual(files.settingsDirectory, StoreFiles.defaultDirectory)
         XCTAssertEqual(files.spoolDirectory, FileManager.default.temporaryDirectory
-            .appendingPathComponent("CompleteScanner-pages", isDirectory: true))
+            .appendingPathComponent("LazyScan-pages", isDirectory: true))
         XCTAssertEqual(files.diagnosticsFile?.lastPathComponent, "devices.txt")
-        XCTAssertEqual(files.diagnosticsFile?.deletingLastPathComponent().path.hasSuffix("/Logs/CompleteScanner"), true)
+        XCTAssertEqual(files.diagnosticsFile?.deletingLastPathComponent().path.hasSuffix("/Logs/Lazy Scan"), true)
     }
 
     @MainActor

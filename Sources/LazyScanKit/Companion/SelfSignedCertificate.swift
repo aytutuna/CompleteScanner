@@ -16,7 +16,7 @@ public struct SelfSignedCertificateError: Error, Equatable, Sendable {
 }
 
 /// A self-signed X.509 v3 certificate for a P-256 key: a random positive 16-byte serial,
-/// ecdsa-with-SHA256, issuer and subject CN "<host name> CompleteScanner", valid from a day before
+/// ecdsa-with-SHA256, issuer and subject CN "<host name> Lazy Scan", valid from a day before
 /// `now` for `validity`, basicConstraints CA false and keyUsage digitalSignature (both critical),
 /// extKeyUsage serverAuth, and subjectAltName with the host name when it is a DNS name.
 public enum SelfSignedCertificate {
@@ -32,9 +32,9 @@ public enum SelfSignedCertificate {
     static let subjectAltNameOid: [UInt64] = [2, 5, 29, 17]
     static let serverAuthOid: [UInt64] = [1, 3, 6, 1, 5, 5, 7, 3, 1]
 
-    /// "AYTU-MAC CompleteScanner".
+    /// "AYTU-MAC Lazy Scan".
     public static func commonName(hostName: String) -> String {
-        "\(hostName) CompleteScanner"
+        "\(hostName) Lazy Scan"
     }
 
     /// The certificate's DER for the P-256 private key `key`, signed with it.

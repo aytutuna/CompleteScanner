@@ -157,15 +157,15 @@ final class IOSCaptureTests: XCTestCase {
     func test_theImportLaunchOption_carriesOnePhoto() {
         let bytes = Data([0x89, 0x50, 0x4E, 0x47, 1, 2, 3])
         let environment: [String: String] = [IOSLaunchOptions.importFixtureVariable: bytes.base64EncodedString()]
-        let options = IOSLaunchOptions(arguments: ["CompleteScanner", "-demoScanner", "-importFixture"],
+        let options = IOSLaunchOptions(arguments: ["LazyScan", "-demoScanner", "-importFixture"],
                                        environment: environment)
         XCTAssertTrue(options.demoScannerOnly)
         XCTAssertEqual(options.launchImport, IOSImportItem(name: "fixture.png", data: bytes, kind: .image))
         // Without the argument, or without readable bytes, nothing is imported.
-        XCTAssertNil(IOSLaunchOptions(arguments: ["CompleteScanner"], environment: environment).launchImport)
-        XCTAssertNil(IOSLaunchOptions(arguments: ["CompleteScanner", "-importFixture"],
+        XCTAssertNil(IOSLaunchOptions(arguments: ["LazyScan"], environment: environment).launchImport)
+        XCTAssertNil(IOSLaunchOptions(arguments: ["LazyScan", "-importFixture"],
                                       environment: [IOSLaunchOptions.importFixtureVariable: "%%%"]).launchImport)
-        XCTAssertNil(IOSLaunchOptions(arguments: ["CompleteScanner", "-importFixture"]).launchImport)
+        XCTAssertNil(IOSLaunchOptions(arguments: ["LazyScan", "-importFixture"]).launchImport)
         XCTAssertNil(IOSLaunchOptions(demoScannerOnly: true).launchImport)
         XCTAssertEqual(IOSLaunchOptions.importFixtureArgument, "-importFixture")
     }
@@ -174,14 +174,14 @@ final class IOSCaptureTests: XCTestCase {
         let photo = Data([0x89, 0x50, 0x4E, 0x47, 1, 2, 3])
         let pdf = Data("%PDF-1.4\n%fixture\n".utf8)
         let text: String = photo.base64EncodedString() + "," + pdf.base64EncodedString()
-        let options = IOSLaunchOptions(arguments: ["CompleteScanner", "-demoScanner", "-importFixture", "-importTask", "twoSided"],
+        let options = IOSLaunchOptions(arguments: ["LazyScan", "-demoScanner", "-importFixture", "-importTask", "twoSided"],
                                        environment: [IOSLaunchOptions.importFixtureVariable: text])
         XCTAssertEqual(options.launchImports, [IOSImportItem(name: "fixture.png", data: photo, kind: .image),
                                                IOSImportItem(name: "fixture.pdf", data: pdf, kind: .pdf)])
         XCTAssertEqual(options.launchImport, options.launchImports.first)
         XCTAssertEqual(options.launchTask, .twoSided)
         // A part that does not read is left out; the others come in.
-        let mixed = IOSLaunchOptions(arguments: ["CompleteScanner", "-importFixture"],
+        let mixed = IOSLaunchOptions(arguments: ["LazyScan", "-importFixture"],
                                      environment: [IOSLaunchOptions.importFixtureVariable: "%%%," + pdf.base64EncodedString()])
         XCTAssertEqual(mixed.launchImports.map(\.kind), [.pdf])
         XCTAssertTrue(IOSLaunchOptions(demoScannerOnly: false).launchImports.isEmpty)

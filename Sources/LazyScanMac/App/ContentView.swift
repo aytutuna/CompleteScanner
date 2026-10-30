@@ -63,7 +63,7 @@ struct ContentView: View {
                         .environmentObject(state)
                 }
                 Divider()
-                // A `.csdoc` opened by hand, on every tab (AppState+Package.swift).
+                // A `.lsdoc` opened by hand, on every tab (AppState+Package.swift).
                 if let package = state.pendingPackage {
                     PackageBannerView(package: package)
                     Divider()
@@ -127,7 +127,7 @@ struct ContentView: View {
         .importsItemProviders([.image]) { providers in
             state.importFromDevice(providers)
         }
-        // A `.csdoc` opened from the Finder is offered on the banner, in this window rather than a new one.
+        // A `.lsdoc` opened from the Finder is offered on the banner, in this window rather than a new one.
         .onOpenURL { url in
             guard url.pathExtension.lowercased() == CompanionPackage.fileExtension else { return }
             Task { await state.openPackage(at: url) }
@@ -166,7 +166,7 @@ struct ContentView: View {
             StatusBarView()
         }
         // Photos of documents dropped on the scanner view become pages (AppState+Import.swift), a
-        // `.csdoc` is offered on the banner (photos dropped with it are imported as well, so such a drop
+        // `.lsdoc` is offered on the banner (photos dropped with it are imported as well, so such a drop
         // is refused while photos cannot be taken); other drops are refused.
         .dropDestination(for: URL.self) { urls, _ in
             let hasPhotos = !PhotoImport.photoFiles(urls.map(\.path)).isEmpty
