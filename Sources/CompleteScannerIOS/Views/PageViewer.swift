@@ -289,7 +289,7 @@ struct PageViewer: View {
         .fullScreenCover(item: $crop) { (request: IOSCropRequest) in
             CornerEditorView(request: request.request, onAnswer: { (answer: PhotoCornersAnswer) -> Void in
                 finishCrop(request, answer: answer)
-            }, onStop: closeCrop, fixesCrop: true)
+            }, fixesCrop: true)
         }
         .task(id: previewKey) {
             await loadPreviews()
@@ -597,10 +597,6 @@ struct PageViewer: View {
         case .skip:
             break
         }
-    }
-
-    private func closeCrop() {
-        crop = nil
     }
 }
 

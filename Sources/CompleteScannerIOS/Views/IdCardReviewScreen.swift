@@ -71,7 +71,7 @@ struct IdCardReviewScreen: View {
         .fullScreenCover(item: $cropping) { (crop: IOSCropRequest) in
             CornerEditorView(request: crop.request, onAnswer: { (answer: PhotoCornersAnswer) -> Void in
                 finishCrop(crop, answer: answer)
-            }, onStop: closeCrop, fixesCrop: true)
+            }, fixesCrop: true)
         }
         .modifier(ErrorAlert(state: state))
     }
@@ -227,10 +227,6 @@ struct IdCardReviewScreen: View {
     private func finishCrop(_ crop: IOSCropRequest, answer: PhotoCornersAnswer) {
         cropping = nil
         model.applyCrop(crop, answer: answer)
-    }
-
-    private func closeCrop() {
-        cropping = nil
     }
 }
 

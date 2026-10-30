@@ -158,8 +158,17 @@ public enum IOSImportText {
     public static let scannerLabel = "Use Apple's scanner"
     /// What VoiceOver calls Apple's document scanner's button.
     public static let scannerName = "Use Apple's document scanner"
-    /// The name a photo from our camera is shown with (the corner editor, the messages).
+    /// The name of a photo from our camera as an item; the corner editor, the progress and the messages have
+    /// words of their own for a shot (below).
     public static let shotName = "Camera photo"
+    /// In place of Skip photo in a shot's corner editor: the photo is dropped and the page taken again.
+    public static let retakeLabel = "Retake"
+    public static let retakeHint = "Drops this photo. Take the page again."
+    /// The progress while a shot is read and its page searched.
+    public static let readingShot = "Reading the photo\u{2026}"
+    /// A shot that could not be read, and one whose page could not be added.
+    public static let shotUnreadableMessage = "The photo could not be read. Take it again."
+    public static let shotNotAddedMessage = "The photo could not be added. Try again."
     /// The pages Apple's document scanner took, in the message when they could not be added.
     public static let scannedPagesName = "Scanned pages"
     public static let photosLabel = "Photos"
@@ -234,6 +243,11 @@ public final class IOSImportSession: ObservableObject {
     @Published public private(set) var cornerRequest: PhotoCornersRequest?
     /// An import runs.
     @Published public private(set) var isImporting: Bool = false
+    /// The item in hand is a photo our camera just took: its corner editor has Retake and no caption, and its
+    /// progress ("Reading the photo…") no Stop.
+    @Published public private(set) var importsShot: Bool = false
+    /// More photos or pages follow the one in hand, so the corner editor offers Stop.
+    @Published public private(set) var canStop: Bool = false
     /// "Importing photo 2 of 5…" while an import runs.
     @Published public private(set) var progressText: String?
     /// What the last import did.
@@ -297,7 +311,10 @@ public final class IOSImportSession: ObservableObject {
             return outcome
         }
         pending.append(contentsOf: sources)
-        if isImporting { return outcome }
+        if isImporting {
+            canStop = true
+            return outcome
+        }
         isImporting = true
         stopRequested = false
         photoNumber = 0
@@ -401,6 +418,8 @@ public final class IOSImportSession: ObservableObject {
 
     private func finish(_ outcome: IOSImportOutcome) {
         isImporting = false
+        importsShot = false
+        canStop = false
         progressText = nil
         lastOutcome = outcome
         if !outcome.problems.isEmpty {
@@ -417,12 +436,28 @@ public final class IOSImportSession: ObservableObject {
         return count
     }
 
+    /// The message for `name`, which could not be read; a shot has its own.
+    private func unreadableMessage(_ name: String) -> String {
+        importsShot
+            ? IOSImportText.shotUnreadableMessage
+            : PhotoImport.unreadableMessage(name, detail: PhotoImport.unreadableDetail)
+    }
+
+    /// The message for `name`, which could not be added; a shot has its own.
+    private func notAddedMessage(_ name: String) -> String {
+        importsShot ? IOSImportText.shotNotAddedMessage : IOSImportText.notAddedMessage(name)
+    }
+
     /// The item in hand: read, then its photo's pages or its PDF's pages imported.
     private func importSource(_ source: IOSImportSource) async -> IOSImportOutcome {
         var outcome = IOSImportOutcome()
+        importsShot = source.isShot
+        canStop = !pending.isEmpty
         if source.expectedKind == .image {
             photoNumber += 1
-            progressText = PhotoImport.progressMessage(photoNumber, of: photoNumber + waitingPhotos)
+            progressText = source.isShot
+                ? IOSImportText.readingShot
+                : PhotoImport.progressMessage(photoNumber, of: photoNumber + waitingPhotos)
         } else {
             progressText = IOSImportText.importingFile(source.name)
         }
@@ -432,7 +467,7 @@ public final class IOSImportSession: ObservableObject {
         if await isFull(leaving: 1) { return outcome }
         // Nothing is read while the state cannot take pages (a stack being turned over by hand, say).
         guard await canTakePages() else {
-            outcome.add(IOSImportText.notAddedMessage(source.name))
+            outcome.add(notAddedMessage(source.name))
             return outcome
         }
         let read: IOSReadItem = await readItem(source)
@@ -504,7 +539,10 @@ public final class IOSImportSession: ObservableObject {
                 if stopRequested { break }
             }
             let count: Int = max(number, photoNumber + waitingPhotos)
-            progressText = PhotoImport.progressMessage(number, of: count, page: page, pageCount: pageCount)
+            canStop = !pending.isEmpty || page < pageCount
+            if !importsShot {
+                progressText = PhotoImport.progressMessage(number, of: count, page: page, pageCount: pageCount)
+            }
             let shownName: String = PhotoImport.pageName(name, page: page, pageCount: pageCount)
             var part = IOSImportOutcome()
             var made: ScannedPage?
@@ -537,7 +575,7 @@ public final class IOSImportSession: ObservableObject {
                 if await bringIn([newPage]) {
                     part.added += 1
                 } else {
-                    part.add(IOSImportText.notAddedMessage(shownName))
+                    part.add(notAddedMessage(shownName))
                 }
             }
             outcome.merge(part)
@@ -556,16 +594,16 @@ public final class IOSImportSession: ObservableObject {
                           asksOnlyWhenUnsure: Bool, kind: CaptureKind, byShape: Bool,
                           outcome: inout IOSImportOutcome) async -> ScannedPage? {
         if let problem = prepared.problem {
-            outcome.add(problem)
+            outcome.add(importsShot ? IOSImportText.shotUnreadableMessage : problem)
             return nil
         }
         guard let decoded = prepared.decoded, let found = prepared.found else {
-            outcome.add(PhotoImport.unreadableMessage(shownName, detail: PhotoImport.unreadableDetail))
+            outcome.add(unreadableMessage(shownName))
             return nil
         }
         // No editor for a page the state could not take now.
         guard await canTakePages() else {
-            outcome.add(IOSImportText.notAddedMessage(shownName))
+            outcome.add(notAddedMessage(shownName))
             return nil
         }
         let photo: RgbaImage = decoded.photo
@@ -647,6 +685,7 @@ public final class IOSImportSession: ObservableObject {
                 await waitForReview()
                 if stopRequested { break }
             }
+            canStop = !pending.isEmpty || index + 1 < pageCount
             progressText = IOSImportText.importingPage(index + 1, of: pageCount)
             let pageIndex: Int = index
             let page: ScannedPage? = await Task.detached(priority: .userInitiated) { () -> ScannedPage? in
@@ -674,11 +713,11 @@ public final class IOSImportSession: ObservableObject {
                                byShape: Bool) async -> IOSImportOutcome {
         var outcome = IOSImportOutcome()
         if let problem = prepared.problem {
-            outcome.add(problem)
+            outcome.add(importsShot ? IOSImportText.shotUnreadableMessage : problem)
             return outcome
         }
         guard let decoded = prepared.decoded else {
-            outcome.add(PhotoImport.unreadableMessage(shownName, detail: PhotoImport.unreadableDetail))
+            outcome.add(unreadableMessage(shownName))
             return outcome
         }
         let photo: RgbaImage = decoded.photo
@@ -688,13 +727,13 @@ public final class IOSImportSession: ObservableObject {
             IOSImportSession.objectPages(photo, quads: quads, kind: kind, focalLength: focalLength, byShape: byShape)
         }.value
         guard !pages.isEmpty else {
-            outcome.add(PhotoImport.unreadableMessage(shownName, detail: PhotoImport.unreadableDetail))
+            outcome.add(unreadableMessage(shownName))
             return outcome
         }
         if await bringIn(pages) {
             outcome.added += pages.count
         } else {
-            outcome.add(IOSImportText.notAddedMessage(shownName))
+            outcome.add(notAddedMessage(shownName))
         }
         return outcome
     }

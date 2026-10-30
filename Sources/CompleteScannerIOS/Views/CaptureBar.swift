@@ -117,7 +117,7 @@ struct CaptureBar: View {
 }
 
 /// An import's progress ("Importing photo 2 of 5…") with Stop while it runs, on the capture bar and over
-/// camera mode's viewfinder.
+/// camera mode's viewfinder; a shot, read in a moment, has none (its corner editor has Retake).
 struct ImportProgressRow: View {
     @EnvironmentObject private var importer: IOSImportSession
 
@@ -132,7 +132,7 @@ struct ImportProgressRow: View {
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("import.progress")
             Spacer(minLength: 0)
-            if importer.isImporting {
+            if importer.isImporting && !importer.importsShot {
                 Button(role: .cancel) {
                     importer.stop()
                 } label: {

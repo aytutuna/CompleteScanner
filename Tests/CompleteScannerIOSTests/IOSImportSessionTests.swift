@@ -69,6 +69,9 @@ final class IOSImportSessionTests: XCTestCase {
         XCTAssertTrue(importer.isImporting)
         XCTAssertFalse(importer.canImport)
         XCTAssertEqual(importer.progressText, PhotoImport.progressMessage(1, of: 1))
+        // A file, not a shot, and nothing after it: Skip photo and no Stop.
+        XCTAssertFalse(importer.importsShot)
+        XCTAssertFalse(importer.canStop)
 
         importer.answer(PhotoCornersAnswer(choice: .useCorners, corners: placed))
         XCTAssertNil(importer.cornerRequest)
@@ -143,11 +146,15 @@ final class IOSImportSessionTests: XCTestCase {
             await importer.importItems(items)
         }
         try await ImportTestSupport.waitUntil(timeout: 60) { importer.cornerRequest != nil }
+        // Another photo follows the one in hand: the editor offers Stop.
+        XCTAssertTrue(importer.canStop)
+        XCTAssertFalse(importer.importsShot)
         importer.stop()
         let outcome: IOSImportOutcome = await importing.value
         XCTAssertEqual(outcome.added, 0)
         XCTAssertEqual(outcome.skipped, 1)
         XCTAssertNil(importer.cornerRequest)
+        XCTAssertFalse(importer.canStop)
         XCTAssertTrue(state.scannedPages.isEmpty)
     }
 
@@ -160,14 +167,16 @@ final class IOSImportSessionTests: XCTestCase {
             await importer.importItems([IOSImportItem(name: "a.png", data: data, kind: .image)])
         }
         try await ImportTestSupport.waitUntil(timeout: 60) { importer.cornerRequest != nil }
+        XCTAssertFalse(importer.canStop)
         // A file opened in the app ("Open in CompleteScanner") while the editor waits: it waits too,
-        // unread, and nothing is said yet.
+        // unread, and nothing is said yet; the editor in view now offers Stop.
         let url: URL = folder.appendingPathComponent("b.png")
         try data.write(to: url)
         let queued: IOSImportOutcome = await importer.importFiles([url])
         XCTAssertEqual(queued, IOSImportOutcome())
         XCTAssertEqual(importer.waitingCount, 1)
         XCTAssertNil(state.errorMessage)
+        XCTAssertTrue(importer.canStop)
         XCTAssertEqual(importer.cornerRequest?.fileName, "a.png")
         importer.answer(PhotoCornersAnswer.skip)
         try await ImportTestSupport.waitUntil(timeout: 60) { importer.cornerRequest != nil }
@@ -176,6 +185,7 @@ final class IOSImportSessionTests: XCTestCase {
         XCTAssertEqual(second.number, 2)
         XCTAssertEqual(second.count, 2)
         XCTAssertEqual(importer.waitingCount, 0)
+        XCTAssertFalse(importer.canStop)
         importer.answer(PhotoCornersAnswer(choice: .wholePhoto))
         let outcome: IOSImportOutcome = await importing.value
         XCTAssertEqual(outcome.added, 1)
@@ -232,11 +242,14 @@ final class IOSImportSessionTests: XCTestCase {
         XCTAssertEqual(first.number, 1)
         XCTAssertEqual(first.count, 1)
         XCTAssertEqual(importer.progressText, PhotoImport.progressMessage(1, of: 1, page: 1, pageCount: 2))
+        // Stop while a page follows, not on the last.
+        XCTAssertTrue(importer.canStop)
         importer.answer(PhotoCornersAnswer(choice: .wholePhoto))
         try await ImportTestSupport.waitUntil(timeout: 60) { importer.cornerRequest != nil }
         let second: PhotoCornersRequest = try XCTUnwrap(importer.cornerRequest)
         XCTAssertEqual(second.fileName, "fax.tif, page 2 of 2")
         XCTAssertEqual(importer.progressText, PhotoImport.progressMessage(1, of: 1, page: 2, pageCount: 2))
+        XCTAssertFalse(importer.canStop)
         importer.answer(PhotoCornersAnswer.skip)
         let outcome: IOSImportOutcome = await importing.value
         XCTAssertEqual(outcome.added, 1)

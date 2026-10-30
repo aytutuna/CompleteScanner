@@ -18,8 +18,9 @@ import XCTest
 // yet take nothing; a failed photo is said for a while and the page taken again; the setting is
 // remembered; the wait line said to VoiceOver once per wait,
 // `IOSWaitAnnouncer`); then the shutter's photo from a fixture still through
-// the corner editor into the queue with its focal length (`IOSImportSession.importShot`), the live
-// outline as the editor's start, and continuous capture, where a page found clearly skips the editor.
+// the corner editor into the queue with its focal length (`IOSImportSession.importShot`), in words of
+// its own (Retake and no Stop in its editor, its own message when it cannot be read), the live outline
+// as the editor's start, and continuous capture, where a page found clearly skips the editor.
 // The Simulator has no camera: the real model says so there.
 
 /// A stand-in for the capture session: counts what it was asked and hands over the photo it is given.
@@ -980,12 +981,16 @@ final class IOSCameraTests: XCTestCase {
         XCTAssertEqual(request.plan.reason, PhotoReviewReason.unsure)
         XCTAssertEqual(request.photo.width, 600)
         XCTAssertEqual(request.photo.height, 450)
-        XCTAssertEqual(importer.progressText, PhotoImport.progressMessage(1, of: 1))
+        // The editor offers Retake and no Stop: nothing follows the shot.
+        XCTAssertTrue(importer.importsShot)
+        XCTAssertFalse(importer.canStop)
+        XCTAssertEqual(importer.progressText, IOSImportText.readingShot)
         importer.answer(PhotoCornersAnswer(choice: .useCorners, corners: request.plan.corners))
         let outcome: IOSImportOutcome = await importing.value
         XCTAssertEqual(outcome.added, 1)
         XCTAssertEqual(outcome.problems, [])
         XCTAssertNil(state.errorMessage)
+        XCTAssertFalse(importer.importsShot)
 
         defer { state.deleteSpoolFiles(of: state.scannedPages) }
         XCTAssertEqual(state.scannedPages.count, 1)
@@ -1005,6 +1010,19 @@ final class IOSCameraTests: XCTestCase {
         XCTAssertEqual(page.dpi, scale.dpi)
         XCTAssertEqual(page.geometry?.basis, .perspective)
         XCTAssertEqual(page.fullPixelSize, CGSize(width: scale.pixelWidth, height: scale.pixelHeight))
+    }
+
+    @MainActor
+    func test_aShotThatCannotBeRead_saysSo_withoutAFileName() async throws {
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        let defaults: UserDefaults = try itemsInFrame(.one)
+        let importer = IOSImportSession(state: state, finder: fixedFinder(sheetQuad, reason: .unsure), defaults: defaults)
+        let outcome: IOSImportOutcome = await importer.importShot(IOSCameraShot(data: Data("no photo".utf8), liveOutline: nil))
+        XCTAssertEqual(outcome.added, 0)
+        XCTAssertEqual(outcome.problems, [IOSImportText.shotUnreadableMessage])
+        XCTAssertEqual(state.errorMessage, IOSImportText.shotUnreadableMessage)
+        XCTAssertNil(importer.cornerRequest)
+        XCTAssertFalse(importer.importsShot)
     }
 
     @MainActor
@@ -1107,6 +1125,11 @@ final class IOSCameraTests: XCTestCase {
                           bottomRight: CGPoint(x: 0.501, y: 0.9), bottomLeft: CGPoint(x: 0.5, y: 0.9))
         XCTAssertEqual(IOSImportSession.seeded(unsure, liveOutline: sliver, width: 600, height: 450), unsure)
         XCTAssertEqual(IOSImportText.shotName, "Camera photo")
+        XCTAssertEqual(IOSImportText.retakeLabel, "Retake")
+        XCTAssertEqual(IOSImportText.retakeHint, "Drops this photo. Take the page again.")
+        XCTAssertEqual(IOSImportText.readingShot, "Reading the photo\u{2026}")
+        XCTAssertEqual(IOSImportText.shotUnreadableMessage, "The photo could not be read. Take it again.")
+        XCTAssertEqual(IOSImportText.shotNotAddedMessage, "The photo could not be added. Try again.")
     }
 
     // MARK: Where it is offered, and the Simulator

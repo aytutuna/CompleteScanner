@@ -8,9 +8,9 @@ import XCTest
 // editor opens with its corners, Use corners puts the straightened page in the strip, and Save writes
 // a PDF in the app's own Documents folder in the Simulator, with Save floating on camera mode's
 // viewfinder. The Simulator has no document scanner, so Use Apple's scanner, in camera mode's drawer, is
-// dimmed with its reason. Stop in the corner editor ends the import: no page comes in. The page stays when
-// Book is picked, which collects pages too; Receipts and the ID card would leave it without a Save, so
-// picking either asks first, and Cancel keeps the kind and the page.
+// dimmed with its reason. With the photo to import twice, Stop in the first one's corner editor ends the
+// import: no page comes in. The page stays when Book is picked, which collects pages too; Receipts and the
+// ID card would leave it without a Save, so picking either asks first, and Cancel keeps the kind and the page.
 
 final class ImportTests: XCTestCase {
     override func setUpWithError() throws {
@@ -57,7 +57,8 @@ final class ImportTests: XCTestCase {
 
     @MainActor
     func test_stop_inTheCornerEditor_endsTheImport() throws {
-        let app: XCUIApplication = try launchWithFixture()
+        // Stop is offered only while another photo follows the one in hand.
+        let app: XCUIApplication = try launchWithFixture(count: 2)
         let stop: XCUIElement = app.buttons["corners.stop"]
         XCTAssertTrue(stop.waitForExistence(timeout: 120), "The corner editor's Stop button")
         stop.tap()
@@ -111,10 +112,10 @@ final class ImportTests: XCTestCase {
         XCTAssertFalse(app.alerts.firstMatch.exists, "Nothing asked for Book")
     }
 
-    /// The app on the demo scanner with the fixture photo to import at launch, into `task` when one is given
-    /// (`ScanTask`'s raw value).
+    /// The app on the demo scanner with the fixture photo to import at launch, `count` times, into `task` when
+    /// one is given (`ScanTask`'s raw value).
     @MainActor
-    private func launchWithFixture(task: String? = nil) throws -> XCUIApplication {
+    private func launchWithFixture(task: String? = nil, count: Int = 1) throws -> XCUIApplication {
         let fixture: URL = try XCTUnwrap(Bundle(for: ImportTests.self).url(forResource: "document-photo", withExtension: "png"),
                                          "The fixture photo in the test bundle")
         let bytes: Data = try Data(contentsOf: fixture)
@@ -123,7 +124,9 @@ final class ImportTests: XCTestCase {
         if let task {
             app.launchArguments += ["-importTask", task]
         }
-        app.launchEnvironment["COMPLETESCANNER_IMPORT_FIXTURE"] = bytes.base64EncodedString()
+        // Several files go comma-separated, as `IOSLaunchOptions` reads them.
+        let photos: [String] = Array(repeating: bytes.base64EncodedString(), count: count)
+        app.launchEnvironment["COMPLETESCANNER_IMPORT_FIXTURE"] = photos.joined(separator: ",")
         app.launch()
         return app
     }

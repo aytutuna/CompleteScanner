@@ -127,7 +127,8 @@ public struct IOSRootView: View {
             }
         }
         .fullScreenCover(item: cornerRequest) { (request: PhotoCornersRequest) in
-            CornerEditorView(request: request, onAnswer: answerCorners, onStop: stopImport)
+            CornerEditorView(request: request, onAnswer: answerCorners, onStop: importer.canStop ? stopImport : nil,
+                             isShot: importer.importsShot)
         }
         .sheet(isPresented: $state.showTroubleshooter) {
             TroubleshooterScreen(makeAddModel: makeAddModel, onClose: closeTroubleshooter)

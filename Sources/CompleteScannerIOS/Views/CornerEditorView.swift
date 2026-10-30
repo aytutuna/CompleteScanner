@@ -6,28 +6,35 @@ import SwiftUI
 /// The corner editor on the iPhone and iPad, after a photo was imported: the photo with the page's four
 /// corners as found (`IOSPageFinder`); each corner is dragged with a finger onto a corner of the page while
 /// a magnifier shows the photo around it. Use corners cuts the page out along them, Use whole photo takes
-/// the photo as it is, Skip photo leaves it out, Stop skips it and ends the import. VoiceOver reads each
-/// corner by the name of where it sits now on the outline, with where it is in the photo. What it does is `CornerEditorModel`; this view draws it.
+/// the photo as it is, Skip photo leaves it out, and Stop, there while more photos or pages follow, skips it
+/// and ends the import. VoiceOver reads each corner by the name of where it sits now on the outline, with
+/// where it is in the photo. What it does is `CornerEditorModel`; this view draws it.
+/// A photo our camera just took (`isShot`) has Retake in place of Skip photo, and no caption, since it has no
+/// file name.
 /// For Fix crop in a review (`fixesCrop`, I13) the same editor opens on the picture an object was cut from:
 /// Cancel in place of Skip photo, and no Stop, since no import runs.
 struct CornerEditorView: View {
     let request: PhotoCornersRequest
     let onAnswer: @MainActor (PhotoCornersAnswer) -> Void
-    /// Ends the import: this photo is skipped and the ones after it are not imported.
-    let onStop: @MainActor () -> Void
+    /// Ends the import: this photo is skipped and the ones after it are not imported; nil, and no Stop, when
+    /// nothing follows it.
+    let onStop: (@MainActor () -> Void)?
     /// Fix crop in a review rather than an import.
     let fixesCrop: Bool
+    /// A photo our camera just took.
+    let isShot: Bool
 
     @State private var model: CornerEditorModel
     /// The photo as shown, made smaller when it is large.
     @State private var display: CGImage?
 
     init(request: PhotoCornersRequest, onAnswer: @escaping @MainActor (PhotoCornersAnswer) -> Void,
-         onStop: @escaping @MainActor () -> Void, fixesCrop: Bool = false) {
+         onStop: (@MainActor () -> Void)? = nil, fixesCrop: Bool = false, isShot: Bool = false) {
         self.request = request
         self.onAnswer = onAnswer
         self.onStop = onStop
         self.fixesCrop = fixesCrop
+        self.isShot = isShot
         _model = State(initialValue: CornerEditorModel(request: request))
     }
 
@@ -45,10 +52,19 @@ struct CornerEditorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(fixesCrop ? IOSReviewText.cancelLabel : PhotoImport.skipLabel) {
-                        onAnswer(PhotoCornersAnswer.skip)
+                    if isShot {
+                        // Skip, as for any photo: Auto then takes the page still in view again (`IOSCameraModel.shotImported`).
+                        Button(IOSImportText.retakeLabel) {
+                            onAnswer(PhotoCornersAnswer.skip)
+                        }
+                        .accessibilityHint(Text(IOSImportText.retakeHint))
+                        .accessibilityIdentifier("corners.retake")
+                    } else {
+                        Button(fixesCrop ? IOSReviewText.cancelLabel : PhotoImport.skipLabel) {
+                            onAnswer(PhotoCornersAnswer.skip)
+                        }
+                        .accessibilityIdentifier(fixesCrop ? "corners.cancel" : "corners.skip")
                     }
-                    .accessibilityIdentifier(fixesCrop ? "corners.cancel" : "corners.skip")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(PhotoImport.useCornersLabel) {
@@ -66,11 +82,16 @@ struct CornerEditorView: View {
 
     // MARK: Header and footer
 
-    /// Why the corners need a look (when they do), the help line, and which photo this is.
+    /// Why the corners need a look (when they do), the help line, and which photo this is; no caption for a
+    /// shot, which has no file name, or for a lone photo from the Photos library, which is only "Photo".
     private var header: some View {
         let reason: String = PhotoImport.reasonText(request.plan.reason)
         let counter: String = PhotoImport.counter(request.number, of: request.count, fileName: request.fileName)
-        let counterName: String = PhotoImport.counterName(request.number, of: request.count, fileName: request.fileName)
+        // The Photos library's photos are all named "Photo": VoiceOver reads "Photo 2 of 5" without ": Photo".
+        let counterName: String = request.fileName == PhotoImport.label
+            ? counter
+            : PhotoImport.counterName(request.number, of: request.count, fileName: request.fileName)
+        let showsCounter: Bool = !isShot && counter != PhotoImport.label
         return VStack(alignment: .leading, spacing: 4) {
             if !reason.isEmpty {
                 Label(reason, systemImage: "exclamationmark.triangle")
@@ -83,12 +104,14 @@ struct CornerEditorView: View {
                     .foregroundStyle(Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
-                Text(counter)
-                    .font(.footnote)
-                    .foregroundStyle(Color.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .accessibilityLabel(Text(counterName))
+                if showsCounter {
+                    Text(counter)
+                        .font(.footnote)
+                        .foregroundStyle(Color.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .accessibilityLabel(Text(counterName))
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -98,7 +121,7 @@ struct CornerEditorView: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            if !fixesCrop {
+            if let onStop {
                 Button(IOSImportText.stopLabel, role: .cancel) {
                     onStop()
                 }
