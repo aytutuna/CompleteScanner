@@ -2661,6 +2661,13 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
         NotifyAll();
     }
 
+    /// <summary>Hides the review with the sides kept; Scan at the review step opens it again.</summary>
+    public void CloseIdCardReview()
+    {
+        ShowIdCardReview = false;
+        NotifyAll();
+    }
+
     /// <summary>Resolution of the page picture in the review.</summary>
     private const int IdCardPreviewDpi = 40;
 

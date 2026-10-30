@@ -1444,20 +1444,23 @@
                 <DockPanel>
                     <Border DockPanel.Dock="Bottom" Padding="24,16">
                         <DockPanel>
-                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Bottom">
+                            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right">
                                 <Button x:Name="IdCardPrintButton" Style="{StaticResource IconTextButtonStyle}"
                                         local:Icon.Glyph="&#xE749;" Content="Print" MinWidth="110" Margin="0,0,8,0"
                                         ToolTipService.ShowOnDisabled="True"
                                         Click="IdCardPrint_Click" />
                                 <Button x:Name="IdCardDiscardButton" Style="{StaticResource IconTextButtonStyle}"
                                         local:Icon.Glyph="&#xE74D;" Content="Discard" MinWidth="110"
-                                        ToolTip="Delete both sides; can't be undone"
                                         Click="IdCardDiscard_Click" />
+                                <Button x:Name="IdCardCloseButton" Style="{StaticResource IconTextButtonStyle}"
+                                        local:Icon.Glyph="&#xE711;" Content="Close" MinWidth="110" Margin="8,0,0,0"
+                                        ToolTip="Keep the sides and close; Review in the settings column opens this again"
+                                        Click="IdCardClose_Click" />
                                 <Button x:Name="IdCardSaveButton" Style="{StaticResource AccentIconTextButtonStyle}"
                                         local:Icon.Glyph="&#xE74E;" Content="Save" MinWidth="110" Margin="8,0,0,0"
                                         Click="IdCardSave_Click" />
                             </StackPanel>
-                            <WrapPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                            <WrapPanel VerticalAlignment="Center" Margin="0,0,0,4">
                                 <StackPanel Orientation="Horizontal" Margin="0,0,16,6">
                                     <TextBlock x:Name="IdCardPaperLabel" Text="Paper" Style="{StaticResource BodyText}"
                                                VerticalAlignment="Center" Margin="0,0,8,0" />

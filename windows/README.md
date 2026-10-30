@@ -664,6 +664,8 @@ PDF, at the scan's full resolution). The file is named "ID card {date}". Saving 
 [Copy and print](#copy-and-print)), with no dialog: the sides are laid out on the paper the printer
 prints on (the review's paper when the printer has it), and the status says when the printer's
 margins reach a card. The review stays open, so the card can still be saved or discarded.
+**Discard** asks first. **Close** hides the review and keeps the sides; the Scan button, which
+reads **Review** at that step, opens it again.
 
 ID cards are sensitive, so the task keeps as little as it can: the scans are never written to the
 page spool and never added to the Scans tab, they stay in memory only while the review needs them,

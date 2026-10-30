@@ -809,10 +809,11 @@ public partial class MainWindow : Window
         IdCardSaveButton.Content = savedAs == OutputFormat.Pdf ? "Save PDF" : $"Save {savedAs.Label()}";
         AutomationProperties.SetHelpText(IdCardSaveButton,
             $"Save {(back is null ? "the front" : "both sides")} on one {ViewModel.IdCardPaperSize.Label()} page");
+        IdCardDiscardButton.ToolTip = back is null ? "Delete the front; can't be undone" : "Delete both sides; can't be undone";
 
         bool busy = ViewModel.IsBusy;
         IdCardSaveButton.IsEnabled = !busy && front is not null;
-        IdCardDiscardButton.IsEnabled = !busy;
+        IdCardDiscardButton.IsEnabled = IdCardCloseButton.IsEnabled = !busy;
         SyncIdCardPrint(busy);
         IdCardPaperBox.IsEnabled = IdCardFormatBox.IsEnabled = IdCardSidesBox.IsEnabled = !busy;
         IdCardFrontCard.IsEnabled = IdCardBackCard.IsEnabled = IdCardSwapButton.IsEnabled = !busy;
@@ -834,7 +835,16 @@ public partial class MainWindow : Window
 
     private void IdCardDiscard_Click(object sender, RoutedEventArgs e)
     {
+        if (!AskDiscardIdCard()) return;
         ViewModel.DiscardIdCard();
+        RefreshFromViewModel();
+        FocusMainAction();
+    }
+
+    /// <summary>Hides the review with the sides kept: the Scan button, reading Review, opens it again.</summary>
+    private void IdCardClose_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.CloseIdCardReview();
         RefreshFromViewModel();
         FocusMainAction();
     }
@@ -2129,7 +2139,19 @@ public partial class MainWindow : Window
     // MARK: - Photo review
 
     private void ReviewSave_Click(object sender, RoutedEventArgs e) => _ = ViewModel.SaveReviewedPhotos();
-    private void ReviewCancel_Click(object sender, RoutedEventArgs e) => ViewModel.CancelPhotoReview();
+
+    private void ReviewCancel_Click(object sender, RoutedEventArgs e)
+    {
+        int n = ViewModel.DetectedPhotos.Count(p => p.Photo.Included);
+        // A single kept photo goes at once, as a single page does with Clear.
+        if (n > 1)
+        {
+            string kind = ViewModel.IsReceiptReview ? "receipts" : "photos";
+            if (MessageBox.Show(this, $"The {n} {kind} have not been saved.\n\nDiscard them?", "Lazy Scan",
+                                MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        }
+        ViewModel.CancelPhotoReview();
+    }
 
     /// <summary>Keep toggled: the "Save N Photos" count follows.</summary>
     private void ReviewKeep_Click(object sender, RoutedEventArgs e) => RefreshFromViewModel();

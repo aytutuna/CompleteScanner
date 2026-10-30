@@ -11,9 +11,16 @@ struct PhotoReviewView: View {
 
     /// Photo whose crop is being corrected manually (drives the editor sheet).
     @State private var editingPhoto: DetectedPhoto?
+    /// Discard is asking before it drops more than one kept photo.
+    @State private var asksDiscard = false
 
     private var includedCount: Int {
         state.detectedPhotos.filter(\.included).count
+    }
+
+    /// "Discard 6 photos?", "Discard 3 receipts?".
+    private var discardTitle: String {
+        state.isReceiptReview ? "Discard \(includedCount) receipts?" : "Discard \(includedCount) photos?"
     }
 
     var body: some View {
@@ -61,8 +68,12 @@ struct PhotoReviewView: View {
                 .fixedSize()
                 .help(state.settings.output.afterSave.hint)
                 .disabled(state.isBusy)
-                Button("Cancel") {
-                    state.cancelPhotoReview()
+                Button("Discard") {
+                    if includedCount > 1 {
+                        asksDiscard = true
+                    } else {
+                        state.cancelPhotoReview()
+                    }
                 }
                 .keyboardShortcut(.cancelAction)
 
@@ -80,6 +91,12 @@ struct PhotoReviewView: View {
         .sheet(item: $editingPhoto) { photo in
             PhotoCropEditorView(photo: photo)
                 .environmentObject(state)
+        }
+        .alert(discardTitle, isPresented: $asksDiscard) {
+            Button("Discard", role: .destructive) { state.cancelPhotoReview() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("They have not been saved.")
         }
     }
 

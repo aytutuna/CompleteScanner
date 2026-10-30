@@ -14,6 +14,8 @@ struct IdCardReviewView: View {
 
     /// Side whose crop is being corrected manually (drives the editor sheet).
     @State private var editingPhoto: DetectedPhoto?
+    /// Discard is asking before it drops the sides.
+    @State private var asksDiscard = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -123,10 +125,14 @@ struct IdCardReviewView: View {
                       ? "Print at real size on \(state.copyPrinterName ?? "the default printer")"
                       : PrintText.noPrinterMessage)
                 Button("Discard") {
-                    state.discardIdCard()
+                    asksDiscard = true
+                }
+                .help(discardHelp)
+                Button("Close") {
+                    state.showIdCardReview = false
                 }
                 .keyboardShortcut(.cancelAction)
-                .help("Delete both sides; can't be undone")
+                .help("Keep the sides and close; Review in the settings column opens this again")
                 Button(saveTitle) {
                     state.saveIdCard()
                 }
@@ -144,6 +150,13 @@ struct IdCardReviewView: View {
             PhotoCropEditorView(photo: photo)
                 .environmentObject(state)
         }
+        // Asked here: ContentView's alert for leaving the card is under this sheet.
+        .alert("Discard the ID card?", isPresented: $asksDiscard) {
+            Button("Discard", role: .destructive) { state.discardIdCard() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The ID card has not been saved. Its scanned sides will be discarded.")
+        }
     }
 
     /// "Save PDF", "Save JPEG".
@@ -154,6 +167,10 @@ struct IdCardReviewView: View {
     private var saveHelp: String {
         let sides = state.idCardBack == nil ? "the front" : "both sides"
         return "Save \(sides) on one \(state.idCardPaperSize.label) page"
+    }
+
+    private var discardHelp: String {
+        state.idCardBack == nil ? "Delete the front; can't be undone" : "Delete both sides; can't be undone"
     }
 }
 
