@@ -10,12 +10,15 @@ import SwiftUI
 /// Save as, Also save sides as images, Discard and Save. The card stays in memory only until it is saved or
 /// discarded (AppState+IdCard.swift); Print prints both sides at real size over AirPrint
 /// (`IOSPrintService`, I16). It shows the error alert itself,
-/// since the root's cannot show over it.
+/// since the root's cannot show over it. Discard asks first.
 struct IdCardReviewScreen: View {
     @EnvironmentObject private var state: AppState
     let model: IOSPhotoReviewModel
+    /// The phone's mode: in camera mode the camera took the sides, so their buttons say Take, not Scan.
+    @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
     @State private var cropping: IOSCropRequest?
     @State private var preparing: Bool = false
+    @State private var asksDiscard: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -28,12 +31,12 @@ struct IdCardReviewScreen: View {
                             .accessibilityHint(Text(IOSReviewText.privacyHelp))
                             .accessibilityIdentifier("idcard.privacy")
                         SideCard(side: .front, photo: state.idCardFront, note: state.idCardFrontNote,
-                                 busy: state.isBusy || preparing,
+                                 busy: state.isBusy || preparing, camera: mode == .camera,
                                  onRotate: { state.rotateIdCardSide(.front) },
                                  onCrop: { fixCrop(.front) },
                                  onRetake: { state.retakeIdCardSide(.front) })
                         SideCard(side: .back, photo: state.idCardBack, note: state.idCardBackNote,
-                                 busy: state.isBusy || preparing,
+                                 busy: state.isBusy || preparing, camera: mode == .camera,
                                  onRotate: { state.rotateIdCardSide(.back) },
                                  onCrop: { fixCrop(.back) },
                                  onRetake: { state.retakeIdCardSide(.back) })
@@ -60,12 +63,20 @@ struct IdCardReviewScreen: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(IOSReviewText.discardLabel, role: .destructive) {
-                        state.discardIdCard()
+                        asksDiscard = true
                     }
                     .disabled(state.isBusy)
                     .accessibilityHint(Text(IOSReviewText.discardHint))
                     .accessibilityIdentifier("idcard.discard")
                 }
+            }
+            .confirmationDialog(IOSPresetText.discardTitle, isPresented: $asksDiscard, titleVisibility: .visible) {
+                Button(IOSReviewText.discardLabel, role: .destructive) {
+                    state.discardIdCard()
+                }
+                .accessibilityIdentifier("idcard.confirmDiscard")
+            } message: {
+                Text(IOSPresetText.discardLine)
             }
         }
         .fullScreenCover(item: $cropping) { (crop: IOSCropRequest) in
@@ -231,12 +242,14 @@ struct IdCardReviewScreen: View {
 }
 
 /// One side of the card: its picture turned as the user turned it, the note about it, and Rotate, Fix crop
-/// and Scan again; a missing back says so and offers to scan it.
+/// and Scan again; a missing back says so and offers to scan it. In camera mode the phone takes the sides,
+/// so those two say Take again and Take the back.
 private struct SideCard: View {
     let side: PageSide
     let photo: DetectedPhoto?
     let note: String?
     let busy: Bool
+    let camera: Bool
     let onRotate: () -> Void
     let onCrop: () -> Void
     let onRetake: () -> Void
@@ -248,6 +261,8 @@ private struct SideCard: View {
         guard let held = photo else { return "none" }
         return "\(held.region.id.uuidString)-\(held.rotationQuarterTurns)"
     }
+    private var againLabel: String { camera ? IOSReviewText.takeAgainLabel : IOSReviewText.scanAgainLabel }
+    private var missingBackLabel: String { camera ? IOSReviewText.takeBackLabel : IOSReviewText.scanBackLabel }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -268,7 +283,7 @@ private struct SideCard: View {
                     Button(action: onRetake) {
                         Image(systemName: "arrow.clockwise")
                     }
-                    .accessibilityLabel(Text(IOSReviewText.sideAction(IOSReviewText.scanAgainLabel, side: side)))
+                    .accessibilityLabel(Text(IOSReviewText.sideAction(againLabel, side: side)))
                     .accessibilityIdentifier("idcard.retake.\(title.lowercased())")
                 }
             }
@@ -298,7 +313,7 @@ private struct SideCard: View {
                 Text(IOSReviewText.noBackLine)
                     .font(.callout)
                     .foregroundStyle(Color.secondary)
-                Button(IOSReviewText.scanBackLabel, action: onRetake)
+                Button(missingBackLabel, action: onRetake)
                     .buttonStyle(.bordered)
                     .disabled(busy)
                     .accessibilityIdentifier("idcard.scanBack")

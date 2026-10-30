@@ -734,6 +734,16 @@ final class IOSObjectsTests: XCTestCase {
         XCTAssertEqual(IOSReviewText.sideAction(IOSReviewText.rotateLabel, side: .front), "Rotate the front")
     }
 
+    func test_theCardReview_hasCameraWords_andADiscardHintTrueForOneSide() {
+        XCTAssertEqual(IOSReviewText.takeAgainLabel, "Take again")
+        XCTAssertEqual(IOSReviewText.takeBackLabel, "Take the back")
+        XCTAssertEqual(IOSReviewText.sideAction(IOSReviewText.takeAgainLabel, side: .front), "Take the front again")
+        // A scanner's words stay for printer mode.
+        XCTAssertEqual(IOSReviewText.sideAction(IOSReviewText.scanAgainLabel, side: .back), "Scan the back again")
+        // The review opens with the front alone when the back is skipped.
+        XCTAssertEqual(IOSReviewText.discardHint, "Deletes the sides taken; can't be undone")
+    }
+
     // MARK: The photos UI test's launch
 
     func test_theLaunchOption_namesTheTaskThePhotoGoesInto() {

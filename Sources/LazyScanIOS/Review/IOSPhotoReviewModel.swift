@@ -31,11 +31,14 @@ public enum IOSReviewText {
     /// A card saved without its back.
     public static let noBackLine = "No back side"
     public static let scanBackLabel = "Scan the back"
+    /// What Scan again and Scan the back say where the phone's camera took the sides.
+    public static let takeAgainLabel = "Take again"
+    public static let takeBackLabel = "Take the back"
     public static let pagePreviewName = "Page preview"
     public static let paperLabel = "Paper"
     public static let sidesAsImagesLabel = "Also save sides as images"
     public static let discardLabel = "Discard"
-    public static let discardHint = "Delete both sides; can't be undone"
+    public static let discardHint = "Deletes the sides taken; can't be undone"
     /// The ID card review's Print button (AirPrint, I16).
     public static let printLabel = "Print"
     public static let printIdCardHint = "Print both sides at real size on an AirPrint printer"
@@ -55,6 +58,7 @@ public enum IOSReviewText {
     public static func sideAction(_ action: String, side: PageSide) -> String {
         let name: String = side == .front ? "front" : "back"
         if action == scanAgainLabel { return "Scan the \(name) again" }
+        if action == takeAgainLabel { return "Take the \(name) again" }
         if action == fixCropLabel { return "Fix crop of the \(name)" }
         return "\(action) the \(name)"
     }
