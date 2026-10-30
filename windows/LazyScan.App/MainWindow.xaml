@@ -198,7 +198,7 @@
                 <ListBox Grid.Row="1" x:Name="DeviceList" Style="{StaticResource NavListBoxStyle}" MaxHeight="220"
                          ItemContainerStyle="{StaticResource DeviceListItemStyle}"
                          KeyboardNavigation.TabNavigation="Local"
-                         AutomationProperties.Name="Scanners"
+                         AutomationProperties.Name="Scanners" ToolTipService.ShowOnDisabled="True"
                          SelectionChanged="DeviceList_SelectionChanged"
                          PreviewMouseLeftButtonDown="DeviceList_PreviewMouseDown"
                          ContextMenuOpening="DeviceList_ContextMenuOpening">

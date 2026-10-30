@@ -354,8 +354,14 @@ public partial class MainWindow : Window
         Inspector.IsEnabled = !ViewModel.IsBusy;
         PresetList.IsEnabled = !ViewModel.IsBusy;
         PresetButtons.IsEnabled = !ViewModel.IsBusy;
+        // So is the scanner list: picking another scanner would cancel the scan.
+        string? busyHint = ViewModel.IsBusy ? "Wait for the scan to finish" : null;
+        DeviceList.IsEnabled = !ViewModel.IsBusy;
+        DeviceList.ToolTip = busyHint;
+        AutomationProperties.SetHelpText(DeviceList, busyHint ?? "");
         // While a side of an ID card is held, the mode and the source stay as they are: changing
-        // them would end the task and drop the card. Leaving the task asks first.
+        // them would end the task and drop the card. Leaving the task or picking another scanner
+        // asks first.
         bool cardHeld = ViewModel.HasIdCardCaptures;
         string? cardHint = cardHeld ? IdCardHeldHint : null;
         ModeTrack.IsEnabled = SourceBox.IsEnabled = !cardHeld;
@@ -989,10 +995,10 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Asks before something that ends the ID card task (leaving it, picking a task or a preset)
-    /// while a side of the card is held and not saved. Discard drops the card and goes on (true);
-    /// Cancel keeps it (false). True at once when no side is held. Refused (false) while an
-    /// operation runs: the card cannot be discarded then.
+    /// Asks before something that can end the ID card task (leaving it, picking a task, a preset
+    /// or another scanner) while a side of the card is held and not saved. Discard drops the card
+    /// and goes on (true); Cancel keeps it (false). True at once when no side is held. Refused
+    /// (false) while an operation runs: the card cannot be discarded then.
     /// </summary>
     private bool ConfirmDropIdCard()
     {
@@ -1838,6 +1844,14 @@ public partial class MainWindow : Window
         if (_updatingUi) return;
         if (DeviceList.SelectedItem is DeviceRow row && row.Id != ViewModel.SelectedDeviceId)
         {
+            // A scanner without a flatbed ends the ID card task, and a scanner's sources are known
+            // only once it is open, so any switch asks while a side is held. Cancel selects the
+            // scanner in use again.
+            if (ViewModel.HasIdCardCaptures && !ConfirmDropIdCard())
+            {
+                SyncDeviceSelection();
+                return;
+            }
             ViewModel.UserSelectDevice(row.Id);
         }
     }
@@ -1963,7 +1977,7 @@ public partial class MainWindow : Window
             IsCheckable = true,
             IsChecked = row.ChosenConnection is null,
         };
-        automatic.Click += (_, _) => ViewModel.ChooseConnection(row.Group.Key, null);
+        automatic.Click += (_, _) => ChooseConnection(row, null);
         menu.Items.Add(automatic);
         menu.Items.Add(new Separator());
         foreach (var member in row.Group.Members)
@@ -1976,10 +1990,17 @@ public partial class MainWindow : Window
                 IsCheckable = true,
                 IsChecked = string.Equals(row.ChosenConnection, connection, StringComparison.OrdinalIgnoreCase),
             };
-            item.Click += (_, _) => ViewModel.ChooseConnection(row.Group.Key, connection);
+            item.Click += (_, _) => ChooseConnection(row, connection);
             menu.Items.Add(item);
         }
         return menu;
+    }
+
+    private void ChooseConnection(DeviceRow row, string? connection)
+    {
+        // Another scanner's connection opens it at once; the selected one's waits for the card.
+        if (row.Id != ViewModel.SelectedDeviceId && ViewModel.HasIdCardCaptures && !ConfirmDropIdCard()) return;
+        ViewModel.ChooseConnection(row.Group.Key, connection);
     }
 
     private void PresetList_MouseDoubleClick(object sender, MouseButtonEventArgs e)

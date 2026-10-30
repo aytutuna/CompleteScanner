@@ -240,8 +240,8 @@ eSCL, then TWAIN, and through Windows Scan only when it is chosen or the only co
 (see [Windows Scan](#windows-scan-backup-connection)); the row's **via WIA ▾** menu chooses another connection for that scanner
 (or **Automatic** again). The same menu is the row's context menu (right-click, Shift+F10 or
 the Menu key), which is also the way to reach it in the folded sidebar rail; Tab moves from
-the selected row to its **via** button. While a scan runs or the photo review is open, a new
-choice for the selected scanner takes effect when that ends. The choice is remembered while
+the selected row to its **via** button. While a scan runs the list is greyed out ("Wait for the
+scan to finish"), since a switch would cancel it. The choice is remembered while
 the scanner is reached the same ways: it is saved under the network connection's eSCL UUID
 when that connection is listed and under the model name otherwise, so a choice made while the
 eSCL host answered does not apply while it is offline, and the other way round. Choices for
@@ -645,8 +645,9 @@ resolution, when both scans cover the same part of the glass (otherwise the larg
 whole glass). Each side is cut out and turned straight, and a note says when its crop should be
 checked. While a side is held, the inspector's Mode and Source are locked (changing them would end
 the task), the app does not switch scanners on its own (a scanner that went away or a better
-connection waits until the card is saved or discarded), and leaving the task, picking a task or a
-preset asks whether to discard the card first.
+connection waits until the card is saved or discarded), and leaving the task, picking a task, a
+preset or another scanner (one without a flatbed would end the task) asks whether to discard the
+card first.
 
 The review shows both sides, each with **Turn**, **Fix crop** (the crop editor, on the scan the side
 came from) and **Scan again**, **Swap front and back**, and the page they go on: centred, the front
