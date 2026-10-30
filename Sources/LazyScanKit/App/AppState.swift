@@ -124,6 +124,12 @@ public final class AppState: ObservableObject {
     /// Every backend entry grouped by physical scanner, in sidebar order.
     public private(set) var deviceGroups: [DeviceGroup] = []
     @Published public private(set) var selectedDeviceID: String?
+    /// The selected scanner is open and no switch is under way, so Scan and Preview can run. Neither this nor
+    /// `isConnecting` is published: they only change along with the selection or the status. Twins of the
+    /// Windows view model's `IsConnected` and `IsConnecting`.
+    public var isConnected: Bool { session != nil && switchTask == nil }
+    /// A switch of scanner is under way: the one selected is still connecting.
+    public var isConnecting: Bool { switchTask != nil }
     @Published public private(set) var capabilities: ScannerCapabilities?
     @Published public var settings: ScanSettings {
         didSet {
@@ -1012,6 +1018,12 @@ public final class AppState: ObservableObject {
     /// Why Preview cannot be used with the settings and the scanner at hand; nil when it can. A greyed-out
     /// Preview shows it as its help. Twin of the Windows `AppViewModel.PreviewUnavailableReason`.
     public var previewUnavailableReason: String? {
+        if !isConnected {
+            guard let id = selectedDeviceID else { return "No scanner selected." }
+            let name = devices.first(where: { $0.id == id })?.name ?? "the scanner"
+            if isConnecting { return "Connecting to \(name)…" }
+            return "Not connected to \(name). Choose it in the list again to retry."
+        }
         if capabilities?.supportsOverview == false { return "This scanner has no preview." }
         // The preview shows the flatbed; a feeder scan would ignore a selection drawn on it.
         if settings.source == .documentFeeder {
@@ -2214,7 +2226,13 @@ public final class AppState: ObservableObject {
     }
 
     private func noDevice() {
-        errorMessage = "No scanner is connected. Select a device in the sidebar (or use the Demo Scanner)."
+        guard let id = selectedDeviceID else {
+            errorMessage = "No scanner selected. Choose one under Scanners (or the Demo Scanner)."
+            return
+        }
+        let name = devices.first(where: { $0.id == id })?.name ?? "the scanner"
+        errorMessage = "Not connected to \(name). Turn it on and choose it in the list again, or pick another scanner."
+        errorSuggestsTroubleshooter = true
     }
 
     private func scheduleSettingsSave() {

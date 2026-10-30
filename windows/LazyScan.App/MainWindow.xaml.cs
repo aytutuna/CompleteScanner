@@ -334,7 +334,11 @@ public partial class MainWindow : Window
         string previewHint = previewReason ?? "Quick look at the whole glass";
         PreviewButton.ToolTip = previewHint;
         AutomationProperties.SetHelpText(PreviewButton, previewHint);
-        ScanButton.IsEnabled = !ViewModel.IsBusy;
+        // Scan has a tooltip only while it waits for the scanner.
+        string? notConnected = NotConnectedHint();
+        ScanButton.IsEnabled = !ViewModel.IsBusy && ViewModel.IsConnected;
+        ScanButton.ToolTip = notConnected;
+        AutomationProperties.SetHelpText(ScanButton, notConnected ?? "");
         ScanButton.Content = ViewModel.PrimaryActionLabel;
         SyncTaskBanner();
         SyncCopyOptions();
@@ -838,10 +842,7 @@ public partial class MainWindow : Window
     {
         ViewModel.RetakeIdCardSide(SideOf(sender));
         RefreshFromViewModel();
-        Dispatcher.BeginInvoke(() =>
-        {
-            if (ScanButton.IsEnabled) ScanButton.Focus();
-        }, System.Windows.Threading.DispatcherPriority.Loaded);
+        Dispatcher.BeginInvoke(FocusMainAction, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     /// <summary>Fixes a side's crop in the crop editor, on the scan it was cut from.</summary>
@@ -905,35 +906,35 @@ public partial class MainWindow : Window
     {
         ViewModel.FinishFronts();
         RefreshFromViewModel();
-        ScanButton.Focus();
+        FocusMainAction();
     }
 
     private void MoreFronts_Click(object sender, RoutedEventArgs e)
     {
         ViewModel.ScanMoreFronts();
         RefreshFromViewModel();
-        ScanButton.Focus();
+        FocusMainAction();
     }
 
     private void CombineSides_Click(object sender, RoutedEventArgs e)
     {
         ViewModel.CombineSidesAnyway();
         RefreshFromViewModel();
-        ScanButton.Focus();
+        FocusMainAction();
     }
 
     private void ScanBacksAgain_Click(object sender, RoutedEventArgs e)
     {
         ViewModel.ScanBacksAgain();
         RefreshFromViewModel();
-        ScanButton.Focus();
+        FocusMainAction();
     }
 
     private void KeepFronts_Click(object sender, RoutedEventArgs e)
     {
         ViewModel.KeepFrontsOnly();
         RefreshFromViewModel();
-        ScanButton.Focus();
+        FocusMainAction();
     }
 
     /// <summary>
@@ -1031,10 +1032,7 @@ public partial class MainWindow : Window
         ScanTab.IsSelected = true;
         RefreshFromViewModel();
         // After the tab's content is laid out, so the button can take focus.
-        Dispatcher.BeginInvoke(() =>
-        {
-            if (ScanButton.IsEnabled) ScanButton.Focus();
-        }, System.Windows.Threading.DispatcherPriority.Loaded);
+        Dispatcher.BeginInvoke(FocusMainAction, System.Windows.Threading.DispatcherPriority.Loaded);
         // Focus lands on the Scan button, outside the banner, so the task is announced ("Task: Photos").
         if (ViewModel.ActiveTaskDefinition is not null) AnnounceWhenShown(TaskBannerGroup);
     }
@@ -1059,7 +1057,7 @@ public partial class MainWindow : Window
         }
         PushSettingsToUi();
         RefreshFromViewModel();
-        ScanButton.Focus();
+        FocusMainAction();
     }
 
     // MARK: - Appearance
@@ -1109,6 +1107,18 @@ public partial class MainWindow : Window
         {
             _updatingUi = wasUpdating;
         }
+    }
+
+    /// <summary>
+    /// Why Scan and Preview are off while no scanner is connected: the selected one is still
+    /// connecting, it would not connect, or none is selected. Null once it is connected.
+    /// </summary>
+    private string? NotConnectedHint()
+    {
+        if (ViewModel.IsConnected) return null;
+        if (ViewModel.SelectedDeviceId is not { } id) return "No scanner selected.";
+        string name = ViewModel.Devices.FirstOrDefault(d => d.Id == id)?.Name ?? "the scanner";
+        return ViewModel.IsConnecting ? $"Connecting to {name}…" : $"Not connected to {name}. Choose it in the list again to retry.";
     }
 
     /// <summary>
@@ -1830,6 +1840,27 @@ public partial class MainWindow : Window
         {
             ViewModel.UserSelectDevice(row.Id);
         }
+    }
+
+    /// <summary>
+    /// Clicking the selected scanner again while it is not connected (it was off, or did not answer)
+    /// opens it again, which SelectionChanged never reports. Handled on the press, before the list
+    /// selects, so a scanner picked by this very click is not opened twice.
+    /// </summary>
+    private void DeviceList_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not UIElement source
+            || ItemsControl.ContainerFromElement(DeviceList, source) is not ListBoxItem { DataContext: DeviceRow row } item
+            || row.Id != ViewModel.SelectedDeviceId || ViewModel.IsConnected || ViewModel.IsConnecting)
+        {
+            return;
+        }
+        // Not from the row's "via" button, which opens the connection menu.
+        for (DependencyObject? node = source; node != item; node = System.Windows.Media.VisualTreeHelper.GetParent(node))
+        {
+            if (node is null or ButtonBase) return;
+        }
+        ViewModel.UserSelectDevice(row.Id);
     }
 
     /// <summary>The "via WIA" button of a scanner reached several ways: choose the connection.</summary>

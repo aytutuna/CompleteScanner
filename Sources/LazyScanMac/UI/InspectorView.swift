@@ -1207,7 +1207,8 @@ struct InspectorView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(state.isBusy)
+                .disabled(state.isBusy || !state.isConnected)
+                .help(scanHelp)
             }
             .controlSize(.large)
             // Photos of documents become pages of the queue too, with no scanner (AppState+Import.swift).
@@ -1226,6 +1227,19 @@ struct InspectorView: View {
         }
         .padding(12)
         .background(.bar)
+    }
+
+    /// Scan has help only while it waits for the scanner.
+    private var scanHelp: String { notConnectedHelp ?? "" }
+
+    /// Why Scan and Preview are off while no scanner is connected: the selected one is still connecting, it would
+    /// not connect, or none is selected; nil once it is connected. Twin of the Windows window's `NotConnectedHint`.
+    private var notConnectedHelp: String? {
+        guard !state.isConnected else { return nil }
+        guard let id = state.selectedDeviceID else { return "No scanner selected." }
+        let name: String = state.devices.first(where: { $0.id == id })?.name ?? "the scanner"
+        if state.isConnecting { return "Connecting to \(name)…" }
+        return "Not connected to \(name). Choose it in the list again to retry."
     }
 }
 

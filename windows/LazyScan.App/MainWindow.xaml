@@ -200,6 +200,7 @@
                          KeyboardNavigation.TabNavigation="Local"
                          AutomationProperties.Name="Scanners"
                          SelectionChanged="DeviceList_SelectionChanged"
+                         PreviewMouseLeftButtonDown="DeviceList_PreviewMouseDown"
                          ContextMenuOpening="DeviceList_ContextMenuOpening">
                     <!-- One row per scanner (DeviceRow). A scanner reached several ways (WIA, TWAIN,
                          network) shows its connection as a "via WIA" menu button instead of a caption;
@@ -1264,6 +1265,7 @@
                                                 Click="Preview_Click" />
                                         <Button Grid.Column="2" x:Name="ScanButton" Style="{StaticResource AccentIconTextButtonStyle}"
                                                 local:Icon.Glyph="&#xE8FE;" Content="Scan" MinHeight="36"
+                                                ToolTipService.ShowOnDisabled="True"
                                                 Click="Scan_Click" />
                                     </Grid>
                                     <!-- Save (with the page count and, for a protected PDF, a lock) and its menu;

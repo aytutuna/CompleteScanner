@@ -4,8 +4,10 @@ import XCTest
 
 // How AppState keeps its scanner as the list changes and connections fail: the phone waits for its scanner
 // when it drops off the list (the Mac moves on to another), Refresh opens a scanner that could not be
-// connected to, and a scanner left while it was connecting fails without a word. Windows: the same rules in
-// `AppViewModel.RefreshScanners` and `SwitchSession`, which have no tests of their own.
+// connected to, and a scanner left while it was connecting fails without a word. No scanner counts as connected
+// while a switch runs, nor one that could not be connected to until it is picked again; Scan and Preview then
+// say why. Windows: the same rules in `AppViewModel.RefreshScanners`, `SwitchSession`, `IsConnected`, `NoDevice`
+// and `PreviewUnavailableReason`, which have no tests of their own.
 
 /// Scanners the test lists and takes away, each opened as the demo scanner. The first `failures` opens fail;
 /// an open of `held` waits for `release()` and then fails, as a scanner that does not answer.
@@ -193,5 +195,73 @@ final class AppStateDeviceTests: XCTestCase {
         XCTAssertNil(state.lastFailure)
         XCTAssertFalse(statuses.contains("Could not connect to Office MFP."), "\(statuses)")
         XCTAssertTrue(state.statusMessage.hasPrefix("Ready — Demo Scanner"), state.statusMessage)
+    }
+
+    /// A scanner that would not connect stays selected but not connected: Scan names it and offers the
+    /// troubleshooter, and picking it again (the Mac's click on its row) opens it.
+    @MainActor
+    func test_aScannerThatWouldNotConnect_isNotConnected_untilPickedAgain() async throws {
+        let backend: ListedScannersBackend = ListedScannersBackend()
+        backend.list([office])
+        backend.failures = 1
+        let state: AppState = makeState([backend])
+        XCTAssertFalse(state.isConnected)
+        state.start()
+        try await waitFor(10) { state.lastFailure != nil && !state.isConnecting }
+        XCTAssertEqual(state.selectedDeviceID, office.id)
+        XCTAssertEqual(state.statusMessage, "Could not connect to Office MFP.")
+        XCTAssertFalse(state.isConnected)
+        XCTAssertEqual(state.previewUnavailableReason, "Not connected to Office MFP. Choose it in the list again to retry.")
+        state.errorMessage = nil
+        state.errorSuggestsTroubleshooter = false
+
+        state.performScan()
+        XCTAssertEqual(state.errorMessage,
+                       "Not connected to Office MFP. Turn it on and choose it in the list again, or pick another scanner.")
+        XCTAssertTrue(state.errorSuggestsTroubleshooter)
+
+        state.userSelectDevice(office.id)
+        XCTAssertTrue(state.isConnecting)
+        XCTAssertEqual(state.statusMessage, "Connecting to Office MFP…")
+        try await waitFor(10) { state.isConnected }
+        XCTAssertFalse(state.isConnecting)
+        XCTAssertEqual(backend.opened, [office.id, office.id])
+        XCTAssertNotNil(state.capabilities)
+        XCTAssertNil(state.previewUnavailableReason)
+    }
+
+    /// Picking another scanner ends the connection at once, though the one left closes only as the switch runs.
+    @MainActor
+    func test_whileASwitchRuns_noScannerIsConnected() async throws {
+        let backend: ListedScannersBackend = ListedScannersBackend()
+        backend.list([office])
+        let state: AppState = makeState([backend])
+        state.start()
+        try await waitFor(10) { state.isConnected }
+        backend.list([office, library])
+
+        state.userSelectDevice(library.id)
+        XCTAssertFalse(state.isConnected)
+        XCTAssertTrue(state.isConnecting)
+        // The scanner left is still open, yet Preview waits too.
+        XCTAssertEqual(state.previewUnavailableReason, "Connecting to Library MFP…")
+        try await waitFor(10) { state.isConnected }
+        XCTAssertEqual(state.selectedDeviceID, library.id)
+        XCTAssertEqual(backend.opened, [office.id, library.id])
+    }
+
+    /// Scan or Preview with no scanner selected says where to choose one, and offers no troubleshooter.
+    @MainActor
+    func test_scanWithNoScannerSelected_saysWhereToChooseOne() {
+        let state: AppState = makeState([])
+        state.performScan()
+        XCTAssertEqual(state.errorMessage, "No scanner selected. Choose one under Scanners (or the Demo Scanner).")
+        XCTAssertFalse(state.errorSuggestsTroubleshooter)
+        state.errorMessage = nil
+        state.performOverview()
+        XCTAssertEqual(state.errorMessage, "No scanner selected. Choose one under Scanners (or the Demo Scanner).")
+        XCTAssertEqual(state.previewUnavailableReason, "No scanner selected.")
+        XCTAssertFalse(state.isConnected)
+        XCTAssertFalse(state.isConnecting)
     }
 }

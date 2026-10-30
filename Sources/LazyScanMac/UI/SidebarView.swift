@@ -14,6 +14,8 @@ struct SidebarView: View {
                 ForEach(state.devices) { device in
                     DeviceRow(device: device)
                         .tag(device.id)
+                        // Simultaneous, so the List still selects the row.
+                        .simultaneousGesture(retryTap(device.id))
                 }
                 if !state.hasRealDevices {
                     // Twin of the Windows side pane: what is missing, and the way to find out why.
@@ -84,6 +86,15 @@ struct SidebarView: View {
         )
     }
 
+    /// A click on the selected scanner while it is not connected (it was off, or did not answer) opens it
+    /// again: the List sets its selection only when it changes. Twin of the Windows `DeviceList_PreviewMouseDown`.
+    private func retryTap(_ id: String) -> some Gesture {
+        TapGesture().onEnded {
+            guard id == state.selectedDeviceID, !state.isConnected, !state.isConnecting else { return }
+            state.userSelectDevice(id)
+        }
+    }
+
     private var footerHint: some View {
         VStack(alignment: .leading, spacing: 0) {
             Divider()
@@ -128,6 +139,8 @@ private struct DeviceRow: View {
             }
         }
         .padding(.vertical, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 #endif

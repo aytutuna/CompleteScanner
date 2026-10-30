@@ -47,7 +47,7 @@ public partial class MainWindow
         ViewModel.ClearAppendTarget();
         // The × goes away with the row.
         if (SavePdfButton.IsEnabled) SavePdfButton.Focus();
-        else ScanButton.Focus();
+        else FocusMainAction();
     }
 
     private string? PickPdfToAddTo()

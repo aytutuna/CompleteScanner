@@ -376,6 +376,10 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     public IReadOnlyList<DeviceGroup> DeviceGroups { get; private set; } = [];
 
     public string? SelectedDeviceId { get; private set; }
+    /// <summary>The selected scanner is open and no switch is under way, so Scan and Preview can run.</summary>
+    public bool IsConnected => _session is not null && _switchTask.IsCompleted;
+    /// <summary>A switch of scanner is under way: the one selected is still connecting.</summary>
+    public bool IsConnecting => !_switchTask.IsCompleted;
     public ScannerCapabilities? Capabilities { get; private set; }
     public ScanSettings Settings { get; private set; }
 
@@ -1284,6 +1288,9 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
             await previous;
             if (_switchGeneration != generation) return;
             await SwitchSession(id, interactive);
+            // SwitchSession's own NotifyAll can be handled before this task completes, while
+            // IsConnected and IsConnecting still see the switch running.
+            NotifyAll();
         }
     }
 
@@ -1407,6 +1414,12 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
     {
         get
         {
+            if (!IsConnected)
+            {
+                if (SelectedDeviceId is not { } id) return "No scanner selected.";
+                string name = Devices.FirstOrDefault(d => d.Id == id)?.Name ?? "the scanner";
+                return IsConnecting ? $"Connecting to {name}…" : $"Not connected to {name}. Choose it in the list again to retry.";
+            }
             if (Capabilities?.SupportsOverview == false) return "This scanner has no preview.";
             // The preview shows the flatbed; a feeder scan would ignore a selection drawn on it.
             return Settings.Source == ScanSource.DocumentFeeder
@@ -3186,7 +3199,16 @@ public sealed partial class AppViewModel : INotifyPropertyChanged
 
     private void NoDevice()
     {
-        ErrorMessage = "No scanner is connected. Select a device in the sidebar (or use the Demo Scanner).";
+        if (SelectedDeviceId is not { } id)
+        {
+            ErrorMessage = "No scanner selected. Choose one under Scanners (or the Demo Scanner).";
+        }
+        else
+        {
+            string name = DeviceGroups.SelectMany(g => g.Members).FirstOrDefault(d => d.Id == id)?.Name ?? "the scanner";
+            ErrorMessage = $"Not connected to {name}. Turn it on and choose it in the list again, or pick another scanner.";
+            ErrorSuggestsTroubleshooter = true;
+        }
         NotifyAll();
     }
 
