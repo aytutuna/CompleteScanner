@@ -343,8 +343,27 @@ fileprivate struct PageThumbnailCell: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityName)
+        // The hover controls exist only while the pointer is over the page; VoiceOver never hovers.
+        .accessibilityActions {
+            Button("Remove page", action: onRemove)
+            Button("Rotate 90\u{00B0} clockwise", action: onRotate)
+            if canMoveLeft {
+                Button("Move left") { onMove(-1) }
+            }
+            if canMoveRight {
+                Button("Move right") { onMove(1) }
+            }
+        }
         .contextMenu {
             Button("Copy Text", action: onCopyText)
+            Button("Rotate 90\u{00B0} Clockwise", action: onRotate)
+            Button("Move Left") { onMove(-1) }
+                .disabled(!canMoveLeft)
+            Button("Move Right") { onMove(1) }
+                .disabled(!canMoveRight)
+            if let label = split.toggleLabel {
+                Button(label, action: onToggle)
+            }
             if split.menuBreakLabel != nil || split.canNameDocument {
                 Divider()
             }
@@ -363,6 +382,8 @@ fileprivate struct PageThumbnailCell: View {
             if let label = book.joinLabel {
                 Button(label, action: onJoinSpread)
             }
+            Divider()
+            Button("Remove Page", role: .destructive, action: onRemove)
         }
         // Re-render when the page is rotated, shown as scanned or turned back (the cell keeps its
         // identity, so a plain run-once task would show stale pixels).
