@@ -764,9 +764,13 @@ public enum IOSShell {
             && DocumentSplitter.clampSheetCount(settings.document.splitSheetCount) == 1
     }
 
-    /// That switch's name: a sheet's front and back stay together, so with both sides it is per sheet.
-    public static func eachPageTitle(_ settings: ScanSettings) -> String {
-        settings.source == .documentFeeder && settings.duplex != .off ? "One PDF per sheet" : "One PDF per page"
+    /// That switch's name: a sheet's front and back stay together, so with both sides it is per sheet. The
+    /// camera pairs the sides only for Both sides, whatever source and sides printer mode left in the settings.
+    public static func eachPageTitle(_ settings: ScanSettings, camera: Bool = false) -> String {
+        let sheets: Bool = camera
+            ? settings.task == .twoSided
+            : settings.source == .documentFeeder && settings.duplex != .off
+        return sheets ? "One PDF per sheet" : "One PDF per page"
     }
 
     public static func settingEachPage(_ on: Bool, in settings: ScanSettings) -> ScanSettings {

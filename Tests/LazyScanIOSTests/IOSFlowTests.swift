@@ -281,6 +281,15 @@ final class IOSFlowTests: XCTestCase {
         // Export sheet's toggle alike) says so.
         XCTAssertEqual(IOSShell.eachPageTitle(on), "One PDF per page")
         XCTAssertEqual(IOSShell.eachPageTitle(IOSShell.settingBothSides(true, in: on)), "One PDF per sheet")
+        XCTAssertEqual(IOSShell.eachPageTitle(IOSShell.settingBothSides(true, in: on), camera: true),
+                       "One PDF per sheet")
+        // The camera pairs the sides only for Both sides, not for the feeder and sides printer mode left.
+        var feeder: ScanSettings = s
+        feeder.source = .documentFeeder
+        feeder.duplex = .both
+        XCTAssertEqual(feeder.task, .document)
+        XCTAssertEqual(IOSShell.eachPageTitle(feeder), "One PDF per sheet")
+        XCTAssertEqual(IOSShell.eachPageTitle(feeder, camera: true), "One PDF per page")
     }
 
     func test_anOptionThatEndsTheTask_keepsItsKind() {
@@ -351,8 +360,11 @@ final class IOSFlowTests: XCTestCase {
         defaults.set("many", forKey: IOSShell.itemsInFrameKey)
         XCTAssertEqual(IOSShell.itemsInFrame(document, defaults: defaults), .auto)
         XCTAssertEqual(IOSShell.itemsInFrameKey, "camera.itemsInFrame")
-        XCTAssertEqual(IOSCameraText.itemsInFrameHint,
+        XCTAssertEqual(IOSCameraText.itemsInFrameHint(.document),
                        "Auto splits the shot when it sees more than one page or photo. Pick One for a page with slips on it.")
+        // Photo's Auto cuts out every print already: its line speaks of prints, and Several is not offered.
+        XCTAssertEqual(IOSCameraText.itemsInFrameHint(.photos),
+                       "Auto cuts out each print it sees. Pick One to keep only the largest.")
     }
 
     func test_drawerGroups_followWhatIsSaved() {

@@ -186,12 +186,18 @@ public enum IOSCameraText {
     public static let autoHint = "Takes each page once it holds still"
     /// The automatic shutter's switch in the options drawer.
     public static let autoShutterLabel = "Auto shutter"
-    /// The options drawer's Items in frame (`IOSItemsInFrame`) and the line under it.
+    /// Why Separate documents or Both sides is dimmed while the other is on: one task holds either.
+    public static let notWithBothSides = "Not with Both sides"
+    public static let notWithSeparate = "Not with Separate documents"
+    /// The options drawer's Items in frame (`IOSItemsInFrame`) and the line under it for `kind`. Photo has no
+    /// Several: its Auto cuts out every print found already.
     public static let itemsInFrameLabel = "Items in frame"
-    public static let itemsInFrameHint =
-        "Auto splits the shot when it sees more than one page or photo. Pick One for a page with slips on it."
-    /// The status line while a page holds still for the automatic shutter.
-    public static let pageFound = "Page found \u{00B7} hold still"
+    public static func itemsInFrameHint(_ kind: IOSScanKind) -> String {
+        if kind == .photos {
+            return "Auto cuts out each print it sees. Pick One to keep only the largest."
+        }
+        return "Auto splits the shot when it sees more than one page or photo. Pick One for a page with slips on it."
+    }
     /// The chevron that swaps the kinds for the options drawer.
     public static let showOptions = "Show options"
     public static let hideOptions = "Hide options"
@@ -272,6 +278,20 @@ public enum IOSCameraText {
             return "The photos are found in the shot"
         case .idCard:
             return "Takes the side of the card in the frame"
+        }
+    }
+
+    /// The status line while the page, card, photo or receipt of `kind` holds still for the automatic shutter.
+    public static func pageFound(_ kind: CaptureKind) -> String {
+        switch kind {
+        case .document:
+            return "Page found \u{00B7} hold still"
+        case .receipt:
+            return "Receipt found \u{00B7} hold still"
+        case .photo:
+            return "Photo found \u{00B7} hold still"
+        case .idCard:
+            return "Card found \u{00B7} hold still"
         }
     }
 

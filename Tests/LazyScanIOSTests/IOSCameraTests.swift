@@ -520,6 +520,10 @@ final class IOSCameraTests: XCTestCase {
             hints.insert(hint)
         }
         XCTAssertEqual(hints.count, CaptureKind.allCases.count)
+        // The line while it holds still for Auto names what was found: a card under the ID card's guide is no page.
+        XCTAssertEqual(IOSCameraText.pageFound(.document), "Page found \u{00B7} hold still")
+        XCTAssertEqual(IOSCameraText.pageFound(.idCard), "Card found \u{00B7} hold still")
+        XCTAssertEqual(Set(CaptureKind.allCases.map(IOSCameraText.pageFound)).count, CaptureKind.allCases.count)
         XCTAssertLessThanOrEqual(words(IOSCameraText.autoHint), 15)
         // The scan screen's Camera button promises nothing about Auto, which may be off.
         XCTAssertLessThanOrEqual(words(IOSCameraText.cameraHint), 15)

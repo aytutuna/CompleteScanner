@@ -248,7 +248,8 @@ struct SeparatorSheetRow: View {
 
 /// Options' Both sides for the camera: the two-sided task under the hood (`IOSShell.settingBothSides`), so
 /// the camera takes each sheet's front and back; how it does is `TaskWayPicker`'s. Dimmed with its reason
-/// while the scanner set up has no feeder, as the two-sided task's tile was.
+/// while the scanner set up has no feeder, as the two-sided task's tile was, and while Separate documents is
+/// on, since one task holds either.
 struct BothSidesToggle: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -256,11 +257,14 @@ struct BothSidesToggle: View {
     var body: some View {
         let on: Bool = state.activeTask == .twoSided
         let availability: TaskAvailability = TaskCatalog.availability(of: .twoSided, capabilities: state.capabilities)
+        let separates: Bool = !on && IOSShell.separatesDocuments(state.settings)
         Toggle("Both sides", isOn: bothSides)
-            .disabled(state.isBusy || importer.isImporting || (!on && !availability.isAvailable))
+            .disabled(state.isBusy || importer.isImporting || (!on && (!availability.isAvailable || separates)))
             .accessibilityHint(Text("Takes the front and back of each sheet"))
             .accessibilityIdentifier("options.bothSides")
-        if !on, let reason = availability.reason {
+        if separates {
+            OptionReason(text: IOSCameraText.notWithSeparate)
+        } else if !on, let reason = availability.reason {
             OptionReason(text: reason)
         }
     }
@@ -301,16 +305,21 @@ struct RestoreToggle: View {
 
 /// The Export sheet's sections, while the scan screen collects pages: the format (a PDF, a JPEG a page, Word
 /// or text) on its own at the top; for a document Separate documents (the Separate documents task, with its
-/// separator sheets; dimmed without a feeder as its tile was), One PDF per page for a PDF that is not split
-/// otherwise, and the PDF's choices while Save writes one; then After saving (`IOSAfterSave`).
+/// separator sheets; dimmed without a feeder as its tile was, and while Both sides is on, since one task holds
+/// either), One PDF per page for a PDF that is not split otherwise, and the PDF's choices while Save writes
+/// one; then After saving (`IOSAfterSave`).
 struct ExportOptions: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
+    /// The phone's mode: the camera pairs the sides only for Both sides (`IOSShell.eachPageTitle`).
+    @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
 
     var body: some View {
         let s: ScanSettings = state.settings
         let busy: Bool = state.isBusy || importer.isImporting
         let separates: Bool = IOSShell.separatesDocuments(s)
+        let bothSides: Bool = !separates && state.activeTask == .twoSided
+        let camera: Bool = mode == IOSScanMode.camera
         let availability: TaskAvailability = TaskCatalog.availability(of: .batch, capabilities: state.capabilities)
         Section {
             Picker("Format", selection: format) {
@@ -326,16 +335,18 @@ struct ExportOptions: View {
             // A book stays a book: its spreads are split, not its stack.
             if IOSShell.shownKind(s) == .document {
                 Toggle("Separate documents", isOn: separate)
-                    .disabled(busy || (!separates && !availability.isAvailable))
+                    .disabled(busy || (!separates && (!availability.isAvailable || bothSides)))
                     .accessibilityHint(Text("Splits the pages into documents at separator sheets"))
                     .accessibilityIdentifier("options.separate")
-                if !separates, let reason = availability.reason {
+                if bothSides {
+                    OptionReason(text: IOSCameraText.notWithBothSides)
+                } else if !separates, let reason = availability.reason {
                     OptionReason(text: reason)
                 }
                 SeparatorSheetRow()
             }
             if !separates && IOSShell.exportFormat(s) == .pdf {
-                Toggle(IOSShell.eachPageTitle(s), isOn: eachPage)
+                Toggle(IOSShell.eachPageTitle(s, camera: camera), isOn: eachPage)
                     .disabled(busy)
                     .accessibilityIdentifier("options.eachPage")
             }

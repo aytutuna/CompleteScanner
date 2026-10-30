@@ -53,10 +53,10 @@ public enum CameraTaskCatalog {
         switch task {
         case .document:
             return CameraStepText(prompt: "Hold the phone over each page.",
-                                  help: "Each page is taken once it holds still. Save the PDF when they are all in.")
+                                  help: "Take each page in turn, then save.")
         case .feeder:
             return CameraStepText(prompt: "Take the pages one by one.",
-                                  help: "The phone has no feeder: hold it over each page in turn, then save the PDF.")
+                                  help: "The phone has no feeder: hold it over each page in turn, then save.")
         case .photos:
             return CameraStepText(prompt: "Lay the photos apart on a dark table.",
                                   help: "Each photo is found, cut out and straightened. Check them before saving.")
@@ -90,7 +90,7 @@ public enum CameraTaskCatalog {
                                   help: "Each one is found, straightened and made easy to read. Check them before saving.")
         case .batch:
             return CameraStepText(prompt: "Take each page, then tap New document.",
-                                  help: "Separator sheets work too, once a page matches a paper size. Check the splits in the strip, then save.")
+                                  help: "Separator sheets work too, once a page matches a paper size. Check the splits in the pages, then save.")
         case .book:
             if options.cameraSpreads {
                 return CameraStepText(prompt: "Take the open book, both pages at once.",

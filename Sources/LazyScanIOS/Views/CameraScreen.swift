@@ -333,7 +333,8 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
             return CameraStatus(text: reason, hint: nil, identifier: "camera.wait")
         }
         if model.autoShutter && canShoot && model.live?.state == CaptureState.steadying {
-            return CameraStatus(text: IOSCameraText.pageFound, hint: nil, identifier: "camera.found")
+            return CameraStatus(text: IOSCameraText.pageFound(CaptureObjects.kind(for: state.settings)), hint: nil,
+                                identifier: "camera.found")
         }
         guard cardPrompt == nil, let line = taskLine else { return nil }
         return CameraStatus(text: line.prompt, hint: line.help, identifier: "camera.prompt")

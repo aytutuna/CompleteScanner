@@ -170,8 +170,15 @@ final class CameraTaskTests: XCTestCase {
                 // The camera's words, not the glass's.
                 XCTAssertFalse(text.prompt.lowercased().contains("glass"), text.prompt)
                 XCTAssertFalse(text.prompt.lowercased().contains("feeder"), text.prompt)
+                // The phone's pages are not called a strip anywhere.
+                XCTAssertFalse(text.help.lowercased().contains("strip"), text.help)
             }
         }
+        // Camera mode may save a JPEG, Word or Text, and Auto may be off.
+        for task in [ScanTask.document, .feeder] {
+            XCTAssertFalse(CameraTaskCatalog.text(task).help.contains("PDF"), task.rawValue)
+        }
+        XCTAssertFalse(CameraTaskCatalog.text(.document).help.contains("holds still"))
         XCTAssertNotEqual(CameraTaskCatalog.text(.twoSided), CameraTaskCatalog.text(.twoSided, options: other))
         XCTAssertNotEqual(CameraTaskCatalog.text(.book), CameraTaskCatalog.text(.book, options: other))
         let lines: [String] = [CameraTaskCatalog.turnOverPrompt, CameraTaskCatalog.nextFrontPrompt,

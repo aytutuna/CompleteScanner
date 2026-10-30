@@ -355,7 +355,7 @@ struct CameraDrawer: View {
             }
             TaskWayPicker()
             if IOSShell.offersItemsInFrame(state.settings) {
-                ItemsInFramePicker()
+                ItemsInFramePicker(kind: IOSShell.shownKind(state.settings))
             }
             if IOSShell.offersCamera(state.activeTask) {
                 AppleScannerRow(scanner: scanner, onScanner: onAppleScanner)
@@ -395,27 +395,45 @@ struct CameraDrawer: View {
 }
 
 /// The drawer's Items in frame, kept in the user's defaults (`IOSShell.itemsInFrameKey`) where the import of
-/// the next shot reads it, with the line that says what Auto does.
+/// the next shot reads it, with the line that says what Auto does for the kind. Photo offers Auto and One:
+/// Several would cut out every print, as its Auto does.
 private struct ItemsInFramePicker: View {
     @AppStorage(IOSShell.itemsInFrameKey) private var items: IOSItemsInFrame = .auto
+    let kind: IOSScanKind
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(IOSCameraText.itemsInFrameLabel)
                 Spacer()
-                Picker(IOSCameraText.itemsInFrameLabel, selection: $items) {
-                    ForEach(IOSItemsInFrame.allCases) { (choice: IOSItemsInFrame) in
+                Picker(IOSCameraText.itemsInFrameLabel, selection: shown) {
+                    ForEach(choices) { (choice: IOSItemsInFrame) in
                         Text(choice.title).tag(choice)
                     }
                 }
                 .pickerStyle(.segmented)
                 .accessibilityIdentifier("camera.itemsInFrame")
             }
-            Text(IOSCameraText.itemsInFrameHint)
+            Text(IOSCameraText.itemsInFrameHint(kind))
                 .font(.caption)
                 .foregroundStyle(Color.secondary)
         }
+    }
+
+    private var choices: [IOSItemsInFrame] {
+        kind == .photos ? [IOSItemsInFrame.auto, .one] : IOSItemsInFrame.allCases
+    }
+
+    /// The pick as the kind shows it. The Document keeps its choice under the same key, so its Several is
+    /// Photo's Auto rather than no segment at all.
+    private var shown: Binding<IOSItemsInFrame> {
+        let kept: Binding<IOSItemsInFrame> = $items
+        let photo: Bool = kind == .photos
+        return Binding<IOSItemsInFrame>(
+            get: { photo && kept.wrappedValue == .several ? IOSItemsInFrame.auto : kept.wrappedValue },
+            set: { (choice: IOSItemsInFrame) in
+                kept.wrappedValue = choice
+            })
     }
 }
 
@@ -443,15 +461,20 @@ private struct ExportDrawer: View {
         let s: ScanSettings = state.settings
         let separates: Bool = IOSShell.separatesDocuments(s)
         let batch: TaskAvailability = TaskCatalog.availability(of: .batch, capabilities: state.capabilities)
+        // One task holds Both sides or Separate documents: turning this on would drop the sides taken so far.
+        let bothSides: Bool = !separates && state.activeTask == .twoSided
+        let separateHint: String = bothSides ? IOSCameraText.notWithBothSides : batch.reason ?? ""
         let output: OutputOptions = s.output
         return HStack(spacing: 6) {
             if IOSShell.shownKind(s) == .document {
                 DrawerChip(title: "Separate documents", isOn: separates, action: toggleSeparate)
-                    .disabled(!separates && !batch.isAvailable)
+                    .disabled(!separates && (!batch.isAvailable || bothSides))
+                    .accessibilityHint(Text(separateHint))
                     .accessibilityIdentifier("chip.separate")
             }
             if !separates && IOSShell.exportFormat(s) == .pdf {
-                DrawerChip(title: IOSShell.eachPageTitle(s), isOn: IOSShell.savesEachPage(s), action: toggleEachPage)
+                DrawerChip(title: IOSShell.eachPageTitle(s, camera: true), isOn: IOSShell.savesEachPage(s),
+                           action: toggleEachPage)
                     .accessibilityIdentifier("chip.eachPage")
             }
             if IOSShell.offersPDFOptions(s) {
