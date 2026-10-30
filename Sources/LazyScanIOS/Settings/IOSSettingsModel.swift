@@ -354,7 +354,7 @@ public enum IOSAfterSave: String, CaseIterable, Identifiable {
             if inFolder == waiting {
                 return reason + " The document is in the cloud folder; the computer takes it from there."
             }
-            return reason + " The pages wait on this phone and are sent once it answers."
+            return reason + " The pages wait on this device and are sent once it answers."
         case .unpaired(let name):
             return CompanionText.unpairedMessage(name) + " The pages were not sent."
         case .notPaired, .checking, .reachable:

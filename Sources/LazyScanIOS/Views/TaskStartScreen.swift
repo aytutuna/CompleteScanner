@@ -5,22 +5,23 @@ import UniformTypeIdentifiers
 
 /// The task list: what are you scanning? The iPad's detail beside the sidebar; the iPhone has the kinds on
 /// its scan screen instead. The user's presets first (when there are any, as on the
-/// Mac), then one tile per kind (`IOSScanKind`: Document, Photos, Receipts, ID card, Book, Text): an icon,
+/// Mac), then one tile per kind (`IOSScanKind`: Document, Photos, Receipts, ID card, Book, Text; in camera
+/// mode the camera's four, `IOSShell.cameraKinds`, named as its row names them): an icon,
 /// the title and the one-line subtitle; the feeder, both sides, the format and the rest are the scan
 /// screen's Options and Save's menu. A kind whose task cannot be started (no feeder or flatbed,
 /// `IOSShell.availability`) is dimmed with one short line saying why. Picking a tile starts the kind's
 /// task through the root view (`onTask`, which asks about queued pages and an ID card held) or sets the
 /// preset's settings up, and opens the scan screen (`onOpenScanner`); not while an import runs, whose pages
-/// belong to the task set up. With a side of an ID card held, a preset asks to discard the card first
-/// (`IdCardDiscardQuestion`), and one that would leave the queued pages without a Save asks about them
-/// (`KeepPagesQuestion`). After the kinds, "Add pages to a PDF"
+/// belong to the task set up, or while a share or a send reads the queue. With a side of an ID card held,
+/// a preset asks to discard the card first (`IdCardDiscardQuestion`), and one that would leave the queued
+/// pages without a Save asks about them (`KeepPagesQuestion`). After the kinds, "Add pages to a PDF"
 /// (`IOSAppendTile`) picks a PDF in Files first, then sets up Document to PDF with that file as the append
 /// target, so Save adds the pages to it.
 struct TaskStartScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
 
-    /// Opens the scan screen (after a tile was set up, or for the Scanner button).
+    /// Opens the scan screen (after a tile was set up, or for the Scanner or Camera button).
     let onOpenScanner: @MainActor () -> Void
     /// Starts a task, with the PDF its pages are added to when one was picked.
     let onTask: @MainActor (ScanTask, URL?) -> Void
@@ -29,11 +30,17 @@ struct TaskStartScreen: View {
     @State private var leavingPages: PagesLeave?
     /// Files is open to pick the PDF for "Add pages to a PDF".
     @State private var picksPDF: Bool = false
+    @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
 
     private let columns: [GridItem] = [GridItem(.adaptive(minimum: 150, maximum: 280), spacing: 12, alignment: .top)]
 
+    private var openTitle: String { mode == .camera ? IOSImportText.cameraLabel : "Scanner" }
+    private var openSymbol: String { mode == .camera ? "camera" : "scanner" }
+
     var body: some View {
-        let tiles: [IOSKindTile] = IOSShell.kindTiles(state.taskCards, current: IOSShell.shownKind(state.settings))
+        let kinds: [IOSScanKind] = mode == .camera ? IOSShell.cameraKinds : IOSScanKind.allCases
+        let tiles: [IOSKindTile] = IOSShell.kindTiles(state.taskCards, current: IOSShell.shownKind(state.settings),
+                                                      order: kinds)
         let presets: [IOSPresetRow] = IOSPresetsModel.rows(state.presets)
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -76,7 +83,7 @@ struct TaskStartScreen: View {
                 Button {
                     onOpenScanner()
                 } label: {
-                    Label("Scanner", systemImage: "scanner")
+                    Label(openTitle, systemImage: openSymbol)
                 }
                 .accessibilityIdentifier("open.scanner")
             }
@@ -85,18 +92,19 @@ struct TaskStartScreen: View {
 
     private func tileButton(_ tile: IOSKindTile) -> some View {
         let kind: IOSScanKind = tile.kind
+        let title: String = mode == .camera ? kind.cameraTitle : kind.title
         let available: Bool = tile.availability.isAvailable
         let reason: String = tile.availability.reason ?? ""
         let hint: String = available ? "\(kind.subtitle). \(tile.summary)." : "\(kind.subtitle). Not available: \(reason)"
         return Button {
             pick(kind.task)
         } label: {
-            TaskTileLabel(symbol: kind.symbol, title: kind.title, subtitle: kind.subtitle,
+            TaskTileLabel(symbol: kind.symbol, title: title, subtitle: kind.subtitle,
                           availability: tile.availability, isCurrent: tile.isCurrent)
         }
         .buttonStyle(TaskTileButtonStyle())
-        .disabled(!available || state.isBusy || importer.isImporting)
-        .accessibilityLabel(Text(kind.title))
+        .disabled(!available || state.isBusy || importer.isImporting || state.readsQueue)
+        .accessibilityLabel(Text(title))
         .accessibilityValue(Text(tile.accessibilityValue))
         .accessibilityHint(Text(hint))
         .accessibilityIdentifier("task.\(kind.rawValue)")
@@ -113,7 +121,7 @@ struct TaskStartScreen: View {
                           availability: availability, isCurrent: false)
         }
         .buttonStyle(TaskTileButtonStyle())
-        .disabled(!available || state.isBusy || importer.isImporting)
+        .disabled(!available || state.isBusy || importer.isImporting || state.readsQueue)
         .accessibilityLabel(Text(IOSAppendTile.title))
         .accessibilityHint(Text(hint))
         .accessibilityIdentifier("task.appendToPDF")
@@ -132,7 +140,7 @@ struct TaskStartScreen: View {
             PresetTileLabel(row: row)
         }
         .buttonStyle(TaskTileButtonStyle())
-        .disabled(state.isBusy || importer.isImporting)
+        .disabled(state.isBusy || importer.isImporting || state.readsQueue)
         .accessibilityLabel(Text(row.accessibilityLabel))
         .accessibilityHint(Text(row.accessibilityHint))
         .accessibilityIdentifier("start.preset.\(row.name)")

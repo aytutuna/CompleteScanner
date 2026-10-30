@@ -12,9 +12,10 @@ public enum IOSCompanionText {
     public static let textLabel = "Enter pairing text"
     public static let textPlaceholder = "lazyscan://pair?\u{2026}"
     public static let compareLine = "Compare with the code on the computer"
-    public static let phoneNameLabel = "Name of this phone"
+    /// The model word ("iPhone", "iPad") instead of "phone", here and in `waitingLine`.
+    @MainActor public static var phoneNameLabel: String { "Name of this \(UIDevice.current.model)" }
     public static let pairButton = "Pair"
-    public static let waitingLine = "Accept this phone on the computer."
+    @MainActor public static var waitingLine: String { "Accept this \(UIDevice.current.model) on the computer." }
     public static let refreshButton = "Refresh"
     public static let sendAgainButton = "Send again"
     public static let removeButton = "Remove"

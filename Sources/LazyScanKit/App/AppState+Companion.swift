@@ -11,14 +11,14 @@ public enum CompanionText {
     public static let clientIsolationSyncFolderReason =
         "This network keeps devices apart (client isolation). Documents go to the cloud folder instead."
     public static let notPairedMessage =
-        "Pair this phone with a computer first: choose Pair a phone in Lazy Scan on the computer and scan its code."
+        "Pair this device with a computer first: choose Pair a phone in Lazy Scan on the computer and scan its code."
     public static let outboxFullMessage =
         "\(PhoneOutbox.maxItems) documents are waiting to be sent already. Send them, or remove some first."
     public static let unreachableMessage = "The computer cannot be reached."
     public static let wrongCertificateMessage =
-        "The computer that answered is not the one this phone was paired with. If pairing was reset there, pair again."
+        "The computer that answered is not the one this device was paired with. If pairing was reset there, pair again."
     public static let badResponseMessage = "The computer's answer could not be read."
-    public static let notSavedMessage = "The pairing could not be saved on this phone. Try again."
+    public static let notSavedMessage = "The pairing could not be saved on this device. Try again."
     public static let syncFolderHint = "Set a cloud folder in My computer to send when the computer cannot be reached."
     public static let syncFolderUnavailableMessage =
         "The cloud folder could not be opened. Choose it again in My computer."
@@ -40,9 +40,9 @@ public enum CompanionText {
         "Paired with \(desktopName)."
     }
 
-    /// "This phone is no longer paired with Office PC."
+    /// "This device is no longer paired with Office PC."
     public static func unpairedMessage(_ desktopName: String) -> String {
-        "This phone is no longer paired with \(desktopName)."
+        "This device is no longer paired with \(desktopName)."
     }
 
     /// "3 pages sent to Office PC."

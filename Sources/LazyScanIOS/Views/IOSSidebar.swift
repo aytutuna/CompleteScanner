@@ -13,13 +13,14 @@ enum IOSDetail: Hashable {
 
 /// The iPad's sidebar (a regular width, `IOSLayout.usesSidebar`): the user's presets, the kinds and "Add
 /// pages to a PDF" as the task list has them (`IOSShell.kindTiles`: dimmed with the reason when
-/// one cannot be started, the kind set up marked; in camera mode only camera mode's, `IOSShell.cameraKinds`),
-/// the scanners, one of which picked is printer mode's
+/// one cannot be started, the kind set up marked; in camera mode only camera mode's, `IOSShell.cameraKinds`,
+/// named as the camera row names them), the scanners, one of which picked is printer mode's
 /// (`ScannerPickerSections`, with Add by address and Troubleshoot), and the library: Presets, Scans, Saved files and Settings
 /// (Command-comma). A kind picked goes to the root view (`onTask`), which asks about the pages and an ID card
 /// held; a preset picked while a side of an ID card is held asks to discard the card first
 /// (`IdCardDiscardQuestion`), and one that would leave the queued pages without a Save asks about them
-/// (`KeepPagesQuestion`).
+/// (`KeepPagesQuestion`). The rows do nothing while an import runs or while a share or a send reads the
+/// queue (`AppState.readsQueue`), when a pick would only be refused.
 struct IOSSidebar: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -97,13 +98,14 @@ struct IOSSidebar: View {
 
     private func kindRow(_ tile: IOSKindTile) -> some View {
         let kind: IOSScanKind = tile.kind
+        let title: String = mode == .camera ? kind.cameraTitle : kind.title
         let available: Bool = tile.availability.isAvailable
         let current: Bool = tile.isCurrent && scannerShown
         return Button {
             pick(kind.task)
         } label: {
             HStack(spacing: 10) {
-                Label(kind.title, systemImage: kind.symbol)
+                Label(title, systemImage: kind.symbol)
                     .foregroundStyle(available ? Color.primary : Color.secondary)
                 Spacer(minLength: 4)
                 if current {
@@ -113,7 +115,7 @@ struct IOSSidebar: View {
                 }
             }
         }
-        .disabled(!available || state.isBusy || importer.isImporting)
+        .disabled(!available || state.isBusy || importer.isImporting || state.readsQueue)
         .accessibilityValue(Text(tile.accessibilityValue))
         .accessibilityHint(Text(available ? kind.subtitle : "Not available: \(tile.availability.reason ?? "")"))
         .accessibilityAddTraits(current ? AccessibilityTraits.isSelected : [])
@@ -128,7 +130,7 @@ struct IOSSidebar: View {
             Label(IOSAppendTile.title, systemImage: IOSAppendTile.symbol)
                 .foregroundStyle(available ? Color.primary : Color.secondary)
         }
-        .disabled(!available || state.isBusy || importer.isImporting)
+        .disabled(!available || state.isBusy || importer.isImporting || state.readsQueue)
         .accessibilityHint(Text(available ? IOSAppendTile.subtitle : "Not available: \(availability.reason ?? "")"))
         .accessibilityIdentifier("sidebar.task.appendToPDF")
     }
@@ -141,7 +143,7 @@ struct IOSSidebar: View {
             Label(row.name, systemImage: row.symbol)
                 .foregroundStyle(Color.primary)
         }
-        .disabled(state.isBusy || importer.isImporting)
+        .disabled(state.isBusy || importer.isImporting || state.readsQueue)
         .accessibilityLabel(Text(row.accessibilityLabel))
         .accessibilityHint(Text(row.accessibilityHint))
     }

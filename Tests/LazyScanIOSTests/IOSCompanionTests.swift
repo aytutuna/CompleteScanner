@@ -263,7 +263,7 @@ final class IOSCompanionTests: XCTestCase {
         XCTAssertEqual(IOSCompanionText.status(.unreachable(reason: "Office PC is not on this network.")),
                        "Office PC is not on this network.")
         XCTAssertEqual(IOSCompanionText.status(.unpaired(byDesktop: "Office PC")),
-                       "This phone is no longer paired with Office PC.")
+                       "This device is no longer paired with Office PC.")
         XCTAssertEqual(IOSCompanionText.waiting(0), "Nothing waiting to be sent")
         XCTAssertEqual(IOSCompanionText.waiting(1), "1 document waiting to be sent")
         XCTAssertEqual(IOSCompanionText.waiting(4), "4 documents waiting to be sent")
