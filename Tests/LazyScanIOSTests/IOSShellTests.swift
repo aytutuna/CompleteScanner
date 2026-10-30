@@ -264,6 +264,19 @@ final class IOSShellTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func test_adoptCameraKind_startsTheDocument_overSettingsLeftWithoutATask() {
+        let state = AppState(backends: [], presetStore: PresetStore(directory: folder),
+                             fileActions: IOSFileActions(pasteboard: nil, openSystemURL: { (_: URL) -> Void in }),
+                             files: AppStateFiles.all(in: folder))
+        // Settings printer mode left without a task, on the feeder.
+        state.settings.taskId = nil
+        state.settings.source = .documentFeeder
+        IOSShell.adoptCameraKind(state)
+        XCTAssertEqual(state.settings.task, .document)
+        XCTAssertEqual(IOSShell.shownKind(state.settings), .document)
+    }
+
     func test_listedScanner_followsTheRememberedScanner_toAnotherConnection() {
         let direct: ScannerInfo = ScannerInfo(id: "escl:x", name: "Office MFP", transport: "Network", backend: "escl")
         let viaDesktop: ScannerInfo = ScannerInfo(id: "companion:x", name: "Office MFP", transport: "Companion", backend: "companion")

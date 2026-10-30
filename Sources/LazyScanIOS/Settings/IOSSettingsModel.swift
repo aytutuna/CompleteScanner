@@ -56,6 +56,11 @@ public enum IOSSettingsText {
         "Adding to \(fileName)"
     }
 
+    /// Why Source is locked under ID card, Book and Text, whose tasks need the flatbed.
+    public static func needsFlatbedReason(_ kind: String) -> String {
+        "\(kind) is scanned on the flatbed. Pick Document to use the feeder."
+    }
+
     /// A photo size in the Resolution picker, "24 MP (default)" for the one taken until another is picked.
     public static func resolutionChoice(_ size: IOSPhotoSize, isDefault: Bool) -> String {
         isDefault ? "\(IOSCameraText.sizeLabel(size)) (default)" : IOSCameraText.sizeLabel(size)
@@ -123,6 +128,17 @@ public enum IOSSettingsSections {
             sources.append(chosen)
         }
         return sources
+    }
+
+    /// Why the Source row is locked, nil while it is free: a side of an ID card held, or a task that needs the
+    /// flatbed (ID card, Book, Text) while the row offers the feeder, which would end the task under its chip.
+    /// A scanner without a flatbed never has such a task (connecting to it ends the task), so the lock keeps
+    /// nothing from it.
+    public static func sourceLockReason(task: ScanTask?, cardHeld: Bool, sources: [ScanSource]) -> String? {
+        if cardHeld { return IOSSettingsText.idCardHeldReason }
+        guard let task, sources.contains(ScanSource.documentFeeder),
+              TaskCatalog.definition(task).requiredSource == ScanSource.flatbed else { return nil }
+        return IOSSettingsText.needsFlatbedReason(IOSShell.kind(of: task).title)
     }
 
     /// Also save text applies here.

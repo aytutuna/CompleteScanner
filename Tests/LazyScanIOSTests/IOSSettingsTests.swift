@@ -231,6 +231,30 @@ final class IOSSettingsTests: XCTestCase {
         XCTAssertFalse(IOSSettingsText.idCardHeldReason.contains("Document mode"))
     }
 
+    func test_scannerRows_lockTheSource_underIdCardBookAndText_andWhileACardIsHeld() {
+        let sources: [ScanSource] = [.flatbed, .documentFeeder]
+        XCTAssertEqual(IOSSettingsSections.sourceLockReason(task: .idCard, cardHeld: false, sources: sources),
+                       "ID card is scanned on the flatbed. Pick Document to use the feeder.")
+        XCTAssertEqual(IOSSettingsSections.sourceLockReason(task: .book, cardHeld: false, sources: sources),
+                       "Book is scanned on the flatbed. Pick Document to use the feeder.")
+        // Quick scan is the Text kind on the phone.
+        XCTAssertEqual(IOSSettingsSections.sourceLockReason(task: .quickScan, cardHeld: false, sources: sources),
+                       "Text is scanned on the flatbed. Pick Document to use the feeder.")
+        // Document and Both sides leave it free, as do settings without a task.
+        XCTAssertNil(IOSSettingsSections.sourceLockReason(task: .document, cardHeld: false, sources: sources))
+        XCTAssertNil(IOSSettingsSections.sourceLockReason(task: .twoSided, cardHeld: false, sources: sources))
+        XCTAssertNil(IOSSettingsSections.sourceLockReason(task: nil, cardHeld: false, sources: sources))
+        // So does a scanner with only a flatbed, or one whose sources are not known yet: no feeder to pick.
+        XCTAssertNil(IOSSettingsSections.sourceLockReason(task: .idCard, cardHeld: false, sources: [.flatbed]))
+        let tasks: [ScanTask?] = [.idCard, .document, nil]
+        for task in tasks {
+            XCTAssertEqual(IOSSettingsSections.sourceLockReason(task: task, cardHeld: true, sources: sources),
+                           IOSSettingsText.idCardHeldReason)
+            XCTAssertEqual(IOSSettingsSections.sourceLockReason(task: task, cardHeld: true, sources: [.flatbed]),
+                           IOSSettingsText.idCardHeldReason)
+        }
+    }
+
     func test_version_fromTheAppsInfo() {
         let info: [String: Any] = ["CFBundleShortVersionString": "0.1.0", "CFBundleVersion": "7"]
         XCTAssertEqual(IOSSettingsText.version(info), "Version 0.1.0 (7)")

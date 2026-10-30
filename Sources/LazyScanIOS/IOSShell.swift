@@ -507,10 +507,11 @@ public enum IOSShell {
     }
 
     /// Camera mode has no Receipts or Text: their task, kept from printer mode or an older build, starts the
-    /// Document over in camera mode, with the Document's own choices.
+    /// Document over in camera mode, with the Document's own choices, as do settings left without a task in
+    /// printer mode, since camera mode always shows a kind.
     @MainActor
     static func adoptCameraKind(_ state: AppState) {
-        guard let task = state.settings.task, !cameraKinds.contains(kind(of: task)) else { return }
+        if let task = state.settings.task, cameraKinds.contains(kind(of: task)) { return }
         state.startTask(.document)
     }
 

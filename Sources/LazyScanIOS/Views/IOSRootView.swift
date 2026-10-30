@@ -386,7 +386,8 @@ public struct IOSRootView: View {
         if remembered == nil {
             state.userSelectNoDevice()
         }
-        // Settings left without a task by hand are kept: only a first run or a task not offered here starts one.
+        // Settings left without a task by hand are kept in printer mode (camera mode started the Document over
+        // them, `adoptCameraKind`): only a first run or a task not offered here starts one.
         let task: ScanTask = IOSShell.launchTask(state.settings)
         if state.activeTask != task && (state.activeTask != nil || state.isFirstRun) {
             _ = state.startTask(task)

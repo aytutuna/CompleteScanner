@@ -282,8 +282,9 @@ private struct TaskSettingsRows: View {
 /// The scanner's Source, Sides (with a feeder), Resolution and Color: for the scanner in use (a network
 /// scanner, the demo scanner), in printer mode only, since the camera measures its own pages; with no
 /// scanner selected yet a line says where to pick one instead. Source is locked while a side of an ID card
-/// is held, as on the Mac: another source would end the task and drop the card. Also the scan screen's
-/// Options, outside a form, so each picker sits beside its name (`LabeledContent`).
+/// is held, as on the Mac: another source would end the task and drop the card. With a feeder it is locked
+/// under ID card, Book and Text too, whose tasks need the flatbed, so the feeder never ends the task under the
+/// chip. Also the scan screen's Options, outside a form, so each picker sits beside its name (`LabeledContent`).
 struct ScannerSettingsRows: View {
     @EnvironmentObject private var state: AppState
 
@@ -300,7 +301,9 @@ struct ScannerSettingsRows: View {
         let sources: [ScanSource] = IOSSettingsSections.offeredSources(state.capabilities,
                                                                          chosen: state.settings.source)
         let feeder: Bool = state.settings.source == ScanSource.documentFeeder
-        let cardHeld: Bool = state.hasIdCardCaptures
+        let lock: String? = IOSSettingsSections.sourceLockReason(task: state.activeTask,
+                                                                  cardHeld: state.hasIdCardCaptures,
+                                                                  sources: sources)
         LabeledContent("Source") {
             Picker("Source", selection: source) {
                 ForEach(sources) { (source: ScanSource) in
@@ -309,10 +312,10 @@ struct ScannerSettingsRows: View {
             }
             .labelsHidden()
         }
-        .disabled(cardHeld)
-        .accessibilityHint(Text(cardHeld ? IOSSettingsText.idCardHeldReason : state.settings.source.hint))
-        if cardHeld {
-            ReasonLine(text: IOSSettingsText.idCardHeldReason)
+        .disabled(lock != nil)
+        .accessibilityHint(Text(lock ?? state.settings.source.hint))
+        if let lock {
+            ReasonLine(text: lock)
         }
         if sources.contains(ScanSource.documentFeeder) {
             LabeledContent("Sides") {
