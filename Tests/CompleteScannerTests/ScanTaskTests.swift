@@ -541,6 +541,23 @@ final class ScanTaskTests: XCTestCase {
         XCTAssertFalse(TaskCatalog.fits(.photos, photos))
     }
 
+    func test_fits_aBookCollectsItsPages_aQuickScanSavesEachAtOnce() {
+        // Each page saved at once is never split: the book ends, and the settings look like a document.
+        var book = TaskCatalog.apply(.book, to: ScanSettings())
+        book.documentMultiPage = false
+        XCTAssertFalse(TaskCatalog.fits(.book, book))
+        XCTAssertNil(TaskCatalog.guidedSteps(book, capabilities: nil))
+        book.taskId = nil
+        XCTAssertEqual(TaskCatalog.infer(book), .document)
+        // Collected pages wait in the queue instead of being saved at once: it ends too.
+        var quick = TaskCatalog.apply(.quickScan, to: ScanSettings())
+        quick.documentMultiPage = true
+        XCTAssertFalse(TaskCatalog.fits(.quickScan, quick))
+        XCTAssertNil(TaskCatalog.guidedSteps(quick, capabilities: nil))
+        quick.taskId = nil
+        XCTAssertEqual(TaskCatalog.infer(quick), .document)
+    }
+
     func test_flowOf_taskThenMode() {
         XCTAssertEqual(TaskCatalog.flow(of: ScanSettings()), .documentQueue)
         var photo = ScanSettings()

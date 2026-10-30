@@ -26,6 +26,9 @@ public enum IOSSettingsText {
     public static let rulerHint = "Prints a ruler to check copies come out at real size"
     public static let resetLabel = "Reset"
     public static let notCollectingReason = "Needs Collect pages"
+    /// Why Collect pages is locked while the camera's Both sides is on: its fronts and backs are paired in
+    /// the queue.
+    public static let bothSidesCollectsReason = "Both sides pairs the pages in the stack"
     public static let docdateReason = "Needs {docdate} in File name"
     public static let onlyPDFReason = "Only for PDFs"
     public static let importingReason = "Can be changed once the import has finished"

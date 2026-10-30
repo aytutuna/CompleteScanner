@@ -26,9 +26,12 @@ struct SettingsScreen: View {
     /// Browses the computers on the network for My computer; nil when the app does not (`-demoScanner`).
     var companion: IOSCompanionBrowser?
     @AppStorage(IOSSettingsSections.storageKey) private var openText: String = IOSSettingsSections.defaultText
+    /// The phone's mode (`IOSScanMode`), which some rows follow.
+    @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
 
     var body: some View {
         let sections: [IOSSettingsSection] = IOSSettingsSections.sections(state.settings)
+        let camera: Bool = mode == .camera
         Form {
             Section {
                 NavigationLink {
@@ -64,7 +67,7 @@ struct SettingsScreen: View {
             ForEach(sections) { (section: IOSSettingsSection) in
                 Section {
                     DisclosureGroup(isExpanded: openBinding(section.id)) {
-                        SettingsSectionRows(id: section.id)
+                        SettingsSectionRows(id: section.id, camera: camera)
                             .disabled(importer.isImporting)
                     } label: {
                         SettingsSectionHeader(section: section, collapsed: !isOpen(section.id))
@@ -190,6 +193,7 @@ private struct SettingsSectionHeader: View {
 /// The settings of one section.
 private struct SettingsSectionRows: View {
     let id: String
+    let camera: Bool
 
     var body: some View {
         switch id {
@@ -198,7 +202,7 @@ private struct SettingsSectionRows: View {
         case InspectorSections.scanner:
             ScannerSettingsRows()
         case InspectorSections.output:
-            OutputSettingsRows()
+            OutputSettingsRows(camera: camera)
         case InspectorSections.adjustments:
             AdjustmentSettingsRows()
         case InspectorSections.pages:
@@ -397,15 +401,20 @@ struct ScannerSettingsRows: View {
 }
 
 /// Output: the format (an image format for photos and the Text kind's held page, a PDF or an image for
-/// receipts and the ID card), the PDF's size, Searchable PDF while a PDF is written, Collect pages, and where
-/// files are saved; Photos in Photos mode.
+/// receipts and the ID card), the PDF's size, Searchable PDF while a PDF is written, Collect pages (locked on
+/// while the camera's Both sides pairs the sides), and where files are saved; Photos in Photos mode.
 private struct OutputSettingsRows: View {
     @EnvironmentObject private var state: AppState
+    let camera: Bool
 
     var body: some View {
         let s: ScanSettings = state.settings
         let shown: OutputFormat = IOSSettingsSections.shownFormat(s)
         let flow: TaskFlowKind = TaskCatalog.flow(of: s)
+        // Both sides pairs the camera's fronts and backs in the queue; a feeder scanning both sides keeps a
+        // scan's sheets together even when each scan is saved at once. Locked only while on: Both sides kept
+        // from printer mode or a preset with Collect off can still turn it on.
+        let paired: Bool = camera && state.cameraSides != nil && s.documentMultiPage
         Picker("Format", selection: format) {
             ForEach(formats) { (choice: OutputFormat) in
                 Text(choice.label).tag(choice)
@@ -427,7 +436,12 @@ private struct OutputSettingsRows: View {
         }
         if s.intent == ScanIntent.document && flow != TaskFlowKind.receiptSplit && flow != TaskFlowKind.idCard {
             Toggle("Collect pages before saving", isOn: $state.settings.documentMultiPage)
-                .accessibilityHint(Text("Off: each page is saved right away"))
+                .disabled(paired)
+                .accessibilityHint(Text(paired ? IOSSettingsText.bothSidesCollectsReason
+                                        : "Off: each page is saved right away"))
+            if paired {
+                ReasonLine(text: IOSSettingsText.bothSidesCollectsReason)
+            }
         }
         SaveFolderRow()
     }

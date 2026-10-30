@@ -1293,7 +1293,8 @@ scan of an open book or magazine at the spine into its two pages. The **Book or 
 each page straightened and turned upright on its own, named `{task} {date} {counter}` ("Book
 2026-10-19 3.pdf"), and the banner asks for one spread at a time ("Open the book face down with the
 spine in the middle of the glass and press it gently flat, then scan. Turn the page and scan the
-next spread; each one becomes two pages."; the button says **Scan spread**). Color is the default
+next spread; each one becomes two pages."; the button says **Scan spread**). Turning
+**Split facing pages** or **Collect pages before saving** off ends the task. Color is the default
 because the Standard PDF size already stores pages that are really gray in gray, and magazines keep
 their color. The switch works for any collected document scan of one side of each sheet; with each
 scan saved at once and for two-sided feeder scans (whose pages are paired by sheet and side) it is

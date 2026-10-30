@@ -434,9 +434,11 @@ public static class TaskCatalog
     /// <summary>
     /// The settings still do what the task is for: the same scan mode, and the task's
     /// required source; for the two-sided task, both sides; for Scan to Word, a Word document; for
-    /// the Batch task, a split; for the Book or magazine task, splitting facing pages; for the Archive
-    /// document task, an archival PDF. Changing the mode by hand (or choosing one side, another
-    /// format, no split or a plain PDF), or a scanner without that source, ends the task.
+    /// the Batch task, a split; for the Book or magazine task, collected pages with their facing pages
+    /// split; for Quick scan, each scan saved at once; for the Archive document task, an archival PDF.
+    /// Changing the mode by hand (or choosing one side, another format, no split or a plain PDF, or
+    /// turning Collect pages before saving off for a book or on for a quick scan), or a scanner
+    /// without that source, ends the task.
     /// </summary>
     public static bool Fits(ScanTask task, ScanSettings settings)
     {
@@ -446,7 +448,8 @@ public static class TaskCatalog
                && (task != ScanTask.TwoSided || settings.Duplex != DuplexMode.Off)
                && (task != ScanTask.Word || settings.Format == OutputFormat.Word)
                && (task != ScanTask.Batch || settings.Document.SplitMode != SplitMode.None)
-               && (task != ScanTask.Book || settings.Document.SplitFacingPages)
+               && (task != ScanTask.Book || (settings.Document.SplitFacingPages && settings.DocumentMultiPage))
+               && (task != ScanTask.QuickScan || !settings.DocumentMultiPage)
                && (task != ScanTask.Archive || (settings.Output.Archival && settings.Format == OutputFormat.Pdf));
     }
 

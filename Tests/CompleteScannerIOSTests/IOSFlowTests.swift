@@ -155,10 +155,13 @@ final class IOSFlowTests: XCTestCase {
         s.output.pdfSize = .compact
         s.output.alsoSaveText = true
         s.resolution = 200
+        s.documentMultiPage = false
         let on: ScanSettings = IOSShell.settingBothSides(true, in: s)
         XCTAssertEqual(on.task, .twoSided)
         XCTAssertTrue(TaskCatalog.fits(.twoSided, on))
         XCTAssertEqual(on.duplex, .both)
+        // The camera pairs the sides of collected pages only.
+        XCTAssertTrue(on.documentMultiPage)
         XCTAssertEqual(IOSShell.shownKind(on), .document)
         let off: ScanSettings = IOSShell.settingBothSides(false, in: on)
         XCTAssertEqual(off.task, .document)
