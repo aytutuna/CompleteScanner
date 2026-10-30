@@ -67,11 +67,14 @@ public enum IOSPresetApply: Equatable, Sendable {
 public final class IOSPresetsModel {
     private let state: AppState
     private let importer: IOSImportSession
+    /// Where the phone's mode (`IOSShell.scanModeKey`) and camera mode's Items in frame are kept.
+    private let defaults: UserDefaults
 
     /// `importer`: while it imports, no preset is applied (its pages belong to the task it started in).
-    public init(state: AppState, importer: IOSImportSession) {
+    public init(state: AppState, importer: IOSImportSession, defaults: UserDefaults = .standard) {
         self.state = state
         self.importer = importer
+        self.defaults = defaults
     }
 
     public var rows: [IOSPresetRow] { IOSPresetsModel.rows(state.presets) }
@@ -110,7 +113,9 @@ public final class IOSPresetsModel {
     /// to add the pages to forgotten, then `done` runs; with an ID card side held, both wait until the user
     /// discards the card. Settings that do not collect pages (`IOSShell.collectsPages`: another kind, or
     /// Collect pages before saving off) are not applied over queued pages unless `discardingPages`, which
-    /// drops them with their spooled files first. With no scanner selected (camera mode) a stack turned over
+    /// drops them with their spooled files first. In camera mode, which has no Receipts or Text, a Receipts or
+    /// Quick scan preset is applied as Document with its own choices (`IOSShell.cameraPreset`), a Receipts one
+    /// with Items in frame set to Several. With no scanner selected (camera mode) a stack turned over
     /// by hand is applied as both sides, as the camera takes them. Refused while an operation, an import, or a share or a send of the queue runs.
     @discardableResult
     public func apply(_ id: UUID, discardingPages: Bool = false,
@@ -119,18 +124,31 @@ public final class IOSPresetsModel {
         guard let preset = state.presets.first(where: { (item: Preset) -> Bool in item.id == id }) else {
             return .refused
         }
-        let collects: Bool = IOSShell.collectsPages(IOSShell.savingActionsAsDocument(preset.settings))
+        // No mode kept yet is camera mode, the default.
+        let camera: Bool = defaults.string(forKey: IOSShell.scanModeKey) != IOSScanMode.printer.rawValue
+        let folded: ScanSettings = IOSShell.savingActionsAsDocument(preset.settings)
+        let applied: ScanSettings = camera ? IOSShell.cameraPreset(folded) : folded
+        let collects: Bool = IOSShell.collectsPages(applied)
         if !discardingPages && !collects && !state.scannedPages.isEmpty {
             return .waitsForPages(preset.name)
         }
         let held: Bool = state.hasIdCardCaptures
         let appState: AppState = state
+        let userDefaults: UserDefaults = defaults
         state.leaveIdCard {
             if discardingPages {
                 appState.clearPages()
             }
             appState.applyPreset(preset)
-            appState.settings = IOSShell.savingActionsAsDocument(appState.settings)
+            var settings: ScanSettings = IOSShell.savingActionsAsDocument(appState.settings)
+            if camera {
+                settings = IOSShell.cameraPreset(settings)
+            }
+            appState.settings = settings
+            // Receipts in camera mode are a Document shot that holds several.
+            if camera && preset.settings.task == .receipt {
+                userDefaults.set(IOSItemsInFrame.several.rawValue, forKey: IOSShell.itemsInFrameKey)
+            }
             // With no scanner a stack turned over by hand would leave the camera nothing to take; a
             // one-sided feeder turns both sides back into by hand once it is selected.
             if appState.selectedDeviceID == nil && appState.settings.duplex == .manual {

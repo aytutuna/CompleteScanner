@@ -201,6 +201,21 @@ public enum IOSShell {
         return s
     }
 
+    /// The settings with a Receipts or Quick scan task (a preset's, saved in printer mode or an older build) as
+    /// Document, for camera mode, which has neither kind. Unlike `adoptCameraKind` the preset's own choices
+    /// stay, a Receipts preset's grey Compact PDF among them; a Quick scan's pages are collected into a PDF, as
+    /// a Document's are.
+    public static func cameraPreset(_ settings: ScanSettings) -> ScanSettings {
+        guard settings.task == .receipt || settings.task == .quickScan else { return settings }
+        var s: ScanSettings = settings
+        if settings.task == .quickScan {
+            s.documentMultiPage = true
+            s.format = .pdf
+        }
+        s.taskId = ScanTask.document.rawValue
+        return s
+    }
+
     /// The user's defaults key: the card saying why the camera is asked for was shown (`cameraOnOpen`).
     public static let cameraIntroKey = "camera.introShown"
 

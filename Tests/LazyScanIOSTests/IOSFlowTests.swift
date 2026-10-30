@@ -57,6 +57,54 @@ final class IOSFlowTests: XCTestCase {
         XCTAssertEqual(state.settings.output.pdfSize, .compact)
     }
 
+    @MainActor
+    func test_aReceiptsOrTextPreset_isAppliedAsDocument_inCameraMode() throws {
+        let folder: URL = try ImportTestSupport.makeFolder("cameraPreset")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let suite: String = "cameraPreset.\(UUID().uuidString)"
+        let defaults: UserDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(IOSScanMode.camera.rawValue, forKey: IOSShell.scanModeKey)
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        let model: IOSPresetsModel = IOSPresetsModel(state: state, importer: IOSImportSession(state: state),
+                                                     defaults: defaults)
+        state.settings = TaskCatalog.apply(.receipt, to: state.settings)
+        XCTAssertTrue(model.save(named: "Receipts"))
+        state.settings = TaskCatalog.apply(.quickScan, to: state.settings)
+        XCTAssertTrue(model.save(named: "Text"))
+        let rows: [IOSPresetRow] = model.rows
+        state.settings = TaskCatalog.apply(.document, to: state.settings)
+        state.scannedPages = [flowPage()]
+
+        // The Document collects the page queued, so nothing is asked first.
+        XCTAssertEqual(model.apply(rows[0].id) {}, IOSPresetApply.applied)
+        XCTAssertEqual(state.activeTask, ScanTask.document)
+        XCTAssertEqual(IOSShell.shownKind(state.settings), .document)
+        XCTAssertEqual(state.scannedPages.count, 1)
+        // The receipts' grey Compact PDF stays, and a shot holds several of them.
+        XCTAssertEqual(state.settings.colorMode, .grayscale)
+        XCTAssertEqual(state.settings.output.pdfSize, .compact)
+        XCTAssertEqual(defaults.string(forKey: IOSShell.itemsInFrameKey), "several")
+
+        XCTAssertEqual(model.apply(rows[1].id) {}, IOSPresetApply.applied)
+        XCTAssertEqual(state.activeTask, ScanTask.document)
+        XCTAssertTrue(state.settings.documentMultiPage)
+        XCTAssertEqual(state.settings.format, .pdf)
+
+        // Printer mode has Receipts: the preset stays one, which saves from its review, not the queue.
+        defaults.set(IOSScanMode.printer.rawValue, forKey: IOSShell.scanModeKey)
+        defaults.removeObject(forKey: IOSShell.itemsInFrameKey)
+        XCTAssertEqual(model.apply(rows[0].id) {}, IOSPresetApply.waitsForPages("Receipts"))
+        XCTAssertEqual(model.apply(rows[0].id, discardingPages: true) {}, IOSPresetApply.applied)
+        XCTAssertEqual(state.activeTask, ScanTask.receipt)
+        XCTAssertNil(defaults.string(forKey: IOSShell.itemsInFrameKey))
+
+        for task in [ScanTask.document, .photos, .idCard, .book] {
+            let settings: ScanSettings = TaskCatalog.apply(task, to: ScanSettings())
+            XCTAssertEqual(IOSShell.cameraPreset(settings), settings, task.rawValue)
+        }
+    }
+
     func test_cameraOnOpen_opensWhereTheCameraCanBeUsed() {
         for status in [AVAuthorizationStatus.authorized, .notDetermined] {
             XCTAssertEqual(IOSShell.cameraOnOpen(offersCamera: true, camera: .available, authorization: status,

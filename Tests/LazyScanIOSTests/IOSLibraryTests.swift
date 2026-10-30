@@ -66,7 +66,13 @@ final class IOSLibraryTests: XCTestCase {
     @MainActor
     func test_presets_savedRenamedAppliedAndDeleted_throughPresetsJSON() throws {
         let state: AppState = ImportTestSupport.makeState(in: folder)
-        let model: IOSPresetsModel = IOSPresetsModel(state: state, importer: IOSImportSession(state: state))
+        // Printer mode, where Receipts is a kind of its own: camera mode applies it as Document (IOSFlowTests).
+        let suite: String = "presets.\(UUID().uuidString)"
+        let defaults: UserDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(IOSScanMode.printer.rawValue, forKey: IOSShell.scanModeKey)
+        let model: IOSPresetsModel = IOSPresetsModel(state: state, importer: IOSImportSession(state: state),
+                                                     defaults: defaults)
         XCTAssertTrue(model.rows.isEmpty, "A first run has no presets")
         XCTAssertFalse(model.save(named: "   "))
         XCTAssertTrue(state.presets.isEmpty)
