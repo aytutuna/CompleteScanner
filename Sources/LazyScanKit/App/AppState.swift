@@ -1743,8 +1743,8 @@ public final class AppState: ObservableObject {
 
     public func removePage(id: UUID) {
         // Never mutate the queue (or unlink spool files) while a save is
-        // reading from it.
-        guard !isBusy else { return }
+        // reading from it, or a share or a send is reading the spool files.
+        guard !isBusy, !readsQueue else { return }
         if let page = scannedPages.first(where: { $0.id == id }) {
             deleteSpoolFiles(of: [page])
         }
@@ -1897,7 +1897,7 @@ public final class AppState: ObservableObject {
     }
 
     public func clearPages() {
-        guard !isBusy else { return }
+        guard !isBusy, !readsQueue else { return }
         deleteSpoolFiles(of: scannedPages)
         scannedPages = []
         resetFlow()

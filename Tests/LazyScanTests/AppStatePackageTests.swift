@@ -317,6 +317,30 @@ final class AppStatePackageTests: XCTestCase {
     }
 
     @MainActor
+    func test_whileTheQueueIsRead_itsPagesStay() async throws {
+        let state = try await makeState(pages: 2)
+        let ids = state.scannedPages.map(\.id)
+        let file = try XCTUnwrap(state.scannedPages[0].fileURL)
+        let url = try write("Receipt.lsdoc", CompanionPackage.make(packageDocument()))
+        await state.openPackage(at: url)
+
+        // A share or a send reading the spooled pages: no page goes, and no file.
+        state.queueReaders = 1
+        state.removePage(id: ids[0])
+        state.clearPages()
+        XCTAssertFalse(state.openPendingPackageAsNew())
+        XCTAssertNil(state.errorMessage)
+        XCTAssertNotNil(state.pendingPackage)
+        XCTAssertEqual(state.scannedPages.map(\.id), ids)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+        state.queueReaders = 0
+
+        state.removePage(id: ids[0])
+        XCTAssertEqual(state.scannedPages.map(\.id), [ids[1]])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
+
+    @MainActor
     func test_exportPackage_refusesAnEmptyQueue() async throws {
         let state = try await makeState(pages: 0)
         do {

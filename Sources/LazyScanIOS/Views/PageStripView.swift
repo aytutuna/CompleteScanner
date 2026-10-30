@@ -71,9 +71,10 @@ struct PageStripCell: Identifiable {
 /// title of the document it starts and its note (blank, separator) on a badge over it. A tap opens the page
 /// (`onOpen`); its menu turns it, keeps or skips it (`PageStripCell.toggle`), deletes it once asked
 /// (`onDelete`), and for a book's page splits its spread again (`onEditSpread`) or joins its two pages, each
-/// off while the app is busy. A page dragged onto another takes its place (`IOSPageDrop`); VoiceOver has Move
-/// left and Move right for the same. While the sheet is selecting (`selection`), a tap picks or drops the
-/// page instead, and it has no menu and is not dragged.
+/// off while the app is busy, Delete also while a share or a send reads the pages (`AppState.readsQueue`). A
+/// page dragged onto another takes its place (`IOSPageDrop`); VoiceOver has Move left and Move right for the
+/// same. While the sheet is selecting (`selection`), a tap picks or drops the page instead, and it has no menu
+/// and is not dragged.
 struct PageStripView: View {
     @EnvironmentObject private var state: AppState
     /// Opens the split sheet for the spread the page with this id was cut from.
@@ -237,7 +238,7 @@ struct PageStripView: View {
             } label: {
                 Label(PageViewerText.deleteLabel, systemImage: "trash")
             }
-            .disabled(state.isBusy)
+            .disabled(state.isBusy || state.readsQueue)
         }
         .draggable(pageID.uuidString)
         .dropDestination(for: String.self) { (items: [String], _: CGPoint) -> Bool in
@@ -377,7 +378,8 @@ private struct PageTile: View {
 /// place of Done, with a bottom bar that turns the pages picked, shares them as pictures, moves them to the
 /// start or the end, and deletes them once asked. Outside Select a bottom bar has Delete All, which empties the
 /// queue once asked; the sheet then closes, as it does whenever the pages run out. Delete in a page's menu
-/// asks first too, as in the viewer.
+/// asks first too, as in the viewer. The deletes are off while a share or a send reads the pages
+/// (`AppState.readsQueue`).
 struct PageStripSheet: View {
     @EnvironmentObject private var state: AppState
     var onEditSpread: (@MainActor (UUID) -> Void)?
@@ -431,7 +433,7 @@ struct PageStripSheet: View {
                                 Spacer()
                                 Button(PageViewerText.deleteAllLabel, role: .destructive, action: askDeleteAll)
                                     .tint(Color.red)
-                                    .disabled(state.isBusy)
+                                    .disabled(state.isBusy || state.readsQueue)
                                     .accessibilityIdentifier("pages.deleteAll")
                             }
                         }
@@ -551,7 +553,7 @@ struct PageStripSheet: View {
         Button(role: .destructive, action: askDelete) {
             Label(PageViewerText.deleteLabel, systemImage: "trash")
         }
-        .disabled(blocked)
+        .disabled(blocked || state.readsQueue)
         .accessibilityIdentifier("pages.deleteSelected")
     }
 
@@ -598,7 +600,7 @@ struct PageStripSheet: View {
     }
 
     private func deleteSelected() {
-        guard !state.isBusy else { return }
+        guard !state.isBusy, !state.readsQueue else { return }
         for id in IOSPageSelection.ordered(selected, in: state.scannedPages) {
             state.removePage(id: id)
         }

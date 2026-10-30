@@ -132,10 +132,11 @@ extension AppState {
     }
 
     /// Open as new: the queue is cleared and the offered pages become it, under the document's name.
-    /// Refused as Add to pages is, and the queue is then left alone.
+    /// Refused as Add to pages is, or while a share or a send reads the pages (`readsQueue`), and the queue
+    /// is then left alone.
     @discardableResult
     public func openPendingPackageAsNew() -> Bool {
-        guard let package = pendingPackage, canTakePackage() else { return false }
+        guard let package = pendingPackage, !readsQueue, canTakePackage() else { return false }
         clearPages()
         return takePackage(package.asNewDocument)
     }
@@ -170,6 +171,8 @@ extension AppState {
     public func exportPackage(to folder: URL) async throws -> URL {
         queueReaders += 1
         defer { queueReaders -= 1 }
+        // Filters and crops tapped before land first: a cut takes its page's old file away.
+        await pageEditChain?.value
         let pages = scannedPages
         guard !pages.isEmpty else { throw CompanionPackageError(.noPages, CompanionPackage.noPagesMessage) }
         let s = settings

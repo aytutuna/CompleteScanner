@@ -75,7 +75,8 @@ enum PageViewerText {
 /// of this page with each, `AppState.filterPreviews`), turns it a quarter, opens the corner editor on its
 /// photo for Crop (`AppState.pageCropStart`, `recropPage`), shows the text on it (`PageTextSheet`), keeps or
 /// skips it as the grid's menu does (`PageStripCell.toggle`), and deletes it once asked; the edits are off
-/// while the app is busy.
+/// while the app is busy, and the filters, Crop and Delete also while a share or a send reads the pages
+/// (`AppState.readsQueue`).
 /// Filters and Crop are left out for pages that cannot be cut again (`PageRecut.canRecut`): scans, imported
 /// PDFs, the pages of a book's spread taken whole.
 struct PageViewer: View {
@@ -460,7 +461,7 @@ struct PageViewer: View {
             Button(action: openCrop) {
                 Label(PageViewerText.cropLabel, systemImage: "crop")
             }
-            .disabled(blocked)
+            .disabled(blocked || state.readsQueue)
             .accessibilityIdentifier("viewer.crop")
             Spacer()
         }
@@ -481,7 +482,7 @@ struct PageViewer: View {
         Button(role: .destructive, action: askDelete) {
             Label(PageViewerText.deleteLabel, systemImage: "trash")
         }
-        .disabled(state.isBusy)
+        .disabled(state.isBusy || state.readsQueue)
         .accessibilityIdentifier("viewer.delete")
     }
 
@@ -561,7 +562,7 @@ struct PageViewer: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(state.isBusy)
+        .disabled(state.isBusy || state.readsQueue)
         .accessibilityLabel(Text(PageViewerText.filterName(filter)))
         .accessibilityAddTraits(chosen ? .isSelected : [])
         .accessibilityIdentifier("filter.\(filter.rawValue)")

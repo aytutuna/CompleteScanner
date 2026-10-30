@@ -218,4 +218,34 @@ final class PageRecutTests: XCTestCase {
         XCTAssertEqual(state.scannedPages[0].capture?.filter, .original)
         XCTAssertEqual(state.statusMessage, "Page 1 is cut out again.")
     }
+
+    @MainActor
+    func testWhileTheQueueIsRead_thePageIsNotCutAgain() async throws {
+        let state = AppState(presetStore: PresetStore(directory: folder), orientationScorer: RecutScorer(),
+                             barcodeReader: RecutBarcodes(), files: AppStateFiles.all(in: folder))
+        XCTAssertTrue(state.startTask(.document))
+        state.settings.taskOptions.cameraFilter = .original
+        state.settings.destinationPath = folder.path
+        let (_, taken) = shot()
+        XCTAssertTrue(state.ingest([taken], source: .photo))
+        try await waitUntil(timeout: 60) { !state.isBusy && state.scannedPages.count == 1 }
+        defer { state.deleteSpoolFiles(of: state.scannedPages) }
+        let page: ScannedPage = state.scannedPages[0]
+        XCTAssertTrue(PageRecut.canRecut(page))
+        let file: URL = try XCTUnwrap(page.fileURL)
+        let inner = Quad(topLeft: CGPoint(x: 80, y: 80), topRight: CGPoint(x: 260, y: 80),
+                         bottomRight: CGPoint(x: 260, y: 330), bottomLeft: CGPoint(x: 80, y: 330))
+
+        // A share or a send reading the spooled pages: the page keeps its file.
+        state.queueReaders = 1
+        state.setPageFilter(id: page.id, .grayscale)
+        state.recropPage(id: page.id, corners: inner, rotation: 0)
+        XCTAssertNil(state.pageEditChain)
+        XCTAssertEqual(state.scannedPages.first?.fileURL, file)
+        state.queueReaders = 0
+
+        state.setPageFilter(id: page.id, .grayscale)
+        try await waitUntil(timeout: 60) { state.scannedPages.first?.capture?.filter == .grayscale }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    }
 }

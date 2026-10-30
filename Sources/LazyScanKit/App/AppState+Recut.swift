@@ -86,9 +86,10 @@ extension AppState {
     /// Gives the queued page `id` another filter: the page is cut out of its photo again with it, off the main
     /// actor, and its spool file replaced (`PageRecut`). It runs behind the page swaps and turns under way,
     /// like them, and a save waits for it, so the last filter tapped is the one the page ends with; a page that
-    /// has the filter by then is left as it is, and one that cannot be cut again is never touched.
+    /// has the filter by then is left as it is, and one that cannot be cut again is never touched. Not while a
+    /// share or a send reads the pages (`readsQueue`): the cut takes the old file away.
     public func setPageFilter(id: UUID, _ filter: CaptureFilter) {
-        guard !isBusy, let page = scannedPages.first(where: { (item: ScannedPage) -> Bool in item.id == id }),
+        guard !isBusy, !readsQueue, let page = scannedPages.first(where: { (item: ScannedPage) -> Bool in item.id == id }),
               PageRecut.canRecut(page) else { return }
         enqueuePageEdit { (state: AppState) async -> Void in
             await state.recut(id: id, filter: filter, corners: nil)
@@ -99,7 +100,7 @@ extension AppState {
     /// `pageCropStart(id:)` gave (the photo turned as the page is shown, while its rotation was `rotation`),
     /// keeping its filter; as `setPageFilter(id:_:)` does it. Nothing happens once the page was turned since.
     public func recropPage(id: UUID, corners: Quad, rotation: Int) {
-        guard !isBusy, let page = scannedPages.first(where: { (item: ScannedPage) -> Bool in item.id == id }),
+        guard !isBusy, !readsQueue, let page = scannedPages.first(where: { (item: ScannedPage) -> Bool in item.id == id }),
               page.rotationQuarterTurns == rotation, PageRecut.canRecut(page), let filter = PageRecut.filter(of: page),
               let facts = page.capture else { return }
         let turns: Int = PageRecut.fileTurns(page) + page.rotationQuarterTurns
