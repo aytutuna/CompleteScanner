@@ -489,14 +489,14 @@ final class IOSObjectsTests: XCTestCase {
     }
 
     @MainActor
-    func test_aDocumentShot_onAuto_aSheetAndAPhone_staysOnePage() async throws {
+    func test_aDocumentShot_onAuto_aSheetAndASmallObject_staysOnePage() async throws {
         let state: AppState = makeState(.document)
         let defaults: UserDefaults = try itemsDefaults(.auto)
-        // A phone beside the sheet, 120 × 180 px: 2 % of the photo.
-        let phone = Quad(topLeft: CGPoint(x: 800, y: 100), topRight: CGPoint(x: 920, y: 100),
+        // A small object beside the sheet, 120 × 180 px: 2 % of the photo.
+        let small = Quad(topLeft: CGPoint(x: 800, y: 100), topRight: CGPoint(x: 920, y: 100),
                          bottomRight: CGPoint(x: 920, y: 280), bottomLeft: CGPoint(x: 800, y: 280))
         let importer = IOSImportSession(state: state, finder: clearPage(printA),
-                                        objectFinder: fixedObjects([printA, phone], for: .receipt), defaults: defaults)
+                                        objectFinder: fixedObjects([printA, small], for: .receipt), defaults: defaults)
         let outcome: IOSImportOutcome = await importer.importShot(IOSCameraShot(data: png(printsOnTable()), liveOutline: nil),
                                                                   asksOnlyWhenUnsure: true)
         XCTAssertEqual(outcome.added, 1)
@@ -517,6 +517,30 @@ final class IOSObjectsTests: XCTestCase {
                                         objectFinder: fixedObjects([printA, printB], for: .receipt), defaults: defaults)
         let outcome: IOSImportOutcome = await importer.importShot(IOSCameraShot(data: png(printsOnTable()), liveOutline: nil),
                                                                   asksOnlyWhenUnsure: true)
+        XCTAssertEqual(outcome.added, 1)
+        try await ImportTestSupport.waitUntil(timeout: 60) { !state.isBusy }
+        defer { state.deleteSpoolFiles(of: state.scannedPages) }
+        XCTAssertEqual(state.scannedPages.map { (page: ScannedPage) -> Quad? in page.capture?.quad }, [sheet])
+    }
+
+    @MainActor
+    func test_aDocumentShot_onAuto_printsOnAnUnsurePage_openTheEditorForThatPage() async throws {
+        let state: AppState = makeState(.document)
+        let defaults: UserDefaults = try itemsDefaults(.auto)
+        // The prints stand for a form's boxes, on a sheet the page finder is unsure of.
+        let sheet = Quad(topLeft: CGPoint(x: 100, y: 100), topRight: CGPoint(x: 1100, y: 100),
+                         bottomRight: CGPoint(x: 1100, y: 800), bottomLeft: CGPoint(x: 100, y: 800))
+        let found = IOSFoundPage(corners: sheet, reason: .unsure, byModel: false)
+        let importer = IOSImportSession(state: state, finder: { (_: RgbaImage) -> IOSFoundPage in found },
+                                        objectFinder: fixedObjects([printA, printB], for: .receipt), defaults: defaults)
+        let importing: Task<IOSImportOutcome, Never> = Task { @MainActor in
+            await importer.importShot(IOSCameraShot(data: png(printsOnTable()), liveOutline: nil), asksOnlyWhenUnsure: true)
+        }
+        // Not split without asking: the corner editor opens for the sheet.
+        try await ImportTestSupport.waitUntil(timeout: 60) { importer.cornerRequest != nil }
+        XCTAssertEqual(importer.cornerRequest?.plan.corners, sheet)
+        importer.answer(PhotoCornersAnswer(choice: .useCorners, corners: sheet))
+        let outcome: IOSImportOutcome = await importing.value
         XCTAssertEqual(outcome.added, 1)
         try await ImportTestSupport.waitUntil(timeout: 60) { !state.isBusy }
         defer { state.deleteSpoolFiles(of: state.scannedPages) }

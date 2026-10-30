@@ -234,9 +234,9 @@ public enum IOSImportText {
 /// searched for loose pages too (the receipts' search), those under 3 % of the photo or 15 % of the largest
 /// left out: two or more on Auto, one or more on Several, come in as pages of their own, cut along their
 /// outlines with no corner editor, into the queue as any page; fewer, One, or on Auto a page the page finder
-/// is sure of holding the middle of every one found, is the single page as before. Photo on One keeps only
-/// the largest print found. A page of the camera's own Document shot 2.2 times as long as wide or more is
-/// measured as a receipt roll (`documentKind`); every other import's pages are measured as before.
+/// found, clearly or not, holding the middle of every one found, is the single page as before. Photo on One
+/// keeps only the largest print found. A page of the camera's own Document shot 2.2 times as long as wide or
+/// more is measured as a receipt roll (`documentKind`); every other import's pages are measured as before.
 @MainActor
 public final class IOSImportSession: ObservableObject {
     /// The corner editor to show; nil when none is waiting.
@@ -940,9 +940,9 @@ struct IOSPreparedPhoto: Sendable {
     /// For receipts and photos (`kind`) its objects are searched for (`objectFinder`) instead of a page, the
     /// largest alone when `items` is One; for a document page with `items` Auto or Several, its loose pages
     /// too (`loosePages`), taken when there are two or more (one or more on Several), except on Auto when the
-    /// page finder is sure of a page holding the middle of every one found; for an ID card the card first
-    /// (sure only when its shape snaps to ID-1, `CaptureScale.measure`), then the page finder when no card
-    /// was found.
+    /// page finder found a page, clearly or not, holding the middle of every one found; for an ID card the
+    /// card first (sure only when its shape snaps to ID-1, `CaptureScale.measure`), then the page finder when
+    /// no card was found.
     static func make(_ data: Data, fileName: String, page: Int = 1, finder: (RgbaImage) -> IOSFoundPage,
                      liveOutline: Quad? = nil, kind: CaptureKind = .document, items: IOSItemsInFrame? = nil,
                      objectFinder: ((RgbaImage, CaptureKind) -> [Quad])? = nil) -> IOSPreparedPhoto {
@@ -966,9 +966,10 @@ struct IOSPreparedPhoto: Sendable {
                 }
                 // Sheets and slips lie loose on a table as receipts do: the receipts' search takes both shapes.
                 let loose: [Quad] = search(decoded.photo, .receipt)
-                // Slips or prints lying on a page found clearly, or that page found again, are the page.
+                // Slips or prints lying on a page found, clearly or not, or that page found again, are the
+                // page. With nothing found the finder gives the start rectangle, which would hold them all.
                 var onPage: Bool = false
-                if let sheet = finderPage, sheet.reason == PhotoReviewReason.none {
+                if let sheet = finderPage, sheet.reason != PhotoReviewReason.nothingFound {
                     onPage = loose.allSatisfy { (quad: Quad) -> Bool in sheet.corners.contains(quad.centroid) }
                 }
                 let pages: [Quad] = onPage ? [] : loosePages(loose, width: decoded.photo.width,
@@ -1002,8 +1003,9 @@ struct IOSPreparedPhoto: Sendable {
         }
     }
 
-    /// The loose pages of a Document shot worth a page of their own: none under 3 % of the photo (a phone, a
-    /// pen, a label) or under 15 % of the largest found.
+    /// The loose pages of a Document shot worth a page of their own: none under 3 % of the photo (a pen, a
+    /// label) or under 15 % of the largest found. A phone beside an A4 sheet is more, about 17 % of the sheet
+    /// and 9 % of the frame, so it comes in as a page unless Items in frame is One.
     static func loosePages(_ quads: [Quad], width: Int, height: Int) -> [Quad] {
         let largest: Double = quads.map(\.area).max() ?? 0
         let least: Double = max(0.03 * Double(width) * Double(height), 0.15 * largest)
