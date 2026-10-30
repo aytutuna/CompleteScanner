@@ -90,7 +90,7 @@ UI per platform** architecture:
   orientation tag, a HEIC photo Windows cannot decode, the file only read; `PhotoFileReaderTests`),
   and a phone's document becomes queue pages, the network list and firewall rules are read (read
   only), and the phone link's certificate is kept in a certificate store of the test's own
-  (`CompanionAppTests`; the certificate case runs only with `COMPLETESCANNER_CERT_STORE_TESTS=1`,
+  (`CompanionAppTests`; the certificate case runs only with `LAZYSCAN_CERT_STORE_TESTS=1`,
   which CI sets).
   Nothing is sent to a printer.
 - **`LazyScan.TwainHelper`** — the 32-bit TWAIN helper (x86, .NET 10): a small console
@@ -113,7 +113,7 @@ Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), o
 Studio 2026 (18.0+), the first Visual Studio release that supports .NET 10. The 32-bit TWAIN
 helper also needs the 32-bit (x86) .NET 10 Desktop Runtime to run; without it the app works as
 before, the helper reports that it cannot start, and its tests are skipped (CI installs it and
-requires them, `COMPLETESCANNER_REQUIRE_TWAIN_HELPER=1`).
+requires them, `LAZYSCAN_REQUIRE_TWAIN_HELPER=1`).
 
 ```powershell
 cd windows
@@ -243,7 +243,7 @@ the scanner is reached the same ways: it is saved under the network connection's
 when that connection is listed and under the model name otherwise, so a choice made while the
 eSCL host answered does not apply while it is offline, and the other way round. Choices for
 scanners no longer present stay in `preferences.json`. The names the drivers report, and how
-they were matched, are written to `%LOCALAPPDATA%\CompleteScanner\Logs\devices.txt`, so
+they were matched, are written to `%LOCALAPPDATA%\Lazy Scan\Logs\devices.txt`, so
 missing aliases can be spotted on real hardware.
 
 Pick **Demo Scanner** in the sidebar to exercise everything without hardware: scan in
@@ -557,7 +557,7 @@ background). A document sent as new starts a document of its own in the queue, u
 came with; one sent to the current document joins it. While the queue does not collect pages
 (Photos mode, the ID card, copy and receipt tasks, a review open) or a scan runs, the document waits
 and says so, and is added as soon as it can be. Pages the phone kept as photographed can be shown
-that way with one click, as for imported photos. A `.csdoc` opened from File Explorer (the app
+that way with one click, as for imported photos. A `.lsdoc` opened from File Explorer (the app
 registers the type for your user each time it starts), dropped on the window or picked with Import
 photos is not added on its own: a bar offers **Add to pages** or **Open as new**.
 
@@ -575,9 +575,9 @@ store, made the first time a pairing code is shown) is pinned by the phone from 
 connection is already checked. Each phone gets a 256-bit secret when it pairs; the PC keeps only its
 SHA-256 (`companion-devices.json`), and every request without a paired phone's secret is refused
 (401), except checking that the PC answers and pairing with a valid code. Uploads are checked in full
-(every picture's checksum and format, see the `.csdoc` package) before they count, are taken once
+(every picture's checksum and format, see the `.lsdoc` package) before they count, are taken once
 however often a phone retries, and are refused when too large; repeated wrong secrets or codes block
-the sender for a minute. The PC advertises itself (DNS-SD, `_completescan._tcp`) only on the
+the sender for a minute. The PC advertises itself (DNS-SD, `_lazyscan._tcp`) only on the
 networks it receives on and only while it receives, and the phone also remembers the address from the
 QR code. Only one Lazy Scan window receives at a time.
 
@@ -829,7 +829,7 @@ Checked here: the structure, the XMP and Info dates, and the text layer read bac
 (`PdfATests`, `GlyphlessFontTests`); the saved files opened by Windows' own PDF reader
 (`Windows.Data.Pdf`), the font read by DirectWrite (two glyphs, half an em, installable).
 veraPDF is not installed on this PC; CI validates PDF/A files instead: the Windows job keeps the
-files `PdfATests.Archival_ValidationSamples` writes (it does so when `COMPLETESCANNER_PDFA_SAMPLES`
+files `PdfATests.Archival_ValidationSamples` writes (it does so when `LAZYSCAN_PDFA_SAMPLES`
 names a folder) and runs veraPDF 1.30.3, downloaded in CI only and pinned by its SHA-256, on them
 with `--flavour 2b`. Run `verapdf --flavour 2b` on a saved file where it is installed.
 
@@ -1445,7 +1445,7 @@ it had found stay listed, and those its new search does not find again are dropp
 pass), and TWAIN lists its drivers again when it was missing or would not start (while TWAIN works
 its list stays as it is). A Refresh while one is running is ignored. The checks are made again as
 the scanner list changes. **Copy diagnostics** copies the checks and the device list
-(the same text as `%LOCALAPPDATA%\CompleteScanner\Logs\devices.txt`, which now ends with the
+(the same text as `%LOCALAPPDATA%\Lazy Scan\Logs\devices.txt`, which now ends with the
 checks). The window only reads: it never starts, stops or reconfigures a service or a setting, and
 the Settings buttons only open Windows Settings. Everything is keyboard reachable (Tab goes through
 each card's buttons in reading order; Enter or Esc closes), and screen readers hear each card's
@@ -1694,7 +1694,7 @@ same scanners through ImageCaptureCore.
   tagged with the resolution the driver reports; a device that configures itself reports none,
   and its pages take the resolution their file records (not 72 or 96 dpi, which stand for none),
   else the one asked for. Each scan writes its files to a new folder inside the app's own
-  page spool (`%TEMP%\CompleteScanner-pages`), never to the user's folders, and the folder is
+  page spool (`%TEMP%\LazyScan-pages`), never to the user's folders, and the folder is
   deleted once the pages are read. A multi-page TIFF gives one page per frame.
 - **Preview, cancel and errors.** The overview is the device's own preview when it makes
   one, otherwise a 150 dpi scan. Cancel cancels the running Windows operation. Errors become
@@ -1714,7 +1714,7 @@ same scanners through ImageCaptureCore.
 
 - **What it needs.** The TWAIN Data Source Manager (`C:\Windows\System32\TWAINDSM.dll`) that
   scanner drivers install. The app never ships it (it is LGPL). Without it the TWAIN backend
-  lists nothing, and `%LOCALAPPDATA%\CompleteScanner\Logs\devices.txt` says
+  lists nothing, and `%LOCALAPPDATA%\Lazy Scan\Logs\devices.txt` says
   "TWAIN: not installed"; the troubleshooter says so too and explains what installs it. The
   drivers are listed once, at start: a driver installed while TWAIN works appears after a
   restart (while TWAIN is missing or would not start, the troubleshooter's **Refresh** lists
@@ -1825,7 +1825,7 @@ row's **via** menu chooses between them.
   a name is kept as its number), and one that names no interface is refused rather than
   dropped. It checks that an eSCL scanner answers there before adding it, and
   explains what is wrong when nothing does. Addresses are kept in
-  `%APPDATA%\CompleteScanner\escl-hosts.json` (a JSON list of strings, the file earlier
+  `%APPDATA%\Lazy Scan\escl-hosts.json` (a JSON list of strings, the file earlier
   versions asked to edit by hand; hand-written entries keep working). They are checked at
   start, and ones that do not answer are tried again every minute. A row reached through an
   added address has **Remove address …** in its context menu; a scanner that is also found
@@ -1833,7 +1833,7 @@ row's **via** menu chooses between them.
 - **HTTPS and certificates.** Scanners make their own certificates, which Windows cannot
   check. The first time the app connects to a scanner over HTTPS, its certificate is trusted
   and pinned (trust on first use): the SHA-256 of its public key is kept, with the scanner's
-  UUID and the addresses it was seen at, in `%APPDATA%\CompleteScanner\escl-trust.json`. Only
+  UUID and the addresses it was seen at, in `%APPDATA%\Lazy Scan\escl-trust.json`. Only
   the **Add scanner by address** dialog shows a new certificate's fingerprint and asks first.
   A new certificate is pinned only once the scanner has reported its UUID: one that comes
   with the UUID of a scanner trusted with another certificate counts as a changed
@@ -1901,14 +1901,14 @@ The tests also use PdfPig 0.1.16 (Apache-2.0), which is never shipped.
 
 ## Settings files
 
-Presets, scan settings and app preferences are JSON files in `%APPDATA%\CompleteScanner\`
+Presets, scan settings and app preferences are JSON files in `%APPDATA%\Lazy Scan\`
 (`presets.json`, `settings.json`, `preferences.json`; the preferences hold the appearance,
 the connection chosen per scanner and the TWAIN connections that use their driver's
 window), next to the network scanners added by address (`escl-hosts.json`) and their
 trusted certificates (`escl-trust.json`), and the phone link's paired phones
 (`companion-devices.json`: this PC's id and each phone's id, name and the SHA-256 of its secret,
 never the secret) and the networks receiving is allowed on (`companion-networks.json`); what phones
-sent and what waits for them is under `%LOCALAPPDATA%\CompleteScanner\Companion`. The scan settings and presets remember the task
+sent and what waits for them is under `%LOCALAPPDATA%\Lazy Scan\Companion`. The scan settings and presets remember the task
 they were set up for as text (`"taskId": "document"`), left out when there is none, so a task
 added by a newer version is kept by an older one. They also hold an `"output"` object with the
 PDF size, the after-save action, the text beside a PDF, PDF/A and the password switch

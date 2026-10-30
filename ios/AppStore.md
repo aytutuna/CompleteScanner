@@ -28,8 +28,8 @@ Primary category: Productivity
 Age rating: 4+ (answer No to everything)
 App Privacy: Data Not Collected
 Copyright: 2026 [YOUR NAME]
-Support URL: https://aytutuna.github.io/CompleteScanner/#support
-Privacy policy URL: https://aytutuna.github.io/CompleteScanner/privacy.html
+Support URL: https://aytutuna.github.io/LazyScan/#support
+Privacy policy URL: https://aytutuna.github.io/LazyScan/privacy.html
 Price: free (no in-app purchases)
 
 Export compliance: Info.plist sets ITSAppUsesNonExemptEncryption to false, so App Store Connect

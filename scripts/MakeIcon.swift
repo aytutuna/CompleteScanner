@@ -1,4 +1,4 @@
-// Generates the CompleteScanner app icon as a 1024x1024 PNG.
+// Generates the Lazy Scan app icon as a 1024x1024 PNG.
 // A white page on flat blue with a cyan scan beam across it: the lines the beam has passed are
 // sharp, the ones below it are still soft.
 // Usage: swift scripts/MakeIcon.swift <output.png>

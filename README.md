@@ -1,7 +1,5 @@
 # Lazy Scan
 
-The code, folders and identifiers still use the earlier name, CompleteScanner.
-
 A one-stop, native macOS scanning app: documents to (searchable) PDF, and batch photo
 scanning that automatically finds, straightens, and splits multiple photos laid on the
 flatbed into separate JPEG/PNG files.
@@ -117,7 +115,7 @@ scanners** — including the Epson Perfection V39 II.
   it as photographed. The photo files themselves are only read, never changed or moved. On Windows,
   HEIC photos need Microsoft's free HEIF Image Extensions. On the Mac, **File > Import from iPhone or
   iPad** takes a photo or a scanned document from a nearby iPhone or iPad the same way (Continuity
-  Camera), and a Lazy Scan document (`.csdoc`) opened in the Finder, dropped on the window or
+  Camera), and a Lazy Scan document (`.lsdoc`) opened in the Finder, dropped on the window or
   picked with Import offers **Add to pages** or **Open as new** on a banner.
 - **Send from your phone** (Windows and the Mac): pair a phone once by scanning a QR code on the PC, and
   documents scanned with Lazy Scan on the phone are added to the PC's page queue on their own,
@@ -254,7 +252,7 @@ scanners** — including the Epson Perfection V39 II.
 Requires Xcode (or its toolchain) on macOS 14+.
 
 ```bash
-cd ~/CompleteScanner
+cd ~/LazyScan
 ./scripts/fetch_docaligner.sh      # the page corner model; without it the apps use their own page search
 swift run LazyScan                 # run directly
 # or build a double-clickable app:
@@ -317,7 +315,7 @@ added to the end of a PDF picked in Files or in the saved files, as the same inc
 the desktop (signed files and PDF/A files that may not stay PDF/A asked about first), from the menu
 beside Save or from the iPad's Add pages to a PDF, which picks the file first so that Save
 reads "Add to Contract.pdf"; the queue shared
-as a Lazy Scan document (`.csdoc`), and one opened from AirDrop, Files or Mail offered on a
+as a Lazy Scan document (`.lsdoc`), and one opened from AirDrop, Files or Mail offered on a
 banner with Add to pages or Open as new; the pages taken kept when iOS ends the app in the
 background, and asked about (save them first, discard them or cancel) before a kind, a preset or
 Open as new would leave them without a Save; network
@@ -370,7 +368,7 @@ Windows rules and messages; its certificate is trusted on first use, and a certi
 since is asked about. When a scanner's HTTPS connection cannot be made (an old TLS version), the
 app may use the scanner's own plain HTTP address and marks the connection "Not encrypted"; it never
 does so after a refused certificate. The addresses and the trusted certificates are kept in
-Application Support/CompleteScanner/Network, out of backups. Launched with `-demoScanner` (the UI
+Application Support/Lazy Scan/Network, out of backups. Launched with `-demoScanner` (the UI
 tests), the app has the Demo Scanner alone and never searches the network; otherwise the Demo
 Scanner is not listed at all. The search itself is
 checked with stand-ins for the system's browsers, and the prompt, a denial, client-isolated Wi-Fi,
@@ -414,7 +412,7 @@ instructions and current status.
 - A scanner reachable several ways (an MFP on USB and on the network) is listed once. The app
   connects over USB when it can, then over the network, then through a shared Mac. The names
   the devices report, how they were matched and the troubleshooter's checks are written to
-  `~/Library/Logs/CompleteScanner/devices.txt`; **Copy Diagnostics** in the troubleshooter
+  `~/Library/Logs/Lazy Scan/devices.txt`; **Copy Diagnostics** in the troubleshooter
   copies the same text.
 
 ## Project layout
