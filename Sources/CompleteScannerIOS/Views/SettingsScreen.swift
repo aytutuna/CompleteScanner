@@ -402,7 +402,8 @@ struct ScannerSettingsRows: View {
 
 /// Output: the format (an image format for photos and the Text kind's held page, a PDF or an image for
 /// receipts and the ID card), the PDF's size, Searchable PDF while a PDF is written, Collect pages (locked on
-/// while the camera's Both sides pairs the sides), and where files are saved; Photos in Photos mode.
+/// while the camera's Both sides pairs the sides, and while a PDF picked in the task list takes the pages),
+/// and where files are saved; Photos in Photos mode.
 private struct OutputSettingsRows: View {
     @EnvironmentObject private var state: AppState
     let camera: Bool
@@ -415,6 +416,10 @@ private struct OutputSettingsRows: View {
         // scan's sheets together even when each scan is saved at once. Locked only while on: Both sides kept
         // from printer mode or a preset with Collect off can still turn it on.
         let paired: Bool = camera && state.cameraSides != nil && s.documentMultiPage
+        // A PDF picked in the task list takes the pages only while they are collected: turned off, each scan
+        // would be saved as a new file. Stop Adding in Save's menu is the way back.
+        let reason: String? = paired ? IOSSettingsText.bothSidesCollectsReason
+            : state.appendTarget.map { IOSSettingsText.addingToReason($0.lastPathComponent) }
         Picker("Format", selection: format) {
             ForEach(formats) { (choice: OutputFormat) in
                 Text(choice.label).tag(choice)
@@ -436,11 +441,10 @@ private struct OutputSettingsRows: View {
         }
         if s.intent == ScanIntent.document && flow != TaskFlowKind.receiptSplit && flow != TaskFlowKind.idCard {
             Toggle("Collect pages before saving", isOn: $state.settings.documentMultiPage)
-                .disabled(paired)
-                .accessibilityHint(Text(paired ? IOSSettingsText.bothSidesCollectsReason
-                                        : "Off: each page is saved right away"))
-            if paired {
-                ReasonLine(text: IOSSettingsText.bothSidesCollectsReason)
+                .disabled(reason != nil)
+                .accessibilityHint(Text(reason ?? "Off: each page is saved right away"))
+            if let reason {
+                ReasonLine(text: reason)
             }
         }
         SaveFolderRow()

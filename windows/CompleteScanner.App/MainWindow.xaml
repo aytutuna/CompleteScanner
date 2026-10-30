@@ -959,7 +959,7 @@
                                                           Checked="Setting_Changed" Unchecked="Setting_Changed" />
                                                 <CheckBox x:Name="MultiPageBox" Style="{StaticResource ToggleSwitchStyle}"
                                                           Content="Collect pages before saving"
-                                                          ToolTip="Off: each scan is saved right away"
+                                                          ToolTipService.ShowOnDisabled="True"
                                                           Checked="Setting_Changed" Unchecked="Setting_Changed" />
                                             </StackPanel>
                                             <TextBlock Text="Save to" Style="{StaticResource FieldLabelText}" Margin="0,12,0,4" />

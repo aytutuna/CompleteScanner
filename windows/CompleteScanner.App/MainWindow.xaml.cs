@@ -1658,8 +1658,6 @@ public partial class MainWindow : Window
         // nothing for them. The text layer of the copy's and the ID card's PDF is never made.
         bool idCard = flow == TaskFlowKind.IdCard;
         MultiPageBox.Visibility = receipts || idCard ? Visibility.Collapsed : Visibility.Visible;
-        AutomationProperties.SetHelpText(MultiPageBox,
-            $"On: pages are collected until you {OutputFormats.SaveTitle(shownFormat)}. Off: each scan is saved right away.");
         // Shown whenever the save writes a PDF that can carry text: a queue of JPEG pages saves one too.
         SearchableBox.Visibility = WritesPdf(s) && flow != TaskFlowKind.Copy && !idCard ? Visibility.Visible : Visibility.Collapsed;
         string hint = flow switch

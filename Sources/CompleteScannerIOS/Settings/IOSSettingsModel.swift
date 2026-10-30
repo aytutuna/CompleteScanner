@@ -49,6 +49,12 @@ public enum IOSSettingsText {
     public static let cameraTitle = "Camera"
     public static let cameraResolutionLabel = "Resolution"
 
+    /// Why Collect pages is locked while a PDF picked in the task list takes the pages: turned off, each scan
+    /// would be saved as a new file while Save still names this one.
+    public static func addingToReason(_ fileName: String) -> String {
+        "Adding to \(fileName)"
+    }
+
     /// A photo size in the Resolution picker, "24 MP (default)" for the one taken until another is picked.
     public static func resolutionChoice(_ size: IOSPhotoSize, isDefault: Bool) -> String {
         isDefault ? "\(IOSCameraText.sizeLabel(size)) (default)" : IOSCameraText.sizeLabel(size)

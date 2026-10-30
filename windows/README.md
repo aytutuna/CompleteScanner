@@ -954,6 +954,8 @@ the appender (`PDFReaderLite.swift`, `PDFAppender.swift`).
 The start screen's "Add pages to a PDF" tile asks for the PDF first and then sets up Document to
 PDF: Save reads "Add to Contract.pdf", with the file's path and a × under it to save a new PDF
 instead, and adds the scanned pages to that file. Picking another task or a preset forgets the file.
+**Collect pages before saving** is greyed out while the file is picked, and its tooltip and help text
+say why: with it off each scan would be saved as a new file.
 
 **Not done yet** (from the M21 spec): the picker showing the chosen file's first page. (The split
 button is there now: Save with Add to existing PDF… in its ▾ menu; instead of a "Save as new PDF"
