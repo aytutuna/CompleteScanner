@@ -20,8 +20,9 @@ import UIKit
 /// It keeps the screen on while a network scanner's job runs, and keeps the selected scanner on the mode:
 /// in printer mode the remembered scanner once it is listed, else none, so no scanner's limits apply to
 /// the camera. Photos and PDFs opened in this app from another one ("Open in Lazy Scan") are
-/// imported: into the task set up when it takes photos (`IOSShell.takesPhotos`), else into Document to
-/// PDF; while an import runs they wait for it (`IOSImportSession`). A Lazy Scan document (`.lsdoc`,
+/// imported with Settings and the share sheets closed: photos into the task set up, a PDF into Document to
+/// PDF unless that task collects pages or holds what it took (`openFiles`); while an import runs they wait
+/// for it (`IOSImportSession`). A Lazy Scan document (`.lsdoc`,
 /// I18) is not imported: the scan screen offers it on its banner. Leaving the scan screen stops an import
 /// and closes the scan screen's covers. The scan screen opens the photo and ID card reviews.
 public struct IOSRootView: View {
@@ -406,8 +407,11 @@ public struct IOSRootView: View {
         }
     }
 
-    /// Files opened in this app: a Lazy Scan document to the scan screen's banner, the others
-    /// imported into the queue; the scan screen shown.
+    /// Files opened in this app: a Lazy Scan document to the scan screen's banner, the others imported;
+    /// the scan screen shown, Settings and the share sheets closed. A PDF goes into Document to PDF unless
+    /// the task set up collects pages or holds what it took (a side of the ID card, a Text page, a copy, the
+    /// photo review, an import under way), which starting Document would drop or change; photos stay in the
+    /// task set up (`prepareForImport`).
     private func openFiles(_ urls: [URL]) {
         var imports: [URL] = []
         for url in urls {
@@ -418,7 +422,14 @@ public struct IOSRootView: View {
             }
         }
         guard !imports.isEmpty else { return }
-        let pushed: Bool = prepareForImport(nil)
+        // By the name alone: the bytes are read only when the file's turn comes.
+        let pdf: Bool = imports.contains { (url: URL) -> Bool in
+            IOSImportItem.kind(forFileName: url.lastPathComponent, data: Data()) == .pdf
+        }
+        let free: Bool = !state.hasIdCardCaptures && state.quickScanPage == nil && state.copyPages.isEmpty
+            && !state.showPhotoReview && !importer.isImporting
+        let task: ScanTask? = pdf && free && !IOSShell.collectsPages(state.settings) ? ScanTask.document : nil
+        let pushed: Bool = prepareForImport(task)
         let session: IOSImportSession = importer
         Task { @MainActor in
             await IOSRootView.settle(pushed)
@@ -426,13 +437,14 @@ public struct IOSRootView: View {
         }
     }
 
-    /// A `.lsdoc` opened in this app, offered on the scan screen's banner. Document to PDF is set up when no
-    /// task is; a task set up is kept (an ID card half taken, say), and in one that does not collect pages
-    /// the banner offers to open it in Document.
+    /// A `.lsdoc` opened in this app, offered on the scan screen's banner, with Settings closed so it is seen.
+    /// Document to PDF is set up when no task is; a task set up is kept (an ID card half taken, say), and in
+    /// one that does not collect pages the banner offers to open it in Document.
     private func openPackage(_ url: URL) {
         if state.activeTask == nil {
             _ = state.startTask(.document)
         }
+        showsSettings = false
         openScanner()
         let appState: AppState = state
         Task { @MainActor in
@@ -440,10 +452,12 @@ public struct IOSRootView: View {
         }
     }
 
-    /// `task` is set up when given; otherwise the task set up takes photos (not the photocopy, which holds
-    /// one batch of pages; a copy still held keeps its task and the import is refused as a held Quick scan is), or
-    /// Document to PDF is set up; the scan screen is shown. True when it was brought to the front now (shown
-    /// on the iPad, or the library closed on the iPhone).
+    /// `task` is set up when given; otherwise the task set up is kept (every task takes photos), and Document
+    /// to PDF is set up when there is none or it is the photocopy, which holds one batch of pages; a copy still
+    /// held keeps its task and the import is refused, as a held Quick scan is. Settings, the share sheet, Mail
+    /// and Quick Look close, since the corner editor cannot show over them, and the scan screen is shown. True
+    /// when it was brought to the front now (shown on the iPad, the library closed on the iPhone, or what was
+    /// presented over it closed).
     private func prepareForImport(_ task: ScanTask?) -> Bool {
         if let wanted = task {
             if state.activeTask != wanted {
@@ -452,12 +466,18 @@ public struct IOSRootView: View {
         } else if state.activeTask == nil || !IOSShell.takesPhotos(state.settings) || (state.isCopyFlow && state.copyPages.isEmpty) {
             _ = state.startTask(.document)
         }
-        let pushed: Bool = !showsScanner || showsLibrary
+        let presented: Bool = cameraRests
+        showsSettings = false
+        fileActions.shareRequest = nil
+        fileActions.mailRequest = nil
+        fileActions.previewURL = nil
+        let pushed: Bool = !showsScanner || showsLibrary || presented
         openScanner()
         return pushed
     }
 
-    /// Lets the scan screen come to the front before the corner editor is presented over it.
+    /// Lets the scan screen come to the front, and what was presented over it go, before the corner editor
+    /// is presented over it.
     private static func settle(_ pushed: Bool) async {
         if pushed {
             try? await Task.sleep(nanoseconds: 700_000_000)

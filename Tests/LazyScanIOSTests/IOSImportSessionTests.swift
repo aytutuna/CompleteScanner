@@ -313,6 +313,38 @@ final class IOSImportSessionTests: XCTestCase {
     }
 
     @MainActor
+    func test_aHeldCopy_orAStackTurnedOverByHand_refusesTheImport_inOneLine() async throws {
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        let importer = IOSImportSession(state: state, finder: fixedFinder(sheetQuad, reason: .none))
+        let data: Data = sheetPNG()
+        let items: [IOSImportItem] = [IOSImportItem(name: "a.png", data: data, kind: .image),
+                                      IOSImportItem(name: "b.png", data: data, kind: .image)]
+        // The queue's pages held on the copy screen after Print…, until they are printed or discarded.
+        let white: CGImage = try XCTUnwrap(RgbaImage.filled(width: 100, height: 100, r: 255, g: 255, b: 255).makeCGImage())
+        state.copyPages = [ScannedPage(image: white, dpi: 100, colorMode: .color)]
+        let held: IOSImportOutcome = await importer.importItems(items)
+        XCTAssertEqual(held.added, 0)
+        XCTAssertEqual(held.problems, [IOSImportText.copyHeldMessage])
+        XCTAssertEqual(state.errorMessage, "Print or discard the copy first; nothing was imported.")
+        XCTAssertNil(importer.cornerRequest)
+        XCTAssertEqual(importer.waitingCount, 0)
+
+        state.copyPages = []
+        state.errorMessage = nil
+        // A stack turned over by hand: its steps count the scanner's fronts and backs.
+        state.settings.source = .documentFeeder
+        state.settings.duplex = .manual
+        XCTAssertTrue(state.isTurningOverByHand)
+        let turning: IOSImportOutcome = await importer.importItems(items)
+        XCTAssertEqual(turning.added, 0)
+        XCTAssertEqual(turning.problems, [IOSImportText.sidesInProgressMessage])
+        XCTAssertEqual(state.errorMessage, "Finish the front and back sides first; nothing was imported.")
+        XCTAssertNil(importer.cornerRequest)
+        XCTAssertFalse(importer.isImporting)
+        XCTAssertTrue(state.scannedPages.isEmpty)
+    }
+
+    @MainActor
     func test_whatCannotBeRead_isListed_andTheOthersComeIn() async throws {
         let state: AppState = ImportTestSupport.makeState(in: folder)
         let importer = IOSImportSession(state: state, finder: fixedFinder(sheetQuad, reason: .none))

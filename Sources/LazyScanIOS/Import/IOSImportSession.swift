@@ -202,6 +202,15 @@ public enum IOSImportText {
         if count == 1 { return "The card already has both sides; the other one was not added." }
         return "The card already has both sides; the other \(count) were not added."
     }
+    /// An import refused while a copy is held on the copy screen (the queue's pages after Print…, or a photocopy).
+    public static let copyHeldMessage = "Print or discard the copy first; nothing was imported."
+    /// What a photocopy's import left out once its first page was held as the copy.
+    public static func copyFullMessage(_ count: Int) -> String {
+        if count == 1 { return "Print or discard the copy first; the other one was not added." }
+        return "Print or discard the copy first; the other \(count) were not added."
+    }
+    /// An import refused while a stack is being turned over by hand: its steps count the fronts and backs.
+    public static let sidesInProgressMessage = "Finish the front and back sides first; nothing was imported."
 }
 
 /// Brings photos and PDFs into the queue on the iPhone and iPad, one after another: a photo is read
@@ -218,7 +227,8 @@ public enum IOSImportText {
 /// each page is added once the one before is in. What arrives while an import runs (another pick, a
 /// file opened in the app) waits and is imported after it; Stop drops what waits and ends the import
 /// after the item in hand. What could not be read is listed in one error at the end. Text takes one page and an
-/// ID card two sides: once they are in, the rest of the import is left out, said in one line.
+/// ID card two sides: once they are in, the rest of the import is left out, said in one line; so is what
+/// comes while a copy is held or a stack is being turned over by hand.
 ///
 /// For the tasks that photograph objects (I13, `CaptureObjects.kind(for:)`) a photo is searched for them
 /// instead (`IOSObjectFinder`: Vision's rectangles, `MultiQuadPicker`): the receipts or photos of a shot come
@@ -331,8 +341,7 @@ public final class IOSImportSession: ObservableObject {
         }
         stopRequested = false
         if leftOut > 0 {
-            let card: Bool = TaskCatalog.flow(of: state.settings) == .idCard
-            outcome.add(card ? IOSImportText.cardFullMessage(leftOut) : IOSImportText.textTakesOneMessage(leftOut))
+            outcome.add(leftOutMessage(added: outcome.added))
             leftOut = 0
         }
         finish(outcome)
@@ -465,7 +474,7 @@ public final class IOSImportSession: ObservableObject {
         await waitForReview()
         if stopRequested && state.showPhotoReview { return outcome }
         if await isFull(leaving: 1) { return outcome }
-        // Nothing is read while the state cannot take pages (a stack being turned over by hand, say).
+        // Nothing is read while the state cannot take pages (a review open, say).
         guard await canTakePages() else {
             outcome.add(notAddedMessage(source.name))
             return outcome
@@ -756,17 +765,29 @@ public final class IOSImportSession: ObservableObject {
         }
     }
 
-    /// Waits until nothing else runs; true when the kind has taken all it takes: Text's page is held for its
-    /// screen, or the ID card's steps are past its sides. The `left` pages of the item in hand and what waits
+    /// Waits until nothing else runs; true when the kind has taken all it takes (Text's page is held for its
+    /// screen, or the ID card's steps are past its sides) or nothing comes in until the user is done (a copy
+    /// is held, or a stack is being turned over by hand). The `left` pages of the item in hand and what waits
     /// are then left out (`leftOut`), said once at the end rather than as pages that could not be added.
     private func isFull(leaving left: Int) async -> Bool {
         await waitUntilIdle()
         let card: Bool = TaskCatalog.flow(of: state.settings) == .idCard && state.taskFlow != nil
         let cardIn: Bool = card && (state.showIdCardReview || IdCardSteps.sideOf(state.taskFlow?.current?.id) == nil)
-        guard cardIn || state.quickScanPage != nil else { return false }
+        guard cardIn || state.quickScanPage != nil || !state.copyPages.isEmpty || state.isTurningOverByHand else { return false }
         leftOut += left + pending.count
         pending.removeAll()
         return true
+    }
+
+    /// The one line for what `isFull` left out of an import that added `added` pages. A copy held before
+    /// anything came in refused the whole import, so its line says nothing was imported.
+    private func leftOutMessage(added: Int) -> String {
+        if !state.copyPages.isEmpty {
+            return added > 0 ? IOSImportText.copyFullMessage(leftOut) : IOSImportText.copyHeldMessage
+        }
+        if state.isTurningOverByHand { return IOSImportText.sidesInProgressMessage }
+        if TaskCatalog.flow(of: state.settings) == .idCard { return IOSImportText.cardFullMessage(leftOut) }
+        return IOSImportText.textTakesOneMessage(leftOut)
     }
 
     /// Waits until nothing else runs; true when the state can take pages then (`AppState.canIngest`).
