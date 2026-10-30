@@ -267,6 +267,8 @@ final class IOSCompanionTests: XCTestCase {
         XCTAssertEqual(IOSCompanionText.waiting(0), "Nothing waiting to be sent")
         XCTAssertEqual(IOSCompanionText.waiting(1), "1 document waiting to be sent")
         XCTAssertEqual(IOSCompanionText.waiting(4), "4 documents waiting to be sent")
+        XCTAssertEqual(IOSCompanionText.forUnpairedComputer(1), "1 document for a computer no longer paired")
+        XCTAssertEqual(IOSCompanionText.forUnpairedComputer(2), "2 documents for a computer no longer paired")
         XCTAssertEqual(IOSCompanionText.inCloudFolder(1), "1 document in the cloud folder")
         XCTAssertEqual(IOSCompanionText.inCloudFolder(3), "3 documents in the cloud folder")
     }

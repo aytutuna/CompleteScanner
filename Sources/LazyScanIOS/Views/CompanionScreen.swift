@@ -11,7 +11,8 @@ import UniformTypeIdentifiers
 /// Send again and Remove, and those in the cloud folder the computer has not taken yet. For a computer that
 /// handed out a sync key, the cloud folder (Choose…, Clear) documents go to when it cannot be reached. A
 /// computer that no longer knows the phone is shown with pairing offered again. Local Network access that
-/// is off is said with Open Settings.
+/// is off is said with Open Settings. Documents left for a computer no longer paired have a line and a Remove
+/// of their own.
 struct CompanionScreen: View {
     @EnvironmentObject private var state: AppState
     @StateObject private var model: IOSCompanionModel
@@ -77,6 +78,9 @@ struct CompanionScreen: View {
                     }
                 }
             }
+            if state.companionOtherOutboxCount > 0 {
+                otherOutboxSection
+            }
             if model.offersCloudFolder && !model.needsPairing {
                 cloudFolderSection
             }
@@ -93,6 +97,17 @@ struct CompanionScreen: View {
         }
         .onDisappear {
             model.disappear()
+        }
+    }
+
+    private var otherOutboxSection: some View {
+        Section {
+            Text(IOSCompanionText.forUnpairedComputer(state.companionOtherOutboxCount))
+                .accessibilityIdentifier("companion.otherOutbox")
+            Button(IOSCompanionText.removeButton, role: .destructive) {
+                model.removeOtherWaiting()
+            }
+            .accessibilityIdentifier("companion.otherOutbox.remove")
         }
     }
 

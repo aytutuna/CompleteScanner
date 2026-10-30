@@ -61,6 +61,11 @@ public enum IOSCompanionText {
         return (count == 1 ? "1 document" : "\(count) documents") + " waiting to be sent"
     }
 
+    /// "2 documents for a computer no longer paired": queued for it before another was paired.
+    public static func forUnpairedComputer(_ count: Int) -> String {
+        (count == 1 ? "1 document" : "\(count) documents") + " for a computer no longer paired"
+    }
+
     /// "2 documents in the cloud folder": put there, not taken by the computer yet.
     public static func inCloudFolder(_ count: Int) -> String {
         (count == 1 ? "1 document" : "\(count) documents") + " in the cloud folder"
@@ -212,6 +217,10 @@ public final class IOSCompanionModel: ObservableObject {
 
     public func removeWaiting() {
         state.clearOutbox()
+    }
+
+    public func removeOtherWaiting() {
+        state.clearOtherOutbox()
     }
 
     public func unpair() async {

@@ -110,8 +110,8 @@ extension AppState {
         companionOutbox = outbox
         companionInbox = folder.appendingPathComponent("Inbox", isDirectory: true)
         companionClient = nil
-        companionOutboxCount = outbox.count
         companionDesktop = store.load()
+        countOutbox()
         if let desktop = companionDesktop {
             companionStatus = store.secret(for: desktop) == nil ? .unpaired(byDesktop: desktop.name) : .checking
         } else {
@@ -181,6 +181,7 @@ extension AppState {
         }
         stopPulling()
         companionDesktop = desktop
+        countOutbox()
         companionClient = client
         companionStatus = .reachable(desktopName: desktop.name, queuedPages: 0)
         statusMessage = CompanionText.pairedMessage(desktop.name)
@@ -197,6 +198,7 @@ extension AppState {
         companionStore?.remove()
         companionClient = nil
         companionDesktop = nil
+        countOutbox()
         companionStatus = .notPaired
         statusMessage = CompanionText.unpairedMessage(desktop.name)
     }
@@ -249,7 +251,7 @@ extension AppState {
             errorMessage = error.localizedDescription
             return
         }
-        companionOutboxCount = outbox.count
+        countOutbox()
         await drainOutbox()
     }
 
@@ -270,7 +272,7 @@ extension AppState {
         companionDraining = true
         defer {
             companionDraining = false
-            companionOutboxCount = outbox.count
+            countOutbox()
         }
         var tried: Set<String> = []
         var pages = 0
@@ -279,7 +281,7 @@ extension AppState {
             guard item.desktopId == desktop.id else { continue }
             if item.inSyncFolder, let folder = openSyncFolder(), !syncFolder(folder, holds: item.id) {
                 outbox.markSent(item.id)
-                companionOutboxCount = outbox.count
+                countOutbox()
                 continue
             }
             if item.viaSyncFolder, sendThroughSyncFolder(itemId: item.id) { continue }
@@ -302,7 +304,7 @@ extension AppState {
                 }
                 outbox.markSent(item.id)
                 pages += response.pageCount
-                companionOutboxCount = outbox.count
+                countOutbox()
             } catch {
                 outbox.markFailed(item.id, error: error.localizedDescription)
                 switch error as? CompanionClientError {
@@ -338,9 +340,10 @@ extension AppState {
         return companionStore?.syncKey(for: desktop) != nil
     }
 
-    /// The documents waiting in the outbox that are in the sync folder, for the desktop to take from there.
+    /// The documents waiting in the outbox for the paired desktop that are in the sync folder, for the desktop
+    /// to take from there.
     public var companionInSyncFolderCount: Int {
-        companionOutbox?.items.filter(\.inSyncFolder).count ?? 0
+        companionOutbox?.items.filter { $0.inSyncFolder && isForPairedDesktop($0) }.count ?? 0
     }
 
     /// Keeps `bookmark` (made by the shell of the folder picked in My computer, in iCloud Drive or
@@ -435,13 +438,23 @@ extension AppState {
         companionPull = nil
     }
 
-    /// Removes the documents waiting to be sent, unsent.
+    /// Removes the documents waiting to be sent to the paired desktop (all of them while none is paired),
+    /// unsent.
     public func clearOutbox() {
         guard let outbox = companionOutbox else { return }
-        for item in outbox.items {
+        for item in outbox.items where isForPairedDesktop(item) {
             outbox.remove(item.id)
         }
-        companionOutboxCount = outbox.count
+        countOutbox()
+    }
+
+    /// Removes the documents waiting for a desktop no longer paired while another is, unsent.
+    public func clearOtherOutbox() {
+        guard let outbox = companionOutbox else { return }
+        for item in outbox.items where !isForPairedDesktop(item) {
+            outbox.remove(item.id)
+        }
+        countOutbox()
     }
 
     /// The desktop with this id was found on the network (its DNS-SD service, TXT `id`) at `addresses`
@@ -535,6 +548,20 @@ extension AppState {
         let client = CompanionClient(desktop: desktop, secret: secret, protocolClasses: companionProtocolClasses)
         companionClient = client
         return client
+    }
+
+    /// Whether `item` waits for the paired desktop; while none is paired, every one does.
+    private func isForPairedDesktop(_ item: PhoneOutboxItem) -> Bool {
+        guard let desktop = companionDesktop else { return true }
+        return item.desktopId == desktop.id
+    }
+
+    /// Counts what waits in the outbox for the paired desktop, and apart what waits for another.
+    private func countOutbox() {
+        let items = companionOutbox?.items ?? []
+        let waiting = items.filter { isForPairedDesktop($0) }.count
+        companionOutboxCount = waiting
+        companionOtherOutboxCount = items.count - waiting
     }
 
     /// `desktop` did not answer: what waits for it goes through the sync folder when it handed out a sync

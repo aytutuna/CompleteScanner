@@ -301,7 +301,8 @@ final class AppStateCompanionTests: XCTestCase {
         await state.drainOutbox()
 
         XCTAssertTrue(fake.requests.filter { $0.method == "PUT" }.isEmpty)
-        XCTAssertEqual(state.companionOutboxCount, 1)
+        XCTAssertEqual(state.companionOutboxCount, 0)
+        XCTAssertEqual(state.companionOtherOutboxCount, 1)
     }
 
     @MainActor
@@ -324,6 +325,82 @@ final class AppStateCompanionTests: XCTestCase {
         }
         XCTAssertEqual(packages, [])
         XCTAssertEqual(state.scannedPages.count, 1)
+    }
+
+    @MainActor
+    func test_clearOutbox_keepsWhatWaitsForAnotherDesktop_clearOtherOutboxRemovesIt() async throws {
+        let fake = CompanionFakeDesktop()
+        let state = try await makeState(pages: 1)
+        try await pair(state, with: fake)
+        let outbox = try XCTUnwrap(state.companionOutbox)
+        let file = folder.appendingPathComponent("For another.lsdoc")
+        try Data("package".utf8).write(to: file)
+        let other = try outbox.enqueue(file, target: .new, desktopId: "desk-0002-other")
+        fake.downHosts = [CompanionLink.address]
+        await state.sendQueueToDesktop(target: .new)
+        XCTAssertEqual(state.companionOutboxCount, 1)
+        XCTAssertEqual(state.companionOtherOutboxCount, 1)
+
+        state.clearOutbox()
+
+        XCTAssertEqual(state.companionOutboxCount, 0)
+        XCTAssertEqual(state.companionOtherOutboxCount, 1)
+        XCTAssertEqual(outbox.items.map(\.id), [other.id])
+
+        await state.sendQueueToDesktop(target: .new)
+        state.clearOtherOutbox()
+
+        XCTAssertEqual(state.companionOutboxCount, 1)
+        XCTAssertEqual(state.companionOtherOutboxCount, 0)
+        XCTAssertEqual(outbox.items.map(\.desktopId), [CompanionLink.desktopId])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outbox.fileURL(of: other).path))
+    }
+
+    @MainActor
+    func test_pairDesktop_anotherDesktop_countsWhatWaitsForTheFirstApart_andSendsNoneOfIt() async throws {
+        let fake = CompanionFakeDesktop()
+        let state = try await makeState(pages: 1)
+        try await pairWithSyncKey(state, with: fake)
+        let cloud = folder.appendingPathComponent("iCloud Drive", isDirectory: true)
+        try FileManager.default.createDirectory(at: cloud, withIntermediateDirectories: true)
+        setSyncFolder(state, cloud)
+        fake.downHosts = [CompanionLink.address]
+        await state.sendQueueToDesktop(target: .new)
+        XCTAssertEqual(state.companionInSyncFolderCount, 1)
+        await state.unpairDesktop()
+
+        // With none paired it still waits to be sent, for that desktop.
+        XCTAssertEqual(state.companionOutboxCount, 1)
+        XCTAssertEqual(state.companionOtherOutboxCount, 0)
+
+        let laptopId = "desk-0002-laptop"
+        let laptop = CompanionFakeDesktop()
+        laptop.on("POST " + CompanionProtocol.pairPath,
+                  .json(200, PairResponse(desktopId: laptopId, desktopName: "Laptop", deviceSecret: CompanionVectors.secretText,
+                                          protocolVersion: CompanionProtocol.version).toJSON()))
+        let uri = try PairingUri(desktopId: laptopId, name: "Laptop", fingerprint: CompanionVectors.fingerprintText,
+                                 addresses: [CompanionLink.address], port: laptop.port,
+                                 token: CompanionVectors.tokenText).format()
+        await state.pairDesktop(uri: uri, phoneName: "Test phone")
+        XCTAssertNil(state.errorMessage)
+
+        XCTAssertEqual(state.companionOutboxCount, 0)
+        XCTAssertEqual(state.companionOtherOutboxCount, 1)
+        XCTAssertEqual(state.companionInSyncFolderCount, 0)
+
+        laptop.on("PUT " + CompanionProtocol.inboxPrefix + "*") { request in
+            let id = String(request.path.dropFirst(CompanionProtocol.inboxPrefix.count))
+            return .json(201, InboxResponse(packageId: id, pageCount: 1, duplicate: false).toJSON())
+        }
+        laptop.on("GET " + CompanionProtocol.helloPath,
+                  .json(200, HelloResponse(desktopId: laptopId, desktopName: "Laptop", protocolVersion: CompanionProtocol.version,
+                                           queuedPages: 1, maxUploadBytes: CompanionProtocol.maxUploadBytes).toJSON()))
+        await state.sendQueueToDesktop(target: .new)
+
+        XCTAssertEqual(state.statusMessage, "1 page sent to Laptop.")
+        XCTAssertEqual(laptop.requests.filter { $0.method == "PUT" }.count, 1)
+        XCTAssertEqual(state.companionOutboxCount, 0)
+        XCTAssertEqual(state.companionOtherOutboxCount, 1)
     }
 
     @MainActor

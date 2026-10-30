@@ -428,8 +428,11 @@ public final class AppState: ObservableObject {
     /// The desktop this phone is paired with (AppState+Companion.swift); nil when there is none.
     @Published public internal(set) var companionDesktop: PairedDesktop?
     @Published public internal(set) var companionStatus = CompanionStatus.notPaired
-    /// Documents waiting in the outbox to be sent to the desktop.
+    /// Documents waiting in the outbox to be sent to the paired desktop; all of them while none is paired.
     @Published public internal(set) var companionOutboxCount = 0
+    /// Documents waiting in the outbox for a desktop no longer paired while another is: they wait for that one
+    /// to be paired again, or for `clearOtherOutbox`.
+    @Published public internal(set) var companionOtherOutboxCount = 0
     /// The status last said about documents sent, put in the cloud folder or received (`statusMessage` has it
     /// too): these come while the app may be idle, from a drain or the pull in the background, so a screen
     /// without a status line (the iPhone's camera mode) shows them. Nil until the first.
