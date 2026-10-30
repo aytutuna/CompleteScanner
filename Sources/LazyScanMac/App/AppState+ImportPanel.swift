@@ -40,12 +40,17 @@ extension AppState {
             errorMessage = Self.deviceBusyMessage
             return false
         }
+        // A folder per hand-over, so pictures named for the same second do not overwrite each other.
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("Continuity Camera", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let taken = Date()
         Task {
             var files: [URL] = []
-            for provider in providers {
-                if let file = await Self.pictureFile(provider, in: folder) { files.append(file) }
+            for (index, provider) in providers.enumerated() {
+                if let file = await Self.pictureFile(provider, number: index + 1, taken: taken, in: folder) {
+                    files.append(file)
+                }
             }
             // A scan may have started while the pictures came over.
             guard !isBusy else {
@@ -61,9 +66,19 @@ extension AppState {
     private static let deviceBusyMessage =
         "The picture from your iPhone or iPad was not added while another task was running. Import it again once it has finished."
 
-    private nonisolated static func pictureFile(_ provider: NSItemProvider, in folder: URL) async -> URL? {
+    /// The file's name is shown by the corner editor and in an error, so it is the provider's suggested
+    /// name or the time the picture came over, written like a screenshot's: "Picture 2026-10-29 at
+    /// 14.03.22.jpeg". Further pictures of a hand-over get " 2", " 3" before the extension.
+    private nonisolated static func pictureFile(_ provider: NSItemProvider, number: Int, taken: Date,
+                                                in folder: URL) async -> URL? {
         guard let type = provider.registeredContentTypes.first(where: { $0.conforms(to: .image) }) else { return nil }
-        let name = "Picture \(UUID().uuidString).\(type.preferredFilenameExtension ?? "jpg")"
+        let stamp = DateFormatter()
+        stamp.locale = Locale(identifier: "en_US_POSIX")
+        stamp.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        let base = provider.suggestedName.map { ($0 as NSString).deletingPathExtension }
+            ?? "Picture \(stamp.string(from: taken))"
+        let ext = type.preferredFilenameExtension ?? "jpg"
+        let name = number == 1 ? "\(base).\(ext)" : "\(base) \(number).\(ext)"
         return await withCheckedContinuation { continuation in
             _ = provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, _ in
                 guard let data else {
