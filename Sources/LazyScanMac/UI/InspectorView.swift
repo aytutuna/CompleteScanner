@@ -40,11 +40,6 @@ struct InspectorView: View {
                     actionArea
                 }
             }
-        .onChange(of: state.settings.intent) { _, newIntent in
-            if newIntent == .photo && state.settings.format == .pdf {
-                state.settings.format = .jpeg
-            }
-        }
         .alert("Save Preset", isPresented: $showSavePresetAlert) {
             TextField("Preset name", text: $newPresetName)
             Button("Save") { state.saveCurrentAsPreset(named: newPresetName) }
