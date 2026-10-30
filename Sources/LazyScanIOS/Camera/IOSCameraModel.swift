@@ -62,9 +62,11 @@ public protocol IOSCameraDriving: AnyObject {
 /// photo's shares; the scan screen hands it to the import (`IOSImportSession.importShot`). The automatic
 /// shutter (`autoShutter`, on unless turned off; remembered in `UserDefaults`) takes the photo itself when
 /// a live update says so (`LiveQuadUpdate.shouldCapture`: the page held still on a sharp, lit frame) and
-/// hands it to `onAutoShot`; a decision that comes while a photo cannot be taken (one being taken or read,
-/// `canTakePage` false) has the page judged again, so it is taken once it can be. After every photo the
-/// page in view counts as taken (`LiveQuadTracker.markCaptured`), so the next photo waits for the next page.
+/// hands it to `onAutoShot`; a decision that comes while a photo is being taken has the page judged again,
+/// and one that comes while the queue cannot take a page (`canTakePage` false: a photo being read, a save)
+/// stands without a photo until the screen calls `rearm()` once a photo can be taken, so the page is judged
+/// again then rather than over and over meanwhile. After every photo the page in view counts as taken
+/// (`LiveQuadTracker.markCaptured`), so the next photo waits for the next page.
 @MainActor
 public final class IOSCameraModel: ObservableObject {
     /// Whether the camera can be used here; nil until checked (and asked, the first time).
@@ -103,6 +105,9 @@ public final class IOSCameraModel: ObservableObject {
     private let center: NotificationCenter
     private let defaults: UserDefaults
     private var asked: Bool = false
+    /// The torch was turned on here (`toggleTorch`): lit again each time the session starts, until it is
+    /// turned off or the screen is left.
+    private var torchWanted: Bool = false
     /// The session is set up (the preview can show it).
     @Published private var prepared: Bool = false
     private var thermalObserver: NSObjectProtocol?
@@ -231,8 +236,14 @@ public final class IOSCameraModel: ObservableObject {
         apply(.ready(prepared))
     }
 
-    /// The screen is gone: the session stops and the page is forgotten.
+    /// The screen is gone: the session stops and the page is forgotten. The torch stays off when the screen
+    /// is back (from printer mode, the Library), unless the screen went while a cover rested the camera
+    /// (SwiftUI can take it away under a full-screen cover, the review or the corner editor): then it comes
+    /// back after the cover as after any other rest.
     public func disappear() {
+        if !lifecycle.isReviewing {
+            torchWanted = false
+        }
         apply(.hidden)
         stopObserving()
         tracker.reset()
@@ -248,6 +259,13 @@ public final class IOSCameraModel: ObservableObject {
         if on {
             tracker.rearm()
         }
+    }
+
+    /// A photo can be taken again (the screen's shutter is no longer dimmed): a page decided on while none
+    /// could be (`canTakePage` false) is judged afresh, so Auto takes it once it holds still; a page
+    /// photographed stays taken (`LiveQuadTracker.rearm`).
+    public func rearm() {
+        tracker.rearm()
     }
 
     /// Takes `event` in and starts or stops the session as `IOSCameraLifecycle` answers.
@@ -268,11 +286,13 @@ public final class IOSCameraModel: ObservableObject {
         }
     }
 
-    /// Turns the torch on or off.
+    /// Turns the torch on or off. Turned on, it is lit again each time the session starts after a rest (a
+    /// review, the corner editor, a sheet, the background), until it is turned off or the screen is left.
     public func toggleTorch() async {
         guard hasTorch, lifecycle.isLive else { return }
         let wanted: Bool = !torchOn
         torchOn = await driver.setTorch(wanted)
+        torchWanted = torchOn
     }
 
     /// Takes a photo: the shot with the live outline turned into the upright photo's shares (none for a
@@ -332,6 +352,14 @@ public final class IOSCameraModel: ObservableObject {
             }
         }
         driver.startRunning()
+        if torchWanted {
+            // The torch went out with the session. The driver keeps the order of its calls, so it is lit once
+            // the session runs; one that cannot light now (too warm) is tried again at the next start.
+            Task { @MainActor [weak self] in
+                guard let model = self, model.lifecycle.isLive else { return }
+                model.torchOn = await model.driver.setTorch(true)
+            }
+        }
     }
 
     private func stop() {
@@ -351,18 +379,20 @@ public final class IOSCameraModel: ObservableObject {
     }
 
     /// The live search says the page held still on a sharp, lit frame: the photo is taken and handed to
-    /// `onAutoShot`, when the automatic shutter is on; when a photo cannot be taken now, the page is judged
-    /// again.
+    /// `onAutoShot`, when the automatic shutter is on. While a photo is being taken the page is judged again;
+    /// while the queue cannot take one (`canTakePage`), the decision stands without a photo until `rearm()`.
     private func shootAutomatically() {
         guard autoShutter, let deliver = onAutoShot else { return }
         var free: Bool = true
         if let check = canTakePage {
             free = check()
         }
-        guard canShoot, free else {
+        guard canShoot else {
             tracker.reset()
             return
         }
+        // Judged again now, the page would be decided on again every 0.6 s for as long as it waits.
+        guard free else { return }
         Task { @MainActor [weak self] in
             guard let model = self else { return }
             if let shot = await model.shoot() {

@@ -12,10 +12,11 @@ import XCTest
 // photos are (`IOSCameraLens`); when the session runs (`IOSCameraLifecycle`, driven by fake events);
 // the screen's model (`IOSCameraModel`) with a stand-in session: no camera, access asked once and a
 // denial leading to Settings, the session started and stopped by the app going to the background, heat,
-// interruptions and the corner editor, the torch, and the shutter with the live outline turned into the
-// photo; the automatic shutter (frames pushed one by one: a page held still on sharp, lit frames is
-// taken once and handed over; blurred or dark frames, Auto turned off, or a photo that cannot be taken
-// yet take nothing; a failed photo is said for a while and the page taken again; the setting is
+// interruptions and the corner editor, the torch (lit again after a rest), and the shutter with the live
+// outline turned into the photo; the automatic shutter (frames pushed one by one: a page held still on
+// sharp, lit frames is taken once and handed over; blurred or dark frames, Auto turned off, or a photo
+// that cannot be taken yet take nothing, the last until the page is re-armed; a failed photo is said for
+// a while and the page taken again; the setting is
 // remembered; the wait line said to VoiceOver once per wait,
 // `IOSWaitAnnouncer`); then the shutter's photo from a fixture still through
 // the corner editor into the queue with its focal length (`IOSImportSession.importShot`), in words of
@@ -36,6 +37,7 @@ final class FakeCameraDriver: IOSCameraDriving {
     private(set) var stops: Int = 0
     private(set) var photos: Int = 0
     private(set) var torch: Bool = false
+    private(set) var torchCalls: [Bool] = []
 
     func prepare() async -> Bool {
         prepares += 1
@@ -52,6 +54,7 @@ final class FakeCameraDriver: IOSCameraDriving {
     }
 
     func setTorch(_ on: Bool) async -> Bool {
+        torchCalls.append(on)
         torch = on
         return on
     }
@@ -718,6 +721,46 @@ final class IOSCameraTests: XCTestCase {
     }
 
     @MainActor
+    func test_theTorchTurnedOn_isLitAgainAfterARest_butNotAfterTheScreenIsLeft() async throws {
+        let driver = FakeCameraDriver()
+        let model: IOSCameraModel = makeModel(driver, access: FakeCameraAccess(status: .authorized, grants: true),
+                                              hasCamera: true, center: NotificationCenter())
+        await model.appear()
+        await model.toggleTorch()
+        XCTAssertEqual(driver.torchCalls, [true])
+        XCTAssertTrue(model.torchOn)
+        // A review, the corner editor or a sheet rests the camera: out meanwhile, lit again after it.
+        model.apply(IOSCameraEvent.reviewStarted)
+        XCTAssertFalse(model.torchOn)
+        model.apply(IOSCameraEvent.reviewEnded)
+        try await ImportTestSupport.waitUntil(timeout: 10) { model.torchOn }
+        XCTAssertEqual(driver.torchCalls, [true, true])
+        XCTAssertTrue(driver.torch)
+        // A full-screen cover can take the screen away while the camera rests: lit again after it all the same.
+        model.apply(IOSCameraEvent.reviewStarted)
+        model.disappear()
+        model.apply(IOSCameraEvent.reviewEnded)
+        await model.appear()
+        try await ImportTestSupport.waitUntil(timeout: 10) { model.torchOn }
+        XCTAssertEqual(driver.torchCalls, [true, true, true])
+        // Camera mode left (printer mode, the Library) and opened again: it stays off.
+        model.disappear()
+        await model.appear()
+        try await settle()
+        XCTAssertFalse(model.torchOn)
+        XCTAssertEqual(driver.torchCalls, [true, true, true])
+        // Turned off by hand: off after a rest too.
+        await model.toggleTorch()
+        await model.toggleTorch()
+        model.apply(IOSCameraEvent.reviewStarted)
+        model.apply(IOSCameraEvent.reviewEnded)
+        try await settle()
+        XCTAssertFalse(model.torchOn)
+        XCTAssertEqual(driver.torchCalls, [true, true, true, true, false])
+        model.disappear()
+    }
+
+    @MainActor
     func test_theShutter_takesAPhoto_withTheLiveOutlineTurnedIntoThePhoto() async throws {
         let driver = FakeCameraDriver()
         driver.frameSource = FixtureFrameSource(stillFrames())
@@ -864,7 +907,7 @@ final class IOSCameraTests: XCTestCase {
     }
 
     @MainActor
-    func test_aDecisionThatCannotBeTakenNow_hasThePageJudgedAgain() async throws {
+    func test_aDecisionThatCannotBeTakenNow_standsUntilAPhotoCanBe_thenThePageIsJudgedAgain() async throws {
         let driver = FakeCameraDriver()
         let source = ManualFrameSource()
         driver.frameSource = source
@@ -875,14 +918,21 @@ final class IOSCameraTests: XCTestCase {
         var free: Bool = false
         model.canTakePage = { () -> Bool in free }
         await model.appear()
-        // A photo is still being read: the decision is not acted on…
+        // A photo is still being read (or a save runs): the decision is not acted on…
         source.push(LiveFrames.frame(), from: 0, through: 14)
         try await settle()
         XCTAssertEqual(log.shots.count, 0)
         XCTAssertEqual(driver.photos, 0)
-        // …and the page is taken once it can be, after holding still again.
+        // …and it stands rather than having the page judged over and over; the queue being free again changes
+        // nothing by itself…
         free = true
         source.push(LiveFrames.frame(), from: 15, through: 30)
+        try await settle()
+        XCTAssertEqual(driver.photos, 0)
+        XCTAssertEqual(model.live?.state, CaptureState.captured)
+        // …until the screen re-arms it as its shutter can be pressed again: taken once it holds still again.
+        model.rearm()
+        source.push(LiveFrames.frame(), from: 31, through: 46)
         try await ImportTestSupport.waitUntil(timeout: 30) { log.shots.count == 1 }
         XCTAssertEqual(driver.photos, 1)
         model.disappear()

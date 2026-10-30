@@ -313,9 +313,10 @@ public final class LiveQuadTracker: @unchecked Sendable {
         lock.unlock()
     }
 
-    /// The automatic shutter was turned on: a page `CaptureStability` counted as taken while no photo was
-    /// taken of it (the shutter was off when it decided) is judged afresh (as `reset()`), so it is taken once
-    /// it holds still; a page photographed (`markCaptured()`) stays taken, and nothing else changes.
+    /// The automatic shutter was turned on, or a photo can be taken again: a page `CaptureStability` counted
+    /// as taken while no photo was taken of it (the shutter was off when it decided, or no photo could be
+    /// taken then) is judged afresh (as `reset()`), so it is taken once it holds still; a page photographed
+    /// (`markCaptured()`) stays taken, and nothing else changes.
     public func rearm() {
         lock.lock()
         let untaken: Bool = stability.state == .captured && !photographed

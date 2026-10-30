@@ -105,6 +105,12 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
         .onChange(of: covered) { (_: Bool, rests: Bool) in
             model.apply(rests ? IOSCameraEvent.reviewStarted : IOSCameraEvent.reviewEnded)
         }
+        .onChange(of: canShoot) { (_: Bool, can: Bool) in
+            // A page Auto decided on while no photo could be taken (an import, a save) is judged again now.
+            if can {
+                model.rearm()
+            }
+        }
         .onChange(of: waitCue) { (_: IOSWaitCue, cue: IOSWaitCue) in
             // Spoken once per wait, when the line is first shown, so a VoiceOver user knows why nothing is
             // taken yet without hearing it again each time a frame flips it.
@@ -317,8 +323,8 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
     }
 
     /// The one line at the viewfinder's top: the glare hint for the ID card's back, why a page held still
-    /// is not taken yet, that it is about to be, else the task's camera line (none under the ID card's
-    /// guide, which says the side itself).
+    /// is not taken yet, that it is about to be (these two only while a photo can be taken), else the task's
+    /// camera line (none under the ID card's guide, which says the side itself).
     private var statusLine: CameraStatus? {
         if let glare = glareLine {
             return CameraStatus(text: glare, hint: nil, identifier: "camera.glare")
@@ -326,7 +332,7 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
         if let reason = waitLine {
             return CameraStatus(text: reason, hint: nil, identifier: "camera.wait")
         }
-        if model.autoShutter && model.live?.state == CaptureState.steadying {
+        if model.autoShutter && canShoot && model.live?.state == CaptureState.steadying {
             return CameraStatus(text: IOSCameraText.pageFound, hint: nil, identifier: "camera.found")
         }
         guard cardPrompt == nil, let line = taskLine else { return nil }
@@ -351,9 +357,11 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
         return IOSIdCardGuide.glareLine(stepID: state.taskFlow?.current?.id, frontNote: state.idCardFrontNote)
     }
 
-    /// Why the page held still is not taken yet (a blurred or dark frame), while the automatic shutter waits.
+    /// Why the page held still is not taken yet (a blurred or dark frame), while the automatic shutter waits
+    /// and a photo can be taken.
     private var waitLine: String? {
-        guard model.autoShutter, let update = model.live, update.state == CaptureState.steadying else { return nil }
+        guard model.autoShutter, canShoot, let update = model.live,
+              update.state == CaptureState.steadying else { return nil }
         return IOSCameraText.waitReason(update.quality)
     }
 
@@ -425,9 +433,11 @@ struct CameraScreen<Notices: View, SaveControls: View>: View {
         .accessibilityIdentifier("camera.shutter")
     }
 
-    /// How far the page is through the steady time, for the ring around the shutter (Auto on only).
+    /// How far the page is through the steady time, for the ring around the shutter (Auto on, while a photo
+    /// can be taken).
     private var ringProgress: CGFloat {
-        guard model.autoShutter, let update = model.live, update.state == CaptureState.steadying else { return 0 }
+        guard model.autoShutter, canShoot, let update = model.live,
+              update.state == CaptureState.steadying else { return 0 }
         return CGFloat(update.progress)
     }
 
