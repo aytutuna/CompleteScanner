@@ -69,7 +69,8 @@ public struct IOSRootView: View {
         self.launchTask = launchTask
     }
 
-    public var body: some View {
+    /// Kept apart from `body` so the compiler can type-check each in time.
+    private var layout: some View {
         Group {
             if IOSLayout.usesSidebar(sizeClass, pad: isPad) {
                 sidebarLayout
@@ -112,6 +113,10 @@ public struct IOSRootView: View {
             }
             followMode()
         }
+    }
+
+    public var body: some View {
+        layout
         .environmentObject(importer)
         .task {
             startOnce()
