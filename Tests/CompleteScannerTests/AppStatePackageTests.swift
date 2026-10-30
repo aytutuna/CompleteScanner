@@ -226,7 +226,7 @@ final class AppStatePackageTests: XCTestCase {
         await state.openPackage(at: url)
         XCTAssertNil(state.pendingPackage)
         XCTAssertEqual(state.errorMessage,
-                       "This document was made by a newer version of CompleteScanner (package format 2). Update CompleteScanner to open it.")
+                       "This document was made by a newer version of Lazy Scan (package format 2). Update Lazy Scan to open it.")
     }
 
     @MainActor

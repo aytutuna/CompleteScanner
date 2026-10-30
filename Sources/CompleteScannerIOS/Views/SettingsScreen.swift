@@ -823,7 +823,7 @@ struct AboutScreen: View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("CompleteScanner")
+                    Text("Lazy Scan")
                         .font(.headline)
                     Text(IOSSettingsText.version(info))
                         .font(.subheadline)

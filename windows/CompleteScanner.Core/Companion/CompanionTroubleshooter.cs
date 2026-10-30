@@ -64,7 +64,7 @@ public static class CompanionTroubleshooter
             CompanionListenState.Offline => "Not connected to a network.",
             CompanionListenState.NoTrustedNetwork => $"Not receiving from phones on {JoinNames(untrusted)}.",
             CompanionListenState.Failed => "Could not start receiving from phones.",
-            CompanionListenState.Elsewhere => "Another CompleteScanner window receives from phones.",
+            CompanionListenState.Elsewhere => "Another Lazy Scan window receives from phones.",
             _ => "",
         };
     }
@@ -84,9 +84,9 @@ public static class CompanionTroubleshooter
     private static TroubleshootCheck? ListenCheck(CompanionSnapshot snapshot) => snapshot.Listen switch
     {
         CompanionListenState.Failed => new TroubleshootCheck(
-            "phoneListening", CheckStatus.Problem, "CompleteScanner could not start receiving",
+            "phoneListening", CheckStatus.Problem, "Lazy Scan could not start receiving",
             JoinSentences(snapshot.ListenError,
-                          "Close other copies of CompleteScanner, then select Refresh. Restarting the PC also helps."),
+                          "Close other copies of Lazy Scan, then select Refresh. Restarting the PC also helps."),
             [TroubleshootAction.Refresh]),
         CompanionListenState.Offline => new TroubleshootCheck(
             "phoneListening", CheckStatus.Problem, "Not connected to a network",
@@ -94,12 +94,12 @@ public static class CompanionTroubleshooter
             + "or to your phone's hotspot.",
             [TroubleshootAction.OpenNetworkSettings, TroubleshootAction.Refresh]),
         CompanionListenState.Elsewhere => new TroubleshootCheck(
-            "phoneListening", CheckStatus.Warning, "Another CompleteScanner window receives from phones",
-            "Documents from phones go to the CompleteScanner window that was opened first. Close it to receive here.",
+            "phoneListening", CheckStatus.Warning, "Another Lazy Scan window receives from phones",
+            "Documents from phones go to the Lazy Scan window that was opened first. Close it to receive here.",
             [TroubleshootAction.Refresh]),
         CompanionListenState.Off when !snapshot.PairingOpen => new TroubleshootCheck(
             "phoneListening", CheckStatus.Tip, "No phone is paired",
-            "Choose Pair a phone and scan the code with CompleteScanner on your phone. Until a phone is paired, "
+            "Choose Pair a phone and scan the code with Lazy Scan on your phone. Until a phone is paired, "
             + "this PC does not listen for phones.",
             []),
         CompanionListenState.Listening => new TroubleshootCheck(
@@ -130,7 +130,7 @@ public static class CompanionTroubleshooter
             _ => new TroubleshootCheck(
                 id, CheckStatus.Warning, $"Not receiving on {name}",
                 $"Windows treats {name} as {(network.Category == CompanionNetworkCategory.Domain ? "a work" : "a public")} "
-                + "network, so CompleteScanner does not listen for phones there. If it is your home network, set it to "
+                + "network, so Lazy Scan does not listen for phones there. If it is your home network, set it to "
                 + "Private in Windows network settings. On a network you trust but cannot change, such as your school's "
                 + "Wi-Fi, turn on Allow receiving on this network.",
                 [TroubleshootAction.OpenNetworkSettings]),
@@ -143,11 +143,11 @@ public static class CompanionTroubleshooter
         switch (snapshot.Firewall)
         {
             case CompanionFirewallVerdict.Blocked:
-                string rules = snapshot.BlockingRules.Count == 0 ? "the rules for CompleteScanner"
+                string rules = snapshot.BlockingRules.Count == 0 ? "the rules for Lazy Scan"
                     : string.Join(", ", snapshot.BlockingRules.Select(r => $"\"{r}\""));
                 return new TroubleshootCheck(
-                    "phoneFirewall", CheckStatus.Problem, "Windows Firewall blocks CompleteScanner",
-                    "A Windows Firewall rule stops phones from reaching CompleteScanner on this network. This happens "
+                    "phoneFirewall", CheckStatus.Problem, "Windows Firewall blocks Lazy Scan",
+                    "A Windows Firewall rule stops phones from reaching Lazy Scan on this network. This happens "
                     + "when the firewall's question was cancelled or the network type was not ticked. Someone with "
                     + "administrator rights can open Windows Defender Firewall with Advanced Security (wf.msc), select "
                     + $"Inbound Rules and delete {rules} that block it. Windows then asks again.",
@@ -157,13 +157,13 @@ public static class CompanionTroubleshooter
                                                                  && n.Network.Category != CompanionNetworkCategory.Private);
                 return new TroubleshootCheck(
                     "phoneFirewall", CheckStatus.Tip, "Windows Firewall will ask once",
-                    "When CompleteScanner starts receiving, Windows Firewall asks whether to allow it. Choose Allow"
+                    "When Lazy Scan starts receiving, Windows Firewall asks whether to allow it. Choose Allow"
                     + (approvedPublic ? ", with Public networks ticked for the networks you allowed that Windows treats as public" : "")
                     + ". Cancel blocks phones until the rule it makes is removed.",
                     []);
             case CompanionFirewallVerdict.Allowed:
                 return new TroubleshootCheck(
-                    "phoneFirewall", CheckStatus.Ok, "Windows Firewall allows CompleteScanner",
+                    "phoneFirewall", CheckStatus.Ok, "Windows Firewall allows Lazy Scan",
                     "Phones on the networks you receive on can reach this PC.", []);
             default:
                 return null;

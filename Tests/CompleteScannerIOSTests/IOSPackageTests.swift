@@ -40,7 +40,7 @@ final class IOSPackageTests: XCTestCase {
         XCTAssertFalse(IOSShell.isPackage(URL(fileURLWithPath: "/tmp/photo.jpg")))
         XCTAssertFalse(IOSShell.isPackage(URL(fileURLWithPath: "/tmp/csdoc")))
         XCTAssertEqual(IOSShell.packageType.identifier, "com.completescanner.package")
-        XCTAssertEqual(IOSShell.sharePackageLabel, "Share as CompleteScanner document")
+        XCTAssertEqual(IOSShell.sharePackageLabel, "Share as Lazy Scan document")
     }
 
     @MainActor

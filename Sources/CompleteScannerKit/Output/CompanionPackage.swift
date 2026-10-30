@@ -470,14 +470,14 @@ public enum CompanionPackage {
         }
     }
 
-    public static let notPackageMessage = "This file is not a CompleteScanner document."
+    public static let notPackageMessage = "This file is not a Lazy Scan document."
     public static let noPagesMessage = "This document has no pages."
     public static var tooManyPagesMessage: String { "This document has more than \(maxPages) pages." }
     public static let damagedManifestMessage = "This document cannot be opened: its list of pages is damaged."
 
-    /// "This document was made by a newer version of CompleteScanner (package format 2). Update CompleteScanner to open it."
+    /// "This document was made by a newer version of Lazy Scan (package format 2). Update Lazy Scan to open it."
     public static func newerVersionMessage(_ version: Int) -> String {
-        "This document was made by a newer version of CompleteScanner (package format \(version)). Update CompleteScanner to open it."
+        "This document was made by a newer version of Lazy Scan (package format \(version)). Update Lazy Scan to open it."
     }
 
     /// "Page 3's picture", "Page 3's original picture".
@@ -592,7 +592,7 @@ public enum CompanionPackage {
         let data = try reader.read(entry)
         if dto.sha256.lowercased() != sha256Hex(data) { throw damaged }
         let unsupported = CompanionPackageError(
-            .unsupportedImage, "\(subject) is in a format this version of CompleteScanner cannot read.")
+            .unsupportedImage, "\(subject) is in a format this version of Lazy Scan cannot read.")
         guard let format = sniff(data) else { throw unsupported }
         if let named = dto.format, CompanionImageFormat(rawValue: named) != format { throw unsupported }
         return CompanionImage(data: data, format: format, pixelWidth: max(Int(dto.pixelWidth), 0),

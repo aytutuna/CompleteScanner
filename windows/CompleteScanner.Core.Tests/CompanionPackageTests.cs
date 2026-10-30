@@ -288,14 +288,14 @@ public class CompanionPackageTests
     {
         string m = CompanionFixtures.MinimalManifest;
         AssertReadRefused(CompanionPackageErrorKind.NotPackage, ZipStore.Make([new("pages/0001.jpg", DocxFixtures.Jpeg)]),
-                          "This file is not a CompleteScanner document.");
+                          "This file is not a Lazy Scan document.");
         AssertReadRefused(CompanionPackageErrorKind.NotPackage, Package(m.Replace("\"format\":\"csdoc\"", "\"format\":\"other\"")));
         AssertReadRefused(CompanionPackageErrorKind.NotPackage, Package(m.Replace("\"format\":\"csdoc\",", "")));
         AssertReadRefused(CompanionPackageErrorKind.NotPackage, Package(m.Replace("\"formatVersion\":1", "\"formatVersion\":0")));
         AssertReadRefused(CompanionPackageErrorKind.NewerVersion, Package(m.Replace("\"formatVersion\":1", "\"formatVersion\":2")),
-                          "This document was made by a newer version of CompleteScanner (package format 2). Update CompleteScanner to open it.");
+                          "This document was made by a newer version of Lazy Scan (package format 2). Update Lazy Scan to open it.");
         AssertReadRefused(CompanionPackageErrorKind.NewerVersion, Package(m.Replace("\"formatVersion\":1", "\"formatVersion\":2.0")),
-                          "This document was made by a newer version of CompleteScanner (package format 2). Update CompleteScanner to open it.");
+                          "This document was made by a newer version of Lazy Scan (package format 2). Update Lazy Scan to open it.");
         AssertReadRefused(CompanionPackageErrorKind.NotPackage, Package(m.Replace("\"formatVersion\":1", "\"formatVersion\":1.5")));
         // Text that is not valid UTF-8 anywhere, in a known key's value or an unknown one's, damages
         // the whole manifest (as for JSONDecoder), not just that value.
@@ -339,7 +339,7 @@ public class CompanionPackageTests
         AssertReadRefused(CompanionPackageErrorKind.InvalidManifest, Package(m.Replace(page, page + "," + page)),
                           "This document cannot be opened: Page 2's picture is listed twice.");
 
-        string unsupported = "Page 1's picture is in a format this version of CompleteScanner cannot read.";
+        string unsupported = "Page 1's picture is in a format this version of Lazy Scan cannot read.";
         AssertReadRefused(CompanionPackageErrorKind.UnsupportedImage, Package(m.Replace("\"format\":\"jpeg\"", "\"format\":\"png\"")), unsupported);
         AssertReadRefused(CompanionPackageErrorKind.UnsupportedImage, Package(m.Replace("\"format\":\"jpeg\"", "\"format\":\"heic\"")), unsupported);
         byte[] text = "not a picture"u8.ToArray();

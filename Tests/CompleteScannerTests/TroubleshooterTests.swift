@@ -167,7 +167,7 @@ final class TroubleshooterTests: XCTestCase {
         XCTAssertEqual(Troubleshooter.overview(snapshot, checks: checks), "No scanner found \u{00B7} 2 problems, 2 warnings")
         XCTAssertEqual(check(checks, "localNetwork"), TroubleshootCheck(
             id: "localNetwork", status: .problem, title: "Local Network access is off",
-            detail: "Turn on Local Network for CompleteScanner in Settings.",
+            detail: "Turn on Local Network for Lazy Scan in Settings.",
             more: "Without it, the app can't find or reach scanners on your network. Scanners appear as soon as it's on. "
                 + "If it's on already, turn it off and on again.",
             actions: [.openAppSettings]))
@@ -351,7 +351,7 @@ final class TroubleshooterTests: XCTestCase {
         XCTAssertEqual(none.detail, "Some scanners need their maker's 64-bit TWAIN driver.")
         XCTAssertEqual(none.more, "Some scanners, often document scanners, work only through their maker's TWAIN driver, which "
                        + "also installs TWAIN. If yours is one of them, install the maker's 64-bit TWAIN driver, then "
-                       + "restart CompleteScanner.")
+                       + "restart Lazy Scan.")
         let some = check(Troubleshooter.diagnose(changed(healthyWindows()) { $0.twain = .notInstalled }), "twain")
         XCTAssertEqual(some.status, .tip)
     }
@@ -374,7 +374,7 @@ final class TroubleshooterTests: XCTestCase {
         XCTAssertEqual(one.title, "A TWAIN driver is 32-bit only")
         XCTAssertEqual(one.detail, "\"acme.ds\" is installed only for 32-bit apps.")
         let oneMore = [
-            "CompleteScanner reaches such drivers through its 32-bit TWAIN helper, which has not listed it yet. ",
+            "Lazy Scan reaches such drivers through its 32-bit TWAIN helper, which has not listed it yet. ",
             "A 64-bit (x64) driver from the maker, where there is one, works without the helper. Many scanners ",
             "also work through Windows Image Acquisition (WIA) once the maker's full driver package is installed.",
         ].joined()
@@ -383,22 +383,22 @@ final class TroubleshooterTests: XCTestCase {
         XCTAssertEqual(two.status, .problem)
         XCTAssertEqual(two.title, "2 TWAIN drivers are 32-bit only")
         XCTAssertEqual(two.detail, "\"acme.ds\", \"beta.ds\" are installed only for 32-bit apps.")
-        XCTAssertTrue(two.more.hasPrefix("CompleteScanner reaches such drivers through its 32-bit TWAIN helper, which has not listed them yet. "))
+        XCTAssertTrue(two.more.hasPrefix("Lazy Scan reaches such drivers through its 32-bit TWAIN helper, which has not listed them yet. "))
     }
 
     func test_thirtyTwoBitDrivers_sayWhyTheHelperDoesNotReachThem() {
         let snapshot = changed(troubledWindows()) {
             $0.thirtyTwoBitHelperProblem = " It cannot run: it needs the .NET 10 Desktop Runtime for 32-bit programs (x86), "
-                + "which is not installed. Install it, then restart CompleteScanner "
+                + "which is not installed. Install it, then restart Lazy Scan "
         }
         let found = check(Troubleshooter.diagnose(snapshot), "twain32")
         XCTAssertEqual(found.status, .problem)
         XCTAssertEqual(found.title, "A TWAIN driver is 32-bit only")
         XCTAssertEqual(found.detail, "\"acme.ds\" is installed only for 32-bit apps.")
         let expected = [
-            "CompleteScanner reaches such drivers through its 32-bit TWAIN helper. It cannot run: it needs the ",
+            "Lazy Scan reaches such drivers through its 32-bit TWAIN helper. It cannot run: it needs the ",
             ".NET 10 Desktop Runtime for 32-bit programs (x86), which is not installed. Install it, then restart ",
-            "CompleteScanner. A 64-bit (x64) driver from the maker, where there is one, works without the helper. ",
+            "Lazy Scan. A 64-bit (x64) driver from the maker, where there is one, works without the helper. ",
             "Many scanners also work through Windows Image Acquisition (WIA) once the maker's full driver package ",
             "is installed.",
         ].joined()
@@ -486,7 +486,7 @@ final class TroubleshooterTests: XCTestCase {
         XCTAssertEqual(check(checks, "usb").more, "macOS lists a USB scanner only when it can scan without a driver or its maker's driver is "
                        + "installed. If Image Capture doesn't show it either, macOS doesn't see it.")
         XCTAssertEqual(check(checks, "networkScanner").detail, "The Mac and the scanner must be on the same network.")
-        XCTAssertEqual(check(checks, "networkScanner").more, "If macOS asked whether CompleteScanner may find devices on your local network, "
+        XCTAssertEqual(check(checks, "networkScanner").more, "If macOS asked whether Lazy Scan may find devices on your local network, "
                        + "allow it in System Settings, Privacy & Security, Local Network. A network printer with a scanner added in "
                        + "Printers & Scanners also appears here.")
         XCTAssertEqual(check(checks, "networkScanner").actions, [.openScannerSettings])

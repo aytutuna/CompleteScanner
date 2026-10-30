@@ -261,7 +261,7 @@ public final class CompanionHost: @unchecked Sendable {
         if case .unusableIdentity? = failure as? CompanionServerError {
             return "The security certificate cannot be used to receive from phones."
         }
-        return "macOS did not let CompleteScanner listen for phones (\(failure.map(CompanionHost.message) ?? "unknown error"))."
+        return "macOS did not let Lazy Scan listen for phones (\(failure.map(CompanionHost.message) ?? "unknown error"))."
     }
 
     /// `address` scoped to the interface of its adapter, so the server answers only what comes in there.

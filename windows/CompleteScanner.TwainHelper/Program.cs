@@ -41,7 +41,7 @@ internal static class Program
         }
         if (string.IsNullOrEmpty(pipeName))
         {
-            Console.Error.WriteLine("CompleteScanner starts this helper itself when a scanner needs it.");
+            Console.Error.WriteLine("Lazy Scan starts this helper itself when a scanner needs it.");
             return 2;
         }
         WatchParent(parent);
@@ -54,7 +54,7 @@ internal static class Program
         }
         catch (Exception e) when (e is TimeoutException or IOException or UnauthorizedAccessException)
         {
-            Console.Error.WriteLine($"Could not connect to CompleteScanner: {e.Message}");
+            Console.Error.WriteLine($"Could not connect to Lazy Scan: {e.Message}");
             return 3;
         }
 

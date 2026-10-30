@@ -447,7 +447,7 @@ public static class Troubleshooter
     /// </summary>
     private static TroubleshootCheck LocalNetworkDeniedCheck() => new(
         "localNetwork", CheckStatus.Problem, "Local Network access is off",
-        "Turn on Local Network for CompleteScanner in Settings.",
+        "Turn on Local Network for Lazy Scan in Settings.",
         [TroubleshootAction.OpenAppSettings],
         "Without it, the app can't find or reach scanners on your network. Scanners appear as soon as it's on. "
         + "If it's on already, turn it off and on again.");
@@ -499,10 +499,10 @@ public static class Troubleshooter
             "Some scanners need their maker's 64-bit TWAIN driver.",
             [],
             "Some scanners, often document scanners, work only through their maker's TWAIN driver, which also "
-            + "installs TWAIN. If yours is one of them, install the maker's 64-bit TWAIN driver, then restart CompleteScanner."),
+            + "installs TWAIN. If yours is one of them, install the maker's 64-bit TWAIN driver, then restart Lazy Scan."),
         TwainStatus.Failed => new TroubleshootCheck(
             "twain", CheckStatus.Warning, "TWAIN did not start",
-            "Restart CompleteScanner; if that fails, reinstall the maker's TWAIN driver.",
+            "Restart Lazy Scan; if that fails, reinstall the maker's TWAIN driver.",
             [TroubleshootAction.Refresh],
             "TWAIN is installed but would not open, so scanners that use a TWAIN driver are not listed."),
         _ => null,
@@ -514,7 +514,7 @@ public static class Troubleshooter
         var names = drivers.Select(path => $"\"{path[(path.LastIndexOfAny(['/', '\\']) + 1)..]}\"").ToList();
         bool one = names.Count == 1;
         bool known = !string.IsNullOrWhiteSpace(helperProblem);
-        string reach = "CompleteScanner reaches such drivers through its 32-bit TWAIN helper"
+        string reach = "Lazy Scan reaches such drivers through its 32-bit TWAIN helper"
                        + (known ? "." : $", which has not listed {(one ? "it" : "them")} yet.");
         return new TroubleshootCheck(
             "twain32", CheckStatus.Problem,
@@ -602,7 +602,7 @@ public static class Troubleshooter
                 "networkScanner", CheckStatus.Tip, "Scanner on the network?",
                 "The Mac and the scanner must be on the same network.",
                 [TroubleshootAction.OpenScannerSettings],
-                "If macOS asked whether CompleteScanner may find devices on your local network, allow it in System "
+                "If macOS asked whether Lazy Scan may find devices on your local network, allow it in System "
                 + "Settings, Privacy & Security, Local Network. A network printer with a scanner added in Printers & "
                 + "Scanners also appears here.");
             yield return new TroubleshootCheck(

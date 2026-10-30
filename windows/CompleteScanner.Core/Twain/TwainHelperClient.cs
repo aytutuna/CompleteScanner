@@ -103,8 +103,8 @@ public sealed class TwainHelperConnection : IDisposable
         {
             Abort(StoppedMessage);
             throw ScanException.SessionFailed(
-                $"the 32-bit TWAIN helper does not match this version of CompleteScanner (protocol {hello.Version}, "
-                + $"{hello.ProcessBits}-bit). Reinstall CompleteScanner.");
+                $"the 32-bit TWAIN helper does not match this version of Lazy Scan (protocol {hello.Version}, "
+                + $"{hello.ProcessBits}-bit). Reinstall Lazy Scan.");
         }
     }
 

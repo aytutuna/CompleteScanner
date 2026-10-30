@@ -132,7 +132,7 @@ public enum CompanionTroubleshooter {
         case .offline: return "Not connected to a network."
         case .noTrustedNetwork: return "Not receiving from phones on \(joinNames(untrusted))."
         case .failed: return "Could not start receiving from phones."
-        case .elsewhere: return "Another CompleteScanner window receives from phones."
+        case .elsewhere: return "Another Lazy Scan window receives from phones."
         }
     }
 
@@ -151,9 +151,9 @@ public enum CompanionTroubleshooter {
         switch snapshot.listen {
         case .failed:
             return TroubleshootCheck(
-                id: "phoneListening", status: .problem, title: "CompleteScanner could not start receiving",
+                id: "phoneListening", status: .problem, title: "Lazy Scan could not start receiving",
                 detail: joinSentences(snapshot.listenError,
-                                      "Close other copies of CompleteScanner, then select Refresh. Restarting the \(computer) also helps."),
+                                      "Close other copies of Lazy Scan, then select Refresh. Restarting the \(computer) also helps."),
                 actions: [.refresh])
         case .offline:
             return TroubleshootCheck(
@@ -163,13 +163,13 @@ public enum CompanionTroubleshooter {
                 actions: [.openNetworkSettings, .refresh])
         case .elsewhere:
             return TroubleshootCheck(
-                id: "phoneListening", status: .warning, title: "Another CompleteScanner window receives from phones",
-                detail: "Documents from phones go to the CompleteScanner window that was opened first. Close it to receive here.",
+                id: "phoneListening", status: .warning, title: "Another Lazy Scan window receives from phones",
+                detail: "Documents from phones go to the Lazy Scan window that was opened first. Close it to receive here.",
                 actions: [.refresh])
         case .off where !snapshot.pairingOpen:
             return TroubleshootCheck(
                 id: "phoneListening", status: .tip, title: "No phone is paired",
-                detail: "Choose Pair a phone and scan the code with CompleteScanner on your phone. Until a phone is paired, "
+                detail: "Choose Pair a phone and scan the code with Lazy Scan on your phone. Until a phone is paired, "
                     + "this \(computer) does not listen for phones.",
                 actions: [])
         case .listening:
@@ -203,14 +203,14 @@ public enum CompanionTroubleshooter {
             guard platform == .windows else {
                 return TroubleshootCheck(
                     id: id, status: .warning, title: "Not receiving on \(name)",
-                    detail: "CompleteScanner listens for phones only on networks you allow. If \(name) is a network you trust, "
+                    detail: "Lazy Scan listens for phones only on networks you allow. If \(name) is a network you trust, "
                         + "such as your home Wi-Fi, turn on Allow receiving on this network.",
                     actions: [])
             }
             return TroubleshootCheck(
                 id: id, status: .warning, title: "Not receiving on \(name)",
                 detail: "Windows treats \(name) as \(network.category == .domainNetwork ? "a work" : "a public") "
-                    + "network, so CompleteScanner does not listen for phones there. If it is your home network, set it to "
+                    + "network, so Lazy Scan does not listen for phones there. If it is your home network, set it to "
                     + "Private in Windows network settings. On a network you trust but cannot change, such as your school's "
                     + "Wi-Fi, turn on Allow receiving on this network.",
                 actions: [.openNetworkSettings])
@@ -221,7 +221,7 @@ public enum CompanionTroubleshooter {
         let wanted = snapshot.listen == .listening || snapshot.listen == .noTrustedNetwork
         switch snapshot.firewall {
         case .blocked:
-            var rules = "the rules for CompleteScanner"
+            var rules = "the rules for Lazy Scan"
             if !snapshot.blockingRules.isEmpty {
                 var quoted: [String] = []
                 for rule in snapshot.blockingRules {
@@ -230,8 +230,8 @@ public enum CompanionTroubleshooter {
                 rules = quoted.joined(separator: ", ")
             }
             return TroubleshootCheck(
-                id: "phoneFirewall", status: .problem, title: "Windows Firewall blocks CompleteScanner",
-                detail: "A Windows Firewall rule stops phones from reaching CompleteScanner on this network. This happens "
+                id: "phoneFirewall", status: .problem, title: "Windows Firewall blocks Lazy Scan",
+                detail: "A Windows Firewall rule stops phones from reaching Lazy Scan on this network. This happens "
                     + "when the firewall's question was cancelled or the network type was not ticked. Someone with "
                     + "administrator rights can open Windows Defender Firewall with Advanced Security (wf.msc), select "
                     + "Inbound Rules and delete \(rules) that block it. Windows then asks again.",
@@ -240,13 +240,13 @@ public enum CompanionTroubleshooter {
             let approvedPublic = snapshot.networks.contains { $0.trust == .approved && $0.network.category != .privateNetwork }
             return TroubleshootCheck(
                 id: "phoneFirewall", status: .tip, title: "Windows Firewall will ask once",
-                detail: "When CompleteScanner starts receiving, Windows Firewall asks whether to allow it. Choose Allow"
+                detail: "When Lazy Scan starts receiving, Windows Firewall asks whether to allow it. Choose Allow"
                     + (approvedPublic ? ", with Public networks ticked for the networks you allowed that Windows treats as public" : "")
                     + ". Cancel blocks phones until the rule it makes is removed.",
                 actions: [])
         case .allowed:
             return TroubleshootCheck(
-                id: "phoneFirewall", status: .ok, title: "Windows Firewall allows CompleteScanner",
+                id: "phoneFirewall", status: .ok, title: "Windows Firewall allows Lazy Scan",
                 detail: "Phones on the networks you receive on can reach this PC.", actions: [])
         default:
             return nil

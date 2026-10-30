@@ -19,7 +19,7 @@ import UIKit
 /// Troubleshoot when it is about a scanner; in the Settings sheet it opens Settings' own troubleshooter).
 /// It keeps the screen on while a network scanner's job runs, and keeps the selected scanner on the mode:
 /// in printer mode the remembered scanner once it is listed, else none, so no scanner's limits apply to
-/// the camera. Photos and PDFs opened in this app from another one ("Open in CompleteScanner") are
+/// the camera. Photos and PDFs opened in this app from another one ("Open in Lazy Scan") are
 /// imported: into the task set up when it takes photos (`IOSShell.takesPhotos`), else into Document to
 /// PDF; while an import runs they wait for it (`IOSImportSession`). A CompleteScanner document (`.csdoc`,
 /// I18) is not imported: the scan screen offers it on its banner. Leaving the scan screen stops an import
@@ -167,7 +167,7 @@ public struct IOSRootView: View {
         NavigationSplitView(columnVisibility: $columns) {
             IOSSidebar(picker: picker, scannerShown: showsScanner, detail: detail, onTask: pickTask,
                        onPresetApplied: openScanner, onDetail: showDetail, onSettings: openSettings)
-                .navigationTitle("CompleteScanner")
+                .navigationTitle("Lazy Scan")
         } detail: {
             NavigationStack {
                 splitDetail

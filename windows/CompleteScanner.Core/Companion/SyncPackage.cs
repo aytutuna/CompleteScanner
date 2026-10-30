@@ -110,8 +110,8 @@ public static class SyncPackage
     /// <summary>The file name a package is put in the folder under.</summary>
     public static string FileName(string packageId) => packageId + "." + FileExtension;
 
-    public const string NotASyncPackageMessage = "This file was not put in the cloud folder by CompleteScanner.";
-    public const string NewerVersionMessage = "This file was put in the cloud folder by a newer version of CompleteScanner.";
+    public const string NotASyncPackageMessage = "This file was not put in the cloud folder by Lazy Scan.";
+    public const string NewerVersionMessage = "This file was put in the cloud folder by a newer version of Lazy Scan.";
     public const string WrongKeyMessage = "This file was not put there by a phone paired with this computer, or it was changed.";
 
     /// <summary>The magic and header, the package id, a zero byte and the phone's id.</summary>

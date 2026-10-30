@@ -52,9 +52,9 @@ public struct PairingUri: Equatable, Sendable, CustomStringConvertible {
     /// The token's length in bytes.
     public static let tokenByteCount = 16
 
-    public static let notPairingCodeMessage = "This is not a CompleteScanner pairing code."
+    public static let notPairingCodeMessage = "This is not a Lazy Scan pairing code."
     public static let newerVersionMessage =
-        "This pairing code is from a newer version of CompleteScanner. Update the app on this phone, then scan it again."
+        "This pairing code is from a newer version of Lazy Scan. Update the app on this phone, then scan it again."
     public static let damagedMessage =
         "This pairing code could not be read. Show the code on the computer again and scan it once more."
 

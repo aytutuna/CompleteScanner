@@ -11,7 +11,7 @@ public enum CompanionText {
     public static let clientIsolationSyncFolderReason =
         "This network keeps devices apart (client isolation). Documents go to the cloud folder instead."
     public static let notPairedMessage =
-        "Pair this phone with a computer first: choose Pair a phone in CompleteScanner on the computer and scan its code."
+        "Pair this phone with a computer first: choose Pair a phone in Lazy Scan on the computer and scan its code."
     public static let outboxFullMessage =
         "\(PhoneOutbox.maxItems) documents are waiting to be sent already. Send them, or remove some first."
     public static let unreachableMessage = "The computer cannot be reached."

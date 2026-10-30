@@ -46,7 +46,7 @@
             <TextBlock x:Name="HeadlineText" Style="{StaticResource BodyStrongText}" TextWrapping="Wrap" Margin="0,8,0,0"
                        AutomationProperties.LiveSetting="Polite" />
             <TextBlock Style="{StaticResource SecondaryBodyText}" TextWrapping="Wrap" Margin="0,2,0,0"
-                       Text="Documents scanned with CompleteScanner on a paired phone are added to the page queue here. Nothing goes through the internet: the phone and this PC talk directly, encrypted, on networks you trust." />
+                       Text="Documents scanned with Lazy Scan on a paired phone are added to the page queue here. Nothing goes through the internet: the phone and this PC talk directly, encrypted, on networks you trust." />
         </StackPanel>
 
         <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
@@ -61,7 +61,7 @@
                 <Border x:Name="PairCard" Style="{StaticResource CardStyle}" Padding="16,12,16,12">
                     <StackPanel>
                         <TextBlock x:Name="PairIntro" Style="{StaticResource BodyText}" TextWrapping="Wrap"
-                                   Text="Open CompleteScanner on your phone, choose Pair a computer, and scan the code shown here. The code works once, for 5 minutes." />
+                                   Text="Open Lazy Scan on your phone, choose Pair a computer, and scan the code shown here. The code works once, for 5 minutes." />
                         <Button x:Name="PairButton" Content="Pair a phone" ui:Icon.Glyph="&#xE8EA;" HorizontalAlignment="Left"
                                 Margin="0,10,0,0" Style="{StaticResource AccentIconTextButtonStyle}" Click="Pair_Click" />
                         <StackPanel x:Name="PairingPanel" Visibility="Collapsed" Margin="0,8,0,0">

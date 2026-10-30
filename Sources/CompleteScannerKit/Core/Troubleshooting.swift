@@ -65,7 +65,7 @@ public enum ScannerProblems {
         case .communicationError:
             return "The connection to the scanner was interrupted. Check the cable or network, then try again."
         case .appSuspended:
-            return "The system suspended CompleteScanner in the background before the scan finished. Keep the app open while scanning, then scan again."
+            return "The system suspended Lazy Scan in the background before the scan finished. Keep the app open while scanning, then scan again."
         case .unknown:
             return "The scanner reported a problem. Check the scanner, then try again."
         }

@@ -276,12 +276,12 @@ public struct EsclCertificateError: Error, Equatable, LocalizedError, Sendable {
     public var message: String {
         switch verdict {
         case .changed:
-            return "The security certificate of \(deviceName) has changed since you trusted it, so CompleteScanner did not connect. "
+            return "The security certificate of \(deviceName) has changed since you trusted it, so Lazy Scan did not connect. "
                 + "A firmware update or a reset of the scanner can change it, but so can another device pretending to be your scanner."
         case .invalid:
-            return "\(deviceName) did not present a usable security certificate, so CompleteScanner did not connect."
+            return "\(deviceName) did not present a usable security certificate, so Lazy Scan did not connect."
         default:
-            return "\(deviceName) uses a security certificate that has not been trusted yet, so CompleteScanner did not connect."
+            return "\(deviceName) uses a security certificate that has not been trusted yet, so Lazy Scan did not connect."
         }
     }
 

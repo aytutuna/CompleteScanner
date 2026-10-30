@@ -476,7 +476,7 @@ public enum Troubleshooter {
     private static func localNetworkDeniedCheck() -> TroubleshootCheck {
         TroubleshootCheck(
             id: "localNetwork", status: .problem, title: "Local Network access is off",
-            detail: "Turn on Local Network for CompleteScanner in Settings.",
+            detail: "Turn on Local Network for Lazy Scan in Settings.",
             more: "Without it, the app can't find or reach scanners on your network. Scanners appear as soon as it's on. "
                 + "If it's on already, turn it off and on again.",
             actions: [.openAppSettings])
@@ -531,12 +531,12 @@ public enum Troubleshooter {
             return TroubleshootCheck(
                 id: "twain", status: snapshot.listedScannerCount == 0 ? .warning : .tip, title: "TWAIN is not installed",
                 detail: "Some scanners need their maker's 64-bit TWAIN driver.",
-                more: "Some scanners, often document scanners, work only through their maker's TWAIN driver, which also installs TWAIN. If yours is one of them, install the maker's 64-bit TWAIN driver, then restart CompleteScanner.",
+                more: "Some scanners, often document scanners, work only through their maker's TWAIN driver, which also installs TWAIN. If yours is one of them, install the maker's 64-bit TWAIN driver, then restart Lazy Scan.",
                 actions: [])
         case .failed:
             return TroubleshootCheck(
                 id: "twain", status: .warning, title: "TWAIN did not start",
-                detail: "Restart CompleteScanner; if that fails, reinstall the maker's TWAIN driver.",
+                detail: "Restart Lazy Scan; if that fails, reinstall the maker's TWAIN driver.",
                 more: "TWAIN is installed but would not open, so scanners that use a TWAIN driver are not listed.",
                 actions: [.refresh])
         case .unknown:
@@ -559,7 +559,7 @@ public enum Troubleshooter {
         let problem = (helperProblem ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let known = !problem.isEmpty
         let pronoun = one ? "it" : "them"
-        var reach = "CompleteScanner reaches such drivers through its 32-bit TWAIN helper"
+        var reach = "Lazy Scan reaches such drivers through its 32-bit TWAIN helper"
         reach += known ? "." : ", which has not listed \(pronoun) yet."
         let installed: String = names.joined(separator: ", ") + (one ? " is" : " are") + " installed only for 32-bit apps."
         return TroubleshootCheck(
@@ -644,7 +644,7 @@ public enum Troubleshooter {
             tips.append(TroubleshootCheck(
                 id: "networkScanner", status: .tip, title: "Scanner on the network?",
                 detail: "The Mac and the scanner must be on the same network.",
-                more: "If macOS asked whether CompleteScanner may find devices on your local network, allow it in System Settings, Privacy & Security, Local Network. A network printer with a scanner added in Printers & Scanners also appears here.",
+                more: "If macOS asked whether Lazy Scan may find devices on your local network, allow it in System Settings, Privacy & Security, Local Network. A network printer with a scanner added in Printers & Scanners also appears here.",
                 actions: [.openScannerSettings]))
             tips.append(TroubleshootCheck(
                 id: "sharing", status: .tip, title: "Shared by another Mac?",

@@ -37,7 +37,7 @@ public partial class CertificateTrustWindow : Window
               + "Windows cannot vouch for such certificates; that is normal for scanners.";
         AdviceText.Text = changed
             ? "Trust the new certificate only if you know why it changed. Otherwise choose Cancel and check the scanner."
-            : "Trust it if this is your scanner. CompleteScanner remembers the certificate and warns you if it ever changes.";
+            : "Trust it if this is your scanner. Lazy Scan remembers the certificate and warns you if it ever changes.";
 
         ScannerText.Text = name;
         AddressText.Text = certificate.Authority;

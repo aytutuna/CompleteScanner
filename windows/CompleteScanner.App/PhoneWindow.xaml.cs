@@ -106,7 +106,7 @@ public partial class PhoneWindow : Window
         if (_companion is null)
         {
             HeadlineText.Text = _viewModel.CompanionElsewhere
-                ? "Another CompleteScanner window receives from phones. Pair and manage phones there."
+                ? "Another Lazy Scan window receives from phones. Pair and manage phones there."
                 : $"The phone link could not start: {_viewModel.CompanionError}";
             PairButton.IsEnabled = false;
             ResetButton.IsEnabled = false;
@@ -207,7 +207,7 @@ public partial class PhoneWindow : Window
         {
             texts.Children.Add(new TextBlock
             {
-                Text = "The first time a phone connects here, Windows Firewall may ask about CompleteScanner: tick Public networks, then choose Allow.",
+                Text = "The first time a phone connects here, Windows Firewall may ask about Lazy Scan: tick Public networks, then choose Allow.",
                 Style = (Style)FindResource("CaptionText"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 4, 0, 0),

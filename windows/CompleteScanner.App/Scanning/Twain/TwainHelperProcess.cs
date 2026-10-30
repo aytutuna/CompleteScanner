@@ -73,7 +73,7 @@ internal sealed class TwainHelperProcess : IDisposable
     {
         lock (_gate)
         {
-            if (_disposed) throw ScanException.SessionFailed("CompleteScanner is closing.");
+            if (_disposed) throw ScanException.SessionFailed("Lazy Scan is closing.");
             if (_connection is { IsAlive: true } live) return live;
             EndProcess();
             if (_permanentFailure is { } failure) throw ScanException.DeviceUnavailable(failure);
@@ -162,8 +162,8 @@ internal sealed class TwainHelperProcess : IDisposable
         string path = _options.HelperPath;
         if (!File.Exists(path))
         {
-            _permanentFailure = $"the 32-bit TWAIN helper ({TwainHelperOptions.FileName}) is missing from CompleteScanner's "
-                                + "folder. Reinstall CompleteScanner.";
+            _permanentFailure = $"the 32-bit TWAIN helper ({TwainHelperOptions.FileName}) is missing from Lazy Scan's "
+                                + "folder. Reinstall Lazy Scan.";
             throw ScanException.DeviceUnavailable(_permanentFailure);
         }
         string pipeName = $"CompleteScanner.TwainHelper.{Environment.ProcessId}.{Guid.NewGuid():N}";
@@ -311,7 +311,7 @@ internal sealed class TwainHelperProcess : IDisposable
         if (IsRuntimeMissing(process, errors))
         {
             return "it needs the .NET 10 Desktop Runtime for 32-bit programs (x86), which is not installed. "
-                   + "Install it from https://dotnet.microsoft.com/download/dotnet/10.0, then restart CompleteScanner.";
+                   + "Install it from https://dotnet.microsoft.com/download/dotnet/10.0, then restart Lazy Scan.";
         }
         string code;
         try

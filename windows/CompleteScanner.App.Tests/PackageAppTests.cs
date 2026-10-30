@@ -100,7 +100,7 @@ public sealed class PackageAppTests : IDisposable
         string path = Write("Newer.csdoc", ZipStore.Make(entries));
         var e = Assert.Throws<CompanionPackageException>(() => PendingPackage.Read(path, PendingPackage.Decode));
         Assert.Equal(CompanionPackageErrorKind.NewerVersion, e.Kind);
-        Assert.Equal("This document was made by a newer version of CompleteScanner (package format 2). Update CompleteScanner to open it.",
+        Assert.Equal("This document was made by a newer version of Lazy Scan (package format 2). Update Lazy Scan to open it.",
                      e.Message);
     }
 

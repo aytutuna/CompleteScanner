@@ -112,7 +112,7 @@ public class TroubleshootingTests
         Assert.Equal(ScannerProblem.AppSuspended, Enum.GetValues<ScannerProblem>()[^1]);
         var stop = ScanStop.From(ScanException.ForProblem(ScannerProblem.AppSuspended));
         Assert.Equal(ScannerProblem.AppSuspended, stop.Problem);
-        Assert.Equal("Scanning stopped after 2 pages; they were kept. The system suspended CompleteScanner in the "
+        Assert.Equal("Scanning stopped after 2 pages; they were kept. The system suspended Lazy Scan in the "
                      + "background before the scan finished. Keep the app open while scanning, then scan again.",
                      stop.Message(2));
         Assert.Equal(new ProblemNotice("App suspended",

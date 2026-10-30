@@ -9,7 +9,7 @@ import Foundation
 /// The desktop's companion texts.
 public enum CompanionHostText {
     public static let elsewhereMessage =
-        "Another copy of CompleteScanner receives from phones. Pair and manage phones there."
+        "Another copy of Lazy Scan receives from phones. Pair and manage phones there."
 
     /// "The phone link could not start: …"
     public static func notStartedMessage(_ reason: String) -> String {
@@ -39,7 +39,7 @@ public enum CompanionHostText {
     /// The document could not be read now; it stays in the inbox.
     public static func notAddedMessage(_ phoneName: String, reason: String) -> String {
         "The document from \(phoneName) could not be added to the queue now (\(reason)). "
-            + "It is kept on this Mac and added the next time CompleteScanner starts."
+            + "It is kept on this Mac and added the next time Lazy Scan starts."
     }
 }
 

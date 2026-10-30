@@ -51,7 +51,7 @@ public static class ScannerProblems
         ScannerProblem.WarmingUp => "The scanner is warming up. Try again in a moment.",
         ScannerProblem.NeedsAttention => "The scanner needs attention. Check its display or control panel.",
         ScannerProblem.CommunicationError => "The connection to the scanner was interrupted. Check the cable or network, then try again.",
-        ScannerProblem.AppSuspended => "The system suspended CompleteScanner in the background before the scan finished. Keep the app open while scanning, then scan again.",
+        ScannerProblem.AppSuspended => "The system suspended Lazy Scan in the background before the scan finished. Keep the app open while scanning, then scan again.",
         _ => "The scanner reported a problem. Check the scanner, then try again.",
     };
 

@@ -465,14 +465,14 @@ public static class CompanionPackage
         }
     }
 
-    public static string NotPackageMessage => "This file is not a CompleteScanner document.";
+    public static string NotPackageMessage => "This file is not a Lazy Scan document.";
     public static string NoPagesMessage => "This document has no pages.";
     public static string TooManyPagesMessage => $"This document has more than {MaxPages} pages.";
     public static string DamagedManifestMessage => "This document cannot be opened: its list of pages is damaged.";
 
-    /// <summary>"This document was made by a newer version of CompleteScanner (package format 2). Update CompleteScanner to open it."</summary>
+    /// <summary>"This document was made by a newer version of Lazy Scan (package format 2). Update Lazy Scan to open it."</summary>
     public static string NewerVersionMessage(int version) =>
-        $"This document was made by a newer version of CompleteScanner (package format {version}). Update CompleteScanner to open it.";
+        $"This document was made by a newer version of Lazy Scan (package format {version}). Update Lazy Scan to open it.";
 
     /// <summary>"Page 3's picture", "Page 3's original picture".</summary>
     public static string Subject(int pageNumber, bool original) =>
@@ -607,7 +607,7 @@ public static class CompanionPackage
         {
             throw new CompanionPackageException(CompanionPackageErrorKind.ChecksumMismatch, damaged);
         }
-        string unsupported = $"{subject} is in a format this version of CompleteScanner cannot read.";
+        string unsupported = $"{subject} is in a format this version of Lazy Scan cannot read.";
         var format = Sniff(data) ?? throw new CompanionPackageException(CompanionPackageErrorKind.UnsupportedImage, unsupported);
         if (dto.Format is { } named)
         {

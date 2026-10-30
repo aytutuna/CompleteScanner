@@ -286,7 +286,7 @@ public sealed partial class AppViewModel
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 problem = $"The document from {phoneName} could not be added to the queue now ({e.Message.TrimEnd('.')}). "
-                          + "It is kept on this PC and added the next time CompleteScanner starts.";
+                          + "It is kept on this PC and added the next time Lazy Scan starts.";
                 StatusMessage = "Ready.";
                 return;
             }

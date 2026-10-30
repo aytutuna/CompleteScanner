@@ -37,7 +37,7 @@ struct PhoneView: View {
                 Text(headline(snapshot))
                     .font(.headline)
                     .padding(.top, 4)
-                Text("Documents scanned with CompleteScanner on a paired phone are added to the page queue here. "
+                Text("Documents scanned with Lazy Scan on a paired phone are added to the page queue here. "
                      + "Nothing goes through the internet: the phone and this Mac talk directly, encrypted, on networks you allow.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -175,7 +175,7 @@ struct PhoneView: View {
                 .accessibilityLabel("Allow receiving on \(name)")
                 .padding(.top, 4)
             if receiving {
-                Text("macOS may ask once whether CompleteScanner may find devices on local networks. Choose Allow, so phones can find this Mac.")
+                Text("macOS may ask once whether Lazy Scan may find devices on local networks. Choose Allow, so phones can find this Mac.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -204,7 +204,7 @@ struct PhoneView: View {
         let shown = codeShown(service)
         let title: String = shown ? "Show a new code" : "Pair a phone"
         return VStack(alignment: .leading, spacing: 10) {
-            Text("Open CompleteScanner on your phone, choose Pair a computer, and scan the code shown here. The code works once, for 5 minutes.")
+            Text("Open Lazy Scan on your phone, choose Pair a computer, and scan the code shown here. The code works once, for 5 minutes.")
                 .fixedSize(horizontal: false, vertical: true)
             Button(title) {
                 Task { await pair() }

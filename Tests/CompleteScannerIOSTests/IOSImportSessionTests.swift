@@ -168,7 +168,7 @@ final class IOSImportSessionTests: XCTestCase {
         }
         try await ImportTestSupport.waitUntil(timeout: 60) { importer.cornerRequest != nil }
         XCTAssertFalse(importer.canStop)
-        // A file opened in the app ("Open in CompleteScanner") while the editor waits: it waits too,
+        // A file opened in the app ("Open in Lazy Scan") while the editor waits: it waits too,
         // unread, and nothing is said yet; the editor in view now offers Stop.
         let url: URL = folder.appendingPathComponent("b.png")
         try data.write(to: url)

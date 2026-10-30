@@ -504,7 +504,7 @@ public enum IOSShell {
     public static let packageType: UTType = UTType(exportedAs: "com.completescanner.package", conformingTo: .data)
 
     /// The Save row's button that shares the queue as one `.csdoc` (`sharePackage`).
-    public static let sharePackageLabel = "Share as CompleteScanner document"
+    public static let sharePackageLabel = "Share as Lazy Scan document"
     /// The package banner's Open as new in a kind that keeps no pages: it switches to Document first.
     public static let openPackageInDocumentLabel = "Open in Document"
 
@@ -568,7 +568,7 @@ public enum IOSShell {
         FileManager.default.temporaryDirectory.appendingPathComponent("Shared documents", isDirectory: true)
     }
 
-    /// Share as CompleteScanner document: the queue written as one `.csdoc` in `packageShareFolder`
+    /// Share as Lazy Scan document: the queue written as one `.csdoc` in `packageShareFolder`
     /// (`AppState.exportPackage(to:)`, named as the next saved file would be), then the share sheet with
     /// it. Returns the file; nil when it could not be written, which the error alert says.
     @MainActor

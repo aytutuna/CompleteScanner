@@ -266,14 +266,14 @@ final class CompanionPackageTests: XCTestCase {
     func test_read_refusesWhatIsNotAPackage() {
         let m = CompanionFixtures.minimalManifest
         assertReadRefused(.notPackage, ZipStore.make([ZipStoreEntry(name: "pages/0001.jpg", data: DocxFixtures.jpeg)]),
-                          "This file is not a CompleteScanner document.")
+                          "This file is not a Lazy Scan document.")
         assertReadRefused(.notPackage, package(m.replacingOccurrences(of: "\"format\":\"csdoc\"", with: "\"format\":\"other\"")))
         assertReadRefused(.notPackage, package(m.replacingOccurrences(of: "\"format\":\"csdoc\",", with: "")))
         assertReadRefused(.notPackage, package(m.replacingOccurrences(of: "\"formatVersion\":1", with: "\"formatVersion\":0")))
         assertReadRefused(.newerVersion, package(m.replacingOccurrences(of: "\"formatVersion\":1", with: "\"formatVersion\":2")),
-                          "This document was made by a newer version of CompleteScanner (package format 2). Update CompleteScanner to open it.")
+                          "This document was made by a newer version of Lazy Scan (package format 2). Update Lazy Scan to open it.")
         assertReadRefused(.newerVersion, package(m.replacingOccurrences(of: "\"formatVersion\":1", with: "\"formatVersion\":2.0")),
-                          "This document was made by a newer version of CompleteScanner (package format 2). Update CompleteScanner to open it.")
+                          "This document was made by a newer version of Lazy Scan (package format 2). Update Lazy Scan to open it.")
         assertReadRefused(.notPackage, package(m.replacingOccurrences(of: "\"formatVersion\":1", with: "\"formatVersion\":1.5")))
         // Text that is not valid UTF-8 anywhere, in a known key's value or an unknown one's, damages
         // the whole manifest, not just that value.
@@ -315,7 +315,7 @@ final class CompanionPackageTests: XCTestCase {
         assertReadRefused(.invalidManifest, package(m.replacingOccurrences(of: page, with: page + "," + page)),
                           "This document cannot be opened: Page 2's picture is listed twice.")
 
-        let unsupported = "Page 1's picture is in a format this version of CompleteScanner cannot read."
+        let unsupported = "Page 1's picture is in a format this version of Lazy Scan cannot read."
         assertReadRefused(.unsupportedImage, package(m.replacingOccurrences(of: "\"format\":\"jpeg\"", with: "\"format\":\"png\"")), unsupported)
         assertReadRefused(.unsupportedImage, package(m.replacingOccurrences(of: "\"format\":\"jpeg\"", with: "\"format\":\"heic\"")), unsupported)
         let text = Data("not a picture".utf8)

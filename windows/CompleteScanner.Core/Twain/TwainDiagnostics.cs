@@ -122,14 +122,14 @@ public static class TwainDiagnostics
         TwainHelperStatus.Available when reachedAny => null,
         TwainHelperStatus.Available =>
             "It started, but its TWAIN Data Source Manager lists no driver it can use, which happens when a driver "
-            + "did not install completely. Reinstall the scanner maker's driver, then restart CompleteScanner.",
+            + "did not install completely. Reinstall the scanner maker's driver, then restart Lazy Scan.",
         TwainHelperStatus.NoDataSourceManager =>
             "It found no 32-bit TWAIN Data Source Manager (TWAINDSM.dll or twain_32.dll) to load the driver with. "
-            + "Reinstall the scanner maker's driver, then restart CompleteScanner.",
+            + "Reinstall the scanner maker's driver, then restart Lazy Scan.",
         TwainHelperStatus.Failed when !string.IsNullOrWhiteSpace(cannotRun) => $"It cannot run: {cannotRun.Trim()}",
         TwainHelperStatus.Failed =>
-            "It did not work this time, and CompleteScanner tries again on its own. If the scanner still does not "
-            + "appear, restart CompleteScanner.",
+            "It did not work this time, and Lazy Scan tries again on its own. If the scanner still does not "
+            + "appear, restart Lazy Scan.",
         _ => null,
     };
 

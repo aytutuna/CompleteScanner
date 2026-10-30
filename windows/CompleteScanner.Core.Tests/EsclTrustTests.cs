@@ -296,7 +296,7 @@ public sealed class EsclTrustTests : IDisposable
         Assert.Equal("192.168.1.20:443", rejection.Authority);
         Assert.Equal("CN=FakeScanner", rejection.Subject);
         Assert.Equal(EsclCertificates.Fingerprint(certificate), rejection.Fingerprint);
-        Assert.Equal("Fake MFP uses a security certificate that has not been trusted yet, so CompleteScanner did not connect.",
+        Assert.Equal("Fake MFP uses a security certificate that has not been trusted yet, so Lazy Scan did not connect.",
                      rejection.Message);
         Assert.Null(validator.TakeRejection()); // taken once
 

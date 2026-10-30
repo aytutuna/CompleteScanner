@@ -365,7 +365,7 @@ public class TwainHelperTests
         var snapshot = backend.AddStatus(new DiscoverySnapshot { ThirtyTwoBitOnlyDrivers = ["x.ds"] });
         Assert.Equal(["x.ds"], snapshot.ThirtyTwoBitOnlyDrivers);
         Assert.Equal("It cannot run: the 32-bit TWAIN helper (CompleteScanner.TwainHelper.exe) is missing from "
-                     + "CompleteScanner's folder. Reinstall CompleteScanner.", snapshot.ThirtyTwoBitHelperProblem);
+                     + "Lazy Scan's folder. Reinstall Lazy Scan.", snapshot.ThirtyTwoBitHelperProblem);
         var check = Troubleshooter.Diagnose(snapshot with { Platform = TroubleshootPlatform.Windows }).Single(c => c.Id == "twain32");
         Assert.Contains(snapshot.ThirtyTwoBitHelperProblem!, check.More);
         Assert.DoesNotContain("can use only 64-bit drivers", check.FullDetail);

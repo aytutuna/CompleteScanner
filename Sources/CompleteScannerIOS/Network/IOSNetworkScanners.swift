@@ -8,7 +8,7 @@ import UIKit
 public enum IOSNetworkText {
     /// The explanation card shown before the first search, so the system's Local Network prompt is understood.
     public static let explanationTitle = "Find scanners on your Wi-Fi"
-    public static let explanationLine = "CompleteScanner talks only to devices on your network."
+    public static let explanationLine = "Lazy Scan talks only to devices on your network."
     public static let explanationButton = "Continue"
     /// Local Network access is off: the one-line reason, with the Settings button.
     public static let deniedLine = "Local Network access is off."

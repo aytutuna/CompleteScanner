@@ -16,8 +16,8 @@ public enum SyncPackageError: Error, Equatable, LocalizedError, Sendable {
 
     public var errorDescription: String? {
         switch self {
-        case .notASyncPackage: return "This file was not put in the cloud folder by CompleteScanner."
-        case .newerVersion: return "This file was put in the cloud folder by a newer version of CompleteScanner."
+        case .notASyncPackage: return "This file was not put in the cloud folder by Lazy Scan."
+        case .newerVersion: return "This file was put in the cloud folder by a newer version of Lazy Scan."
         case .wrongKeyOrTampered: return "This file was not put there by a phone paired with this computer, or it was changed."
         case .tooLarge: return CompanionError.tooLarge.message
         }

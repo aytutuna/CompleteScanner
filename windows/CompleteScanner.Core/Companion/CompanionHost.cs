@@ -250,7 +250,7 @@ public sealed class CompanionHost : IAsyncDisposable
                 if (e.SocketErrorCode is not (SocketError.AddressAlreadyInUse or SocketError.AccessDenied)) break;
             }
         }
-        return $"Windows did not let CompleteScanner listen for phones ({failure?.Message}).";
+        return $"Windows did not let Lazy Scan listen for phones ({failure?.Message}).";
     }
 
     private async Task StopServerAsync()

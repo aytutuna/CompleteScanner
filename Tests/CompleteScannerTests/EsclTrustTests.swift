@@ -313,7 +313,7 @@ final class EsclTrustTests: XCTestCase {
         XCTAssertEqual(rejection.subject, "CN=FakeScanner")
         XCTAssertEqual(rejection.fingerprint, EsclCertificates.fingerprint(certificateDER: der))
         XCTAssertEqual(rejection.message,
-                       "Fake MFP uses a security certificate that has not been trusted yet, so CompleteScanner did not connect.")
+                       "Fake MFP uses a security certificate that has not been trusted yet, so Lazy Scan did not connect.")
         XCTAssertNil(validator.takeRejection())   // taken once
 
         try store.trust(rejection.fingerprint, deviceUuid: rejection.deviceUuid, authority: rejection.authority,

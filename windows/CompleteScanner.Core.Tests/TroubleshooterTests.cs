@@ -177,7 +177,7 @@ public class TroubleshooterTests
         Assert.Equal("No scanner found · 2 problems, 2 warnings", Troubleshooter.Overview(snapshot, checks));
         Assert.Equal(new TroubleshootCheck(
             "localNetwork", CheckStatus.Problem, "Local Network access is off",
-            "Turn on Local Network for CompleteScanner in Settings.",
+            "Turn on Local Network for Lazy Scan in Settings.",
             [TroubleshootAction.OpenAppSettings],
             "Without it, the app can't find or reach scanners on your network. Scanners appear as soon as it's on. "
             + "If it's on already, turn it off and on again."), Check(checks, "localNetwork"));
@@ -385,7 +385,7 @@ public class TroubleshooterTests
         Assert.Equal("Some scanners need their maker's 64-bit TWAIN driver.", none.Detail);
         Assert.Equal("Some scanners, often document scanners, work only through their maker's TWAIN driver, which "
                      + "also installs TWAIN. If yours is one of them, install the maker's 64-bit TWAIN driver, then "
-                     + "restart CompleteScanner.", none.More);
+                     + "restart Lazy Scan.", none.More);
         var some = Check(Troubleshooter.Diagnose(HealthyWindows() with { Twain = TwainStatus.NotInstalled }), "twain");
         Assert.Equal(CheckStatus.Tip, some.Status);
     }
@@ -410,14 +410,14 @@ public class TroubleshooterTests
         var one = Check(Troubleshooter.Diagnose(TroubledWindows()), "twain32");
         Assert.Equal("A TWAIN driver is 32-bit only", one.Title);
         Assert.Equal("\"acme.ds\" is installed only for 32-bit apps.", one.Detail);
-        Assert.Equal("CompleteScanner reaches such drivers through its 32-bit TWAIN helper, which has not listed it yet. "
+        Assert.Equal("Lazy Scan reaches such drivers through its 32-bit TWAIN helper, which has not listed it yet. "
                      + "A 64-bit (x64) driver from the maker, where there is one, works without the helper. Many scanners "
                      + "also work through Windows Image Acquisition (WIA) once the maker's full driver package is installed.",
                      one.More);
         var two = Check(Troubleshooter.Diagnose(HealthyWindows() with { ThirtyTwoBitOnlyDrivers = ["Acme/acme.ds", "beta.ds"] }), "twain32");
         Assert.Equal((CheckStatus.Problem, "2 TWAIN drivers are 32-bit only"), (two.Status, two.Title));
         Assert.Equal("\"acme.ds\", \"beta.ds\" are installed only for 32-bit apps.", two.Detail);
-        Assert.StartsWith("CompleteScanner reaches such drivers through its 32-bit TWAIN helper, which has not listed them yet. ",
+        Assert.StartsWith("Lazy Scan reaches such drivers through its 32-bit TWAIN helper, which has not listed them yet. ",
                           two.More);
     }
 
@@ -427,14 +427,14 @@ public class TroubleshooterTests
         var snapshot = TroubledWindows() with
         {
             ThirtyTwoBitHelperProblem = " It cannot run: it needs the .NET 10 Desktop Runtime for 32-bit programs (x86), "
-                                        + "which is not installed. Install it, then restart CompleteScanner ",
+                                        + "which is not installed. Install it, then restart Lazy Scan ",
         };
         var check = Check(Troubleshooter.Diagnose(snapshot), "twain32");
         Assert.Equal((CheckStatus.Problem, "A TWAIN driver is 32-bit only"), (check.Status, check.Title));
         Assert.Equal("\"acme.ds\" is installed only for 32-bit apps.", check.Detail);
-        Assert.Equal("CompleteScanner reaches such drivers through its 32-bit TWAIN helper. It cannot run: it needs the "
+        Assert.Equal("Lazy Scan reaches such drivers through its 32-bit TWAIN helper. It cannot run: it needs the "
                      + ".NET 10 Desktop Runtime for 32-bit programs (x86), which is not installed. Install it, then restart "
-                     + "CompleteScanner. A 64-bit (x64) driver from the maker, where there is one, works without the helper. "
+                     + "Lazy Scan. A 64-bit (x64) driver from the maker, where there is one, works without the helper. "
                      + "Many scanners also work through Windows Image Acquisition (WIA) once the maker's full driver package "
                      + "is installed.", check.More);
         Assert.Empty(check.Actions);
@@ -527,7 +527,7 @@ public class TroubleshooterTests
         Assert.Equal("macOS lists a USB scanner only when it can scan without a driver or its maker's driver is installed. "
                      + "If Image Capture doesn't show it either, macOS doesn't see it.", Check(checks, "usb").More);
         Assert.Equal("The Mac and the scanner must be on the same network.", Check(checks, "networkScanner").Detail);
-        Assert.Equal("If macOS asked whether CompleteScanner may find devices on your local network, allow it in System "
+        Assert.Equal("If macOS asked whether Lazy Scan may find devices on your local network, allow it in System "
                      + "Settings, Privacy & Security, Local Network. A network printer with a scanner added in Printers & "
                      + "Scanners also appears here.", Check(checks, "networkScanner").More);
         Assert.Equal([TroubleshootAction.OpenScannerSettings], Check(checks, "networkScanner").Actions);

@@ -83,7 +83,7 @@ final class TroubleshootingTests: XCTestCase {
         let stop: ScanStop = ScanStop.from(ScanError.scannerProblem(.appSuspended))
         XCTAssertEqual(stop.problem, ScannerProblem.appSuspended)
         XCTAssertEqual(stop.message(pagesKept: 2),
-                       "Scanning stopped after 2 pages; they were kept. The system suspended CompleteScanner in the "
+                       "Scanning stopped after 2 pages; they were kept. The system suspended Lazy Scan in the "
                        + "background before the scan finished. Keep the app open while scanning, then scan again.")
         XCTAssertEqual(ScannerProblems.notice(stop.message(pagesKept: 2)),
                        ProblemNotice(title: "App suspended",
