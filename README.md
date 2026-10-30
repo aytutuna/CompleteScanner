@@ -336,16 +336,16 @@ release and checks its SHA-256. To build it and run its UI smoke test on the Sim
 
 ```bash
 xcodegen generate --spec ios/project.yml
-xcodebuild test -project ios/CompleteScanneriOS.xcodeproj -scheme CompleteScanneriOS \
+xcodebuild test -project ios/LazyScaniOS.xcodeproj -scheme LazyScaniOS \
   -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' CODE_SIGNING_ALLOWED=NO
 ```
 
-The app's icon is drawn by `python scripts/make_ios_icon.py ios/CompleteScanneriOS/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`
+The app's icon is drawn by `python scripts/make_ios_icon.py ios/LazyScaniOS/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`
 (standard library only; the Windows app's `windows/LazyScan.App/app.ico` is the same picture,
 from `python scripts/make_ico.py windows/LazyScan.App/app.ico`), and the photo the import UI test brings in by
-`python scripts/make_ios_ui_fixture.py ios/CompleteScanneriOSUITests/Fixtures/document-photo.png`
+`python scripts/make_ios_ui_fixture.py ios/LazyScaniOSUITests/Fixtures/document-photo.png`
 (a sheet with grey bars on a dark table; standard library only), and the Photos task's by
-`python scripts/make_ios_ui_fixture.py ios/CompleteScanneriOSUITests/Fixtures/photos-on-table.png photos`
+`python scripts/make_ios_ui_fixture.py ios/LazyScaniOSUITests/Fixtures/photos-on-table.png photos`
 (two prints on a dark table, the same pixels as the unit tests' `ObjectShots.printsOnTable`), and the
 two-sided and Separate documents tests' PDFs by `... Fixtures/two-sided.pdf two-sided` (two pages of grey
 lines) and `... Fixtures/batch.pdf batch` (a page, the Patch T sheet's bars, a page). The
@@ -473,7 +473,7 @@ target for each platform's own parts:
   scan area, a feeder's progress with Cancel, and the troubleshooter)
 - `ios/` — the iPhone app's Xcode project for XcodeGen (`project.yml`): the app target that
   only starts `LazyScanIOSApp`, its `Info.plist`, privacy manifest and asset catalog, and the
-  UI tests (`CompleteScanneriOSUITests`: the smoke test, the photo import, with its fixture
+  UI tests (`LazyScaniOSUITests`: the smoke test, the photo import, with its fixture
   photo, two prints in one shot under the Photos task saved as two JPEGs, two pages under the
   two-sided task saved as one PDF, a patch-code sheet splitting a PDF into two, the camera screen's
   no-camera state, the scanner picker with the add-by-address sheet, and Settings with a preset saved

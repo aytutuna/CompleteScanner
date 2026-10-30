@@ -1,8 +1,8 @@
 # The iPhone app's Xcode project, for XcodeGen (CI pins its release and SHA-256; see the
 # ios job in .github/workflows/ci.yml). `xcodegen generate --spec ios/project.yml` writes
-# ios/CompleteScanneriOS.xcodeproj, which is not checked in. The app target holds no logic: it starts
+# ios/LazyScaniOS.xcodeproj, which is not checked in. The app target holds no logic: it starts
 # LazyScanIOSApp from the package at the repository root (Sources/LazyScanIOS).
-name: CompleteScanneriOS
+name: LazyScaniOS
 
 options:
   deploymentTarget:
@@ -22,25 +22,25 @@ packages:
     path: ..
 
 targets:
-  CompleteScanneriOS:
+  LazyScaniOS:
     type: application
     platform: iOS
     deploymentTarget: "18.0"
     sources:
-      - path: CompleteScanneriOS
+      - path: LazyScaniOS
         excludes:
           - Info.plist
           - PrivacyInfo.xcprivacy
-      - path: CompleteScanneriOS/PrivacyInfo.xcprivacy
+      - path: LazyScaniOS/PrivacyInfo.xcprivacy
         buildPhase: resources
     dependencies:
       - package: LazyScan
         product: LazyScanIOS
     settings:
       base:
-        PRODUCT_NAME: CompleteScanneriOS
-        PRODUCT_BUNDLE_IDENTIFIER: com.completescanner.completescanner
-        INFOPLIST_FILE: CompleteScanneriOS/Info.plist
+        PRODUCT_NAME: LazyScan
+        PRODUCT_BUNDLE_IDENTIFIER: com.lazyscan.lazyscan
+        INFOPLIST_FILE: LazyScaniOS/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         # iPhone only for now: iPads run it in iPhone compatibility mode. Vision Pro has no camera
         # for camera mode, the root screen.
@@ -52,41 +52,41 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
 
-  CompleteScanneriOSUITests:
+  LazyScaniOSUITests:
     type: bundle.ui-testing
     platform: iOS
     deploymentTarget: "18.0"
     sources:
-      - path: CompleteScanneriOSUITests
+      - path: LazyScaniOSUITests
         excludes:
           - Fixtures
           - Fixtures/**
       # The photos and PDFs the import, Photos, two-sided and batch tests bring in (drawn by
       # scripts/make_ios_ui_fixture.py).
-      - path: CompleteScanneriOSUITests/Fixtures/document-photo.png
+      - path: LazyScaniOSUITests/Fixtures/document-photo.png
         buildPhase: resources
-      - path: CompleteScanneriOSUITests/Fixtures/photos-on-table.png
+      - path: LazyScaniOSUITests/Fixtures/photos-on-table.png
         buildPhase: resources
-      - path: CompleteScanneriOSUITests/Fixtures/two-sided.pdf
+      - path: LazyScaniOSUITests/Fixtures/two-sided.pdf
         buildPhase: resources
-      - path: CompleteScanneriOSUITests/Fixtures/batch.pdf
+      - path: LazyScaniOSUITests/Fixtures/batch.pdf
         buildPhase: resources
     dependencies:
-      - target: CompleteScanneriOS
+      - target: LazyScaniOS
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.completescanner.completescanner.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: com.lazyscan.lazyscan.uitests
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1"
-        TEST_TARGET_NAME: CompleteScanneriOS
+        TEST_TARGET_NAME: LazyScaniOS
 
 schemes:
-  CompleteScanneriOS:
+  LazyScaniOS:
     build:
       targets:
-        CompleteScanneriOS: all
-        CompleteScanneriOSUITests: [test]
+        LazyScaniOS: all
+        LazyScaniOSUITests: [test]
     test:
       targets:
-        - CompleteScanneriOSUITests
+        - LazyScaniOSUITests
       gatherCoverageData: false

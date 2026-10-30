@@ -2,7 +2,7 @@
 import Foundation
 import XCTest
 
-// The app's accent colour (ios/CompleteScanneriOS/Assets.xcassets/AccentColor.colorset) fills the
+// The app's accent colour (ios/LazyScaniOS/Assets.xcassets/AccentColor.colorset) fills the
 // Scan button (`.borderedProminent`, which draws its label white) and the start screen's "Current"
 // badge (white caption text). Every variant of it keeps white text at 4.5:1 or more, the WCAG
 // minimum for normal text, in light and in dark mode alike.
@@ -20,7 +20,7 @@ final class AccentColorTests: XCTestCase {
             .deletingLastPathComponent()   // LazyScanIOSTests
             .deletingLastPathComponent()   // Tests
             .deletingLastPathComponent()   // the repository
-            .appendingPathComponent("ios/CompleteScanneriOS/Assets.xcassets/AccentColor.colorset/Contents.json")
+            .appendingPathComponent("ios/LazyScaniOS/Assets.xcassets/AccentColor.colorset/Contents.json")
         let data: Data = try Data(contentsOf: colorset)
         let root: [String: Any] = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         let colors: [[String: Any]] = try XCTUnwrap(root["colors"] as? [[String: Any]])
