@@ -75,7 +75,7 @@ public enum InspectorSections {
     }
 
     /// "PDF · Standard", "Word", "JPEG": the format the save uses, and a PDF's size. `shownFormat`: the
-    /// format the column shows (photos save an image, receipts a PDF or an image).
+    /// format the column shows (photos save an image, receipts and the ID card a PDF or an image).
     public static func outputSummary(_ s: ScanSettings, shownFormat: OutputFormat) -> String {
         let format: String
         switch shownFormat {
@@ -173,10 +173,10 @@ public enum InspectorSections {
 
     /// The sections shown for `s`, in order (hide what can't apply): the task's own for Photocopy and
     /// Receipts; Scanner, Output and Adjustments always; Pages and Split into documents for document pages
-    /// outside those two tasks; Archive & password while a save writes a PDF (`writesPDF`); More options always.
+    /// collected in the queue; Archive & password while a save writes a PDF (`writesPDF`); More options always.
     public static func shown(_ s: ScanSettings) -> [String] {
         let flow: TaskFlowKind = TaskCatalog.flow(of: s)
-        let pageSections: Bool = s.intent == .document && flow != .copy && flow != .receiptSplit
+        let pageSections: Bool = s.intent == .document && flow == .documentQueue
         var result: [String] = []
         for section in all {
             switch section {
@@ -210,9 +210,17 @@ public enum InspectorSections {
         return title(section)
     }
 
-    /// The format the column shows: receipts save a PDF or an image, photos an image, else the format.
+    /// Receipts and the ID card are saved from their reviews as a PDF or an image (`pageFormat`), so Word
+    /// and text are not offered for them.
+    public static func savesPageFormat(_ s: ScanSettings) -> Bool {
+        let flow: TaskFlowKind = TaskCatalog.flow(of: s)
+        return flow == .receiptSplit || flow == .idCard
+    }
+
+    /// The format the column shows: receipts and the ID card save a PDF or an image, photos an image, else
+    /// the format.
     public static func shownFormat(_ s: ScanSettings) -> OutputFormat {
-        if TaskCatalog.flow(of: s) == .receiptSplit { return s.format.pageFormat }
+        if savesPageFormat(s) { return s.format.pageFormat }
         if s.intent == .photo { return s.format.imageFormatOrJPEG }
         return s.format
     }

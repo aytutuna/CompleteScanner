@@ -27,8 +27,7 @@ public partial class MainWindow
     private void SyncBookOptions()
     {
         var s = ViewModel.Settings;
-        var flow = TaskCatalog.FlowOf(s);
-        bool queue = s.DocumentMultiPage && flow != TaskFlowKind.Copy && flow != TaskFlowKind.ReceiptSplit;
+        bool queue = PageProcessor.ChecksBlankPages(s);
         bool oneSide = BookPages.ScansOneSide(s);
         bool collecting = queue && oneSide;
         bool wasUpdating = _updatingUi;

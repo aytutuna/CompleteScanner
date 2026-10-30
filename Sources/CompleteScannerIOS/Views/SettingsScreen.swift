@@ -396,14 +396,15 @@ struct ScannerSettingsRows: View {
     }
 }
 
-/// Output: the format (an image format for photos, a PDF or an image for receipts), the PDF's size,
-/// Searchable PDF while a PDF is written, Collect pages, and where files are saved; Photos in Photos mode.
+/// Output: the format (an image format for photos and the Text kind's held page, a PDF or an image for
+/// receipts and the ID card), the PDF's size, Searchable PDF while a PDF is written, Collect pages, and where
+/// files are saved; Photos in Photos mode.
 private struct OutputSettingsRows: View {
     @EnvironmentObject private var state: AppState
 
     var body: some View {
         let s: ScanSettings = state.settings
-        let shown: OutputFormat = InspectorSections.shownFormat(s)
+        let shown: OutputFormat = IOSSettingsSections.shownFormat(s)
         let flow: TaskFlowKind = TaskCatalog.flow(of: s)
         Picker("Format", selection: format) {
             ForEach(formats) { (choice: OutputFormat) in
@@ -431,10 +432,14 @@ private struct OutputSettingsRows: View {
         SaveFolderRow()
     }
 
-    /// Every format for documents, the image formats for photos; receipts are saved as a PDF or an image.
+    /// Every format for documents, the image formats for photos and the Text kind's held page (saved as a
+    /// picture); receipts and the ID card are saved as a PDF or an image.
     private var formats: [OutputFormat] {
+        if state.activeTask == ScanTask.quickScan && !state.settings.documentMultiPage {
+            return OutputFormat.offered(for: ScanIntent.photo)
+        }
         let offered: [OutputFormat] = OutputFormat.offered(for: state.settings.intent)
-        guard state.isReceiptFlow else { return offered }
+        guard InspectorSections.savesPageFormat(state.settings) else { return offered }
         var list: [OutputFormat] = []
         for choice in offered where choice.pageFormat == choice {
             list.append(choice)
@@ -445,7 +450,7 @@ private struct OutputSettingsRows: View {
     private var format: Binding<OutputFormat> {
         let appState: AppState = state
         return Binding<OutputFormat>(
-            get: { InspectorSections.shownFormat(appState.settings) },
+            get: { IOSSettingsSections.shownFormat(appState.settings) },
             set: { (choice: OutputFormat) in
                 appState.settings.format = choice
             })
@@ -560,7 +565,7 @@ private struct PageSettingsRows: View {
 
     var body: some View {
         let s: ScanSettings = state.settings
-        let collecting: Bool = s.documentMultiPage && !state.isCopyFlow && !state.isReceiptFlow
+        let collecting: Bool = PageProcessor.checksBlankPages(s)
         let separators: Bool = collecting && DocumentSplitter.blankPagesAreSeparators(s.document, sides: state.effectiveDuplex)
         let upright: Bool = state.canTurnPagesUpright
         let oneSide: Bool = BookPages.scansOneSide(s)

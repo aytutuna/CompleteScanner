@@ -86,14 +86,16 @@ struct InspectorView: View {
         .disabled(state.isBusy)
     }
 
-    /// Pages and Split into documents apply to document pages, not to copies or receipts.
+    /// Pages and Split into documents apply to document pages collected in the queue, not to copies,
+    /// receipts or the ID card.
     private var showsPageSections: Bool {
-        state.settings.intent == .document && !state.isCopyFlow && !state.isReceiptFlow
+        state.settings.intent == .document && TaskCatalog.flow(of: state.settings) == .documentQueue
     }
 
-    /// Pages are collected in the queue (not each scan saved at once), outside copies and receipts.
+    /// Pages are collected in the queue (not each scan saved at once), outside copies, receipts and the
+    /// ID card (`PageProcessor.checksBlankPages`).
     private var collecting: Bool {
-        state.settings.documentMultiPage && !state.isCopyFlow && !state.isReceiptFlow
+        PageProcessor.checksBlankPages(state.settings)
     }
 
     // MARK: Sections
@@ -600,19 +602,20 @@ struct InspectorView: View {
     }
 
     /// Every format for documents, the image formats for photos (`OutputFormat.offered(for:)`);
-    /// receipts are saved as a PDF or an image (`pageFormat`), so Word and text are not offered there.
+    /// receipts and the ID card are saved as a PDF or an image (`InspectorSections.savesPageFormat`),
+    /// so Word and text are not offered there.
     private var availableFormats: [OutputFormat] {
         let offered = OutputFormat.offered(for: state.settings.intent)
-        return state.isReceiptFlow ? offered.filter { $0.pageFormat == $0 } : offered
+        return InspectorSections.savesPageFormat(state.settings) ? offered.filter { $0.pageFormat == $0 } : offered
     }
 
     /// The format a save uses, as the picker shows it: photos are saved as an image, so a PDF or
-    /// text format shows as JPEG there, and receipts as a PDF or an image, so Word or text shows as
-    /// PDF there (the setting itself is kept for documents until another format is picked). Twin of
-    /// the Windows inspector's format box.
+    /// text format shows as JPEG there, and receipts and the ID card as a PDF or an image, so Word or
+    /// text shows as PDF there (the setting itself is kept for documents until another format is
+    /// picked). Twin of the Windows inspector's format box.
     private var shownFormat: OutputFormat {
         if state.settings.intent == .photo { return state.settings.format.imageFormatOrJPEG }
-        return state.isReceiptFlow ? state.settings.format.pageFormat : state.settings.format
+        return InspectorSections.savesPageFormat(state.settings) ? state.settings.format.pageFormat : state.settings.format
     }
 
     private var shownFormatBinding: Binding<OutputFormat> {

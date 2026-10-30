@@ -94,6 +94,43 @@ final class IOSSettingsTests: XCTestCase {
         XCTAssertEqual(titles, ["Scanner", "Photos", "Adjustments", "More options"])
     }
 
+    func test_output_showsTheFormatSaved_aPictureForText_aPDFForAnIdCardInWord() {
+        // The Text kind's screen saves its page as a picture whatever format was picked before.
+        var text: ScanSettings = TaskCatalog.apply(.quickScan, to: ScanSettings())
+        text.format = .pdf
+        XCTAssertEqual(InspectorSections.shownFormat(text), .pdf, "The desktop saves the format chosen")
+        XCTAssertEqual(IOSSettingsSections.shownFormat(text), .jpeg)
+        XCTAssertFalse(IOSSettingsSections.writesPDF(text))
+        XCTAssertFalse(IOSSettingsSections.textApplies(text))
+        var ids: [String] = []
+        var output: String?
+        for section in IOSSettingsSections.sections(text) {
+            ids.append(section.id)
+            if section.id == InspectorSections.output { output = section.summary }
+        }
+        XCTAssertFalse(ids.contains(InspectorSections.archive))
+        XCTAssertEqual(output, "JPEG")
+
+        // With Collect pages on, its pages go to the queue and are saved in the format picked.
+        text.documentMultiPage = true
+        XCTAssertEqual(IOSSettingsSections.shownFormat(text), .pdf)
+        XCTAssertTrue(IOSSettingsSections.writesPDF(text))
+        XCTAssertTrue(IOSSettingsSections.textApplies(text))
+
+        var idCard: ScanSettings = TaskCatalog.apply(.idCard, to: ScanSettings())
+        idCard.format = .word
+        XCTAssertEqual(InspectorSections.shownFormat(idCard), .pdf)
+        XCTAssertEqual(IOSSettingsSections.shownFormat(idCard), .pdf)
+        var cardIds: [String] = []
+        var cardOutput: String?
+        for section in IOSSettingsSections.sections(idCard) {
+            cardIds.append(section.id)
+            if section.id == InspectorSections.output { cardOutput = section.summary }
+        }
+        XCTAssertEqual(cardIds, ["scanner", "output", "adjustments", "archive", "more"])
+        XCTAssertEqual(cardOutput, "PDF \u{00B7} Standard")
+    }
+
     func test_openSections_keptAsText_theTaskScannerAndOutputOpenAtFirst() {
         XCTAssertEqual(IOSSettingsSections.defaultText, "task,scanner,output")
         XCTAssertEqual(IOSSettingsSections.open("scanner,bogus,more"), Set<String>(["scanner", "more"]))

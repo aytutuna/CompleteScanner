@@ -159,9 +159,21 @@ public class InspectorSectionsTests
         Assert.Contains(InspectorSections.Archive, InspectorSections.Shown(copy));
         Assert.False(InspectorSections.TextApplies(copy));
 
+        // The ID card never goes through the queue and is saved from its review as a PDF or an image.
+        var idCard = TaskCatalog.Apply(ScanTask.IdCard, new ScanSettings());
+        idCard.Format = OutputFormat.Word;
+        Assert.Equal(["scanner", "output", "adjustments", "archive", "more"], InspectorSections.Shown(idCard));
+        Assert.Equal(OutputFormat.Pdf, InspectorSections.ShownFormat(idCard));
+        Assert.True(InspectorSections.SavesPageFormat(idCard));
+        Assert.True(InspectorSections.SavesPageFormat(receipts));
+        Assert.False(InspectorSections.SavesPageFormat(new ScanSettings()));
+        Assert.False(InspectorSections.TextApplies(idCard));
+        idCard.Format = OutputFormat.Png;
+        Assert.DoesNotContain(InspectorSections.Archive, InspectorSections.Shown(idCard));
+
         Assert.Null(InspectorSections.TaskTitle(new ScanSettings()));
         Assert.Equal("Task", InspectorSections.Title(InspectorSections.Task, new ScanSettings()));
-        foreach (var settings in new[] { s, photos, receipts, copy })
+        foreach (var settings in new[] { s, photos, receipts, copy, idCard })
         {
             var shown = InspectorSections.Shown(settings);
             Assert.Equal(shown.Count, shown.Distinct().Count());

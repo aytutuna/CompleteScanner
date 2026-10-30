@@ -132,13 +132,11 @@ public partial class MainWindow
     {
         if (_sections.Count == 0) return;
         var s = ViewModel.Settings;
-        var flow = TaskCatalog.FlowOf(s);
-        bool copy = flow == TaskFlowKind.Copy, receipts = flow == TaskFlowKind.ReceiptSplit;
         bool documents = s.Intent == ScanIntent.Document;
         var shownFormat = ShownFormat(s);
         bool textApplies = InspectorSections.TextApplies(s);
 
-        PagesSection.Visibility = documents && !copy && !receipts ? Visibility.Visible : Visibility.Collapsed;
+        PagesSection.Visibility = InspectorSections.Shown(s).Contains(InspectorSections.Pages) ? Visibility.Visible : Visibility.Collapsed;
         SplitSection.Visibility = PagesSection.Visibility;
         // Archive & password apply whenever the save writes a PDF (a queue of image pages too, and a
         // copy also saved as a PDF), not only when PDF is the format shown.
@@ -208,7 +206,7 @@ public partial class MainWindow
 
     /// <summary>
     /// The format the inspector shows: photos save an image (a PDF or text format shows as JPEG),
-    /// receipts a PDF or an image (Word and text show as PDF).
+    /// receipts and the ID card a PDF or an image (Word and text show as PDF).
     /// </summary>
     private static OutputFormat ShownFormat(ScanSettings s) => InspectorSections.ShownFormat(s);
 

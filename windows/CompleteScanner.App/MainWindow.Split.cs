@@ -26,8 +26,8 @@ public partial class MainWindow
     /// <summary>
     /// Splitting works on pages collected in the queue only, where the strip shows the documents
     /// before saving: with each scan saved at once the choice is greyed out with the reason (the
-    /// section is hidden for copies and receipts). Under the choice, one line says what happens to the
-    /// sheets that split; the ⓘ holds how it works.
+    /// section is hidden for copies, receipts and the ID card). Under the choice, one line says what
+    /// happens to the sheets that split; the ⓘ holds how it works.
     /// </summary>
     private void SyncSplitOptions()
     {
@@ -35,7 +35,7 @@ public partial class MainWindow
         var flow = TaskCatalog.FlowOf(s);
         bool copy = flow == TaskFlowKind.Copy;
         bool receipts = flow == TaskFlowKind.ReceiptSplit;
-        bool collecting = s.DocumentMultiPage && !copy && !receipts;
+        bool collecting = PageProcessor.ChecksBlankPages(s);
         var mode = s.Document.SplitMode;
         int count = DocumentSplitter.ClampSheetCount(s.Document.SplitSheetCount);
         bool wasUpdating = _updatingUi;

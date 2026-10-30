@@ -72,15 +72,24 @@ public struct IOSSettingsSection: Identifiable, Equatable {
 
 /// The settings screen's sections: the shared `InspectorSections` (which are shown, in which order, their
 /// titles, summaries and which start open), as the Mac's inspector and the Windows window lay them out.
-/// The iPhone differs in one place: a queue saved as pictures (`IOSShell.savesImages`) writes no PDF, so
-/// Archive & password is hidden there and the text beside a PDF does not count. Which sections the user
-/// left open is kept in the user's defaults (`storageKey`), not in presets, as on the desktop.
+/// The iPhone differs where it saves pictures: a queue saved as pictures (`IOSShell.savesImages`) and the
+/// Text kind's held page (`AppState.saveQuickScan`) write no PDF, so Archive & password is hidden there and
+/// the text beside a PDF does not count, and Output shows that page's picture format (`shownFormat`).
+/// Which sections the user left open is kept in the user's defaults (`storageKey`), not in presets, as on
+/// the desktop.
 public enum IOSSettingsSections {
     public static let storageKey = "settings.openSections"
 
-    /// The scan screen saves the queue as a picture a page, so no PDF is written.
+    /// The scan screen saves the queue as a picture a page, or the Text kind's screen its page as a picture,
+    /// so no PDF is written.
     public static func savesPictures(_ s: ScanSettings) -> Bool {
-        IOSShell.collectsPages(s) && IOSShell.savesImages(s)
+        (IOSShell.collectsPages(s) && IOSShell.savesImages(s)) || (s.task == .quickScan && !s.documentMultiPage)
+    }
+
+    /// The format Output shows: the Text kind's held page (Collect pages off) is saved as a picture (JPEG
+    /// unless an image format is chosen), the rest as `InspectorSections.shownFormat` says.
+    public static func shownFormat(_ s: ScanSettings) -> OutputFormat {
+        s.task == .quickScan && !s.documentMultiPage ? s.format.imageFormatOrJPEG : InspectorSections.shownFormat(s)
     }
 
     /// Archive & password and Searchable PDF apply: a save of `s` writes a PDF here.
@@ -116,6 +125,10 @@ public enum IOSSettingsSections {
             let title: String = InspectorSections.title(id, for: s)
             var summary: String = InspectorSections.summary(id, for: s)
             var changed: Bool = InspectorSections.changed(id, for: s)
+            if id == InspectorSections.output {
+                summary = InspectorSections.outputSummary(s, shownFormat: shownFormat(s))
+                changed = InspectorSections.outputChanged(s, shownFormat: shownFormat(s))
+            }
             if id == InspectorSections.more {
                 summary = InspectorSections.moreSummary(s.output, textShown: textApplies(s))
                 changed = !summary.isEmpty

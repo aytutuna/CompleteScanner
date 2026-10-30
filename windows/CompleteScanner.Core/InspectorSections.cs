@@ -69,7 +69,7 @@ public static class InspectorSections
         || s.Resolution != Defaults.Resolution || s.ColorMode != Defaults.ColorMode;
 
     /// <summary>"PDF · Standard", "Word", "JPEG": the format the save uses, and a PDF's size.</summary>
-    /// <param name="shownFormat">The format the column shows (photos save an image, receipts a PDF or an image).</param>
+    /// <param name="shownFormat">The format the column shows (photos save an image, receipts and the ID card a PDF or an image).</param>
     public static string OutputSummary(ScanSettings s, OutputFormat shownFormat)
     {
         string format = shownFormat switch { OutputFormat.Word => "Word", OutputFormat.Text => "Text", var f => f.Label() };
@@ -159,13 +159,13 @@ public static class InspectorSections
     /// <summary>
     /// The sections shown for <paramref name="s"/>, in order (hide what can't apply): the task's own for
     /// Photocopy and Receipts; Scanner, Output and Adjustments always; Pages and Split into documents for
-    /// document pages outside those two tasks; Archive &amp; password while a save writes a PDF
+    /// document pages collected in the queue; Archive &amp; password while a save writes a PDF
     /// (<see cref="WritesPdf"/>); More options always.
     /// </summary>
     public static IReadOnlyList<string> Shown(ScanSettings s)
     {
         var flow = TaskCatalog.FlowOf(s);
-        bool pageSections = s.Intent == ScanIntent.Document && flow != TaskFlowKind.Copy && flow != TaskFlowKind.ReceiptSplit;
+        bool pageSections = s.Intent == ScanIntent.Document && flow == TaskFlowKind.DocumentQueue;
         var result = new List<string>();
         foreach (string section in All)
         {
@@ -200,9 +200,15 @@ public static class InspectorSections
         return Title(section);
     }
 
-    /// <summary>The format the column shows: receipts save a PDF or an image, photos an image, else the format.</summary>
+    /// <summary>
+    /// Receipts and the ID card are saved from their reviews as a PDF or an image
+    /// (<see cref="OutputFormats.PageFormat"/>), so Word and text are not offered for them.
+    /// </summary>
+    public static bool SavesPageFormat(ScanSettings s) => TaskCatalog.FlowOf(s) is TaskFlowKind.ReceiptSplit or TaskFlowKind.IdCard;
+
+    /// <summary>The format the column shows: receipts and the ID card save a PDF or an image, photos an image, else the format.</summary>
     public static OutputFormat ShownFormat(ScanSettings s) =>
-        TaskCatalog.FlowOf(s) == TaskFlowKind.ReceiptSplit ? OutputFormats.PageFormat(s.Format)
+        SavesPageFormat(s) ? OutputFormats.PageFormat(s.Format)
         : s.Intent == ScanIntent.Photo ? OutputFormats.ImageFormatOrJpeg(s.Format)
         : s.Format;
 

@@ -1433,11 +1433,11 @@ public partial class MainWindow : Window
         var flow = TaskCatalog.FlowOf(s);
         bool copy = flow == TaskFlowKind.Copy;
         bool receipts = flow == TaskFlowKind.ReceiptSplit;
-        bool collecting = s.DocumentMultiPage && !copy && !receipts;
+        bool collecting = PageProcessor.ChecksBlankPages(s);
         // One-sided at blank sheets, every blank page is a separator: the switch has no say.
         bool separators = collecting && DocumentSplitter.BlankPagesAreSeparators(s.Document, ViewModel.EffectiveDuplex);
         SkipBlankBox.IsEnabled = collecting && !separators;
-        PagesReason.Visibility = collecting || copy || receipts ? Visibility.Collapsed : Visibility.Visible;
+        PagesReason.Visibility = collecting ? Visibility.Collapsed : Visibility.Visible;
         SkipBlankReason.Visibility = separators ? Visibility.Visible : Visibility.Collapsed;
         string hint = copy
             ? "Copies print every page as scanned: blank pages are not left out."
@@ -1492,7 +1492,7 @@ public partial class MainWindow : Window
         var flow = TaskCatalog.FlowOf(s);
         bool copy = flow == TaskFlowKind.Copy;
         bool receipts = flow == TaskFlowKind.ReceiptSplit;
-        bool collecting = s.DocumentMultiPage && !copy && !receipts;
+        bool collecting = PageProcessor.ChecksBlankPages(s);
         AutoCropBox.IsEnabled = collecting;
         AutoStraightenBox.IsEnabled = collecting;
         string hint = copy
@@ -1532,8 +1532,7 @@ public partial class MainWindow : Window
     private void SyncAutoRotateOptions()
     {
         var s = ViewModel.Settings;
-        var flow = TaskCatalog.FlowOf(s);
-        bool collecting = s.DocumentMultiPage && flow != TaskFlowKind.Copy && flow != TaskFlowKind.ReceiptSplit;
+        bool collecting = PageProcessor.ChecksBlankPages(s);
         bool available = ViewModel.CanTurnPagesUpright;
         AutoRotateBox.IsEnabled = collecting && available;
         string hint = PageTurns.Hint(s, available);
@@ -1638,8 +1637,10 @@ public partial class MainWindow : Window
         var s = ViewModel.Settings;
         var flow = TaskCatalog.FlowOf(s);
         bool receipts = flow == TaskFlowKind.ReceiptSplit;
-        // Receipts are saved as a PDF or an image: a Word or text format left from before saves PDFs.
-        var shownFormat = receipts ? OutputFormats.PageFormat(s.Format) : s.Format;
+        // Receipts and the ID card are saved as a PDF or an image: a Word or text format left from before
+        // saves PDFs.
+        bool pageOnly = InspectorSections.SavesPageFormat(s);
+        var shownFormat = pageOnly ? OutputFormats.PageFormat(s.Format) : s.Format;
         bool documents = s.Intent == ScanIntent.Document;
         bool word = documents && shownFormat == OutputFormat.Word;
         bool pdf = documents && shownFormat == OutputFormat.Pdf;
@@ -1651,7 +1652,7 @@ public partial class MainWindow : Window
         PdfSizeLabel.Text = pdf ? "PDF size" : "Page image size";
         AutomationProperties.SetName(PdfSizeTrack, PdfSizeLabel.Text);
         AutomationProperties.SetHelpText(PdfSizeTrack, $"{s.Output.PdfSize.Hint()}. {s.Output.PdfSize.Detail()}");
-        bool savesPdf = receipts ? OutputFormats.PageFormat(s.Format) == OutputFormat.Pdf : OutputFormats.SavesPdf(s.Format, s.DocumentMultiPage);
+        bool savesPdf = pageOnly ? OutputFormats.PageFormat(s.Format) == OutputFormat.Pdf : OutputFormats.SavesPdf(s.Format, s.DocumentMultiPage);
         AlsoSaveTextBox.IsEnabled = savesPdf && (flow == TaskFlowKind.DocumentQueue || receipts);
         // Receipts are saved from their review, and the ID card from its own: collecting pages does
         // nothing for them. The text layer of the copy's and the ID card's PDF is never made.
@@ -1695,14 +1696,14 @@ public partial class MainWindow : Window
     /// <summary>
     /// The formats the mode offers (<see cref="OutputFormats.Offered"/>), with the format a save
     /// uses chosen: photos are saved as an image, so a PDF or text format shows as JPEG there
-    /// (the setting itself is kept for documents). Receipts are saved as a PDF or an image
-    /// (<see cref="OutputFormats.PageFormat"/>): Word and text are not offered, and show as PDF.
+    /// (the setting itself is kept for documents). Receipts and the ID card are saved as a PDF or an
+    /// image (<see cref="OutputFormats.PageFormat"/>): Word and text are not offered, and show as PDF.
     /// </summary>
     private void SyncFormatChoices()
     {
         var s = ViewModel.Settings;
-        bool receipts = TaskCatalog.FlowOf(s) == TaskFlowKind.ReceiptSplit;
-        var offered = OutputFormats.Offered(s.Intent).Where(f => !receipts || OutputFormats.PageFormat(f) == f).ToList();
+        bool pageOnly = InspectorSections.SavesPageFormat(s);
+        var offered = OutputFormats.Offered(s.Intent).Where(f => !pageOnly || OutputFormats.PageFormat(f) == f).ToList();
         var labels = offered.Select(f => f.Label()).ToList();
         bool wasUpdating = _updatingUi;
         _updatingUi = true;
@@ -1713,7 +1714,7 @@ public partial class MainWindow : Window
                 FormatBox.ItemsSource = labels;
             }
             var shown = offered.Contains(s.Format) ? s.Format
-                : receipts ? OutputFormats.PageFormat(s.Format)
+                : pageOnly ? OutputFormats.PageFormat(s.Format)
                 : OutputFormats.ImageFormatOrJpeg(s.Format);
             FormatBox.SelectedItem = shown.Label();
         }

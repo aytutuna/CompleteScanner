@@ -153,9 +153,21 @@ final class InspectorSectionsTests: XCTestCase {
         XCTAssertTrue(InspectorSections.shown(copy).contains(InspectorSections.archive))
         XCTAssertFalse(InspectorSections.textApplies(copy))
 
+        // The ID card never goes through the queue and is saved from its review as a PDF or an image.
+        var idCard: ScanSettings = TaskCatalog.apply(.idCard, to: ScanSettings())
+        idCard.format = .word
+        XCTAssertEqual(InspectorSections.shown(idCard), ["scanner", "output", "adjustments", "archive", "more"])
+        XCTAssertEqual(InspectorSections.shownFormat(idCard), .pdf)
+        XCTAssertTrue(InspectorSections.savesPageFormat(idCard))
+        XCTAssertTrue(InspectorSections.savesPageFormat(receipts))
+        XCTAssertFalse(InspectorSections.savesPageFormat(ScanSettings()))
+        XCTAssertFalse(InspectorSections.textApplies(idCard))
+        idCard.format = .png
+        XCTAssertFalse(InspectorSections.shown(idCard).contains(InspectorSections.archive))
+
         XCTAssertNil(InspectorSections.taskTitle(ScanSettings()))
         XCTAssertEqual(InspectorSections.title(InspectorSections.task, for: ScanSettings()), "Task")
-        let all: [ScanSettings] = [s, photos, receipts, copy]
+        let all: [ScanSettings] = [s, photos, receipts, copy, idCard]
         for settings in all {
             let shown: [String] = InspectorSections.shown(settings)
             XCTAssertEqual(Set(shown).count, shown.count)
