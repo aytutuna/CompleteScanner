@@ -84,8 +84,9 @@ public struct IOSSettingsSection: Identifiable, Equatable {
 /// The iPhone differs where it saves pictures: a queue saved as pictures (`IOSShell.savesImages`) and the
 /// Text kind's held page (`AppState.saveQuickScan`) write no PDF, so Archive & password is hidden there and
 /// the text beside a PDF does not count, and Output shows that page's picture format (`shownFormat`).
-/// Which sections the user left open is kept in the user's defaults (`storageKey`), not in presets, as on
-/// the desktop.
+/// More options leaves out the action after a save, which the phone sets under Export's After saving
+/// (`IOSAfterSave.thenTitle`). Which sections the user left open is kept in the user's defaults
+/// (`storageKey`), not in presets, as on the desktop.
 public enum IOSSettingsSections {
     public static let storageKey = "settings.openSections"
 
@@ -139,7 +140,9 @@ public enum IOSSettingsSections {
                 changed = InspectorSections.outputChanged(s, shownFormat: shownFormat(s))
             }
             if id == InspectorSections.more {
-                summary = InspectorSections.moreSummary(s.output, textShown: textApplies(s))
+                var output: OutputOptions = s.output
+                output.afterSave = AfterSaveAction.none
+                summary = InspectorSections.moreSummary(output, textShown: textApplies(s))
                 changed = !summary.isEmpty
             }
             let name: String = id == InspectorSections.pages
@@ -251,7 +254,10 @@ public enum IOSAdjustment: String, CaseIterable, Identifiable {
 /// Export's After saving on the iPhone: what runs each time Save writes a document, checked in any
 /// combination and kept in the user's defaults, not in the settings file. They run in the order of the
 /// cases: Send to computer and Print take the queue, which the save empties, so they come before the file is
-/// written (the save follows once the copy screen has closed); Email goes out with the saved file.
+/// written (the save follows once the copy screen has closed); Email goes out with the saved file. Under the
+/// checks, Then is the settings' own action after a save (`OutputOptions.afterSave`, kept in presets), the
+/// phone's only control for it. A save that is emailed runs the email in its place (`AppState.runAfterSave`):
+/// a preview, Files or the share sheet cannot show over Mail's composer.
 public enum IOSAfterSave: String, CaseIterable, Identifiable {
     case send
     case print
@@ -264,6 +270,22 @@ public enum IOSAfterSave: String, CaseIterable, Identifiable {
 
     public static let title = "After saving"
     public static let footer = "Runs each time a document is saved. Change it any time."
+    public static let thenTitle = "Then"
+    /// Under Then while Email is checked.
+    public static let emailInsteadReason = "Email is sent instead"
+
+    /// The Kit's action after a save in the phone's words: Show in folder opens the Files app here.
+    public static func thenLabel(_ action: AfterSaveAction) -> String {
+        action == .reveal ? IOSSavedFiles.revealLabel : action.label
+    }
+
+    public static func thenHint(_ action: AfterSaveAction) -> String {
+        switch action {
+        case .open: return "Open the file (several: show them in Files)"
+        case .reveal: return "Show the files in the Files app"
+        default: return action.hint
+        }
+    }
 
     public var label: String {
         switch self {

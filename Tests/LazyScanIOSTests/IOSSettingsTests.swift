@@ -94,6 +94,28 @@ final class IOSSettingsTests: XCTestCase {
         XCTAssertEqual(titles, ["Scanner", "Photos", "Adjustments", "More options"])
     }
 
+    func test_sections_moreOptions_leavesOutTheActionAfterSaving_whichExportSets() {
+        var s: ScanSettings = ScanSettings()
+        s.output.afterSave = .reveal
+        XCTAssertEqual(InspectorSections.summary(InspectorSections.more, for: s), "Show in folder after saving",
+                       "The desktop's names it")
+        var more: IOSSettingsSection?
+        for section in IOSSettingsSections.sections(s) where section.id == InspectorSections.more {
+            more = section
+        }
+        XCTAssertEqual(more?.summary, "")
+        XCTAssertEqual(more?.changed, false)
+        XCTAssertEqual(more?.accessibilityLabel, "More options")
+
+        s.output.alsoSaveText = true
+        var withText: IOSSettingsSection?
+        for section in IOSSettingsSections.sections(s) where section.id == InspectorSections.more {
+            withText = section
+        }
+        XCTAssertEqual(withText?.summary, ".txt")
+        XCTAssertEqual(withText?.changed, true)
+    }
+
     func test_output_showsTheFormatSaved_aPictureForText_aPDFForAnIdCardInWord() {
         // The Text kind's screen saves its page as a picture whatever format was picked before.
         var text: ScanSettings = TaskCatalog.apply(.quickScan, to: ScanSettings())
@@ -220,6 +242,22 @@ final class IOSSettingsTests: XCTestCase {
         XCTAssertNil(IOSAfterSave.notSentMessage(.reachable(desktopName: "Office PC", queuedPages: 0), waiting: 1),
                      "The computer answered: what waits is on its way")
         XCTAssertNil(IOSAfterSave.notSentMessage(.unreachable(reason: reason), waiting: 0), "Nothing waits")
+    }
+
+    func test_afterSave_thenOffersTheKitsActions_inThePhonesWords() {
+        XCTAssertEqual(IOSAfterSave.thenTitle, "Then")
+        XCTAssertEqual(IOSAfterSave.emailInsteadReason, "Email is sent instead")
+        var labels: [String] = []
+        for action in AfterSaveAction.allCases {
+            labels.append(IOSAfterSave.thenLabel(action))
+        }
+        XCTAssertEqual(labels, ["Do nothing", "Open", "Show in Files", "Share\u{2026}"])
+        XCTAssertEqual(IOSAfterSave.thenLabel(.reveal), IOSSavedFiles.revealLabel)
+        XCTAssertEqual(AfterSaveAction.reveal.label, "Show in folder", "The desktop's words stay")
+        XCTAssertEqual(IOSAfterSave.thenHint(.open), "Open the file (several: show them in Files)")
+        XCTAssertEqual(IOSAfterSave.thenHint(.reveal), "Show the files in the Files app")
+        XCTAssertEqual(IOSAfterSave.thenHint(.share), AfterSaveAction.share.hint)
+        XCTAssertEqual(IOSAfterSave.thenHint(AfterSaveAction.none), "Stay here")
     }
 
     // MARK: The file name

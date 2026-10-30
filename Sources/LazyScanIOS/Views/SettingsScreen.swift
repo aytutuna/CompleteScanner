@@ -769,7 +769,8 @@ private struct ArchiveSettingsRows: View {
     }
 }
 
-/// The text beside each PDF, what happens after a save, and the file name.
+/// The text beside each PDF and the file name; what happens after a save is set in Export's After saving
+/// (`AfterSaveSection`), with the rest of what follows a save.
 private struct MoreSettingsRows: View {
     @EnvironmentObject private var state: AppState
 
@@ -778,12 +779,6 @@ private struct MoreSettingsRows: View {
             Toggle(IOSPDFOptions.alsoSaveTextLabel, isOn: $state.settings.output.alsoSaveText)
                 .accessibilityHint(Text(IOSPDFOptions.alsoSaveTextHint))
         }
-        Picker("After saving", selection: $state.settings.output.afterSave) {
-            ForEach(AfterSaveAction.allCases) { (action: AfterSaveAction) in
-                Text(action.label).tag(action)
-            }
-        }
-        .accessibilityHint(Text(state.settings.output.afterSave.hint))
         NavigationLink {
             NamingEditorScreen(model: IOSNamingModel(state: state))
         } label: {

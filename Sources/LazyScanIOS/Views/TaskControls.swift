@@ -386,11 +386,13 @@ struct ExportOptions: View {
     }
 }
 
-/// After saving (`IOSAfterSave`): what Save also does, each a check. In the Export sheet, and on its own
+/// After saving (`IOSAfterSave`): what Save also does, each a check, and under them Then, the settings' own
+/// action after a save (`OutputOptions.afterSave`) in the phone's words. In the Export sheet, and on its own
 /// from Save's menu. Send to computer is dimmed, with its reason under it, while nothing can send; its
-/// check stays as it was.
+/// check stays as it was. Then is dimmed while Email is checked: the email goes in its place.
 struct AfterSaveSection: View {
     @EnvironmentObject private var state: AppState
+    @AppStorage(IOSAfterSave.email.key) private var emails: Bool = false
 
     var body: some View {
         Section {
@@ -402,10 +404,26 @@ struct AfterSaveSection: View {
                     OptionReason(text: reason)
                 }
             }
+            thenRow
         } header: {
             Text(IOSAfterSave.title)
         } footer: {
             Text(IOSAfterSave.footer)
+        }
+    }
+
+    @ViewBuilder
+    private var thenRow: some View {
+        Picker(IOSAfterSave.thenTitle, selection: $state.settings.output.afterSave) {
+            ForEach(AfterSaveAction.allCases) { (action: AfterSaveAction) in
+                Text(IOSAfterSave.thenLabel(action)).tag(action)
+            }
+        }
+        .disabled(emails)
+        .accessibilityHint(Text(IOSAfterSave.thenHint(state.settings.output.afterSave)))
+        .accessibilityIdentifier("options.afterSave.then")
+        if emails {
+            OptionReason(text: IOSAfterSave.emailInsteadReason)
         }
     }
 
