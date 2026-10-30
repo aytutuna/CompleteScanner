@@ -25,7 +25,8 @@ enum ScanCover: String, Identifiable {
 /// there are pages ("Save PDF · 3", `IOSShell.floatingSaveTitle`) with the menu beside it, the kinds it
 /// picks, the page strip, the Export sheet behind the drawer's More… and Apple's scanner. Printer mode is
 /// the printer screen: the kinds as chips in its top row with the camera at their end (`mode.camera`,
-/// back to camera mode, which selects no scanner so none of its limits apply to the camera), the step
+/// back to camera mode, which selects no scanner so none of its limits apply to the camera) and under
+/// them one line naming the kinds that are dimmed and why (`IOSShell.unavailableKindsLine`), the step
 /// card only while a step needs it (`IOSShell.showsStepCard`, in the step's own words, which speak of the
 /// scanner; while no scanner is in use, a card in its place saying what is missing, `noScannerCard`), the
 /// flatbed preview or the last scan, then a row for each option group that applies, which opens it as a
@@ -559,11 +560,23 @@ struct ScanScreen: View {
 
     // MARK: The top row
 
-    /// The kinds, in place of the navigation bar, and the camera at their end.
+    /// The kinds, in place of the navigation bar, and the camera at their end; under them, which kinds are
+    /// dimmed and why, since a dimmed chip does nothing when tapped.
     private var topRow: some View {
-        HStack(spacing: 4) {
-            kindChips
-            cameraModeButton
+        let current: IOSScanKind = IOSShell.shownKind(state.settings)
+        let tiles: [IOSKindTile] = IOSShell.kindTiles(state.taskCards, current: current)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 4) {
+                kindChips(tiles, current: current)
+                cameraModeButton
+            }
+            if let line = IOSShell.unavailableKindsLine(tiles) {
+                Text(line)
+                    .font(.caption)
+                    .foregroundStyle(Color.secondary)
+                    .padding(.horizontal, 12)
+                    .accessibilityIdentifier("kinds.unavailable")
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -636,9 +649,7 @@ struct ScanScreen: View {
     }
 
     /// One chip per kind (`IOSShell.kindTiles`), the one set up filled; one capsule moves between them.
-    private var kindChips: some View {
-        let current: IOSScanKind = IOSShell.shownKind(state.settings)
-        let tiles: [IOSKindTile] = IOSShell.kindTiles(state.taskCards, current: current)
+    private func kindChips(_ tiles: [IOSKindTile], current: IOSScanKind) -> some View {
         let busy: Bool = saveBlocked
         return ScrollViewReader { (proxy: ScrollViewProxy) in
             ScrollView(.horizontal, showsIndicators: false) {

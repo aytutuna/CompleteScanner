@@ -6,14 +6,18 @@ import SwiftUI
 /// one-line headline, then a card for each problem and warning (title, its one line, its buttons, and
 /// More help when there is more), a compact row for each check that is fine, and the tips. Refresh and
 /// Copy diagnostics are at the bottom. It reads the app's state again every two seconds while shown, so
-/// scanners and the search's state appear as they change. A scanner added by address is picked as in the
-/// picker (`ScannerPickerSheets`), once its sheet has closed, asking here first about a side of an ID card held.
+/// scanners and the search's state appear as they change. While the card explaining the Wi-Fi search is
+/// unread the search is on hold, so the card comes first here too (`network`). A scanner added by address is
+/// picked as in the picker (`ScannerPickerSheets`), once its sheet has closed, asking here first about a side
+/// of an ID card held.
 struct TroubleshooterScreen: View {
     @EnvironmentObject private var state: AppState
     @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
     @AppStorage(IOSShell.scannerKey) private var scanner: String = ""
     /// The add-by-address sheet's model; nil where it is not offered.
     let makeAddModel: (() -> IOSAddScannerModel)?
+    /// The network scanners, for the explanation card; nil where there are none (`-demoScanner`).
+    var network: IOSNetworkScanners? = nil
     let onClose: () -> Void
     @State private var snapshot: DiscoverySnapshot = DiscoverySnapshot(platform: .ios)
     @State private var footer: String?
@@ -28,6 +32,9 @@ struct TroubleshooterScreen: View {
         let checks: [TroubleshootCheck] = Troubleshooter.diagnose(snapshot)
         NavigationStack {
             List {
+                if let network {
+                    ExplanationSection(network: network, onContinue: reload)
+                }
                 Section {
                     Text(Troubleshooter.overview(snapshot, checks: checks))
                         .font(.headline)
@@ -128,6 +135,25 @@ struct TroubleshooterScreen: View {
 
     private func closeAdd() {
         showsAdd = false
+    }
+}
+
+/// The explanation card while it is unread; Continue starts the search, and the screen reads it again.
+private struct ExplanationSection: View {
+    @ObservedObject var network: IOSNetworkScanners
+    let onContinue: () -> Void
+
+    var body: some View {
+        if network.needsExplanation {
+            Section {
+                ExplanationCard(onContinue: continueAfterExplanation)
+            }
+        }
+    }
+
+    private func continueAfterExplanation() {
+        network.continueAfterExplanation()
+        onContinue()
     }
 }
 

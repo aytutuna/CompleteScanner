@@ -136,7 +136,7 @@ public struct IOSRootView: View {
                              isShot: importer.importsShot)
         }
         .sheet(isPresented: $state.showTroubleshooter) {
-            TroubleshooterScreen(makeAddModel: makeAddModel, onClose: closeTroubleshooter)
+            TroubleshooterScreen(makeAddModel: makeAddModel, network: picker.network, onClose: closeTroubleshooter)
                 .environmentObject(state)
         }
         .background {
@@ -147,7 +147,8 @@ public struct IOSRootView: View {
         .sheet(isPresented: $showsSettings) {
             NavigationStack {
                 SettingsScreen(makeAddModel: makeAddModel, onPresetApplied: presetApplied, onClose: closeSettings,
-                               showsTroubleshooter: $showsSettingsTroubleshooter, companion: companion)
+                               showsTroubleshooter: $showsSettingsTroubleshooter, companion: companion,
+                               network: picker.network)
             }
             .modifier(FileActionPresenters(fileActions: fileActions, state: state,
                                            onTroubleshoot: openSettingsTroubleshooter))

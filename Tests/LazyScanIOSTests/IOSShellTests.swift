@@ -55,6 +55,14 @@ private func card(_ task: ScanTask, availability: TaskAvailability = .available,
              summary: "300 dpi")
 }
 
+/// A card for every task, the ones in `reasons` unavailable for the reason given.
+private func everyCard(unavailable reasons: [ScanTask: String]) -> [TaskCard] {
+    TaskCatalog.all.map { (definition: TaskDefinition) -> TaskCard in
+        guard let reason = reasons[definition.task] else { return card(definition.task) }
+        return card(definition.task, availability: TaskAvailability(isAvailable: false, reason: reason))
+    }
+}
+
 final class IOSShellTests: XCTestCase {
     private var folder: URL!
     private var pasteboard: UIPasteboard?
@@ -428,6 +436,26 @@ final class IOSShellTests: XCTestCase {
                                                       current: .document)
         XCTAssertEqual(tiles.map(\.kind), [.document, .photos])
         XCTAssertEqual(tiles[1].availability, noScanner)
+    }
+
+    func test_unavailableKindsLine_namesTheDimmedKinds_andWhy() {
+        let flatbed: String = TaskCatalog.needsFlatbedReason
+        let sheetFed: [IOSKindTile] = IOSShell.kindTiles(
+            everyCard(unavailable: [.idCard: flatbed, .quickScan: flatbed, .book: flatbed]), current: .document)
+        XCTAssertEqual(IOSShell.unavailableKindsLine(sheetFed), "ID card, Book and Text need a flatbed.")
+        let one: [IOSKindTile] = IOSShell.kindTiles(everyCard(unavailable: [.idCard: flatbed]), current: .document)
+        XCTAssertEqual(IOSShell.unavailableKindsLine(one), "ID card needs a flatbed.")
+        let none: [IOSKindTile] = IOSShell.kindTiles(everyCard(unavailable: [:]), current: .document)
+        XCTAssertNil(IOSShell.unavailableKindsLine(none))
+    }
+
+    func test_unavailableKindsLine_isASentenceForEachReason_inTheChipsOrder() {
+        let feeder: String = TaskCatalog.needsFeederReason
+        let flatbed: String = TaskCatalog.needsFlatbedReason
+        let tiles: [IOSKindTile] = IOSShell.kindTiles(
+            everyCard(unavailable: [.photos: feeder, .idCard: flatbed, .book: flatbed]), current: .document)
+        XCTAssertEqual(IOSShell.unavailableKindsLine(tiles),
+                       "Photos needs a document feeder. ID card and Book need a flatbed.")
     }
 
     func test_addPagesTile_isPickedWhenDocumentToPDFIs() {

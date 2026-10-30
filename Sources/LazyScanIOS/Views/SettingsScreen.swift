@@ -26,6 +26,8 @@ struct SettingsScreen: View {
     @Binding var showsTroubleshooter: Bool
     /// Browses the computers on the network for My computer; nil when the app does not (`-demoScanner`).
     var companion: IOSCompanionBrowser?
+    /// The network scanners, for the troubleshooter's explanation card; nil when the app has none (`-demoScanner`).
+    var network: IOSNetworkScanners?
     @AppStorage(IOSSettingsSections.storageKey) private var openText: String = IOSSettingsSections.defaultText
     /// The phone's mode (`IOSScanMode`), which some rows follow.
     @AppStorage(IOSShell.scanModeKey) private var mode: IOSScanMode = .camera
@@ -120,7 +122,7 @@ struct SettingsScreen: View {
             }
         }
         .sheet(isPresented: $showsTroubleshooter) {
-            TroubleshooterScreen(makeAddModel: makeAddModel, onClose: closeTroubleshooter)
+            TroubleshooterScreen(makeAddModel: makeAddModel, network: network, onClose: closeTroubleshooter)
                 .environmentObject(state)
         }
     }

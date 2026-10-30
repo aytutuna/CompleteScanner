@@ -55,7 +55,7 @@ struct ScannerPickerSheets: ViewModifier {
                     .environmentObject(state)
             }
             .sheet(isPresented: $showsTroubleshooter) {
-                TroubleshooterScreen(makeAddModel: makeAddModel, onClose: closeTroubleshooter)
+                TroubleshooterScreen(makeAddModel: makeAddModel, network: picker.network, onClose: closeTroubleshooter)
                     .environmentObject(state)
             }
     }
@@ -303,8 +303,9 @@ private struct ScannerRowView: View {
     }
 }
 
-/// Before the first search: why the system is about to ask about the local network.
-private struct ExplanationCard: View {
+/// Before the first search: why the system is about to ask about the local network. The troubleshooter shows
+/// it too while it is unread.
+struct ExplanationCard: View {
     let onContinue: () -> Void
 
     var body: some View {

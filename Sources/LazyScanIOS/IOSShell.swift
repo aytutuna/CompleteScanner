@@ -749,6 +749,44 @@ public enum IOSShell {
         return tiles
     }
 
+    /// The line under the printer screen's chips for the kinds that are dimmed, a sentence for each reason in
+    /// the chips' order ("ID card, Book and Text need a flatbed."); nil while none is.
+    public static func unavailableKindsLine(_ tiles: [IOSKindTile]) -> String? {
+        let dimmed: [IOSKindTile] = tiles.filter { (tile: IOSKindTile) -> Bool in !tile.availability.isAvailable }
+        var reasons: [String] = []
+        for tile in dimmed {
+            if let reason = tile.availability.reason, !reasons.contains(reason) {
+                reasons.append(reason)
+            }
+        }
+        var sentences: [String] = []
+        for reason in reasons {
+            var titles: [String] = []
+            for tile in dimmed where tile.availability.reason == reason {
+                titles.append(tile.kind.title)
+            }
+            sentences.append(unavailableSentence(titles, reason: reason))
+        }
+        return sentences.isEmpty ? nil : sentences.joined(separator: " ")
+    }
+
+    /// The titles, then the reason as the rest of the sentence: "Needs a flatbed" is "needs a flatbed" for one
+    /// kind and "need a flatbed" for several.
+    private static func unavailableSentence(_ titles: [String], reason: String) -> String {
+        var rest: String = reason.trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+        if let first = rest.first {
+            rest = String(first).lowercased() + String(rest.dropFirst())
+        }
+        var names: String = titles.joined(separator: ", ")
+        if titles.count > 1, let last = titles.last {
+            names = "\(titles.dropLast().joined(separator: ", ")) and \(last)"
+            if rest.hasPrefix("needs ") {
+                rest = "need" + String(rest.dropFirst(5))
+            }
+        }
+        return "\(names) \(rest)."
+    }
+
     // The Options switches below set only what they are about, never through `TaskCatalog.apply`, which
     // would reset the other choices; the task changes under the hood where its flow needs it.
 
