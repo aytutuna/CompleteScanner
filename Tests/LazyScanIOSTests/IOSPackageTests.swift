@@ -6,8 +6,9 @@ import XCTest
 @testable import LazyScanKit
 
 // A Lazy Scan document (.lsdoc) on the iPhone, through the shell as the root view and the scan
-// screen use it, without a screen: where an opened file goes, the queue shared as one, and one opened
-// from a folder of the test's own. What the banner's buttons do is AppStatePackageTests'.
+// screen use it, without a screen: where an opened file goes, the queue shared as one, one opened from a
+// folder of the test's own, and Open as new in Document with Collect pages before saving off. What the
+// banner's buttons do otherwise is AppStatePackageTests'.
 
 final class IOSPackageTests: XCTestCase {
     private var folder: URL!
@@ -105,6 +106,34 @@ final class IOSPackageTests: XCTestCase {
         await IOSShell.openPackage(folder.appendingPathComponent("Missing.lsdoc"), in: state)
         XCTAssertNil(state.pendingPackage)
         XCTAssertTrue(state.errorMessage?.hasPrefix("Missing.lsdoc could not be opened: ") == true)
+    }
+
+    /// Document with Collect pages before saving off is still the kind shown, so the banner opens the document
+    /// as new there: turning Collect pages back on is all it takes, the task and its choices kept.
+    @MainActor
+    func test_openAsNew_inDocumentWithCollectPagesOff_turnsCollectPagesOn() async throws {
+        let state: AppState = ImportTestSupport.makeState(in: folder)
+        XCTAssertTrue(state.startTask(.document))
+        state.settings.documentMultiPage = false
+        state.settings.resolution = 150
+        XCTAssertFalse(IOSShell.collectsPages(state.settings))
+        XCTAssertEqual(IOSShell.shownKind(state.settings), .document)
+        let jpeg: Data = try XCTUnwrap(PDFImageEncoding.encodeJPEG(picture(width: 40, height: 60), quality: 0.9))
+        let document = CompanionDocument(title: "Receipt", pages: [CompanionPage(image: CompanionImage(
+            data: jpeg, format: .jpeg, pixelWidth: 40, pixelHeight: 60, dpi: 200, colorMode: .color))])
+        let url: URL = folder.appendingPathComponent("Receipt.lsdoc")
+        try CompanionPackage.make(document).write(to: url)
+        await IOSShell.openPackage(url, in: state)
+        XCTAssertNotNil(state.pendingPackage)
+
+        state.settings.documentMultiPage = true
+        XCTAssertTrue(state.openPendingPackageAsNew())
+        try await ImportTestSupport.waitUntil(timeout: 60) { !state.isBusy }
+        XCTAssertNil(state.errorMessage)
+        XCTAssertNil(state.pendingPackage)
+        XCTAssertEqual(state.scannedPages.count, 1)
+        XCTAssertEqual(state.activeTask, .document)
+        XCTAssertEqual(state.settings.resolution, 150)
     }
 }
 #endif

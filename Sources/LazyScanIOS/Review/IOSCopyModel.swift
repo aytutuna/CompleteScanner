@@ -17,6 +17,10 @@ public enum IOSCopyText {
     public static let discardLabel = "Discard"
     public static let discardHint = "Delete the page; can't be undone"
     public static let closeLabel = "Close"
+    // The queue's pages (Save's Print…, After saving's Print) are printed, not copied.
+    public static let printTitle = "Print"
+    public static let printPageName = "Page to print"
+    public static let printAgainLabel = "Print again"
     public static let noPrinterYet = "You choose the printer when printing"
     /// Settings' Photocopy section: its choices are on the copy screen.
     public static let settingsNote = "Copies, Fit to page and the PDF are chosen on the copy screen."
@@ -71,6 +75,15 @@ public final class IOSCopyModel: ObservableObject {
         let count: Int = state.copyPages.count
         return count > 1 ? IOSCopyText.pageCount(count) : nil
     }
+
+    /// The screen's title, in printing's words for the queue's pages (`AppState.copyIsOfQueue`), as are
+    /// `pageName` and `againLabel`.
+    public var title: String { state.copyIsOfQueue ? IOSCopyText.printTitle : IOSCopyText.title }
+
+    /// The page's name for VoiceOver.
+    public var pageName: String { state.copyIsOfQueue ? IOSCopyText.printPageName : IOSCopyText.pageName }
+
+    public var againLabel: String { state.copyIsOfQueue ? IOSCopyText.printAgainLabel : IOSCopyText.againLabel }
 
     /// Pages are held: the screen is shown.
     public var isShown: Bool { !state.copyPages.isEmpty }

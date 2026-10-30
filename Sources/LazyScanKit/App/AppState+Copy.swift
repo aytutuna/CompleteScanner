@@ -277,7 +277,7 @@ extension AppState {
 
     /// Print… on the phone: the pages Save would write, at full resolution, held on the copy screen as a
     /// copy's are, to print from there whatever the task. The queue keeps them; letting the copy go only
-    /// closes the screen.
+    /// closes the screen. Nothing is copied, so the status is a print's, not `holdCopy`'s.
     public func printQueueAsCopy() {
         guard !isBusy, !scannedPages.isEmpty else { return }
         let s = settings
@@ -302,6 +302,7 @@ extension AppState {
             self.refreshPrinters()
             self.holdCopy(full, areaSelected: false)
             self.copyIsOfQueue = true
+            self.statusMessage = "Ready to print."
         }
     }
 

@@ -9,7 +9,7 @@ import XCTest
 // The photocopy on the iPhone (I16), without a screen: a page brought in is held, not printed; Print prints
 // it and it stays for another copy, Copy again goes to the printer picked last, a cancelled print records
 // nothing; a camera page of no known size is fitted to the page; Discard and another task let it go; and
-// the copy screen's model. Nothing here presents the print UI.
+// the copy screen's model, in printing's words for the queue's pages. Nothing here presents the print UI.
 
 /// A printer that prints whatever it is sent (or is cancelled, `answer`), counting what came through
 /// Copy again.
@@ -88,6 +88,7 @@ final class IOSCopyTests: XCTestCase {
         XCTAssertTrue(state.ingest([page(inches: 4)], source: .photo))
         try await idle(state)
         XCTAssertEqual(state.copyPages.count, 1)
+        XCTAssertEqual(state.statusMessage, "Copy ready to print.")
         XCTAssertFalse(state.canIngest)
         XCTAssertFalse(state.copyNeedsFit)
         XCTAssertTrue(printer.jobs.isEmpty)
@@ -139,6 +140,13 @@ final class IOSCopyTests: XCTestCase {
         XCTAssertNil(state.errorMessage)
         XCTAssertEqual(state.copyPages.count, 1)
         XCTAssertTrue(state.copyIsOfQueue)
+        // Printed, not copied: the copy screen and its status say Print.
+        XCTAssertEqual(state.statusMessage, "Ready to print.")
+        let model = IOSCopyModel(state: state)
+        XCTAssertEqual(model.title, "Print")
+        XCTAssertEqual(model.pageName, "Page to print")
+        XCTAssertEqual(model.againLabel, IOSCopyText.printAgainLabel)
+        XCTAssertEqual(IOSCopyText.printAgainLabel, "Print again")
         XCTAssertEqual(state.activeTask, .document)
         XCTAssertEqual(state.scannedPages.count, 1)
         // The full pixels, not the strip's preview of a spooled page.
@@ -293,6 +301,9 @@ final class IOSCopyTests: XCTestCase {
         XCTAssertTrue(state.ingest([page(inches: 2), page(inches: 2)], source: .photo))
         try await idle(state)
         XCTAssertTrue(model.isShown)
+        XCTAssertEqual(model.title, "Copy")
+        XCTAssertEqual(model.pageName, "Page to copy")
+        XCTAssertEqual(model.againLabel, "Copy again")
         XCTAssertEqual(model.pageCountLine, "2 pages")
         XCTAssertNotNil(model.image)
         model.discard()

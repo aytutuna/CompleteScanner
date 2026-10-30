@@ -9,8 +9,8 @@ import UIKit
 /// page has no known size), Also save a PDF, the printer the copy goes to and the status while it prints;
 /// Print shows AirPrint's printer picker, Copy again prints on the printer picked last without it, and
 /// Discard lets the pages go and closes the screen (Close, for the queue's pages printed from Save's menu,
-/// which stay in the queue). It stays open after printing, for another copy. It
-/// shows the error alert itself, since the root's cannot show over it.
+/// which stay in the queue; the screen is then Print, with Print again). It stays open after printing, for
+/// another copy. It shows the error alert itself, since the root's cannot show over it.
 struct CopyScreen: View {
     @ObservedObject var model: IOSCopyModel
     @EnvironmentObject private var state: AppState
@@ -25,14 +25,14 @@ struct CopyScreen: View {
                             .resizable()
                             .scaledToFit()
                             .padding(12)
-                            .accessibilityLabel(Text(IOSCopyText.pageName))
+                            .accessibilityLabel(Text(model.pageName))
                             .accessibilityIdentifier("copy.image")
                     }
                 }
                 Divider()
                 footer
             }
-            .navigationTitle(IOSCopyText.title)
+            .navigationTitle(model.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -106,7 +106,7 @@ struct CopyScreen: View {
                     Button {
                         model.printAgain()
                     } label: {
-                        Label(IOSCopyText.againLabel, systemImage: "arrow.clockwise")
+                        Label(model.againLabel, systemImage: "arrow.clockwise")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)

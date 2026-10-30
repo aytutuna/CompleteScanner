@@ -729,13 +729,19 @@ struct ScanScreen: View {
     }
 
     /// Open as new replaces the queued pages, so with pages queued it asks about them first. A kind that keeps
-    /// no pages switches to Document first, as a document opened with no task set up opens there. Not while a
+    /// no pages switches to Document first, as a document opened with no task set up opens there; Document
+    /// itself with Collect pages before saving off only turns it back on, its other choices kept. Not while a
     /// share or a send reads them.
     private func openPackageAsNew() {
         guard !saveBlocked else { return }
         guard IOSShell.collectsPages(state.settings) else {
-            switchKind(.document) {
+            if IOSShell.shownKind(state.settings) == .document {
+                state.settings.documentMultiPage = true
                 openPackageReplacingPages()
+            } else {
+                switchKind(.document) {
+                    openPackageReplacingPages()
+                }
             }
             return
         }
@@ -1278,10 +1284,7 @@ struct ScanScreen: View {
         Task { @MainActor in
             sendsToComputer = true
             await appState.sendQueueToDesktop(target: .new)
-            if appState.errorMessage == nil {
-                appState.errorMessage = IOSAfterSave.notSentMessage(appState.companionStatus,
-                                                                    waiting: appState.companionOutboxCount)
-            }
+            reportUnsent(appState)
             sendsToComputer = false
             if appState.errorMessage != nil {
                 stepsAfterAlert = steps
@@ -1351,7 +1354,17 @@ struct ScanScreen: View {
         let appState: AppState = state
         Task { @MainActor in
             await appState.sendQueueToDesktop(target: target)
+            reportUnsent(appState)
             sendsToComputer = false
+        }
+    }
+
+    /// A send whose document stays in the outbox, the computer not answering or no longer knowing the
+    /// phone, says so in an alert, unless it failed with an error of its own.
+    private func reportUnsent(_ appState: AppState) {
+        if appState.errorMessage == nil {
+            appState.errorMessage = IOSAfterSave.notSentMessage(appState.companionStatus,
+                                                                waiting: appState.companionOutboxCount)
         }
     }
 
@@ -1483,11 +1496,12 @@ struct ScanScreen: View {
         .accessibilityIdentifier("save.menu")
     }
 
-    /// Save's menu: while Save writes a PDF or a picked PDF takes the pages, as on Windows, a new PDF even
-    /// while a picked PDF takes them, the pages added to a PDF picked now, and while one is picked, back to
-    /// saving new files; After saving… (its choices in a sheet); then Print… (the pages as a copy on the
-    /// copy screen, the queue kept), Email… (saved as Save would, then sent by email), the queue shared as a
-    /// Lazy Scan document and, with a computer paired, Send to computer. Each runs once, whatever
+    /// Save's menu: while Save writes a PDF or a picked PDF takes the pages, as on Windows, a new PDF instead
+    /// while a PDF is picked (After saving's steps included, as Save runs them), the pages added to a PDF
+    /// picked now, and while one is picked, back to saving new files; After saving… (its choices in a sheet);
+    /// then Print… (the pages as a copy on the copy screen, the queue kept), Email… (saved as Save would, then
+    /// sent by email), the queue shared as a Lazy Scan document and, with a computer paired, Send to computer
+    /// and how many documents wait to be sent. Print…, Email…, the share and the send run once, whatever
     /// After saving has checked.
     @ViewBuilder
     private func saveMenuContent(canSave: Bool) -> some View {
@@ -1529,16 +1543,21 @@ struct ScanScreen: View {
             }
             .disabled(state.scannedPages.isEmpty)
             .accessibilityIdentifier("send.computer")
+            if state.companionOutboxCount > 0 {
+                Button(IOSCompanionText.waiting(state.companionOutboxCount)) {}
+                    .disabled(true)
+                    .accessibilityIdentifier("send.waiting")
+            }
         }
     }
 
     @ViewBuilder
     private func saveMenuItems(canSave: Bool) -> some View {
         // Word and text queues save their own format once the target is cleared.
-        if state.settings.format.queueFormat == .pdf {
+        if state.settings.format.queueFormat == .pdf, state.appendTarget != nil {
             Button {
                 state.clearAppendTarget()
-                state.savePDF()
+                saveWithActions()
             } label: {
                 Label(PDFAppender.saveAsNewLabel, systemImage: "doc.badge.arrow.up")
             }
@@ -1925,7 +1944,8 @@ private struct SavedFilesRow: View {
 
 /// A Lazy Scan document opened in the app or picked in Files, offered until it is taken or closed:
 /// "Opened Receipt.lsdoc: 3 pages", with Add to pages (after the queued pages) and Open as new (in place
-/// of them, `onOpenAsNew`). A kind that keeps no pages offers only Open in Document.
+/// of them, `onOpenAsNew`). A kind that keeps no pages offers only Open in Document, and Document with
+/// Collect pages before saving off only Open as new, which turns it on.
 private struct PackageBanner: View {
     @EnvironmentObject private var state: AppState
     let offered: PendingPackage
@@ -1962,7 +1982,7 @@ private struct PackageBanner: View {
                     }
                     .accessibilityIdentifier("package.new")
                 } else {
-                    Button(IOSShell.openPackageInDocumentLabel) {
+                    Button(openLabel) {
                         onOpenAsNew()
                     }
                     .accessibilityIdentifier("package.new")
@@ -1971,6 +1991,10 @@ private struct PackageBanner: View {
             .buttonStyle(.bordered)
             .disabled(!state.canIngest)
         }
+    }
+
+    private var openLabel: String {
+        IOSShell.shownKind(state.settings) == .document ? PackageText.openAsNew : IOSShell.openPackageInDocumentLabel
     }
 }
 
