@@ -353,12 +353,10 @@ public struct IOSRootView: View {
         importer.answer(answer)
     }
 
-    private func stopImport() {
-        importer.stop()
-    }
-
     private var stopAction: (@MainActor () -> Void)? {
-        importer.canStop ? stopImport : nil
+        guard importer.canStop else { return nil }
+        let session: IOSImportSession = importer
+        return { session.stop() }
     }
 
     /// The scan screen in front: the iPad's detail, and on the iPhone the library gone.
