@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>CompleteScanner</string>
+	<string>Lazy Scan</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -34,7 +34,7 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
-			<string>CompleteScanner document</string>
+			<string>Lazy Scan document</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
@@ -77,11 +77,11 @@
 		<string>_completescan._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>CompleteScanner uses the camera to scan documents and photos, and the pairing code of your computer. What you scan stays on this device unless you share it.</string>
+	<string>Lazy Scan uses the camera to scan documents and photos, and the pairing code of your computer. What you scan stays on this device unless you share it.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>CompleteScanner looks for scanners on your local network, such as printers that scan, so you can scan from them, and for the computer you pair it with, so you can send it your scans.</string>
+	<string>Lazy Scan looks for scanners on your local network, such as printers that scan, so you can scan from them, and for the computer you pair it with, so you can send it your scans.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>CompleteScanner adds a scan to your photo library only when you choose Save Image in the share sheet.</string>
+	<string>Lazy Scan adds a scan to your photo library only when you choose Save Image in the share sheet.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -115,7 +115,7 @@
 				<string>public.archive</string>
 			</array>
 			<key>UTTypeDescription</key>
-			<string>CompleteScanner document</string>
+			<string>Lazy Scan document</string>
 			<key>UTTypeIdentifier</key>
 			<string>com.completescanner.package</string>
 			<key>UTTypeTagSpecification</key>
