@@ -19,6 +19,8 @@ struct PagesStripView: View {
     @State private var nameDraft = ""
     /// The spread being split by hand (the split sheet).
     @State private var editingSpread: SpreadEditorSource?
+    /// Clear is asking before it removes more than one page.
+    @State private var asksClear = false
 
     /// The pages are saved as a PDF that gets a password (`OutputOptions.protect`). Not when they go
     /// into a picked PDF: that file decides.
@@ -136,7 +138,11 @@ struct PagesStripView: View {
                         .accessibilityLabel(Text("Stop Adding to \(target.lastPathComponent)"))
                     }
                     Button("Clear") {
-                        state.clearPages()
+                        if state.scannedPages.count > 1 {
+                            asksClear = true
+                        } else {
+                            state.clearPages()
+                        }
                     }
                     .disabled(state.isBusy)
                     .help("Remove all pages")
@@ -157,6 +163,13 @@ struct PagesStripView: View {
             Button("Cancel", role: .cancel) { namingPage = nil }
         } message: {
             Text("Used for {label} in the file name.")
+        }
+        .confirmationDialog("Remove all \(state.scannedPages.count) pages?", isPresented: $asksClear,
+                            titleVisibility: .visible) {
+            Button("Remove All", role: .destructive) {
+                state.clearPages()
+            }
+            Button("Cancel", role: .cancel) {}
         }
         .sheet(item: $editingSpread) { source in
             SpreadSplitView(source: source) { choice in

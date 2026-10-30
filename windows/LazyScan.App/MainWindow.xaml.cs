@@ -1836,7 +1836,18 @@ public partial class MainWindow : Window
     private void Preview_Click(object sender, RoutedEventArgs e) => _ = ViewModel.PerformOverview();
     private void Scan_Click(object sender, RoutedEventArgs e) => _ = ViewModel.PerformScan();
     private void SavePdf_Click(object sender, RoutedEventArgs e) => _ = ViewModel.SavePdf();
-    private void ClearPages_Click(object sender, RoutedEventArgs e) => ViewModel.ClearPages();
+    private void ClearPages_Click(object sender, RoutedEventArgs e)
+    {
+        int pages = ViewModel.ScannedPages.Count;
+        // A single page goes at once, as removing it from the strip does.
+        if (pages > 1)
+        {
+            var answer = MessageBox.Show(this, $"Remove all {pages} pages? They have not been saved.", "Lazy Scan",
+                                         MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+            if (answer != MessageBoxResult.Yes) return;
+        }
+        ViewModel.ClearPages();
+    }
     private void Cancel_Click(object sender, RoutedEventArgs e) => ViewModel.CancelScan();
 
     private void DeviceList_SelectionChanged(object sender, SelectionChangedEventArgs e)
