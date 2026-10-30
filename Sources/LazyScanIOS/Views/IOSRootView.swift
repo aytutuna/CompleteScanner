@@ -530,7 +530,7 @@ private struct CameraIntroCard: View {
 
 /// The share sheet, Mail's composer and the Quick Look preview the file actions ask for, and the error
 /// alert. The root view has them, and so does the Settings sheet: a sheet's view cannot present while
-/// another is up over it, so Saved files in Settings would otherwise show nothing until Settings closed.
+/// another is up over it, so these would otherwise show nothing until Settings closed.
 @MainActor
 private struct FileActionPresenters: ViewModifier {
     @ObservedObject var fileActions: IOSFileActions

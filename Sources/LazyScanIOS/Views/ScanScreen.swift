@@ -181,8 +181,7 @@ struct ScanScreen: View {
     private var screen: some View {
         content
             .background(cameraMode ? Color(uiColor: .systemBackground) : Color(uiColor: .systemGroupedBackground))
-            .navigationTitle(cameraMode ? IOSShell.shownKind(state.settings).cameraTitle
-                             : IOSShell.shownKind(state.settings).title)
+            .navigationTitle(barTitle)
             .navigationBarTitleDisplayMode(.inline)
             // The iPad keeps its bar in camera mode too, for the sidebar's button.
             .toolbar(pickerInSidebar ? Visibility.automatic : Visibility.hidden, for: .navigationBar)
@@ -286,6 +285,14 @@ struct ScanScreen: View {
 
     private var cameraMode: Bool {
         mode == .camera
+    }
+
+    /// The kind, in the bar the iPad shows. The iPhone's bar is hidden, and a title there would only name the
+    /// library's back button.
+    private var barTitle: String {
+        guard pickerInSidebar else { return "" }
+        let kind: IOSScanKind = IOSShell.shownKind(state.settings)
+        return cameraMode ? kind.cameraTitle : kind.title
     }
 
     /// The printer screen's column, drawn again as the network scanners' search goes on, since the picker's

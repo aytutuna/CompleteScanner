@@ -32,6 +32,7 @@ public enum IOSSettingsText {
     public static let docdateReason = "Needs {docdate} in File name"
     public static let onlyPDFReason = "Only for PDFs"
     public static let importingReason = "Can be changed once the import has finished"
+    public static let busyReason = "Can be changed once the scan or save has finished"
     /// Why Source is locked while a side of an ID card is held (from the camera or the scanner alike).
     public static let idCardHeldReason =
         "Source is locked while a side of the ID card is held. Save or discard the card, or leave the task, to change it."

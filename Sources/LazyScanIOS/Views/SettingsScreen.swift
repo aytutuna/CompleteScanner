@@ -4,7 +4,7 @@ import LazyScanModel
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Settings: the presets, this session's scans and the saved files first, then the settings in the shared
+/// Settings: the presets first (scans and saved files are the library's), then the settings in the shared
 /// sections (`IOSSettingsSections`, built on `InspectorSections`: which are shown, in which order, their
 /// titles and the summaries their collapsed headers show; the task's own, Scanner and Output start open;
 /// camera mode has no Scanner), then in camera mode the camera's photo size where the camera offers more
@@ -12,7 +12,8 @@ import UniformTypeIdentifiers
 /// pairs the phone with a computer and sends to it (`CompanionScreen`). Which sections are open is kept for
 /// the user, not in presets; a task started opens the section it needs (`AppState.sectionsOpenedByTask`)
 /// until it is closed. While an import runs the settings cannot be changed: its pages belong to the task
-/// and format it started with.
+/// and format it started with. The same holds while a scan or a save runs, which also keeps a preset from
+/// being applied; a line says so, and My computer, Troubleshoot and About stay usable.
 struct SettingsScreen: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -35,6 +36,7 @@ struct SettingsScreen: View {
     var body: some View {
         let camera: Bool = mode == .camera
         let sections: [IOSSettingsSection] = IOSSettingsSections.sections(state.settings, camera: camera)
+        let working: Bool = importer.isImporting || state.isBusy
         Form {
             Section {
                 NavigationLink {
@@ -42,19 +44,8 @@ struct SettingsScreen: View {
                 } label: {
                     Label(IOSSettingsText.presetsLabel, systemImage: "slider.horizontal.3")
                 }
+                .disabled(state.isBusy)
                 .accessibilityIdentifier("settings.presets")
-                NavigationLink {
-                    HistoryScreen()
-                } label: {
-                    Label(IOSSettingsText.historyLabel, systemImage: "clock.arrow.circlepath")
-                }
-                .accessibilityIdentifier("settings.history")
-                NavigationLink {
-                    SavedFilesScreen()
-                } label: {
-                    Label(IOSSettingsText.savedLabel, systemImage: "tray")
-                }
-                .accessibilityIdentifier("settings.saved")
                 NavigationLink {
                     CompanionScreen(state: state, browser: companion)
                 } label: {
@@ -67,11 +58,16 @@ struct SettingsScreen: View {
                     ReasonLine(text: IOSSettingsText.importingReason)
                 }
             }
+            if state.isBusy && !importer.isImporting {
+                Section {
+                    ReasonLine(text: IOSSettingsText.busyReason)
+                }
+            }
             ForEach(sections) { (section: IOSSettingsSection) in
                 Section {
                     DisclosureGroup(isExpanded: openBinding(section.id)) {
                         SettingsSectionRows(id: section.id, camera: camera)
-                            .disabled(importer.isImporting)
+                            .disabled(working)
                     } label: {
                         SettingsSectionHeader(section: section, collapsed: !isOpen(section.id))
                     }
@@ -84,6 +80,7 @@ struct SettingsScreen: View {
                 } header: {
                     Text(IOSSettingsText.cameraTitle)
                 }
+                .disabled(state.isBusy)
             }
             Section {
                 if state.hasPrinter {
@@ -92,6 +89,7 @@ struct SettingsScreen: View {
                     } label: {
                         Label(IOSSettingsText.rulerLabel, systemImage: "ruler")
                     }
+                    .disabled(state.isBusy)
                     .accessibilityHint(Text(IOSSettingsText.rulerHint))
                     .accessibilityIdentifier("settings.ruler")
                 }
@@ -109,7 +107,6 @@ struct SettingsScreen: View {
                 .accessibilityIdentifier("settings.about")
             }
         }
-        .disabled(state.isBusy)
         .navigationTitle(IOSSettingsText.title)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {

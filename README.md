@@ -323,9 +323,9 @@ scanners (AirScan/eSCL) found on the Wi-Fi or added by address, picked from a sh
 sidebar on iPad, with a flatbed preview to choose the scan area on, a feeder's progress with Cancel,
 the screen kept on while a network scanner works, and the troubleshooter with its iPhone checks;
 Settings with the same sections and collapsed-header summaries as the desktop's settings column, the
-presets (save the current settings under a name, rename, delete, apply; also in the task list),
-this session's scans, the saved files with Share and Show in Files, and the file name with a button
-per part and the next file's name; on iPad a sidebar with the tasks, presets, scanners and library,
+presets (save the current settings under a name, rename, delete, apply; also in the task list) and
+the file name with a button per part and the next file's name; the library of this session's scans and
+the saved files with Share and Show in Files; on iPad a sidebar with the tasks, presets, scanners and library,
 Command-S, Command-N and Command-comma, Space for the shutter, pages reordered by dragging them in the
 grid and PDFs or pictures dropped on the scan screen, in any window size Stage Manager gives) is
 an Xcode project that

@@ -4,12 +4,14 @@ import SwiftUI
 
 /// Everything in the save folder, newest first (`IOSSavedFiles`): each file with its picture, name, date
 /// and size, the files of the last save marked New; Share and Show in Files on each, and its other actions
-/// (open, open with, email, copy) in its menu, through `AppState.runFileAction` as on the desktop, and for
-/// a PDF, adding the queued pages to its end (`AppState.appendToPDF(at:)`). Read again whenever something
-/// is saved and when pulled down.
+/// (open, email, copy) in its menu, through `AppState.runFileAction` as on the desktop, and for a PDF,
+/// adding the queued pages to its end (`AppState.appendToPDF(at:)`), whose progress and result show under
+/// the list. Read again whenever something is saved and when pulled down.
 struct SavedFilesScreen: View {
     @EnvironmentObject private var state: AppState
     @State private var folder: IOSSavedFolder = IOSSavedFolder(files: [], failed: false)
+    /// The PDF the queued pages are being added to from this screen: the status under the list is about it.
+    @State private var appending: URL?
 
     var body: some View {
         let place: URL = IOSSavedFiles.shownFolder(state.settings)
@@ -29,11 +31,12 @@ struct SavedFilesScreen: View {
             }
             Section {
                 ForEach(folder.files) { (file: IOSSavedFile) in
-                    SavedFileRow(file: file, canAppend: state.canAppendPages, onAction: run,
-                                 onAppend: { (file: IOSSavedFile) -> Void in state.appendToPDF(at: file.url) })
+                    SavedFileRow(file: file, canAppend: state.canAppendPages, onAction: run, onAppend: append)
                 }
             } header: {
                 Text(place.lastPathComponent)
+            } footer: {
+                appendStatus
             }
         }
         .listStyle(.insetGrouped)
@@ -54,6 +57,23 @@ struct SavedFilesScreen: View {
         .task(id: state.lastSavedURLs) {
             reload()
         }
+        .onDisappear {
+            appending = nil
+        }
+    }
+
+    @ViewBuilder
+    private var appendStatus: some View {
+        if appending != nil {
+            HStack(spacing: 8) {
+                if state.isBusy {
+                    ProgressView()
+                }
+                Text(state.statusMessage)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("saved.appendStatus")
+        }
     }
 
     private func reload() {
@@ -62,6 +82,11 @@ struct SavedFilesScreen: View {
 
     private func run(_ action: FileAction, _ file: IOSSavedFile) {
         state.runFileAction(action, urls: [file.url])
+    }
+
+    private func append(_ file: IOSSavedFile) {
+        appending = file.url
+        state.appendToPDF(at: file.url)
     }
 }
 

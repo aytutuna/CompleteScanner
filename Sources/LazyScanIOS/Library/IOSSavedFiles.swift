@@ -116,10 +116,10 @@ public enum IOSSavedFiles {
     }
 
     /// The actions of a file's More menu: what `SaveActions` offers for one file, but Share and Show in
-    /// Files, which have their own buttons.
+    /// Files, which have their own buttons, and Open with, which iOS answers with the share sheet too.
     public static var moreActions: [FileAction] {
         var actions: [FileAction] = []
-        for action in SaveActions.offered(fileCount: 1) where action != .share && action != .reveal {
+        for action in SaveActions.offered(fileCount: 1) where action != .share && action != .reveal && action != .openWith {
             actions.append(action)
         }
         return actions
