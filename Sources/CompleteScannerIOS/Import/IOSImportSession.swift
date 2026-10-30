@@ -244,9 +244,9 @@ public final class IOSImportSession: ObservableObject {
     /// An import runs.
     @Published public private(set) var isImporting: Bool = false
     /// The item in hand is a photo our camera just took: its corner editor has Retake and no caption, and its
-    /// progress ("Reading the photo…") no Stop.
+    /// progress reads "Reading the photo…".
     @Published public private(set) var importsShot: Bool = false
-    /// More photos or pages follow the one in hand, so the corner editor offers Stop.
+    /// More photos or pages follow the one in hand, so the corner editor and the progress offer Stop.
     @Published public private(set) var canStop: Bool = false
     /// "Importing photo 2 of 5…" while an import runs.
     @Published public private(set) var progressText: String?

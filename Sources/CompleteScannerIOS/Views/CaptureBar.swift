@@ -7,9 +7,10 @@ import UniformTypeIdentifiers
 
 /// The capture bar of the printer screen: the last page with how many the queue holds (it opens the page
 /// strip in a sheet, `onPages`, and bumps with a tap felt as a page comes in) and Photos and Files
-/// (`ImportButtons`), with an import's progress and Stop above them while one runs. Imported photos go to
-/// the corner editor one by one (`IOSImportSession`); the root view shows it. Scan is on the action row
-/// beside Save, and the camera's shutter is camera mode's (`CameraScreen`).
+/// (`ImportButtons`), with an import's progress above them while one runs (Stop while more photos or
+/// pages follow). Imported photos go to the corner editor one by one (`IOSImportSession`); the root view
+/// shows it. Scan is on the action row beside Save, and the camera's shutter is camera mode's
+/// (`CameraScreen`).
 struct CaptureBar: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var importer: IOSImportSession
@@ -116,8 +117,8 @@ struct CaptureBar: View {
     }
 }
 
-/// An import's progress ("Importing photo 2 of 5…") with Stop while it runs, on the capture bar and over
-/// camera mode's viewfinder; a shot, read in a moment, has none (its corner editor has Retake).
+/// An import's progress ("Importing photo 2 of 5…", a shot's "Reading the photo…") with Stop while more
+/// photos or pages follow the one in hand, on the capture bar and over camera mode's viewfinder.
 struct ImportProgressRow: View {
     @EnvironmentObject private var importer: IOSImportSession
 
@@ -132,7 +133,7 @@ struct ImportProgressRow: View {
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("import.progress")
             Spacer(minLength: 0)
-            if importer.isImporting && !importer.importsShot {
+            if importer.canStop {
                 Button(role: .cancel) {
                     importer.stop()
                 } label: {
@@ -140,7 +141,7 @@ struct ImportProgressRow: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .accessibilityHint(Text("Ends the import after this photo"))
+                .accessibilityHint(Text("Ends the import after this photo or page"))
                 .accessibilityIdentifier("import.stop")
             }
         }

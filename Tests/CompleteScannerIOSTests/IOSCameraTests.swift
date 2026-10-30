@@ -981,7 +981,7 @@ final class IOSCameraTests: XCTestCase {
         XCTAssertEqual(request.plan.reason, PhotoReviewReason.unsure)
         XCTAssertEqual(request.photo.width, 600)
         XCTAssertEqual(request.photo.height, 450)
-        // The editor offers Retake and no Stop: nothing follows the shot.
+        // Retake in the editor, and no Stop there or beside "Reading the photo…": nothing follows the shot.
         XCTAssertTrue(importer.importsShot)
         XCTAssertFalse(importer.canStop)
         XCTAssertEqual(importer.progressText, IOSImportText.readingShot)
