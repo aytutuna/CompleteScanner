@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Companion/CompanionInbox.cs: where uploads from paired phones
+// Twin of windows/LazyScan.Core/Companion/CompanionInbox.cs: where uploads from paired phones
 // land on the desktop, with the same checks, the same received.json per phone and the same
 // idempotence by package id.
 

@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/TextExport.cs: the same bytes and the same messages.
+// Twin of windows/LazyScan.Core/TextExport.cs: the same bytes and the same messages.
 
 /// The text file of a save (`OutputFormat.text`, or the text beside a PDF with
 /// `OutputOptions.alsoSaveText`), and what the app says about text it saved or could not read. The

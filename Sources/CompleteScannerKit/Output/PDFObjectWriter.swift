@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/PdfObjectWriter.cs: the same header, objects, streams, table
+// Twin of windows/LazyScan.Core/PdfObjectWriter.cs: the same header, objects, streams, table
 // and trailer, byte for byte, the same encryption of strings and streams (`PDFEncryption`), and the
 // same incremental-update sections (M21) for `PDFAppender`.
 

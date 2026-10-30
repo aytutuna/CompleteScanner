@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Companion/CompanionOutbox.cs: what the desktop holds for each
+// Twin of windows/LazyScan.Core/Companion/CompanionOutbox.cs: what the desktop holds for each
 // paired phone, served by GET /v1/outbox. Not PhoneOutbox (PhoneOutbox.swift), which is what a phone
 // has still to send to its desktop.
 

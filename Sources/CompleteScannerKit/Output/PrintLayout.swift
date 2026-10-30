@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/PrintLayout.cs: where a scan goes on the paper when it is
+// Twin of windows/LazyScan.Core/PrintLayout.cs: where a scan goes on the paper when it is
 // printed (the Copy task, the ID card page, the ruler test page). Printing at real size is the
 // point: a page scanned at 300 dpi prints at pixels / 300 inches, never scaled to the page unless
 // the user asks for it.

@@ -1,6 +1,6 @@
 import Foundation
 
-// The Swift side of windows/CompleteScanner.App/Scanning/EsclScannerBackend.cs: the same device list,
+// The Swift side of windows/LazyScan.App/Scanning/EsclScannerBackend.cs: the same device list,
 // the same way of connecting (addresses in order, trust on first use, a changed certificate refused
 // unless the user trusts it, never plain HTTP after a refused certificate), the same addresses added by
 // hand (escl-hosts.json, checked and re-checked every minute while they do not answer) and the same

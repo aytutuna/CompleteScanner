@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/CameraFixtures.cs: the same pixels, checked by FNV-1a
+// Twin of windows/LazyScan.Core.Tests/CameraFixtures.cs: the same pixels, checked by FNV-1a
 // (PhotoScenes.checksum). Drawn here with integers only, no real document.
 
 /// A colour of a fixture page.

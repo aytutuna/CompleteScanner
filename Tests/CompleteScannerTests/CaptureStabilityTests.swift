@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/CaptureStabilityTests.cs: the same scripted frame sequences.
+// Twin of windows/LazyScan.Core.Tests/CaptureStabilityTests.cs: the same scripted frame sequences.
 
 private let frameWidth = 1000, frameHeight = 750 // diagonal 1250: 1 % = 12.5 px
 private let frameMs = 33.0

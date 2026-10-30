@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/CaptureScale.cs: the same sizes, rules and arithmetic (+ − × ÷
+// Twin of windows/LazyScan.Core/CaptureScale.cs: the same sizes, rules and arithmetic (+ − × ÷
 // and square roots on doubles in the same order, rounding with floor(x + 0.5)).
 
 /// What a camera shot shows: it decides the sizes a page can snap to (`CaptureScale.candidates`) and

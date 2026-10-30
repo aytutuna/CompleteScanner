@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors the syntax and filter cases of windows/CompleteScanner.Core.Tests/PdfReaderLiteTests.cs:
+// Mirrors the syntax and filter cases of windows/LazyScan.Core.Tests/PdfReaderLiteTests.cs:
 // the same values read and written back, the same refusals, the same predictor and Flate cases.
 // The Flate case also inflates zlib's own bytes for its text, so Foundation's inflate is checked
 // against another encoder than the fixtures' Foundation deflate.

@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/GlareDetectorTests.cs: the same cards, readings and answers.
+// Mirrors windows/LazyScan.Core.Tests/GlareDetectorTests.cs: the same cards, readings and answers.
 // The readings are pinned to an independent model of GlareDetector's description.
 
 /// Made-up cards for the glare tests, drawn pixel by pixel the same way on both platforms: 428 × 270 (an

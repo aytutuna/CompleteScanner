@@ -2,9 +2,9 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/BarcodeTests.cs: the same cases, with a stand-in reader.
+// Twin of windows/LazyScan.Core.Tests/BarcodeTests.cs: the same cases, with a stand-in reader.
 // The real readers are checked on synthetic scans: Vision here (VisionBarcodeTests.swift), ZXing.Net
-// in the Windows app's tests (CompleteScanner.App.Tests/BarcodeReaderTests.cs).
+// in the Windows app's tests (LazyScan.App.Tests/BarcodeReaderTests.cs).
 
 /// A reader that returns what it was given and records the images it was asked to read.
 private final class FakeReader: BarcodeReader {

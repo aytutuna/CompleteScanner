@@ -4,7 +4,7 @@ import Foundation
 /// paper's tint, the scanner's uneven lighting or a gradient across the sheet: the area is cut
 /// into tiles, each tile's background is a high percentile of its pixels (the paper between the
 /// marks), and the background of any pixel is interpolated between tile centers. Twin of C#
-/// `BackgroundMap` (windows/CompleteScanner.Core/BackgroundMap.cs): same tiles, same arithmetic.
+/// `BackgroundMap` (windows/LazyScan.Core/BackgroundMap.cs): same tiles, same arithmetic.
 public struct BackgroundMap: Sendable {
     /// Left edge of the area the map covers, in image pixels.
     public let x: Int

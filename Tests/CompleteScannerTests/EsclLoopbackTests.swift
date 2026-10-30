@@ -6,7 +6,7 @@ import Security
 import XCTest
 @testable import CompleteScannerKit
 
-// The Swift twins of the two windows/CompleteScanner.Core.Tests/EsclTrustTests.cs cases that go through a
+// The Swift twins of the two windows/LazyScan.Core.Tests/EsclTrustTests.cs cases that go through a
 // real TLS connection (AFirstUseCertificateIsPinnedOnlyOnceItsUuidIsChecked,
 // HttpsConnectsOnlyOnceTheCertificateIsTrustedAndRefusesAChangedOne), and the network scanner connection
 // end to end: a fake eSCL scanner on an NWListener bound to the loopback interface only, over TLS with the

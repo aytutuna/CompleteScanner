@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Companion/SpkiFingerprint.cs: the same DER walk, the same
+// Twin of windows/LazyScan.Core/Companion/SpkiFingerprint.cs: the same DER walk, the same
 // fingerprint, check code and test vectors on both platforms.
 
 /// The fingerprint a phone pins a desktop's certificate by: the SHA-256 of the certificate's

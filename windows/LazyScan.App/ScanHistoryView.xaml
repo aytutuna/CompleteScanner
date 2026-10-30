@@ -1,0 +1,109 @@
+<UserControl x:Class="LazyScan.App.ScanHistoryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:LazyScan.App"
+             x:Name="Root">
+    <UserControl.Resources>
+        <local:ScanTimeConverter x:Key="ScanTimeConverter" />
+
+        <!-- Small metadata tag on a card (resolution, pixel size). -->
+        <Style x:Key="ChipStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}" />
+            <Setter Property="Padding" Value="6,1,6,2" />
+            <Setter Property="Margin" Value="0,0,4,4" />
+        </Style>
+        <Style x:Key="ChipText" TargetType="TextBlock" BasedOn="{StaticResource CaptionText}">
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <!-- The header and the card grid share their side insets, which centre the grid in the
+             available width (see UpdateInsets); the Saved tab lays out the same way. -->
+        <DockPanel x:Name="CardsPanel">
+            <StackPanel x:Name="Header" DockPanel.Dock="Top" Margin="16,16,16,8">
+                <TextBlock Text="This session" Style="{StaticResource SubtitleText}" TextWrapping="NoWrap"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="CountText" Style="{StaticResource CaptionText}" Margin="0,2,0,0"
+                           TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <ScrollViewer x:Name="CardsScroller" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled" ScrollChanged="CardsScroller_ScrollChanged">
+                <StackPanel>
+                    <ItemsControl x:Name="Cards" Margin="10,0,10,12" Focusable="False">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <!-- Exactly one Button per card, so the card is a single Tab stop opened with
+                                     Enter/Space; the zoom badge below is decoration only. -->
+                                <!-- The tooltip (made as it opens: "Just now" ages) holds what the card does not show. -->
+                                <Button x:Name="Card" Style="{StaticResource CardButtonStyle}" Width="200" Margin="6"
+                                        Click="Thumbnail_Click" Cursor="Hand" ToolTip=""
+                                        ToolTipOpening="Card_ToolTipOpening"
+                                        AutomationProperties.Name="{Binding AccessibleName}"
+                                        AutomationProperties.HelpText="Opens the scan larger">
+                                    <StackPanel>
+                                        <Grid Height="156">
+                                            <Border Style="{StaticResource ImageWellStyle}">
+                                                <Image Source="{Binding Thumbnail}" Stretch="Uniform" Margin="8"
+                                                       RenderOptions.BitmapScalingMode="HighQuality" />
+                                            </Border>
+                                            <Border x:Name="ZoomBadge" Style="{StaticResource HoverActionBarStyle}"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6"
+                                                    Padding="6" IsHitTestVisible="False">
+                                                <TextBlock Text="&#xE740;" Style="{StaticResource GlyphText}" FontSize="12" />
+                                            </Border>
+                                        </Grid>
+    
+                                        <!-- The mode as an icon (the name says it), then when it was scanned. -->
+                                        <DockPanel Margin="2,10,2,0">
+                                            <TextBlock x:Name="IntentGlyph" DockPanel.Dock="Left" Text="&#xE8A5;"
+                                                       Style="{StaticResource GlyphText}" Margin="0,0,8,0"
+                                                       Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                            <TextBlock Style="{StaticResource BodyText}" TextWrapping="NoWrap" VerticalAlignment="Center"
+                                                       Typography.NumeralAlignment="Tabular">
+                                                <TextBlock.Text>
+                                                    <MultiBinding Converter="{StaticResource ScanTimeConverter}">
+                                                        <Binding Path="Entry.Date" />
+                                                        <Binding Path="Now" ElementName="Root" />
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </DockPanel>
+                                    </StackPanel>
+                                </Button>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding Entry.Intent}" Value="Photo">
+                                        <Setter TargetName="IntentGlyph" Property="Text" Value="&#xEB9F;" />
+                                    </DataTrigger>
+                                    <Trigger SourceName="Card" Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="ZoomBadge" Property="Opacity" Value="1" />
+                                    </Trigger>
+                                    <Trigger SourceName="Card" Property="IsKeyboardFocused" Value="True">
+                                        <Setter TargetName="ZoomBadge" Property="Opacity" Value="1" />
+                                    </Trigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
+
+        <StackPanel x:Name="EmptyState" Style="{StaticResource EmptyStatePanelStyle}">
+            <Border Style="{StaticResource EmptyStateCircleStyle}">
+                <TextBlock Text="&#xE81C;" Style="{StaticResource EmptyStateGlyphStyle}" />
+            </Border>
+            <TextBlock Text="No scans yet" Style="{StaticResource EmptyStateTitleStyle}" />
+            <TextBlock Text="Scans from this session appear here, newest first." Style="{StaticResource EmptyStateBodyStyle}" />
+        </StackPanel>
+    </Grid>
+</UserControl>

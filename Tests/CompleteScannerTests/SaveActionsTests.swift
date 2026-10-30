@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/SaveActionsTests.cs: what happens after a save,
+// Twin of windows/LazyScan.Core.Tests/SaveActionsTests.cs: what happens after a save,
 // the actions offered for saved files, what Copy puts on the clipboard and how files are sent.
 // (The C# case of an enum value outside the declared ones has no Swift counterpart.)
 

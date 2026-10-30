@@ -1,7 +1,7 @@
 import Foundation
 import Network
 
-// Twin of the pure parts of windows/CompleteScanner.Core/Companion/CompanionNetworks.cs: the networks
+// Twin of the pure parts of windows/LazyScan.Core/Companion/CompanionNetworks.cs: the networks
 // approved for receiving (companion-networks.json), the addresses listened on and the peers answered.
 // Windows fills `CompanionNetwork` from the Network List Manager; the Mac fills it from its own
 // interfaces and has no categories (see `CompanionNetworkCategory`).

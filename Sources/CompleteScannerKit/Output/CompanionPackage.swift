@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/CompanionPackage.cs: the same manifest, the same bytes for
+// Twin of windows/LazyScan.Core/CompanionPackage.cs: the same manifest, the same bytes for
 // the same document, the same checks and messages when reading one.
 
 /// How a page's picture is stored in a companion package.

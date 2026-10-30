@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 /// Color facts about a page, used to store pages scanned in color as gray when they have no
-/// color. Twin of `windows/CompleteScanner.Core/ColorAnalysis.cs`: same constants, same
+/// color. Twin of `windows/LazyScan.Core/ColorAnalysis.cs`: same constants, same
 /// sampling, same luma weights.
 public enum ColorAnalysis {
     /// Every `sampleStep`-th pixel of every `sampleStep`-th row is looked at.

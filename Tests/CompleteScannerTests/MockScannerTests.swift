@@ -2,7 +2,7 @@ import XCTest
 import CoreGraphics
 @testable import CompleteScannerKit
 
-// The demo scanner's feeder. Mirrors windows/CompleteScanner.Core.Tests/MockScannerTests.cs.
+// The demo scanner's feeder. Mirrors windows/LazyScan.Core.Tests/MockScannerTests.cs.
 
 private let mockDPI = 75
 

@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/PatchCodeTests.cs: the same pages, the same expectations.
+// Twin of windows/LazyScan.Core.Tests/PatchCodeTests.cs: the same pages, the same expectations.
 
 final class PatchCodeTests: XCTestCase {
     private enum Expected {

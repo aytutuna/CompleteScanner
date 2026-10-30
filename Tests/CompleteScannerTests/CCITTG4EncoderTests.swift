@@ -4,7 +4,7 @@ import Foundation
 import ImageIO
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/CcittG4EncoderTests.cs: the same known answers (written
+// Mirrors windows/LazyScan.Core.Tests/CcittG4EncoderTests.cs: the same known answers (written
 // from the bit strings of ITU-T T.4 and T.6, not from the encoder's own tables) and the same golden
 // bytes, pinned in C#. C# decodes with PdfPig; here the round trips decode with ImageIO, through a
 // G4 TIFF around the data (`BilevelTIFF`), as CONTRACTS.md asks of the Mac's port. The every-run

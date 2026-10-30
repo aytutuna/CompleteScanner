@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/PdfSyntax.cs: the object syntax of an existing PDF, as the
+// Twin of windows/LazyScan.Core/PdfSyntax.cs: the object syntax of an existing PDF, as the
 // reader reads it and the appender writes back the few objects it changes. The values (ISO 32000-1
 // 7.3), a lexer over the file's bytes, the FlateDecode filter with its PNG and TIFF predictors
 // (7.4.4), and the way each value is written again, with the same limits and error texts. Strings

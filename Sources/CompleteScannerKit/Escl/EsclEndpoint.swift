@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Escl/EsclEndpoint.cs: the same grouping and address order.
+// Twin of windows/LazyScan.Core/Escl/EsclEndpoint.cs: the same grouping and address order.
 
 /// One DNS-SD service instance of a network scanner, as the operating system reports it: _uscan._tcp
 /// (`secure` false) or _uscans._tcp (true).

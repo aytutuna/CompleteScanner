@@ -2,7 +2,7 @@ import XCTest
 import CoreGraphics
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/ColorAnalysisTests.cs: the same pages, the same answers.
+// Mirrors windows/LazyScan.Core.Tests/ColorAnalysisTests.cs: the same pages, the same answers.
 
 /// An RGBA8 page of one color.
 private struct Page {

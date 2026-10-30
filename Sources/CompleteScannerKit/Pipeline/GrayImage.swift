@@ -4,7 +4,7 @@ import Foundation
 /// An 8-bit luminance bitmap: row-major, top-left origin, y down, one byte per pixel (0 = black).
 /// The page analyses (blank pages, and later page edges, separator sheets and receipts) work on
 /// it at a fixed analysis resolution (`analysisDPI`), so their pixel constants mean the same
-/// physical size on every scan. Twin of C# `GrayImage` (windows/CompleteScanner.Core/GrayImage.cs):
+/// physical size on every scan. Twin of C# `GrayImage` (windows/LazyScan.Core/GrayImage.cs):
 /// same arithmetic, so the same pixels give the same bytes on both platforms.
 public struct GrayImage: Equatable, Sendable {
     /// The resolution the page analyses work at.

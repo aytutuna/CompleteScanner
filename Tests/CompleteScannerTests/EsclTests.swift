@@ -3,7 +3,7 @@ import Foundation
 import CoreGraphics
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/EsclTests.cs (same cases; a C# theory is one test here
+// Mirrors windows/LazyScan.Core.Tests/EsclTests.cs (same cases; a C# theory is one test here
 // that loops over the same rows). The fixtures are the shared files in Tests/Fixtures/Escl, hand-written
 // in the shape real devices send (namespace prefixes vary between devices).
 

@@ -4,7 +4,7 @@ Six frames of the SmartDoc 2015 Challenge 1 dataset for the corner model's tests
 background01 to background04 and two from background05, the cluttered desk where our own page search does
 worst (a cable across the page, more sheets under it, pens on it). Read by the Swift model tests
 (`Tests/CompleteScannerModelTests`, found next to the test file) and copied next to the C# test assembly
-by `windows/CompleteScanner.App.Tests`.
+by `windows/LazyScan.App.Tests`.
 
 The frames are 1920 × 1080 in the dataset. Here they are scaled to 1280 × 720 (Lanczos) and saved as
 JPEG at quality 90, and their ground-truth corners scaled by the same 2/3. `corners.json` lists each file

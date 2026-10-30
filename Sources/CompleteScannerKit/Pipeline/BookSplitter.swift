@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/BookSplitter.cs: same constants, same steps.
+// Twin of windows/LazyScan.Core/BookSplitter.cs: same constants, same steps.
 
 /// Which way the gutter of an open book runs across a scan (`GutterResult`).
 public enum GutterAxis: Sendable {

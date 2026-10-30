@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/CompanionHttpTests.cs (same requests, same answers).
+// Mirrors windows/LazyScan.Core.Tests/CompanionHttpTests.cs (same requests, same answers).
 
 final class CompanionHttpTests: XCTestCase {
     /// The text as ISO 8859-1 bytes (one byte per character), as the C# twin sends it.

@@ -2,7 +2,7 @@ import Foundation
 
 // The phone's side of C1 (I20): pairing with a desktop from its code, checking the link, sending the
 // queue as a `.csdoc` and taking what the desktop holds for the phone. The desktop is the server
-// (windows/CompleteScanner.Core/Companion); this is the client, through `CompanionClient`. When the
+// (windows/LazyScan.Core/Companion); this is the client, through `CompanionClient`. When the
 // desktop cannot be reached, documents go through the cloud sync folder instead (C2, `SyncPackage`).
 
 /// The companion's texts on the phone.

@@ -4,7 +4,7 @@ import Foundation
 import Security
 
 // Where Windows protects a phone's sync key with the Data Protection API (PairedDevice.SyncKeyProtected
-// in windows/CompleteScanner.Core/Companion/PairedDeviceStore.cs), the Mac keeps it in the login keychain.
+// in windows/LazyScan.Core/Companion/PairedDeviceStore.cs), the Mac keeps it in the login keychain.
 
 /// The Mac's store for the phones' sync keys (C2, `PairedDeviceStore`'s `syncKeyStore`): each key as a
 /// generic password in the login keychain (service `service`, account the phone's id). An app built with

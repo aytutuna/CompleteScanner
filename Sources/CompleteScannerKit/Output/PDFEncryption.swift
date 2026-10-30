@@ -3,7 +3,7 @@ import CryptoKit
 import Foundation
 import Security
 
-// Twin of windows/CompleteScanner.Core/PdfEncryption.cs (PasswordStrength, PdfProtection,
+// Twin of windows/LazyScan.Core/PdfEncryption.cs (PasswordStrength, PdfProtection,
 // PdfEncryption): the same password preparation, strength guess and texts, and the same standard
 // security handler (V5 R6, AES-256) with the same values for the same random bytes, so a protected
 // file is the same file on both platforms (PDFEncryptionTests' golden values, pinned in C#). AES is

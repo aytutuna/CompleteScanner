@@ -3,7 +3,7 @@ import XCTest
 @testable import CompleteScannerKit
 
 // CompanionClient against a stub desktop (CompanionFakes.swift): the requests the C# FakePhone sends
-// (windows/CompleteScanner.Core.Tests/CompanionLoopbackTests.cs), the answers the C# router gives and
+// (windows/LazyScan.Core.Tests/CompanionLoopbackTests.cs), the answers the C# router gives and
 // the errors they map to. The certificate check is tested on `accepts` with the shared test
 // certificate; a URLProtocol stub never reaches TLS.
 

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>LazyScan.Core</RootNamespace>
+    <Description>Platform-neutral core of CompleteScanner: photo detection, image pipeline,
+naming, presets, PDF assembly, and the scanner-backend contract. No UI and no OS-specific
+APIs, usable from any .NET UI stack on any OS; the one package dependency, ProtectedData,
+keeps the companion's sync keys on Windows and is not called elsewhere.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="LazyScan.Core.Tests" />
+  </ItemGroup>
+
+</Project>

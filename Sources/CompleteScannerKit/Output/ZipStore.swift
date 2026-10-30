@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/ZipStore.cs: the same bytes for the same entries.
+// Twin of windows/LazyScan.Core/ZipStore.cs: the same bytes for the same entries.
 
 /// One file in a zip package: its path inside the package ("word/document.xml") and its bytes.
 public struct ZipStoreEntry {

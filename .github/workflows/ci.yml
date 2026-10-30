@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
-      # The 32-bit TWAIN helper (windows/CompleteScanner.TwainHelper, x86) runs on the 32-bit .NET
+      # The 32-bit TWAIN helper (windows/LazyScan.TwainHelper, x86) runs on the 32-bit .NET
       # runtime, which its tests start for real. Installed with Microsoft's dotnet-install script
       # into the default x86 location, where the helper's host looks, unless the image has it.
       - name: Install the 32-bit .NET Desktop Runtime
@@ -52,9 +52,9 @@ jobs:
         run: bash scripts/fetch_docaligner.sh
       # Built first, so the tests do not share the runner's cores with the compiler.
       - name: Build
-        run: dotnet build windows/CompleteScanner.sln -c Release
+        run: dotnet build windows/LazyScan.sln -c Release
       - name: Test
-        run: dotnet test windows/CompleteScanner.sln -c Release --no-build
+        run: dotnet test windows/LazyScan.sln -c Release --no-build
         env:
           # The helper's tests must run here, never be skipped for a missing runtime.
           COMPLETESCANNER_REQUIRE_TWAIN_HELPER: '1'

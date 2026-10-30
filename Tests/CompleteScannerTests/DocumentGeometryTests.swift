@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/DocumentGeometryTests.cs: crop to the page and
+// Twin of windows/LazyScan.Core.Tests/DocumentGeometryTests.cs: crop to the page and
 // straighten it, on the same synthetic pages (TestPages, byte-identical, checked by checksum).
 
 private func rowMean(_ gray: GrayImage, _ y: Int) -> Double {

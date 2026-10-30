@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/PdfA.cs (PdfConformance, PdfWriteOptions, PdfA): the same XMP
+// Twin of windows/LazyScan.Core/PdfA.cs (PdfConformance, PdfWriteOptions, PdfA): the same XMP
 // packet, information dictionary, output intent and sRGB profile bytes, so a PDF/A file is the same
 // file on both platforms (PDFATests' golden value, pinned in C#). C# `DateTimeOffset` is a `Date`
 // with the `TimeZone` whose offset it is written with; C#'s exceptions are `ScanError.exportFailed`.

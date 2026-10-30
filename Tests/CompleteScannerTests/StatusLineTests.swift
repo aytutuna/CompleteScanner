@@ -3,7 +3,7 @@ import CoreGraphics
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/StatusLineTests.cs: the status line's six words.
+// Mirrors windows/LazyScan.Core.Tests/StatusLineTests.cs: the status line's six words.
 
 final class StatusLineTests: XCTestCase {
 

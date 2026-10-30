@@ -3,7 +3,7 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-// Twin of windows/CompleteScanner.Core/PdfImageEncoding.cs: the same table, the same rules and
+// Twin of windows/LazyScan.Core/PdfImageEncoding.cs: the same table, the same rules and
 // the same rounding. The Apple part (`encodedPage`, `encodeJPEG`) has no C# counterpart: Windows
 // encodes with WIC in the app (black & white pages as CCITT G4), here ImageIO encodes the JPEG, and
 // both embed the image through the same PDF writer (`PDFWriter`, here through

@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/PerspectiveWarp.cs: integer box averages and the corrector's
+// Twin of windows/LazyScan.Core/PerspectiveWarp.cs: integer box averages and the corrector's
 // sampler (+ − × ÷ on doubles in the same order, halves rounded to even), so the same photo, quad and
 // size give the same bytes on both platforms.
 

@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 // The phone's side of the companion link (CompanionProtocol.swift). The requests are the ones the C#
-// FakePhone sends in windows/CompleteScanner.Core.Tests/CompanionLoopbackTests.cs, the desktop's
+// FakePhone sends in windows/LazyScan.Core.Tests/CompanionLoopbackTests.cs, the desktop's
 // only other client: the same paths, Authorization and X-Device-Id after pairing, X-Target on an
 // upload. An upload also says what it is (`packageContentType`), where .NET's ByteArrayContent sends
 // no Content-Type and URLSession would send a form's.

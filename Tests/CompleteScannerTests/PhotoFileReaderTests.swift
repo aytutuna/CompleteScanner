@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 
 // Photos of documents read for import with ImageIO (`PhotoFileReader`, App/AppState+Import.swift): a
 // photo too large is turned down from its header, before its pixels are decoded, and every page of a
-// TIFF is read in turn. Twin of the Windows CompleteScanner.App.Tests/PhotoFileReaderTests.cs (WIC).
+// TIFF is read in turn. Twin of the Windows LazyScan.App.Tests/PhotoFileReaderTests.cs (WIC).
 
 /// A plain picture of `width` × `height`.
 private func makePicture(width: Int, height: Int) -> CGImage {

@@ -3,7 +3,7 @@ import Foundation
 // The options every PDF a save writes is written with: PDF/A-2b when the archival option is on, a
 // password when the password option is, asked for once per save and never stored. Twin of the
 // Windows view model's `ProtectionFor`, `ForgetPdfPassword`, `PasswordNotGivenException` and
-// `PdfNote` (windows/CompleteScanner.App/AppViewModel.cs).
+// `PdfNote` (windows/LazyScan.App/AppViewModel.cs).
 
 /// A save that needed a password got none (the dialog was cancelled, or nobody could ask): handled
 /// like a cancellation, with its own message (`PDFProtection.notSavedMessage`). Nothing is saved

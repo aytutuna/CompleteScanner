@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/SavePlanTests.cs: the same cases.
+// Twin of windows/LazyScan.Core.Tests/SavePlanTests.cs: the same cases.
 
 private let paperImage: CGImage = RgbaImage.filled(width: 4, height: 4, r: 255, g: 255, b: 255).makeCGImage()!
 

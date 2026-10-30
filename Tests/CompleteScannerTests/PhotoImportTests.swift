@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/PhotoImportTests.cs: the same cases on the same synthetic
+// Twin of windows/LazyScan.Core.Tests/PhotoImportTests.cs: the same cases on the same synthetic
 // photos (PhotoScenes).
 
 /// A small photo whose every pixel is different, to follow where each one goes.

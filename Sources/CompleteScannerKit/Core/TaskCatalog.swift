@@ -1,7 +1,7 @@
 import Foundation
 
 /// How the app handles a task's scans. Twin of C# `TaskFlowKind`
-/// (`windows/CompleteScanner.Core/TaskCatalog.cs`).
+/// (`windows/LazyScan.Core/TaskCatalog.cs`).
 public enum TaskFlowKind: String, Sendable {
     /// Pages go to the queue and are saved together, or each scan is saved at once.
     case documentQueue

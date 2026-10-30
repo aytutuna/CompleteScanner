@@ -1,7 +1,7 @@
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/GrayImageTests.cs: GrayImage and BackgroundMap, same
+// Twin of windows/LazyScan.Core.Tests/GrayImageTests.cs: GrayImage and BackgroundMap, same
 // cases, same bytes.
 
 final class GrayImageTests: XCTestCase {

@@ -1,7 +1,7 @@
 import XCTest
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/DeviceMergeTests.cs: same tables, same cases.
+// Mirrors windows/LazyScan.Core.Tests/DeviceMergeTests.cs: same tables, same cases.
 
 final class DeviceMergeTests: XCTestCase {
 

@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/PerspectiveWarpTests.cs: the same fixture photos, quads
+// Twin of windows/LazyScan.Core.Tests/PerspectiveWarpTests.cs: the same fixture photos, quads
 // and sizes, the same warped bytes (pinned by checksum and sample pixels in both suites, and
 // recomputed by an independent model of the algorithm when the constants change).
 

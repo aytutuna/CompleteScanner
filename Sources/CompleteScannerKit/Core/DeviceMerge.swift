@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/DeviceMerge.cs; the tests in DeviceMergeTests (both
+// Twin of windows/LazyScan.Core/DeviceMerge.cs; the tests in DeviceMergeTests (both
 // platforms) share one table of cases.
 
 /// One physical scanner: every entry the backends list for it, and the one the app connects

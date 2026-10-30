@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/SyncFolderWatcherTests.cs (same cases); the sync keys are
+// Mirrors windows/LazyScan.Core.Tests/SyncFolderWatcherTests.cs (same cases); the sync keys are
 // kept in memory here, where Windows keeps them with the Data Protection API.
 
 final class SyncFolderWatcherTests: XCTestCase {

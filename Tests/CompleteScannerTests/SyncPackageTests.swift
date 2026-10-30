@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/SyncPackageTests.cs: the same cases and the same golden
+// Mirrors windows/LazyScan.Core.Tests/SyncPackageTests.cs: the same cases and the same golden
 // bytes, pinned there from the C# writer, which CryptoKit must reproduce.
 
 final class SyncPackageTests: XCTestCase {

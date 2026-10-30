@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/PairedDeviceStoreTests.cs (same cases; each platform
+// Mirrors windows/LazyScan.Core.Tests/PairedDeviceStoreTests.cs (same cases; each platform
 // writes its own file in its own settings folder, so only the JSON keys are shared, not dates).
 
 final class PairedDeviceStoreTests: XCTestCase {

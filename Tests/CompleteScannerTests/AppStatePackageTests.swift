@@ -4,7 +4,7 @@ import XCTest
 @testable import CompleteScannerKit
 
 // A .csdoc opened by hand and the queue written as one, through the app's state
-// (AppState+Package.swift). Twin of windows/CompleteScanner.App.Tests/PackageAppTests.cs, which tests
+// (AppState+Package.swift). Twin of windows/LazyScan.App.Tests/PackageAppTests.cs, which tests
 // the same pieces without the view model (it reads the user's settings); adding and opening as new
 // are tested here only. A package the Swift writer makes is read by the C# suite through the golden
 // package: CompanionPackageTests.test_golden_packageBytesArePinned writes the bytes the C# suite reads.

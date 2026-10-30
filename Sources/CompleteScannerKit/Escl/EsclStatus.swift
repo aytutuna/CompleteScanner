@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Escl/EsclStatus.cs: the same status mapping and tests.
+// Twin of windows/LazyScan.Core/Escl/EsclStatus.cs: the same status mapping and tests.
 
 /// A parsed eSCL ScannerStatus document: the device state (pwg:State) and the feeder state
 /// (scan:AdfState), read after a job fails to tell the user what is wrong at the scanner.

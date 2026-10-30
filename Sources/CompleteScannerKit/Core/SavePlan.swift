@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/SavePlan.cs.
+// Twin of windows/LazyScan.Core/SavePlan.cs.
 
 /// A document of the queue as saved: its number (from 1), its pages in order and its name, if any.
 /// Twin of C# `SaveDocument`.

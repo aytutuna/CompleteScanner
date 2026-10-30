@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Orientation.cs.
+// Twin of windows/LazyScan.Core/Orientation.cs.
 
 /// How much text recognition read on a page held one way up. Text read the right way up comes out
 /// as words; upside down or sideways it comes out as few letters, or as letters that do not make

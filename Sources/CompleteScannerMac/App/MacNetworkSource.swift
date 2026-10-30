@@ -5,7 +5,7 @@ import Foundation
 import Network
 import SystemConfiguration
 
-// Twin of windows/CompleteScanner.App/Services/Companion/WindowsNetworkSource.cs on the Mac's own
+// Twin of windows/LazyScan.App/Services/Companion/WindowsNetworkSource.cs on the Mac's own
 // interfaces (getifaddrs), since macOS has no network list with categories.
 
 /// The networks this Mac is on: each IPv4 subnet of an interface that is up and running is a network

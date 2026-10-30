@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/EsclClientTests.cs (the same 18 cases, a C# theory being
+// Mirrors windows/LazyScan.Core.Tests/EsclClientTests.cs (the same 18 cases, a C# theory being
 // one test here over the same rows). EsclClient and EsclScannerSession against a URLProtocol stub that
 // plays a device, as the C# stub HttpMessageHandler does; retry waits run on a fake clock. Pages are
 // "read" by a stub reader: a file holding "PAGE w h" becomes a w×h image, anything else is unreadable.

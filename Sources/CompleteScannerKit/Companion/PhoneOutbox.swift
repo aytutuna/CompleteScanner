@@ -1,7 +1,7 @@
 import Foundation
 
 // What the phone has still to send to its desktop. Not the twin of the desktop's CompanionOutbox
-// (windows/CompleteScanner.Core/Companion/CompanionOutbox.cs, what the desktop holds for a phone),
+// (windows/LazyScan.Core/Companion/CompanionOutbox.cs, what the desktop holds for a phone),
 // whose Swift twin is CompanionOutbox.swift.
 
 extension CompanionTarget: Codable {}

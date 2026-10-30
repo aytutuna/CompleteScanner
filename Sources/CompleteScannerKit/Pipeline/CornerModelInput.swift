@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/CornerModelInput.cs: the same sampling arithmetic in the same order,
+// Twin of windows/LazyScan.Core/CornerModelInput.cs: the same sampling arithmetic in the same order,
 // so a corner model gets the very same numbers on both platforms.
 
 /// A photo as DocAligner's corner models take it: stretched to `side` × `side` (its shape not kept, as the

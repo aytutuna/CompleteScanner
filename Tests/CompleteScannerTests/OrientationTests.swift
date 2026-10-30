@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/OrientationTests.cs: rotate pages upright — what a
+// Twin of windows/LazyScan.Core.Tests/OrientationTests.cs: rotate pages upright — what a
 // reading scores, which ways up are read, when a page is turned, and what the page strip says about it.
 
 /// `rgba` with a black 20 × 20 px square 10 px in from its top left corner.

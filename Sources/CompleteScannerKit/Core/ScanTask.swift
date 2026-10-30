@@ -4,7 +4,7 @@ import Foundation
 /// raw value (`ScanSettings.taskId`), never as this enum, so a task added by a newer version
 /// survives a round trip through an older one. Only tasks whose features exist get a case;
 /// later features add theirs after the existing ones. Twin of
-/// `windows/CompleteScanner.Core/ScanTask.cs`.
+/// `windows/LazyScan.Core/ScanTask.cs`.
 public enum ScanTask: String, CaseIterable, Identifiable, Sendable {
     case document
     case feeder

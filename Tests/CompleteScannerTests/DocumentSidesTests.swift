@@ -2,7 +2,7 @@ import XCTest
 import CoreGraphics
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/DocumentSidesTests.cs: the same cases.
+// Mirrors windows/LazyScan.Core.Tests/DocumentSidesTests.cs: the same cases.
 
 private func rows(_ transfers: [SidedTransfer]) -> [String] {
     transfers.map { "\($0.transferIndex) \($0.sheetIndex) \($0.side.rawValue)" }

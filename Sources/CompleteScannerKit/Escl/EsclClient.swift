@@ -3,7 +3,7 @@ import Foundation
 import ImageIO
 import Security
 
-// Twin of windows/CompleteScanner.Core/Escl/EsclClient.cs: the same job rules and the same tests
+// Twin of windows/LazyScan.Core/Escl/EsclClient.cs: the same job rules and the same tests
 // (EsclClientTests), on URLSession. Deliberate differences: each page is downloaded to a file in the
 // page spool and read from there, so its compressed bytes are never held in memory next to its pixels;
 // a job also stops when the system is about to suspend the app (`suspended`, the iPhone only), keeping

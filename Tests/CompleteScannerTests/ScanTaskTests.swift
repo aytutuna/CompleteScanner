@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/ScanTaskTests.cs: the same cases, the Archive document
+// Mirrors windows/LazyScan.Core.Tests/ScanTaskTests.cs: the same cases, the Archive document
 // task included (CONTRACTS.md).
 
 private func customized() -> ScanSettings {

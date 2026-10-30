@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/TaskFlowTests.cs: the same cases.
+// Mirrors windows/LazyScan.Core.Tests/TaskFlowTests.cs: the same cases.
 
 /// A two-sided card: front, then an optional back, then a review that captures nothing.
 private func cardFlow() -> TaskFlow {

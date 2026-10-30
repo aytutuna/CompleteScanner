@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Bilevel.cs: the same layout, threshold and rounding, so both
+// Twin of windows/LazyScan.Core/Bilevel.cs: the same layout, threshold and rounding, so both
 // platforms give CCITTG4Encoder the same bits (see CONTRACTS.md, "CCITT G4 for black & white pages").
 
 /// Black & white pages as one bit per pixel, the form CCITT G4 (`CCITTG4Encoder`) encodes: rows top

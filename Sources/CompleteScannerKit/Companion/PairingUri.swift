@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Companion/PairingUri.cs: the same text for the same pairing
+// Twin of windows/LazyScan.Core/Companion/PairingUri.cs: the same text for the same pairing
 // code, the same checks and the same refusals.
 
 /// Why a scanned code is not a pairing code this app can use.

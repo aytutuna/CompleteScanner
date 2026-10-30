@@ -1,7 +1,7 @@
 import Foundation
 
 /// One step of a guided task, as the banner on the scan screen shows it. Twin of C# `TaskStep`
-/// (`windows/CompleteScanner.Core/TaskFlow.cs`).
+/// (`windows/LazyScan.Core/TaskFlow.cs`).
 public struct TaskStep: Equatable, Sendable {
     /// Stable within its task, for example "scan", "front" or "back".
     public let id: String

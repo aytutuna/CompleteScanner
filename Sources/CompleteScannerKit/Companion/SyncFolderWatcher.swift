@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Companion/SyncFolderWatcher.cs: the same rules for taking,
+// Twin of windows/LazyScan.Core/Companion/SyncFolderWatcher.cs: the same rules for taking,
 // skipping and leaving a file; a DispatchSource on the folder where Windows has a FileSystemWatcher,
 // and the C# events are closures.
 

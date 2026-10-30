@@ -1,7 +1,7 @@
 import XCTest
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/TroubleshooterTests.cs (same fixtures, same text).
+// Mirrors windows/LazyScan.Core.Tests/TroubleshooterTests.cs (same fixtures, same text).
 // Swift-only case: CancellationError in failure(deviceName:error:) (C# has
 // OperationCanceledException instead, tested there).
 

@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/DocumentSplitterTests.cs: the same cases.
+// Twin of windows/LazyScan.Core.Tests/DocumentSplitterTests.cs: the same cases.
 
 private let plain = PageFacts()
 private let blank = PageFacts(looksBlank: true)

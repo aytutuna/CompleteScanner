@@ -1,0 +1,99 @@
+<Window x:Class="LazyScan.App.PhotoCropEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:LazyScan.App"
+        Title="Adjust crop"
+        Width="820" Height="680" MinWidth="560" MinHeight="460"
+        FontFamily="{StaticResource TextFontFamily}"
+        Icon="{x:Static ui:AppIcon.Image}"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Window.Resources>
+        <!-- Read-only value chip in the header (crop size, angle). -->
+        <Style x:Key="CropChipStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="10,3,12,4" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="CropChipGlyphStyle" TargetType="TextBlock" BasedOn="{StaticResource GlyphText}">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Margin" Value="0,1,6,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        </Style>
+        <Style x:Key="CropChipText" TargetType="TextBlock" BasedOn="{StaticResource CaptionText}">
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <!-- Header: title, helper text, live size and angle readouts. -->
+        <Grid DockPanel.Dock="Top" Margin="20,14,20,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Margin="0,0,16,0">
+                <TextBlock Text="Adjust crop" Style="{StaticResource SubtitleText}" TextWrapping="NoWrap" />
+                <DockPanel Margin="0,4,0,0" HorizontalAlignment="Left">
+                    <ui:InfoButton DockPanel.Dock="Right" Label="keyboard use" Heading="Keyboard" Margin="4,-4,0,-4"
+                                   InfoText="Arrow keys move the frame, Ctrl+arrow keys resize it, Shift takes bigger steps." />
+                    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap" VerticalAlignment="Center"
+                               Text="Drag corners to resize, or inside to move." />
+                </DockPanel>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,4,0,0">
+                <Border Style="{StaticResource CropChipStyle}" ToolTip="Crop size in scanned pixels">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource CropChipGlyphStyle}" Text="&#xE7A8;" />
+                        <TextBlock x:Name="SizeCaption" Style="{StaticResource CropChipText}" />
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource CropChipStyle}" Margin="6,0,0,0" ToolTip="Rotation angle">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Style="{StaticResource CropChipGlyphStyle}" Text="&#xE7AD;" />
+                        <TextBlock x:Name="AngleCaption" Style="{StaticResource CropChipText}" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
+
+        <!-- Footer: low-emphasis Reset on the left, Cancel and the primary Apply on the right. -->
+        <DockPanel DockPanel.Dock="Bottom" Margin="20,12,20,16" LastChildFill="False">
+            <Button x:Name="ResetButton" DockPanel.Dock="Left" Content="Reset" Style="{StaticResource SubtleButtonStyle}"
+                    ui:Icon.Glyph="&#xE7A7;" Margin="-11,0,0,0" Click="Reset_Click" IsEnabled="False"
+                    ToolTip="Go back to the detected crop" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Content="Cancel" IsCancel="True" MinWidth="96" />
+                <Button Content="Apply" IsDefault="True" MinWidth="96" Margin="8,0,0,0"
+                        Style="{StaticResource AccentButtonStyle}" Click="Apply_Click" />
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Neutral stage: the page with a soft shadow, the area outside the crop dimmed. -->
+        <Border Style="{StaticResource StageStyle}" Margin="12,0,12,0">
+            <Canvas x:Name="Host" Background="Transparent" ClipToBounds="True"
+                    Focusable="True" KeyDown="Host_KeyDown"
+                    FocusVisualStyle="{DynamicResource DefaultControlFocusVisualStyle}"
+                    AutomationProperties.Name="Crop frame"
+                    AutomationProperties.HelpText="Arrow keys move the crop, Ctrl+arrow keys resize it, Shift takes bigger steps."
+                    MouseLeftButtonDown="Host_MouseDown" MouseMove="Host_MouseMove"
+                    MouseLeftButtonUp="Host_MouseUp" LostMouseCapture="Host_LostMouseCapture"
+                    SizeChanged="Host_SizeChanged">
+                <Image x:Name="DisplayImage" Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality"
+                       Effect="{DynamicResource PageShadow}" />
+                <Path x:Name="OutsideDim" Fill="{DynamicResource SmokeFillColorDefaultBrush}" IsHitTestVisible="False" />
+                <Path x:Name="ThirdsGrid" Stroke="{DynamicResource AccentFillColorDefaultBrush}" StrokeThickness="1"
+                      Opacity="0.6" IsHitTestVisible="False" />
+                <TextBlock x:Name="LoadingText" Text="Loading…" Style="{StaticResource SecondaryBodyText}"
+                           TextAlignment="Center" MaxWidth="360" />
+                <Polygon x:Name="CropOutline" Stroke="{DynamicResource AccentFillColorDefaultBrush}" StrokeThickness="2"
+                         StrokeLineJoin="Miter" IsHitTestVisible="False" />
+            </Canvas>
+        </Border>
+    </DockPanel>
+</Window>

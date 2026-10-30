@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 import ImageIO
 
-// Twin of windows/CompleteScanner.App/AppViewModel.Package.cs: a `.csdoc` opened by hand (dropped,
+// Twin of windows/LazyScan.App/AppViewModel.Package.cs: a `.csdoc` opened by hand (dropped,
 // opened from Files or the Finder, or through the file association) is offered, not added: a banner
 // adds its pages to the queue or opens it as a new one, unlike a paired phone's documents, which C1
 // adds on its own. The queue can also be written as a `.csdoc`, for the iPhone's share sheet.

@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/PatchCode.cs.
+// Twin of windows/LazyScan.Core/PatchCode.cs.
 
 /// The six patch codes of document scanners: four parallel bars, two wide and two narrow, in an
 /// order that names the code. Separator sheets carry one (Patch T by convention). A sheet fed the

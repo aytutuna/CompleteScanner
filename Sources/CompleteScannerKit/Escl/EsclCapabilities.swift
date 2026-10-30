@@ -1,7 +1,7 @@
 import Foundation
 import CoreGraphics
 
-// Twin of windows/CompleteScanner.Core/Escl/EsclCapabilitiesParser.cs: the eSCL (AirScan) protocol
+// Twin of windows/LazyScan.Core/Escl/EsclCapabilitiesParser.cs: the eSCL (AirScan) protocol
 // logic both apps share, tested against the fixtures in Tests/Fixtures/Escl that the C# tests read
 // too. Only Foundation: it builds for macOS and iOS.
 

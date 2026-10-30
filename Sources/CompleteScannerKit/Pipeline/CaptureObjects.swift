@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/CaptureObjects.cs: the same kinds, pages and rules.
+// Twin of windows/LazyScan.Core/CaptureObjects.cs: the same kinds, pages and rules.
 
 /// The objects of one camera shot as pages (I13): several receipts or photos, or the side of an ID card,
 /// each the photo as taken with the object's corners as its capture facts, so the clean-up stage cuts

@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/PageProcessorTests.cs: the clean-up stage, which
+// Twin of windows/LazyScan.Core.Tests/PageProcessorTests.cs: the clean-up stage, which
 // pages are saved, and the page facts every rebuild keeps.
 
 private let blankRgba = TestPages.enlarged(TestPages.noisyBlank(), 1)

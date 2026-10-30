@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 /// Which setting `SettingsAdapter.adapt` changed. Twin of C# `SettingsChange`
-/// (`windows/CompleteScanner.Core/SettingsAdapter.cs`).
+/// (`windows/LazyScan.Core/SettingsAdapter.cs`).
 public enum SettingsChange: String, Sendable {
     case source
     case resolution

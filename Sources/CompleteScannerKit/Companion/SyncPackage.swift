@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Companion/SyncPackage.cs: the same bytes for the same package,
+// Twin of windows/LazyScan.Core/Companion/SyncPackage.cs: the same bytes for the same package,
 // key and nonce, and the same checks when opening one.
 
 /// Why a `.cssync` file could not be made or opened.

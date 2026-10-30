@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/PhotoDocumentDetectorTests.cs: the same synthetic photos
+// Twin of windows/LazyScan.Core.Tests/PhotoDocumentDetectorTests.cs: the same synthetic photos
 // (PhotoScenes, byte-identical, checked by checksum) and the same expectations.
 
 /// 1 % of the photo's diagonal (360 × 480: 6 px).

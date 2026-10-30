@@ -4,7 +4,7 @@ import Foundation
 import Network
 import dnssd
 
-// Twin of windows/CompleteScanner.App/Services/Companion/WindowsDnsSdAdvertiser.cs on the DNS-SD C API.
+// Twin of windows/LazyScan.App/Services/Companion/WindowsDnsSdAdvertiser.cs on the DNS-SD C API.
 // NWListener.Service would advertise from the server's own listeners, one per address with no
 // interface of its own; DNSServiceRegister takes the interface and the port, as Windows does.
 

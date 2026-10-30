@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Escl/EsclTxtRecord.cs: the same keys, defaults and UUID key.
+// Twin of windows/LazyScan.Core/Escl/EsclTxtRecord.cs: the same keys, defaults and UUID key.
 
 /// The TXT record a network scanner advertises with its _uscan._tcp / _uscans._tcp DNS-SD service
 /// (Mopria eSCL): where the eSCL resource lives, what the device is and roughly what it can do, known

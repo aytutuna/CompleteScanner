@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/CaptureObjectsTests.cs: the same shots, pages and answers.
+// Mirrors windows/LazyScan.Core.Tests/CaptureObjectsTests.cs: the same shots, pages and answers.
 
 /// Made-up camera shots for the objects of one photo, drawn the same way on both platforms: two prints on
 /// a dark table, and an ID card photographed turned and tilted.

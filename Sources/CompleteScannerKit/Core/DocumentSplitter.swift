@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/DocumentSplitter.cs.
+// Twin of windows/LazyScan.Core/DocumentSplitter.cs.
 
 /// What saving does with a queued page (`DocumentSplitter.plan`). Twin of C# `PageRole`.
 public enum PageRole: Sendable {

@@ -4,7 +4,7 @@ import PDFKit
 @testable import CompleteScannerKit
 
 // The ID card task: paper, steps, layout, composer and detector. Mirrors
-// windows/CompleteScanner.Core.Tests/IdCardTests.cs: the same cases, on the same synthetic beds.
+// windows/LazyScan.Core.Tests/IdCardTests.cs: the same cases, on the same synthetic beds.
 
 private let card = CGSize(width: IdCardDetector.cardLongSideInches, height: IdCardDetector.cardShortSideInches)
 private let letter = PaperSizes.inches(.letter)!

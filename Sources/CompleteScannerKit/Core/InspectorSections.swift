@@ -2,7 +2,7 @@ import Foundation
 
 // The settings column's sections: which of them start open, which a task opens, and the summary a
 // collapsed section's header shows. Both apps lay their settings out in these sections. Twin of
-// windows/CompleteScanner.Core/InspectorSections.cs (same rules, same tests).
+// windows/LazyScan.Core/InspectorSections.cs (same rules, same tests).
 
 /// The settings column's sections, in order: the task's own section (Photocopy or Receipts), Scanner,
 /// Output, Adjustments, Pages, Split into documents, Archive & password and More options. The task's

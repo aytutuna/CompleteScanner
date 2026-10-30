@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Companion/CompanionHttp.cs: the same subset of HTTP/1.1, the
+// Twin of windows/LazyScan.Core/Companion/CompanionHttp.cs: the same subset of HTTP/1.1, the
 // same limits and the same answers to malformed requests (CompanionServer.swift reads requests with it).
 
 /// How far parsing a request's head got.

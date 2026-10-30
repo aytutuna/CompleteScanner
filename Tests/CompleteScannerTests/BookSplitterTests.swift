@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/BookSplitterTests.cs: finding the gutter of an open book
+// Twin of windows/LazyScan.Core.Tests/BookSplitterTests.cs: finding the gutter of an open book
 // and cutting the spread into its pages, on the same synthetic spreads (TestPages, byte-identical,
 // checked by checksum).
 

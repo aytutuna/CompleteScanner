@@ -1,6 +1,6 @@
 import Foundation
 
-// The Apple side of windows/CompleteScanner.App/Scanning/EsclDiscovery.cs: finds network scanners that
+// The Apple side of windows/LazyScan.App/Scanning/EsclDiscovery.cs: finds network scanners that
 // announce eSCL over DNS-SD (_uscan._tcp, and _uscans._tcp for HTTPS) and hands them over as the same
 // `EsclService` values Windows produces, so `EsclEndpoint.choose` groups and orders them the same way. The
 // browsing and the resolving are behind two protocols: the app's are NWBrowser and the dnssd resolver

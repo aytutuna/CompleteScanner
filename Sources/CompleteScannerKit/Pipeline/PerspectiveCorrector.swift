@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/PerspectiveCorrector.cs: + − × ÷ and square roots on doubles
+// Twin of windows/LazyScan.Core/PerspectiveCorrector.cs: + − × ÷ and square roots on doubles
 // in the same order, rounding halves to even as RgbaImage's bilinear sampler does, so the same
 // photo and quad give the same bytes on both platforms.
 

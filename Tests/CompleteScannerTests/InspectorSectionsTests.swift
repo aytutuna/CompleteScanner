@@ -1,7 +1,7 @@
 import XCTest
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/InspectorSectionsTests.cs: the settings column's sections
+// Mirrors windows/LazyScan.Core.Tests/InspectorSectionsTests.cs: the settings column's sections
 // and the summaries their collapsed headers show.
 
 final class InspectorSectionsTests: XCTestCase {

@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/ZipStoreReader.cs: the same checks, in the same order,
+// Twin of windows/LazyScan.Core/ZipStoreReader.cs: the same checks, in the same order,
 // with the same error kinds and messages.
 
 /// Why `ZipStoreReader` refused an archive.

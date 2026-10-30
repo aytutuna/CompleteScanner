@@ -1,7 +1,7 @@
 import XCTest
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/TroubleshootingTests.cs. C#-only cases: the
+// Mirrors windows/LazyScan.Core.Tests/TroubleshootingTests.cs. C#-only cases: the
 // error kind (Swift's ScanError has no kind) and the appended detail.
 
 final class TroubleshootingTests: XCTestCase {

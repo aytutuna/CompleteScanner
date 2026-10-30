@@ -1,7 +1,7 @@
 import Foundation
 import Network
 
-// Twin of windows/CompleteScanner.Core/Companion/CompanionRateLimiter.cs: the same limits, per address.
+// Twin of windows/LazyScan.Core/Companion/CompanionRateLimiter.cs: the same limits, per address.
 
 /// Limits what one address can try: after `maxFailures` failed authentications or pairing tokens
 /// within `window` it is refused until that window has passed without more, and it may make at most

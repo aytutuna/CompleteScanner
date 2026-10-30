@@ -3,7 +3,7 @@ import CompleteScannerKit
 import Foundation
 import Security
 
-// Twin of windows/CompleteScanner.App/Services/Companion/CompanionCertificateStore.cs on the keychain.
+// Twin of windows/LazyScan.App/Services/Companion/CompanionCertificateStore.cs on the keychain.
 
 /// The Mac's own identity for the phone link: a permanent P-256 key in the login keychain (tagged
 /// `keyTag`, labelled `label`) and a self-signed certificate for it (`SelfSignedCertificate`, labelled

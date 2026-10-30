@@ -3,7 +3,7 @@ import Foundation
 import CoreGraphics
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/CompanionPackageTests.cs: the same cases, the same
+// Mirrors windows/LazyScan.Core.Tests/CompanionPackageTests.cs: the same cases, the same
 // golden package (CompanionFixtures: written by the Windows writer and pinned there as hex, length
 // and SHA-256), which this writer must reproduce byte for byte and this reader must decode. The
 // Windows-only case that opens the package with System.IO.Compression has no twin here.

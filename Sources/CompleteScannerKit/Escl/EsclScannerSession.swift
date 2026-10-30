@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Escl/EsclScannerSession.cs: the same rules and tests
+// Twin of windows/LazyScan.Core/Escl/EsclScannerSession.cs: the same rules and tests
 // (EsclClientTests). On the iPhone each job also asks the system for background time
 // (`BackgroundActivity`), so a page in flight and the deletion of a job cut short finish when the user
 // switches apps; when that time is nearly up the job stops, keeping the pages received (`appSuspended`),

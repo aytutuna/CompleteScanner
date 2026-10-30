@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/GlyphlessFont.cs: the same font program, the same hand-made
+// Twin of windows/LazyScan.Core/GlyphlessFont.cs: the same font program, the same hand-made
 // zlib stream (its own Deflate encoder, no compression library) and the same ToUnicode map, byte
 // for byte (the lengths and SHA-256 pinned in GlyphlessFontTests on both platforms).
 

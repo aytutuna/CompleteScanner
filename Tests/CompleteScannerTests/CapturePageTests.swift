@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/CapturePageTests.cs: camera pages in the clean-up stage,
+// Twin of windows/LazyScan.Core.Tests/CapturePageTests.cs: camera pages in the clean-up stage,
 // their capture facts kept by every rebuild, and the geometry of perspective pages. (The C# rebuild
 // list also turns the page with `RotatedClockwise`, which the Mac keeps on `AppState`.)
 

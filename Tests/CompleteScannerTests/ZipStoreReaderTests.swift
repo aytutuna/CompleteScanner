@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/ZipStoreReaderTests.cs: the same cases, the same
+// Mirrors windows/LazyScan.Core.Tests/ZipStoreReaderTests.cs: the same cases, the same
 // hand-built archives (RawZip), the same error kinds and messages. The Windows-only case that reads
 // System.IO.Compression's output has no twin here (Foundation writes no zip).
 

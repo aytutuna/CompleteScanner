@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Escl/EsclRetry.cs: the same policy and retry loop. The C#
+// Twin of windows/LazyScan.Core/Escl/EsclRetry.cs: the same policy and retry loop. The C#
 // loop sends HttpClient requests; this one sends whatever the caller's closure sends (URLSession in
 // the app) and reads the status and Retry-After through two more closures, so it stays free of any
 // HTTP stack and is tested with a fake clock as the C# one is.

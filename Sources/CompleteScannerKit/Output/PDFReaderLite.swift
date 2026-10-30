@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/PdfReaderLite.cs: the same cross-reference layouts, limits,
+// Twin of windows/LazyScan.Core/PdfReaderLite.cs: the same cross-reference layouts, limits,
 // page tree walk and facts, with the same refusals and error texts. A file is opened with a
 // FileHandle and read through `PDFStreamBytes` where C# takes a Stream; a source the caller owns is
 // a read closure, which the reader never closes. The XMP is read with Foundation's XMLParser where

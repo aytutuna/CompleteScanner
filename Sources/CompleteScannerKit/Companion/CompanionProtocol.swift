@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Companion/CompanionProtocol.cs: the same constants, the same
+// Twin of windows/LazyScan.Core/Companion/CompanionProtocol.cs: the same constants, the same
 // JSON bytes for the same message and the same lenient reading, so the phone (Swift) and the desktop
 // (C# now, Swift on the Mac later) speak exactly one protocol.
 

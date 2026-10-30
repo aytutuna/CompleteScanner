@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/SpkiFingerprintTests.cs (same vectors; the scanner
+// Mirrors windows/LazyScan.Core.Tests/SpkiFingerprintTests.cs (same vectors; the scanner
 // certificates are the shared fixtures in Tests/Fixtures/Escl). The Windows-only case that makes
 // certificates with .NET's CertificateRequest has no twin here.
 

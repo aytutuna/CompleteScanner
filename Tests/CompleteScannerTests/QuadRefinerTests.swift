@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/QuadRefinerTests.cs: outlines put 1 % of the diagonal off the
+// Twin of windows/LazyScan.Core.Tests/QuadRefinerTests.cs: outlines put 1 % of the diagonal off the
 // pages of the synthetic photos (PhotoScenes), or 2 % too large, moved back onto their edges; a page on a
 // sheet whose edges lie just outside it; and a table with no page.
 

@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/PhotoDocumentDetector.cs: the same steps, constants and
+// Twin of windows/LazyScan.Core/PhotoDocumentDetector.cs: the same steps, constants and
 // arithmetic in the same order (integers for the blur and the gradient, + − × ÷ and square roots
 // on doubles, no trigonometry: the angle table is built from two constants), and every sort with a
 // tie-break, so both platforms find the same corners.

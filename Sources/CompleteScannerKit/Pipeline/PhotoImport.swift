@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/PhotoImport.cs: the same rules, numbers and words.
+// Twin of windows/LazyScan.Core/PhotoImport.cs: the same rules, numbers and words.
 
 /// How a photo's stored pixels are turned to show it the right way up, read from the orientation tag
 /// cameras write (EXIF and TIFF tag 274, values 1 to 8, ImageIO's `kCGImagePropertyOrientation`):

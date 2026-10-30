@@ -3,7 +3,7 @@ import Network
 import XCTest
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/CompanionRouterTests.cs (same cases): the desktop's
+// Mirrors windows/LazyScan.Core.Tests/CompanionRouterTests.cs (same cases): the desktop's
 // request handling without a network, with the inbox and outbox it serves.
 
 /// A value shared with the tasks the router starts.

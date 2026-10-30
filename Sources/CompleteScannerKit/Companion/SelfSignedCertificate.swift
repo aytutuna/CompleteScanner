@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 // The desktop's certificate for the phone link on Apple platforms: what
-// windows/CompleteScanner.App/Services/Companion/CompanionCertificateStore.cs makes with .NET's
+// windows/LazyScan.App/Services/Companion/CompanionCertificateStore.cs makes with .NET's
 // CertificateRequest, written here with a minimal DER writer, since the Security framework reads
 // certificates but does not make them. Phones pin the key (SpkiFingerprint), not the certificate.
 

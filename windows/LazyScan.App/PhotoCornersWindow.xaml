@@ -1,0 +1,97 @@
+<Window x:Class="LazyScan.App.PhotoCornersWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:LazyScan.App"
+        Title="Check the corners"
+        Width="860" Height="720" MinWidth="560" MinHeight="480"
+        FontFamily="{StaticResource TextFontFamily}"
+        Icon="{x:Static ui:AppIcon.Image}"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Window.Resources>
+        <!-- Read-only value chip in the header (which photo). -->
+        <Style x:Key="CornersChipStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="10,3,12,4" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <!-- Header: title, why the corners are asked for, how to move them, which photo. -->
+        <Grid DockPanel.Dock="Top" Margin="20,14,20,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Margin="0,0,16,0">
+                <TextBlock x:Name="TitleText" Style="{StaticResource SubtitleText}" TextWrapping="NoWrap" />
+                <DockPanel x:Name="ReasonPanel" Margin="0,6,0,0">
+                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource GlyphText}" Text="&#xE7BA;"
+                               Margin="0,0,8,0" VerticalAlignment="Top" Padding="0,2,0,0"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                    <TextBlock x:Name="ReasonText" Style="{StaticResource BodyText}" TextWrapping="Wrap"
+                               AutomationProperties.LiveSetting="Polite" />
+                </DockPanel>
+                <DockPanel Margin="0,4,0,0" HorizontalAlignment="Left">
+                    <ui:InfoButton x:Name="KeyboardInfoButton" DockPanel.Dock="Right" Label="keyboard use" Heading="Keyboard"
+                                   Margin="4,-4,0,-4" />
+                    <TextBlock x:Name="HelpText" Style="{StaticResource CaptionText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                </DockPanel>
+            </StackPanel>
+            <Border Grid.Column="1" Style="{StaticResource CornersChipStyle}" Margin="0,4,0,0">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Style="{StaticResource GlyphText}" FontSize="12" Margin="0,1,6,0" Text="&#xEB9F;"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Name="CounterText" Style="{StaticResource CaptionText}" TextWrapping="NoWrap"
+                               TextTrimming="CharacterEllipsis" MaxWidth="260" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Footer: Reset and the whole photo on the left, Skip and the primary choice on the right. -->
+        <DockPanel DockPanel.Dock="Bottom" Margin="20,12,20,16" LastChildFill="False">
+            <Button x:Name="ResetButton" DockPanel.Dock="Left" Content="Reset" Style="{StaticResource SubtleButtonStyle}"
+                    ui:Icon.Glyph="&#xE7A7;" Margin="-11,0,0,0" Click="Reset_Click" IsEnabled="False"
+                    ToolTip="Go back to the corners found in the photo" />
+            <Button x:Name="WholePhotoButton" DockPanel.Dock="Left" Style="{StaticResource SubtleButtonStyle}"
+                    ui:Icon.Glyph="&#xE740;" Margin="4,0,0,0" Click="WholePhoto_Click"
+                    AutomationProperties.HelpText="Add the whole photo as the page, as it is" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button x:Name="SkipButton" IsCancel="True" MinWidth="96" Click="Skip_Click" />
+                <Button x:Name="UseButton" IsDefault="True" MinWidth="96" Margin="8,0,0,0"
+                        Style="{StaticResource AccentButtonStyle}" Click="Use_Click" />
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Neutral stage: the photo with a soft shadow, the area outside the page dimmed. -->
+        <Border Style="{StaticResource StageStyle}" Margin="12,0,12,0">
+            <Canvas x:Name="Host" Background="Transparent" ClipToBounds="True"
+                    Focusable="True" KeyDown="Host_KeyDown"
+                    FocusVisualStyle="{DynamicResource DefaultControlFocusVisualStyle}"
+                    MouseLeftButtonDown="Host_MouseDown" MouseMove="Host_MouseMove"
+                    MouseLeftButtonUp="Host_MouseUp" LostMouseCapture="Host_LostMouseCapture"
+                    SizeChanged="Host_SizeChanged">
+                <Image x:Name="DisplayImage" Stretch="Fill" RenderOptions.BitmapScalingMode="HighQuality"
+                       Effect="{DynamicResource PageShadow}" />
+                <Path x:Name="OutsideDim" Fill="{DynamicResource SmokeFillColorDefaultBrush}" IsHitTestVisible="False" />
+                <TextBlock x:Name="LoadingText" Text="Loading…" Style="{StaticResource SecondaryBodyText}"
+                           TextAlignment="Center" MaxWidth="360" />
+                <Polygon x:Name="Outline" Stroke="{DynamicResource AccentFillColorDefaultBrush}" StrokeThickness="2"
+                         StrokeLineJoin="Miter" IsHitTestVisible="False" />
+                <!-- The magnifier: the photo around the corner being moved, three times larger. -->
+                <Grid x:Name="Loupe" Width="132" Height="132" IsHitTestVisible="False" Visibility="Collapsed">
+                    <Ellipse x:Name="LoupeLens" StrokeThickness="2"
+                             Stroke="{DynamicResource AccentFillColorDefaultBrush}" />
+                    <Line X1="66" Y1="52" X2="66" Y2="80" StrokeThickness="1"
+                          Stroke="{DynamicResource AccentFillColorDefaultBrush}" />
+                    <Line X1="52" Y1="66" X2="80" Y2="66" StrokeThickness="1"
+                          Stroke="{DynamicResource AccentFillColorDefaultBrush}" />
+                </Grid>
+            </Canvas>
+        </Border>
+    </DockPanel>
+</Window>

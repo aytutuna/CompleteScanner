@@ -1,7 +1,7 @@
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/MaskOpsTests.cs. MaskOps was moved out of
+// Twin of windows/LazyScan.Core.Tests/MaskOpsTests.cs. MaskOps was moved out of
 // PhotoDetector; these tests prove it still does exactly what PhotoDetector's private copies did
 // (kept below, verbatim, as the reference). The C# suite also pins PhotoDetector's regions on the
 // demo bed to the last bit; the Swift demo bed is drawn by CoreGraphics, so PhotoDetectorTests

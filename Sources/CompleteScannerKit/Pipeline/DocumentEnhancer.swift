@@ -105,7 +105,7 @@ public struct PaperWhiteBalance: Equatable, Sendable {
 /// dark flyer, a slide: `isLightOnDark`) has no paper to even out against, so it is stretched as a whole
 /// like a photo and then made gray or black and white as the mode says. The samples (white balance, black
 /// point, light on dark) are every `sampleStep`-th pixel of every `sampleStep`-th row. Pure arithmetic in a
-/// fixed order: the same bytes as the C# twin (`windows/CompleteScanner.Core/DocumentEnhancer.cs`).
+/// fixed order: the same bytes as the C# twin (`windows/LazyScan.Core/DocumentEnhancer.cs`).
 public enum DocumentEnhancer {
     /// The paper is estimated in tiles of about the long side over this.
     public static let tilesAlongLongSide: Int = 16

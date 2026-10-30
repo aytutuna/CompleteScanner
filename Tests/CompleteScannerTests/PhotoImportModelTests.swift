@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/PhotoImportModelTests.cs: the photo import with a corner model
+// Twin of windows/LazyScan.Core.Tests/PhotoImportModelTests.cs: the photo import with a corner model
 // tried first, on the wood scene (PhotoScenes) with a fake model that draws its heatmaps where it is told.
 
 /// A corner model that answers `answer` and keeps what it was given.

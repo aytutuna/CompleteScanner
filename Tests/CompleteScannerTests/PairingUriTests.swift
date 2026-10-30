@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/PairingUriTests.cs (same codes, same refusals).
+// Mirrors windows/LazyScan.Core.Tests/PairingUriTests.cs (same codes, same refusals).
 
 final class PairingUriTests: XCTestCase {
     private let desktopId = "0123456789abcdef0123456789abcdef"

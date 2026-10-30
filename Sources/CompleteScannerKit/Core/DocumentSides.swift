@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/DocumentSides.cs: which page is which side of which sheet
+// Twin of windows/LazyScan.Core/DocumentSides.cs: which page is which side of which sheet
 // in a two-sided scan, and putting pages in reading order. The one collation helper for feeders
 // that scan both sides and for stacks turned over by hand.
 

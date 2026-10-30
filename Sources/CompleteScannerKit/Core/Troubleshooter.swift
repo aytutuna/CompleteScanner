@@ -3,7 +3,7 @@ import Foundation
 // "Why isn't my scanner listed?": what the app knows about finding scanners, gathered into one
 // snapshot and turned into plain-language checks, each with the actions that help. The apps only
 // read the system's state and link to the system's settings; they never change a service or a
-// setting. Twin of windows/CompleteScanner.Core/Troubleshooter.cs (same checks, same text, same
+// setting. Twin of windows/LazyScan.Core/Troubleshooter.cs (same checks, same text, same
 // order). The Windows-only fields (the WIA service, TWAIN, addresses added by hand) are kept so
 // both suites run the same fixtures; the Mac leaves them at their defaults.
 

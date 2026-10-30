@@ -3,7 +3,7 @@ import CoreGraphics
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/SettingsAdapterTests.cs: the same cases.
+// Mirrors windows/LazyScan.Core.Tests/SettingsAdapterTests.cs: the same cases.
 
 final class SettingsAdapterTests: XCTestCase {
 

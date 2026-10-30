@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/MultiQuadPickerTests.cs: the same outlines and picks.
+// Twin of windows/LazyScan.Core.Tests/MultiQuadPickerTests.cs: the same outlines and picks.
 
 private func box(_ x: Double, _ y: Double, _ w: Double, _ h: Double) -> Quad {
     Quad(topLeft: CGPoint(x: x, y: y), topRight: CGPoint(x: x + w, y: y),

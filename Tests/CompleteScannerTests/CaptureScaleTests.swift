@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/CaptureScaleTests.cs: the same shots, sizes and answers.
+// Twin of windows/LazyScan.Core.Tests/CaptureScaleTests.cs: the same shots, sizes and answers.
 
 /// cos and sin of the angles the shots are taken at, as literals so both platforms use the same numbers.
 private let cos35 = 0.8191520442889918, sin35 = 0.573576436351046

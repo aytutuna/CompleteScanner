@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/CompanionProtocolTests.cs (same JSON, byte for byte).
+// Mirrors windows/LazyScan.Core.Tests/CompanionProtocolTests.cs (same JSON, byte for byte).
 
 final class CompanionProtocolTests: XCTestCase {
     private let desktopId = "0123456789abcdef0123456789abcdef"

@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/RgbaImageTests.cs: the Swift RgbaImage is a port of
+// Twin of windows/LazyScan.Core.Tests/RgbaImageTests.cs: the Swift RgbaImage is a port of
 // the C# type, and both must give these exact bytes.
 
 final class RgbaImageTests: XCTestCase {

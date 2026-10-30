@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Escl/EsclTrust.cs: trust for eSCL over HTTPS (_uscans).
+// Twin of windows/LazyScan.Core/Escl/EsclTrust.cs: trust for eSCL over HTTPS (_uscans).
 // Scanners make their own certificates, which the system cannot check, so a scanner's certificate is
 // trusted the first time the app connects to it (trust on first use) and pinned: the SHA-256 of its
 // public key (SubjectPublicKeyInfo, cut out of the certificate by `SpkiFingerprint`) is kept in

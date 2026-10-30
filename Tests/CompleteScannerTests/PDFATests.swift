@@ -4,7 +4,7 @@ import Foundation
 import PDFKit
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/PdfATests.cs: PDF/A-2b output (the dates, text strings
+// Mirrors windows/LazyScan.Core.Tests/PdfATests.cs: PDF/A-2b output (the dates, text strings
 // and titles, the information dictionary and XMP packet, the sRGB profile, the archival file's
 // header, catalog, numbering and trailer, its golden bytes pinned in C#, the validation samples)
 // with the same fixtures. The object writer's cases, the plain file's structure and its text layer

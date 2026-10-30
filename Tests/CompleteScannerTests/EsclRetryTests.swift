@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/EsclRetryTests.cs (same cases). Time is simulated: the
+// Mirrors windows/LazyScan.Core.Tests/EsclRetryTests.cs (same cases). Time is simulated: the
 // fake delay advances a fake clock instead of waiting. A response is its status code and Retry-After.
 
 final class EsclRetryTests: XCTestCase {

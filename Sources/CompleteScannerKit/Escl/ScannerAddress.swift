@@ -3,7 +3,7 @@ import Foundation
 import Darwin
 #endif
 
-// Twin of windows/CompleteScanner.Core/Escl/ScannerAddress.cs: the same accepted forms, messages and
+// Twin of windows/LazyScan.Core/Escl/ScannerAddress.cs: the same accepted forms, messages and
 // canonical text (the text kept in escl-hosts.json). The C# code leans on System.Uri and IPAddress;
 // here the address text is read by hand (EsclUrlText) and IPv6 addresses by inet_pton/inet_ntop, to
 // the same results for every form a user types or discovery reports.

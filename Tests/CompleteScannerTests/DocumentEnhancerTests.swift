@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/DocumentEnhancerTests.cs: the same pages, the same bytes.
+// Twin of windows/LazyScan.Core.Tests/DocumentEnhancerTests.cs: the same pages, the same bytes.
 // The checksums were recomputed by an independent model of the algorithm as CONTRACTS.md describes it.
 
 /// The luma of pixel (x, y), as `ColorAnalysis.grayPixels` computes it.

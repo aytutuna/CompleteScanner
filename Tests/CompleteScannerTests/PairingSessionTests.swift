@@ -2,7 +2,7 @@ import XCTest
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/PairingSessionTests.cs (same clock steps, same answers).
+// Mirrors windows/LazyScan.Core.Tests/PairingSessionTests.cs (same clock steps, same answers).
 
 final class PairingSessionTests: XCTestCase {
     /// 2026-10-20T08:30:00Z.

@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Companion/PairingSession.cs: the same lifetime, attempt limit
+// Twin of windows/LazyScan.Core/Companion/PairingSession.cs: the same lifetime, attempt limit
 // and answers.
 
 /// Where a pairing session is.

@@ -4,7 +4,7 @@ import Foundation
 import PDFKit
 @testable import CompleteScannerKit
 
-// Mirrors the object-level cases of windows/CompleteScanner.Core.Tests/PdfBuilderTests.cs and
+// Mirrors the object-level cases of windows/LazyScan.Core.Tests/PdfBuilderTests.cs and
 // PdfATests.cs (the object writer, the plain PDF's structure, the text layer, the JPEG headers,
 // cancellation) with the same fixtures: the TinyJpeg bytes and SyntheticJpeg generator are copied,
 // and the golden files are the C# tests' (PdfATests.Standard_GoldenBytes and

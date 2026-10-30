@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/CornerHeatmapTests.cs: DocAligner's heatmaps read back into
+// Twin of windows/LazyScan.Core.Tests/CornerHeatmapTests.cs: DocAligner's heatmaps read back into
 // corners (`CornerHeatmap`), on heatmaps drawn here: a Gaussian spot per channel where the corner is, as the
 // model draws them.
 

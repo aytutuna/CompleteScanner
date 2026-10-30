@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/HomographyTests.cs: the quad, homography and sheet-shape math.
+// Twin of windows/LazyScan.Core.Tests/HomographyTests.cs: the quad, homography and sheet-shape math.
 
 private let tilted = Quad(topLeft: CGPoint(x: 105, y: 90), topRight: CGPoint(x: 258, y: 86),
                           bottomRight: CGPoint(x: 310, y: 418), bottomLeft: CGPoint(x: 48, y: 414))

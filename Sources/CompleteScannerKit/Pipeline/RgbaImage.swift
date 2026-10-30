@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 /// A plain RGBA8 bitmap: row-major, top-left origin, y down, 4 bytes per pixel (R, G, B, A).
-/// Port of the C# `RgbaImage` (windows/CompleteScanner.Core/RgbaImage.cs): the same box filter,
+/// Port of the C# `RgbaImage` (windows/LazyScan.Core/RgbaImage.cs): the same box filter,
 /// bilinear sampling and rounding, so the page analyses built on it give the same numbers on
 /// both platforms. CoreGraphics is met at the edges only (`init?(cgImage:)`, `makeCGImage()`).
 /// A value type: a copy is independent, so there is no `clone()`.

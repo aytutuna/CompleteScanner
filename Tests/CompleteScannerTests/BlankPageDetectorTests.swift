@@ -1,7 +1,7 @@
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/BlankPageDetectorTests.cs: same pages, same expectations.
+// Twin of windows/LazyScan.Core.Tests/BlankPageDetectorTests.cs: same pages, same expectations.
 
 final class BlankPageDetectorTests: XCTestCase {
     private let levels: [BlankSensitivity] = [.low, .medium, .high]

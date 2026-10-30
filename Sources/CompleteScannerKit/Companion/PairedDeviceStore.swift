@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Companion/PairedDeviceStore.cs: the same rules for pairing,
+// Twin of windows/LazyScan.Core/Companion/PairedDeviceStore.cs: the same rules for pairing,
 // checking and removing phones; each platform keeps its own file in its own settings folder.
 
 /// A phone paired with this desktop (an entry of companion-devices.json).

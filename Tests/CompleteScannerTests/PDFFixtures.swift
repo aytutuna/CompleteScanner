@@ -1,7 +1,7 @@
 import Foundation
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/PdfFixtures.cs: the same files, written the same way,
+// Twin of windows/LazyScan.Core.Tests/PdfFixtures.cs: the same files, written the same way,
 // byte for byte except inside Flate streams. `deflate` wraps Foundation's raw deflate in a zlib
 // header and Adler-32 where C# uses ZLibStream, so compressed data (and the offsets after it) may
 // differ between the platforms; no case pins them.

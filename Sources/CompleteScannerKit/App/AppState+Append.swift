@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.App/AppViewModel.Append.cs: the queued pages added to the end of a
+// Twin of windows/LazyScan.App/AppViewModel.Append.cs: the queued pages added to the end of a
 // PDF the user picks, as an incremental update (`PDFAppender`). The window asks the question
 // (`confirmAppend`); the iPhone also wraps the file's reading and its update in the picked file's
 // security scope and a coordinated access (`accessPDFForAppend`), which Windows has no need of. A PDF

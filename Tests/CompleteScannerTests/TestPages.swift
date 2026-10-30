@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/TestPages.cs: the same pages, byte for byte. Integer
+// Twin of windows/LazyScan.Core.Tests/TestPages.cs: the same pages, byte for byte. Integer
 // arithmetic only (no floating point, no trigonometry), and one xorshift32 generator consumed in
 // the same order, so both platforms draw identical pixels.
 

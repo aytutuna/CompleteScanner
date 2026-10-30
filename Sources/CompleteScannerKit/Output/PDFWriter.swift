@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of the object-level parts of windows/CompleteScanner.Core/PdfBuilder.cs (PdfImageData,
+// Twin of the object-level parts of windows/LazyScan.Core/PdfBuilder.cs (PdfImageData,
 // PdfJpegImage, PdfCcittImage, PdfPageInput, Make, Write, WritePage, ImageEntries, WriteTextFont,
 // TextLayerLine, F): the same objects, numbering, content streams and number formatting, for plain,
 // PDF/A-2b and password-protected files (`PDFWriteOptions`, `PDFA`, `PDFEncryption`), so each is the

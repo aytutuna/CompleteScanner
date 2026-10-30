@@ -3,7 +3,7 @@ import Foundation
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/FrameQualityTests.cs: the same frames, the same readings (to
+// Twin of windows/LazyScan.Core.Tests/FrameQualityTests.cs: the same frames, the same readings (to
 // the last bit: integer sums divided once), recomputed by an independent model of the description.
 
 private func judged(_ frame: RgbaImage) -> CaptureQuality {

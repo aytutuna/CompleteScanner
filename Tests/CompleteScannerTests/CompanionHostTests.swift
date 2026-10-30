@@ -4,7 +4,7 @@ import Security
 import XCTest
 @testable import CompleteScannerKit
 
-// The host's cases of windows/CompleteScanner.Core.Tests/CompanionLoopbackTests.cs: CompanionService
+// The host's cases of windows/LazyScan.Core.Tests/CompanionLoopbackTests.cs: CompanionService
 // with a stand-in network source and advertiser, so nothing listens on or is advertised to the real
 // network, and the server on loopback with the fixture identity of CompanionLoopbackTests. The phone is
 // the I20 `CompanionClient`. The second network is ::1, since macOS has no 127.0.0.2 unless it is added

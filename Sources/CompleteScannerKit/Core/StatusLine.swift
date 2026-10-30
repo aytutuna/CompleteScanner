@@ -2,7 +2,7 @@ import Foundation
 
 // The status line's short text. Both apps show at most six words of their status sentence, facts
 // only, and keep the whole sentence as the line's accessibility label. Twin of
-// windows/CompleteScanner.Core/StatusLine.cs (same rules, same tests).
+// windows/LazyScan.Core/StatusLine.cs (same rules, same tests).
 
 /// The status line's visible text: at most `maxWords` words, facts only. The full sentence stays the
 /// status line's accessibility label, so VoiceOver reads all of it. Twin of C# `StatusLine`.

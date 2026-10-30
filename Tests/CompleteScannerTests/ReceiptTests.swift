@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/ReceiptTests.cs: the same cases, on the same synthetic
+// Mirrors windows/LazyScan.Core.Tests/ReceiptTests.cs: the same cases, on the same synthetic
 // beds (TestPages.receiptBed) and the same date table (ReceiptDateCases).
 
 private let ink: UInt8 = 153     // faded thermal print, 0.6

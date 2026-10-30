@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/SpineShadow.cs: same constants, same steps and the same
+// Twin of windows/LazyScan.Core/SpineShadow.cs: same constants, same steps and the same
 // arithmetic (no library functions beyond + − × ÷), so a page gives the same bytes on both platforms.
 
 /// An edge of a page. Twin of C# `PageEdge`; the order is the clockwise order (`SpineShadow.turned`).

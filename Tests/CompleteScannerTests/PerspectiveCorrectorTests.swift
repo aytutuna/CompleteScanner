@@ -2,7 +2,7 @@ import CoreGraphics
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/PerspectiveCorrectorTests.cs: the same photos and quads,
+// Twin of windows/LazyScan.Core.Tests/PerspectiveCorrectorTests.cs: the same photos and quads,
 // the same corrected bytes (pinned by checksum in both suites).
 
 private var roundTripQuad: Quad { PhotoScenes.roundTripMap.corners(PhotoScenes.pageWidth, PhotoScenes.pageHeight) }

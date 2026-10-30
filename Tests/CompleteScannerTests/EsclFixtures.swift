@@ -1,7 +1,7 @@
 import Foundation
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/EsclFixtures.cs: both suites read the same files in
+// Twin of windows/LazyScan.Core.Tests/EsclFixtures.cs: both suites read the same files in
 // Tests/Fixtures/Escl (found next to this file, on the Mac and in the iOS Simulator alike), so the eSCL
 // cases on the two platforms cannot drift apart.
 

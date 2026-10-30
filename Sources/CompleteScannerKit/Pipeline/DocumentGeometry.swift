@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/DocumentGeometry.cs: same constants, same steps.
+// Twin of windows/LazyScan.Core/DocumentGeometry.cs: same constants, same steps.
 
 /// Which way the lines of text on a page run (`DocumentGeometry.estimateTextLayout`).
 public enum TextAxis: Sendable {

@@ -3,7 +3,7 @@ import Network
 import XCTest
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/CompanionNetworkTests.cs: trusted networks, the peers
+// Mirrors windows/LazyScan.Core.Tests/CompanionNetworkTests.cs: trusted networks, the peers
 // answered, rate limits and the phone checks (same cases; the Firewall_* cases read Windows Firewall
 // rules and have no twin). The Mac's wording of the checks is Swift only.
 
@@ -211,11 +211,11 @@ final class CompanionNetworkTests: XCTestCase {
 
     func testChecks_FirewallBlockIsAProblem() {
         let snapshot = CompanionSnapshot(networks: [state(TestNetworks.home(), .privateNetwork)], listen: .listening, port: 52731,
-                                         firewall: .blocked, blockingRules: ["completescanner.exe"], pairedCount: 1)
+                                         firewall: .blocked, blockingRules: ["lazyscan.exe"], pairedCount: 1)
         let checks = CompanionTroubleshooter.diagnose(snapshot)
         XCTAssertEqual(checks[0].id, "phoneFirewall")
         XCTAssertEqual(checks[0].status, .problem)
-        XCTAssertTrue(checks[0].detail.contains("\"completescanner.exe\""))
+        XCTAssertTrue(checks[0].detail.contains("\"lazyscan.exe\""))
         XCTAssertTrue(checks[0].detail.contains("wf.msc"))
         XCTAssertEqual(checks.first { $0.id.hasPrefix("phoneNetwork:") }?.title, "Home Wi-Fi is a private network")
         XCTAssertEqual(CompanionTroubleshooter.summary(checks), "1 problem found.")

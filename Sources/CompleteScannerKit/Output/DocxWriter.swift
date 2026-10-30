@@ -3,7 +3,7 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-// Twin of windows/CompleteScanner.Core/DocxWriter.cs: the same package, byte for byte.
+// Twin of windows/LazyScan.Core/DocxWriter.cs: the same package, byte for byte.
 
 /// How the picture of a page is stored in a Word document. Twin of C# `DocxPictureFormat`.
 public enum DocxPictureFormat: Equatable, Sendable {

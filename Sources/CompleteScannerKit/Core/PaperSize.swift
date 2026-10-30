@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/PaperSize.cs: one paper size model for scan areas, and
+// Twin of windows/LazyScan.Core/PaperSize.cs: one paper size model for scan areas, and
 // later for the ID card page and printing.
 
 /// A paper size (`ScanSettings.paperSize`). `.auto` comes first: it is the default and the

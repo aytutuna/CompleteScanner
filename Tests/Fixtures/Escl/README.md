@@ -1,7 +1,7 @@
 # eSCL fixtures
 
 Read by both test suites: `Tests/CompleteScannerTests` (Swift, through `EsclFixtures.swift`) and
-`windows/CompleteScanner.Core.Tests` (C#, through `EsclFixtures.cs`, which the project copies next to
+`windows/LazyScan.Core.Tests` (C#, through `EsclFixtures.cs`, which the project copies next to
 its assembly). Changing a file here changes the expectations on both platforms at once.
 
 | File | What it is |

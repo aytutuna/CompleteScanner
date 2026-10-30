@@ -2,7 +2,7 @@ import XCTest
 import CoreGraphics
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/PrintLayoutTests.cs: the same cases.
+// Mirrors windows/LazyScan.Core.Tests/PrintLayoutTests.cs: the same cases.
 
 private let letter = PaperSizes.inches(.letter)!
 private let a4 = PaperSizes.inches(.a4)!

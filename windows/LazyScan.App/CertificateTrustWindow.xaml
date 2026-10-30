@@ -1,0 +1,78 @@
+<Window x:Class="LazyScan.App.CertificateTrustWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:LazyScan.App"
+        Title="Scanner certificate"
+        Width="560" SizeToContent="Height" ResizeMode="NoResize"
+        FontFamily="{StaticResource TextFontFamily}"
+        Icon="{x:Static ui:AppIcon.Image}"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Window.Resources>
+        <Style x:Key="DetailLabelText" TargetType="TextBlock" BasedOn="{StaticResource CaptionText}">
+            <Setter Property="Margin" Value="0,0,16,8" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        </Style>
+        <Style x:Key="DetailValueText" TargetType="TextBlock" BasedOn="{StaticResource BodyText}">
+            <Setter Property="Margin" Value="0,0,0,8" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <!-- Read-only and selectable, so the fingerprint can be copied and compared. -->
+        <Style x:Key="FingerprintBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,0,0,8" />
+        </Style>
+    </Window.Resources>
+
+    <DockPanel>
+        <!-- Footer: the safe choice is the default for a changed certificate. -->
+        <Border DockPanel.Dock="Bottom" Style="{StaticResource DialogFooterStyle}" Padding="24,14,24,18">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="TrustButton" MinWidth="120" Click="Trust_Click" />
+                <Button x:Name="CancelButton" Content="Cancel" IsCancel="True" MinWidth="96" Margin="8,0,0,0" />
+            </StackPanel>
+        </Border>
+
+        <StackPanel Margin="24,20,24,16">
+            <DockPanel Margin="0,0,0,12">
+                <TextBlock x:Name="HeaderGlyph" DockPanel.Dock="Left" Style="{StaticResource GlyphText}" FontSize="24"
+                           Margin="0,2,12,0" VerticalAlignment="Top" />
+                <TextBlock x:Name="HeaderText" Style="{StaticResource SubtitleText}" TextWrapping="Wrap" />
+            </DockPanel>
+            <TextBlock x:Name="ExplanationText" Style="{StaticResource BodyText}" TextWrapping="Wrap" Margin="0,0,0,8" />
+            <TextBlock x:Name="AdviceText" Style="{StaticResource BodyText}" TextWrapping="Wrap" Margin="0,0,0,16" />
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="Scanner" Style="{StaticResource DetailLabelText}" />
+                <TextBlock Grid.Row="0" Grid.Column="1" x:Name="ScannerText" Style="{StaticResource DetailValueText}" />
+                <TextBlock Grid.Row="1" Text="Address" Style="{StaticResource DetailLabelText}" />
+                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="AddressText" Style="{StaticResource DetailValueText}" />
+                <TextBlock Grid.Row="2" x:Name="SubjectLabel" Text="Issued to" Style="{StaticResource DetailLabelText}" />
+                <TextBlock Grid.Row="2" Grid.Column="1" x:Name="SubjectText" Style="{StaticResource DetailValueText}" />
+                <TextBlock Grid.Row="3" x:Name="FingerprintLabel" Text="Fingerprint" Style="{StaticResource DetailLabelText}"
+                           Margin="0,6,16,8" />
+                <TextBox Grid.Row="3" Grid.Column="1" x:Name="FingerprintBox" Style="{StaticResource FingerprintBox}"
+                         AutomationProperties.LabeledBy="{Binding ElementName=FingerprintLabel}" />
+                <TextBlock Grid.Row="4" x:Name="PreviousLabel" Text="Trusted before" Style="{StaticResource DetailLabelText}"
+                           Margin="0,6,16,8" Visibility="Collapsed" />
+                <TextBox Grid.Row="4" Grid.Column="1" x:Name="PreviousBox" Style="{StaticResource FingerprintBox}"
+                         Visibility="Collapsed"
+                         AutomationProperties.LabeledBy="{Binding ElementName=PreviousLabel}" />
+            </Grid>
+        </StackPanel>
+    </DockPanel>
+</Window>

@@ -1,7 +1,7 @@
 import Foundation
 import Network
 
-// Twin of windows/CompleteScanner.Core/Companion/CompanionRouter.cs: the same routes, statuses,
+// Twin of windows/LazyScan.Core/Companion/CompanionRouter.cs: the same routes, statuses,
 // headers and error bodies. The C# events are closures here, set by the host before it starts, and
 // the C# `CompanionRequestBody` stream reads through a closure (`CompanionServer` gives the connection).
 

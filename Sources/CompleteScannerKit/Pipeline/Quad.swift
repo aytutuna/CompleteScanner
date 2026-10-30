@@ -9,7 +9,7 @@ import Foundation
 /// page's text reads. Near the turn where two edges' midpoints are equally high (a W × H sheet turned
 /// by atan(H / W)), a slight turn names the corners from the next edge: to tell whether two quads are
 /// the same outline, compare them from every starting corner (`CaptureStability.movement`), not corner
-/// by corner. Twin of C# `Quad` (windows/CompleteScanner.Core/Quad.cs): the same
+/// by corner. Twin of C# `Quad` (windows/LazyScan.Core/Quad.cs): the same
 /// arithmetic in the same order.
 public struct Quad: Equatable, Codable, Sendable {
     public var topLeft: CGPoint

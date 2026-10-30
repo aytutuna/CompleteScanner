@@ -5,7 +5,7 @@ import XCTest
 
 // The desktop's side of C1 through the app's state (AppState+CompanionHost.swift): a paired phone's
 // document becomes queue pages with the bar's text, or waits. The C# twins are the CompanionPages
-// cases of windows/CompleteScanner.App.Tests/CompanionAppTests.cs (the view model's queueing has no
+// cases of windows/LazyScan.App.Tests/CompanionAppTests.cs (the view model's queueing has no
 // C# test). The documents are handed over as the server does, without a network. Every AppState
 // here keeps its settings, presets and spool in a folder of its own.
 

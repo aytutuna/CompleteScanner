@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/GlareDetector.cs: the same cells, rules and numbers.
+// Twin of windows/LazyScan.Core/GlareDetector.cs: the same cells, rules and numbers.
 
 /// How much of a card or a glossy print a camera saw blown out by a reflection (`GlareDetector.measure`):
 /// the share of the measured cells whose every channel is clipped, and the share the largest patch of

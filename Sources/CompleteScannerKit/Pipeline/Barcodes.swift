@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Barcodes.cs.
+// Twin of windows/LazyScan.Core/Barcodes.cs.
 
 /// The kinds of code read on scanned pages for splitting a stack at barcode or QR sheets
 /// (`SplitMode.barcode`). Other kinds are not looked for. Twin of C# `BarcodeSymbology`

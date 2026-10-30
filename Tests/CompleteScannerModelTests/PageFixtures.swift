@@ -3,7 +3,7 @@ import Foundation
 import ImageIO
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.App.Tests/PageFixtures.cs: both suites read the SmartDoc frames in
+// Twin of windows/LazyScan.App.Tests/PageFixtures.cs: both suites read the SmartDoc frames in
 // Tests/Fixtures/Pages (found next to this file, on the Mac and in the iOS Simulator alike) and their
 // corners.json.
 

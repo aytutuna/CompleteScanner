@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/IdCard.cs: the ID card task. The front and the back of a
+// Twin of windows/LazyScan.Core/IdCard.cs: the ID card task. The front and the back of a
 // card are scanned on the flatbed, the card is found on each scan (PhotoDetector), and both sides
 // are laid out on one page at their real size (ID-1 is 85.60 × 53.98 mm).
 

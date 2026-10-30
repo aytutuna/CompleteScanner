@@ -3,7 +3,7 @@ import CoreGraphics
 import PDFKit
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/PdfImageEncodingTests.cs: the same table and cases.
+// Mirrors windows/LazyScan.Core.Tests/PdfImageEncodingTests.cs: the same table and cases.
 // The Mac-only part at the end encodes pages with ImageIO and builds PDFs with CoreGraphics.
 
 /// "300 Color 0.80" — target dpi, kind (Color, Gray or G4) and quality of one plan.

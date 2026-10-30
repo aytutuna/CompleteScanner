@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/NamingTokensTests.cs: the file name field's parts, putting
+// Mirrors windows/LazyScan.Core.Tests/NamingTokensTests.cs: the file name field's parts, putting
 // one in, what is wrong with a template, and the name the next file gets.
 
 /// 2026-10-20 14:05:32 in the current time zone.

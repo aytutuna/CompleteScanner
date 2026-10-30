@@ -4,7 +4,7 @@ import Foundation
 /// A plane-to-plane projective map (3 × 3, row-major): (x, y) goes to
 /// ((m00 x + m01 y + m02) / w, (m10 x + m11 y + m12) / w) with w = m20 x + m21 y + m22.
 /// Coordinates are continuous pixels (see `Quad`). Twin of C# `Homography`
-/// (windows/CompleteScanner.Core/Homography.cs): + − × ÷ on doubles in the same order, so the same
+/// (windows/LazyScan.Core/Homography.cs): + − × ÷ on doubles in the same order, so the same
 /// quad gives the same matrix, bit for bit, on both platforms.
 public struct Homography: Equatable, Sendable {
     public var m00: Double, m01: Double, m02: Double

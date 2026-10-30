@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Escl/EsclHostList.cs: the same file (escl-hosts.json, a JSON
+// Twin of windows/LazyScan.Core/Escl/EsclHostList.cs: the same file (escl-hosts.json, a JSON
 // list of address strings) and rules; each platform keeps its own in its own settings folder.
 
 /// The network scanners added by address: escl-hosts.json in the settings folder, a JSON list of

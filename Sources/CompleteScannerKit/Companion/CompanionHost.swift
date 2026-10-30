@@ -2,7 +2,7 @@ import Foundation
 import Network
 import Security
 
-// Twin of windows/CompleteScanner.Core/Companion/CompanionHost.cs: the server started, moved and
+// Twin of windows/LazyScan.Core/Companion/CompanionHost.cs: the server started, moved and
 // stopped as the networks change, and advertised by DNS-SD only on the trusted networks' interfaces.
 // The Mac fills in the network source (its interfaces), the advertiser (dnssd) and the identity (the
 // keychain); the tests give stand-ins. C# events are closures here, as in `CompanionRouter`.

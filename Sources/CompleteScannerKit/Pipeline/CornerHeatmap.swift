@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/CornerHeatmap.cs: the same search, sums and divisions in the same
+// Twin of windows/LazyScan.Core/CornerHeatmap.cs: the same search, sums and divisions in the same
 // order, so both platforms read the same corners from the same heatmaps.
 
 /// The page's corners from the heatmaps of DocAligner's corner models: four channels of `width` × `height`

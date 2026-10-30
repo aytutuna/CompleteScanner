@@ -1,7 +1,7 @@
 import Foundation
 import CoreGraphics
 
-// Twin of windows/CompleteScanner.Core/Escl/EsclScanRequest.cs: the same job settings and a
+// Twin of windows/LazyScan.Core/Escl/EsclScanRequest.cs: the same job settings and a
 // ScanSettings document byte for byte the same as the C# one (checked against the shared request
 // fixtures in Tests/Fixtures/Escl).
 

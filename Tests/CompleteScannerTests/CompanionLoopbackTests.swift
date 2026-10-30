@@ -4,7 +4,7 @@ import Security
 import XCTest
 @testable import CompleteScannerKit
 
-// The Swift server end to end, the twin of the windows/CompleteScanner.Core.Tests/CompanionLoopbackTests.cs
+// The Swift server end to end, the twin of the windows/LazyScan.Core.Tests/CompanionLoopbackTests.cs
 // cases about the server: CompanionServer on 127.0.0.1 (loopback only, nothing advertised) with a fixed
 // identity from Tests/Fixtures/Companion, and the phone's CompanionClient pinned to that certificate's key,
 // as the C# FakePhone is. The cases about the host (networks, advertising, listening only while wanted,

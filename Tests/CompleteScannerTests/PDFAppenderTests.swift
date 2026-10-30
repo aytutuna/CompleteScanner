@@ -4,7 +4,7 @@ import Foundation
 import PDFKit
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/PdfAppenderTests.cs: adding scanned pages to an existing
+// Mirrors windows/LazyScan.Core.Tests/PdfAppenderTests.cs: adding scanned pages to an existing
 // PDF as an incremental update, over the same fixtures (PDFFixtures.swift) and our own files from
 // PDFWriter, with the same fixed identifier. C# reads the results back with PdfPig, its lenient
 // parsing off; here PDFReaderLite reads them strictly and PDFKit opens them (page count, sizes,

@@ -5,7 +5,7 @@ import ImageIO
 import PDFKit
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/BilevelOutputTests.cs: black & white pages as CCITT G4
+// Mirrors windows/LazyScan.Core.Tests/BilevelOutputTests.cs: black & white pages as CCITT G4
 // in a PDF (the image dictionary and its data; JPEG and G4 pages with a text layer) and G4 TIFFs of
 // one or several pages, field by field, with the C#-pinned golden file. The C# case builds its page
 // with its own image pipeline; the gray text page thresholded at 128 has the same bits (C# checks

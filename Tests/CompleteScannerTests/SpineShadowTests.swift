@@ -1,7 +1,7 @@
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/SpineShadowTests.cs: softening the shadow along the spine on
+// Twin of windows/LazyScan.Core.Tests/SpineShadowTests.cs: softening the shadow along the spine on
 // a page cut from a spread, on the same synthetic book pages (TestPages, byte-identical, checked by
 // checksum), with the same softened bytes on both platforms.
 

@@ -1,7 +1,7 @@
 import XCTest
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/TextExportTests.cs: the same cases, except
+// Mirrors windows/LazyScan.Core.Tests/TextExportTests.cs: the same cases, except
 // WriteNewFile (the Mac writes the files in AppState with Data.write).
 
 final class TextExportTests: XCTestCase {

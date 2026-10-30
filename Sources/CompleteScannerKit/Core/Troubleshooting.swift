@@ -1,7 +1,7 @@
 import Foundation
 
 // Scanner problems every backend reports the same way, so the user sees one wording whatever
-// the connection. Twin of windows/CompleteScanner.Core/Troubleshooting.cs (same cases, same
+// the connection. Twin of windows/LazyScan.Core/Troubleshooting.cs (same cases, same
 // text).
 
 /// A condition at the scanner that stops a scan and that the user can usually fix. The first

@@ -5,7 +5,7 @@ import Darwin
 #endif
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/EsclDiscoveryTests.cs (same cases; a C# theory is one test
+// Mirrors windows/LazyScan.Core.Tests/EsclDiscoveryTests.cs (same cases; a C# theory is one test
 // here that loops over the same rows; the TXT record is the shared fixture Tests/Fixtures/Escl/txt-hp.txt).
 // Covers what discovery hands over: TXT records, the addresses users type, and how a scanner's DNS-SD
 // services become one endpoint. One deliberate difference: a zoned IPv6 address keeps its zone in

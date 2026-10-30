@@ -2,7 +2,7 @@ import XCTest
 import CoreGraphics
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/OcrTextTests.cs: the same cases.
+// Mirrors windows/LazyScan.Core.Tests/OcrTextTests.cs: the same cases.
 
 /// Lines placed on a 1000 × 1000 page by their top-left corner, as a person reads the page.
 enum OCRFixtures {

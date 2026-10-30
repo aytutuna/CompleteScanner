@@ -1,6 +1,6 @@
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/Companion/CompanionTroubleshooter.cs ("Why can't my phone
+// Twin of windows/LazyScan.Core/Companion/CompanionTroubleshooter.cs ("Why can't my phone
 // connect?"): the same checks, order and Windows text in the troubleshooter's form (TroubleshootCheck).
 // As in Troubleshooter.swift, the snapshot says which app it comes from and the Mac's text names the Mac;
 // the Windows Firewall fields are kept so both suites run the same cases, and the Mac leaves them at

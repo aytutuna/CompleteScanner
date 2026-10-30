@@ -4,7 +4,7 @@ import CoreGraphics
 import ImageIO
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/DocxWriterTests.cs: the same cases. Foundation has no
+// Mirrors windows/LazyScan.Core.Tests/DocxWriterTests.cs: the same cases. Foundation has no
 // zip reader, so the package is read here by `StoredZip`, which walks its records and checks each
 // entry's CRC-32 (the Windows tests open it with System.IO.Compression.ZipArchive).
 
@@ -717,7 +717,7 @@ final class DocxWriterPictureTests: XCTestCase {
 
 /// The page pictures of a Word document as the Mac encodes them (`DocxWriter.picture(of:...)`),
 /// read back by ImageIO, and a document holding them read back with every picture decoded. Twin of
-/// windows/CompleteScanner.App.Tests/DocxPictureTests.cs, which decodes the Windows pictures with WIC.
+/// windows/LazyScan.App.Tests/DocxPictureTests.cs, which decodes the Windows pictures with WIC.
 final class DocxPictureTests: XCTestCase {
     private func page(_ width: Int, _ height: Int, _ color: (Int, Int) -> (UInt8, UInt8, UInt8)) -> CGImage {
         var rgba = [UInt8](repeating: 255, count: width * height * 4)

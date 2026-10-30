@@ -2,7 +2,7 @@ import XCTest
 import CoreGraphics
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/PaperSizeTests.cs: the same cases.
+// Mirrors windows/LazyScan.Core.Tests/PaperSizeTests.cs: the same cases.
 
 private func assertSize(_ width: Double, _ height: Double, _ actual: CGSize?,
                         file: StaticString = #filePath, line: UInt = #line) {

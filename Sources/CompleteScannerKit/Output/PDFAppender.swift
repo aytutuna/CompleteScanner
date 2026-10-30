@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/PdfAppender.cs: the same update, byte for byte, with the same
+// Twin of windows/LazyScan.Core/PdfAppender.cs: the same update, byte for byte, with the same
 // refusals and messages. The file is opened with open(2) for reading and writing where C# opens a
 // FileStream that shares reading only: a read-only file is refused the same way, but another app is
 // seen to have the file open only when it holds a lock on it (flock), since nothing else here says

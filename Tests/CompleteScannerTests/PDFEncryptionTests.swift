@@ -5,7 +5,7 @@ import Foundation
 import PDFKit
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/PdfEncryptionTests.cs: the standard security handler
+// Mirrors windows/LazyScan.Core.Tests/PdfEncryptionTests.cs: the standard security handler
 // V5 R6 (AES-256) checked against known answers (pdf.js's PDF 2.0 cases, Apache-2.0), the password
 // rules and texts, the values and the whole file pinned in C# for the same password and random
 // bytes, then whole files read back. C# reads them with PdfPig; here PDFKit opens them, locked, and

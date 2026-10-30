@@ -341,8 +341,8 @@ xcodebuild test -project ios/CompleteScanneriOS.xcodeproj -scheme CompleteScanne
 ```
 
 The app's icon is drawn by `python scripts/make_ios_icon.py ios/CompleteScanneriOS/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png`
-(standard library only; the Windows app's `windows/CompleteScanner.App/app.ico` is the same picture,
-from `python scripts/make_ico.py windows/CompleteScanner.App/app.ico`), and the photo the import UI test brings in by
+(standard library only; the Windows app's `windows/LazyScan.App/app.ico` is the same picture,
+from `python scripts/make_ico.py windows/LazyScan.App/app.ico`), and the photo the import UI test brings in by
 `python scripts/make_ios_ui_fixture.py ios/CompleteScanneriOSUITests/Fixtures/document-photo.png`
 (a sheet with grey bars on a dark table; standard library only), and the Photos task's by
 `python scripts/make_ios_ui_fixture.py ios/CompleteScanneriOSUITests/Fixtures/photos-on-table.png photos`

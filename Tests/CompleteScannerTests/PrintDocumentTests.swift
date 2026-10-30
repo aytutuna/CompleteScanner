@@ -6,7 +6,7 @@ import PDFKit
 // The print document is what the print panel prints at 100 %: here it is drawn back into pixels at
 // one pixel per point, so the paper size and where each image lands are checked without a printer.
 // Mac only: no C# twin (the Windows print document is checked by
-// windows/CompleteScanner.App.Tests/PrintDocumentTests.cs).
+// windows/LazyScan.App.Tests/PrintDocumentTests.cs).
 
 private let letter = PaperSizes.inches(.letter)!
 private let a4 = PaperSizes.inches(.a4)!

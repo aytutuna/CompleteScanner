@@ -10,7 +10,7 @@ struct MaskComponent {
 /// Binary-mask operations shared by the detectors (photos, blank pages, and later receipts and
 /// page edges). A mask is one byte per pixel, row-major, 1 = set and 0 = clear. Moved out of
 /// `PhotoDetector` unchanged, so photo detection gives exactly the same regions. Twin of C#
-/// `MaskOps` (windows/CompleteScanner.Core/MaskOps.cs).
+/// `MaskOps` (windows/LazyScan.Core/MaskOps.cs).
 enum MaskOps {
 
     // MARK: - Morphology (square kernel, separable passes)

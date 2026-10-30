@@ -3,7 +3,7 @@ import Compression
 import Foundation
 @testable import CompleteScannerKit
 
-// Mirrors windows/CompleteScanner.Core.Tests/GlyphlessFontTests.cs: the same tables, checksums and
+// Mirrors windows/LazyScan.Core.Tests/GlyphlessFontTests.cs: the same tables, checksums and
 // pinned bytes (the font program's and the CIDToGIDMap's lengths and SHA-256, pinned in C#). The map
 // is inflated here with the Compression framework (raw deflate between the zlib header and the
 // Adler-32), where C# uses ZLibStream. A Swift string cannot hold a lone surrogate, so the lone

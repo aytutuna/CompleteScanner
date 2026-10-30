@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/MultiQuadPicker.cs: the same filters, order and numbers.
+// Twin of windows/LazyScan.Core/MultiQuadPicker.cs: the same filters, order and numbers.
 
 /// An outline a finder proposed (Vision's rectangles, a page finder), with how sure it is (0 to 1).
 /// Twin of C# `QuadCandidate`.

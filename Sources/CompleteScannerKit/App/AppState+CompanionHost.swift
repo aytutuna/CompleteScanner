@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 
-// Twin of windows/CompleteScanner.App/AppViewModel.Companion.cs: the desktop's side of C1 (I21), the
+// Twin of windows/LazyScan.App/AppViewModel.Companion.cs: the desktop's side of C1 (I21), the
 // Mac receiving from paired phones. The phone's side is AppState+Companion.swift; the two roles share
 // the protocol and nothing else. The shell passes the platform's pieces (`setUpCompanionHost`); the
 // Phone window answers `confirmPhonePairing`.

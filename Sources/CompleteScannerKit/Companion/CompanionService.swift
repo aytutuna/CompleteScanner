@@ -3,7 +3,7 @@ import Foundation
 import Network
 import Security
 
-// Twin of windows/CompleteScanner.Core/Companion/CompanionService.cs: the desktop's side of C1 put
+// Twin of windows/LazyScan.Core/Companion/CompanionService.cs: the desktop's side of C1 put
 // together, without a screen, so the tests drive it end to end over loopback. The certificate is a
 // `CompanionIdentity` (the Mac's keychain), and the C# events are closures.
 

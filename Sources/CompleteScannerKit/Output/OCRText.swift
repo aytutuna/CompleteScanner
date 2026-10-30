@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/OcrText.cs: same rules, same numbers, same text.
+// Twin of windows/LazyScan.Core/OcrText.cs: same rules, same numbers, same text.
 
 /// The recognized text of one page: the lines as the OCR engine returned them and the page's size
 /// in points (any unit works, as long as width and height share it: it only sets how far across

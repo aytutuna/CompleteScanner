@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-// Twin of windows/CompleteScanner.Core/ReceiptProcessing.cs: same constants, same steps, same patterns.
+// Twin of windows/LazyScan.Core/ReceiptProcessing.cs: same constants, same steps, same patterns.
 
 /// How a receipt's edges were found (`ReceiptDetector`).
 public enum ReceiptBasis: Sendable {

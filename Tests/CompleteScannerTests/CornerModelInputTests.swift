@@ -1,7 +1,7 @@
 import XCTest
 @testable import CompleteScannerKit
 
-// Twin of windows/CompleteScanner.Core.Tests/CornerModelInputTests.cs: the same photos and the same expected
+// Twin of windows/LazyScan.Core.Tests/CornerModelInputTests.cs: the same photos and the same expected
 // numbers, compared exactly, so both platforms are known to give a corner model the same input.
 
 /// A `width` × `height` photo whose pixel (x, y) is `color(x, y)` (red, green, blue), opaque.

@@ -8,7 +8,7 @@ import XCTest
 // scans: codes drawn at their printed size on a page (at 300 dpi, which keeps the debug build quick),
 // "scanned" at common resolutions (each scan pixel the mean of the printed ones it covers), with the
 // scanner's noise and a slant. The logic around them is in BarcodeTests (a stand-in reader, the same
-// cases as Windows); Windows reads with ZXing.Net (CompleteScanner.App.Tests/BarcodeReaderTests.cs).
+// cases as Windows); Windows reads with ZXing.Net (LazyScan.App.Tests/BarcodeReaderTests.cs).
 // Core Image draws QR and Code 128 codes and Core draws Code 39; macOS has no Data Matrix generator,
 // so Data Matrix is checked on Windows only.
 

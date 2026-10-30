@@ -4,7 +4,7 @@ import Foundation
 @testable import CompleteScannerKit
 
 // Mirrors the cross-reference, page tree, facts and refusal cases of
-// windows/CompleteScanner.Core.Tests/PdfReaderLiteTests.cs, over the same fixtures (PDFFixtures.swift)
+// windows/LazyScan.Core.Tests/PdfReaderLiteTests.cs, over the same fixtures (PDFFixtures.swift)
 // and our own files from PDFWriter; its syntax and filter cases are PDFSyntaxTests'. C#'s theories
 // are loops over the same inline data. The stream case also opens the file from disk, the path
 // C#'s Open takes.

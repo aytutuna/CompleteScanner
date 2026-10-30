@@ -2,7 +2,7 @@ import Foundation
 import Network
 import Security
 
-// Twin of windows/CompleteScanner.Core/Companion/CompanionServer.cs on the Network framework: one
+// Twin of windows/LazyScan.Core/Companion/CompanionServer.cs on the Network framework: one
 // NWListener per address with TLS from the desktop's identity, one request per connection, the same
 // limits and timeouts. A connection is offered by the listener before it is started, so a peer that is
 // refused is closed before TLS.
