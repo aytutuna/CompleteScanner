@@ -158,7 +158,7 @@ struct ContentView: View {
             }
             PreviewCanvasView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if state.settings.intent == .document && (!state.scannedPages.isEmpty || state.appendTarget != nil) {
+            if !state.scannedPages.isEmpty || state.appendTarget != nil {
                 Divider()
                 PagesStripView()
             }
