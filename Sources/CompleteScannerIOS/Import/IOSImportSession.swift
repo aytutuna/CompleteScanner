@@ -163,7 +163,7 @@ public enum IOSImportText {
     public static let shotName = "Camera photo"
     /// In place of Skip photo in a shot's corner editor: the photo is dropped and the page taken again.
     public static let retakeLabel = "Retake"
-    public static let retakeHint = "Drops this photo. Take the page again."
+    public static let retakeHint = "Drops this photo. Take it again."
     /// The progress while a shot is read and its page searched.
     public static let readingShot = "Reading the photo\u{2026}"
     /// A shot that could not be read, and one whose page could not be added.
@@ -609,7 +609,8 @@ public final class IOSImportSession: ObservableObject {
         let photo: RgbaImage = decoded.photo
         let plan = PhotoImportPlan(action: .review, corners: found.corners, reason: found.reason,
                                    detection: PhotoDocumentDetection.nothing)
-        let request = PhotoCornersRequest(photo: photo, plan: plan, fileName: shownName, number: number, count: count)
+        let request = PhotoCornersRequest(photo: photo, plan: plan, fileName: shownName, number: number, count: count,
+                                          kind: kind)
         let reply: PhotoCornersAnswer
         if asksOnlyWhenUnsure && prepared.sure && !stopRequested {
             reply = PhotoCornersAnswer(choice: .useCorners, corners: found.corners)

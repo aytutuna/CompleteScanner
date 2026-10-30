@@ -72,7 +72,6 @@
             <Canvas x:Name="Host" Background="Transparent" ClipToBounds="True"
                     Focusable="True" KeyDown="Host_KeyDown"
                     FocusVisualStyle="{DynamicResource DefaultControlFocusVisualStyle}"
-                    AutomationProperties.Name="Page corners"
                     MouseLeftButtonDown="Host_MouseDown" MouseMove="Host_MouseMove"
                     MouseLeftButtonUp="Host_MouseUp" LostMouseCapture="Host_LostMouseCapture"
                     SizeChanged="Host_SizeChanged">

@@ -80,8 +80,8 @@ struct PhotoCornersEditorView: View {
                 nudge(press.key, bigger: press.modifiers.contains(.shift))
                 return .handled
             }
-            .accessibilityLabel("Page corners")
-            .accessibilityHint(PhotoImport.editorHelp + " " + PhotoImport.editorKeys)
+            .accessibilityLabel(Text(PhotoImport.cornersName(request.kind)))
+            .accessibilityHint(PhotoImport.cornersHelp(request.kind) + " " + PhotoImport.editorKeys)
             Divider()
             footer
         }
@@ -105,13 +105,13 @@ struct PhotoCornersEditorView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(PhotoImport.editorTitle)
                     .font(.title3.bold())
-                let reason = PhotoImport.reasonText(request.plan.reason)
+                let reason = PhotoImport.reasonText(request.plan.reason, kind: request.kind)
                 if !reason.isEmpty {
                     Label(reason, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.primary)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(PhotoImport.editorHelp)
+                    Text(PhotoImport.cornersHelp(request.kind))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     // The keys, one click away.

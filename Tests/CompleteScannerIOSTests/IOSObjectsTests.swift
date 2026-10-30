@@ -279,7 +279,7 @@ final class IOSObjectsTests: XCTestCase {
         review.rotate(first.id)
         XCTAssertEqual(review.photos[0].rotationQuarterTurns, 1)
 
-        // Fix crop: the corner editor's request on the photo as taken, with the print's corners.
+        // Fix crop: the corner editor's request on the photo as taken, with the print's corners, worded for a photo.
         let asked: IOSCropRequest? = await review.cropRequest(for: first, name: PhotoImport.label, number: 1, count: 2)
         let crop: IOSCropRequest = try XCTUnwrap(asked)
         XCTAssertEqual(crop.photoID, first.id)
@@ -287,6 +287,7 @@ final class IOSObjectsTests: XCTestCase {
         XCTAssertEqual(crop.request.photo.height, 900)
         XCTAssertEqual(crop.request.plan.corners, printA)
         XCTAssertEqual(crop.request.plan.reason, PhotoReviewReason.none)
+        XCTAssertEqual(crop.request.kind, CaptureKind.photo)
         // The border left out: 414 × 264 px, cut again with the perspective warp.
         let inner = Quad(topLeft: CGPoint(x: 138, y: 168), topRight: CGPoint(x: 552, y: 168),
                          bottomRight: CGPoint(x: 552, y: 432), bottomLeft: CGPoint(x: 138, y: 432))
@@ -612,12 +613,13 @@ final class IOSObjectsTests: XCTestCase {
         XCTAssertNotNil(state.idCardBack)
         XCTAssertTrue(state.showIdCardReview)
         XCTAssertFalse(importer.canImport)
-        // Fix crop of a side: the photo as taken, with the card's corners.
+        // Fix crop of a side: the photo as taken, with the card's corners, worded for a card.
         let review = IOSPhotoReviewModel(state: state)
         let asked: IOSCropRequest? = await review.cropRequest(for: side, name: IOSReviewText.frontTitle, number: 1, count: 1)
         let crop: IOSCropRequest = try XCTUnwrap(asked)
         XCTAssertEqual(crop.request.photo.width, 1200)
         XCTAssertLessThan(crop.request.plan.corners.maxCornerDistance(cardQuad), 1)
+        XCTAssertEqual(crop.request.kind, CaptureKind.idCard)
         XCTAssertEqual(names(spool), [])
         XCTAssertEqual(names(saved), [])
         XCTAssertTrue(state.scanHistory.isEmpty)
@@ -662,6 +664,7 @@ final class IOSObjectsTests: XCTestCase {
         }
         try await ImportTestSupport.waitUntil(timeout: 60) { importer.cornerRequest != nil }
         XCTAssertEqual(importer.cornerRequest?.plan.corners, cardQuad)
+        XCTAssertEqual(importer.cornerRequest?.kind, CaptureKind.idCard)
         importer.answer(PhotoCornersAnswer(choice: .useCorners, corners: cardQuad))
         let outcome: IOSImportOutcome = await importing.value
         XCTAssertEqual(outcome.added, 1)
@@ -683,8 +686,13 @@ final class IOSObjectsTests: XCTestCase {
             await importer.importShot(IOSCameraShot(data: png(cardOnTable()), liveOutline: nil), asksOnlyWhenUnsure: true)
         }
         try await ImportTestSupport.waitUntil(timeout: 60) { importer.cornerRequest != nil }
-        XCTAssertEqual(importer.cornerRequest?.plan.corners, wide)
-        XCTAssertEqual(importer.cornerRequest?.plan.reason, PhotoReviewReason.unsure)
+        let request: PhotoCornersRequest = try XCTUnwrap(importer.cornerRequest)
+        XCTAssertEqual(request.plan.corners, wide)
+        XCTAssertEqual(request.plan.reason, PhotoReviewReason.unsure)
+        XCTAssertEqual(request.kind, CaptureKind.idCard)
+        // The card is sharp, only its shape is off: the note speaks of its outline, not of a page's edges.
+        XCTAssertEqual(PhotoImport.reasonText(request.plan.reason, kind: request.kind),
+                       "The card's outline is not certain.")
         importer.answer(PhotoCornersAnswer(choice: .useCorners, corners: wide))
         let outcome: IOSImportOutcome = await importing.value
         XCTAssertEqual(outcome.added, 1)

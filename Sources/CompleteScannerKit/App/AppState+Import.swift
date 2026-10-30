@@ -4,8 +4,9 @@ import ImageIO
 import UniformTypeIdentifiers
 
 /// A photo whose page was not found clearly, for the corner editor: the photo (upright), what the page
-/// search found and suggests (`PhotoImportPlan`), and where it is in the import. Twin of the Windows
-/// `PhotoCornersRequest`.
+/// search found and suggests (`PhotoImportPlan`), where it is in the import, and what is cut out of it,
+/// which the editor's words name (`kind`: a page; on the iPhone also an ID card, and a photo or receipt for
+/// Fix crop). Twin of the Windows `PhotoCornersRequest`.
 public struct PhotoCornersRequest: Identifiable {
     public let id = UUID()
     public let photo: RgbaImage
@@ -13,13 +14,16 @@ public struct PhotoCornersRequest: Identifiable {
     public let fileName: String
     public let number: Int
     public let count: Int
+    public let kind: CaptureKind
 
-    public init(photo: RgbaImage, plan: PhotoImportPlan, fileName: String, number: Int, count: Int) {
+    public init(photo: RgbaImage, plan: PhotoImportPlan, fileName: String, number: Int, count: Int,
+                kind: CaptureKind = .document) {
         self.photo = photo
         self.plan = plan
         self.fileName = fileName
         self.number = number
         self.count = count
+        self.kind = kind
     }
 }
 

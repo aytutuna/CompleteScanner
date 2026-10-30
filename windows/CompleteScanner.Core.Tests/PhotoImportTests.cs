@@ -412,6 +412,40 @@ public class PhotoImportTests
     }
 
     [Fact]
+    public void TheCornerEditor_NamesWhatIsCutOut()
+    {
+        Assert.Equal(PhotoImport.EditorHelp, PhotoImport.CornersHelp(CaptureKind.Document));
+        Assert.Equal("Drag each corner onto a corner of the receipt.", PhotoImport.CornersHelp(CaptureKind.Receipt));
+        Assert.Equal("Drag each corner onto a corner of the photo.", PhotoImport.CornersHelp(CaptureKind.Photo));
+        Assert.Equal("Drag each corner onto a corner of the card.", PhotoImport.CornersHelp(CaptureKind.IdCard));
+        Assert.Equal("Page corners", PhotoImport.CornersName(CaptureKind.Document));
+        Assert.Equal("Receipt corners", PhotoImport.CornersName(CaptureKind.Receipt));
+        Assert.Equal("Photo corners", PhotoImport.CornersName(CaptureKind.Photo));
+        Assert.Equal("Card corners", PhotoImport.CornersName(CaptureKind.IdCard));
+        // A card that did not measure as ID-1 is unsure: its note speaks of the outline, not of the page's edges.
+        Assert.Equal("The card's outline is not certain.", PhotoImport.ReasonText(PhotoReviewReason.Unsure, CaptureKind.IdCard));
+        Assert.Equal("The card runs off the photo.", PhotoImport.ReasonText(PhotoReviewReason.CutOff, CaptureKind.IdCard));
+        Assert.Equal("No card found in this photo.", PhotoImport.ReasonText(PhotoReviewReason.NothingFound, CaptureKind.IdCard));
+        Assert.Equal("The photo's edges are unclear.", PhotoImport.ReasonText(PhotoReviewReason.Unsure, CaptureKind.Photo));
+        Assert.Equal("No photo found in this shot.", PhotoImport.ReasonText(PhotoReviewReason.NothingFound, CaptureKind.Photo));
+        Assert.Equal("The receipt's edges are unclear.", PhotoImport.ReasonText(PhotoReviewReason.Unsure, CaptureKind.Receipt));
+        Assert.Equal("No receipt found in this shot.", PhotoImport.ReasonText(PhotoReviewReason.NothingFound, CaptureKind.Receipt));
+        foreach (var reason in Enum.GetValues<PhotoReviewReason>())
+        {
+            Assert.Equal(PhotoImport.ReasonText(reason), PhotoImport.ReasonText(reason, CaptureKind.Document));
+            foreach (var kind in Enum.GetValues<CaptureKind>())
+            {
+                Assert.InRange(StatusLine.Words(PhotoImport.ReasonText(reason, kind)), 0, 6);
+            }
+        }
+        // Fix crop gives no reason, whatever it cuts out.
+        foreach (var kind in Enum.GetValues<CaptureKind>())
+        {
+            Assert.Equal("", PhotoImport.ReasonText(PhotoReviewReason.None, kind));
+        }
+    }
+
+    [Fact]
     public void TheStatusAfterAScanLeavesPagesFromPhotosToTheImport()
     {
         var photo = PhotoScenes.WoodScene();

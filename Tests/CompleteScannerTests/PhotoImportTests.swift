@@ -402,6 +402,35 @@ final class PhotoImportTests: XCTestCase {
         }
     }
 
+    func testTheCornerEditor_namesWhatIsCutOut() {
+        XCTAssertEqual(PhotoImport.cornersHelp(.document), PhotoImport.editorHelp)
+        XCTAssertEqual(PhotoImport.cornersHelp(.receipt), "Drag each corner onto a corner of the receipt.")
+        XCTAssertEqual(PhotoImport.cornersHelp(.photo), "Drag each corner onto a corner of the photo.")
+        XCTAssertEqual(PhotoImport.cornersHelp(.idCard), "Drag each corner onto a corner of the card.")
+        XCTAssertEqual(PhotoImport.cornersName(.document), "Page corners")
+        XCTAssertEqual(PhotoImport.cornersName(.receipt), "Receipt corners")
+        XCTAssertEqual(PhotoImport.cornersName(.photo), "Photo corners")
+        XCTAssertEqual(PhotoImport.cornersName(.idCard), "Card corners")
+        // A card that did not measure as ID-1 is unsure: its note speaks of the outline, not of the page's edges.
+        XCTAssertEqual(PhotoImport.reasonText(.unsure, kind: .idCard), "The card's outline is not certain.")
+        XCTAssertEqual(PhotoImport.reasonText(.cutOff, kind: .idCard), "The card runs off the photo.")
+        XCTAssertEqual(PhotoImport.reasonText(.nothingFound, kind: .idCard), "No card found in this photo.")
+        XCTAssertEqual(PhotoImport.reasonText(.unsure, kind: .photo), "The photo's edges are unclear.")
+        XCTAssertEqual(PhotoImport.reasonText(.nothingFound, kind: .photo), "No photo found in this shot.")
+        XCTAssertEqual(PhotoImport.reasonText(.unsure, kind: .receipt), "The receipt's edges are unclear.")
+        XCTAssertEqual(PhotoImport.reasonText(.nothingFound, kind: .receipt), "No receipt found in this shot.")
+        for reason in [PhotoReviewReason.none, .unsure, .cutOff, .twoPages, .nothingFound] {
+            XCTAssertEqual(PhotoImport.reasonText(reason, kind: .document), PhotoImport.reasonText(reason))
+            for kind in CaptureKind.allCases {
+                XCTAssertTrue((0...6).contains(StatusLine.words(PhotoImport.reasonText(reason, kind: kind))))
+            }
+        }
+        // Fix crop gives no reason, whatever it cuts out.
+        for kind in CaptureKind.allCases {
+            XCTAssertEqual(PhotoImport.reasonText(.none, kind: kind), "")
+        }
+    }
+
     func testTheStatusAfterAScanLeavesPagesFromPhotosToTheImport() throws {
         let photo = PhotoScenes.woodScene()
         let fromPhoto = try XCTUnwrap(PhotoImport.correctedPage(photo, corners: PhotoImport.plan(photo).corners))

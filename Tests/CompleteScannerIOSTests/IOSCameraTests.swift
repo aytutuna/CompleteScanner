@@ -979,6 +979,7 @@ final class IOSCameraTests: XCTestCase {
         XCTAssertEqual(request.fileName, "Camera photo")
         XCTAssertEqual(request.plan.corners, sheetQuad)
         XCTAssertEqual(request.plan.reason, PhotoReviewReason.unsure)
+        XCTAssertEqual(request.kind, CaptureKind.document)
         XCTAssertEqual(request.photo.width, 600)
         XCTAssertEqual(request.photo.height, 450)
         // Retake in the editor, and no Stop there or beside "Reading the photo…": nothing follows the shot.
@@ -1126,7 +1127,7 @@ final class IOSCameraTests: XCTestCase {
         XCTAssertEqual(IOSImportSession.seeded(unsure, liveOutline: sliver, width: 600, height: 450), unsure)
         XCTAssertEqual(IOSImportText.shotName, "Camera photo")
         XCTAssertEqual(IOSImportText.retakeLabel, "Retake")
-        XCTAssertEqual(IOSImportText.retakeHint, "Drops this photo. Take the page again.")
+        XCTAssertEqual(IOSImportText.retakeHint, "Drops this photo. Take it again.")
         XCTAssertEqual(IOSImportText.readingShot, "Reading the photo\u{2026}")
         XCTAssertEqual(IOSImportText.shotUnreadableMessage, "The photo could not be read. Take it again.")
         XCTAssertEqual(IOSImportText.shotNotAddedMessage, "The photo could not be added. Try again.")

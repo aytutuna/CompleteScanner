@@ -5,9 +5,12 @@ namespace CompleteScanner.App;
 
 /// <summary>
 /// A photo whose page was not found clearly, for the corner editor: the photo (upright), what the
-/// page search found and suggests (<see cref="PhotoImportPlan"/>), and where it is in the import.
+/// page search found and suggests (<see cref="PhotoImportPlan"/>), where it is in the import, and what
+/// is cut out of it, which the editor's words name (a page here; the iPhone also cuts out ID cards,
+/// photos and receipts).
 /// </summary>
-public sealed record PhotoCornersRequest(RgbaImage Photo, PhotoImportPlan Plan, string FileName, int Number, int Count);
+public sealed record PhotoCornersRequest(RgbaImage Photo, PhotoImportPlan Plan, string FileName, int Number, int Count,
+                                         CaptureKind Kind = CaptureKind.Document);
 
 /// <summary>The corner editor's answer: what to do with the photo, and the corners placed when they are used.</summary>
 public sealed record PhotoCornersAnswer(PhotoCornersChoice Choice, Quad? Corners = null)

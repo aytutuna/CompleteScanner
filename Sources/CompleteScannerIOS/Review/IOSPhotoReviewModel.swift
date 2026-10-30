@@ -179,8 +179,9 @@ public final class IOSPhotoReviewModel {
     // MARK: Fix crop
 
     /// The corner editor's request for `photo` (a photo, a receipt or a side of the ID card): the picture it
-    /// was cut from, read off the main actor, with the corners it was cut along, shown as `name` (number of
-    /// count); nil once the review is closed.
+    /// was cut from, read off the main actor, with the corners it was cut along and what it is, which the
+    /// editor's words name (`PhotoCropStart.kind`), shown as `name` (number of count); nil once the review is
+    /// closed.
     public func cropRequest(for photo: DetectedPhoto, name: String, number: Int, count: Int) async -> IOSCropRequest? {
         guard let start = state.cropStart(for: photo) else { return nil }
         let source: CGImage = start.source
@@ -190,7 +191,8 @@ public final class IOSPhotoReviewModel {
         guard let picture = pixels else { return nil }
         let plan = PhotoImportPlan(action: .review, corners: start.corners, reason: PhotoReviewReason.none,
                                    detection: PhotoDocumentDetection.nothing)
-        let request = PhotoCornersRequest(photo: picture, plan: plan, fileName: name, number: number, count: count)
+        let request = PhotoCornersRequest(photo: picture, plan: plan, fileName: name, number: number, count: count,
+                                          kind: start.kind)
         return IOSCropRequest(photoID: photo.id, request: request)
     }
 

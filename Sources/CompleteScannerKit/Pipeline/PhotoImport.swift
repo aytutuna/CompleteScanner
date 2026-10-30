@@ -364,6 +364,43 @@ public enum PhotoImport {
         }
     }
 
+    /// `reasonText(_:)` in the words of what is cut out of the photo: an ID card, a photo or a receipt
+    /// rather than a page. A card's `.unsure` speaks of its outline: a card found whose shape is not ID-1's
+    /// is unsure too, however sharp its edges.
+    public static func reasonText(_ reason: PhotoReviewReason, kind: CaptureKind) -> String {
+        switch (kind, reason) {
+        case (.idCard, .unsure): return "The card's outline is not certain."
+        case (.idCard, .cutOff): return "The card runs off the photo."
+        case (.idCard, .nothingFound): return "No card found in this photo."
+        case (.photo, .unsure): return "The photo's edges are unclear."
+        case (.photo, .nothingFound): return "No photo found in this shot."
+        case (.receipt, .unsure): return "The receipt's edges are unclear."
+        case (.receipt, .nothingFound): return "No receipt found in this shot."
+        default: return reasonText(reason)
+        }
+    }
+
+    /// The corner editor's help line for what is cut out of the photo: `editorHelp` for a page, "Drag each
+    /// corner onto a corner of the card." for an ID card.
+    public static func cornersHelp(_ kind: CaptureKind) -> String {
+        switch kind {
+        case .document: return editorHelp
+        case .receipt: return "Drag each corner onto a corner of the receipt."
+        case .photo: return "Drag each corner onto a corner of the photo."
+        case .idCard: return "Drag each corner onto a corner of the card."
+        }
+    }
+
+    /// What VoiceOver calls the corner editor's photo with its corners: "Page corners", "Card corners".
+    public static func cornersName(_ kind: CaptureKind) -> String {
+        switch kind {
+        case .document: return "Page corners"
+        case .receipt: return "Receipt corners"
+        case .photo: return "Photo corners"
+        case .idCard: return "Card corners"
+        }
+    }
+
     /// The corner editor's caption: "Photo 2 of 5" (the file name is its tooltip), or the file name alone
     /// for one photo.
     public static func counter(_ number: Int, of count: Int, fileName: String) -> String {

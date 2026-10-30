@@ -64,11 +64,11 @@ public partial class PhotoCornersWindow : Window
         Corners = _start;
         Title = PhotoImport.EditorTitle;
         TitleText.Text = PhotoImport.EditorTitle;
-        string reason = PhotoImport.ReasonText(request.Plan.Reason);
+        string reason = PhotoImport.ReasonText(request.Plan.Reason, request.Kind);
         ReasonText.Text = reason;
         ReasonPanel.Visibility = reason.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         // What to do on screen; the keys behind the ⓘ.
-        HelpText.Text = PhotoImport.EditorHelp;
+        HelpText.Text = PhotoImport.CornersHelp(request.Kind);
         KeyboardInfoButton.InfoText = PhotoImport.EditorKeys;
         // "Photo 2 of 3"; the file's name is the tooltip.
         CounterText.Text = PhotoImport.Counter(request.Number, request.Count, request.FileName);
@@ -77,7 +77,8 @@ public partial class PhotoCornersWindow : Window
         WholePhotoButton.Content = PhotoImport.WholePhotoLabel;
         SkipButton.Content = PhotoImport.SkipLabel;
         UseButton.Content = PhotoImport.UseCornersLabel;
-        AutomationProperties.SetHelpText(Host, $"{PhotoImport.EditorHelp} {PhotoImport.EditorKeys}");
+        AutomationProperties.SetName(Host, PhotoImport.CornersName(request.Kind));
+        AutomationProperties.SetHelpText(Host, $"{PhotoImport.CornersHelp(request.Kind)} {PhotoImport.EditorKeys}");
         LoupeLens.Fill = _loupeBrush;
         for (int i = 0; i < 4; i++)
         {

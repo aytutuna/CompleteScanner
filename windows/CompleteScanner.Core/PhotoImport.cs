@@ -372,6 +372,44 @@ public static class PhotoImport
         _ => "",
     };
 
+    /// <summary>
+    /// <see cref="ReasonText(PhotoReviewReason)"/> in the words of what is cut out of the photo: an ID card,
+    /// a photo or a receipt rather than a page. A card's <see cref="PhotoReviewReason.Unsure"/> speaks of its
+    /// outline: a card found whose shape is not ID-1's is unsure too, however sharp its edges.
+    /// </summary>
+    public static string ReasonText(PhotoReviewReason reason, CaptureKind kind) => (kind, reason) switch
+    {
+        (CaptureKind.IdCard, PhotoReviewReason.Unsure) => "The card's outline is not certain.",
+        (CaptureKind.IdCard, PhotoReviewReason.CutOff) => "The card runs off the photo.",
+        (CaptureKind.IdCard, PhotoReviewReason.NothingFound) => "No card found in this photo.",
+        (CaptureKind.Photo, PhotoReviewReason.Unsure) => "The photo's edges are unclear.",
+        (CaptureKind.Photo, PhotoReviewReason.NothingFound) => "No photo found in this shot.",
+        (CaptureKind.Receipt, PhotoReviewReason.Unsure) => "The receipt's edges are unclear.",
+        (CaptureKind.Receipt, PhotoReviewReason.NothingFound) => "No receipt found in this shot.",
+        _ => ReasonText(reason),
+    };
+
+    /// <summary>
+    /// The corner editor's help line for what is cut out of the photo: <see cref="EditorHelp"/> for a page,
+    /// "Drag each corner onto a corner of the card." for an ID card.
+    /// </summary>
+    public static string CornersHelp(CaptureKind kind) => kind switch
+    {
+        CaptureKind.Receipt => "Drag each corner onto a corner of the receipt.",
+        CaptureKind.Photo => "Drag each corner onto a corner of the photo.",
+        CaptureKind.IdCard => "Drag each corner onto a corner of the card.",
+        _ => EditorHelp,
+    };
+
+    /// <summary>What screen readers call the corner editor's photo with its corners: "Page corners", "Card corners".</summary>
+    public static string CornersName(CaptureKind kind) => kind switch
+    {
+        CaptureKind.Receipt => "Receipt corners",
+        CaptureKind.Photo => "Photo corners",
+        CaptureKind.IdCard => "Card corners",
+        _ => "Page corners",
+    };
+
     /// <summary>The corner editor's caption: "Photo 2 of 5" (the file name is its tooltip), or the file name alone for one photo.</summary>
     public static string Counter(int number, int count, string fileName) =>
         count > 1 ? $"Photo {number} of {count}" : fileName;

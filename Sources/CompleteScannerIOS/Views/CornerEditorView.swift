@@ -13,6 +13,8 @@ import SwiftUI
 /// file name.
 /// For Fix crop in a review (`fixesCrop`, I13) the same editor opens on the picture an object was cut from:
 /// Cancel in place of Skip photo, and no Stop, since no import runs.
+/// The reason, the help line and the photo's name for VoiceOver speak of what is cut out (`request.kind`):
+/// the ID card, a photo or a receipt, else the page.
 struct CornerEditorView: View {
     let request: PhotoCornersRequest
     let onAnswer: @MainActor (PhotoCornersAnswer) -> Void
@@ -85,7 +87,7 @@ struct CornerEditorView: View {
     /// Why the corners need a look (when they do), the help line, and which photo this is; no caption for a
     /// shot, which has no file name, or for a lone photo from the Photos library, which is only "Photo".
     private var header: some View {
-        let reason: String = PhotoImport.reasonText(request.plan.reason)
+        let reason: String = PhotoImport.reasonText(request.plan.reason, kind: request.kind)
         let counter: String = PhotoImport.counter(request.number, of: request.count, fileName: request.fileName)
         // The Photos library's photos are all named "Photo": VoiceOver reads "Photo 2 of 5" without ": Photo".
         let counterName: String = request.fileName == PhotoImport.label
@@ -99,7 +101,7 @@ struct CornerEditorView: View {
                     .accessibilityIdentifier("corners.reason")
             }
             HStack(alignment: .firstTextBaseline) {
-                Text(PhotoImport.editorHelp)
+                Text(PhotoImport.cornersHelp(request.kind))
                     .font(.footnote)
                     .foregroundStyle(Color.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -173,7 +175,7 @@ struct CornerEditorView: View {
         .contentShape(Rectangle())
         .gesture(cornerDrag(frame: frame))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("Page corners"))
+        .accessibilityLabel(Text(PhotoImport.cornersName(request.kind)))
         .accessibilityIdentifier("corners.stage")
     }
 
@@ -186,7 +188,7 @@ struct CornerEditorView: View {
             .accessibilityElement()
             .accessibilityLabel(Text(model.cornerLabel(index)))
             .accessibilityValue(Text(model.cornerValue(index)))
-            .accessibilityHint(Text(PhotoImport.editorHelp))
+            .accessibilityHint(Text(PhotoImport.cornersHelp(request.kind)))
             .accessibilityAdjustableAction { (direction: AccessibilityAdjustmentDirection) in
                 switch direction {
                 case .increment:
