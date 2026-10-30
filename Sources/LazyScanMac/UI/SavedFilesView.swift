@@ -66,7 +66,10 @@ struct SavedFilesView: View {
             Text(destinationURL.path)
                 .font(.caption.monospaced())
                 .foregroundStyle(.tertiary)
-            Button("Show in Finder") { state.revealInFinder(destinationURL) }
+            Button("Show in Finder") {
+                try? FileManager.default.createDirectory(at: destinationURL, withIntermediateDirectories: true)
+                state.revealInFinder(destinationURL)
+            }
         }
         .padding(40)
     }

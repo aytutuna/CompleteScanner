@@ -552,6 +552,7 @@ struct InspectorView: View {
                 Spacer(minLength: 4)
                 Button("Choose…") { chooseDestination() }
                 Button {
+                    try? FileManager.default.createDirectory(at: destinationURL, withIntermediateDirectories: true)
                     state.revealInFinder(destinationURL)
                 } label: {
                     Image(systemName: "magnifyingglass")
