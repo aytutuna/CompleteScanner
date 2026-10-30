@@ -282,7 +282,7 @@ of options (export, colour, quality, flash, camera) and Save floating over the p
 pages; the pages taken stay when you switch between Document and Book, and any other kind asks first
 whether to save them or discard them; a printer button switches to printer mode, where one scanner is picked in the Scanner sheet and
 Scan sits beside Save, and a camera button switches back, the scanner kept for next time; Print… and
-Email… in Save's menu, and what runs after each save (Email, Print, Send to PC) under After saving;
+Email… in Save's menu, and what runs after each save (Email, Print, Send to computer) under After saving;
 so far the Demo Scanner,
 our own camera as the default way to take pages, with the page's outline found by the page corner
 model (FastViT-T8) and held

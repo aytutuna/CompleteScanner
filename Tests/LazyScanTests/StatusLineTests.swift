@@ -26,6 +26,7 @@ final class StatusLineTests: XCTestCase {
             ("Reading the text of page 3 of 12\u{2026}", "Reading page 3 of 12\u{2026}"),
             ("Adding 3 pages to Scan 2026-10-20 1.pdf\u{2026}", "Adding 3 pages\u{2026}"),
             ("Sent the ruler test page to Office Laser. At real size each square measures 1 inch.", "Sent to the printer"),
+            ("3 pages sent to MacBook.", "3 pages sent to MacBook"),
             ("9 pages \u{00B7} 3 documents.", "9 pages \u{00B7} 3 documents"),
             ("9 pages \u{00B7} 3 documents \u{00B7} 2 separator pages skipped.", "9 pages \u{00B7} 3 documents"),
             ("12 pages \u{00B7} 4 documents \u{00B7} 2 separator pages and 1 blank skipped.", "12 pages \u{00B7} 4 documents"),

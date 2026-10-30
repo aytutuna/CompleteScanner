@@ -238,7 +238,7 @@ final class AppStateCompanionTests: XCTestCase {
         await state.sendQueueToDesktop(target: .new)
 
         XCTAssertNil(state.errorMessage)
-        XCTAssertEqual(state.statusMessage, "Sent 2 pages to Office PC.")
+        XCTAssertEqual(state.statusMessage, "2 pages sent to Office PC.")
         XCTAssertEqual(state.companionOutboxCount, 0)
         XCTAssertEqual(state.companionStatus, .reachable(desktopName: "Office PC", queuedPages: 2))
         XCTAssertEqual(state.scannedPages.count, 2)
@@ -271,7 +271,7 @@ final class AppStateCompanionTests: XCTestCase {
         await state.drainOutbox()
 
         // A duplicate counts as sent: the desktop had it.
-        XCTAssertEqual(state.statusMessage, "Sent 1 page to Office PC.")
+        XCTAssertEqual(state.statusMessage, "1 page sent to Office PC.")
         XCTAssertEqual(state.companionOutboxCount, 0)
         let put = try XCTUnwrap(fake.requests.last { $0.method == "PUT" })
         XCTAssertEqual(put.header(CompanionProtocol.targetHeader), "current")
@@ -626,7 +626,7 @@ final class AppStateCompanionTests: XCTestCase {
         await state.sendQueueToDesktop(target: .new)
 
         XCTAssertEqual(state.statusMessage,
-                       "Office PC cannot be reached on this network. Set a cloud folder in My computer to send when the PC cannot be reached.")
+                       "Office PC cannot be reached on this network. Set a cloud folder in My computer to send when the computer cannot be reached.")
         XCTAssertEqual(state.companionOutboxCount, 1)
 
         await state.drainOutbox()

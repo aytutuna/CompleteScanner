@@ -208,7 +208,7 @@ final class IOSSettingsTests: XCTestCase {
         defaults.set(false, forKey: IOSAfterSave.print.key)
         XCTAssertEqual(IOSAfterSave.steps(defaults, paired: true), [.send, .email])
         XCTAssertEqual(IOSAfterSave.rows.map { (action: IOSAfterSave) -> String in action.label },
-                       ["Email", "Print", "Send to PC"])
+                       ["Email", "Print", "Send to computer"])
     }
 
     func test_afterSave_saysWhenSendToPCsPagesWait() {

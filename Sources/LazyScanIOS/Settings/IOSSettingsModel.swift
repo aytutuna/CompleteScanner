@@ -250,7 +250,7 @@ public enum IOSAdjustment: String, CaseIterable, Identifiable {
 
 /// Export's After saving on the iPhone: what runs each time Save writes a document, checked in any
 /// combination and kept in the user's defaults, not in the settings file. They run in the order of the
-/// cases: Send to PC and Print take the queue, which the save empties, so they come before the file is
+/// cases: Send to computer and Print take the queue, which the save empties, so they come before the file is
 /// written (the save follows once the copy screen has closed); Email goes out with the saved file.
 public enum IOSAfterSave: String, CaseIterable, Identifiable {
     case send
@@ -267,7 +267,7 @@ public enum IOSAfterSave: String, CaseIterable, Identifiable {
 
     public var label: String {
         switch self {
-        case .send: return "Send to PC"
+        case .send: return IOSCompanionText.sendButton
         case .print: return "Print"
         case .email: return "Email"
         }
@@ -276,7 +276,7 @@ public enum IOSAfterSave: String, CaseIterable, Identifiable {
     /// The user's defaults key the row's check is kept under.
     public var key: String { "afterSave.\(rawValue)" }
 
-    /// The checked actions in the order they run; Send to PC only while a computer is paired.
+    /// The checked actions in the order they run; Send to computer only while a computer is paired.
     public static func steps(_ defaults: UserDefaults, paired: Bool) -> [IOSAfterSave] {
         var steps: [IOSAfterSave] = []
         for action in allCases where defaults.bool(forKey: action.key) {
@@ -286,7 +286,7 @@ public enum IOSAfterSave: String, CaseIterable, Identifiable {
         return steps
     }
 
-    /// Why Send to PC's pages have not gone when the send raised no alert of its own: the computer did not
+    /// Why Send to computer's pages have not gone when the send raised no alert of its own: the computer did not
     /// answer, or no longer knows this phone, and the document waits in the outbox (`waiting`). Nil when
     /// nothing waits or the computer answered.
     public static func notSentMessage(_ status: CompanionStatus, waiting: Int) -> String? {

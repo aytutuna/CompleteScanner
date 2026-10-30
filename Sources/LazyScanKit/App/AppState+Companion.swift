@@ -19,7 +19,7 @@ public enum CompanionText {
         "The computer that answered is not the one this phone was paired with. If pairing was reset there, pair again."
     public static let badResponseMessage = "The computer's answer could not be read."
     public static let notSavedMessage = "The pairing could not be saved on this phone. Try again."
-    public static let syncFolderHint = "Set a cloud folder in My computer to send when the PC cannot be reached."
+    public static let syncFolderHint = "Set a cloud folder in My computer to send when the computer cannot be reached."
     public static let syncFolderUnavailableMessage =
         "The cloud folder could not be opened. Choose it again in My computer."
     public static let syncFolderLine =
@@ -45,9 +45,9 @@ public enum CompanionText {
         "This phone is no longer paired with \(desktopName)."
     }
 
-    /// "Sent 3 pages to Office PC."
+    /// "3 pages sent to Office PC."
     public static func sentMessage(_ pageCount: Int, desktopName: String) -> String {
-        "Sent \(pageCount == 1 ? "1 page" : "\(pageCount) pages") to \(desktopName)."
+        "\(pageCount == 1 ? "1 page" : "\(pageCount) pages") sent to \(desktopName)."
     }
 
     /// "Scan 12.lsdoc was not sent: This document is too large to send in one piece."
@@ -255,7 +255,7 @@ extension AppState {
     /// not readable (another error status sends the next too, but keeps the folder open); with a key but no
     /// folder, the status says once this session where to set one. One that failed to go into the folder
     /// before tries the folder first. One in the folder leaves once its file has left it (the desktop took
-    /// it), or once it is sent over the network, its file then taken out of the folder. "Sent 3 pages to
+    /// it), or once it is sent over the network, its file then taken out of the folder. "3 pages sent to
     /// Office PC."
     public func drainOutbox() async {
         guard !companionDraining, let outbox = companionOutbox, let desktop = companionDesktop,

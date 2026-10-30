@@ -22,6 +22,7 @@ public class StatusLineTests
     [InlineData("Reading the text of page 3 of 12…", "Reading page 3 of 12…")]
     [InlineData("Adding 3 pages to Scan 2026-10-20 1.pdf…", "Adding 3 pages…")]
     [InlineData("Sent the ruler test page to Office Laser. At real size each square measures 1 inch.", "Sent to the printer")]
+    [InlineData("3 pages sent to MacBook.", "3 pages sent to MacBook")]
     [InlineData("9 pages · 3 documents.", "9 pages · 3 documents")]
     [InlineData("9 pages · 3 documents · 2 separator pages skipped.", "9 pages · 3 documents")]
     [InlineData("12 pages · 4 documents · 2 separator pages and 1 blank skipped.", "12 pages · 4 documents")]

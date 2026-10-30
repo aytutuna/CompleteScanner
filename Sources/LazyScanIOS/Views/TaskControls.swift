@@ -387,12 +387,20 @@ struct ExportOptions: View {
 }
 
 /// After saving (`IOSAfterSave`): what Save also does, each a check. In the Export sheet, and on its own
-/// from Save's menu.
+/// from Save's menu. Send to computer is dimmed, with its reason under it, while nothing can send; its
+/// check stays as it was.
 struct AfterSaveSection: View {
+    @EnvironmentObject private var state: AppState
+
     var body: some View {
         Section {
             ForEach(IOSAfterSave.rows) { (action: IOSAfterSave) in
+                let reason: String? = unavailableReason(of: action)
                 AfterSaveRow(action: action)
+                    .disabled(reason != nil)
+                if let reason = reason {
+                    OptionReason(text: reason)
+                }
             }
         } header: {
             Text(IOSAfterSave.title)
@@ -400,10 +408,19 @@ struct AfterSaveSection: View {
             Text(IOSAfterSave.footer)
         }
     }
+
+    /// Why `action` cannot run now, nil while it can. Only Send to computer can be out of reach: Save's menu
+    /// shows it under the same test (`IOSShell.offersSendToComputer`).
+    private func unavailableReason(of action: IOSAfterSave) -> String? {
+        let s: ScanSettings = state.settings
+        guard action == .send, !IOSShell.offersSendToComputer(s, status: state.companionStatus) else { return nil }
+        return IOSShell.collectsPages(s) ? IOSCompanionText.sendNeedsPairingReason : IOSCompanionText.sendNeedsPagesReason
+    }
 }
 
 /// A row of After saving: a check kept in the user's defaults under the action's key.
 private struct AfterSaveRow: View {
+    @Environment(\.isEnabled) private var isEnabled: Bool
     let action: IOSAfterSave
     @AppStorage private var checked: Bool
 
@@ -429,6 +446,8 @@ private struct AfterSaveRow: View {
             }
             .contentShape(Rectangle())
         }
+        // The label sets its own colours, so a disabled button does not dim it.
+        .opacity(isEnabled ? 1 : 0.4)
         .accessibilityAddTraits(checked ? AccessibilityTraits.isSelected : [])
         .accessibilityIdentifier("options.afterSave.\(action.rawValue)")
     }

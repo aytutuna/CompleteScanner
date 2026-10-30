@@ -101,14 +101,14 @@ struct ScanScreen: View {
     /// Save waits for the copy screen After saving's Print opened, then emails when `emailsAfterPrint`.
     @State private var savesAfterPrint: Bool = false
     @State private var emailsAfterPrint: Bool = false
-    /// After saving's steps left once Send to PC's alert closes: the copy screen and Mail cannot show over it.
+    /// After saving's steps left once Send to computer's alert closes: the copy screen and Mail cannot show over it.
     @State private var stepsAfterAlert: [IOSAfterSave]?
     /// What was asked for that would leave the pages without a Save, while the question about them is up.
     @State private var leavingPages: PagesLeave?
-    /// The status a busy spell left in camera mode ("Sent 3 pages to Office PC."), on a card for a few seconds.
+    /// The status a busy spell left in camera mode ("3 pages sent to Office PC."), on a card for a few seconds.
     @State private var statusAfterBusy: String?
     /// The status and the files saved last as the busy spell began, to tell what it changed, and whether it
-    /// is a send, whose "Sent 3 pages to Office PC." is the same each time.
+    /// is a send, whose "3 pages sent to Office PC." is the same each time.
     @State private var statusBeforeBusy: String = ""
     @State private var savedBeforeBusy: [URL] = []
     @State private var busySends: Bool = false
@@ -1109,7 +1109,7 @@ struct ScanScreen: View {
 
     // MARK: Saving
 
-    /// Save, then what After saving has checked, in its order (`IOSAfterSave.steps`). Send to PC and Print
+    /// Save, then what After saving has checked, in its order (`IOSAfterSave.steps`). Send to computer and Print
     /// take the queue, which the save empties, so they go first: the save waits for the copy screen Print
     /// opens to close. Email goes out with the saved file. A send that failed, or whose pages wait for a
     /// computer that did not answer, says so in an alert, and the other steps run once it is closed.
@@ -1152,7 +1152,7 @@ struct ScanScreen: View {
         }
     }
 
-    /// Send to PC's alert has closed: the steps after it run once it has gone.
+    /// Send to computer's alert has closed: the steps after it run once it has gone.
     private func alertClosed() {
         guard let steps = stepsAfterAlert else { return }
         stepsAfterAlert = nil
